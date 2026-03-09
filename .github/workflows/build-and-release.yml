@@ -1,0 +1,87 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore packages
+        run: dotnet restore src/Pia.Wpf/Pia.Wpf.csproj
+
+      - name: Determine release info
+        id: info
+        shell: bash
+        run: |
+          dotnet tool restore
+          VERSION=$(dotnet nbgv get-version -v SimpleVersion)
+          DATE=$(date +%Y%m%d)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "title=Pia v${VERSION} (${DATE})" >> "$GITHUB_OUTPUT"
+          BRANCH=${GITHUB_REF_NAME}
+          if [ "$BRANCH" = "master" ]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish self-contained
+        run: >
+          dotnet publish src/Pia.Wpf/Pia.Wpf.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk --allow-roll-forward --prerelease
+
+      - name: Download previous release (for delta updates)
+        run: |
+          vpk download github --repoUrl https://github.com/Pia-Ai-dev/Pia.Wpf --token ${{ secrets.GITHUB_TOKEN }} -x
+        continue-on-error: true
+
+      - name: Create Velopack release
+        run: >
+          vpk pack
+          -u Pia.Wpf
+          -v ${{ steps.info.outputs.version }}
+          -p publish
+          --mainExe Pia.Wpf.exe
+          --msi
+
+      - name: Upload Velopack release to GitHub
+        run: >
+          vpk upload github
+          --repoUrl https://github.com/Pia-Ai-dev/Pia.Wpf
+          --publish
+          --releaseName "${{ steps.info.outputs.title }}"
+          --tag ${{ steps.info.outputs.tag }}
+          --token ${{ secrets.GITHUB_TOKEN }}
+          -xy
