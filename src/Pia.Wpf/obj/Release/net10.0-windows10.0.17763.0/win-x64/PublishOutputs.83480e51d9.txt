@@ -1,5 +1,0 @@
-C:\projects\Pia\artifacts\publish\Pia.pdb
-C:\projects\Pia\artifacts\publish\onnxruntime.lib
-C:\projects\Pia\artifacts\publish\onnxruntime_providers_shared.lib
-C:\projects\Pia\artifacts\publish\Pia.Shared.pdb
-C:\projects\Pia\artifacts\publish\Pia.exe
