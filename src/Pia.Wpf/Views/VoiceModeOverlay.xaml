@@ -1,0 +1,80 @@
+<UserControl x:Class="Pia.Views.VoiceModeOverlay"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+  xmlns:controls="clr-namespace:Pia.Views.Controls"
+  xmlns:loc="clr-namespace:Pia.Localization"
+  mc:Ignorable="d"
+  d:DesignHeight="500" d:DesignWidth="400">
+
+  <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Row 0: Main indicator area -->
+    <controls:RecordingIndicator x:Name="VoiceIndicator"
+                                 Grid.Row="0"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 AudioLevel="{Binding AudioLevel}"
+                                 StatusText="{Binding StatusText}"
+                                 EllipseSize="100" />
+
+    <!-- Row 1: Transcript area -->
+    <Border Grid.Row="1"
+            Margin="20,0,20,12"
+            Padding="12,8"
+            CornerRadius="8"
+            MaxHeight="150"
+            Background="{DynamicResource ControlFillColorSecondaryBrush}"
+            Visibility="{Binding TranscriptText,
+              Converter={StaticResource ZeroToVisibilityConverter}}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled"
+                    MaxHeight="134">
+        <TextBlock Text="{Binding TranscriptText}"
+                   TextWrapping="Wrap"
+                   FontSize="13"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+      </ScrollViewer>
+    </Border>
+
+    <!-- Row 2: Control buttons -->
+    <StackPanel Grid.Row="2"
+                HorizontalAlignment="Center"
+                Orientation="Horizontal"
+                Margin="0,0,0,24">
+      <!-- Done button (visible during Listening) -->
+      <ui:Button Command="{Binding DoneListeningCommand}"
+                 Margin="8,0"
+                 Padding="16,10"
+                 Appearance="Secondary"
+                 Content="{loc:Str VoiceMode_Done}"
+                 Visibility="{Binding State,
+                   Converter={StaticResource VoiceModeStateToVisibilityConverter},
+                   ConverterParameter=Listening}" />
+
+      <!-- Stop button (visible during Speaking) -->
+      <ui:Button Command="{Binding StopSpeakingCommand}"
+                 Margin="8,0"
+                 Padding="16,10"
+                 Appearance="Secondary"
+                 Content="{loc:Str VoiceMode_Stop}"
+                 Visibility="{Binding State,
+                   Converter={StaticResource VoiceModeStateToVisibilityConverter},
+                   ConverterParameter=Speaking}" />
+
+      <!-- End button (always visible) -->
+      <ui:Button Command="{Binding ExitCommand}"
+                 Margin="8,0"
+                 Padding="16,10"
+                 Appearance="Danger"
+                 Content="{loc:Str VoiceMode_End}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

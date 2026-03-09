@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>1.3</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <!-- Shared -->
+  <data name="Snackbar_Success" xml:space="preserve"><value>Erfolg</value></data>
+  <data name="Snackbar_Error" xml:space="preserve"><value>Fehler</value></data>
+  <data name="Snackbar_Warning" xml:space="preserve"><value>Warnung</value></data>
+  <data name="Snackbar_Cancelled" xml:space="preserve"><value>Abgebrochen</value></data>
+  <data name="Msg_Error" xml:space="preserve"><value>Fehler</value></data>
+  <data name="Msg_Success" xml:space="preserve"><value>Erfolg</value></data>
+  <data name="Msg_Warning" xml:space="preserve"><value>Warnung</value></data>
+  <data name="Msg_Cancelled" xml:space="preserve"><value>Abgebrochen</value></data>
+  <!-- Assistant messages -->
+  <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Kopiert</value></data>
+  <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
+  <data name="Msg_Assistant_MemoryUpdated" xml:space="preserve"><value>Gedächtnis aktualisiert</value></data>
+  <data name="Msg_Assistant_MessageCopied" xml:space="preserve"><value>Nachricht in die Zwischenablage kopiert.</value></data>
+  <data name="Msg_Assistant_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
+  <data name="Msg_Assistant_NoProviderConfigured" xml:space="preserve"><value>Kein KI-Anbieter für den Assistentenmodus konfiguriert. Bitte füge einen in den Einstellungen hinzu.</value></data>
+  <data name="Msg_Assistant_NoProviderInline" xml:space="preserve"><value>Kein KI-Anbieter konfiguriert. Bitte füge einen in den Einstellungen hinzu.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteMemory" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Diese Aufgabe wird dauerhaft gelöscht.</value></data>
+  <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Erinnerung aktualisiert</value></data>
+  <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>Antwortgenerierung wurde abgebrochen.</value></data>
+  <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Fehler beim Abrufen der KI-Antwort: {0}</value></data>
+  <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Gedächtnis wird überprüft...</value></data>
+  <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Erinnerungen werden überprüft...</value></data>
+  <data name="Msg_Assistant_StatusCheckingTodos" xml:space="preserve"><value>Aufgaben werden überprüft...</value></data>
+  <data name="Msg_Assistant_StatusCompletingTodo" xml:space="preserve"><value>Aufgabe wird abgeschlossen...</value></data>
+  <data name="Msg_Assistant_StatusCreatingMemory" xml:space="preserve"><value>Erinnerung wird erstellt...</value></data>
+  <data name="Msg_Assistant_StatusCreatingReminder" xml:space="preserve"><value>Erinnerung wird erstellt...</value></data>
+  <data name="Msg_Assistant_StatusCreatingTodo" xml:space="preserve"><value>Aufgabe wird erstellt...</value></data>
+  <data name="Msg_Assistant_StatusDeletingMemory" xml:space="preserve"><value>Erinnerung wird gelöscht...</value></data>
+  <data name="Msg_Assistant_StatusDeletingReminder" xml:space="preserve"><value>Erinnerung wird gelöscht...</value></data>
+  <data name="Msg_Assistant_StatusDeletingTodo" xml:space="preserve"><value>Aufgabe wird gelöscht...</value></data>
+  <data name="Msg_Assistant_StatusProcessing" xml:space="preserve"><value>Verarbeitung...</value></data>
+  <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Gedächtnis wird durchsucht...</value></data>
+  <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Denke nach...</value></data>
+  <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Erinnerung wird aktualisiert...</value></data>
+  <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Erinnerung wird aktualisiert...</value></data>
+  <data name="Msg_Assistant_StatusUpdatingTodo" xml:space="preserve"><value>Aufgabe wird aktualisiert...</value></data>
+  <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Aufgabe aktualisiert</value></data>
+  <data name="Msg_Assistant_Value" xml:space="preserve"><value>Wert:</value></data>
+  <!-- History messages -->
+  <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Möchtest du diese Sitzung wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.</value></data>
+  <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Sitzung löschen</value></data>
+  <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Kopieren in die Zwischenablage fehlgeschlagen: {0}</value></data>
+  <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Löschen der Sitzung fehlgeschlagen: {0}</value></data>
+  <!-- Memory messages -->
+  <data name="Msg_Memory_AllFresh" xml:space="preserve"><value>Alles aktuell</value></data>
+  <data name="Msg_Memory_AndMore" xml:space="preserve"><value>...und {0} weitere.</value></data>
+  <data name="Msg_Memory_CleanedUp" xml:space="preserve"><value>Bereinigt</value></data>
+  <data name="Msg_Memory_Complete" xml:space="preserve"><value>Abgeschlossen</value></data>
+  <data name="Msg_Memory_DeleteAllStaleQuestion" xml:space="preserve"><value>Möchtest du alle veralteten Erinnerungen löschen?</value></data>
+  <data name="Msg_Memory_DeleteConfirm" xml:space="preserve"><value>Möchtest du die Erinnerung „{0}" wirklich löschen?</value></data>
+  <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Löschen der Erinnerung fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Erinnerung löschen</value></data>
+  <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Gelöscht</value></data>
+  <data name="Msg_Memory_DownloadError" xml:space="preserve"><value>Herunterladen des Embedding-Modells fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Memory_DownloadFailedMessage" xml:space="preserve"><value>Der Download des Embedding-Modells wurde nicht erfolgreich abgeschlossen. Bitte versuche es erneut.</value></data>
+  <data name="Msg_Memory_DownloadFailedTitle" xml:space="preserve"><value>Download fehlgeschlagen</value></data>
+  <data name="Msg_Memory_Downloaded" xml:space="preserve"><value>Heruntergeladen</value></data>
+  <data name="Msg_Memory_EmbeddingModelDownloaded" xml:space="preserve"><value>Embedding-Modell heruntergeladen und einsatzbereit.</value></data>
+  <data name="Msg_Memory_EmbeddingsRegenerated" xml:space="preserve"><value>Embeddings für {0} von {1} Erinnerungen neu generiert.</value></data>
+  <data name="Msg_Memory_ExportFailed" xml:space="preserve"><value>Exportieren der Erinnerungen fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Memory_Exported" xml:space="preserve"><value>Exportiert</value></data>
+  <data name="Msg_Memory_ExportedTo" xml:space="preserve"><value>Erinnerungen exportiert nach {0}</value></data>
+  <data name="Msg_Memory_InvalidJsonMessage" xml:space="preserve"><value>Die eingegebenen Daten sind kein gültiges JSON. Bitte korrigiere sie und versuche es erneut.</value></data>
+  <data name="Msg_Memory_InvalidJsonTitle" xml:space="preserve"><value>Ungültiges JSON</value></data>
+  <data name="Msg_Memory_LastAccessed" xml:space="preserve"><value>letzter Zugriff {0}</value></data>
+  <data name="Msg_Memory_MemoryDeleted" xml:space="preserve"><value>Erinnerung „{0}" wurde gelöscht.</value></data>
+  <data name="Msg_Memory_MemoryUpdated" xml:space="preserve"><value>Erinnerung erfolgreich aktualisiert.</value></data>
+  <data name="Msg_Memory_ModelNotAvailableMessage" xml:space="preserve"><value>Bitte lade zuerst das Embedding-Modell herunter, bevor du Embeddings neu generierst.</value></data>
+  <data name="Msg_Memory_ModelNotAvailableTitle" xml:space="preserve"><value>Modell nicht verfügbar</value></data>
+  <data name="Msg_Memory_NoStaleMemories" xml:space="preserve"><value>Keine Erinnerungen älter als 90 Tage gefunden.</value></data>
+  <data name="Msg_Memory_RegenerateEmbeddingsMessage" xml:space="preserve"><value>Dies wird Vektor-Embeddings für alle Erinnerungen neu generieren. Dies kann einen Moment dauern.</value></data>
+  <data name="Msg_Memory_RegenerateEmbeddingsTitle" xml:space="preserve"><value>Embeddings neu generieren</value></data>
+  <data name="Msg_Memory_RegenerateFailed" xml:space="preserve"><value>Neugenerierung der Embeddings fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Memory_Saved" xml:space="preserve"><value>Gespeichert</value></data>
+  <data name="Msg_Memory_SaveFailed" xml:space="preserve"><value>Speichern der Erinnerung fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Memory_StaleDeleted" xml:space="preserve"><value>{0} veraltete Erinnerungen gelöscht.</value></data>
+  <data name="Msg_Memory_StaleFound" xml:space="preserve"><value>{0} Erinnerungen gefunden, auf die seit über 90 Tagen nicht zugegriffen wurde:</value></data>
+  <data name="Msg_Memory_StaleReviewTitle" xml:space="preserve"><value>Veraltete Erinnerungen</value></data>
+  <!-- Research messages -->
+  <data name="Msg_Research_Cancelled" xml:space="preserve"><value>Recherche wurde abgebrochen.</value></data>
+  <data name="Msg_Research_Copied" xml:space="preserve"><value>Kopiert</value></data>
+  <data name="Msg_Research_Exported" xml:space="preserve"><value>Exportiert</value></data>
+  <data name="Msg_Research_Failed" xml:space="preserve"><value>Recherche fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Research_FullResearchExported" xml:space="preserve"><value>Vollständige Recherche in die Zwischenablage exportiert.</value></data>
+  <data name="Msg_Research_NoProviderConfigured" xml:space="preserve"><value>Kein KI-Anbieter für den Recherchemodus konfiguriert. Bitte füge einen in den Einstellungen hinzu.</value></data>
+  <data name="Msg_Research_ResultCopied" xml:space="preserve"><value>Rechercheergebnis in die Zwischenablage kopiert.</value></data>
+  <!-- Settings messages -->
+  <data name="Msg_Settings_CannotDeleteAssignedProvider" xml:space="preserve"><value>Ein einem Modus zugewiesener Anbieter kann nicht gelöscht werden. Bitte weise ihn zuerst einem anderen zu.</value></data>
+  <data name="Msg_Settings_CannotDeleteBuiltInTemplate" xml:space="preserve"><value>Integrierte Vorlagen können nicht gelöscht werden.</value></data>
+  <data name="Msg_Settings_CannotDeleteDefaultTemplate" xml:space="preserve"><value>Die Standardvorlage kann nicht gelöscht werden. Bitte lege zuerst eine andere Vorlage als Standard fest.</value></data>
+  <data name="Msg_Settings_Conflict" xml:space="preserve"><value>Konflikt</value></data>
+  <data name="Msg_Settings_ConnectionFailed" xml:space="preserve"><value>Verbindung fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Settings_ConnectionSuccess" xml:space="preserve"><value>Verbindung erfolgreich! Anbieter unterstützt Tool-Calling und Streaming.</value></data>
+  <data name="Msg_Settings_ConnectionSuccessNoStreaming" xml:space="preserve"><value>Verbunden, aber Streaming wird nicht unterstützt. Antworten werden auf einmal geladen.</value></data>
+  <data name="Msg_Settings_ConnectionSuccessNoTools" xml:space="preserve"><value>Verbunden, aber Tool-Calling wird nicht unterstützt. Gedächtnis und Erinnerungen sind im Assistentenmodus nicht verfügbar.</value></data>
+  <data name="Msg_Settings_ConnectionSuccessNoToolsNoStreaming" xml:space="preserve"><value>Verbunden, aber weder Tool-Calling noch Streaming werden unterstützt.</value></data>
+  <data name="Msg_Settings_CustomTemplatePromptInfo" xml:space="preserve"><value>Dies ist eine benutzerdefinierte Vorlage. Der Prompt wird dynamisch basierend auf den konfigurierten Feldern der Vorlage generiert.</value></data>
+  <data name="Msg_Settings_HotkeyAlreadyAssigned" xml:space="preserve"><value>Dieses Tastenkürzel ist bereits dem Modus {0} zugewiesen.</value></data>
+  <data name="Msg_Settings_HotkeyNotSet" xml:space="preserve"><value>Nicht festgelegt</value></data>
+  <data name="Msg_Settings_ModelDownloadCancelled" xml:space="preserve"><value>Modell-Download wurde abgebrochen.</value></data>
+  <data name="Msg_Settings_ModelDownloadCompleted" xml:space="preserve"><value>Whisper-Modell erfolgreich heruntergeladen.</value></data>
+  <data name="Msg_Settings_ModelDownloadFailed" xml:space="preserve"><value>Modell-Download fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Settings_NowUsingVoice" xml:space="preserve"><value>Verwende jetzt die Stimme {0}.</value></data>
+  <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Vorlage erfolgreich hinzugefügt.</value></data>
+  <data name="Msg_Settings_TemplateDeleted" xml:space="preserve"><value>Vorlage erfolgreich gelöscht.</value></data>
+  <data name="Msg_Settings_TemplateUpdated" xml:space="preserve"><value>Vorlage erfolgreich aktualisiert.</value></data>
+  <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Stimme geändert</value></data>
+  <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Stimmen-Download fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Stimme {0} erfolgreich heruntergeladen.</value></data>
+  <data name="Msg_Settings_VoiceSetFailed" xml:space="preserve"><value>Stimme konnte nicht festgelegt werden: {0}</value></data>
+  <!-- Todo messages -->
+  <data name="Msg_Todo_AddFailed" xml:space="preserve"><value>Hinzufügen der Aufgabe fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Todo_Added" xml:space="preserve"><value>Hinzugefügt</value></data>
+  <data name="Msg_Todo_CompleteFailed" xml:space="preserve"><value>Abschließen der Aufgabe fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Todo_DeleteConfirm" xml:space="preserve"><value>Möchtest du „{0}" wirklich löschen?</value></data>
+  <data name="Msg_Todo_DeleteFailed" xml:space="preserve"><value>Löschen der Aufgabe fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Todo_DeleteTitle" xml:space="preserve"><value>Aufgabe löschen</value></data>
+  <data name="Msg_Todo_Deleted" xml:space="preserve"><value>Gelöscht</value></data>
+  <data name="Msg_Todo_ProgressText" xml:space="preserve"><value>{0} von {1} erledigt</value></data>
+  <data name="Msg_Todo_TodoAdded" xml:space="preserve"><value>Aufgabe „{0}" hinzugefügt.</value></data>
+  <data name="Msg_Todo_TodoDeleted" xml:space="preserve"><value>Aufgabe „{0}" gelöscht.</value></data>
+  <data name="Msg_Todo_TodoUpdated" xml:space="preserve"><value>Aufgabe erfolgreich aktualisiert.</value></data>
+  <data name="Msg_Todo_UncompleteFailed" xml:space="preserve"><value>Rückgängigmachen der Aufgabe fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Todo_UpdateFailed" xml:space="preserve"><value>Aktualisieren der Aufgabe fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Todo_Updated" xml:space="preserve"><value>Aktualisiert</value></data>
+  <!-- Tray icon -->
+  <data name="Tray_CloseAssistant" xml:space="preserve"><value>Assistent schließen</value></data>
+  <data name="Tray_CloseOptimize" xml:space="preserve"><value>Optimieren schließen</value></data>
+  <data name="Tray_CloseResearch" xml:space="preserve"><value>Recherche schließen</value></data>
+  <data name="Tray_Exit" xml:space="preserve"><value>Beenden</value></data>
+  <data name="Tray_OpenAssistant" xml:space="preserve"><value>Assistent öffnen</value></data>
+  <data name="Tray_OpenOptimize" xml:space="preserve"><value>Optimieren öffnen</value></data>
+  <data name="Tray_OpenResearch" xml:space="preserve"><value>Recherche öffnen</value></data>
+  <data name="Tray_Tooltip" xml:space="preserve"><value>Pia – Persönlicher intelligenter Assistent</value></data>
+  <data name="Tray_TooltipIdle" xml:space="preserve"><value>Pia – Klicken zum Öffnen</value></data>
+  <data name="Tray_TooltipWindowCount" xml:space="preserve"><value>Pia – {0} Fenster offen</value></data>
+  <!-- Notifications -->
+  <data name="Notification_Dismiss" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="Notification_Reminder" xml:space="preserve"><value>Erinnerung</value></data>
+  <data name="Notification_ReminderInApp" xml:space="preserve"><value>Erinnerung: {0}</value></data>
+  <data name="Notification_Snooze" xml:space="preserve"><value>Schlummern</value></data>
+</root>

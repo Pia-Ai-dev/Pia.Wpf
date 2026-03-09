@@ -1,0 +1,34 @@
+<ui:ContentDialog x:Class="Pia.Views.Dialogs.ModelDownloadContentDialog"
+                  xmlns:local="clr-namespace:Pia.Views.Dialogs"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                  xmlns:loc="clr-namespace:Pia.Localization"
+                  Title="{loc:Str Dialog_ModelDownload_Title}"
+                  SecondaryButtonText="{loc:Str Common_Cancel}"
+                  DefaultButton="Close"
+                  DialogMaxWidth="400">
+  <ui:ContentDialog.Resources>
+    <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
+           TargetType="{x:Type local:ModelDownloadContentDialog}" />
+  </ui:ContentDialog.Resources>
+  
+  <StackPanel Margin="0,16,0,8">
+    <TextBlock x:Name="ModelNameText"
+               Text="{loc:Str Dialog_ModelDownload_Message}"
+               FontSize="16"
+               FontWeight="SemiBold"
+               Margin="0,0,0,16"/>
+
+    <ProgressBar x:Name="DownloadProgressBar"
+                 Value="0"
+                 Maximum="100"
+                 Height="24"
+                 Margin="0,0,0,8"/>
+
+    <TextBlock x:Name="ProgressText"
+               Text="0%"
+               Opacity="0.7"
+               HorizontalAlignment="Center"/>
+  </StackPanel>
+</ui:ContentDialog>

@@ -1,0 +1,253 @@
+<UserControl x:Class="Pia.Views.SettingsViews.ProvidersView"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+              xmlns:loc="clr-namespace:Pia.Localization">
+  <Grid Margin="16">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="260"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- Left panel: Default Providers -->
+    <Border Grid.Column="0"
+            Background="{DynamicResource SecondaryBackgroundBrush}"
+            BorderBrush="{DynamicResource CardStrokeColorBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            Padding="16"
+            Margin="0,0,16,0"
+            VerticalAlignment="Top">
+      <StackPanel>
+        <TextBlock Text="{loc:Str Providers_DefaultProviders}"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,12"/>
+
+        <CheckBox Content="{loc:Str Providers_SameForAllModes}"
+                  IsChecked="{Binding UseSameProviderForAllModes}"
+                  Margin="0,0,0,12"/>
+
+        <!-- Optimize / All Modes dropdown (single ComboBox, no duplicate binding) -->
+        <TextBlock Text="{Binding OptimizeProviderLabel}"
+                   Opacity="0.7"
+                   Margin="0,0,0,4"/>
+        <ComboBox ItemsSource="{Binding OptimizeProviderOptions}"
+                  SelectedValue="{Binding OptimizeProviderId}"
+                  SelectedValuePath="Id"
+                  DisplayMemberPath="Name"
+                  Margin="0,0,0,8"/>
+
+        <!-- Assistant and Research dropdowns only when "same for all" is unchecked -->
+        <StackPanel Visibility="{Binding UseSameProviderForAllModes, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+          <TextBlock Text="{loc:Str Providers_Assistant}"
+                     Opacity="0.7"
+                     Margin="0,0,0,4"/>
+          <ComboBox ItemsSource="{Binding NonCloudProviders}"
+                    SelectedValue="{Binding AssistantProviderId}"
+                    SelectedValuePath="Id"
+                    DisplayMemberPath="Name"
+                    Margin="0,0,0,8"/>
+
+          <TextBlock Text="{loc:Str Providers_Research}"
+                     Opacity="0.7"
+                     Margin="0,0,0,4"/>
+          <ComboBox ItemsSource="{Binding NonCloudProviders}"
+                    SelectedValue="{Binding ResearchProviderId}"
+                    SelectedValuePath="Id"
+                    DisplayMemberPath="Name"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- Right panel: Provider list -->
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+      </Grid.RowDefinitions>
+
+      <!-- Cloud not set up banner -->
+      <Border Grid.Row="0"
+              Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+              BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+              BorderThickness="1"
+              CornerRadius="4"
+              Padding="12"
+              Margin="0,0,0,12"
+              Visibility="{Binding ShowCloudSetupBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="{loc:Str Providers_CloudNotSetup}"
+                     VerticalAlignment="Center"
+                     TextWrapping="Wrap"/>
+          <ui:Button Grid.Column="1"
+                     Command="{Binding GoToCloudSyncCommand}"
+                     Appearance="Primary"
+                     Margin="12,0,0,0">
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="Cloud24" FontSize="16" Margin="0,0,8,0"/>
+              <TextBlock Text="{loc:Str Providers_GoToCloudSync}"/>
+            </StackPanel>
+          </ui:Button>
+        </Grid>
+      </Border>
+
+      <!-- Header with Add button -->
+      <Grid Grid.Row="1" Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="{loc:Str Providers_Title}"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   VerticalAlignment="Center"/>
+        <ui:Button Grid.Column="1" Command="{Binding AddProviderCommand}">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,8,0"/>
+            <TextBlock Text="{loc:Str Providers_Add}"/>
+          </StackPanel>
+        </ui:Button>
+      </Grid>
+
+      <!-- Provider cards -->
+      <ScrollViewer Grid.Row="2">
+        <ItemsControl ItemsSource="{Binding Providers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Background="{DynamicResource SecondaryBackgroundBrush}"
+                      BorderBrush="{DynamicResource CardStrokeColorBrush}"
+                      BorderThickness="1"
+                      CornerRadius="4"
+                      Padding="16"
+                      Margin="0,0,0,8">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+
+                  <StackPanel Grid.Column="0">
+                    <TextBlock FontSize="16" FontWeight="SemiBold">
+                      <Run Text="{Binding Name}"/>
+                      <Run Text=" (" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                      <Run Text="{Binding ProviderType}" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                      <Run Text=")" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                    </TextBlock>
+                    <TextBlock Text="{Binding Endpoint}"
+                               Opacity="0.7"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ModelName}"
+                               Opacity="0.7"
+                               Margin="0,2,0,0"/>
+                    <!-- Mode chips + No Tool Calling badge -->
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                      <Border Margin="0,0,4,0">
+                        <Border.Visibility>
+                          <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                            <Binding Path="Id"/>
+                            <Binding Path="DataContext.OptimizeProviderId"
+                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                          </MultiBinding>
+                        </Border.Visibility>
+                        <ui:Badge Content="{loc:Str Providers_Optimize}" Appearance="Info"/>
+                      </Border>
+                      <Border Margin="0,0,4,0">
+                        <Border.Visibility>
+                          <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                            <Binding Path="Id"/>
+                            <Binding Path="DataContext.AssistantProviderId"
+                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                          </MultiBinding>
+                        </Border.Visibility>
+                        <ui:Badge Content="{loc:Str Providers_Assistant}" Appearance="Info"/>
+                      </Border>
+                      <Border Margin="0,0,4,0">
+                        <Border.Visibility>
+                          <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                            <Binding Path="Id"/>
+                            <Binding Path="DataContext.ResearchProviderId"
+                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                          </MultiBinding>
+                        </Border.Visibility>
+                        <ui:Badge Content="{loc:Str Providers_Research}" Appearance="Info"/>
+                      </Border>
+                      <ui:Badge Content="{loc:Str Providers_NoToolCalling}"
+                                Visibility="{Binding SupportsToolCalling, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                Appearance="Caution"
+                                Margin="0,0,4,0"/>
+                      <ui:Badge Content="{loc:Str Providers_NoStreaming}"
+                                Visibility="{Binding SupportsStreaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                Appearance="Caution"
+                                Margin="0,0,4,0"/>
+                    </StackPanel>
+                  </StackPanel>
+
+                  <!-- Action buttons: Test, Edit, Delete -->
+                  <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ui:Button Command="{Binding DataContext.TestConnectionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}"
+                              IsEnabled="{Binding DataContext.IsTestConnectionInProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBooleanConverter}}"
+                              Width="40"
+                              Height="40"
+                              Margin="0,0,8,0">
+                      <Grid>
+                        <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16">
+                          <ui:SymbolIcon.Visibility>
+                            <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}" ConverterParameter="Invert">
+                              <Binding Path="Id"/>
+                              <Binding Path="DataContext.TestingProviderId" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                            </MultiBinding>
+                          </ui:SymbolIcon.Visibility>
+                        </ui:SymbolIcon>
+                        <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16">
+                          <ui:ProgressRing.Visibility>
+                            <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                              <Binding Path="Id"/>
+                              <Binding Path="DataContext.TestingProviderId" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                            </MultiBinding>
+                          </ui:ProgressRing.Visibility>
+                        </ui:ProgressRing>
+                      </Grid>
+                      <ui:Button.ToolTip>
+                        <ToolTip Content="{loc:Str Providers_Test}"/>
+                      </ui:Button.ToolTip>
+                    </ui:Button>
+                    <ui:Button Command="{Binding DataContext.EditProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}"
+                              Appearance="Secondary"
+                              Width="40"
+                              Height="40"
+                              Margin="0,0,8,0">
+                      <ui:SymbolIcon Symbol="Edit24" FontSize="16"/>
+                      <ui:Button.ToolTip>
+                        <ToolTip Content="{loc:Str Providers_Edit}"/>
+                      </ui:Button.ToolTip>
+                    </ui:Button>
+                    <ui:Button Command="{Binding DataContext.DeleteProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}"
+                              Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Delete}"
+                              Appearance="Danger"
+                              Width="40"
+                              Height="40">
+                      <ui:SymbolIcon Symbol="Delete24" FontSize="16"/>
+                      <ui:Button.ToolTip>
+                        <ToolTip Content="{loc:Str Providers_Delete}"/>
+                      </ui:Button.ToolTip>
+                    </ui:Button>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -1,0 +1,186 @@
+<UserControl x:Class="Pia.Views.WizardSteps.ProviderSetupStep"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             mc:Ignorable="d"
+             d:DesignHeight="500" d:DesignWidth="720">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel HorizontalAlignment="Center"
+                MaxWidth="480"
+                Margin="0,20,0,20">
+
+      <!-- Icon -->
+      <ui:SymbolIcon Symbol="PlugConnected24"
+                     FontSize="48"
+                     HorizontalAlignment="Center"
+                     Margin="0,0,0,16"
+                     Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
+
+      <!-- Heading -->
+      <TextBlock Text="{loc:Str Wizard_Provider_Title}"
+                 Style="{StaticResource H2TextStyle}"
+                 HorizontalAlignment="Center"
+                 Margin="0,0,0,8" />
+
+      <TextBlock Text="{loc:Str Wizard_Provider_Subtitle}"
+                 Style="{StaticResource BodyTextStyle}"
+                 HorizontalAlignment="Center"
+                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                 TextWrapping="Wrap"
+                 TextAlignment="Center"
+                 Margin="0,0,0,24" />
+
+      <!-- Provider Type -->
+      <TextBlock Text="{loc:Str Wizard_Provider_Type}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <ComboBox ItemsSource="{Binding WizardProviderTypes}"
+                SelectedItem="{Binding SelectedProviderType}"
+                Margin="0,0,0,16" />
+
+      <!-- Endpoint (not for PiaCloud) -->
+      <StackPanel Visibility="{Binding SelectedProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Endpoint}">
+        <TextBlock Text="{loc:Str Wizard_Provider_Endpoint}"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4" />
+        <ui:TextBox Text="{Binding ProviderEndpoint, UpdateSourceTrigger=PropertyChanged}"
+                    PlaceholderText="http://localhost:11434/v1"
+                    Margin="0,0,0,16" />
+      </StackPanel>
+
+      <!-- API Key (not for Ollama or PiaCloud) -->
+      <StackPanel Visibility="{Binding SelectedProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=ApiKey}">
+        <TextBlock Text="{loc:Str Wizard_Provider_ApiKey}"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4" />
+        <ui:PasswordBox x:Name="ApiKeyPasswordBox"
+                        Margin="0,0,0,16" />
+      </StackPanel>
+
+      <!-- Model Name -->
+      <StackPanel Visibility="{Binding SelectedProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=ModelName}">
+        <TextBlock Text="{loc:Str Wizard_Provider_ModelName}"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4" />
+        <Grid Margin="0,0,0,4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <ComboBox Grid.Column="0"
+                    IsEditable="True"
+                    Text="{Binding ProviderModelName, UpdateSourceTrigger=PropertyChanged}"
+                    ItemsSource="{Binding AvailableModels}" />
+          <ui:Button Grid.Column="1"
+                     Margin="8,0,0,0"
+                     VerticalAlignment="Stretch"
+                     Command="{Binding FetchModelsCommand}"
+                     ToolTip="{loc:Str Wizard_Provider_FetchModels}"
+                     IsEnabled="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanConverter}}">
+            <Grid>
+              <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"
+                             Visibility="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+              <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16"
+                               Visibility="{Binding IsFetchingModels, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </Grid>
+          </ui:Button>
+        </Grid>
+        <!-- Fetch models error -->
+        <TextBlock Text="{Binding FetchModelsError}"
+                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,4,0,12">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Visibility" Value="Visible" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding FetchModelsError}" Value="{x:Null}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+
+      <!-- Azure Deployment Name -->
+      <StackPanel Visibility="{Binding SelectedProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=AzureDeployment}">
+        <TextBlock Text="{loc:Str Wizard_Provider_AzureDeployment}"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4" />
+        <ui:TextBox Text="{Binding AzureDeploymentName, UpdateSourceTrigger=PropertyChanged}"
+                    Margin="0,0,0,16" />
+      </StackPanel>
+
+      <!-- Test Connection -->
+      <StackPanel Margin="0,8,0,0">
+        <ui:Button Content="{loc:Str Wizard_Provider_TestConnection}"
+                   Command="{Binding TestProviderConnectionCommand}"
+                   Appearance="Primary"
+                   HorizontalAlignment="Left"
+                   MinWidth="160"
+                   IsEnabled="{Binding IsTestingConnection, Converter={StaticResource InverseBooleanConverter}}" />
+
+        <!-- Testing spinner -->
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+          <StackPanel.Style>
+            <Style TargetType="StackPanel">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsTestingConnection}" Value="True">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </StackPanel.Style>
+          <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0" />
+          <TextBlock Text="{loc:Str Wizard_Provider_Testing}"
+                     FontSize="13"
+                     Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Success -->
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+          <StackPanel.Style>
+            <Style TargetType="StackPanel">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding ConnectionTestPassed}" Value="True">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </StackPanel.Style>
+          <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="18"
+                         Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"
+                         Margin="0,0,8,0" />
+          <TextBlock Text="{loc:Str Wizard_Provider_TestSuccess}"
+                     FontSize="13"
+                     Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Error -->
+        <TextBlock Text="{Binding ConnectionTestError}"
+                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,8,0,0">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Visibility" Value="Visible" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding ConnectionTestError}" Value="{x:Null}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

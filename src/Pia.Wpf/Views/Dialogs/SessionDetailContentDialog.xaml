@@ -1,0 +1,109 @@
+<ui:ContentDialog x:Class="Pia.Views.Dialogs.SessionDetailContentDialog"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:local="clr-namespace:Pia.Views.Dialogs"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                  xmlns:loc="clr-namespace:Pia.Localization"
+                  Title="{loc:Str Dialog_SessionDetail_Title}"
+                  CloseButtonText="{loc:Str Common_Close}"
+                  DefaultButton="Close"
+                  DialogMaxWidth="900"
+                  DialogMaxHeight="700">
+
+  <ui:ContentDialog.Resources>
+    <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
+           TargetType="{x:Type local:SessionDetailContentDialog}" />
+  </ui:ContentDialog.Resources>
+  
+  <Grid Margin="0,8,0,0">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="220" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <Border Grid.Column="0"
+            Background="{DynamicResource ControlFillColorSecondaryBrush}"
+            CornerRadius="4"
+            Margin="0,0,12,0"
+            Padding="12">
+      <StackPanel>
+        <TextBlock Text="{loc:Str Dialog_SessionDetail_Metadata}"
+                   FontWeight="Bold"
+                   Margin="0,0,0,12" />
+
+        <TextBlock Text="{loc:Str Dialog_SessionDetail_Created}"
+                   Opacity="0.7"
+                   Margin="0,0,0,4" />
+        <TextBlock Text="{Binding FormattedCreatedAt}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,12" />
+
+        <TextBlock Text="{loc:Str Dialog_SessionDetail_Template}"
+                   Opacity="0.7"
+                   Margin="0,0,0,4" />
+        <TextBlock Text="{Binding TemplateName}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,12" />
+
+        <TextBlock Text="{loc:Str Dialog_SessionDetail_Provider}"
+                   Opacity="0.7"
+                   Margin="0,0,0,4" />
+        <TextBlock Text="{Binding ProviderName}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,12" />
+
+        <TextBlock Text="{loc:Str Dialog_SessionDetail_ProcessingTime}"
+                   Opacity="0.7"
+                   Margin="0,0,0,4" />
+        <TextBlock Text="{Binding ProcessingTime}"
+                   Margin="0,0,0,12" />
+
+        <StackPanel Orientation="Vertical" Margin="0,8,0,0">
+          <ui:Button Content="{loc:Str Dialog_SessionDetail_CopyOriginal}"
+                     Command="{Binding CopyOriginalCommand}"
+                     HorizontalAlignment="Stretch"
+                     Margin="0,0,0,8" />
+          <ui:Button Content="{loc:Str Dialog_SessionDetail_CopyOptimized}"
+                     Command="{Binding CopyOptimizedCommand}"
+                     HorizontalAlignment="Stretch"
+                     Appearance="Primary" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+        <RadioButton x:Name="OriginalTextRadioButton"
+                     Content="{loc:Str Dialog_SessionDetail_OriginalText}"
+                     GroupName="TextTab"
+                     IsChecked="True"
+                     Margin="0,0,12,0" />
+        <RadioButton x:Name="OptimizedTextRadioButton"
+                     Content="{loc:Str Dialog_SessionDetail_OptimizedText}"
+                     GroupName="TextTab" />
+      </StackPanel>
+
+      <Grid Grid.Row="1">
+        <TextBox Text="{Binding OriginalText, Mode=OneWay}"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 AcceptsReturn="True"
+                 VerticalScrollBarVisibility="Auto"
+                 MaxHeight="400"
+                 Visibility="{Binding ElementName=OriginalTextRadioButton, Path=IsChecked, Converter={StaticResource BooleanToVisibilityConverter}}" />
+        <TextBox Text="{Binding OptimizedText, Mode=OneWay}"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 AcceptsReturn="True"
+                 VerticalScrollBarVisibility="Auto"
+                 MaxHeight="400"
+                 Visibility="{Binding ElementName=OptimizedTextRadioButton, Path=IsChecked, Converter={StaticResource BooleanToVisibilityConverter}}" />
+      </Grid>
+    </Grid>
+  </Grid>
+</ui:ContentDialog>

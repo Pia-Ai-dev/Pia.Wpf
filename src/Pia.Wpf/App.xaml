@@ -1,0 +1,69 @@
+<Application x:Class="Pia.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Pia"
+              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+              xmlns:views="clr-namespace:Pia.Views"
+              xmlns:viewModels="clr-namespace:Pia.ViewModels"
+              xmlns:converters="clr-namespace:Pia.Converters"
+              xmlns:loc="clr-namespace:Pia.Localization">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <!-- WPF-UI Theme -->
+        <ui:ThemesDictionary />
+        <ui:ControlsDictionary />
+
+        <!-- Custom Styles -->
+        <ResourceDictionary Source="Resources/Styles/Typography.xaml" />
+        <ResourceDictionary Source="Resources/Styles/Layout.xaml" />
+        <ResourceDictionary Source="Resources/Styles/Controls.xaml" />
+        <ResourceDictionary Source="Resources/Styles/Navigation.xaml" />
+        <ResourceDictionary Source="Resources/Styles/MarkdownStyles.xaml" />
+        <ResourceDictionary Source="Resources/Styles/OverlayDialog.xaml" />
+        <ResourceDictionary Source="Resources/Styles/BrandIcons.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <!-- Converters -->
+      <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+      <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+      <converters:ZeroToVisibilityConverter x:Key="ZeroToVisibilityConverter" />
+      <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
+      <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+      <converters:IdEqualsVisibilityConverter x:Key="IdEqualsVisibilityConverter" />
+      <converters:ProviderTypeToVisibilityConverter x:Key="ProviderTypeToVisibilityConverter" />
+      <converters:LanguageToFlagConverter x:Key="LanguageToFlagConverter" />
+      <converters:WindowModeToVisibilityConverter x:Key="WindowModeToVisibilityConverter" />
+      <converters:VoiceModeStateToVisibilityConverter x:Key="VoiceModeStateToVisibilityConverter" />
+      <converters:StringEqualsBoolConverter x:Key="StringEqualsBoolConverter" />
+      <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
+      <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+
+      <!-- DataTemplate mappings for Views and ViewModels -->
+      <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">
+        <views:OptimizeView />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:SettingsViewModel}">
+        <views:SettingsView />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:HistoryViewModel}">
+        <views:HistoryView />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:AssistantViewModel}">
+        <views:AssistantView />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:ResearchViewModel}">
+        <views:ResearchView />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:MemoryViewModel}">
+        <views:MemoryView />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:RemindersViewModel}">
+        <views:RemindersView />
+      </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:TodoViewModel}">
+        <views:TodoView />
+      </DataTemplate>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

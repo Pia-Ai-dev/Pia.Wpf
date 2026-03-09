@@ -1,0 +1,40 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Light Theme Brushes -->
+  <SolidColorBrush x:Key="PrimaryBackgroundBrush" Color="#FFFFFFFF" />
+  <SolidColorBrush x:Key="SecondaryBackgroundBrush" Color="#FFF3F3F3" />
+  <SolidColorBrush x:Key="TertiaryBackgroundBrush" Color="#FFE5E5E5" />
+  <SolidColorBrush x:Key="TextBrush" Color="#FF1A1A1A" />
+  <SolidColorBrush x:Key="TextSecondaryBrush" Color="#FF6B6B6B" />
+  <SolidColorBrush x:Key="MutedTextBrush" Color="#FF6B6B6B" />
+  <SolidColorBrush x:Key="AccentBrush" Color="#FF0078D4" />
+  <SolidColorBrush x:Key="AccentHoverBrush" Color="#FF106EBE" />
+  <SolidColorBrush x:Key="ErrorBrush" Color="#FFC42B1C" />
+  <SolidColorBrush x:Key="SuccessBrush" Color="#FF0F7B0F" />
+  <SolidColorBrush x:Key="WarningBrush" Color="#FF9D5D00" />
+  <SolidColorBrush x:Key="BorderBrush" Color="#FFE0E0E0" />
+  <SolidColorBrush x:Key="CardBorderBrush" Color="#FFE0E0E0" />
+
+  <!-- Todo Priority Brushes -->
+  <SolidColorBrush x:Key="TodoPriorityHighBrush" Color="#FFE74C3C" />
+  <SolidColorBrush x:Key="TodoPriorityMediumBrush" Color="#FFF39C12" />
+  <SolidColorBrush x:Key="TodoPriorityLowBrush" Color="#FF3498DB" />
+
+  <!-- WPF-UI Theme Resources (required by WPF-UI controls) -->
+  <!-- System Accent Colors (Color type, required by WPF-UI controls) -->
+  <Color x:Key="SystemAccentColorPrimary">#FF0078D4</Color>
+  <Color x:Key="SystemAccentColorSecondary">#FF106EBE</Color>
+  <Color x:Key="SystemAccentColorTertiary">#FF005A9E</Color>
+
+  <!-- System Accent Color Brushes -->
+  <SolidColorBrush x:Key="SystemAccentColorPrimaryBrush" Color="{StaticResource SystemAccentColorPrimary}" />
+  <SolidColorBrush x:Key="SystemAccentColorSecondaryBrush" Color="{StaticResource SystemAccentColorSecondary}" />
+  <SolidColorBrush x:Key="SystemAccentColorTertiaryBrush" Color="{StaticResource SystemAccentColorTertiary}" />
+
+  <!-- Card and Text Brushes -->
+  <SolidColorBrush x:Key="CardStrokeColorBrushDefault" Color="#FFE0E0E0" />
+  <SolidColorBrush x:Key="TextFillColorTertiaryBrush" Color="#FF6B6B6B" />
+  <SolidColorBrush x:Key="CardStrokeColorBrush" Color="#FFE0E0E0" />
+
+</ResourceDictionary>

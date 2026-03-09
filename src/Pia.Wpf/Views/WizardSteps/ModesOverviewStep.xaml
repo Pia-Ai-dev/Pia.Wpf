@@ -1,0 +1,176 @@
+<UserControl x:Class="Pia.Views.WizardSteps.ModesOverviewStep"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="720">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel MaxWidth="700" Margin="0,20,0,20">
+
+      <!-- Heading -->
+      <TextBlock Text="{loc:Str Wizard_Modes_Title}"
+                 Style="{StaticResource H2TextStyle}"
+                 HorizontalAlignment="Center"
+                 Margin="0,0,0,8" />
+
+      <TextBlock Text="{loc:Str Wizard_Modes_Subtitle}"
+                 Style="{StaticResource BodyTextStyle}"
+                 HorizontalAlignment="Center"
+                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                 Margin="0,0,0,32" />
+
+      <!-- Mode Cards -->
+      <UniformGrid Columns="3" Margin="0,0,0,0">
+
+        <!-- Optimize Card -->
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="8"
+                Padding="20"
+                Margin="6,0">
+          <StackPanel>
+            <ui:SymbolIcon Symbol="Sparkle24"
+                           FontSize="32"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"
+                           Margin="0,0,0,12" />
+
+            <TextBlock Text="{loc:Str Wizard_Modes_OptimizeTitle}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,8" />
+
+            <TextBlock Text="{loc:Str Wizard_Modes_OptimizeDesc}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                       Margin="0,0,0,16"
+                       LineHeight="18" />
+
+            <!-- Hotkey Badge -->
+            <Border Background="{DynamicResource SystemAccentColorPrimaryBrush}"
+                    CornerRadius="4"
+                    Padding="10,4"
+                    HorizontalAlignment="Center"
+                    Margin="0,0,0,12">
+              <TextBlock Text="{loc:Str Wizard_Modes_OptimizeHotkey}"
+                         FontSize="11"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
+                         HorizontalAlignment="Center" />
+            </Border>
+
+            <TextBlock Text="{loc:Str Wizard_Modes_OptimizeExample}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="11"
+                       FontStyle="Italic"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Assistant Card -->
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="8"
+                Padding="20"
+                Margin="6,0">
+          <StackPanel>
+            <ui:SymbolIcon Symbol="Chat24"
+                           FontSize="32"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"
+                           Margin="0,0,0,12" />
+
+            <TextBlock Text="{loc:Str Wizard_Modes_AssistantTitle}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,8" />
+
+            <TextBlock Text="{loc:Str Wizard_Modes_AssistantDesc}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                       Margin="0,0,0,16"
+                       LineHeight="18" />
+
+            <!-- Hotkey Badge (not configured) -->
+            <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,4"
+                    HorizontalAlignment="Center"
+                    Margin="0,0,0,12">
+              <TextBlock Text="{loc:Str Wizard_Modes_NotConfigured}"
+                         FontSize="11"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         HorizontalAlignment="Center" />
+            </Border>
+
+            <TextBlock Text="{loc:Str Wizard_Modes_SetHotkeyHint}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="11"
+                       FontStyle="Italic"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Research Card -->
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="8"
+                Padding="20"
+                Margin="6,0">
+          <StackPanel>
+            <ui:SymbolIcon Symbol="Search24"
+                           FontSize="32"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"
+                           Margin="0,0,0,12" />
+
+            <TextBlock Text="{loc:Str Wizard_Modes_ResearchTitle}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,8" />
+
+            <TextBlock Text="{loc:Str Wizard_Modes_ResearchDesc}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                       Margin="0,0,0,16"
+                       LineHeight="18" />
+
+            <!-- Hotkey Badge (not configured) -->
+            <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,4"
+                    HorizontalAlignment="Center"
+                    Margin="0,0,0,12">
+              <TextBlock Text="{loc:Str Wizard_Modes_NotConfigured}"
+                         FontSize="11"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         HorizontalAlignment="Center" />
+            </Border>
+
+            <TextBlock Text="{loc:Str Wizard_Modes_SetHotkeyHint}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="11"
+                       FontStyle="Italic"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          </StackPanel>
+        </Border>
+      </UniformGrid>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,524 @@
+<UserControl x:Class="Pia.Views.TodoView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:local="clr-namespace:Pia.Views"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:models="clr-namespace:Pia.Models"
+             xmlns:nav="clr-namespace:Pia.Navigation"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="900"
+             nav:ViewModelLocator.AutoWireViewModel="True">
+
+  <UserControl.Resources>
+    <!-- Priority to color converter -->
+    <Style x:Key="PriorityDotStyle" TargetType="Ellipse">
+      <Setter Property="Width" Value="10" />
+      <Setter Property="Height" Value="10" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="Fill" Value="{DynamicResource TextPlaceholderColorBrush}" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.High}">
+          <Setter Property="Fill" Value="{DynamicResource TodoPriorityHighBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.Medium}">
+          <Setter Property="Fill" Value="{DynamicResource TodoPriorityMediumBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.Low}">
+          <Setter Property="Fill" Value="{DynamicResource TodoPriorityLowBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+  </UserControl.Resources>
+
+  <Grid Background="{DynamicResource PrimaryBackgroundBrush}"
+        Margin="20,45,20,20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Header -->
+    <Grid Grid.Row="0" Margin="20,20,20,10">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <TextBlock Grid.Column="0"
+                 Text="{loc:Str Todo_Title}"
+                 Style="{StaticResource H1TextStyle}" />
+
+      <TextBlock Grid.Column="1"
+                 Text="{Binding ProgressText}"
+                 FontSize="14"
+                 VerticalAlignment="Center"
+                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                 Margin="0,0,12,0" />
+
+      <ui:Button Grid.Column="2"
+                 Command="{Binding RefreshCommand}"
+                 Appearance="Secondary"
+                 ToolTip="{loc:Str Todo_Refresh}">
+        <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" />
+      </ui:Button>
+    </Grid>
+
+    <!-- Progress bar -->
+    <Border Grid.Row="1"
+            Margin="20,0,20,10">
+      <ProgressBar Value="{Binding ProgressPercentage}"
+                   Maximum="100"
+                   Minimum="0"
+                   Height="6"
+                   Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+    </Border>
+
+    <!-- Main content: Pending + Completed -->
+    <Grid Grid.Row="2" Margin="20,0,20,10">
+      <!-- Loading overlay -->
+      <ui:ProgressRing IsIndeterminate="True"
+                       Width="40" Height="40"
+                       Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+      <!-- Empty state -->
+      <StackPanel HorizontalAlignment="Center"
+                  VerticalAlignment="Center">
+        <StackPanel.Style>
+          <Style TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding IsLoading}" Value="False" />
+                  <Condition Binding="{Binding PendingTodos.Count}" Value="0" />
+                  <Condition Binding="{Binding CompletedTodos.Count}" Value="0" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Visibility" Value="Visible" />
+              </MultiDataTrigger>
+            </Style.Triggers>
+          </Style>
+        </StackPanel.Style>
+        <ui:SymbolIcon Symbol="TaskListSquareLtr24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,16"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        <TextBlock Text="{loc:Str Todo_EmptyState}"
+                   FontSize="16"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        <TextBlock Text="{loc:Str Todo_EmptyStateHint}"
+                   FontSize="12"
+                   HorizontalAlignment="Center"
+                   Margin="0,4,0,0"
+                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+      </StackPanel>
+
+      <ScrollViewer VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+          <!-- Pending todos -->
+          <ItemsControl ItemsSource="{Binding PendingTodos}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="{x:Type models:TodoItem}">
+                <Border x:Name="TodoItemBorder"
+                        Margin="0,0,0,4"
+                        Padding="12,10"
+                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Opacity="0">
+                  <Border.Triggers>
+                    <EventTrigger RoutedEvent="Loaded">
+                      <BeginStoryboard>
+                        <Storyboard>
+                          <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                           From="0" To="1" Duration="0:0:0.2">
+                            <DoubleAnimation.EasingFunction>
+                              <CubicEase EasingMode="EaseOut" />
+                            </DoubleAnimation.EasingFunction>
+                          </DoubleAnimation>
+                        </Storyboard>
+                      </BeginStoryboard>
+                    </EventTrigger>
+                  </Border.Triggers>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Checkbox -->
+                    <CheckBox Grid.Column="0"
+                              IsChecked="False"
+                              VerticalAlignment="Center"
+                              Margin="0,0,8,0"
+                              Command="{Binding DataContext.CompleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}">
+                      <CheckBox.RenderTransform>
+                        <ScaleTransform ScaleX="1" ScaleY="1" />
+                      </CheckBox.RenderTransform>
+                    </CheckBox>
+
+                    <!-- Priority dot -->
+                    <Ellipse Grid.Column="1"
+                             Style="{StaticResource PriorityDotStyle}" />
+
+                    <!-- Title and info -->
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Title}"
+                                 FontSize="14"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Notes}"
+                                 FontSize="11"
+                                 TextTrimming="CharacterEllipsis"
+                                 MaxHeight="16"
+                                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                                 ToolTip="{Binding Notes}"
+                                 Margin="0,2,0,0">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding Notes, Converter={StaticResource StringNotNullOrEmptyToBoolConverter}}" Value="True">
+                                <Setter Property="Visibility" Value="Visible" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                      <StackPanel Orientation="Horizontal"
+                                  Margin="0,2,0,0">
+                        <TextBlock FontSize="11"
+                                   Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding DueDate, Converter={StaticResource NullToBoolConverter}}" Value="True">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                          <Run Text="{loc:Str Todo_DuePrefix}" />
+                          <Run Text="{Binding DueDate, StringFormat='{}{0:d}', Mode=OneWay}" />
+                        </TextBlock>
+                      </StackPanel>
+                    </StackPanel>
+
+                    <!-- Action buttons (visible on hover) -->
+                    <StackPanel Grid.Column="3"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                      <ui:Button Appearance="Transparent"
+                                 Padding="4"
+                                 ToolTip="{loc:Str Todo_Edit}"
+                                 Command="{Binding DataContext.StartEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                 CommandParameter="{Binding}">
+                        <ui:Button.Style>
+                          <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                            <Setter Property="Opacity" Value="0" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding IsMouseOver, ElementName=TodoItemBorder}" Value="True">
+                                <Setter Property="Opacity" Value="1" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </ui:Button.Style>
+                        <ui:SymbolIcon Symbol="Edit24" FontSize="14" />
+                      </ui:Button>
+
+                      <ui:Button Appearance="Transparent"
+                                 Padding="4"
+                                 ToolTip="{loc:Str Todo_Delete}"
+                                 Command="{Binding DataContext.DeleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                 CommandParameter="{Binding}">
+                        <ui:Button.Style>
+                          <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                            <Setter Property="Opacity" Value="0" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding IsMouseOver, ElementName=TodoItemBorder}" Value="True">
+                                <Setter Property="Opacity" Value="1" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </ui:Button.Style>
+                        <ui:SymbolIcon Symbol="Delete24" FontSize="14" />
+                      </ui:Button>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Completed section -->
+          <Border Margin="0,12,0,0"
+                  Background="{DynamicResource ControlFillColorDefaultBrush}"
+                  BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                  BorderThickness="1"
+                  CornerRadius="6"
+                  Padding="0">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CompletedTodos.Count}" Value="0">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <Expander IsExpanded="{Binding IsCompletedSectionExpanded}">
+              <Expander.Header>
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="{loc:Str Todo_Completed}"
+                             FontWeight="SemiBold"
+                             FontSize="14"
+                             VerticalAlignment="Center" />
+                  <Border Background="{DynamicResource AccentFillColorDefaultBrush}"
+                          CornerRadius="10"
+                          Padding="8,2"
+                          Margin="8,0"
+                          VerticalAlignment="Center">
+                    <TextBlock Text="{Binding CompletedTodos.Count}"
+                               FontSize="12"
+                               Foreground="White"
+                               HorizontalAlignment="Center" />
+                  </Border>
+                </StackPanel>
+              </Expander.Header>
+
+              <ItemsControl ItemsSource="{Binding CompletedTodos}"
+                            Margin="4,0,4,4">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="{x:Type models:TodoItem}">
+                    <Border x:Name="CompletedItemBorder"
+                            Margin="0,2"
+                            Padding="12,8"
+                            Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                            CornerRadius="4"
+                            Opacity="0">
+                      <Border.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                          <BeginStoryboard>
+                            <Storyboard>
+                              <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                               From="0" To="0.7" Duration="0:0:0.2">
+                                <DoubleAnimation.EasingFunction>
+                                  <CubicEase EasingMode="EaseOut" />
+                                </DoubleAnimation.EasingFunction>
+                              </DoubleAnimation>
+                            </Storyboard>
+                          </BeginStoryboard>
+                        </EventTrigger>
+                      </Border.Triggers>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Checked checkbox -->
+                        <CheckBox Grid.Column="0"
+                                  IsChecked="True"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"
+                                  Command="{Binding DataContext.UncompleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                  CommandParameter="{Binding}" />
+
+                        <!-- Strikethrough title -->
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Title}"
+                                   FontSize="14"
+                                   TextDecorations="Strikethrough"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+
+                        <!-- Completed date -->
+                        <TextBlock Grid.Column="2"
+                                   FontSize="11"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0"
+                                   Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                                   Text="{Binding CompletedAt, StringFormat='{}{0:g}'}" />
+
+                        <!-- Delete button -->
+                        <ui:Button Grid.Column="3"
+                                   Appearance="Transparent"
+                                   Padding="4"
+                                   ToolTip="{loc:Str Todo_Delete}"
+                                   Command="{Binding DataContext.DeleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   CommandParameter="{Binding}">
+                          <ui:Button.Style>
+                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                              <Setter Property="Opacity" Value="0" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsMouseOver, ElementName=CompletedItemBorder}" Value="True">
+                                  <Setter Property="Opacity" Value="1" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:Button.Style>
+                          <ui:SymbolIcon Symbol="Delete24" FontSize="14" />
+                        </ui:Button>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- Edit overlay -->
+      <Border Background="{DynamicResource PrimaryBackgroundBrush}"
+              Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}"
+              Padding="20">
+        <Border Background="{DynamicResource SecondaryBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="20"
+                VerticalAlignment="Center"
+                HorizontalAlignment="Center"
+                MinWidth="400"
+                MaxWidth="500">
+          <StackPanel>
+            <TextBlock Text="{loc:Str Todo_EditTitle}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,16" />
+
+            <TextBlock Text="{loc:Str Todo_TitleLabel}"
+                       FontSize="12"
+                       Margin="0,0,0,4" />
+            <ui:TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="{loc:Str Todo_TitlePlaceholder}"
+                        PlaceholderEnabled="True"
+                        Margin="0,0,0,12" />
+
+            <TextBlock Text="{loc:Str Todo_NotesLabel}"
+                       FontSize="12"
+                       Margin="0,0,0,4" />
+            <ui:TextBox Text="{Binding EditNotes, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="{loc:Str Todo_NotesPlaceholder}"
+                        PlaceholderEnabled="True"
+                        AcceptsReturn="True"
+                        TextWrapping="Wrap"
+                        MinHeight="60"
+                        MaxHeight="120"
+                        Margin="0,0,0,12" />
+
+            <Grid Margin="0,0,0,12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+
+              <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                <TextBlock Text="{loc:Str Todo_PriorityLabel}"
+                           FontSize="12"
+                           Margin="0,0,0,4" />
+                <ComboBox ItemsSource="{Binding Priorities}"
+                          SelectedItem="{Binding EditPriority}" />
+              </StackPanel>
+
+              <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                <TextBlock Text="{loc:Str Todo_DueDateLabel}"
+                           FontSize="12"
+                           Margin="0,0,0,4" />
+                <DatePicker SelectedDate="{Binding EditDueDate}" />
+              </StackPanel>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+              <ui:Button Command="{Binding CancelEditCommand}"
+                         Appearance="Secondary"
+                         Margin="0,0,8,0">
+                <TextBlock Text="{loc:Str Todo_Cancel}" />
+              </ui:Button>
+              <ui:Button Command="{Binding SaveEditCommand}"
+                         Appearance="Primary">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="Save24" FontSize="16" Margin="0,0,6,0" />
+                  <TextBlock Text="{loc:Str Todo_Save}" />
+                </StackPanel>
+              </ui:Button>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </Border>
+    </Grid>
+
+    <!-- Add bar (bottom) -->
+    <Border Grid.Row="3"
+            Background="{DynamicResource SecondaryBackgroundBrush}"
+            BorderBrush="{DynamicResource CardBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            Margin="20,0,20,0"
+            Padding="12,8">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <ui:TextBox Grid.Column="0"
+                    Text="{Binding NewTodoTitle, UpdateSourceTrigger=PropertyChanged}"
+                    PlaceholderText="{loc:Str Todo_AddPlaceholder}"
+                    PlaceholderEnabled="True"
+                    ClearButtonEnabled="False"
+                    Margin="0,0,8,0">
+          <ui:TextBox.InputBindings>
+            <KeyBinding Key="Return"
+                        Command="{Binding AddTodoCommand}" />
+          </ui:TextBox.InputBindings>
+        </ui:TextBox>
+
+        <ComboBox Grid.Column="1"
+                  ItemsSource="{Binding Priorities}"
+                  SelectedItem="{Binding NewTodoPriority}"
+                  Width="120"
+                  Margin="0,0,8,0"
+                  ToolTip="{loc:Str Todo_PriorityTooltip}" />
+
+        <DatePicker Grid.Column="2"
+                    SelectedDate="{Binding NewTodoDueDate}"
+                    Width="130"
+                    Margin="0,0,8,0"
+                    ToolTip="{loc:Str Todo_DueDateTooltip}" />
+
+        <ui:Button Grid.Column="3"
+                   Command="{Binding AddTodoCommand}"
+                   Appearance="Primary"
+                   ToolTip="{loc:Str Todo_AddTooltip}">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0" />
+            <TextBlock Text="{loc:Str Todo_Add}" />
+          </StackPanel>
+        </ui:Button>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

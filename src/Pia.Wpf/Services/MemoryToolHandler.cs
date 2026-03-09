@@ -1,0 +1,354 @@
+using System.ComponentModel;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Pia.Helpers;
+using Pia.Models;
+using Pia.Services.Interfaces;
+
+namespace Pia.Services;
+
+public class MemoryToolHandler : IMemoryToolHandler
+{
+    private readonly IMemoryService _memoryService;
+    private readonly IEmbeddingService _embeddingService;
+    private readonly ILogger<MemoryToolHandler> _logger;
+
+    public MemoryToolHandler(
+        IMemoryService memoryService,
+        IEmbeddingService embeddingService,
+        ILogger<MemoryToolHandler> logger)
+    {
+        _memoryService = memoryService;
+        _embeddingService = embeddingService;
+        _logger = logger;
+    }
+
+    public IList<AITool> GetTools()
+    {
+        return
+        [
+            AIFunctionFactory.Create(CreateObjectSchema, "create_object",
+                "Create a new memory object. Use this to store new information about the user. " +
+                "Always check for existing related objects before creating new ones to avoid duplication. " +
+                "Types: personal_profile (single evolving object for user facts), contact_list (collection of contacts), " +
+                "preference (individual user preferences), note (freeform knowledge/summaries)."),
+
+            AIFunctionFactory.Create(UpdateObjectSchema, "update_object",
+                "Update an existing memory object by ID using a JSON merge patch. " +
+                "Use this to modify or extend existing knowledge rather than creating duplicates. " +
+                "For personal_profile, merge new facts into the existing object."),
+
+            AIFunctionFactory.Create(AppendToListSchema, "append_to_list",
+                "Add a new entry to a list-type memory object (e.g., add a contact to contact_list). " +
+                "The entry will be appended to the first array found in the object's data."),
+
+            AIFunctionFactory.Create(ListMemoriesSchema, "list_memories",
+                "List all memory objects showing type, label, and ID. " +
+                "Use as a lightweight discovery step before fetching full details with query_memory."),
+
+            AIFunctionFactory.Create(QueryMemorySchema, "query_memory",
+                "Search the user's memory store using a natural language query. " +
+                "Use this to recall information when the user asks about something personal, " +
+                "or when you need to check if a memory already exists before creating a new one. " +
+                "Returns matching memory objects with full data, ranked by relevance."),
+
+            AIFunctionFactory.Create(DeleteObjectSchema, "delete_object",
+                "Remove a memory object by ID. Use this when the user explicitly asks to forget something.")
+        ];
+    }
+
+    public async Task<(object? Result, MemoryToolCall? PendingAction)> HandleToolCallAsync(
+        FunctionCallContent toolCall,
+        CancellationToken cancellationToken = default)
+    {
+        var args = toolCall.Arguments ?? new Dictionary<string, object?>();
+
+        return toolCall.Name switch
+        {
+            "list_memories" => (await HandleListMemories(args), null),
+            "query_memory" => (await HandleQueryMemory(args, cancellationToken), null),
+            "create_object" => (null, await PrepareCreateObject(args)),
+            "update_object" => (null, await PrepareUpdateObject(args)),
+            "append_to_list" => (null, await PrepareAppendToList(args)),
+            "delete_object" => (null, await PrepareDeleteObject(args)),
+            _ => ($"Unknown tool: {toolCall.Name}", null)
+        };
+    }
+
+    public async Task<object?> ExecutePendingActionAsync(MemoryToolCall pendingAction)
+    {
+        try
+        {
+            var result = await pendingAction.Execute();
+
+            // Generate embedding for the affected object if applicable
+            if (pendingAction.TargetObjectId.HasValue && _embeddingService.IsModelAvailable)
+            {
+                try
+                {
+                    var obj = await _memoryService.GetObjectAsync(pendingAction.TargetObjectId.Value);
+                    if (obj is not null)
+                    {
+                        var textToEmbed = $"{obj.Label} {obj.Data}";
+                        var embedding = await _embeddingService.GenerateEmbeddingAsync(textToEmbed);
+                        await _memoryService.UpdateEmbeddingAsync(obj.Id, _embeddingService.FloatsToBytes(embedding));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to generate embedding for memory object {Id}", pendingAction.TargetObjectId);
+                }
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute memory tool action: {ToolName}", pendingAction.ToolName);
+            return $"Error executing {pendingAction.ToolName}: {ex.Message}";
+        }
+    }
+
+    private async Task<object?> HandleListMemories(IDictionary<string, object?> args)
+    {
+        var type = GetStringArg(args, "type");
+        var typeFilter = string.IsNullOrWhiteSpace(type) ? null : type;
+
+        var summaries = await _memoryService.GetMemorySummariesAsync(typeFilter);
+
+        if (summaries.Count == 0)
+            return typeFilter is not null
+                ? $"No memory objects found with type '{typeFilter}'."
+                : "No memory objects stored yet.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"{summaries.Count} memory object(s):");
+
+        string? currentType = null;
+        foreach (var summary in summaries)
+        {
+            if (summary.Type != currentType)
+            {
+                currentType = summary.Type;
+                sb.AppendLine();
+                sb.AppendLine($"{MemoryObjectTypes.GetDisplayName(currentType)}:");
+            }
+            sb.AppendLine($"  - {summary.Label} (ID: {summary.Id})");
+        }
+
+        return sb.ToString();
+    }
+
+    private async Task<object?> HandleQueryMemory(
+        IDictionary<string, object?> args,
+        CancellationToken cancellationToken)
+    {
+        var query = GetStringArg(args, "query");
+        if (string.IsNullOrWhiteSpace(query))
+            return "Error: query parameter is required";
+
+        float[]? queryEmbedding = null;
+        if (_embeddingService.IsModelAvailable)
+        {
+            try
+            {
+                queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to generate query embedding, falling back to text search");
+            }
+        }
+
+        var results = await _memoryService.HybridSearchAsync(query, queryEmbedding);
+
+        // Touch access time for retrieved objects
+        foreach (var result in results)
+        {
+            await _memoryService.TouchAccessTimeAsync(result.Id);
+        }
+
+        if (results.Count == 0)
+            return "No relevant memories found.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {results.Count} relevant memories:");
+
+        foreach (var result in results)
+        {
+            sb.AppendLine($"\n[ID: {result.Id}] [{MemoryObjectTypes.GetDisplayName(result.Type)}] {result.Label}:");
+            sb.AppendLine(result.Data);
+        }
+
+        return sb.ToString();
+    }
+
+    private Task<MemoryToolCall> PrepareCreateObject(IDictionary<string, object?> args)
+    {
+        var type = GetStringArg(args, "type");
+        var label = GetStringArg(args, "label");
+        var data = GetStringArg(args, "data");
+
+        return Task.FromResult(new MemoryToolCall(
+            ToolName: "create_object",
+            Description: $"Create new {MemoryObjectTypes.GetDisplayName(type)}: {label}",
+            OldValue: null,
+            NewValue: JsonHelper.FormatJson(data),
+            TargetObjectId: null,
+            Execute: async () =>
+            {
+                var created = await _memoryService.CreateObjectAsync(type, label, data);
+                return $"Memory object created successfully with ID: {created.Id}";
+            }));
+    }
+
+    private async Task<MemoryToolCall> PrepareUpdateObject(IDictionary<string, object?> args)
+    {
+        var idStr = GetStringArg(args, "id");
+        if (!Guid.TryParse(idStr, out var id))
+            return new MemoryToolCall("update_object", "Invalid ID format", null, null, null,
+                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+
+        var mergePatch = GetStringArg(args, "data");
+
+        var existing = await _memoryService.GetObjectAsync(id);
+        if (existing is null)
+            return new MemoryToolCall("update_object", "Object not found", null, null, null,
+                () => Task.FromResult<object?>($"Error: Memory object {id} not found"));
+
+        return new MemoryToolCall(
+            ToolName: "update_object",
+            Description: $"Update {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            OldValue: JsonHelper.FormatJson(existing.Data),
+            NewValue: FormatMergedJson(existing.Data, mergePatch),
+            TargetObjectId: id,
+            Execute: async () =>
+            {
+                await _memoryService.UpdateObjectAsync(id, mergePatch);
+                return $"Memory object {id} updated successfully.";
+            });
+    }
+
+    private async Task<MemoryToolCall> PrepareAppendToList(IDictionary<string, object?> args)
+    {
+        var idStr = GetStringArg(args, "id");
+        if (!Guid.TryParse(idStr, out var id))
+            return new MemoryToolCall("append_to_list", "Invalid ID format", null, null, null,
+                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+
+        var entry = GetStringArg(args, "entry");
+
+        var existing = await _memoryService.GetObjectAsync(id);
+        if (existing is null)
+            return new MemoryToolCall("append_to_list", "Object not found", null, null, null,
+                () => Task.FromResult<object?>($"Error: Memory object {id} not found"));
+
+        return new MemoryToolCall(
+            ToolName: "append_to_list",
+            Description: $"Add entry to {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            OldValue: JsonHelper.FormatJson(existing.Data),
+            NewValue: $"+ {JsonHelper.FormatJson(entry)}",
+            TargetObjectId: id,
+            Execute: async () =>
+            {
+                await _memoryService.AppendToListAsync(id, entry);
+                return $"Entry appended to memory object {id} successfully.";
+            });
+    }
+
+    private async Task<MemoryToolCall> PrepareDeleteObject(IDictionary<string, object?> args)
+    {
+        var idStr = GetStringArg(args, "id");
+        if (!Guid.TryParse(idStr, out var id))
+            return new MemoryToolCall("delete_object", "Invalid ID format", null, null, null,
+                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+
+        var existing = await _memoryService.GetObjectAsync(id);
+        if (existing is null)
+            return new MemoryToolCall("delete_object", "Object not found", null, null, null,
+                () => Task.FromResult<object?>($"Error: Memory object {id} not found"));
+
+        return new MemoryToolCall(
+            ToolName: "delete_object",
+            Description: $"Delete {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            OldValue: JsonHelper.FormatJson(existing.Data),
+            NewValue: null,
+            TargetObjectId: id,
+            Execute: async () =>
+            {
+                await _memoryService.DeleteObjectAsync(id);
+                return $"Memory object {id} deleted successfully.";
+            });
+    }
+
+    [Description("Create a new memory object")]
+    private static string CreateObjectSchema(
+        [Description("Type of memory object: personal_profile, contact_list, preference, note")] string type,
+        [Description("Human-readable label for this memory")] string label,
+        [Description("JSON data for the memory object")] string data) => "";
+
+    [Description("Update an existing memory object by ID using JSON merge patch")]
+    private static string UpdateObjectSchema(
+        [Description("The ID of the memory object to update")] string id,
+        [Description("JSON merge patch to apply to the existing data")] string data) => "";
+
+    [Description("Append a new entry to a list-type memory object")]
+    private static string AppendToListSchema(
+        [Description("The ID of the memory object to append to")] string id,
+        [Description("JSON entry to append to the list")] string entry) => "";
+
+    [Description("List all memory objects with their type, label, and ID")]
+    private static string ListMemoriesSchema(
+        [Description("Optional type filter: personal_profile, contact_list, preference, note")] string? type = null) => "";
+
+    [Description("Search the user's memory store using a natural language query")]
+    private static string QueryMemorySchema(
+        [Description("Natural language query to search for in memories")] string query) => "";
+
+    [Description("Delete a memory object by ID")]
+    private static string DeleteObjectSchema(
+        [Description("The ID of the memory object to delete")] string id) => "";
+
+    private static string GetStringArg(IDictionary<string, object?> args, string key)
+    {
+        if (args.TryGetValue(key, out var value))
+        {
+            if (value is JsonElement element)
+                return element.ValueKind == JsonValueKind.String
+                    ? element.GetString() ?? string.Empty
+                    : element.GetRawText();
+            return value?.ToString() ?? string.Empty;
+        }
+        return string.Empty;
+    }
+
+    private static string FormatMergedJson(string existingData, string mergePatch)
+    {
+        try
+        {
+            var existingNode = JsonNode.Parse(existingData)?.AsObject() ?? new JsonObject();
+            var patchNode = JsonNode.Parse(mergePatch)?.AsObject() ?? new JsonObject();
+
+            foreach (var property in patchNode)
+            {
+                if (property.Value is null)
+                {
+                    existingNode.Remove(property.Key);
+                }
+                else
+                {
+                    existingNode[property.Key] = property.Value.DeepClone();
+                }
+            }
+
+            return existingNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return mergePatch;
+        }
+    }
+}

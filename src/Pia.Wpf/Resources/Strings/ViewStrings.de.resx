@@ -1,0 +1,451 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>1.3</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <!-- Navigation -->
+  <data name="Nav_Optimize" xml:space="preserve"><value>Optimieren</value></data>
+  <data name="Nav_Assistant" xml:space="preserve"><value>Assistent</value></data>
+  <data name="Nav_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Nav_History" xml:space="preserve"><value>Verlauf</value></data>
+  <data name="Nav_Memory" xml:space="preserve"><value>Gedächtnis</value></data>
+  <data name="Nav_Reminders" xml:space="preserve"><value>Erinnerungen</value></data>
+  <data name="Nav_Todo" xml:space="preserve"><value>Aufgaben</value></data>
+  <data name="Nav_Settings" xml:space="preserve"><value>Einstellungen</value></data>
+  <data name="Nav_NewWindow" xml:space="preserve"><value>Neues Fenster</value></data>
+  <data name="Nav_NewWindow_Tooltip" xml:space="preserve"><value>Neues Fenster öffnen</value></data>
+  <!-- Optimize View -->
+  <data name="Optimize_Title" xml:space="preserve"><value>Textoptimierung</value></data>
+  <data name="Optimize_Subtitle" xml:space="preserve"><value>Optimiere deinen Text für jeden Zweck. Tippe oder diktiere deinen Text, wähle eine Vorlage und lass Pia ihn verbessern.</value></data>
+  <data name="Optimize_InputPlaceholder" xml:space="preserve"><value>Tippe oder diktiere deinen Text hier...</value></data>
+  <data name="Optimize_Optimize" xml:space="preserve"><value>Optimieren</value></data>
+  <data name="Optimize_Original" xml:space="preserve"><value>Original</value></data>
+  <data name="Optimize_Optimized" xml:space="preserve"><value>Optimiert</value></data>
+  <data name="Optimize_Clear_Tooltip" xml:space="preserve"><value>Leeren</value></data>
+  <data name="Optimize_Template_Tooltip" xml:space="preserve"><value>Vorlage</value></data>
+  <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Ausgabesprache</value></data>
+  <data name="Optimize_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
+  <data name="Optimize_Accept_Tooltip" xml:space="preserve"><value>Annehmen</value></data>
+  <data name="Optimize_Reject_Tooltip" xml:space="preserve"><value>Ablehnen</value></data>
+  <data name="Optimize_Copy_Tooltip" xml:space="preserve"><value>Kopieren</value></data>
+  <data name="Optimize_SendTo_Tooltip" xml:space="preserve"><value>Senden an...</value></data>
+  <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
+  <!-- Assistant View -->
+  <data name="Assistant_EmptyState" xml:space="preserve"><value>Starte eine Unterhaltung mit Pia</value></data>
+  <data name="Assistant_Suggestion_Reminder1" xml:space="preserve"><value>Erinnere mich morgen den Zahnarzt anzurufen</value></data>
+  <data name="Assistant_Suggestion_Reminder2" xml:space="preserve"><value>Erstelle eine tägliche Erinnerung, Wasser zu trinken</value></data>
+  <data name="Assistant_Suggestion_Reminder3" xml:space="preserve"><value>Erinnere mich an das Meeting um 15 Uhr</value></data>
+  <data name="Assistant_Suggestion_Reminder4" xml:space="preserve"><value>Erstelle eine wöchentliche Erinnerung, meine Ziele zu überprüfen</value></data>
+  <data name="Assistant_Suggestion_Reminder5" xml:space="preserve"><value>Erinnere mich am Freitag das Paket abzuholen</value></data>
+  <data name="Assistant_Suggestion_Todo1" xml:space="preserve"><value>Füge "Einkaufen gehen" zu meiner Todo-Liste hinzu</value></data>
+  <data name="Assistant_Suggestion_Todo2" xml:space="preserve"><value>Was steht auf meiner Todo-Liste?</value></data>
+  <data name="Assistant_Suggestion_Todo3" xml:space="preserve"><value>Markiere die Wäsche-Aufgabe als erledigt</value></data>
+  <data name="Assistant_Suggestion_Todo4" xml:space="preserve"><value>Füge eine wichtige Aufgabe hinzu: Bericht fertigstellen</value></data>
+  <data name="Assistant_Suggestion_Todo5" xml:space="preserve"><value>Welche Aufgaben sind diese Woche fällig?</value></data>
+  <data name="Assistant_Suggestion_Memory1" xml:space="preserve"><value>Merk dir, dass meine Lieblingsfarbe blau ist</value></data>
+  <data name="Assistant_Suggestion_Memory2" xml:space="preserve"><value>Was weißt du über mich?</value></data>
+  <data name="Assistant_Suggestion_Memory3" xml:space="preserve"><value>Merk dir, dass ich eine Erdnussallergie habe</value></data>
+  <data name="Assistant_Suggestion_Memory4" xml:space="preserve"><value>Ändere meine bevorzugte Sprache auf Französisch</value></data>
+  <data name="Assistant_Suggestion_Memory5" xml:space="preserve"><value>Merk dir, dass mein Partner Alex heißt</value></data>
+  <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Nachricht eingeben...</value></data>
+  <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Kopieren</value></data>
+  <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Vorlesen</value></data>
+  <data name="Assistant_StopReading_Tooltip" xml:space="preserve"><value>Vorlesen beenden</value></data>
+  <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Überlegungen anzeigen</value></data>
+  <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Unterhaltung löschen</value></data>
+  <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Abbrechen</value></data>
+  <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Sprachausgabe ein-/ausschalten</value></data>
+  <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
+  <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
+  <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden</value></data>
+  <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
+  <!-- Research View -->
+  <data name="Research_Title" xml:space="preserve"><value>Recherchemodus</value></data>
+  <data name="Research_Subtitle" xml:space="preserve"><value>Stelle eine Frage und Pia recherchiert sie gründlich</value></data>
+  <data name="Research_Suggestion1" xml:space="preserve"><value>React vs Vue für ein neues Projekt vergleichen</value></data>
+  <data name="Research_Suggestion2" xml:space="preserve"><value>Best Practices für API-Authentifizierung</value></data>
+  <data name="Research_Suggestion3" xml:space="preserve"><value>Wie verbessert WebAssembly die Leistung?</value></data>
+  <data name="Research_InputPlaceholder" xml:space="preserve"><value>Was möchtest du recherchieren?</value></data>
+  <data name="Research_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
+  <data name="Research_StartResearch" xml:space="preserve"><value>Recherche starten</value></data>
+  <data name="Research_QuestionLabel" xml:space="preserve"><value>Forschungsfrage</value></data>
+  <data name="Research_CancelResearch_Tooltip" xml:space="preserve"><value>Recherche abbrechen</value></data>
+  <data name="Research_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
+  <data name="Research_CopyResult" xml:space="preserve"><value>Ergebnis kopieren</value></data>
+  <data name="Research_ExportAll" xml:space="preserve"><value>Alles exportieren</value></data>
+  <data name="Research_NewResearch" xml:space="preserve"><value>Neue Recherche</value></data>
+  <data name="Research_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
+  <!-- History View -->
+  <data name="History_Title" xml:space="preserve"><value>Verlauf</value></data>
+  <data name="History_DateRangeTo" xml:space="preserve"><value>bis</value></data>
+  <data name="History_ClearFilters" xml:space="preserve"><value>Filter zurücksetzen</value></data>
+  <data name="History_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
+  <data name="History_TemplateFilter_Placeholder" xml:space="preserve"><value>Alle Vorlagen</value></data>
+  <data name="History_SearchPlaceholder" xml:space="preserve"><value>Suchen...</value></data>
+  <data name="History_DateColumn" xml:space="preserve"><value>Datum</value></data>
+  <data name="History_TemplateColumn" xml:space="preserve"><value>Vorlage</value></data>
+  <data name="History_ProviderColumn" xml:space="preserve"><value>Anbieter</value></data>
+  <data name="History_PreviewColumn" xml:space="preserve"><value>Vorschau</value></data>
+  <data name="History_ActionsColumn" xml:space="preserve"><value>Aktionen</value></data>
+  <data name="History_View" xml:space="preserve"><value>Anzeigen</value></data>
+  <data name="History_Copy" xml:space="preserve"><value>Kopieren</value></data>
+  <data name="History_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="History_ViewDetail" xml:space="preserve"><value>Details anzeigen</value></data>
+  <data name="History_CopyOriginal" xml:space="preserve"><value>Original kopieren</value></data>
+  <data name="History_CopyOptimized" xml:space="preserve"><value>Optimiert kopieren</value></data>
+  <data name="History_Loading" xml:space="preserve"><value>Sitzungen werden geladen...</value></data>
+  <data name="History_NoSessions" xml:space="preserve"><value>Keine Sitzungen gefunden</value></data>
+  <data name="History_LoadMore" xml:space="preserve"><value>Mehr laden</value></data>
+  <!-- Todo View -->
+  <data name="Todo_Title" xml:space="preserve"><value>Aufgabenliste</value></data>
+  <data name="Todo_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
+  <data name="Todo_EmptyState" xml:space="preserve"><value>Noch keine Aufgaben</value></data>
+  <data name="Todo_EmptyStateHint" xml:space="preserve"><value>Füge unten eine Aufgabe hinzu oder frage den Assistenten</value></data>
+  <data name="Todo_DuePrefix" xml:space="preserve"><value>Fällig:</value></data>
+  <data name="Todo_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
+  <data name="Todo_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="Todo_Completed" xml:space="preserve"><value>Erledigt</value></data>
+  <data name="Todo_EditTitle" xml:space="preserve"><value>Aufgabe bearbeiten</value></data>
+  <data name="Todo_TitleLabel" xml:space="preserve"><value>Titel</value></data>
+  <data name="Todo_TitlePlaceholder" xml:space="preserve"><value>Aufgabentitel...</value></data>
+  <data name="Todo_NotesLabel" xml:space="preserve"><value>Notizen</value></data>
+  <data name="Todo_NotesPlaceholder" xml:space="preserve"><value>Optionale Notizen...</value></data>
+  <data name="Todo_PriorityLabel" xml:space="preserve"><value>Priorität</value></data>
+  <data name="Todo_DueDateLabel" xml:space="preserve"><value>Fälligkeitsdatum</value></data>
+  <data name="Todo_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
+  <data name="Todo_Save" xml:space="preserve"><value>Speichern</value></data>
+  <data name="Todo_AddPlaceholder" xml:space="preserve"><value>Neue Aufgabe hinzufügen...</value></data>
+  <data name="Todo_PriorityTooltip" xml:space="preserve"><value>Priorität</value></data>
+  <data name="Todo_DueDateTooltip" xml:space="preserve"><value>Fälligkeitsdatum (optional)</value></data>
+  <data name="Todo_AddTooltip" xml:space="preserve"><value>Aufgabe hinzufügen</value></data>
+  <data name="Todo_Add" xml:space="preserve"><value>Hinzufügen</value></data>
+  <!-- Todo Panel -->
+  <data name="TodoPanel_Title" xml:space="preserve"><value>Aufgaben</value></data>
+  <data name="TodoPanel_ClosePanel" xml:space="preserve"><value>Leiste schließen</value></data>
+  <data name="TodoPanel_AddPlaceholder" xml:space="preserve"><value>Aufgabe hinzufügen...</value></data>
+  <data name="TodoPanel_Add" xml:space="preserve"><value>Hinzufügen</value></data>
+  <data name="TodoPanel_OpenFullView" xml:space="preserve"><value>Vollansicht öffnen</value></data>
+  <!-- Memory View -->
+  <data name="Memory_Title" xml:space="preserve"><value>Gedächtnis</value></data>
+  <data name="Memory_Export" xml:space="preserve"><value>Exportieren</value></data>
+  <data name="Memory_ExportTooltip" xml:space="preserve"><value>Alle Erinnerungen als JSON exportieren</value></data>
+  <data name="Memory_ReviewStale" xml:space="preserve"><value>Veraltete prüfen</value></data>
+  <data name="Memory_ReviewStaleTooltip" xml:space="preserve"><value>Erinnerungen prüfen, auf die seit 90+ Tagen nicht zugegriffen wurde</value></data>
+  <data name="Memory_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
+  <data name="Memory_SearchPlaceholder" xml:space="preserve"><value>Erinnerungen durchsuchen...</value></data>
+  <data name="Memory_ObjectsSuffix" xml:space="preserve"><value> Objekte</value></data>
+  <data name="Memory_EmptyState" xml:space="preserve"><value>Noch keine Erinnerungen</value></data>
+  <data name="Memory_EmptyStateHint" xml:space="preserve"><value>Chatte mit Pia, um das Gedächtnis aufzubauen</value></data>
+  <data name="Memory_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
+  <data name="Memory_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="Memory_SelectPrompt" xml:space="preserve"><value>Wähle eine Erinnerung zum Anzeigen</value></data>
+  <data name="Memory_TypeLabel" xml:space="preserve"><value>Typ:</value></data>
+  <data name="Memory_CreatedLabel" xml:space="preserve"><value>  |  Erstellt:</value></data>
+  <data name="Memory_UpdatedLabel" xml:space="preserve"><value>Aktualisiert:</value></data>
+  <data name="Memory_LastAccessedLabel" xml:space="preserve"><value>  |  Letzter Zugriff:</value></data>
+  <data name="Memory_EditingPrefix" xml:space="preserve"><value>Bearbeiten:</value></data>
+  <data name="Memory_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
+  <data name="Memory_Save" xml:space="preserve"><value>Speichern</value></data>
+  <data name="Memory_EmbeddingModel" xml:space="preserve"><value>Embedding-Modell:</value></data>
+  <data name="Memory_ModelNotAvailable" xml:space="preserve"><value>Nicht verfügbar</value></data>
+  <data name="Memory_ModelReady" xml:space="preserve"><value>Bereit</value></data>
+  <data name="Memory_DownloadModel" xml:space="preserve"><value>Modell herunterladen</value></data>
+  <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>all-MiniLM-L6-v2 Embedding-Modell für semantische Suche herunterladen</value></data>
+  <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Embeddings neu generieren</value></data>
+  <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Embeddings für alle Gedächtnisobjekte neu generieren</value></data>
+  <!-- Reminders View -->
+  <data name="Reminders_Title" xml:space="preserve"><value>Erinnerungen</value></data>
+  <data name="Reminders_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
+  <data name="Reminders_DescriptionColumn" xml:space="preserve"><value>Beschreibung</value></data>
+  <data name="Reminders_RecurrenceColumn" xml:space="preserve"><value>Wiederholung</value></data>
+  <data name="Reminders_TimeColumn" xml:space="preserve"><value>Uhrzeit</value></data>
+  <data name="Reminders_NextFireColumn" xml:space="preserve"><value>Nächste Auslösung</value></data>
+  <data name="Reminders_StatusColumn" xml:space="preserve"><value>Status</value></data>
+  <data name="Reminders_ActionsColumn" xml:space="preserve"><value>Aktionen</value></data>
+  <data name="Reminders_ToggleEnable" xml:space="preserve"><value>Aktivieren/Deaktivieren</value></data>
+  <data name="Reminders_Snooze" xml:space="preserve"><value>15 Min. schlummern</value></data>
+  <data name="Reminders_Dismiss" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="Reminders_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="Reminders_Loading" xml:space="preserve"><value>Erinnerungen werden geladen...</value></data>
+  <data name="Reminders_EmptyState" xml:space="preserve"><value>Keine Erinnerungen gefunden. Erstelle Erinnerungen über den Assistenten-Chat.</value></data>
+  <!-- Settings View -->
+  <data name="Settings_Tab_Providers" xml:space="preserve"><value>Anbieter</value></data>
+  <data name="Settings_Tab_Templates" xml:space="preserve"><value>Vorlagen</value></data>
+  <data name="Settings_Tab_General" xml:space="preserve"><value>Allgemein</value></data>
+  <data name="Settings_Tab_TextToSpeech" xml:space="preserve"><value>Sprachausgabe</value></data>
+  <data name="Settings_Tab_CloudSync" xml:space="preserve"><value>Cloud-Synchronisierung</value></data>
+  <data name="Settings_UiLanguage" xml:space="preserve"><value>Oberflächensprache</value></data>
+  <data name="Settings_UiLanguage_Description" xml:space="preserve"><value>Sprache für Menüs, Schaltflächen und Beschriftungen</value></data>
+  <data name="Settings_GeneralTitle" xml:space="preserve"><value>Allgemeine Einstellungen</value></data>
+  <data name="Settings_OutputAction" xml:space="preserve"><value>Ausgabeaktion</value></data>
+  <data name="Settings_AutoTypeDelay" xml:space="preserve"><value>Auto-Tipp-Verzögerung (ms)</value></data>
+  <data name="Settings_AutoTypeDelay_Description" xml:space="preserve"><value>Verzögerung zwischen Tastenanschlägen beim Auto-Tippen (5-100ms)</value></data>
+  <data name="Settings_WhisperModel" xml:space="preserve"><value>Whisper-Modell</value></data>
+  <data name="Settings_WhisperModel_Description" xml:space="preserve"><value>Modellgröße für Sprache-zu-Text-Transkription</value></data>
+  <data name="Settings_DownloadModel" xml:space="preserve"><value>Modell herunterladen</value></data>
+  <data name="Settings_SpeechToTextLanguage" xml:space="preserve"><value>Sprache-zu-Text Sprache</value></data>
+  <data name="Settings_SpeechToTextLanguage_Description" xml:space="preserve"><value>Sprachvoreinstellung für Sprache-zu-Text-Transkription</value></data>
+  <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Standard-Fenstermodus</value></data>
+  <data name="Settings_DefaultWindowMode_Description" xml:space="preserve"><value>Modus beim Öffnen eines neuen Fensters über die Hauptschaltfläche</value></data>
+  <data name="Settings_ApplicationBehavior" xml:space="preserve"><value>Anwendungsverhalten</value></data>
+  <data name="Settings_StartMinimized" xml:space="preserve"><value>Minimiert im Infobereich starten</value></data>
+  <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Anwendung startet beim Start versteckt im Infobereich</value></data>
+  <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
+  <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
+  <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Globale Tastenkürzel</value></data>
+  <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Drücke ein Tastenkürzel, wenn die App ausgeblendet ist, um das Fenster unter dem Cursor zu erfassen und Pia im entsprechenden Modus zu öffnen</value></data>
+  <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimieren</value></data>
+  <data name="Settings_Hotkey_Assistant" xml:space="preserve"><value>Assistent</value></data>
+  <data name="Settings_Hotkey_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Settings_Hotkey_Change" xml:space="preserve"><value>Ändern</value></data>
+  <data name="Settings_Hotkey_ResetToDefault" xml:space="preserve"><value>Auf Standard zurücksetzen</value></data>
+  <data name="Settings_Hotkey_ClearHotkey" xml:space="preserve"><value>Tastenkürzel löschen</value></data>
+  <!-- Providers Settings -->
+  <data name="Providers_Title" xml:space="preserve"><value>Anbieter</value></data>
+  <data name="Providers_DefaultProviders" xml:space="preserve"><value>Standardanbieter</value></data>
+  <data name="Providers_SameForAllModes" xml:space="preserve"><value>Gleich für alle Modi</value></data>
+  <data name="Providers_AllModes" xml:space="preserve"><value>Alle Modi</value></data>
+  <data name="Providers_Optimize" xml:space="preserve"><value>Optimieren</value></data>
+  <data name="Providers_Assistant" xml:space="preserve"><value>Assistent</value></data>
+  <data name="Providers_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Providers_Add" xml:space="preserve"><value>Anbieter hinzufügen</value></data>
+  <data name="Providers_NoToolCalling" xml:space="preserve"><value>Kein Tool-Calling</value></data>
+  <data name="Providers_NoStreaming" xml:space="preserve"><value>Kein Streaming</value></data>
+  <data name="Providers_Test" xml:space="preserve"><value>Testen</value></data>
+  <data name="Providers_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
+  <data name="Providers_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="Providers_CloudNotSetup" xml:space="preserve"><value>Pia Cloud ist nicht eingerichtet. Melden Sie sich an, um cloudbasierte KI zu nutzen.</value></data>
+  <data name="Providers_GoToCloudSync" xml:space="preserve"><value>Cloud-Sync einrichten</value></data>
+  <!-- Templates Settings -->
+  <data name="Templates_Add" xml:space="preserve"><value>Vorlage hinzufügen</value></data>
+  <data name="Templates_Description" xml:space="preserve"><value>Vorlagen für Textoptimierung verwalten</value></data>
+  <data name="Templates_BuiltIn" xml:space="preserve"><value>Integriert</value></data>
+  <data name="Templates_Default" xml:space="preserve"><value>Standard</value></data>
+  <data name="Templates_ViewPrompt" xml:space="preserve"><value>Prompt anzeigen</value></data>
+  <data name="Templates_SetDefault" xml:space="preserve"><value>Als Standard festlegen</value></data>
+  <data name="Templates_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
+  <data name="Templates_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <!-- TTS Settings -->
+  <data name="Tts_Title" xml:space="preserve"><value>Sprachausgabe</value></data>
+  <data name="Tts_Description" xml:space="preserve"><value>Wähle eine Stimme zum Vorlesen von Assistenten-Antworten. Lade zuerst ein Stimmmodell herunter und wähle es dann als aktiv.</value></data>
+  <data name="Tts_VoiceSelection" xml:space="preserve"><value>Stimmauswahl</value></data>
+  <data name="Tts_Active" xml:space="preserve"><value>Aktiv</value></data>
+  <data name="Tts_Download" xml:space="preserve"><value>Herunterladen</value></data>
+  <data name="Tts_Select" xml:space="preserve"><value>Auswählen</value></data>
+  <data name="Tts_Selected" xml:space="preserve"><value>Ausgewählt</value></data>
+  <!-- Sync Settings -->
+  <data name="Sync_Title" xml:space="preserve"><value>Cloud-Synchronisierung</value></data>
+  <data name="Sync_Description" xml:space="preserve"><value>Synchronisiere deine Vorlagen, Anbieter, Einstellungen und den Verlauf zwischen Geräten</value></data>
+  <data name="Sync_ServerUrl" xml:space="preserve"><value>Server-URL</value></data>
+  <data name="Sync_ServerUrl_Placeholder" xml:space="preserve"><value>https://pia-sync.example.com</value></data>
+  <data name="Sync_ServerUrl_Description" xml:space="preserve"><value>URL deines Pia-Synchronisierungsservers</value></data>
+  <data name="Sync_TrustSelfSignedCertificates" xml:space="preserve"><value>Selbstsignierten Zertifikaten vertrauen</value></data>
+  <data name="Sync_TrustSelfSignedCertificates_Description" xml:space="preserve"><value>Verbindungen zu Servern mit selbstsignierten oder nicht vertrauenswürdigen SSL-Zertifikaten zulassen. Erfordert einen Neustart der App.</value></data>
+  <data name="Sync_SignIn" xml:space="preserve"><value>Anmelden</value></data>
+  <data name="Sync_SignInWithGoogle" xml:space="preserve"><value>Mit Google anmelden</value></data>
+  <data name="Sync_SignInWithMicrosoft" xml:space="preserve"><value>Mit Microsoft anmelden</value></data>
+  <data name="Sync_SignIn_Description" xml:space="preserve"><value>Dein Browser wird geöffnet, um den Anmeldevorgang abzuschließen</value></data>
+  <data name="Sync_LocalAuth_Email" xml:space="preserve"><value>E-Mail</value></data>
+  <data name="Sync_LocalAuth_Password" xml:space="preserve"><value>Passwort</value></data>
+  <data name="Sync_LocalAuth_SignIn" xml:space="preserve"><value>Anmelden</value></data>
+  <data name="Sync_LocalAuth_CreateAccount" xml:space="preserve"><value>Konto erstellen</value></data>
+  <data name="Sync_LocalAuth_ForgotPassword" xml:space="preserve"><value>Passwort vergessen?</value></data>
+  <data name="Sync_LocalAuth_FieldsRequired" xml:space="preserve"><value>E-Mail und Passwort sind erforderlich</value></data>
+  <data name="Sync_LocalAuth_ServerUrlRequired" xml:space="preserve"><value>Server-URL ist nicht konfiguriert.</value></data>
+  <data name="Sync_LocalAuth_InvalidCredentials" xml:space="preserve"><value>Ungültige E-Mail oder Passwort</value></data>
+  <data name="Sync_LocalAuth_AccountLocked" xml:space="preserve"><value>Konto ist vorübergehend gesperrt. Versuche es später erneut.</value></data>
+  <data name="Sync_LocalAuth_EmailNotVerified" xml:space="preserve"><value>Bitte bestätige deine E-Mail vor der Anmeldung</value></data>
+  <data name="Sync_Or" xml:space="preserve"><value>oder</value></data>
+  <data name="Sync_WaitingForSignIn" xml:space="preserve"><value>Warte auf Anmeldung...</value></data>
+  <data name="Sync_Account" xml:space="preserve"><value>Konto</value></data>
+  <data name="Sync_SignedInAs" xml:space="preserve"><value>Angemeldet als </value></data>
+  <data name="Sync_Provider" xml:space="preserve"><value>Anbieter: </value></data>
+  <data name="Sync_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <!-- Dialogs -->
+  <data name="Dialog_Optimizing_Title" xml:space="preserve"><value>Optimierung</value></data>
+  <data name="Dialog_Optimizing_Processing" xml:space="preserve"><value>Verarbeitung...</value></data>
+  <data name="Dialog_Recording_Title" xml:space="preserve"><value>Aufnahme</value></data>
+  <data name="Dialog_Recording_StatusText" xml:space="preserve"><value>Aufnahme läuft...</value></data>
+  <data name="Dialog_Transcribing_Title" xml:space="preserve"><value>Transkription</value></data>
+  <data name="Dialog_Transcribing_Message" xml:space="preserve"><value>Audio wird transkribiert...</value></data>
+  <data name="Dialog_HotkeyCapture_Title" xml:space="preserve"><value>Tastenkürzel erfassen</value></data>
+  <data name="Dialog_HotkeyCapture_Instruction" xml:space="preserve"><value>Drücke die gewünschte Tastenkombination (z.B. Strg+Alt+P)</value></data>
+  <data name="Dialog_HotkeyCapture_Hint" xml:space="preserve"><value>Drücke eine Taste, um das Kürzel zu erfassen</value></data>
+  <data name="Dialog_SessionDetail_Title" xml:space="preserve"><value>Sitzungsdetails</value></data>
+  <data name="Dialog_SessionDetail_Metadata" xml:space="preserve"><value>Metadaten</value></data>
+  <data name="Dialog_SessionDetail_Created" xml:space="preserve"><value>Erstellt:</value></data>
+  <data name="Dialog_SessionDetail_Template" xml:space="preserve"><value>Vorlage:</value></data>
+  <data name="Dialog_SessionDetail_Provider" xml:space="preserve"><value>Anbieter:</value></data>
+  <data name="Dialog_SessionDetail_ProcessingTime" xml:space="preserve"><value>Verarbeitungszeit:</value></data>
+  <data name="Dialog_SessionDetail_CopyOriginal" xml:space="preserve"><value>Original kopieren</value></data>
+  <data name="Dialog_SessionDetail_CopyOptimized" xml:space="preserve"><value>Optimiert kopieren</value></data>
+  <data name="Dialog_SessionDetail_OriginalText" xml:space="preserve"><value>Originaltext</value></data>
+  <data name="Dialog_SessionDetail_OptimizedText" xml:space="preserve"><value>Optimierter Text</value></data>
+  <data name="Dialog_ProviderEdit_Title" xml:space="preserve"><value>Anbieter bearbeiten</value></data>
+  <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Name *</value></data>
+  <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Anbietertyp *</value></data>
+  <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Endpunkt *</value></data>
+  <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>API-Schlüssel</value></data>
+  <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Modellname</value></data>
+  <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure-Bereitstellungsname</value></data>
+  <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Modelle abrufen</value></data>
+  <data name="Dialog_ProviderEdit_MaxCharacters" xml:space="preserve"><value>Max. Zeichen</value></data>
+  <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Zeitlimit (Sekunden)</value></data>
+  <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Vorlage bearbeiten</value></data>
+  <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Vorlagenname *</value></data>
+  <data name="Dialog_TemplateEdit_StyleDescription" xml:space="preserve"><value>Stilbeschreibung *</value></data>
+  <data name="Dialog_TemplateEdit_StyleHint" xml:space="preserve"><value>Beschreibe den Ton, Stil und die Struktur für diese Vorlage</value></data>
+  <data name="Dialog_TemplateEdit_GeneratePrompt" xml:space="preserve"><value>Prompt generieren</value></data>
+  <data name="Dialog_TemplateEdit_Generating" xml:space="preserve"><value>Wird generiert...</value></data>
+  <data name="Dialog_TemplateEdit_GeneratedPrompt" xml:space="preserve"><value>Generierter Prompt</value></data>
+  <data name="Dialog_TemplateEdit_PromptEditHint" xml:space="preserve"><value>Du kannst den generierten Prompt manuell bearbeiten</value></data>
+  <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Modell wird heruntergeladen</value></data>
+  <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Whisper-Modell wird heruntergeladen...</value></data>
+  <!-- Voice Mode -->
+  <data name="VoiceMode_Done" xml:space="preserve"><value>Fertig</value></data>
+  <data name="VoiceMode_Stop" xml:space="preserve"><value>Stopp</value></data>
+  <data name="VoiceMode_End" xml:space="preserve"><value>Beenden</value></data>
+  <!-- Wizard -->
+  <data name="Wizard_WindowTitle" xml:space="preserve"><value>Willkommen bei Pia</value></data>
+  <data name="Wizard_Skip" xml:space="preserve"><value>Überspringen</value></data>
+  <data name="Wizard_Back" xml:space="preserve"><value>Zurück</value></data>
+  <data name="Wizard_Welcome_Title" xml:space="preserve"><value>Triff Pia</value></data>
+  <data name="Wizard_Welcome_Subtitle" xml:space="preserve"><value>Dein persönlicher intelligenter Assistent</value></data>
+  <data name="Wizard_Welcome_Description" xml:space="preserve"><value>Pia ist ein KI-gestützter Desktop-Assistent, der dir hilft, Texte zu optimieren, mit einem intelligenten Assistenten zu chatten und tiefgehende Recherchen durchzuführen. Pia lernt aus deinen Interaktionen durch sein leistungsfähiges Gedächtnissystem und ist immer nur ein Tastenkürzel entfernt.</value></data>
+  <data name="Wizard_Welcome_Feature_AiPowered" xml:space="preserve"><value>KI-gestützt</value></data>
+  <data name="Wizard_Welcome_Feature_Memory" xml:space="preserve"><value>Leistungsfähiges Gedächtnis</value></data>
+  <data name="Wizard_Welcome_Feature_Hotkey" xml:space="preserve"><value>Per Tastenkürzel aktiviert</value></data>
+  <data name="Wizard_Modes_Title" xml:space="preserve"><value>Drei Wege, wie Pia helfen kann</value></data>
+  <data name="Wizard_Modes_Subtitle" xml:space="preserve"><value>Jeder Modus ist für einen anderen Arbeitsablauf konzipiert</value></data>
+  <data name="Wizard_Modes_OptimizeTitle" xml:space="preserve"><value>Optimieren</value></data>
+  <data name="Wizard_Modes_OptimizeDesc" xml:space="preserve"><value>Verwandle deinen Text für jeden Zweck. Wähle eine Vorlage und lass Pia dein Schreiben verbessern.</value></data>
+  <data name="Wizard_Modes_OptimizeHotkey" xml:space="preserve"><value>Strg+Alt+P</value></data>
+  <data name="Wizard_Modes_OptimizeExample" xml:space="preserve"><value>z.B. "Mach diese E-Mail professioneller"</value></data>
+  <data name="Wizard_Modes_AssistantTitle" xml:space="preserve"><value>Assistent</value></data>
+  <data name="Wizard_Modes_AssistantDesc" xml:space="preserve"><value>Chatte mit einer KI, die sich deine Vorlieben merkt und Werkzeuge wie Gedächtnis und Erinnerungen nutzt.</value></data>
+  <data name="Wizard_Modes_NotConfigured" xml:space="preserve"><value>Nicht konfiguriert</value></data>
+  <data name="Wizard_Modes_SetHotkeyHint" xml:space="preserve"><value>Tastenkürzel in den Einstellungen festlegen</value></data>
+  <data name="Wizard_Modes_ResearchTitle" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Wizard_Modes_ResearchDesc" xml:space="preserve"><value>Führe tiefgehende Analysen zu jedem Thema durch. Pia sammelt und synthetisiert Informationen für umfassende Ergebnisse.</value></data>
+  <data name="Wizard_Profile_Title" xml:space="preserve"><value>Erzähle Pia von dir</value></data>
+  <data name="Wizard_Profile_Subtitle" xml:space="preserve"><value>Alle Felder sind optional. Dies hilft Pia, dein Erlebnis zu personalisieren.</value></data>
+  <data name="Wizard_Profile_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Wizard_Profile_NamePlaceholder" xml:space="preserve"><value>Dein vollständiger Name</value></data>
+  <data name="Wizard_Profile_VoiceTooltip" xml:space="preserve"><value>Mit Stimme aufnehmen</value></data>
+  <data name="Wizard_Profile_Nickname" xml:space="preserve"><value>Spitzname</value></data>
+  <data name="Wizard_Profile_NicknamePlaceholder" xml:space="preserve"><value>Wie soll Pia dich nennen?</value></data>
+  <data name="Wizard_Profile_Location" xml:space="preserve"><value>Standort</value></data>
+  <data name="Wizard_Profile_LocationPlaceholder" xml:space="preserve"><value>Stadt, Land</value></data>
+  <data name="Wizard_Profile_OperatingMode" xml:space="preserve"><value>Betriebsmodus</value></data>
+  <data name="Wizard_Profile_OperatingModeHint" xml:space="preserve"><value>Dies passt Pias Standardton und Formalität an</value></data>
+  <data name="Wizard_Profile_Personal" xml:space="preserve"><value>Persönlich</value></data>
+  <data name="Wizard_Profile_PersonalDesc" xml:space="preserve"><value>Lässiger, freundlicher Ton</value></data>
+  <data name="Wizard_Profile_Business" xml:space="preserve"><value>Geschäftlich</value></data>
+  <data name="Wizard_Profile_BusinessDesc" xml:space="preserve"><value>Professioneller, formeller Ton</value></data>
+  <data name="Wizard_Ready_Title" xml:space="preserve"><value>Alles bereit!</value></data>
+  <data name="Wizard_Ready_Subtitle" xml:space="preserve"><value>Hier ist eine Zusammenfassung und einige Tipps zum Einstieg</value></data>
+  <data name="Wizard_Ready_YourProfile" xml:space="preserve"><value>Dein Profil</value></data>
+  <data name="Wizard_Ready_NameLabel" xml:space="preserve"><value>Name: </value></data>
+  <data name="Wizard_Ready_NicknameLabel" xml:space="preserve"><value>Spitzname: </value></data>
+  <data name="Wizard_Ready_LocationLabel" xml:space="preserve"><value>Standort: </value></data>
+  <data name="Wizard_Ready_ModeLabel" xml:space="preserve"><value>Modus: </value></data>
+  <data name="Wizard_Ready_TipsTitle" xml:space="preserve"><value>Schnellstart-Tipps</value></data>
+  <data name="Wizard_Ready_Tip1" xml:space="preserve"><value>Drücke Strg+Alt+P, um Text von überall zu optimieren</value></data>
+  <data name="Wizard_Ready_Tip2" xml:space="preserve"><value>Öffne den Assistenten aus dem Infobereich für KI-Chat</value></data>
+  <data name="Wizard_Ready_Tip3" xml:space="preserve"><value>Nutze den Recherchemodus für tiefgehende Analysen</value></data>
+  <data name="Wizard_Ready_Tip4" xml:space="preserve"><value>Das Gedächtnis lernt im Laufe der Zeit aus deinen Interaktionen</value></data>
+  <data name="Wizard_Ready_Tip5" xml:space="preserve"><value>Konfiguriere KI-Anbieter und Tastenkürzel in den Einstellungen</value></data>
+  <!-- Wizard: Account Setup Step -->
+  <data name="Wizard_Account_Title" xml:space="preserve"><value>Mit Pia Cloud verbinden</value></data>
+  <data name="Wizard_Account_Subtitle" xml:space="preserve"><value>Melde dich an, um Cloud-Sync, Pia Cloud KI und Ende-zu-Ende-Verschlüsselung freizuschalten</value></data>
+  <data name="Wizard_Account_Benefit_Sync" xml:space="preserve"><value>Synchronisiere Einstellungen und Erinnerungen über Geräte hinweg</value></data>
+  <data name="Wizard_Account_Benefit_CloudAi" xml:space="preserve"><value>Zugang zu Pia Cloud KI — kein API-Schlüssel erforderlich</value></data>
+  <data name="Wizard_Account_Benefit_E2ee" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung schützt deine Daten</value></data>
+  <data name="Wizard_Account_WaitingForSignIn" xml:space="preserve"><value>Warte auf Anmeldung...</value></data>
+  <data name="Wizard_Account_SkipNote" xml:space="preserve"><value>Du kannst dies auch später in den Einstellungen einrichten</value></data>
+  <!-- Wizard: Provider Setup Step -->
+  <data name="Wizard_Provider_Title" xml:space="preserve"><value>KI-Anbieter einrichten</value></data>
+  <data name="Wizard_Provider_Subtitle" xml:space="preserve"><value>Verbinde deinen eigenen KI-Anbieter mit Pia</value></data>
+  <data name="Wizard_Provider_Type" xml:space="preserve"><value>Anbietertyp</value></data>
+  <data name="Wizard_Provider_Endpoint" xml:space="preserve"><value>Endpunkt</value></data>
+  <data name="Wizard_Provider_ApiKey" xml:space="preserve"><value>API-Schlüssel</value></data>
+  <data name="Wizard_Provider_ModelName" xml:space="preserve"><value>Modellname</value></data>
+  <data name="Wizard_Provider_FetchModels" xml:space="preserve"><value>Verfügbare Modelle abrufen</value></data>
+  <data name="Wizard_Provider_AzureDeployment" xml:space="preserve"><value>Azure-Bereitstellungsname</value></data>
+  <data name="Wizard_Provider_TestConnection" xml:space="preserve"><value>Verbindung testen</value></data>
+  <data name="Wizard_Provider_Testing" xml:space="preserve"><value>Verbindung wird getestet...</value></data>
+  <data name="Wizard_Provider_TestSuccess" xml:space="preserve"><value>Verbindung erfolgreich!</value></data>
+  <!-- Wizard: Ready Step Additions -->
+  <data name="Wizard_Ready_AccountTitle" xml:space="preserve"><value>Konto</value></data>
+  <data name="Wizard_Ready_ProviderTitle" xml:space="preserve"><value>KI-Anbieter</value></data>
+  <data name="Wizard_Ready_CloudSyncTip" xml:space="preserve"><value>Cloud-Sync ist aktiv — deine Daten werden automatisch synchronisiert</value></data>
+  <!-- Setup Required Overlay -->
+  <data name="Setup_Overlay_Title" xml:space="preserve"><value>Einrichtung erforderlich</value></data>
+  <data name="Setup_Overlay_Description" xml:space="preserve"><value>Um diese Funktion zu nutzen, melde dich bei Pia Cloud an oder konfiguriere einen KI-Anbieter.</value></data>
+  <data name="Setup_Overlay_OpenSettings" xml:space="preserve"><value>Einstellungen öffnen</value></data>
+  <data name="Setup_Overlay_RunWizard" xml:space="preserve"><value>Einrichtungsassistent starten</value></data>
+  <!-- Reset App Data -->
+  <data name="Settings_ResetAppData" xml:space="preserve"><value>Anwendung zurücksetzen</value></data>
+  <data name="Settings_ResetAppData_Description" xml:space="preserve"><value>Alle lokalen Daten (Einstellungen, Anbieter, Verlauf, Erinnerungen) löschen und Pia neu starten. Dies kann nicht rückgängig gemacht werden.</value></data>
+  <data name="Settings_ResetAppData_Button" xml:space="preserve"><value>Zurücksetzen &amp; Neustart</value></data>
+  <data name="Settings_ResetAppData_Confirm_Title" xml:space="preserve"><value>Anwendung zurücksetzen?</value></data>
+  <data name="Settings_ResetAppData_Confirm_Message" xml:space="preserve"><value>Alle lokalen Daten werden dauerhaft gelöscht, einschließlich Einstellungen, Anbieter, Verlauf und Erinnerungen. Pia wird nach dem Zurücksetzen neu gestartet. Bist du sicher?</value></data>
+  <!-- Action Cards -->
+  <data name="ActionCard_Accept" xml:space="preserve"><value>Akzeptieren</value></data>
+  <data name="ActionCard_Decline" xml:space="preserve"><value>Ablehnen</value></data>
+  <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
+  <data name="ActionCard_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
+  <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>
+  <data name="ActionCard_Category_Todo" xml:space="preserve"><value>Aufgabe</value></data>
+  <data name="ActionCard_Category_Reminder" xml:space="preserve"><value>Erinnerung</value></data>
+  <data name="ActionCard_Action_Create" xml:space="preserve"><value>Erstellen</value></data>
+  <data name="ActionCard_Action_Update" xml:space="preserve"><value>Aktualisieren</value></data>
+  <data name="ActionCard_Action_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="ActionCard_Action_Complete" xml:space="preserve"><value>Abschließen</value></data>
+  <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Erledigt</value></data>
+  <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Abgelehnt</value></data>
+  <!-- Enum Display Names -->
+  <data name="Enum_CopyToClipboard" xml:space="preserve"><value>In Zwischenablage kopieren</value></data>
+  <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Tippen</value></data>
+  <data name="Enum_PasteToPreviousWindow" xml:space="preserve"><value>In vorheriges Fenster einfügen</value></data>
+  <data name="Enum_WhisperTiny" xml:space="preserve"><value>Tiny</value></data>
+  <data name="Enum_WhisperBase" xml:space="preserve"><value>Base</value></data>
+  <data name="Enum_WhisperSmall" xml:space="preserve"><value>Small</value></data>
+  <data name="Enum_WhisperMedium" xml:space="preserve"><value>Medium</value></data>
+  <data name="Enum_WhisperLarge" xml:space="preserve"><value>Large</value></data>
+  <data name="Enum_SpeechAuto" xml:space="preserve"><value>Automatisch</value></data>
+  <data name="Enum_SpeechEN" xml:space="preserve"><value>Englisch</value></data>
+  <data name="Enum_SpeechDE" xml:space="preserve"><value>Deutsch</value></data>
+  <data name="Enum_SpeechFR" xml:space="preserve"><value>Französisch</value></data>
+  <data name="Enum_LangEN" xml:space="preserve"><value>English</value></data>
+  <data name="Enum_LangDE" xml:space="preserve"><value>Deutsch</value></data>
+  <data name="Enum_LangFR" xml:space="preserve"><value>Français</value></data>
+</root>

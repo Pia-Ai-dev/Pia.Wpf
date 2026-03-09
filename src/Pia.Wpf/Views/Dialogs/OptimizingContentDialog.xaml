@@ -1,0 +1,28 @@
+<ui:ContentDialog x:Class="Pia.Views.Dialogs.OptimizingContentDialog"
+                  xmlns:local="clr-namespace:Pia.Views.Dialogs"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                  xmlns:loc="clr-namespace:Pia.Localization"
+                  Title="{loc:Str Dialog_Optimizing_Title}"
+                  CloseButtonText="{loc:Str Common_Cancel}">
+
+  <ui:ContentDialog.Resources>
+    <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
+           TargetType="{x:Type local:OptimizingContentDialog}" />
+  </ui:ContentDialog.Resources>
+
+  <StackPanel Width="300" HorizontalAlignment="Center">
+    <ui:ProgressRing IsIndeterminate="True"
+                     Width="60"
+                     Height="60"
+                     HorizontalAlignment="Center"
+                     Margin="0,10,0,20" />
+    <TextBlock x:Name="MessageTextBlock"
+               Text="{loc:Str Dialog_Optimizing_Processing}"
+               FontSize="14"
+               HorizontalAlignment="Center"
+               TextAlignment="Center"
+               Margin="0,0,0,10" />
+  </StackPanel>
+</ui:ContentDialog>

@@ -1,0 +1,296 @@
+<ui:FluentWindow x:Class="Pia.Views.FirstRunWizardWindow"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                xmlns:steps="clr-namespace:Pia.Views.WizardSteps"
+                xmlns:vm="clr-namespace:Pia.ViewModels"
+                xmlns:loc="clr-namespace:Pia.Localization"
+                mc:Ignorable="d"
+                Title="{loc:Str Wizard_WindowTitle}"
+                Icon="pack://application:,,,/Resources/Icons/Pia.ico"
+                Height="650"
+                Width="800"
+                ResizeMode="NoResize"
+                WindowBackdropType="Mica"
+                ExtendsContentIntoTitleBar="True"
+                WindowCornerPreference="Round"
+                WindowStartupLocation="CenterScreen">
+
+  <Window.InputBindings>
+    <KeyBinding Key="Return" Command="{Binding NextOrFinishCommand}" />
+    <KeyBinding Key="Escape" Command="{Binding SkipCommand}" />
+    <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding BackCommand}" />
+    <KeyBinding Key="Right" Modifiers="Alt" Command="{Binding NextOrFinishCommand}" />
+  </Window.InputBindings>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- TitleBar -->
+    <ui:TitleBar x:Name="TitleBar"
+                 Title="{loc:Str Wizard_WindowTitle}"
+                 Grid.Row="0"
+                 ShowMaximize="False"
+                 ShowMinimize="False">
+      <ui:TitleBar.Icon>
+        <ui:ImageIcon Source="pack://application:,,,/Resources/Icons/Pia.ico" />
+      </ui:TitleBar.Icon>
+    </ui:TitleBar>
+
+    <!-- Progress Dots -->
+    <Grid Grid.Row="1" HorizontalAlignment="Center" Margin="0,8,0,0">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <StackPanel.Resources>
+          <Style x:Key="DotStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Margin" Value="8,0" />
+            <Setter Property="Fill" Value="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+          </Style>
+        </StackPanel.Resources>
+
+        <!-- Dot 0: Welcome -->
+        <Ellipse>
+          <Ellipse.Style>
+            <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentStep}" Value="0">
+                  <Setter Property="Width" Value="12" />
+                  <Setter Property="Height" Value="12" />
+                  <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+
+        <Rectangle Width="32" Height="2" VerticalAlignment="Center"
+                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+
+        <!-- Dot 1: Account Setup -->
+        <Ellipse>
+          <Ellipse.Style>
+            <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentStep}" Value="1">
+                  <Setter Property="Width" Value="12" />
+                  <Setter Property="Height" Value="12" />
+                  <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+
+        <!-- Dot 2 + connectors: Provider Setup (hidden when logged in) -->
+        <StackPanel Orientation="Horizontal"
+                    Visibility="{Binding IsLoggedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+          <Rectangle Width="32" Height="2" VerticalAlignment="Center"
+                     Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+          <Ellipse>
+            <Ellipse.Style>
+              <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CurrentStep}" Value="2">
+                    <Setter Property="Width" Value="12" />
+                    <Setter Property="Height" Value="12" />
+                    <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Ellipse.Style>
+          </Ellipse>
+        </StackPanel>
+
+        <Rectangle Width="32" Height="2" VerticalAlignment="Center"
+                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+
+        <!-- Dot 3: Modes Overview -->
+        <Ellipse>
+          <Ellipse.Style>
+            <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentStep}" Value="3">
+                  <Setter Property="Width" Value="12" />
+                  <Setter Property="Height" Value="12" />
+                  <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+
+        <Rectangle Width="32" Height="2" VerticalAlignment="Center"
+                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+
+        <!-- Dot 4: User Profile -->
+        <Ellipse>
+          <Ellipse.Style>
+            <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentStep}" Value="4">
+                  <Setter Property="Width" Value="12" />
+                  <Setter Property="Height" Value="12" />
+                  <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+
+        <Rectangle Width="32" Height="2" VerticalAlignment="Center"
+                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+
+        <!-- Dot 5: Ready -->
+        <Ellipse>
+          <Ellipse.Style>
+            <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentStep}" Value="5">
+                  <Setter Property="Width" Value="12" />
+                  <Setter Property="Height" Value="12" />
+                  <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+      </StackPanel>
+    </Grid>
+
+    <!-- Step Content -->
+    <Grid Grid.Row="2" Margin="40,16,40,0">
+      <!-- Step 0: Welcome -->
+      <steps:WelcomeStep>
+        <steps:WelcomeStep.Style>
+          <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentStep}" Value="0">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </steps:WelcomeStep.Style>
+      </steps:WelcomeStep>
+
+      <!-- Step 1: Account Setup -->
+      <steps:AccountSetupStep>
+        <steps:AccountSetupStep.Style>
+          <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentStep}" Value="1">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </steps:AccountSetupStep.Style>
+      </steps:AccountSetupStep>
+
+      <!-- Step 2: Provider Setup -->
+      <steps:ProviderSetupStep>
+        <steps:ProviderSetupStep.Style>
+          <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentStep}" Value="2">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </steps:ProviderSetupStep.Style>
+      </steps:ProviderSetupStep>
+
+      <!-- Step 3: Modes Overview -->
+      <steps:ModesOverviewStep>
+        <steps:ModesOverviewStep.Style>
+          <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentStep}" Value="3">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </steps:ModesOverviewStep.Style>
+      </steps:ModesOverviewStep>
+
+      <!-- Step 4: User Profile -->
+      <steps:UserProfileStep>
+        <steps:UserProfileStep.Style>
+          <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentStep}" Value="4">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </steps:UserProfileStep.Style>
+      </steps:UserProfileStep>
+
+      <!-- Step 5: Ready -->
+      <steps:ReadyStep>
+        <steps:ReadyStep.Style>
+          <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentStep}" Value="5">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </steps:ReadyStep.Style>
+      </steps:ReadyStep>
+    </Grid>
+
+    <!-- Bottom Navigation Bar -->
+    <Border Grid.Row="3"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+            Padding="24,16">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Skip Button -->
+        <ui:Button Grid.Column="0"
+                   Content="{loc:Str Wizard_Skip}"
+                   Appearance="Transparent"
+                   Command="{Binding SkipCommand}" />
+
+        <!-- Back Button -->
+        <ui:Button Grid.Column="2"
+                   Content="{loc:Str Wizard_Back}"
+                   Appearance="Secondary"
+                   Margin="0,0,8,0"
+                   MinWidth="80"
+                   Command="{Binding BackCommand}"
+                   Visibility="{Binding IsFirstStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+
+        <!-- Next / Get Started Button -->
+        <ui:Button Grid.Column="3"
+                   Content="{Binding NextButtonText}"
+                   Appearance="Primary"
+                   MinWidth="120"
+                   Command="{Binding NextOrFinishCommand}" />
+      </Grid>
+    </Border>
+
+    <!-- Dialog & Snackbar Presenters -->
+    <ContentPresenter x:Name="RootContentDialogPresenter" Grid.Row="0" Grid.RowSpan="4" />
+    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" Grid.Row="0" Grid.RowSpan="4" />
+  </Grid>
+</ui:FluentWindow>

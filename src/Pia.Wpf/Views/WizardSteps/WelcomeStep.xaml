@@ -1,0 +1,104 @@
+<UserControl x:Class="Pia.Views.WizardSteps.WelcomeStep"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:converters="clr-namespace:Pia.Converters"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="720">
+  <UserControl.Resources>
+    <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
+  </UserControl.Resources>
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel HorizontalAlignment="Center"
+                MaxWidth="560"
+                Margin="0,40,0,20">
+
+      <!-- Language selector -->
+      <StackPanel Orientation="Horizontal"
+                  HorizontalAlignment="Center"
+                  Margin="0,0,0,16">
+        <ui:SymbolIcon Symbol="LocalLanguage24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}"/>
+        <ComboBox ItemsSource="{Binding UiLanguages}"
+                  SelectedItem="{Binding UiLanguage}"
+                  Width="160"
+                  VerticalAlignment="Center">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+
+      <!-- Persona Image -->
+      <Ellipse Width="96" Height="96"
+               HorizontalAlignment="Center"
+               Margin="0,0,0,24">
+        <Ellipse.Fill>
+          <ImageBrush ImageSource="pack://application:,,,/Resources/Images/Pia_Persona.png"
+                      Stretch="UniformToFill" />
+        </Ellipse.Fill>
+      </Ellipse>
+
+      <!-- Heading -->
+      <TextBlock Text="{loc:Str Wizard_Welcome_Title}"
+                 Style="{StaticResource H1TextStyle}"
+                 HorizontalAlignment="Center"
+                 Margin="0,0,0,8" />
+
+      <!-- Subtitle -->
+      <TextBlock Text="{loc:Str Wizard_Welcome_Subtitle}"
+                 Style="{StaticResource H3TextStyle}"
+                 HorizontalAlignment="Center"
+                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                 Margin="0,0,0,24" />
+
+      <!-- Description -->
+      <TextBlock Text="{loc:Str Wizard_Welcome_Description}"
+                 TextWrapping="Wrap"
+                 TextAlignment="Center"
+                 Style="{StaticResource BodyTextStyle}"
+                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                 Margin="0,0,0,32"
+                 LineHeight="22" />
+
+      <!-- Feature Pills -->
+      <StackPanel Orientation="Horizontal"
+                  HorizontalAlignment="Center">
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="16"
+                Padding="16,8"
+                Margin="4,0">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0" />
+            <TextBlock Text="{loc:Str Wizard_Welcome_Feature_AiPowered}" VerticalAlignment="Center" FontSize="13" />
+          </StackPanel>
+        </Border>
+
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="16"
+                Padding="16,8"
+                Margin="4,0">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="BrainCircuit24" FontSize="16" Margin="0,0,8,0" />
+            <TextBlock Text="{loc:Str Wizard_Welcome_Feature_Memory}" VerticalAlignment="Center" FontSize="13" />
+          </StackPanel>
+        </Border>
+
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="16"
+                Padding="16,8"
+                Margin="4,0">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Keyboard24" FontSize="16" Margin="0,0,8,0" />
+            <TextBlock Text="{loc:Str Wizard_Welcome_Feature_Hotkey}" VerticalAlignment="Center" FontSize="13" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

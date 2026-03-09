@@ -1,0 +1,108 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- MdXaml FlowDocument style for assistant messages.
+         MdXaml assigns Tag values to elements: Heading1-4, CodeBlock, CodeSpan, Blockquote, etc.
+         We use tag-based triggers on Paragraph/Section to style each element type. -->
+    <Style x:Key="PiaMarkdownStyle" TargetType="FlowDocument">
+        <Setter Property="FontFamily" Value="{StaticResource DefaultFontFamily}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="PagePadding" Value="0" />
+
+        <Style.Resources>
+            <!-- Paragraph: base style + heading/code-block triggers -->
+            <Style TargetType="Paragraph">
+                <Setter Property="Margin" Value="0,0,0,8" />
+                <Style.Triggers>
+                    <Trigger Property="Tag" Value="Heading1">
+                        <Setter Property="FontSize" Value="{StaticResource FontSizeH2}" />
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                        <Setter Property="Margin" Value="0,8,0,4" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </Trigger>
+                    <Trigger Property="Tag" Value="Heading2">
+                        <Setter Property="FontSize" Value="{StaticResource FontSizeH3}" />
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                        <Setter Property="Margin" Value="0,6,0,4" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </Trigger>
+                    <Trigger Property="Tag" Value="Heading3">
+                        <Setter Property="FontSize" Value="{StaticResource FontSizeH4}" />
+                        <Setter Property="FontWeight" Value="Medium" />
+                        <Setter Property="Margin" Value="0,4,0,4" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </Trigger>
+                    <Trigger Property="Tag" Value="Heading4">
+                        <Setter Property="FontSize" Value="{StaticResource FontSizeH5}" />
+                        <Setter Property="FontWeight" Value="Medium" />
+                        <Setter Property="Margin" Value="0,4,0,4" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </Trigger>
+                    <Trigger Property="Tag" Value="CodeBlock">
+                        <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New, monospace" />
+                        <Setter Property="FontSize" Value="13" />
+                        <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                        <Setter Property="Padding" Value="12,8" />
+                        <Setter Property="Margin" Value="0,4,0,8" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Section: blockquote trigger -->
+            <Style TargetType="Section">
+                <Setter Property="Margin" Value="0,0,0,4" />
+                <Style.Triggers>
+                    <Trigger Property="Tag" Value="Blockquote">
+                        <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                        <Setter Property="BorderThickness" Value="3,0,0,0" />
+                        <Setter Property="Padding" Value="12,4,0,4" />
+                        <Setter Property="Margin" Value="0,4,0,8" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Lists -->
+            <Style TargetType="List">
+                <Setter Property="Margin" Value="0,0,0,8" />
+                <Setter Property="Padding" Value="24,0,0,0" />
+            </Style>
+
+            <Style TargetType="ListItem">
+                <Setter Property="Margin" Value="0,0,0,2" />
+            </Style>
+
+            <!-- Hyperlinks -->
+            <Style TargetType="Hyperlink">
+                <Setter Property="Foreground" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                <Setter Property="TextDecorations" Value="{x:Null}" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="TextDecorations" Value="Underline" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Tables -->
+            <Style TargetType="Table">
+                <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CellSpacing" Value="0" />
+                <Setter Property="Margin" Value="0,0,0,8" />
+            </Style>
+
+            <Style TargetType="TableCell">
+                <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,1,1" />
+                <Setter Property="Padding" Value="6,4" />
+            </Style>
+
+            <Style TargetType="TableRowGroup">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            </Style>
+        </Style.Resources>
+    </Style>
+
+</ResourceDictionary>

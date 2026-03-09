@@ -1,0 +1,25 @@
+<UserControl x:Class="Pia.Views.Dialogs.Overlay.RecordingOverlayPanel"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+  xmlns:controls="clr-namespace:Pia.Views.Controls"
+  xmlns:loc="clr-namespace:Pia.Localization"
+  mc:Ignorable="d">
+
+  <StackPanel HorizontalAlignment="Center">
+    <TextBlock Text="{loc:Str Dialog_Recording_Title}"
+               FontSize="18"
+               FontWeight="SemiBold"
+               HorizontalAlignment="Center"
+               Margin="0,0,0,20" />
+    <controls:RecordingIndicator x:Name="RecordingIndicatorControl"
+                                 Width="300"
+                                 HorizontalAlignment="Center"
+                                 ShowDuration="True"
+                                 IsTimerRunning="True"
+                                 StatusText="{loc:Str Dialog_Recording_StatusText}"
+                                 EllipseSize="80" />
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,48 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Google "G" logo (4-color) -->
+  <DrawingImage x:Key="GoogleIcon">
+    <DrawingImage.Drawing>
+      <DrawingGroup>
+        <!-- Blue (right side + horizontal bar) -->
+        <GeometryDrawing Brush="#4285F4">
+          <GeometryDrawing.Geometry>
+            <PathGeometry Figures="M 23.52 12.273 C 23.52 11.422 23.444 10.604 23.301 9.818 L 12 9.818 L 12 14.46 L 18.458 14.46 C 18.18 15.96 17.335 17.231 16.065 18.1 L 16.065 21.1 L 19.96 21.1 C 22.211 19.013 23.52 15.927 23.52 12.273 Z"/>
+          </GeometryDrawing.Geometry>
+        </GeometryDrawing>
+        <!-- Red (top-right arc) -->
+        <GeometryDrawing Brush="#EA4335">
+          <GeometryDrawing.Geometry>
+            <PathGeometry Figures="M 12 24 C 15.24 24 17.956 22.925 19.96 21.1 L 16.065 18.1 C 14.985 18.82 13.62 19.25 12 19.25 C 8.874 19.25 6.229 17.14 5.286 14.3 L 1.276 14.3 L 1.276 17.38 C 3.271 21.3 7.309 24 12 24 Z"/>
+          </GeometryDrawing.Geometry>
+        </GeometryDrawing>
+        <!-- Yellow (bottom-left arc) -->
+        <GeometryDrawing Brush="#FBBC05">
+          <GeometryDrawing.Geometry>
+            <PathGeometry Figures="M 5.286 14.3 C 5.046 13.58 4.909 12.81 4.909 12 C 4.909 11.19 5.046 10.42 5.286 9.7 L 5.286 6.62 L 1.276 6.62 C 0.463 8.24 0 10.06 0 12 C 0 13.94 0.463 15.76 1.276 17.38 L 5.286 14.3 Z"/>
+          </GeometryDrawing.Geometry>
+        </GeometryDrawing>
+        <!-- Green (bottom-right arc) -->
+        <GeometryDrawing Brush="#34A853">
+          <GeometryDrawing.Geometry>
+            <PathGeometry Figures="M 12 4.75 C 13.77 4.75 15.355 5.365 16.604 6.549 L 20.022 3.131 C 17.948 1.188 15.235 0 12 0 C 7.309 0 3.271 2.7 1.276 6.62 L 5.286 9.7 C 6.229 6.86 8.874 4.75 12 4.75 Z"/>
+          </GeometryDrawing.Geometry>
+        </GeometryDrawing>
+      </DrawingGroup>
+    </DrawingImage.Drawing>
+  </DrawingImage>
+
+  <!-- Microsoft 4-square logo -->
+  <DrawingImage x:Key="MicrosoftIcon">
+    <DrawingImage.Drawing>
+      <DrawingGroup>
+        <GeometryDrawing Brush="#F25022" Geometry="M 1,1 L 11.5,1 L 11.5,11.5 L 1,11.5 Z"/>
+        <GeometryDrawing Brush="#7FBA00" Geometry="M 12.5,1 L 23,1 L 23,11.5 L 12.5,11.5 Z"/>
+        <GeometryDrawing Brush="#00A4EF" Geometry="M 1,12.5 L 11.5,12.5 L 11.5,23 L 1,23 Z"/>
+        <GeometryDrawing Brush="#FFB900" Geometry="M 12.5,12.5 L 23,12.5 L 23,23 L 12.5,23 Z"/>
+      </DrawingGroup>
+    </DrawingImage.Drawing>
+  </DrawingImage>
+
+</ResourceDictionary>

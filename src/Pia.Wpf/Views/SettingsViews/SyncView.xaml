@@ -1,0 +1,195 @@
+<UserControl x:Class="Pia.Views.SettingsViews.SyncView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <ScrollViewer Margin="16">
+    <StackPanel MaxWidth="600" HorizontalAlignment="Left">
+      <TextBlock Text="{loc:Str Sync_Title}"
+                 FontSize="20"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,8"/>
+      <TextBlock Text="{loc:Str Sync_Description}"
+                 Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,0,0,24"/>
+
+      <!-- Server URL (dev mode only) -->
+      <StackPanel Margin="0,0,0,24"
+                  Visibility="{Binding IsDevMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Sync_ServerUrl}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <ui:TextBox PlaceholderText="{loc:Str Sync_ServerUrl_Placeholder}"
+                    Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    IsEnabled="{Binding IsSyncLoggedIn, Converter={StaticResource InverseBooleanConverter}}"
+                    Width="400"/>
+        <TextBlock Text="{loc:Str Sync_ServerUrl_Description}"
+                   Opacity="0.7"
+                   FontSize="12"
+                   Margin="0,4,0,0"/>
+        <CheckBox Content="{loc:Str Sync_TrustSelfSignedCertificates}"
+                  IsChecked="{Binding TrustSelfSignedCertificates}"
+                  Margin="0,8,0,0"/>
+        <TextBlock Text="{loc:Str Sync_TrustSelfSignedCertificates_Description}"
+                   Opacity="0.7"
+                   FontSize="12"
+                   Margin="0,4,0,0"
+                   TextWrapping="Wrap"/>
+      </StackPanel>
+
+      <!-- Login (shown when not logged in) -->
+      <StackPanel Margin="0,0,0,24"
+                  Visibility="{Binding IsSyncLoggedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Sync_SignIn}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+
+        <!-- Local auth form -->
+        <StackPanel Margin="0,0,0,12" Width="400" HorizontalAlignment="Left">
+          <TextBlock Text="{loc:Str Sync_LocalAuth_Email}"
+                     FontSize="12"
+                     Opacity="0.7"
+                     Margin="0,0,0,4"/>
+          <ui:TextBox PlaceholderText="email@example.com"
+                      Text="{Binding LoginEmail, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                      Margin="0,0,0,8"/>
+          <TextBlock Text="{loc:Str Sync_LocalAuth_Password}"
+                     FontSize="12"
+                     Opacity="0.7"
+                     Margin="0,0,0,4"/>
+          <PasswordBox x:Name="LoginPasswordBox"
+                       PasswordChanged="LoginPasswordBox_PasswordChanged"
+                       IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                       Margin="0,0,0,4"/>
+          <TextBlock Text="{Binding LoginErrorMessage}"
+                     Foreground="#f87171"
+                     FontSize="12"
+                     Margin="0,0,0,8"
+                     Visibility="{Binding LoginErrorMessage, Converter={StaticResource NullToVisibilityConverter}}"
+                     TextWrapping="Wrap"/>
+          <ui:Button Content="{loc:Str Sync_LocalAuth_SignIn}"
+                     Command="{Binding LoginWithPasswordCommand}"
+                     Appearance="Primary"
+                     IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                     Margin="0,0,0,8"/>
+          <StackPanel Orientation="Horizontal">
+            <ui:HyperlinkButton Content="{loc:Str Sync_LocalAuth_CreateAccount}"
+                                Command="{Binding OpenRegistrationPageCommand}"
+                                Margin="0,0,12,0"/>
+            <ui:HyperlinkButton Content="{loc:Str Sync_LocalAuth_ForgotPassword}"
+                                Command="{Binding OpenForgotPasswordCommand}"/>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Divider -->
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,8,0,12"
+                    Width="400"
+                    HorizontalAlignment="Left">
+          <Border Height="1" Background="#2a2d3a" Width="170" VerticalAlignment="Center"/>
+          <TextBlock Text="{loc:Str Sync_Or}"
+                     Opacity="0.5"
+                     FontSize="12"
+                     Margin="12,0"/>
+          <Border Height="1" Background="#2a2d3a" Width="170" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- OAuth buttons -->
+        <StackPanel Orientation="Horizontal">
+          <ui:Button Command="{Binding LoginWithGoogleCommand}"
+                     IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                     Margin="0,0,8,0">
+            <StackPanel Orientation="Horizontal">
+              <Image Source="{StaticResource GoogleIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
+              <TextBlock Text="{loc:Str Sync_SignInWithGoogle}"/>
+            </StackPanel>
+          </ui:Button>
+          <ui:Button Command="{Binding LoginWithMicrosoftCommand}"
+                     IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}">
+            <StackPanel Orientation="Horizontal">
+              <Image Source="{StaticResource MicrosoftIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
+              <TextBlock Text="{loc:Str Sync_SignInWithMicrosoft}"/>
+            </StackPanel>
+          </ui:Button>
+        </StackPanel>
+        <TextBlock Text="{loc:Str Sync_SignIn_Description}"
+                   Opacity="0.7"
+                   FontSize="12"
+                   Margin="0,8,0,0"/>
+      </StackPanel>
+
+      <!-- Loading indicator -->
+      <StackPanel Orientation="Horizontal"
+                  Margin="0,0,0,24"
+                  Visibility="{Binding IsSyncLoggingIn, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ui:ProgressRing IsIndeterminate="True"
+                         Width="20" Height="20"
+                         Margin="0,0,8,0"/>
+        <TextBlock Text="{loc:Str Sync_WaitingForSignIn}"
+                   VerticalAlignment="Center"
+                   Opacity="0.7"/>
+      </StackPanel>
+
+      <!-- Logged in state -->
+      <StackPanel Margin="0,0,0,24"
+                  Visibility="{Binding IsSyncLoggedIn, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Sync_Account}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <ui:Card Padding="16" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock FontSize="14">
+              <Run Text="{loc:Str Sync_SignedInAs}"/>
+              <Run Text="{Binding SyncUserDisplayName, Mode=OneWay}" FontWeight="Bold"/>
+            </TextBlock>
+            <TextBlock Text="{Binding SyncUserEmail, Mode=OneWay}"
+                       Opacity="0.7"
+                       FontSize="12"
+                       Margin="0,4,0,0"/>
+            <TextBlock Opacity="0.5"
+                       FontSize="12"
+                       Margin="0,4,0,0">
+              <Run Text="{loc:Str Sync_Provider}"/>
+              <Run Text="{Binding SyncProvider, Mode=OneWay}"/>
+            </TextBlock>
+          </StackPanel>
+        </ui:Card>
+        <ui:Button Content="{loc:Str Sync_SignOut}"
+                   Command="{Binding SyncLogoutCommand}"
+                   Appearance="Danger"/>
+      </StackPanel>
+
+      <!-- E2EE Section (visible when logged in) -->
+      <StackPanel Margin="0,0,0,24"
+                  Visibility="{Binding IsSyncLoggedIn, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock Text="End-to-End Encryption"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,8"/>
+        <TextBlock TextWrapping="Wrap"
+                   Opacity="0.7"
+                   FontSize="12"
+                   Margin="0,0,0,12"
+                   Text="When enabled, all synced data is encrypted on your device before being sent to the server. A new encryption key and recovery code is generated each time encryption is enabled. Toggling this setting triggers a full sync."/>
+        <ui:ToggleSwitch IsChecked="{Binding IsE2EEEnabled, Mode=TwoWay}"
+                         IsEnabled="{Binding CanToggleE2EE}"
+                         Content="Enable End-to-End Encryption"
+                         Margin="0,0,0,8"/>
+        <!-- Progress indicator while toggling E2EE -->
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,0,0,8"
+                    Visibility="{Binding CanToggleE2EE, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+          <ui:ProgressRing IsIndeterminate="True"
+                           Width="16" Height="16"
+                           Margin="0,0,8,0"/>
+          <TextBlock Text="Updating encryption and syncing data..."
+                     VerticalAlignment="Center"
+                     Opacity="0.7"
+                     FontSize="12"/>
+        </StackPanel>
+        <TextBlock Visibility="{Binding IsE2EEEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   Opacity="0.7"
+                   FontSize="12"
+                   Margin="0,0,0,8">
+          <Run Text="Device fingerprint: "/>
+          <Run Text="{Binding DeviceFingerprint, Mode=OneWay}" FontFamily="Consolas"/>
+        </TextBlock>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

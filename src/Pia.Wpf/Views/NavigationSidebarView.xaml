@@ -1,0 +1,188 @@
+<UserControl x:Class="Pia.Views.NavigationSidebarView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:models="clr-namespace:Pia.Models"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             mc:Ignorable="d">
+
+  <ui:NavigationView x:Name="SidebarNavigationView"
+                     PaneDisplayMode="Left"
+                     IsPaneOpen="False"
+                     Transition="FadeInWithSlide">
+
+    <ui:NavigationView.MenuItems>
+      <!-- Optimize mode items -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Optimize}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Optimize"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Optimize}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Sparkle24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
+      <!-- Assistant mode items -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Assistant}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Assistant"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Assistant}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Chat24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
+      <!-- Research mode items -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Research}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Research"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Research}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Research}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Search24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
+      <!-- History (Optimize only) -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_History}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="History"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=History}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Clock24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
+      <!-- Memory (Assistant only) -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Memory}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Memory"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Memory}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="BrainCircuit24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
+      <!-- Reminders (Assistant only) -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Reminders}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Reminders"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Reminders}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Alert24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
+      <!-- Todo (all modes) -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Todo}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Todo">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="TaskListSquareLtr24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
+      <!-- Settings (all modes) -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Settings}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Settings"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Settings}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Settings24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+    </ui:NavigationView.MenuItems>
+
+    <ui:NavigationView.FooterMenuItems>
+      <ui:NavigationViewItem Content="{loc:Str Nav_NewWindow}"
+                             x:Name="NewWindowNavItem"
+                             ToolTip="{loc:Str Nav_NewWindow_Tooltip}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="WindowNew20" />
+        </ui:NavigationViewItem.Icon>
+        <ui:NavigationViewItem.ContextMenu>
+          <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+            <MenuItem Header="{loc:Str Nav_Optimize}"
+                      Command="{Binding OpenNewWindowCommand}"
+                      CommandParameter="{x:Static models:WindowMode.Optimize}">
+              <MenuItem.Icon>
+                <ui:SymbolIcon Symbol="Sparkle24" />
+              </MenuItem.Icon>
+              <MenuItem.Style>
+                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Mode}" Value="{x:Static models:WindowMode.Optimize}">
+                      <Setter Property="IsEnabled" Value="False" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="{loc:Str Nav_Assistant}"
+                      Command="{Binding OpenNewWindowCommand}"
+                      CommandParameter="{x:Static models:WindowMode.Assistant}">
+              <MenuItem.Icon>
+                <ui:SymbolIcon Symbol="Chat24" />
+              </MenuItem.Icon>
+              <MenuItem.Style>
+                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Mode}" Value="{x:Static models:WindowMode.Assistant}">
+                      <Setter Property="IsEnabled" Value="False" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="{loc:Str Nav_Research}"
+                      Command="{Binding OpenNewWindowCommand}"
+                      CommandParameter="{x:Static models:WindowMode.Research}">
+              <MenuItem.Icon>
+                <ui:SymbolIcon Symbol="Search24" />
+              </MenuItem.Icon>
+              <MenuItem.Style>
+                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Mode}" Value="{x:Static models:WindowMode.Research}">
+                      <Setter Property="IsEnabled" Value="False" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </MenuItem.Style>
+            </MenuItem>
+          </ContextMenu>
+        </ui:NavigationViewItem.ContextMenu>
+      </ui:NavigationViewItem>
+      <ui:NavigationViewItem Content="{Binding Theme}"
+                             Command="{Binding ToggleThemeCommand}"
+                             Tag="ThemeToggle">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon>
+            <ui:SymbolIcon.Style>
+              <Style TargetType="ui:SymbolIcon">
+                <Setter Property="Symbol" Value="Desktop24" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding Theme}" Value="Dark">
+                    <Setter Property="Symbol"
+                            Value="WeatherMoon24" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding Theme}" Value="Light">
+                    <Setter Property="Symbol"
+                            Value="WeatherSunny24" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:SymbolIcon.Style>
+          </ui:SymbolIcon>
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+    </ui:NavigationView.FooterMenuItems>
+  </ui:NavigationView>
+</UserControl>

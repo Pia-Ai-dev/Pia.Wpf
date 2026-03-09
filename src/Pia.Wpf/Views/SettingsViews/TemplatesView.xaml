@@ -1,0 +1,115 @@
+<UserControl x:Class="Pia.Views.SettingsViews.TemplatesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <Grid Margin="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Left">
+      <ui:Button Command="{Binding AddTemplateCommand}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,8,0"/>
+          <TextBlock Text="{loc:Str Templates_Add}"/>
+        </StackPanel>
+      </ui:Button>
+    </StackPanel>
+
+    <TextBlock Grid.Row="1" 
+               Text="{loc:Str Templates_Description}"
+               Opacity="0.7" 
+               Margin="0,16,0,16"/>
+
+    <ScrollViewer Grid.Row="2">
+      <ItemsControl ItemsSource="{Binding Templates}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Background="{DynamicResource SecondaryBackgroundBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="16"
+                    Margin="0,0,0,8">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                  <TextBlock FontSize="16" FontWeight="SemiBold" Text="{Binding Name}"/>
+                  <TextBlock Text="{Binding Description}" 
+                             Opacity="0.7" 
+                             Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <ui:Badge Content="{loc:Str Templates_BuiltIn}"
+                              Visibility="{Binding IsBuiltIn, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              Appearance="Caution"
+                              Margin="0,0,8,0"/>
+                    <ui:Badge Content="{loc:Str Templates_Default}"
+                               Appearance="Primary">
+                      <ui:Badge.Visibility>
+                        <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                          <Binding Path="Id"/>
+                          <Binding Path="DataContext.DefaultTemplateId" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                        </MultiBinding>
+                      </ui:Badge.Visibility>
+                    </ui:Badge>
+                  </StackPanel>
+                </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                      <ui:Button Command="{Binding DataContext.ViewTemplatePromptCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Appearance="Caution"
+                                Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                      <ui:SymbolIcon Symbol="Code24" FontSize="16" Margin="0,0,8,0"/>
+                          <TextBlock Text="{loc:Str Templates_ViewPrompt}"/>
+                        </StackPanel>
+                      </ui:Button>
+                      <ui:Button Command="{Binding DataContext.SetDefaultTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                      <ui:SymbolIcon Symbol="Star24" FontSize="16" Margin="0,0,8,0" Filled="True"/>
+                          <TextBlock Text="{loc:Str Templates_SetDefault}"/>
+                        </StackPanel>
+                      </ui:Button>
+                      <ui:Button Command="{Binding DataContext.EditTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Appearance="Secondary"
+                                Width="40"
+                                Height="40"
+                                Margin="0,0,8,0"
+                                IsEnabled="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanConverter}}">
+                    <ui:SymbolIcon Symbol="Edit24" FontSize="16"/>
+                        <ui:Button.ToolTip>
+                          <ToolTip Content="{loc:Str Templates_Edit}"/>
+                        </ui:Button.ToolTip>
+                      </ui:Button>
+                      <ui:Button Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Appearance="Danger"
+                                Width="40"
+                                Height="40"
+                                IsEnabled="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanConverter}}">
+                    <ui:SymbolIcon Symbol="Delete24" FontSize="16"/>
+                        <ui:Button.ToolTip>
+                          <ToolTip Content="{loc:Str Templates_Delete}"/>
+                        </ui:Button.ToolTip>
+                      </ui:Button>
+                    </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

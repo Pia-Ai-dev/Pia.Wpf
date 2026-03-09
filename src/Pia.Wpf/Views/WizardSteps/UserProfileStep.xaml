@@ -1,0 +1,190 @@
+<UserControl x:Class="Pia.Views.WizardSteps.UserProfileStep"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="720">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel HorizontalAlignment="Center"
+                MaxWidth="480"
+                Margin="0,20,0,20">
+
+      <!-- Heading -->
+      <TextBlock Text="{loc:Str Wizard_Profile_Title}"
+                 Style="{StaticResource H2TextStyle}"
+                 HorizontalAlignment="Center"
+                 Margin="0,0,0,8" />
+
+      <TextBlock Text="{loc:Str Wizard_Profile_Subtitle}"
+                 Style="{StaticResource BodyTextStyle}"
+                 HorizontalAlignment="Center"
+                 TextAlignment="Center"
+                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                 Margin="0,0,0,32" />
+
+      <!-- Name Field -->
+      <TextBlock Text="{loc:Str Wizard_Profile_Name}"
+                 FontSize="13"
+                 FontWeight="Medium"
+                 Margin="0,0,0,6" />
+      <Grid Margin="0,0,0,16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ui:TextBox Grid.Column="0"
+                    PlaceholderText="{loc:Str Wizard_Profile_NamePlaceholder}"
+                    Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
+        <ui:Button Grid.Column="1"
+                   Margin="8,0,0,0"
+                   Appearance="Secondary"
+                   ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
+                   Command="{Binding VoiceInputNameCommand}"
+                   VerticalAlignment="Stretch">
+          <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
+        </ui:Button>
+      </Grid>
+
+      <!-- Nickname Field -->
+      <TextBlock Text="{loc:Str Wizard_Profile_Nickname}"
+                 FontSize="13"
+                 FontWeight="Medium"
+                 Margin="0,0,0,6" />
+      <Grid Margin="0,0,0,16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ui:TextBox Grid.Column="0"
+                    PlaceholderText="{loc:Str Wizard_Profile_NicknamePlaceholder}"
+                    Text="{Binding Nickname, UpdateSourceTrigger=PropertyChanged}" />
+        <ui:Button Grid.Column="1"
+                   Margin="8,0,0,0"
+                   Appearance="Secondary"
+                   ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
+                   Command="{Binding VoiceInputNicknameCommand}"
+                   VerticalAlignment="Stretch">
+          <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
+        </ui:Button>
+      </Grid>
+
+      <!-- Location Field -->
+      <TextBlock Text="{loc:Str Wizard_Profile_Location}"
+                 FontSize="13"
+                 FontWeight="Medium"
+                 Margin="0,0,0,6" />
+      <Grid Margin="0,0,0,24">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ui:TextBox Grid.Column="0"
+                    PlaceholderText="{loc:Str Wizard_Profile_LocationPlaceholder}"
+                    Text="{Binding Location, UpdateSourceTrigger=PropertyChanged}" />
+        <ui:Button Grid.Column="1"
+                   Margin="8,0,0,0"
+                   Appearance="Secondary"
+                   ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
+                   Command="{Binding VoiceInputLocationCommand}"
+                   VerticalAlignment="Stretch">
+          <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
+        </ui:Button>
+      </Grid>
+
+      <!-- Operating Mode -->
+      <TextBlock Text="{loc:Str Wizard_Profile_OperatingMode}"
+                 FontSize="13"
+                 FontWeight="Medium"
+                 Margin="0,0,0,6" />
+      <TextBlock Text="{loc:Str Wizard_Profile_OperatingModeHint}"
+                 FontSize="12"
+                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                 Margin="0,0,0,12" />
+
+      <UniformGrid Columns="2" Margin="0,0,0,0">
+        <!-- Personal Card -->
+        <ui:Button Margin="0,0,6,0"
+                   Appearance="Transparent"
+                   HorizontalAlignment="Stretch"
+                   HorizontalContentAlignment="Stretch"
+                   Padding="0"
+                   Command="{Binding SetOperatingModeCommand}"
+                   CommandParameter="Personal">
+          <Border Padding="16"
+                  CornerRadius="8">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="2" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding OperatingMode}" Value="Personal">
+                    <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <StackPanel HorizontalAlignment="Center">
+              <ui:SymbolIcon Symbol="Person24"
+                             FontSize="24"
+                             HorizontalAlignment="Center"
+                             Margin="0,0,0,8" />
+              <TextBlock Text="{loc:Str Wizard_Profile_Personal}"
+                         FontSize="14"
+                         FontWeight="SemiBold"
+                         HorizontalAlignment="Center"
+                         Margin="0,0,0,4" />
+              <TextBlock Text="{loc:Str Wizard_Profile_PersonalDesc}"
+                         FontSize="12"
+                         HorizontalAlignment="Center"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+            </StackPanel>
+          </Border>
+        </ui:Button>
+
+        <!-- Business Card -->
+        <ui:Button Margin="6,0,0,0"
+                   Appearance="Transparent"
+                   HorizontalAlignment="Stretch"
+                   HorizontalContentAlignment="Stretch"
+                   Padding="0"
+                   Command="{Binding SetOperatingModeCommand}"
+                   CommandParameter="Business">
+          <Border Padding="16"
+                  CornerRadius="8">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="2" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding OperatingMode}" Value="Business">
+                    <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <StackPanel HorizontalAlignment="Center">
+              <ui:SymbolIcon Symbol="Briefcase24"
+                             FontSize="24"
+                             HorizontalAlignment="Center"
+                             Margin="0,0,0,8" />
+              <TextBlock Text="{loc:Str Wizard_Profile_Business}"
+                         FontSize="14"
+                         FontWeight="SemiBold"
+                         HorizontalAlignment="Center"
+                         Margin="0,0,0,4" />
+              <TextBlock Text="{loc:Str Wizard_Profile_BusinessDesc}"
+                         FontSize="12"
+                         HorizontalAlignment="Center"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+            </StackPanel>
+          </Border>
+        </ui:Button>
+      </UniformGrid>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

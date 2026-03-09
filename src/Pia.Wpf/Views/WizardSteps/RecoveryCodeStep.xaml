@@ -1,0 +1,65 @@
+<UserControl x:Class="Pia.Views.WizardSteps.RecoveryCodeStep"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel HorizontalAlignment="Center"
+                MaxWidth="560"
+                Margin="0,40,0,20">
+
+      <!-- Icon -->
+      <ui:SymbolIcon Symbol="ShieldKeyhole24"
+                     FontSize="64"
+                     HorizontalAlignment="Center"
+                     Margin="0,0,0,24"
+                     Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
+
+      <!-- Heading -->
+      <TextBlock Text="Save Your Recovery Code"
+                 Style="{StaticResource H1TextStyle}"
+                 HorizontalAlignment="Center"
+                 Margin="0,0,0,8" />
+
+      <!-- Description -->
+      <TextBlock TextWrapping="Wrap"
+                 TextAlignment="Center"
+                 Opacity="0.8"
+                 Margin="0,0,0,24"
+                 LineHeight="22"
+                 Text="This recovery code is the ONLY way to access your encrypted data if you lose all your devices. Write it down and store it somewhere safe." />
+
+      <!-- Recovery Code Display -->
+      <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+              CornerRadius="8"
+              Padding="24"
+              Margin="0,0,0,16">
+        <TextBlock Text="{Binding RecoveryCode}"
+                   FontFamily="Consolas"
+                   FontSize="20"
+                   FontWeight="Bold"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap" />
+      </Border>
+
+      <!-- Copy Button -->
+      <ui:Button Content="Copy to Clipboard"
+                 Icon="{ui:SymbolIcon Copy24}"
+                 Command="{Binding CopyRecoveryCodeCommand}"
+                 HorizontalAlignment="Center"
+                 Margin="0,0,0,24" />
+
+      <!-- Warning -->
+      <ui:InfoBar IsOpen="True"
+                  IsClosable="False"
+                  Severity="Warning"
+                  Margin="0,0,0,24"
+                  Title="Important"
+                  Message="If you lose this code and all your devices, your encrypted data cannot be recovered. The server cannot decrypt your data." />
+
+      <!-- Confirmation -->
+      <CheckBox Content="I have saved this recovery code in a safe place"
+                IsChecked="{Binding HasConfirmedRecoveryCode, Mode=TwoWay}"
+                HorizontalAlignment="Center" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

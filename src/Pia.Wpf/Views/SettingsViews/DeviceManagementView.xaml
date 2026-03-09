@@ -1,0 +1,87 @@
+<UserControl x:Class="Pia.Views.SettingsViews.DeviceManagementView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:converters="clr-namespace:Pia.Converters"
+             Loaded="OnLoaded">
+  <UserControl.Resources>
+    <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+  </UserControl.Resources>
+  <Grid Margin="24">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- Header -->
+    <StackPanel Grid.Row="0">
+      <TextBlock Text="Device Management"
+                 FontSize="20"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4"/>
+      <TextBlock Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,0,0,0">
+        <Run Text="This device: "/>
+        <Run Text="{Binding CurrentFingerprint, Mode=OneWay}" FontFamily="Consolas"/>
+      </TextBlock>
+    </StackPanel>
+
+    <!-- Refresh button -->
+    <ui:Button Grid.Row="1"
+               Content="Refresh"
+               Icon="{ui:SymbolIcon ArrowSync24}"
+               Command="{Binding LoadDevicesCommand}"
+               Margin="0,16,0,16"/>
+
+    <!-- Loading indicator -->
+    <ui:ProgressRing Grid.Row="2"
+                     IsIndeterminate="True"
+                     Width="32" Height="32"
+                     Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Top"
+                     Margin="0,16,0,0"/>
+
+    <!-- Device list -->
+    <ListView Grid.Row="2"
+              ItemsSource="{Binding Devices}"
+              Margin="0,0,0,0">
+      <ListView.ItemTemplate>
+        <DataTemplate>
+          <Grid Margin="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+              <TextBlock FontWeight="SemiBold">
+                <Run Text="{Binding DeviceName, Mode=OneWay}"/>
+                <Run Text=" — "/>
+                <Run Text="{Binding Status, Mode=OneWay}"/>
+              </TextBlock>
+              <TextBlock Opacity="0.6" FontFamily="Consolas" FontSize="11">
+                <Run Text="Fingerprint: "/>
+                <Run Text="{Binding Fingerprint, Mode=OneWay}"/>
+              </TextBlock>
+              <TextBlock Opacity="0.5" FontSize="11">
+                <Run Text="Last seen: "/>
+                <Run Text="{Binding LastSeenAt, StringFormat='{}{0:g}', Mode=OneWay}"/>
+              </TextBlock>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+              <ui:Button Content="Revoke"
+                         Appearance="Danger"
+                         Command="{Binding DataContext.RevokeDeviceCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                         CommandParameter="{Binding}"
+                         Margin="4,0"/>
+            </StackPanel>
+          </Grid>
+        </DataTemplate>
+      </ListView.ItemTemplate>
+    </ListView>
+  </Grid>
+</UserControl>

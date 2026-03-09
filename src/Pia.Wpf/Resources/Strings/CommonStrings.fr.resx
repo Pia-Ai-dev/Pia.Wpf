@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>1.3</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="Common_Cancel" xml:space="preserve"><value>Annuler</value></data>
+  <data name="Common_Save" xml:space="preserve"><value>Enregistrer</value></data>
+  <data name="Common_Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="Common_Edit" xml:space="preserve"><value>Modifier</value></data>
+  <data name="Common_Close" xml:space="preserve"><value>Fermer</value></data>
+  <data name="Common_Yes" xml:space="preserve"><value>Oui</value></data>
+  <data name="Common_No" xml:space="preserve"><value>Non</value></data>
+  <data name="Common_OK" xml:space="preserve"><value>OK</value></data>
+  <data name="Common_Error" xml:space="preserve"><value>Erreur</value></data>
+  <data name="Common_Success" xml:space="preserve"><value>Succès</value></data>
+  <data name="Common_Warning" xml:space="preserve"><value>Avertissement</value></data>
+  <data name="Common_Copy" xml:space="preserve"><value>Copier</value></data>
+  <data name="Common_Refresh" xml:space="preserve"><value>Actualiser</value></data>
+  <data name="Common_Add" xml:space="preserve"><value>Ajouter</value></data>
+  <data name="Common_Back" xml:space="preserve"><value>Retour</value></data>
+  <data name="Common_Next" xml:space="preserve"><value>Suivant</value></data>
+  <data name="Common_Skip" xml:space="preserve"><value>Passer</value></data>
+  <data name="Common_Record" xml:space="preserve"><value>Enregistrer</value></data>
+  <data name="Common_Send" xml:space="preserve"><value>Envoyer</value></data>
+  <data name="Common_Change" xml:space="preserve"><value>Modifier</value></data>
+  <data name="Common_View" xml:space="preserve"><value>Afficher</value></data>
+  <data name="Common_Done" xml:space="preserve"><value>Terminé</value></data>
+  <data name="Common_Stop" xml:space="preserve"><value>Arrêter</value></data>
+  <data name="Common_End" xml:space="preserve"><value>Fin</value></data>
+  <data name="Common_Finish" xml:space="preserve"><value>Terminer</value></data>
+  <data name="Common_Dismiss" xml:space="preserve"><value>Ignorer</value></data>
+</root>
