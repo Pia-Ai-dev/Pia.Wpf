@@ -205,3 +205,4 @@ appsettings.local.json
 # AI folder
 .opencode
 
+/.claude/settings.local.json
