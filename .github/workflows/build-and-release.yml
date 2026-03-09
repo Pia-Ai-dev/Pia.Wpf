@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     branches:
-      - master
+      - main
   workflow_dispatch:
     inputs:
       branch:
@@ -43,7 +43,7 @@ jobs:
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "title=Pia v${VERSION} (${DATE})" >> "$GITHUB_OUTPUT"
           BRANCH=${GITHUB_REF_NAME}
-          if [ "$BRANCH" = "master" ]; then
+          if [ "$BRANCH" = "main" ]; then
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
