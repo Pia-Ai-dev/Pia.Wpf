@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Controls;
 using Pia.ViewModels.Models;
 using Wpf.Ui.Controls;
 
@@ -9,8 +8,8 @@ public partial class TemplateEditContentDialog : ContentDialog
 {
     public TemplateEditModel EditModel { get; }
 
-    public TemplateEditContentDialog(ContentPresenter contentPresenter, TemplateEditModel template)
-        : base(contentPresenter)
+    public TemplateEditContentDialog(ContentDialogHost dialogHost, TemplateEditModel template)
+        : base(dialogHost)
     {
         EditModel = template;
         DataContext = EditModel;

@@ -15,7 +15,7 @@ namespace Pia.ViewModels;
 
 public partial class AssistantViewModel : ObservableObject, INavigationAware, IDisposable
 {
-    private static string BuildSystemPrompt() => $"""
+    private static string BuildSystemPrompt(bool tokenizationEnabled) => $"""
         You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
         The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
 
@@ -42,6 +42,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge
           the decline and ask the user what they would like to do differently or if they want to adjust
           the details.
+        {(tokenizationEnabled ? """
+
+        When memory or contact data is returned, personal details (names, emails, phones, addresses,
+        dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens
+        naturally in your responses — they will be resolved back to real values before the user sees
+        your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were
+        the person's actual name.
+        """ : "")}
         """;
 
     private static string BuildSystemPromptNoTools() => $"""
@@ -64,8 +72,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ILoggerFactory _loggerFactory;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
+    private readonly ITokenMapService _tokenMapService;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
+    private bool _tokenizationEnabled;
 
     [ObservableProperty]
     private string _inputText = string.Empty;
@@ -145,7 +155,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ITranscriptionService transcriptionService,
         ILoggerFactory loggerFactory,
         Wpf.Ui.ISnackbarService snackbarService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        ITokenMapService tokenMapService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -162,6 +173,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _loggerFactory = loggerFactory;
         _snackbarService = snackbarService;
         _localizationService = localizationService;
+        _tokenMapService = tokenMapService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -235,7 +247,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             if (supportsTools)
             {
-                fullSystemPrompt = BuildSystemPrompt();
+                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled);
                 tools = [.. _memoryToolHandler.GetTools(), .. _reminderToolHandler.GetTools(), .. _todoToolHandler.GetTools()];
             }
             else
@@ -253,6 +265,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             {
                 if (msg == assistantMessage)
                     continue;
+
                 chatMessages.Add(msg.ToChatMessage());
             }
 
@@ -266,6 +279,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             {
                 rawBuffer.Append(token);
                 var (visible, thinking) = ParseStreamedContent(rawBuffer.ToString());
+
                 assistantMessage.Content = visible;
                 if (!string.IsNullOrEmpty(thinking))
                     assistantMessage.ThinkingContent = thinking;
@@ -290,6 +304,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             IsStreaming = false;
             _streamingCts?.Dispose();
             _streamingCts = null;
+
+            // Final full-pass de-tokenization as safety net
+            if (_tokenizationEnabled && !string.IsNullOrEmpty(assistantMessage.Content))
+            {
+                assistantMessage.Content = _tokenMapService.Detokenize(assistantMessage.Content);
+            }
 
             if (IsTtsEnabled && !string.IsNullOrEmpty(assistantMessage.Content)
                 && !assistantMessage.Content.StartsWith("Error:"))
@@ -388,7 +408,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var (result, pendingAction) = await _memoryToolHandler.HandleToolCallAsync(toolCall);
 
-        // If it's a read-only operation (query_memory), return result directly
         if (result is not null)
             return result;
 
@@ -412,8 +431,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             {
                 var actionResult = await _memoryToolHandler.ExecutePendingActionAsync(pendingAction);
                 _snackbarService.Show(_localizationService["Msg_Assistant_MemoryUpdated"],
-                    pendingAction.Description,
+                    DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+
+                // Re-scan for new PII after memory write
+                if (_tokenizationEnabled)
+                {
+                    try { await _tokenMapService.InitializeAsync(); }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after memory write"); }
+                }
+
                 return actionResult;
             }
             else
@@ -429,7 +456,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         var (result, pendingAction) = await _reminderToolHandler.HandleToolCallAsync(toolCall);
 
-        // If it's a read-only operation (query_reminders), return result directly
         if (result is not null)
             return result;
 
@@ -453,7 +479,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             {
                 var actionResult = await _reminderToolHandler.ExecutePendingActionAsync(pendingAction);
                 _snackbarService.Show(_localizationService["Msg_Assistant_ReminderUpdated"],
-                    pendingAction.Description,
+                    DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
                 return actionResult;
             }
@@ -473,16 +499,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var card = new ActionCardInfo
         {
             Title = FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Memory),
-            Summary = pendingAction.Description,
+            Summary = DetokenizeForDisplay(pendingAction.Description),
             Category = ActionCardCategory.Memory,
             ToolName = pendingAction.ToolName,
             IsDestructive = isDelete,
             WarningText = isDelete ? _localizationService["Msg_Assistant_PermanentDeleteMemory"] : null,
             Details = pendingAction.NewValue is not null
-                ? new(JsonHelper.ParseToDetails(pendingAction.NewValue))
+                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.NewValue)))
                 : [],
             OldValueDetails = pendingAction.OldValue is not null
-                ? new(JsonHelper.ParseToDetails(pendingAction.OldValue))
+                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.OldValue)))
                 : [],
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Memory)),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Memory)),
@@ -519,7 +545,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             {
                 var actionResult = await _todoToolHandler.ExecutePendingActionAsync(pendingAction);
                 _snackbarService.Show(_localizationService["Msg_Assistant_TodoUpdated"],
-                    pendingAction.Description,
+                    DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
                 return actionResult;
             }
@@ -539,13 +565,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var card = new ActionCardInfo
         {
             Title = FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Todo),
-            Summary = pendingAction.Description,
+            Summary = DetokenizeForDisplay(pendingAction.Description),
             Category = ActionCardCategory.Todo,
             ToolName = pendingAction.ToolName,
             IsDestructive = isDelete,
             WarningText = isDelete ? _localizationService["Msg_Assistant_PermanentDeleteTodo"] : null,
             Details = pendingAction.Details is not null
-                ? new(JsonHelper.ParseKeyValueText(pendingAction.Details))
+                ? new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details)))
                 : [],
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Todo)),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Todo)),
@@ -561,13 +587,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var card = new ActionCardInfo
         {
             Title = FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Reminder),
-            Summary = pendingAction.Description,
+            Summary = DetokenizeForDisplay(pendingAction.Description),
             Category = ActionCardCategory.Reminder,
             ToolName = pendingAction.ToolName,
             IsDestructive = isDelete,
             WarningText = isDelete ? _localizationService["Msg_Assistant_PermanentDeleteReminder"] : null,
             Details = pendingAction.Details is not null
-                ? new(JsonHelper.ParseKeyValueText(pendingAction.Details))
+                ? new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details)))
                 : [],
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Reminder)),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Reminder)),
@@ -598,6 +624,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return $"{_localizationService[actionKey]} {_localizationService[categoryKey]}";
     }
 
+    private string DetokenizeForDisplay(string text) =>
+        _tokenizationEnabled ? _tokenMapService.Detokenize(text) : text;
+
+    private List<ActionCardDetail> DetokenizeDetails(List<ActionCardDetail> details)
+    {
+        if (!_tokenizationEnabled) return details;
+        return details.Select(d => new ActionCardDetail(d.Label, _tokenMapService.Detokenize(d.Value))).ToList();
+    }
+
     private void ExecuteCancelStreaming()
     {
         _streamingCts?.Cancel();
@@ -613,6 +648,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Messages.Clear();
         InputText = string.Empty;
         HasMessages = false;
+
+        if (_tokenizationEnabled)
+        {
+            _tokenMapService.Clear();
+            _ = Task.Run(async () =>
+            {
+                try { await _tokenMapService.InitializeAsync(); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after clear"); }
+            });
+        }
     }
 
     private static void CancelPendingActionCards(AssistantMessage? message)
@@ -678,6 +723,20 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                         _logger.LogError(ex, "Failed to initialize TTS on navigation");
                     }
                 });
+            }
+
+            // Initialize PII tokenization
+            _tokenizationEnabled = settings.Privacy.TokenizationEnabled;
+            if (_tokenizationEnabled)
+            {
+                try
+                {
+                    await _tokenMapService.InitializeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to initialize token map");
+                }
             }
         }
         catch (Exception ex)
@@ -818,7 +877,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         if (supportsTools)
         {
-            fullSystemPrompt = BuildSystemPrompt();
+            fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled);
             tools = [.. _memoryToolHandler.GetTools(), .. _reminderToolHandler.GetTools()];
         }
         else
@@ -878,13 +937,36 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return "Tool call handled.";
         }
 
+        if (toolCall.Name is "create_todo" or "query_todos" or "complete_todo" or "update_todo" or "delete_todo")
+        {
+            var (result, pendingAction) = await _todoToolHandler.HandleToolCallAsync(toolCall);
+            if (result is not null)
+                return result;
+
+            if (pendingAction is not null)
+                return await _todoToolHandler.ExecutePendingActionAsync(pendingAction);
+
+            return "Tool call handled.";
+        }
+
         var (memResult, memPending) = await _memoryToolHandler.HandleToolCallAsync(toolCall);
         if (memResult is not null)
             return memResult;
 
         // Auto-approve write operations in voice mode (no dialog)
         if (memPending is not null)
-            return await _memoryToolHandler.ExecutePendingActionAsync(memPending);
+        {
+            var actionResult = await _memoryToolHandler.ExecutePendingActionAsync(memPending);
+
+            // Re-scan for new PII after memory write
+            if (_tokenizationEnabled)
+            {
+                try { await _tokenMapService.InitializeAsync(); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after voice mode memory write"); }
+            }
+
+            return actionResult;
+        }
 
         return "Tool call handled.";
     }

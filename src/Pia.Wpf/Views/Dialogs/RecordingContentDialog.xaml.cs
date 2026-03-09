@@ -1,4 +1,3 @@
-using System.Windows.Controls;
 using Pia.Services.Interfaces;
 using Wpf.Ui.Controls;
 
@@ -9,9 +8,9 @@ public partial class RecordingContentDialog : ContentDialog
     private readonly IAudioRecordingService _audioRecordingService;
 
     public RecordingContentDialog(
-        ContentPresenter contentPresenter,
+        ContentDialogHost dialogHost,
         IAudioRecordingService audioRecordingService)
-        : base(contentPresenter)
+        : base(dialogHost)
     {
         _audioRecordingService = audioRecordingService;
         InitializeComponent();

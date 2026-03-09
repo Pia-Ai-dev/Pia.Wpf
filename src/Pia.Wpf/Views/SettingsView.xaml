@@ -32,6 +32,9 @@
       <TabItem Header="{loc:Str Settings_Tab_CloudSync}">
         <localSettings:SyncView/>
       </TabItem>
+      <TabItem Header="{loc:Str Settings_Tab_Privacy}">
+        <localSettings:PrivacyView/>
+      </TabItem>
     </TabControl>
   </Grid>
  </UserControl>

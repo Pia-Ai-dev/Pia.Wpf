@@ -34,7 +34,7 @@ public class DialogService : IDialogService
 
     public async Task<bool> ShowProviderEditDialogAsync(ProviderEditModel provider, IProviderService providerService)
     {
-        var dialogHost = _contentDialogService.GetDialogHost()
+        var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
         var dialog = new ProviderEditContentDialog(dialogHost, provider, providerService);
         var result = await dialog.ShowAsync();
@@ -43,7 +43,7 @@ public class DialogService : IDialogService
 
     public async Task<bool> ShowTemplateEditDialogAsync(TemplateEditModel template)
     {
-        var dialogHost = _contentDialogService.GetDialogHost()
+        var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
         var dialog = new TemplateEditContentDialog(dialogHost, template);
         var result = await dialog.ShowAsync();
@@ -52,7 +52,7 @@ public class DialogService : IDialogService
 
     public async Task ShowSessionDetailDialogAsync(OptimizationSession session)
     {
-        var dialogHost = _contentDialogService.GetDialogHost()
+        var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
         var dialog = new SessionDetailContentDialog(dialogHost, session, _outputService);
         await dialog.ShowAsync();
@@ -102,7 +102,7 @@ public class DialogService : IDialogService
         IProgress<ModelDownloadProgress> progress,
         CancellationToken cancellationToken)
     {
-        var dialogHost = _contentDialogService.GetDialogHost()
+        var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
         var dialog = new ModelDownloadContentDialog(dialogHost, modelName, progress);
         
@@ -137,7 +137,7 @@ public class DialogService : IDialogService
 
     public async Task<KeyboardShortcut?> ShowHotkeyCaptureDialogAsync()
     {
-        var dialogHost = _contentDialogService.GetDialogHost()
+        var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
         var dialog = new HotkeyCaptureContentDialog(dialogHost);
         var result = await dialog.ShowAsync();

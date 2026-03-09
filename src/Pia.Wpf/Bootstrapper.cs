@@ -108,8 +108,13 @@ public static class Bootstrapper
         services.AddScoped<ISnackbarService, SnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
 
-        // AI Client
-        services.AddTransient<IAiClientService, AiClientService>();
+        // AI Client (decorator applies PII tokenization transparently)
+        services.AddTransient<AiClientService>();
+        services.AddTransient<IAiClientService>(sp =>
+            new TokenizingAiClientService(
+                sp.GetRequiredService<AiClientService>(),
+                sp,
+                sp.GetRequiredService<ISettingsService>()));
 
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
@@ -132,6 +137,10 @@ public static class Bootstrapper
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
         services.AddSingleton<ITtsService, TtsService>();
+
+        // Privacy / PII tokenization
+        services.AddSingleton<IPiiDetector, StructuredPiiDetector>();
+        services.AddScoped<ITokenMapService, TokenMapService>();
 
         // E2EE services
         services.AddSingleton<ICryptoService, CryptoService>();

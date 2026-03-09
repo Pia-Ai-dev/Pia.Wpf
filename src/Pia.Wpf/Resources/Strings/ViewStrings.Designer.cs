@@ -61,6 +61,123 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Accept.
+        /// </summary>
+        public static string ActionCard_Accept {
+            get {
+                return ResourceManager.GetString("ActionCard_Accept", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Complete.
+        /// </summary>
+        public static string ActionCard_Action_Complete {
+            get {
+                return ResourceManager.GetString("ActionCard_Action_Complete", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Create.
+        /// </summary>
+        public static string ActionCard_Action_Create {
+            get {
+                return ResourceManager.GetString("ActionCard_Action_Create", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Delete.
+        /// </summary>
+        public static string ActionCard_Action_Delete {
+            get {
+                return ResourceManager.GetString("ActionCard_Action_Delete", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Update.
+        /// </summary>
+        public static string ActionCard_Action_Update {
+            get {
+                return ResourceManager.GetString("ActionCard_Action_Update", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Memory.
+        /// </summary>
+        public static string ActionCard_Category_Memory {
+            get {
+                return ResourceManager.GetString("ActionCard_Category_Memory", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Reminder.
+        /// </summary>
+        public static string ActionCard_Category_Reminder {
+            get {
+                return ResourceManager.GetString("ActionCard_Category_Reminder", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Todo.
+        /// </summary>
+        public static string ActionCard_Category_Todo {
+            get {
+                return ResourceManager.GetString("ActionCard_Category_Todo", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Current value:.
+        /// </summary>
+        public static string ActionCard_CurrentValue {
+            get {
+                return ResourceManager.GetString("ActionCard_CurrentValue", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Decline.
+        /// </summary>
+        public static string ActionCard_Decline {
+            get {
+                return ResourceManager.GetString("ActionCard_Decline", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to New value:.
+        /// </summary>
+        public static string ActionCard_NewValue {
+            get {
+                return ResourceManager.GetString("ActionCard_NewValue", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0} - Done.
+        /// </summary>
+        public static string ActionCard_Status_Accepted {
+            get {
+                return ResourceManager.GetString("ActionCard_Status_Accepted", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0} - Declined.
+        /// </summary>
+        public static string ActionCard_Status_Declined {
+            get {
+                return ResourceManager.GetString("ActionCard_Status_Declined", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Cancel.
         /// </summary>
         public static string Assistant_Cancel_Tooltip {
@@ -1987,6 +2104,141 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Add.
+        /// </summary>
+        public static string Settings_Privacy_AddKeyword {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_AddKeyword", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Address.
+        /// </summary>
+        public static string Settings_Privacy_Category_Address {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Category_Address", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Custom.
+        /// </summary>
+        public static string Settings_Privacy_Category_Custom {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Category_Custom", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Date.
+        /// </summary>
+        public static string Settings_Privacy_Category_Date {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Category_Date", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Email.
+        /// </summary>
+        public static string Settings_Privacy_Category_Email {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Category_Email", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Nickname.
+        /// </summary>
+        public static string Settings_Privacy_Category_Nickname {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Category_Nickname", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Person.
+        /// </summary>
+        public static string Settings_Privacy_Category_Person {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Category_Person", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Phone.
+        /// </summary>
+        public static string Settings_Privacy_Category_Phone {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Category_Phone", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Enter a keyword or phrase....
+        /// </summary>
+        public static string Settings_Privacy_KeywordPlaceholder {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_KeywordPlaceholder", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Private Keywords.
+        /// </summary>
+        public static string Settings_Privacy_Keywords {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Keywords", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Add custom words or phrases that should always be treated as private data and replaced with tokens..
+        /// </summary>
+        public static string Settings_Privacy_KeywordsDescription {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_KeywordsDescription", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to PII Tokenization.
+        /// </summary>
+        public static string Settings_Privacy_Tokenization {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_Tokenization", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to When enabled, names, emails, phone numbers, addresses, and dates are replaced with anonymous tokens before being sent to your AI provider. The AI never sees your real personal data..
+        /// </summary>
+        public static string Settings_Privacy_TokenizationDescription {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_TokenizationDescription", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Replace personal data with tokens before sending to AI.
+        /// </summary>
+        public static string Settings_Privacy_TokenizationEnabled {
+            get {
+                return ResourceManager.GetString("Settings_Privacy_TokenizationEnabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Privacy Settings.
+        /// </summary>
+        public static string Settings_PrivacyTitle {
+            get {
+                return ResourceManager.GetString("Settings_PrivacyTitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Reset Application.
         /// </summary>
         public static string Settings_ResetAppData {
@@ -2100,6 +2352,15 @@ namespace Pia.Resources.Strings {
         public static string Settings_Tab_General {
             get {
                 return ResourceManager.GetString("Settings_Tab_General", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Privacy.
+        /// </summary>
+        public static string Settings_Tab_Privacy {
+            get {
+                return ResourceManager.GetString("Settings_Tab_Privacy", resourceCulture);
             }
         }
         
@@ -3139,7 +3400,7 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to All fields are optional. This helps Pia personalize your experience..
+        ///   Looks up a localized string similar to All fields are optional. This information helps Pia protect your privacy — your name and location ensure personal details are never sent to AI providers..
         /// </summary>
         public static string Wizard_Profile_Subtitle {
             get {

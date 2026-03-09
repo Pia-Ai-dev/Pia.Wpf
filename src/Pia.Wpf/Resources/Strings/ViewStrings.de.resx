@@ -202,6 +202,22 @@
   <data name="Settings_Tab_General" xml:space="preserve"><value>Allgemein</value></data>
   <data name="Settings_Tab_TextToSpeech" xml:space="preserve"><value>Sprachausgabe</value></data>
   <data name="Settings_Tab_CloudSync" xml:space="preserve"><value>Cloud-Synchronisierung</value></data>
+  <data name="Settings_Tab_Privacy" xml:space="preserve"><value>Datenschutz</value></data>
+  <data name="Settings_PrivacyTitle" xml:space="preserve"><value>Datenschutz-Einstellungen</value></data>
+  <data name="Settings_Privacy_Tokenization" xml:space="preserve"><value>PII-Tokenisierung</value></data>
+  <data name="Settings_Privacy_TokenizationEnabled" xml:space="preserve"><value>Persönliche Daten durch Tokens ersetzen, bevor sie an die KI gesendet werden</value></data>
+  <data name="Settings_Privacy_TokenizationDescription" xml:space="preserve"><value>Wenn aktiviert, werden Namen, E-Mails, Telefonnummern, Adressen und Geburtsdaten durch anonyme Tokens ersetzt, bevor sie an Ihren KI-Anbieter gesendet werden. Die KI sieht nie Ihre echten persönlichen Daten.</value></data>
+  <data name="Settings_Privacy_Keywords" xml:space="preserve"><value>Private Schlüsselwörter</value></data>
+  <data name="Settings_Privacy_KeywordsDescription" xml:space="preserve"><value>Fügen Sie eigene Wörter oder Phrasen hinzu, die immer als private Daten behandelt und durch Tokens ersetzt werden sollen.</value></data>
+  <data name="Settings_Privacy_KeywordPlaceholder" xml:space="preserve"><value>Schlüsselwort oder Phrase eingeben...</value></data>
+  <data name="Settings_Privacy_AddKeyword" xml:space="preserve"><value>Hinzufügen</value></data>
+  <data name="Settings_Privacy_Category_Person" xml:space="preserve"><value>Person</value></data>
+  <data name="Settings_Privacy_Category_Nickname" xml:space="preserve"><value>Spitzname</value></data>
+  <data name="Settings_Privacy_Category_Email" xml:space="preserve"><value>E-Mail</value></data>
+  <data name="Settings_Privacy_Category_Phone" xml:space="preserve"><value>Telefon</value></data>
+  <data name="Settings_Privacy_Category_Address" xml:space="preserve"><value>Adresse</value></data>
+  <data name="Settings_Privacy_Category_Date" xml:space="preserve"><value>Datum</value></data>
+  <data name="Settings_Privacy_Category_Custom" xml:space="preserve"><value>Benutzerdefiniert</value></data>
   <data name="Settings_UiLanguage" xml:space="preserve"><value>Oberflächensprache</value></data>
   <data name="Settings_UiLanguage_Description" xml:space="preserve"><value>Sprache für Menüs, Schaltflächen und Beschriftungen</value></data>
   <data name="Settings_GeneralTitle" xml:space="preserve"><value>Allgemeine Einstellungen</value></data>
@@ -356,7 +372,7 @@
   <data name="Wizard_Modes_ResearchTitle" xml:space="preserve"><value>Recherche</value></data>
   <data name="Wizard_Modes_ResearchDesc" xml:space="preserve"><value>Führe tiefgehende Analysen zu jedem Thema durch. Pia sammelt und synthetisiert Informationen für umfassende Ergebnisse.</value></data>
   <data name="Wizard_Profile_Title" xml:space="preserve"><value>Erzähle Pia von dir</value></data>
-  <data name="Wizard_Profile_Subtitle" xml:space="preserve"><value>Alle Felder sind optional. Dies hilft Pia, dein Erlebnis zu personalisieren.</value></data>
+  <data name="Wizard_Profile_Subtitle" xml:space="preserve"><value>Alle Felder sind optional. Diese Informationen helfen Pia, deine Privatsphäre zu schützen — dein Name und Standort stellen sicher, dass persönliche Daten nie an KI-Anbieter gesendet werden.</value></data>
   <data name="Wizard_Profile_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Wizard_Profile_NamePlaceholder" xml:space="preserve"><value>Dein vollständiger Name</value></data>
   <data name="Wizard_Profile_VoiceTooltip" xml:space="preserve"><value>Mit Stimme aufnehmen</value></data>

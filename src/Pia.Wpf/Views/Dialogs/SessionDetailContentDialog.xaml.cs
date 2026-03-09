@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pia.Models;
@@ -11,10 +10,10 @@ namespace Pia.Views.Dialogs;
 public partial class SessionDetailContentDialog : ContentDialog
 {
     public SessionDetailContentDialog(
-        ContentPresenter contentPresenter,
+        ContentDialogHost dialogHost,
         OptimizationSession session,
         IOutputService outputService)
-        : base(contentPresenter)
+        : base(dialogHost)
     {
         DataContext = new SessionDetailDialogViewModel(session, outputService);
         InitializeComponent();

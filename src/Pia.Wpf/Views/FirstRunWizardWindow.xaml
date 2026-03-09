@@ -290,7 +290,7 @@
     </Border>
 
     <!-- Dialog & Snackbar Presenters -->
-    <ContentPresenter x:Name="RootContentDialogPresenter" Grid.Row="0" Grid.RowSpan="4" />
+    <ui:ContentDialogHost x:Name="RootContentDialogPresenter" Grid.Row="0" Grid.RowSpan="4" />
     <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" Grid.Row="0" Grid.RowSpan="4" />
   </Grid>
 </ui:FluentWindow>

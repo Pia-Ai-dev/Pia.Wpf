@@ -1,4 +1,3 @@
-using System.Windows.Controls;
 using Pia.Services.Interfaces;
 using Wpf.Ui.Controls;
 
@@ -9,10 +8,10 @@ public partial class ModelDownloadContentDialog : ContentDialog
     private readonly IProgress<ModelDownloadProgress> _progress;
 
     public ModelDownloadContentDialog(
-        ContentPresenter contentPresenter,
+        ContentDialogHost dialogHost,
         string modelName,
         IProgress<ModelDownloadProgress> progress)
-        : base(contentPresenter)
+        : base(dialogHost)
     {
         _progress = progress;
         InitializeComponent();

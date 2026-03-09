@@ -78,7 +78,7 @@ public class DeviceManagementServiceTests
     public async Task BootstrapFirstDevice_ShouldGenerateUmkAndReturnRecoveryCode()
     {
         var fakeUmk = new byte[32];
-        _e2eeMock.GenerateAndStoreUmk().Returns(fakeUmk);
+        _e2eeMock.GenerateAndStoreUmkAsync().Returns(fakeUmk);
         _e2eeMock.WrapUmkForSelf().Returns(("wrapped-ciphertext", "hkdf-salt"));
         _recoveryMock.GenerateRecoveryCode().Returns("ABCD-EFGH-IJKL-MNOP");
         _recoveryMock.WrapUmkForRecovery(Arg.Any<byte[]>(), Arg.Any<string>())
@@ -115,7 +115,7 @@ public class DeviceManagementServiceTests
         var recoveryCode = await sut.BootstrapFirstDeviceAsync();
 
         Assert.Equal("ABCD-EFGH-IJKL-MNOP", recoveryCode);
-        _e2eeMock.Received(1).GenerateAndStoreUmk();
+        await _e2eeMock.Received(1).GenerateAndStoreUmkAsync();
         _e2eeMock.Received(1).WrapUmkForSelf();
         _recoveryMock.Received(1).GenerateRecoveryCode();
         _recoveryMock.Received(1).WrapUmkForRecovery(Arg.Any<byte[]>(), "ABCD-EFGH-IJKL-MNOP");

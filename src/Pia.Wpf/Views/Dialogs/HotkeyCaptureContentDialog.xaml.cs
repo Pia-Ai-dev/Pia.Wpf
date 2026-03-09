@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Controls;
 using Pia.Models;
 using Wpf.Ui.Controls;
 
@@ -12,7 +11,7 @@ public partial class HotkeyCaptureContentDialog : ContentDialog, INotifyProperty
 {
     public KeyboardShortcut? CapturedHotkey { get; private set; }
 
-    public HotkeyCaptureContentDialog(ContentPresenter? dialogHost)
+    public HotkeyCaptureContentDialog(ContentDialogHost? dialogHost)
         : base(dialogHost)
     {
         InitializeComponent();

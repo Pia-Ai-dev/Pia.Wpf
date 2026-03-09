@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Controls;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
@@ -12,8 +11,8 @@ public partial class ProviderEditContentDialog : ContentDialog
     public ProviderEditModel Provider { get; }
     private readonly IProviderService _providerService;
 
-    public ProviderEditContentDialog(ContentPresenter contentPresenter, ProviderEditModel provider, IProviderService providerService)
-        : base(contentPresenter)
+    public ProviderEditContentDialog(ContentDialogHost dialogHost, ProviderEditModel provider, IProviderService providerService)
+        : base(dialogHost)
     {
         Provider = provider;
         _providerService = providerService;

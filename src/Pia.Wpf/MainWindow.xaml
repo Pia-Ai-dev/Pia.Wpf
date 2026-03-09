@@ -175,7 +175,7 @@
     <controls:DialogOverlayHost x:Name="RootDialogOverlayHost"
                                 Grid.Row="0" Grid.RowSpan="2"
                                 Panel.ZIndex="20" />
-    <ContentPresenter x:Name="RootContentDialogPresenter" Grid.Row="0" Grid.RowSpan="2" />
+    <ui:ContentDialogHost x:Name="RootContentDialogPresenter" Grid.Row="0" Grid.RowSpan="2" />
     <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" Grid.Row="0" Grid.RowSpan="2" />
     <ui:TitleBar x:Name="TitleBar"
                  Title="{Binding WindowTitle}"

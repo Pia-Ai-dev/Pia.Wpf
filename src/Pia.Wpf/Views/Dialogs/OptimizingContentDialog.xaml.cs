@@ -1,5 +1,4 @@
 ﻿using System.Security.Cryptography;
-using System.Windows.Controls;
 using System.Windows.Threading;
 using Wpf.Ui.Controls;
 
@@ -11,9 +10,9 @@ public partial class OptimizingContentDialog : ContentDialog
     private readonly DispatcherTimer _messageTimer;
 
     public OptimizingContentDialog(
-        ContentPresenter contentPresenter,
+        ContentDialogHost dialogHost,
         string[] messages)
-        : base(contentPresenter)
+        : base(dialogHost)
     {
         _messages = messages;
         InitializeComponent();

@@ -94,6 +94,9 @@ public int AutoTypeDelayMs { get; set; } = 10;
     public int E2EEUmkVersion { get; set; }
     public bool E2EERecoveryConfigured { get; set; }
 
+    // Privacy settings
+    public PrivacySettings Privacy { get; set; } = new();
+
     public Guid? GetProviderForMode(WindowMode mode)
     {
         if (UseSameProviderForAllModes)

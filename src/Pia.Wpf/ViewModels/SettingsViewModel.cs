@@ -139,6 +139,15 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         SelectedVoiceKey = settings.TtsVoiceModelKey;
         await LoadTtsVoicesAsync();
 
+        // Load privacy settings
+        TokenizationEnabled = settings.Privacy.TokenizationEnabled;
+        foreach (var entry in PiiKeywords)
+            entry.PropertyChanged -= OnPiiKeywordEntryChanged;
+        var entries = settings.Privacy.PiiKeywords;
+        foreach (var entry in entries)
+            entry.PropertyChanged += OnPiiKeywordEntryChanged;
+        PiiKeywords = new ObservableCollection<PiiKeywordEntry>(entries);
+
         _isLoading = false;
     }
 
@@ -283,6 +292,21 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     [ObservableProperty]
     private string _selectedVoiceKey = "en_US-lessac-medium";
 
+    // Privacy properties
+    [ObservableProperty]
+    private bool _tokenizationEnabled;
+
+    [ObservableProperty]
+    private ObservableCollection<PiiKeywordEntry> _piiKeywords = new();
+
+    [ObservableProperty]
+    private string _newKeywordInput = string.Empty;
+
+    [ObservableProperty]
+    private string _selectedNewCategory = "Custom";
+
+    public List<string> AvailableCategories { get; } = ["Person", "Nickname", "Email", "Phone", "Address", "Date", "Custom"];
+
     public IEnumerable<OutputAction> OutputActions => Enum.GetValues<OutputAction>();
     public IEnumerable<WhisperModelSize> WhisperModels => Enum.GetValues<WhisperModelSize>();
     public IEnumerable<TargetSpeechLanguage> TargetSpeechLanguages => Enum.GetValues<TargetSpeechLanguage>();
@@ -298,6 +322,39 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     partial void OnDefaultTemplateIdChanged(Guid? value)
     {
         if (!_isLoading) SafeFireAndForget(SaveGeneralSettingsAsync());
+    }
+
+    partial void OnTokenizationEnabledChanged(bool value)
+    {
+        if (!_isLoading) SafeFireAndForget(SaveGeneralSettingsAsync());
+    }
+
+    [RelayCommand]
+    private async Task AddPiiKeywordAsync()
+    {
+        var keyword = NewKeywordInput?.Trim();
+        if (string.IsNullOrWhiteSpace(keyword) || PiiKeywords.Any(e => string.Equals(e.Keyword, keyword, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        var entry = new PiiKeywordEntry { Keyword = keyword, Category = SelectedNewCategory };
+        entry.PropertyChanged += OnPiiKeywordEntryChanged;
+        PiiKeywords.Add(entry);
+        NewKeywordInput = string.Empty;
+        await SaveGeneralSettingsAsync();
+    }
+
+    [RelayCommand]
+    private async Task RemovePiiKeywordAsync(PiiKeywordEntry entry)
+    {
+        entry.PropertyChanged -= OnPiiKeywordEntryChanged;
+        if (PiiKeywords.Remove(entry))
+            await SaveGeneralSettingsAsync();
+    }
+
+    private void OnPiiKeywordEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!_isLoading && e.PropertyName == nameof(PiiKeywordEntry.Category))
+            SafeFireAndForget(SaveGeneralSettingsAsync());
     }
 
     partial void OnOptimizeProviderIdChanged(Guid? value)
@@ -1132,6 +1189,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         settings.ResearchHotkey = _researchHotkey;
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
         settings.UiLanguage = UiLanguage;
+
+        settings.Privacy.TokenizationEnabled = TokenizationEnabled;
+        settings.Privacy.PiiKeywords = PiiKeywords.Select(e => new PiiKeywordEntry { Keyword = e.Keyword, Category = e.Category }).ToList();
 
         await _settingsService.SaveSettingsAsync(settings);
     }

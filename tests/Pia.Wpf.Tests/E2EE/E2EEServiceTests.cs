@@ -39,17 +39,17 @@ public class E2EEServiceTests
     }
 
     [Fact]
-    public void GenerateAndStoreUmk_ShouldReturn32Bytes()
+    public async Task GenerateAndStoreUmkAsync_ShouldReturn32Bytes()
     {
-        var umk = _sut.GenerateAndStoreUmk();
+        var umk = await _sut.GenerateAndStoreUmkAsync();
         Assert.Equal(32, umk.Length);
         Assert.True(_sut.HasUmk());
     }
 
     [Fact]
-    public void EncryptRecord_DecryptRecord_RoundTrip()
+    public async Task EncryptRecord_DecryptRecord_RoundTrip()
     {
-        _sut.GenerateAndStoreUmk();
+        await _sut.GenerateAndStoreUmkAsync();
 
         var template = new SyncTemplate
         {
@@ -73,9 +73,9 @@ public class E2EEServiceTests
     }
 
     [Fact]
-    public void DecryptRecord_WrongEntityId_ShouldThrow()
+    public async Task DecryptRecord_WrongEntityId_ShouldThrow()
     {
-        _sut.GenerateAndStoreUmk();
+        await _sut.GenerateAndStoreUmkAsync();
 
         var template = new SyncTemplate
         {
