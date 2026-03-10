@@ -16,6 +16,11 @@ public class DeviceInfo
     /// for human verification during pairing.
     /// </summary>
     public string? Fingerprint { get; set; }
+    /// <summary>
+    /// Onboarding session ID for pending devices. Only populated when the
+    /// device has an active onboarding session. Used by the approving device.
+    /// </summary>
+    public string? OnboardingSessionId { get; set; }
     public string? OsVersion { get; set; }
     public string? AppVersion { get; set; }
     public DateTime CreatedAt { get; set; }
