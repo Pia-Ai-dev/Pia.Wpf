@@ -17,6 +17,7 @@ public interface IProviderService
     Task<TestConnectionResult> TestConnectionAsync(AiProvider provider, string? plainApiKey);
     Task EnsureBuiltInProviderAsync();
     Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType);
+    Task<bool> IsProviderActiveAsync(AiProvider provider);
 }
 
 public record TestConnectionResult(bool Success, bool SupportsToolCalling, bool SupportsStreaming);

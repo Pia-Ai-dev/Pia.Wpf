@@ -184,4 +184,10 @@
   <data name="Notification_Reminder" xml:space="preserve"><value>Reminder</value></data>
   <data name="Notification_ReminderInApp" xml:space="preserve"><value>Reminder: {0}</value></data>
   <data name="Notification_Snooze" xml:space="preserve"><value>Snooze</value></data>
+
+  <!-- PII keyword context menu -->
+  <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII Keyword Added</value></data>
+  <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>"{0}" added as {1}</value></data>
+  <data name="Msg_PiiKeyword_Exists_Title" xml:space="preserve"><value>Already Exists</value></data>
+  <data name="Msg_PiiKeyword_Exists" xml:space="preserve"><value>"{0}" is already in the PII list</value></data>
 </root>

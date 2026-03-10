@@ -255,6 +255,8 @@
   <data name="Providers_Add" xml:space="preserve"><value>Ajouter un fournisseur</value></data>
   <data name="Providers_NoToolCalling" xml:space="preserve"><value>Pas d'appel d'outils</value></data>
   <data name="Providers_NoStreaming" xml:space="preserve"><value>Pas de streaming</value></data>
+  <data name="Providers_NotConnected" xml:space="preserve"><value>Non connecté</value></data>
+  <data name="Providers_NotConfigured" xml:space="preserve"><value>Non configuré</value></data>
   <data name="Providers_Test" xml:space="preserve"><value>Tester</value></data>
   <data name="Providers_Edit" xml:space="preserve"><value>Modifier</value></data>
   <data name="Providers_Delete" xml:space="preserve"><value>Supprimer</value></data>
@@ -363,14 +365,16 @@
   <data name="Wizard_Modes_Subtitle" xml:space="preserve"><value>Chaque mode est conçu pour un flux de travail différent</value></data>
   <data name="Wizard_Modes_OptimizeTitle" xml:space="preserve"><value>Optimiser</value></data>
   <data name="Wizard_Modes_OptimizeDesc" xml:space="preserve"><value>Transformez votre texte pour tout usage. Choisissez un modèle et laissez Pia améliorer votre écriture.</value></data>
-  <data name="Wizard_Modes_OptimizeHotkey" xml:space="preserve"><value>Ctrl+Alt+P</value></data>
+  <data name="Wizard_Modes_OptimizeHotkey" xml:space="preserve"><value>Ctrl+Alt+O</value></data>
   <data name="Wizard_Modes_OptimizeExample" xml:space="preserve"><value>ex. « Rends cet e-mail plus professionnel »</value></data>
   <data name="Wizard_Modes_AssistantTitle" xml:space="preserve"><value>Assistant</value></data>
   <data name="Wizard_Modes_AssistantDesc" xml:space="preserve"><value>Discutez avec une IA qui se souvient de vos préférences et utilise des outils comme la mémoire et les rappels.</value></data>
-  <data name="Wizard_Modes_NotConfigured" xml:space="preserve"><value>Non configuré</value></data>
-  <data name="Wizard_Modes_SetHotkeyHint" xml:space="preserve"><value>Définir un raccourci dans les Paramètres</value></data>
+  <data name="Wizard_Modes_AssistantHotkey" xml:space="preserve"><value>Ctrl+Alt+P</value></data>
+  <data name="Wizard_Modes_AssistantExample" xml:space="preserve"><value>ex. « Quelles réunions ai-je aujourd'hui ? »</value></data>
   <data name="Wizard_Modes_ResearchTitle" xml:space="preserve"><value>Recherche</value></data>
   <data name="Wizard_Modes_ResearchDesc" xml:space="preserve"><value>Menez des analyses approfondies sur tout sujet. Pia collecte et synthétise les informations pour des résultats complets.</value></data>
+  <data name="Wizard_Modes_ResearchHotkey" xml:space="preserve"><value>Ctrl+Alt+R</value></data>
+  <data name="Wizard_Modes_ResearchExample" xml:space="preserve"><value>ex. « Comparer les avantages et inconvénients de React vs Vue »</value></data>
   <data name="Wizard_Profile_Title" xml:space="preserve"><value>Parlez de vous à Pia</value></data>
   <data name="Wizard_Profile_Subtitle" xml:space="preserve"><value>Tous les champs sont optionnels. Ces informations aident Pia à protéger votre vie privée — votre nom et votre localisation garantissent que vos données personnelles ne sont jamais envoyées aux fournisseurs d'IA.</value></data>
   <data name="Wizard_Profile_Name" xml:space="preserve"><value>Nom</value></data>
@@ -464,4 +468,12 @@
   <data name="Enum_LangEN" xml:space="preserve"><value>English</value></data>
   <data name="Enum_LangDE" xml:space="preserve"><value>Deutsch</value></data>
   <data name="Enum_LangFR" xml:space="preserve"><value>Français</value></data>
+  <data name="Assistant_AddToPiiList" xml:space="preserve"><value>Ajouter aux mots-clés PII</value></data>
+  <data name="PiiCategory_Person" xml:space="preserve"><value>Personne</value></data>
+  <data name="PiiCategory_Nickname" xml:space="preserve"><value>Surnom</value></data>
+  <data name="PiiCategory_Email" xml:space="preserve"><value>E-mail</value></data>
+  <data name="PiiCategory_Phone" xml:space="preserve"><value>Téléphone</value></data>
+  <data name="PiiCategory_Address" xml:space="preserve"><value>Adresse</value></data>
+  <data name="PiiCategory_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="PiiCategory_Custom" xml:space="preserve"><value>Personnalisé</value></data>
 </root>

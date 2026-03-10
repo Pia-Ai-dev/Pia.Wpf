@@ -255,6 +255,8 @@
   <data name="Providers_Add" xml:space="preserve"><value>Add Provider</value></data>
   <data name="Providers_NoToolCalling" xml:space="preserve"><value>No Tool Calling</value></data>
   <data name="Providers_NoStreaming" xml:space="preserve"><value>No Streaming</value></data>
+  <data name="Providers_NotConnected" xml:space="preserve"><value>Not Connected</value></data>
+  <data name="Providers_NotConfigured" xml:space="preserve"><value>Not Configured</value></data>
   <data name="Providers_Test" xml:space="preserve"><value>Test</value></data>
   <data name="Providers_Edit" xml:space="preserve"><value>Edit</value></data>
   <data name="Providers_Delete" xml:space="preserve"><value>Delete</value></data>
@@ -363,14 +365,16 @@
   <data name="Wizard_Modes_Subtitle" xml:space="preserve"><value>Each mode is designed for a different workflow</value></data>
   <data name="Wizard_Modes_OptimizeTitle" xml:space="preserve"><value>Optimize</value></data>
   <data name="Wizard_Modes_OptimizeDesc" xml:space="preserve"><value>Transform your text for any purpose. Select a template and let Pia enhance your writing.</value></data>
-  <data name="Wizard_Modes_OptimizeHotkey" xml:space="preserve"><value>Ctrl+Alt+P</value></data>
+  <data name="Wizard_Modes_OptimizeHotkey" xml:space="preserve"><value>Ctrl+Alt+O</value></data>
   <data name="Wizard_Modes_OptimizeExample" xml:space="preserve"><value>e.g. "Make this email more professional"</value></data>
   <data name="Wizard_Modes_AssistantTitle" xml:space="preserve"><value>Assistant</value></data>
   <data name="Wizard_Modes_AssistantDesc" xml:space="preserve"><value>Chat with an AI that remembers your preferences and uses tools like memory and reminders.</value></data>
-  <data name="Wizard_Modes_NotConfigured" xml:space="preserve"><value>Not configured</value></data>
-  <data name="Wizard_Modes_SetHotkeyHint" xml:space="preserve"><value>Set a hotkey in Settings</value></data>
+  <data name="Wizard_Modes_AssistantHotkey" xml:space="preserve"><value>Ctrl+Alt+P</value></data>
+  <data name="Wizard_Modes_AssistantExample" xml:space="preserve"><value>e.g. "What meetings do I have today?"</value></data>
   <data name="Wizard_Modes_ResearchTitle" xml:space="preserve"><value>Research</value></data>
   <data name="Wizard_Modes_ResearchDesc" xml:space="preserve"><value>Conduct deep analysis on any topic. Pia gathers and synthesizes information for comprehensive results.</value></data>
+  <data name="Wizard_Modes_ResearchHotkey" xml:space="preserve"><value>Ctrl+Alt+R</value></data>
+  <data name="Wizard_Modes_ResearchExample" xml:space="preserve"><value>e.g. "Compare the pros and cons of React vs Vue"</value></data>
   <data name="Wizard_Profile_Title" xml:space="preserve"><value>Tell Pia About Yourself</value></data>
   <data name="Wizard_Profile_Subtitle" xml:space="preserve"><value>All fields are optional. This information helps Pia protect your privacy — your name and location ensure personal details are never sent to AI providers.</value></data>
   <data name="Wizard_Profile_Name" xml:space="preserve"><value>Name</value></data>
@@ -464,4 +468,12 @@
   <data name="Enum_LangEN" xml:space="preserve"><value>English</value></data>
   <data name="Enum_LangDE" xml:space="preserve"><value>Deutsch</value></data>
   <data name="Enum_LangFR" xml:space="preserve"><value>Francais</value></data>
+  <data name="Assistant_AddToPiiList" xml:space="preserve"><value>Add to PII Keywords</value></data>
+  <data name="PiiCategory_Person" xml:space="preserve"><value>Person</value></data>
+  <data name="PiiCategory_Nickname" xml:space="preserve"><value>Nickname</value></data>
+  <data name="PiiCategory_Email" xml:space="preserve"><value>Email</value></data>
+  <data name="PiiCategory_Phone" xml:space="preserve"><value>Phone</value></data>
+  <data name="PiiCategory_Address" xml:space="preserve"><value>Address</value></data>
+  <data name="PiiCategory_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="PiiCategory_Custom" xml:space="preserve"><value>Custom</value></data>
 </root>

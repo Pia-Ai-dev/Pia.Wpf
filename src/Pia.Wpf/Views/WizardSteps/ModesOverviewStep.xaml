@@ -99,21 +99,20 @@
                        Margin="0,0,0,16"
                        LineHeight="18" />
 
-            <!-- Hotkey Badge (not configured) -->
-            <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                    BorderThickness="1"
+            <!-- Hotkey Badge -->
+            <Border Background="{DynamicResource SystemAccentColorPrimaryBrush}"
                     CornerRadius="4"
                     Padding="10,4"
                     HorizontalAlignment="Center"
                     Margin="0,0,0,12">
-              <TextBlock Text="{loc:Str Wizard_Modes_NotConfigured}"
+              <TextBlock Text="{loc:Str Wizard_Modes_AssistantHotkey}"
                          FontSize="11"
-                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
                          HorizontalAlignment="Center" />
             </Border>
 
-            <TextBlock Text="{loc:Str Wizard_Modes_SetHotkeyHint}"
+            <TextBlock Text="{loc:Str Wizard_Modes_AssistantExample}"
                        TextWrapping="Wrap"
                        TextAlignment="Center"
                        FontSize="11"
@@ -148,21 +147,20 @@
                        Margin="0,0,0,16"
                        LineHeight="18" />
 
-            <!-- Hotkey Badge (not configured) -->
-            <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                    BorderThickness="1"
+            <!-- Hotkey Badge -->
+            <Border Background="{DynamicResource SystemAccentColorPrimaryBrush}"
                     CornerRadius="4"
                     Padding="10,4"
                     HorizontalAlignment="Center"
                     Margin="0,0,0,12">
-              <TextBlock Text="{loc:Str Wizard_Modes_NotConfigured}"
+              <TextBlock Text="{loc:Str Wizard_Modes_ResearchHotkey}"
                          FontSize="11"
-                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
                          HorizontalAlignment="Center" />
             </Border>
 
-            <TextBlock Text="{loc:Str Wizard_Modes_SetHotkeyHint}"
+            <TextBlock Text="{loc:Str Wizard_Modes_ResearchExample}"
                        TextWrapping="Wrap"
                        TextAlignment="Center"
                        FontSize="11"

@@ -117,7 +117,7 @@
 
       <!-- Provider cards -->
       <ScrollViewer Grid.Row="2">
-        <ItemsControl ItemsSource="{Binding Providers}">
+        <ItemsControl ItemsSource="{Binding ProviderDisplayItems}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
               <Border Background="{DynamicResource SecondaryBackgroundBrush}"
@@ -134,24 +134,24 @@
 
                   <StackPanel Grid.Column="0">
                     <TextBlock FontSize="16" FontWeight="SemiBold">
-                      <Run Text="{Binding Name}"/>
+                      <Run Text="{Binding Provider.Name}"/>
                       <Run Text=" (" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
-                      <Run Text="{Binding ProviderType}" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                      <Run Text="{Binding Provider.ProviderType}" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                       <Run Text=")" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                     </TextBlock>
-                    <TextBlock Text="{Binding Endpoint}"
+                    <TextBlock Text="{Binding Provider.Endpoint}"
                                Opacity="0.7"
                                Margin="0,4,0,0"
                                TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding ModelName}"
+                    <TextBlock Text="{Binding Provider.ModelName}"
                                Opacity="0.7"
                                Margin="0,2,0,0"/>
-                    <!-- Mode chips + No Tool Calling badge -->
+                    <!-- Mode chips + status badges -->
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                       <Border Margin="0,0,4,0">
                         <Border.Visibility>
                           <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
-                            <Binding Path="Id"/>
+                            <Binding Path="Provider.Id"/>
                             <Binding Path="DataContext.OptimizeProviderId"
                                      RelativeSource="{RelativeSource AncestorType=UserControl}"/>
                           </MultiBinding>
@@ -161,7 +161,7 @@
                       <Border Margin="0,0,4,0">
                         <Border.Visibility>
                           <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
-                            <Binding Path="Id"/>
+                            <Binding Path="Provider.Id"/>
                             <Binding Path="DataContext.AssistantProviderId"
                                      RelativeSource="{RelativeSource AncestorType=UserControl}"/>
                           </MultiBinding>
@@ -171,19 +171,23 @@
                       <Border Margin="0,0,4,0">
                         <Border.Visibility>
                           <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
-                            <Binding Path="Id"/>
+                            <Binding Path="Provider.Id"/>
                             <Binding Path="DataContext.ResearchProviderId"
                                      RelativeSource="{RelativeSource AncestorType=UserControl}"/>
                           </MultiBinding>
                         </Border.Visibility>
                         <ui:Badge Content="{loc:Str Providers_Research}" Appearance="Info"/>
                       </Border>
+                      <ui:Badge Content="{Binding FailReason}"
+                                Visibility="{Binding ShowFailBadge, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                Appearance="Danger"
+                                Margin="0,0,4,0"/>
                       <ui:Badge Content="{loc:Str Providers_NoToolCalling}"
-                                Visibility="{Binding SupportsToolCalling, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                Visibility="{Binding Provider.SupportsToolCalling, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
                                 Appearance="Caution"
                                 Margin="0,0,4,0"/>
                       <ui:Badge Content="{loc:Str Providers_NoStreaming}"
-                                Visibility="{Binding SupportsStreaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                Visibility="{Binding Provider.SupportsStreaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
                                 Appearance="Caution"
                                 Margin="0,0,4,0"/>
                     </StackPanel>
@@ -192,7 +196,7 @@
                   <!-- Action buttons: Test, Edit, Delete -->
                   <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <ui:Button Command="{Binding DataContext.TestConnectionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding}"
+                              CommandParameter="{Binding Provider}"
                               IsEnabled="{Binding DataContext.IsTestConnectionInProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBooleanConverter}}"
                               Width="40"
                               Height="40"
@@ -201,7 +205,7 @@
                         <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16">
                           <ui:SymbolIcon.Visibility>
                             <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}" ConverterParameter="Invert">
-                              <Binding Path="Id"/>
+                              <Binding Path="Provider.Id"/>
                               <Binding Path="DataContext.TestingProviderId" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
                             </MultiBinding>
                           </ui:SymbolIcon.Visibility>
@@ -209,7 +213,7 @@
                         <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16">
                           <ui:ProgressRing.Visibility>
                             <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
-                              <Binding Path="Id"/>
+                              <Binding Path="Provider.Id"/>
                               <Binding Path="DataContext.TestingProviderId" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
                             </MultiBinding>
                           </ui:ProgressRing.Visibility>
@@ -220,7 +224,7 @@
                       </ui:Button.ToolTip>
                     </ui:Button>
                     <ui:Button Command="{Binding DataContext.EditProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding}"
+                              CommandParameter="{Binding Provider}"
                               Appearance="Secondary"
                               Width="40"
                               Height="40"
@@ -231,8 +235,8 @@
                       </ui:Button.ToolTip>
                     </ui:Button>
                     <ui:Button Command="{Binding DataContext.DeleteProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding}"
-                              Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Delete}"
+                              CommandParameter="{Binding Provider}"
+                              Visibility="{Binding Provider.ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Delete}"
                               Appearance="Danger"
                               Width="40"
                               Height="40">

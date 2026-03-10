@@ -9,6 +9,7 @@
              d:DesignHeight="500" d:DesignWidth="720">
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel HorizontalAlignment="Center"
+                Width="480"
                 MaxWidth="480"
                 Margin="0,20,0,20">
 
