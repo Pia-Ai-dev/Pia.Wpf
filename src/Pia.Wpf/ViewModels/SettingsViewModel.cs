@@ -84,6 +84,15 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             _syncClientService.StartBackgroundSync();
         };
 
+        // When sync detects E2EE is enabled on the server but not locally, show onboarding
+        _syncClientService.E2EEOnboardingRequired += (_, _) =>
+        {
+            System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                IsE2EEOnboardingRequired = true;
+            });
+        };
+
         // When a pending device is detected during sync, prompt for approval
         _syncClientService.PendingDeviceDetected += (_, args) =>
         {
@@ -1065,6 +1074,34 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         }
     }
 
+    [RelayCommand]
+    private async Task CheckForPendingDevicesAsync()
+    {
+        try
+        {
+            var response = await _deviceManagement.GetDevicesAsync();
+            var pending = response.Devices
+                .Where(d => d.Status == DeviceStatus.Pending && d.OnboardingSessionId is not null)
+                .ToList();
+
+            if (pending.Count > 0)
+            {
+                await HandlePendingDevicesAsync(pending);
+            }
+            else
+            {
+                _snackbarService.Show("No Requests", "No pending device requests found.",
+                    Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(3));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check for pending devices");
+            _snackbarService.Show("Error", "Failed to check for pending devices.",
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+        }
+    }
+
     private void UpdateSyncState()
     {
         IsSyncLoggedIn = _authService.IsLoggedIn;
@@ -1135,8 +1172,19 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             _isLoading = true;
             IsE2EEEnabled = false;
             _isLoading = false;
-            _snackbarService.Show("Error", $"Failed to enable E2EE: {ex.Message}",
-                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
+
+            // Check if this failed because E2EE is already enabled on other devices —
+            // if so, show onboarding instead of the error toggle
+            var serverStatus = await _deviceManagement.CheckE2EEStatusAsync();
+            if (serverStatus is { IsEnabled: true })
+            {
+                IsE2EEOnboardingRequired = true;
+            }
+            else
+            {
+                _snackbarService.Show("Error", $"Failed to enable E2EE: {ex.Message}",
+                    Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
+            }
         }
         finally
         {

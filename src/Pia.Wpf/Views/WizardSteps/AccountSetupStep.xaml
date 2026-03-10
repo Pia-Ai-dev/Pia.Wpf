@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:localSettings="clr-namespace:Pia.Views.SettingsViews"
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="720">
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -209,6 +210,11 @@
           </StackPanel>
         </StackPanel>
       </Border>
+
+      <!-- E2EE Onboarding (shown when account has E2EE enabled) -->
+      <localSettings:E2EEOnboardingView
+          Margin="0,0,0,16"
+          Visibility="{Binding IsE2EEOnboardingRequired, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
       <!-- Skip note -->
       <TextBlock Text="{loc:Str Wizard_Account_SkipNote}"
