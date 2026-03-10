@@ -148,6 +148,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             entry.PropertyChanged += OnPiiKeywordEntryChanged;
         PiiKeywords = new ObservableCollection<PiiKeywordEntry>(entries);
 
+        await RefreshProviderDisplayItemsAsync();
+
         _isLoading = false;
     }
 
@@ -209,6 +211,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
     [ObservableProperty]
     private ObservableCollection<AiProvider> _providers;
+
+    public ObservableCollection<ProviderDisplayItem> ProviderDisplayItems { get; } = new();
 
     public List<AiProvider> NonCloudProviders =>
         Providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).ToList();
@@ -665,6 +669,36 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         AssistantProviderId = savedAssistantId;
         ResearchProviderId = savedResearchId;
         _isLoading = false;
+
+        await RefreshProviderDisplayItemsAsync();
+    }
+
+    private async Task RefreshProviderDisplayItemsAsync()
+    {
+        ProviderDisplayItems.Clear();
+        foreach (var provider in Providers)
+        {
+            var isActive = await _providerService.IsProviderActiveAsync(provider);
+            var isDefault = OptimizeProviderId == provider.Id
+                || AssistantProviderId == provider.Id
+                || ResearchProviderId == provider.Id;
+
+            string? failReason = null;
+            if (!isActive && isDefault)
+            {
+                failReason = provider.ProviderType == AiProviderType.PiaCloud
+                    ? _localizationService["Providers_NotConnected"]
+                    : _localizationService["Providers_NotConfigured"];
+            }
+
+            ProviderDisplayItems.Add(new ProviderDisplayItem
+            {
+                Provider = provider,
+                IsActive = isActive,
+                IsDefaultForAnyMode = isDefault,
+                FailReason = failReason,
+            });
+        }
     }
 
     private async Task RefreshTemplatesAsync()

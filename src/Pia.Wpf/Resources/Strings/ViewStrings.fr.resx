@@ -255,6 +255,8 @@
   <data name="Providers_Add" xml:space="preserve"><value>Ajouter un fournisseur</value></data>
   <data name="Providers_NoToolCalling" xml:space="preserve"><value>Pas d'appel d'outils</value></data>
   <data name="Providers_NoStreaming" xml:space="preserve"><value>Pas de streaming</value></data>
+  <data name="Providers_NotConnected" xml:space="preserve"><value>Non connecté</value></data>
+  <data name="Providers_NotConfigured" xml:space="preserve"><value>Non configuré</value></data>
   <data name="Providers_Test" xml:space="preserve"><value>Tester</value></data>
   <data name="Providers_Edit" xml:space="preserve"><value>Modifier</value></data>
   <data name="Providers_Delete" xml:space="preserve"><value>Supprimer</value></data>

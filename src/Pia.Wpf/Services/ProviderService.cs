@@ -26,17 +26,20 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     private readonly IAiClientService _aiClientService;
     private readonly DpapiHelper _dpapiHelper;
     private readonly ISettingsService _settingsService;
+    private readonly IAuthService _authService;
 
     public ProviderService(
         ILogger<ProviderService> logger,
         IAiClientService aiClientService,
         DpapiHelper dpapiHelper,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        IAuthService authService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
         _dpapiHelper = dpapiHelper;
         _settingsService = settingsService;
+        _authService = authService;
     }
 
     public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
@@ -82,8 +85,9 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             provider.EncryptedApiKey = _dpapiHelper.Encrypt(apiKey);
         }
 
-        // If this is the first provider, set it as default for all modes
-        if (providers.Count == 0)
+        // If no real/configured provider exists yet, treat this as the first provider
+        if (!providers.Any(p => p.ProviderType != AiProviderType.PiaCloud
+            && !string.IsNullOrWhiteSpace(p.Endpoint)))
         {
             var settings = await _settingsService.GetSettingsAsync();
             settings.SetProviderForMode(WindowMode.Optimize, provider.Id);
@@ -268,6 +272,20 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         if (persist) await UpdateProviderAsync(provider);
 
         return new TestConnectionResult(true, supportsToolCalling, supportsStreaming);
+    }
+
+    public Task<bool> IsProviderActiveAsync(AiProvider provider)
+    {
+        if (provider.ProviderType == AiProviderType.PiaCloud)
+            return Task.FromResult(_authService.IsLoggedIn);
+
+        // Ollama doesn't require an API key
+        if (provider.ProviderType == AiProviderType.Ollama)
+            return Task.FromResult(!string.IsNullOrWhiteSpace(provider.Endpoint));
+
+        return Task.FromResult(
+            !string.IsNullOrWhiteSpace(provider.Endpoint)
+            && !string.IsNullOrEmpty(provider.EncryptedApiKey));
     }
 
     public async Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType)

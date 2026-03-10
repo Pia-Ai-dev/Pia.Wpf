@@ -73,6 +73,52 @@
           </Style>
         </StackPanel.Style>
 
+        <!-- Local auth form -->
+        <StackPanel Margin="0,0,0,12" MaxWidth="400" HorizontalAlignment="Center">
+          <TextBlock Text="{loc:Str Sync_LocalAuth_Email}"
+                     FontSize="12"
+                     Opacity="0.7"
+                     Margin="0,0,0,4"/>
+          <ui:TextBox PlaceholderText="email@example.com"
+                      Text="{Binding LoginEmailInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      IsEnabled="{Binding IsLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                      Margin="0,0,0,8"/>
+          <TextBlock Text="{loc:Str Sync_LocalAuth_Password}"
+                     FontSize="12"
+                     Opacity="0.7"
+                     Margin="0,0,0,4"/>
+          <PasswordBox x:Name="LoginPasswordBox"
+                       PasswordChanged="LoginPasswordBox_PasswordChanged"
+                       IsEnabled="{Binding IsLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                       Margin="0,0,0,8"/>
+          <ui:Button Content="{loc:Str Sync_LocalAuth_SignIn}"
+                     Command="{Binding LoginWithPasswordCommand}"
+                     Appearance="Primary"
+                     IsEnabled="{Binding IsLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                     HorizontalAlignment="Stretch"
+                     Margin="0,0,0,8"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <ui:HyperlinkButton Content="{loc:Str Sync_LocalAuth_CreateAccount}"
+                                Command="{Binding OpenRegistrationPageCommand}"
+                                Margin="0,0,12,0"/>
+            <ui:HyperlinkButton Content="{loc:Str Sync_LocalAuth_ForgotPassword}"
+                                Command="{Binding OpenForgotPasswordCommand}"/>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Divider -->
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,8,0,16"
+                    HorizontalAlignment="Center">
+          <Border Height="1" Background="#2a2d3a" Width="170" VerticalAlignment="Center"/>
+          <TextBlock Text="{loc:Str Sync_Or}"
+                     Opacity="0.5"
+                     FontSize="12"
+                     Margin="12,0"/>
+          <Border Height="1" Background="#2a2d3a" Width="170" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- OAuth buttons -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <ui:Button Command="{Binding LoginWithGoogleCommand}"
                      MinWidth="180"
