@@ -27,5 +27,4 @@ public class DeviceInfo
     public DateTime? ActivatedAt { get; set; }
     public DateTime? RevokedAt { get; set; }
     public DateTime? LastSeenAt { get; set; }
-    public string? OnboardingSessionId { get; set; }
 }
