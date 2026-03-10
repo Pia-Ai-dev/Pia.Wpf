@@ -139,6 +139,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<AssistantMessage> PlayMessageCommand { get; }
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
+    public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -184,6 +185,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
+        AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
@@ -683,6 +685,45 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to copy message");
+        }
+    }
+
+    private async Task ExecuteAddPiiKeyword(PiiKeywordRequest? request)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Keyword))
+            return;
+
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            var exists = settings.Privacy.PiiKeywords.Any(k =>
+                string.Equals(k.Keyword, request.Keyword, StringComparison.OrdinalIgnoreCase));
+
+            if (exists)
+            {
+                _snackbarService.Show(
+                    _localizationService["Msg_PiiKeyword_Exists_Title"],
+                    _localizationService.Format("Msg_PiiKeyword_Exists", request.Keyword),
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
+                return;
+            }
+
+            settings.Privacy.PiiKeywords.Add(new PiiKeywordEntry
+            {
+                Keyword = request.Keyword,
+                Category = request.Category
+            });
+
+            await _settingsService.SaveSettingsAsync(settings);
+
+            _snackbarService.Show(
+                _localizationService["Msg_PiiKeyword_Added_Title"],
+                _localizationService.Format("Msg_PiiKeyword_Added", request.Keyword, request.Category),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to add PII keyword");
         }
     }
 

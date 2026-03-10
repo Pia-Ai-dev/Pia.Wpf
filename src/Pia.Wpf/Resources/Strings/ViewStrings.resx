@@ -464,4 +464,12 @@
   <data name="Enum_LangEN" xml:space="preserve"><value>English</value></data>
   <data name="Enum_LangDE" xml:space="preserve"><value>Deutsch</value></data>
   <data name="Enum_LangFR" xml:space="preserve"><value>Francais</value></data>
+  <data name="Assistant_AddToPiiList" xml:space="preserve"><value>Add to PII Keywords</value></data>
+  <data name="PiiCategory_Person" xml:space="preserve"><value>Person</value></data>
+  <data name="PiiCategory_Nickname" xml:space="preserve"><value>Nickname</value></data>
+  <data name="PiiCategory_Email" xml:space="preserve"><value>Email</value></data>
+  <data name="PiiCategory_Phone" xml:space="preserve"><value>Phone</value></data>
+  <data name="PiiCategory_Address" xml:space="preserve"><value>Address</value></data>
+  <data name="PiiCategory_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="PiiCategory_Custom" xml:space="preserve"><value>Custom</value></data>
 </root>

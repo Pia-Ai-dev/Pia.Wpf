@@ -175,4 +175,10 @@
   <data name="Notification_Reminder" xml:space="preserve"><value>Erinnerung</value></data>
   <data name="Notification_ReminderInApp" xml:space="preserve"><value>Erinnerung: {0}</value></data>
   <data name="Notification_Snooze" xml:space="preserve"><value>Schlummern</value></data>
+
+  <!-- PII keyword context menu -->
+  <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII-Schlüsselwort hinzugefügt</value></data>
+  <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>„{0}" als {1} hinzugefügt</value></data>
+  <data name="Msg_PiiKeyword_Exists_Title" xml:space="preserve"><value>Bereits vorhanden</value></data>
+  <data name="Msg_PiiKeyword_Exists" xml:space="preserve"><value>„{0}" ist bereits in der PII-Liste</value></data>
 </root>

@@ -92,4 +92,9 @@ public partial class AssistantView : UserControl
         }
         // Shift+Enter: default behavior (newline) — no handling needed
     }
+
+    private void OnAddToPiiRequested(object? sender, PiiKeywordRequest request)
+    {
+        ViewModel?.AddPiiKeywordCommand.Execute(request);
+    }
 }

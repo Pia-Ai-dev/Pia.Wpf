@@ -1,9 +1,27 @@
 <UserControl x:Class="Pia.Controls.MarkdownMessageControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:mdxam="clr-namespace:MdXaml;assembly=MdXaml">
     <mdxam:MarkdownScrollViewer x:Name="MarkdownViewer"
                                 MarkdownStyle="{DynamicResource PiaMarkdownStyle}"
                                 VerticalScrollBarVisibility="Disabled"
-                                HorizontalScrollBarVisibility="Disabled" />
+                                HorizontalScrollBarVisibility="Disabled"
+                                ContextMenuOpening="MarkdownViewer_ContextMenuOpening">
+        <mdxam:MarkdownScrollViewer.ContextMenu>
+            <ContextMenu>
+                <MenuItem Command="ApplicationCommands.Copy" />
+                <Separator />
+                <MenuItem x:Name="AddToPiiMenu" Header="{loc:Str Assistant_AddToPiiList}">
+                    <MenuItem Header="{loc:Str PiiCategory_Person}" Tag="Person" Click="AddToPii_Click" />
+                    <MenuItem Header="{loc:Str PiiCategory_Nickname}" Tag="Nickname" Click="AddToPii_Click" />
+                    <MenuItem Header="{loc:Str PiiCategory_Email}" Tag="Email" Click="AddToPii_Click" />
+                    <MenuItem Header="{loc:Str PiiCategory_Phone}" Tag="Phone" Click="AddToPii_Click" />
+                    <MenuItem Header="{loc:Str PiiCategory_Address}" Tag="Address" Click="AddToPii_Click" />
+                    <MenuItem Header="{loc:Str PiiCategory_Date}" Tag="Date" Click="AddToPii_Click" />
+                    <MenuItem Header="{loc:Str PiiCategory_Custom}" Tag="Custom" Click="AddToPii_Click" />
+                </MenuItem>
+            </ContextMenu>
+        </mdxam:MarkdownScrollViewer.ContextMenu>
+    </mdxam:MarkdownScrollViewer>
 </UserControl>

@@ -4,11 +4,14 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Navigation;
 using System.Windows.Threading;
+using Pia.Models;
 
 namespace Pia.Controls;
 
 public partial class MarkdownMessageControl : UserControl
 {
+    public event EventHandler<PiiKeywordRequest>? AddToPiiRequested;
+
     private readonly DispatcherTimer _debounceTimer;
     private string? _pendingMarkdown;
 
@@ -100,6 +103,33 @@ public partial class MarkdownMessageControl : UserControl
     private void RenderMarkdown(string? markdown)
     {
         MarkdownViewer.Markdown = markdown ?? string.Empty;
+    }
+
+    public string GetSelectedText() =>
+        MarkdownViewer.Selection?.Text?.Trim() ?? string.Empty;
+
+    private void MarkdownViewer_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        var selectedText = GetSelectedText();
+        var hasSelection = !string.IsNullOrWhiteSpace(selectedText);
+
+        // Store selected text for use by click handlers
+        MarkdownViewer.ContextMenu!.Tag = selectedText;
+
+        // Disable PII menu item when no text is selected
+        AddToPiiMenu.IsEnabled = hasSelection;
+    }
+
+    private void AddToPii_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem) return;
+
+        var category = menuItem.Tag as string ?? "Custom";
+        var selectedText = MarkdownViewer.ContextMenu?.Tag as string ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(selectedText)) return;
+
+        AddToPiiRequested?.Invoke(this, new PiiKeywordRequest(selectedText, category));
     }
 
     private void OnRequestNavigate(object sender, RequestNavigateEventArgs e)

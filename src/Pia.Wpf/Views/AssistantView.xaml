@@ -167,7 +167,8 @@
                   </Border.Style>
                   <controls:MarkdownMessageControl
                       MarkdownText="{Binding Content}"
-                      IsStreaming="{Binding IsStreaming}" />
+                      IsStreaming="{Binding IsStreaming}"
+                      AddToPiiRequested="OnAddToPiiRequested" />
                 </Border>
                 <!-- Inline action cards -->
                 <ItemsControl ItemsSource="{Binding ActionCards}"
