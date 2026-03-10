@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Shared.E2EE;
 using Pia.ViewModels.Models;
 using Pia.Navigation;
 using System.Collections.ObjectModel;
@@ -32,6 +33,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     private readonly IDeviceKeyService _deviceKeys;
     private bool _isLoading;
 
+    public E2EEOnboardingViewModel OnboardingViewModel { get; }
+
     public SettingsViewModel(
         ILogger<SettingsViewModel> logger,
         IProviderService providerService,
@@ -49,7 +52,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         ISyncClientService syncClientService,
         ILocalizationService localizationService,
         IDeviceManagementService deviceManagement,
-        IDeviceKeyService deviceKeys)
+        IDeviceKeyService deviceKeys,
+        E2EEOnboardingViewModel onboardingViewModel)
     {
         _logger = logger;
         _providerService = providerService;
@@ -68,6 +72,25 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         _localizationService = localizationService;
         _deviceManagement = deviceManagement;
         _deviceKeys = deviceKeys;
+        OnboardingViewModel = onboardingViewModel;
+
+        // When onboarding completes, resume sync
+        OnboardingViewModel.OnboardingCompleted += async (_, _) =>
+        {
+            IsE2EEOnboardingRequired = false;
+            IsE2EEEnabled = true;
+            DeviceFingerprint = _deviceKeys.GetFingerprint();
+            await _syncClientService.PerformFirstSyncMigrationAsync();
+            _syncClientService.StartBackgroundSync();
+        };
+
+        // When a pending device is detected during sync, prompt for approval
+        _syncClientService.PendingDeviceDetected += (_, args) =>
+        {
+            // Dispatch to UI thread
+            System.Windows.Application.Current?.Dispatcher.InvokeAsync(
+                () => HandlePendingDevicesAsync(args.PendingDevices));
+        };
 
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
@@ -202,6 +225,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
     [ObservableProperty]
     private string _deviceFingerprint = "";
+
+    [ObservableProperty]
+    private bool _isE2EEOnboardingRequired;
 
     [ObservableProperty]
     private int _selectedTabIndex;
@@ -842,6 +868,29 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         }
     }
 
+    /// <summary>
+    /// After a successful login, check if the account has E2EE enabled.
+    /// If so and UMK is not available locally, trigger the onboarding flow
+    /// instead of starting sync.
+    /// </summary>
+    private async Task HandlePostLoginAsync()
+    {
+        UpdateSyncState();
+
+        var e2eeStatus = await _deviceManagement.CheckE2EEStatusAsync();
+        if (e2eeStatus is { IsEnabled: true } && !_deviceManagement.IsInitialized())
+        {
+            // E2EE is enabled on the account but this device lacks the UMK.
+            // Trigger onboarding instead of sync.
+            _logger.LogInformation("E2EE enabled on account but UMK not available; onboarding required");
+            IsE2EEOnboardingRequired = true;
+            return;
+        }
+
+        await _syncClientService.PerformFirstSyncMigrationAsync();
+        _syncClientService.StartBackgroundSync();
+    }
+
     [RelayCommand]
     private async Task LoginWithGoogleAsync()
     {
@@ -859,10 +908,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             var (success, errorMessage) = await _authService.LoginAsync("google");
             if (success)
             {
-                UpdateSyncState();
-                // Perform first sync migration
-                await _syncClientService.PerformFirstSyncMigrationAsync();
-                _syncClientService.StartBackgroundSync();
+                await HandlePostLoginAsync();
             }
             else if (errorMessage is not null)
             {
@@ -891,9 +937,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             var (success, errorMessage) = await _authService.LoginAsync("microsoft");
             if (success)
             {
-                UpdateSyncState();
-                await _syncClientService.PerformFirstSyncMigrationAsync();
-                _syncClientService.StartBackgroundSync();
+                await HandlePostLoginAsync();
             }
             else if (errorMessage is not null)
             {
@@ -930,9 +974,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             if (success)
             {
                 LoginPassword = "";
-                UpdateSyncState();
-                await _syncClientService.PerformFirstSyncMigrationAsync();
-                _syncClientService.StartBackgroundSync();
+                await HandlePostLoginAsync();
             }
             else
             {
@@ -975,6 +1017,52 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         _syncClientService.StopBackgroundSync();
         await _authService.LogoutAsync();
         UpdateSyncState();
+    }
+
+    private async Task HandlePendingDevicesAsync(List<DeviceInfo> pendingDevices)
+    {
+        foreach (var device in pendingDevices)
+        {
+            try
+            {
+                var fingerprint = _deviceKeys.ComputeFingerprint(device.AgreementPublicKey);
+                var message = $"A new device wants to join your account.\n\n" +
+                    $"Device: {device.DeviceName}\n" +
+                    $"Fingerprint: {fingerprint}\n\n" +
+                    $"Verify this fingerprint matches what is shown on the other device before approving.\n\n" +
+                    $"Do you want to approve this device?";
+
+                var approved = await _dialogService.ShowConfirmationDialogAsync(
+                    "New Device Requesting Access", message);
+
+                if (approved && device.OnboardingSessionId is not null)
+                {
+                    device.Fingerprint = fingerprint;
+                    await _deviceManagement.ApproveDeviceAsync(
+                        device.OnboardingSessionId, device);
+                    _snackbarService.Show("Device Approved",
+                        $"{device.DeviceName} has been approved and can now sync.",
+                        Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
+                }
+                else if (!approved)
+                {
+                    var reject = await _dialogService.ShowConfirmationDialogAsync(
+                        "Reject Device?",
+                        $"Do you want to reject and revoke {device.DeviceName}? " +
+                        "If you don't recognize this device, you should revoke it.");
+                    if (reject)
+                    {
+                        await _deviceManagement.RevokeDeviceAsync(device.DeviceId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to handle pending device {DeviceId}", device.DeviceId);
+                _snackbarService.Show("Error", $"Failed to approve device: {ex.Message}",
+                    Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+            }
+        }
     }
 
     private void UpdateSyncState()

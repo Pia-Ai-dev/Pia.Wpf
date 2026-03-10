@@ -292,6 +292,38 @@ public class DeviceManagementService : IDeviceManagementService
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<E2EEStatusResponse?> CheckE2EEStatusAsync()
+    {
+        try
+        {
+            using var client = await CreateAuthorizedClientAsync();
+            var response = await client.GetAsync("/api/e2ee/status");
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync<E2EEStatusResponse>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check E2EE status");
+            return null;
+        }
+    }
+
+    public async Task<DeviceStatusResponse?> GetDeviceStatusAsync(string deviceId)
+    {
+        try
+        {
+            using var client = await CreateAuthorizedClientAsync();
+            var response = await client.GetAsync($"/api/e2ee/devices/{deviceId}/status");
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync<DeviceStatusResponse>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check device status for {DeviceId}", deviceId);
+            return null;
+        }
+    }
+
     private async Task<HttpClient> CreateAuthorizedClientAsync()
     {
         var client = _httpFactory.CreateClient();

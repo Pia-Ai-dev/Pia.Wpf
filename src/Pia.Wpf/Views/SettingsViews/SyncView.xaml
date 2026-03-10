@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-             xmlns:loc="clr-namespace:Pia.Localization">
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:localSettings="clr-namespace:Pia.Views.SettingsViews">
   <ScrollViewer Margin="16">
     <StackPanel MaxWidth="600" HorizontalAlignment="Left">
       <TextBlock Text="{loc:Str Sync_Title}"
@@ -155,9 +156,27 @@
                    Appearance="Danger"/>
       </StackPanel>
 
-      <!-- E2EE Section (visible when logged in) -->
-      <StackPanel Margin="0,0,0,24"
-                  Visibility="{Binding IsSyncLoggedIn, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <!-- E2EE Onboarding (shown when second device needs key setup) -->
+      <localSettings:E2EEOnboardingView
+          Margin="0,0,0,24"
+          Visibility="{Binding IsE2EEOnboardingRequired, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+      <!-- E2EE Section (visible when logged in and NOT in onboarding) -->
+      <StackPanel Margin="0,0,0,24">
+        <StackPanel.Style>
+          <Style TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding IsSyncLoggedIn}" Value="True"/>
+                  <Condition Binding="{Binding IsE2EEOnboardingRequired}" Value="False"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Visibility" Value="Visible"/>
+              </MultiDataTrigger>
+            </Style.Triggers>
+          </Style>
+        </StackPanel.Style>
         <TextBlock Text="End-to-End Encryption"
                    FontWeight="SemiBold"
                    Margin="0,0,0,8"/>

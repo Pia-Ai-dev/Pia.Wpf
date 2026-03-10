@@ -182,6 +182,7 @@ public static class Bootstrapper
         services.AddScoped<RemindersViewModel>();
         services.AddScoped<TodoViewModel>();
         services.AddScoped<DeviceManagementViewModel>();
+        services.AddScoped<E2EEOnboardingViewModel>();
 
         // First Run Wizard
         services.AddTransient<FirstRunWizardViewModel>();

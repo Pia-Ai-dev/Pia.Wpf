@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Shared.E2EE;
 using Pia.Shared.Models;
 using Pia.Shared.Sync;
 
@@ -20,6 +21,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IMemoryService _memoryService;
     private readonly ITodoService? _todoService;
     private readonly IE2EEService? _e2ee;
+    private readonly IDeviceManagementService? _deviceMgmt;
     private readonly SyncMapper _mapper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
@@ -29,6 +31,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     private static readonly TimeSpan SyncInterval = TimeSpan.FromMinutes(5);
 
     public bool IsSyncActive => _syncTimer is not null;
+    public event EventHandler? E2EEOnboardingRequired;
+    public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
 
     public SyncClientService(
         IAuthService authService,
@@ -41,7 +45,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         IHttpClientFactory httpClientFactory,
         ILogger<SyncClientService> logger,
         ITodoService? todoService = null,
-        IE2EEService? e2ee = null)
+        IE2EEService? e2ee = null,
+        IDeviceManagementService? deviceMgmt = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -51,6 +56,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _memoryService = memoryService;
         _todoService = todoService;
         _e2ee = e2ee;
+        _deviceMgmt = deviceMgmt;
         _mapper = mapper;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -89,10 +95,12 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return;
 
-            // E2EE initialization check
+            // E2EE initialization check: if E2EE is enabled but UMK not available,
+            // this is a second device that needs onboarding before sync can proceed.
             if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
             {
-                _logger.LogWarning("E2EE enabled but UMK not available; skipping sync");
+                _logger.LogWarning("E2EE enabled but UMK not available; onboarding required");
+                E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
@@ -112,6 +120,12 @@ public class SyncClientService : ISyncClientService, IDisposable
             // Update last sync timestamp
             settings.LastSyncTimestamp = DateTime.UtcNow;
             await _settingsService.SaveSettingsAsync(settings);
+
+            // Check for pending devices (only if this device is active with E2EE)
+            if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
+            {
+                await CheckForPendingDevicesAsync();
+            }
 
             _logger.LogInformation("Sync cycle completed successfully");
         }
@@ -438,6 +452,30 @@ public class SyncClientService : ISyncClientService, IDisposable
         _logger.LogError("{Operation} failed ({Status}): {Body}", operation, (int)response.StatusCode, body);
         throw new HttpRequestException(
             $"{operation} failed ({(int)response.StatusCode}): {body}");
+    }
+
+    private async Task CheckForPendingDevicesAsync()
+    {
+        try
+        {
+            var response = await _deviceMgmt!.GetDevicesAsync();
+            var pending = response.Devices
+                .Where(d => d.Status == DeviceStatus.Pending && d.OnboardingSessionId is not null)
+                .ToList();
+
+            if (pending.Count > 0)
+            {
+                _logger.LogInformation("Found {Count} pending device(s) awaiting approval", pending.Count);
+                PendingDeviceDetected?.Invoke(this, new PendingDeviceEventArgs
+                {
+                    PendingDevices = pending
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check for pending devices");
+        }
     }
 
     private HttpClient CreateAuthenticatedClient(string accessToken)

@@ -54,4 +54,16 @@ public interface IDeviceManagementService
     /// Check if E2EE has been initialized for this device.
     /// </summary>
     bool IsInitialized();
+
+    /// <summary>
+    /// Check account-level E2EE status from the server.
+    /// Used after login to detect if onboarding is needed.
+    /// </summary>
+    Task<E2EEStatusResponse?> CheckE2EEStatusAsync();
+
+    /// <summary>
+    /// Poll a specific device's approval status from the server.
+    /// Used during onboarding to detect when a pending device becomes active.
+    /// </summary>
+    Task<DeviceStatusResponse?> GetDeviceStatusAsync(string deviceId);
 }
