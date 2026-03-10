@@ -462,7 +462,7 @@ public class AiClientService : IAiClientService
         if (provider.ProviderType == AiProviderType.OpenRouter || IsOpenRouterEndpoint(provider.Endpoint))
         {
             httpClient.DefaultRequestHeaders.Add("X-Title", "Pia");
-            httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://github.com/Pia-Ai-dev/Pia");
+            httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://github.com/Pia-Ai-dev/Pia.Wpf");
         }
 
         return provider.ProviderType switch
