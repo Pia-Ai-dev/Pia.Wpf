@@ -277,7 +277,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     public bool IsTestConnectionInProgress => TestingProviderId.HasValue;
 
     [ObservableProperty]
-    private string _optimizeHotkeyDisplayText = "Ctrl+Alt+P";
+    private string _optimizeHotkeyDisplayText = "Ctrl+Alt+O";
 
     [ObservableProperty]
     private string _assistantHotkeyDisplayText = "";
