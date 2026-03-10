@@ -45,7 +45,43 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
     {
         var providers = await LoadAsync();
+        await MigrateEmptyProviderIdsAsync(providers);
         return providers.AsReadOnly();
+    }
+
+    /// <summary>
+    /// One-time migration: providers created before the ProviderEditModel fix
+    /// all got Id = Guid.Empty, causing badge/selection collisions.
+    /// Assigns unique IDs and clears stale settings references.
+    /// </summary>
+    private async Task MigrateEmptyProviderIdsAsync(List<AiProvider> providers)
+    {
+        var emptyIdProviders = providers.Where(p => p.Id == Guid.Empty).ToList();
+        if (emptyIdProviders.Count == 0)
+            return;
+
+        _logger.LogWarning("Migrating {Count} provider(s) with empty Guid IDs", emptyIdProviders.Count);
+
+        foreach (var provider in emptyIdProviders)
+            provider.Id = Guid.NewGuid();
+
+        await SaveAsync(providers);
+
+        // Settings referenced Guid.Empty — clear stale mode defaults
+        var settings = await _settingsService.GetSettingsAsync();
+        var staleKeys = settings.ModeProviderDefaults
+            .Where(kv => kv.Value == Guid.Empty)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        if (staleKeys.Count > 0)
+        {
+            foreach (var key in staleKeys)
+                settings.ModeProviderDefaults.Remove(key);
+
+            await _settingsService.SaveSettingsAsync(settings);
+            _logger.LogWarning("Cleared {Count} stale mode-provider default(s) referencing Guid.Empty", staleKeys.Count);
+        }
     }
 
     public async Task<AiProvider?> GetProviderAsync(Guid id)

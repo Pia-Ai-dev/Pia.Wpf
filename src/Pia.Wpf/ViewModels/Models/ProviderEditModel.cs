@@ -8,7 +8,7 @@ namespace Pia.ViewModels.Models;
 public partial class ProviderEditModel : ObservableValidator
 {
     [ObservableProperty]
-    private Guid _id;
+    private Guid _id = Guid.NewGuid();
 
     [Required(ErrorMessage = "Provider name is required")]
     [ObservableProperty]
