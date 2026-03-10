@@ -3202,11 +3202,20 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Not configured.
+        ///   Looks up a localized string similar to Ctrl+Alt+P.
         /// </summary>
-        public static string Wizard_Modes_NotConfigured {
+        public static string Wizard_Modes_AssistantHotkey {
             get {
-                return ResourceManager.GetString("Wizard_Modes_NotConfigured", resourceCulture);
+                return ResourceManager.GetString("Wizard_Modes_AssistantHotkey", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to e.g. &quot;What meetings do I have today?&quot;.
+        /// </summary>
+        public static string Wizard_Modes_AssistantExample {
+            get {
+                return ResourceManager.GetString("Wizard_Modes_AssistantExample", resourceCulture);
             }
         }
         
@@ -3229,7 +3238,7 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Ctrl+Alt+P.
+        ///   Looks up a localized string similar to Ctrl+Alt+O.
         /// </summary>
         public static string Wizard_Modes_OptimizeHotkey {
             get {
@@ -3265,11 +3274,20 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Set a hotkey in Settings.
+        ///   Looks up a localized string similar to Ctrl+Alt+R.
         /// </summary>
-        public static string Wizard_Modes_SetHotkeyHint {
+        public static string Wizard_Modes_ResearchHotkey {
             get {
-                return ResourceManager.GetString("Wizard_Modes_SetHotkeyHint", resourceCulture);
+                return ResourceManager.GetString("Wizard_Modes_ResearchHotkey", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to e.g. &quot;Compare the pros and cons of React vs Vue&quot;.
+        /// </summary>
+        public static string Wizard_Modes_ResearchExample {
+            get {
+                return ResourceManager.GetString("Wizard_Modes_ResearchExample", resourceCulture);
             }
         }
         

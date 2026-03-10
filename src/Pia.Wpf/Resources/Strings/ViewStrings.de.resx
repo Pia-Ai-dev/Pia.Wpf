@@ -255,6 +255,8 @@
   <data name="Providers_Add" xml:space="preserve"><value>Anbieter hinzufügen</value></data>
   <data name="Providers_NoToolCalling" xml:space="preserve"><value>Kein Tool-Calling</value></data>
   <data name="Providers_NoStreaming" xml:space="preserve"><value>Kein Streaming</value></data>
+  <data name="Providers_NotConnected" xml:space="preserve"><value>Nicht verbunden</value></data>
+  <data name="Providers_NotConfigured" xml:space="preserve"><value>Nicht konfiguriert</value></data>
   <data name="Providers_Test" xml:space="preserve"><value>Testen</value></data>
   <data name="Providers_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
   <data name="Providers_Delete" xml:space="preserve"><value>Löschen</value></data>
@@ -363,14 +365,16 @@
   <data name="Wizard_Modes_Subtitle" xml:space="preserve"><value>Jeder Modus ist für einen anderen Arbeitsablauf konzipiert</value></data>
   <data name="Wizard_Modes_OptimizeTitle" xml:space="preserve"><value>Optimieren</value></data>
   <data name="Wizard_Modes_OptimizeDesc" xml:space="preserve"><value>Verwandle deinen Text für jeden Zweck. Wähle eine Vorlage und lass Pia dein Schreiben verbessern.</value></data>
-  <data name="Wizard_Modes_OptimizeHotkey" xml:space="preserve"><value>Strg+Alt+P</value></data>
+  <data name="Wizard_Modes_OptimizeHotkey" xml:space="preserve"><value>Strg+Alt+O</value></data>
   <data name="Wizard_Modes_OptimizeExample" xml:space="preserve"><value>z.B. "Mach diese E-Mail professioneller"</value></data>
   <data name="Wizard_Modes_AssistantTitle" xml:space="preserve"><value>Assistent</value></data>
   <data name="Wizard_Modes_AssistantDesc" xml:space="preserve"><value>Chatte mit einer KI, die sich deine Vorlieben merkt und Werkzeuge wie Gedächtnis und Erinnerungen nutzt.</value></data>
-  <data name="Wizard_Modes_NotConfigured" xml:space="preserve"><value>Nicht konfiguriert</value></data>
-  <data name="Wizard_Modes_SetHotkeyHint" xml:space="preserve"><value>Tastenkürzel in den Einstellungen festlegen</value></data>
+  <data name="Wizard_Modes_AssistantHotkey" xml:space="preserve"><value>Strg+Alt+P</value></data>
+  <data name="Wizard_Modes_AssistantExample" xml:space="preserve"><value>z.B. "Welche Termine habe ich heute?"</value></data>
   <data name="Wizard_Modes_ResearchTitle" xml:space="preserve"><value>Recherche</value></data>
   <data name="Wizard_Modes_ResearchDesc" xml:space="preserve"><value>Führe tiefgehende Analysen zu jedem Thema durch. Pia sammelt und synthetisiert Informationen für umfassende Ergebnisse.</value></data>
+  <data name="Wizard_Modes_ResearchHotkey" xml:space="preserve"><value>Strg+Alt+R</value></data>
+  <data name="Wizard_Modes_ResearchExample" xml:space="preserve"><value>z.B. "Vergleiche die Vor- und Nachteile von React vs Vue"</value></data>
   <data name="Wizard_Profile_Title" xml:space="preserve"><value>Erzähle Pia von dir</value></data>
   <data name="Wizard_Profile_Subtitle" xml:space="preserve"><value>Alle Felder sind optional. Diese Informationen helfen Pia, deine Privatsphäre zu schützen — dein Name und Standort stellen sicher, dass persönliche Daten nie an KI-Anbieter gesendet werden.</value></data>
   <data name="Wizard_Profile_Name" xml:space="preserve"><value>Name</value></data>

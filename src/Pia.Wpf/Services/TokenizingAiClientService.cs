@@ -17,9 +17,11 @@ public class TokenizingAiClientService : IAiClientService
     ];
 
     private readonly IAiClientService _inner;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISettingsService _settingsService;
     private bool? _enabled;
+    private IServiceScope? _scope;
+    private ITokenMapService? _tokenMapService;
 
     public TokenizingAiClientService(
         IAiClientService inner,
@@ -27,12 +29,17 @@ public class TokenizingAiClientService : IAiClientService
         ISettingsService settingsService)
     {
         _inner = inner;
-        _serviceProvider = serviceProvider;
+        _scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         _settingsService = settingsService;
     }
 
-    private ITokenMapService? TryGetTokenMapService() =>
-        _serviceProvider.GetService<ITokenMapService>();
+    private ITokenMapService? TryGetTokenMapService()
+    {
+        if (_tokenMapService is not null) return _tokenMapService;
+        _scope = _scopeFactory.CreateScope();
+        _tokenMapService = _scope.ServiceProvider.GetService<ITokenMapService>();
+        return _tokenMapService;
+    }
 
     private bool _initialized;
 

@@ -91,6 +91,11 @@ public partial class FirstRunWizardViewModel : ObservableObject
     [ObservableProperty]
     private string? _loginError;
 
+    [ObservableProperty]
+    private string _loginEmailInput = string.Empty;
+
+    public string LoginPassword { get; set; } = string.Empty;
+
     // --- Provider Setup (step 2) ---
 
     [ObservableProperty]
@@ -183,6 +188,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
     public IRelayCommand<string> SetOperatingModeCommand { get; }
     public IAsyncRelayCommand LoginWithGoogleCommand { get; }
     public IAsyncRelayCommand LoginWithMicrosoftCommand { get; }
+    public IAsyncRelayCommand LoginWithPasswordCommand { get; }
+    public IRelayCommand OpenRegistrationPageCommand { get; }
+    public IRelayCommand OpenForgotPasswordCommand { get; }
     public IAsyncRelayCommand TestProviderConnectionCommand { get; }
     public IAsyncRelayCommand FetchModelsCommand { get; }
 
@@ -216,6 +224,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
         SetOperatingModeCommand = new RelayCommand<string>(ExecuteSetOperatingMode);
         LoginWithGoogleCommand = new AsyncRelayCommand(LoginWithGoogleAsync);
         LoginWithMicrosoftCommand = new AsyncRelayCommand(LoginWithMicrosoftAsync);
+        LoginWithPasswordCommand = new AsyncRelayCommand(LoginWithPasswordAsync);
+        OpenRegistrationPageCommand = new RelayCommand(ExecuteOpenRegistrationPage);
+        OpenForgotPasswordCommand = new RelayCommand(ExecuteOpenForgotPassword);
         TestProviderConnectionCommand = new AsyncRelayCommand(TestProviderConnectionAsync);
         FetchModelsCommand = new AsyncRelayCommand(FetchModelsAsync);
     }
@@ -315,6 +326,74 @@ public partial class FirstRunWizardViewModel : ObservableObject
         {
             IsLoggingIn = false;
         }
+    }
+
+    // --- Local auth ---
+
+    private async Task LoginWithPasswordAsync()
+    {
+        if (string.IsNullOrWhiteSpace(LoginEmailInput) || string.IsNullOrWhiteSpace(LoginPassword))
+        {
+            LoginError = _localizationService["Sync_LocalAuth_FieldsRequired"];
+            return;
+        }
+
+        IsLoggingIn = true;
+        LoginError = null;
+
+        try
+        {
+            var (success, errorMessage) = await _authService.LoginWithPasswordAsync(LoginEmailInput, LoginPassword);
+            if (success)
+            {
+                LoginPassword = string.Empty;
+                IsLoggedIn = true;
+                LoginDisplayName = _authService.UserDisplayName;
+                LoginEmail = _authService.UserEmail;
+
+                await _providerService.EnsureBuiltInProviderAsync();
+                await _syncClientService.PerformFirstSyncMigrationAsync();
+                _syncClientService.StartBackgroundSync();
+
+                OnPropertyChanged(nameof(VisibleStepCount));
+                NextOrFinishCommand.NotifyCanExecuteChanged();
+            }
+            else
+            {
+                LoginError = errorMessage ?? _localizationService["Sync_LocalAuth_InvalidCredentials"];
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Password login failed during wizard");
+            LoginError = ex.Message;
+        }
+        finally
+        {
+            IsLoggingIn = false;
+        }
+    }
+
+    private void ExecuteOpenRegistrationPage()
+    {
+        _ = OpenAuthPageAsync("auth/register.html");
+    }
+
+    private void ExecuteOpenForgotPassword()
+    {
+        _ = OpenAuthPageAsync("auth/forgot-password.html");
+    }
+
+    private async Task OpenAuthPageAsync(string path)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        var serverUrl = settings.ServerUrl?.TrimEnd('/');
+        if (string.IsNullOrEmpty(serverUrl))
+        {
+            LoginError = _localizationService["Sync_LocalAuth_ServerUrlRequired"];
+            return;
+        }
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"{serverUrl}/{path}") { UseShellExecute = true });
     }
 
     // --- Provider test/fetch ---

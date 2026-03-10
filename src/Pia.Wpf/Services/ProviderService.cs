@@ -26,23 +26,62 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     private readonly IAiClientService _aiClientService;
     private readonly DpapiHelper _dpapiHelper;
     private readonly ISettingsService _settingsService;
+    private readonly IAuthService _authService;
 
     public ProviderService(
         ILogger<ProviderService> logger,
         IAiClientService aiClientService,
         DpapiHelper dpapiHelper,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        IAuthService authService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
         _dpapiHelper = dpapiHelper;
         _settingsService = settingsService;
+        _authService = authService;
     }
 
     public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
     {
         var providers = await LoadAsync();
+        await MigrateEmptyProviderIdsAsync(providers);
         return providers.AsReadOnly();
+    }
+
+    /// <summary>
+    /// One-time migration: providers created before the ProviderEditModel fix
+    /// all got Id = Guid.Empty, causing badge/selection collisions.
+    /// Assigns unique IDs and clears stale settings references.
+    /// </summary>
+    private async Task MigrateEmptyProviderIdsAsync(List<AiProvider> providers)
+    {
+        var emptyIdProviders = providers.Where(p => p.Id == Guid.Empty).ToList();
+        if (emptyIdProviders.Count == 0)
+            return;
+
+        _logger.LogWarning("Migrating {Count} provider(s) with empty Guid IDs", emptyIdProviders.Count);
+
+        foreach (var provider in emptyIdProviders)
+            provider.Id = Guid.NewGuid();
+
+        await SaveAsync(providers);
+
+        // Settings referenced Guid.Empty — clear stale mode defaults
+        var settings = await _settingsService.GetSettingsAsync();
+        var staleKeys = settings.ModeProviderDefaults
+            .Where(kv => kv.Value == Guid.Empty)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        if (staleKeys.Count > 0)
+        {
+            foreach (var key in staleKeys)
+                settings.ModeProviderDefaults.Remove(key);
+
+            await _settingsService.SaveSettingsAsync(settings);
+            _logger.LogWarning("Cleared {Count} stale mode-provider default(s) referencing Guid.Empty", staleKeys.Count);
+        }
     }
 
     public async Task<AiProvider?> GetProviderAsync(Guid id)
@@ -82,8 +121,9 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             provider.EncryptedApiKey = _dpapiHelper.Encrypt(apiKey);
         }
 
-        // If this is the first provider, set it as default for all modes
-        if (providers.Count == 0)
+        // If no real/configured provider exists yet, treat this as the first provider
+        if (!providers.Any(p => p.ProviderType != AiProviderType.PiaCloud
+            && !string.IsNullOrWhiteSpace(p.Endpoint)))
         {
             var settings = await _settingsService.GetSettingsAsync();
             settings.SetProviderForMode(WindowMode.Optimize, provider.Id);
@@ -268,6 +308,20 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         if (persist) await UpdateProviderAsync(provider);
 
         return new TestConnectionResult(true, supportsToolCalling, supportsStreaming);
+    }
+
+    public Task<bool> IsProviderActiveAsync(AiProvider provider)
+    {
+        if (provider.ProviderType == AiProviderType.PiaCloud)
+            return Task.FromResult(_authService.IsLoggedIn);
+
+        // Ollama doesn't require an API key
+        if (provider.ProviderType == AiProviderType.Ollama)
+            return Task.FromResult(!string.IsNullOrWhiteSpace(provider.Endpoint));
+
+        return Task.FromResult(
+            !string.IsNullOrWhiteSpace(provider.Endpoint)
+            && !string.IsNullOrEmpty(provider.EncryptedApiKey));
     }
 
     public async Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType)

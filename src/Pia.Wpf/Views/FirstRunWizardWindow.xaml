@@ -10,7 +10,7 @@
                 mc:Ignorable="d"
                 Title="{loc:Str Wizard_WindowTitle}"
                 Icon="pack://application:,,,/Resources/Icons/Pia.ico"
-                Height="650"
+                Height="750"
                 Width="800"
                 ResizeMode="NoResize"
                 WindowBackdropType="Mica"

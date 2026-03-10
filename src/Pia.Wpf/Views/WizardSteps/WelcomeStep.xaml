@@ -19,7 +19,7 @@
       <!-- Language selector -->
       <StackPanel Orientation="Horizontal"
                   HorizontalAlignment="Center"
-                  Margin="0,0,0,16">
+                  Margin="0,0,0,24">
         <ui:SymbolIcon Symbol="LocalLanguage24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"
                        Foreground="{DynamicResource TextPlaceholderColorBrush}"/>
         <ComboBox ItemsSource="{Binding UiLanguages}"
@@ -34,37 +34,45 @@
         </ComboBox>
       </StackPanel>
 
-      <!-- Persona Image -->
-      <Ellipse Width="96" Height="96"
-               HorizontalAlignment="Center"
-               Margin="0,0,0,24">
-        <Ellipse.Fill>
-          <ImageBrush ImageSource="pack://application:,,,/Resources/Images/Pia_Persona.png"
-                      Stretch="UniformToFill" />
-        </Ellipse.Fill>
-      </Ellipse>
+      <!-- Left-right layout: image + text -->
+      <Grid Margin="0,0,0,32">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="200" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-      <!-- Heading -->
-      <TextBlock Text="{loc:Str Wizard_Welcome_Title}"
-                 Style="{StaticResource H1TextStyle}"
-                 HorizontalAlignment="Center"
-                 Margin="0,0,0,8" />
+        <!-- Persona Image -->
+        <Ellipse Width="200" Height="200"
+                 Grid.Column="0"
+                 VerticalAlignment="Center"
+                 HorizontalAlignment="Center">
+          <Ellipse.Fill>
+            <ImageBrush ImageSource="pack://application:,,,/Resources/Images/Pia_Persona.png"
+                        Stretch="UniformToFill" />
+          </Ellipse.Fill>
+        </Ellipse>
 
-      <!-- Subtitle -->
-      <TextBlock Text="{loc:Str Wizard_Welcome_Subtitle}"
-                 Style="{StaticResource H3TextStyle}"
-                 HorizontalAlignment="Center"
-                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                 Margin="0,0,0,24" />
+        <!-- Text content -->
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="24,0,0,0">
+          <!-- Heading -->
+          <TextBlock Text="{loc:Str Wizard_Welcome_Title}"
+                     Style="{StaticResource H1TextStyle}"
+                     Margin="0,0,0,8" />
 
-      <!-- Description -->
-      <TextBlock Text="{loc:Str Wizard_Welcome_Description}"
-                 TextWrapping="Wrap"
-                 TextAlignment="Center"
-                 Style="{StaticResource BodyTextStyle}"
-                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                 Margin="0,0,0,32"
-                 LineHeight="22" />
+          <!-- Subtitle -->
+          <TextBlock Text="{loc:Str Wizard_Welcome_Subtitle}"
+                     Style="{StaticResource H3TextStyle}"
+                     Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                     Margin="0,0,0,16" />
+
+          <!-- Description -->
+          <TextBlock Text="{loc:Str Wizard_Welcome_Description}"
+                     TextWrapping="Wrap"
+                     Style="{StaticResource BodyTextStyle}"
+                     Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                     LineHeight="22" />
+        </StackPanel>
+      </Grid>
 
       <!-- Feature Pills -->
       <StackPanel Orientation="Horizontal"
