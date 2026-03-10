@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
@@ -17,6 +18,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly IProviderService _providerService;
     private readonly ISyncClientService _syncClientService;
+    private readonly IDeviceManagementService _deviceManagement;
     private readonly ILogger<FirstRunWizardViewModel> _logger;
 
     public const int TotalSteps = 6;
@@ -58,6 +60,11 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     public IEnumerable<TargetLanguage> UiLanguages => Enum.GetValues<TargetLanguage>();
 
+    partial void OnIsE2EEOnboardingRequiredChanged(bool value)
+    {
+        NextOrFinishCommand.NotifyCanExecuteChanged();
+    }
+
     partial void OnUiLanguageChanged(TargetLanguage value)
     {
         _localizationService.SetLanguage(value);
@@ -81,6 +88,12 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isLoggingIn;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VisibleStepCount))]
+    private bool _isE2EEOnboardingRequired;
+
+    public E2EEOnboardingViewModel OnboardingViewModel { get; }
 
     [ObservableProperty]
     private string? _loginDisplayName;
@@ -202,6 +215,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
         IAuthService authService,
         IProviderService providerService,
         ISyncClientService syncClientService,
+        IDeviceManagementService deviceManagement,
+        E2EEOnboardingViewModel onboardingViewModel,
         ILogger<FirstRunWizardViewModel> logger)
     {
         _settingsService = settingsService;
@@ -211,8 +226,18 @@ public partial class FirstRunWizardViewModel : ObservableObject
         _authService = authService;
         _providerService = providerService;
         _syncClientService = syncClientService;
+        _deviceManagement = deviceManagement;
+        OnboardingViewModel = onboardingViewModel;
         _logger = logger;
         _uiLanguage = _localizationService.CurrentLanguage;
+
+        // When E2EE onboarding completes in wizard, start sync
+        OnboardingViewModel.OnboardingCompleted += async (_, _) =>
+        {
+            IsE2EEOnboardingRequired = false;
+            await _syncClientService.PerformFirstSyncMigrationAsync();
+            _syncClientService.StartBackgroundSync();
+        };
 
         NextOrFinishCommand = new AsyncRelayCommand(HandleNextOrFinishAsync, CanExecuteNextOrFinish);
         BackCommand = new RelayCommand(ExecuteBack, CanExecuteBack);
@@ -236,6 +261,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
     private bool CanExecuteNextOrFinish()
     {
         if (IsCompleting) return false;
+
+        // Block Next on account step while E2EE onboarding is in progress
+        if (CurrentStep == 1 && IsE2EEOnboardingRequired) return false;
 
         // Block Next on provider step unless test passed
         if (CurrentStep == 2 && !ConnectionTestPassed) return false;
@@ -305,8 +333,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
                 LoginEmail = _authService.UserEmail;
 
                 await _providerService.EnsureBuiltInProviderAsync();
-                await _syncClientService.PerformFirstSyncMigrationAsync();
-                _syncClientService.StartBackgroundSync();
+                await HandlePostLoginSyncAsync();
 
                 // Update navigation since step 2 is now skipped
                 OnPropertyChanged(nameof(VisibleStepCount));
@@ -352,8 +379,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
                 LoginEmail = _authService.UserEmail;
 
                 await _providerService.EnsureBuiltInProviderAsync();
-                await _syncClientService.PerformFirstSyncMigrationAsync();
-                _syncClientService.StartBackgroundSync();
+                await HandlePostLoginSyncAsync();
 
                 OnPropertyChanged(nameof(VisibleStepCount));
                 NextOrFinishCommand.NotifyCanExecuteChanged();
@@ -394,6 +420,24 @@ public partial class FirstRunWizardViewModel : ObservableObject
             return;
         }
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"{serverUrl}/{path}") { UseShellExecute = true });
+    }
+
+    /// <summary>
+    /// Check E2EE status before starting sync. If E2EE is enabled on the account,
+    /// show onboarding instead of syncing (to avoid pushing unencrypted data).
+    /// </summary>
+    private async Task HandlePostLoginSyncAsync()
+    {
+        var e2eeStatus = await _deviceManagement.CheckE2EEStatusAsync();
+        if (e2eeStatus is { IsEnabled: true } && !_deviceManagement.IsInitialized())
+        {
+            _logger.LogInformation("E2EE enabled on account but UMK not available; showing onboarding in wizard");
+            IsE2EEOnboardingRequired = true;
+            return;
+        }
+
+        await _syncClientService.PerformFirstSyncMigrationAsync();
+        _syncClientService.StartBackgroundSync();
     }
 
     // --- Provider test/fetch ---

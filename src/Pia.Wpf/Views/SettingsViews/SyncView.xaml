@@ -208,6 +208,11 @@
           <Run Text="Device fingerprint: "/>
           <Run Text="{Binding DeviceFingerprint, Mode=OneWay}" FontFamily="Consolas"/>
         </TextBlock>
+        <ui:Button Visibility="{Binding IsE2EEEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   Content="Check for device requests"
+                   Icon="{ui:SymbolIcon PeopleSearch24}"
+                   Command="{Binding CheckForPendingDevicesCommand}"
+                   Margin="0,0,0,8"/>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

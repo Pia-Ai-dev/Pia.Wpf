@@ -29,6 +29,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private Timer? _syncTimer;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private static readonly TimeSpan SyncInterval = TimeSpan.FromMinutes(5);
+    private bool _hasVerifiedServerE2EEStatus;
 
     public bool IsSyncActive => _syncTimer is not null;
     public event EventHandler? E2EEOnboardingRequired;
@@ -79,6 +80,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         _syncTimer?.Dispose();
         _syncTimer = null;
+        _hasVerifiedServerE2EEStatus = false;
         _logger.LogInformation("Background sync stopped");
     }
 
@@ -102,6 +104,21 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogWarning("E2EE enabled but UMK not available; onboarding required");
                 E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
                 return;
+            }
+
+            // One-time server E2EE check: if local E2EE is off, verify against server
+            // to catch cases where E2EE was enabled on another device (e.g., first-run
+            // wizard login, app restart). Without this, sync would push IsE2EEEncrypted=false.
+            if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
+            {
+                _hasVerifiedServerE2EEStatus = true;
+                var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
+                if (serverStatus is { IsEnabled: true })
+                {
+                    _logger.LogWarning("E2EE enabled on server but not locally; onboarding required");
+                    E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
             }
 
             var accessToken = await _authService.GetAccessTokenAsync();
