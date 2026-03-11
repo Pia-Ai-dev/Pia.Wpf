@@ -74,6 +74,12 @@ jobs:
           -v ${{ steps.info.outputs.version }}
           -p publish
           --mainExe Pia.Wpf.exe
+          --icon src/Pia.Wpf/Resources/Icons/Pia.ico
+          --packTitle "Pia"
+          --packAuthors "Pia-Ai-dev"
+          --instLicense src/Pia.Wpf/Resources/Installer/LICENSE.txt
+          --msiBanner src/Pia.Wpf/Resources/Installer/banner.bmp
+          --msiLogo src/Pia.Wpf/Resources/Installer/logo.bmp
           --msi
 
       - name: Upload Velopack release to GitHub

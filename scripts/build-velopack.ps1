@@ -83,6 +83,11 @@ vpk pack `
     -o $ReleaseDir `
     --mainExe Pia.Wpf.exe `
     --icon "$RepoRoot\src\Pia.Wpf\Resources\Icons\Pia.ico" `
+    --packTitle "Pia" `
+    --packAuthors "Pia-Ai-dev" `
+    --instLicense "$RepoRoot\src\Pia.Wpf\Resources\Installer\LICENSE.txt" `
+    --msiBanner "$RepoRoot\src\Pia.Wpf\Resources\Installer\banner.bmp" `
+    --msiLogo "$RepoRoot\src\Pia.Wpf\Resources\Installer\logo.bmp" `
     --msi
 
 if ($LASTEXITCODE -ne 0) {
