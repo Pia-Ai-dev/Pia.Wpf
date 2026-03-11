@@ -101,6 +101,26 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
                 () => HandlePendingDevicesAsync(args.PendingDevices));
         };
 
+        // When current device is removed/revoked on the server, disable E2EE locally
+        _syncClientService.CurrentDeviceRevoked += (_, _) =>
+        {
+            System.Windows.Application.Current?.Dispatcher.InvokeAsync(async () =>
+            {
+                _isLoading = true;
+                IsE2EEEnabled = false;
+                DeviceFingerprint = string.Empty;
+                _isLoading = false;
+
+                var settings = await _settingsService.GetSettingsAsync();
+                settings.IsE2EEEnabled = false;
+                await _settingsService.SaveSettingsAsync(settings);
+
+                _snackbarService.Show("E2EE Disabled",
+                    "This device was removed from E2EE. Encryption has been disabled.",
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(8));
+            });
+        };
+
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
         {

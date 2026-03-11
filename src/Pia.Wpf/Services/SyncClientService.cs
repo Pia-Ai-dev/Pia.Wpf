@@ -23,6 +23,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly ITodoService? _todoService;
     private readonly IE2EEService? _e2ee;
     private readonly IDeviceManagementService? _deviceMgmt;
+    private readonly IDeviceKeyService? _deviceKeys;
     private readonly SyncMapper _mapper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
@@ -35,6 +36,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     public bool IsSyncActive => _syncTimer is not null;
     public event EventHandler? E2EEOnboardingRequired;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
+    public event EventHandler? CurrentDeviceRevoked;
 
     public SyncClientService(
         IAuthService authService,
@@ -48,7 +50,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         ILogger<SyncClientService> logger,
         ITodoService? todoService = null,
         IE2EEService? e2ee = null,
-        IDeviceManagementService? deviceMgmt = null)
+        IDeviceManagementService? deviceMgmt = null,
+        IDeviceKeyService? deviceKeys = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -59,6 +62,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _todoService = todoService;
         _e2ee = e2ee;
         _deviceMgmt = deviceMgmt;
+        _deviceKeys = deviceKeys;
         _mapper = mapper;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -554,6 +558,25 @@ public class SyncClientService : ISyncClientService, IDisposable
         try
         {
             var response = await _deviceMgmt!.GetDevicesAsync();
+
+            // Check if current device still exists and is active
+            if (_deviceKeys is not null)
+            {
+                var currentDeviceId = _deviceKeys.GetDeviceId();
+                var currentDevice = response.Devices
+                    .FirstOrDefault(d => d.DeviceId == currentDeviceId);
+
+                if (currentDevice is null || currentDevice.Status == DeviceStatus.Revoked)
+                {
+                    _logger.LogWarning(
+                        "Current device {DeviceId} was {Status} on server — raising CurrentDeviceRevoked",
+                        currentDeviceId,
+                        currentDevice is null ? "not found" : "revoked");
+                    CurrentDeviceRevoked?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+            }
+
             var pending = response.Devices
                 .Where(d => d.Status == DeviceStatus.Pending && d.OnboardingSessionId is not null)
                 .ToList();
