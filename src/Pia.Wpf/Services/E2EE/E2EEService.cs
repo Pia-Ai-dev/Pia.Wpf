@@ -51,6 +51,9 @@ public class E2EEService : IE2EEService
             return null;
 
         _cachedUmk = Convert.FromBase64String(decrypted);
+        var fingerprint = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(_cachedUmk)[..4]);
+        _logger.LogInformation("UMK loaded from DPAPI (fingerprint: {Fingerprint})", fingerprint);
         return _cachedUmk;
     }
 
@@ -61,7 +64,7 @@ public class E2EEService : IE2EEService
         var settings = await _settings.GetSettingsAsync();
         settings.E2EEEncryptedUmk = encrypted;
         await _settings.SaveSettingsAsync(settings);
-        _cachedUmk = umk;
+        _cachedUmk = umk.ToArray();
     }
 
     public bool HasUmk() => LoadUmk() is not null;

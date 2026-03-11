@@ -1220,13 +1220,18 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             // Stop any in-progress sync and wait for it to finish
             await _syncClientService.StopBackgroundSyncAndWaitAsync();
 
-            // Always generate a new key: use full bootstrap if device keys
-            // don't exist yet, otherwise re-key with a fresh UMK
-            string recoveryCode;
-            if (!_deviceKeys.HasDeviceKeys())
-                recoveryCode = await _deviceManagement.BootstrapFirstDeviceAsync();
-            else
-                recoveryCode = await _deviceManagement.ReKeyAsync();
+            // Check if E2EE is already enabled on the server by another device.
+            // If so, this device needs onboarding — NOT a fresh UMK generation,
+            // which would create a key mismatch.
+            var serverStatus = await _deviceManagement.CheckE2EEStatusAsync();
+            if (serverStatus is { IsEnabled: true })
+            {
+                IsE2EEOnboardingRequired = true;
+                return;
+            }
+
+            // No E2EE on the server yet — bootstrap as the first device
+            var recoveryCode = await _deviceManagement.BootstrapFirstDeviceAsync();
 
             DeviceFingerprint = _deviceKeys.GetFingerprint();
 

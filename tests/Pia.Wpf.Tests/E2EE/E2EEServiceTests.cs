@@ -73,6 +73,54 @@ public class E2EEServiceTests
     }
 
     [Fact]
+    public async Task StoreUmkAsync_SurvivesCallerArrayClear()
+    {
+        // Reproduces the bug where FetchAndUnwrapUmkAsync / ActivateViaRecoveryAsync
+        // call StoreUmkAsync then Array.Clear on the same byte[], zeroing the cache.
+        var umk = _crypto.GenerateRandomBytes(32);
+        var originalUmk = umk.ToArray(); // save a copy for comparison
+
+        await _sut.StoreUmkAsync(umk);
+
+        // Simulate what DeviceManagementService does after StoreUmkAsync
+        Array.Clear(umk);
+
+        // LoadUmk should still return the correct (non-zeroed) key
+        var loaded = _sut.LoadUmk();
+        Assert.NotNull(loaded);
+        Assert.Equal(originalUmk, loaded);
+        Assert.NotEqual(new byte[32], loaded); // must not be all zeros
+    }
+
+    [Fact]
+    public async Task StoreUmkAsync_CallerClear_EncryptDecryptStillWorks()
+    {
+        // End-to-end: store UMK, clear caller's reference, then encrypt/decrypt
+        var umk = _crypto.GenerateRandomBytes(32);
+        await _sut.StoreUmkAsync(umk);
+        Array.Clear(umk);
+
+        _settings.IsE2EEEnabled = true;
+
+        var memory = new SyncMemory
+        {
+            Id = Guid.NewGuid(),
+            Type = "fact",
+            Label = "test memory",
+            Data = "{\"key\":\"value\"}"
+        };
+
+        var (encryptedPayload, wrappedDek) = _sut.EncryptRecord(
+            memory, "user1", "memory", memory.Id.ToString());
+
+        var decrypted = _sut.DecryptRecord<SyncMemory>(
+            encryptedPayload, wrappedDek, "user1", "memory", memory.Id.ToString());
+
+        Assert.Equal(memory.Label, decrypted.Label);
+        Assert.Equal(memory.Data, decrypted.Data);
+    }
+
+    [Fact]
     public async Task DecryptRecord_WrongEntityId_ShouldThrow()
     {
         await _sut.GenerateAndStoreUmkAsync();
