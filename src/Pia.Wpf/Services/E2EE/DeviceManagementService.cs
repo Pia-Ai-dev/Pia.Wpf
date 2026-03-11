@@ -89,6 +89,32 @@ public class DeviceManagementService : IDeviceManagementService
 
     public async Task ApproveDeviceAsync(string onboardingSessionId, DeviceInfo targetDevice)
     {
+        var deviceId = _deviceKeys.GetDeviceId();
+
+        // Verify this device is registered and active before attempting approval
+        var ownStatus = await GetDeviceStatusAsync(deviceId);
+        if (ownStatus is null || ownStatus.Status != DeviceStatus.Active)
+        {
+            _logger.LogWarning(
+                "Cannot approve device: this device ({DeviceId}) is not registered as Active on the server (status={Status}). Re-registering.",
+                deviceId, ownStatus?.Status.ToString() ?? "not found");
+
+            // Re-register to ensure the device exists on the server
+            await RegisterDeviceOnServerAsync(
+                deviceId,
+                _deviceKeys.GetAgreementPublicKey(),
+                _deviceKeys.GetSigningPublicKey());
+
+            // Re-check status — if still not Active, we can't approve
+            ownStatus = await GetDeviceStatusAsync(deviceId);
+            if (ownStatus is null || ownStatus.Status != DeviceStatus.Active)
+            {
+                throw new InvalidOperationException(
+                    $"This device is not active on the server (status: {ownStatus?.Status.ToString() ?? "unknown"}). " +
+                    "It may need to be approved by another device first.");
+            }
+        }
+
         // Wrap UMK for target device
         var (wrappedUmk, hkdfSalt) = _e2ee.WrapUmkForDevice(
             targetDevice.AgreementPublicKey, targetDevice.DeviceId);
@@ -99,7 +125,7 @@ public class DeviceManagementService : IDeviceManagementService
             TargetDeviceId = targetDevice.DeviceId,
             WrappedUmk = wrappedUmk,
             HkdfSalt = hkdfSalt,
-            ApproverDeviceId = _deviceKeys.GetDeviceId(),
+            ApproverDeviceId = deviceId,
         };
 
         // Sign the approval

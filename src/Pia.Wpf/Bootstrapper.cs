@@ -1,7 +1,9 @@
-﻿using System.Net.Http;
+﻿using System.IO;
+using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NReco.Logging.File;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Navigation;
@@ -75,6 +77,26 @@ public static class Bootstrapper
         {
             builder.AddDebug();
             builder.SetMinimumLevel(LogLevel.Information);
+
+            var logDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Pia", "Logs");
+            Directory.CreateDirectory(logDirectory);
+
+            builder.AddFile(Path.Combine(logDirectory, "pia.log"), options =>
+            {
+                options.Append = true;
+                options.MinLevel = LogLevel.Information;
+                options.FileSizeLimitBytes = 10 * 1024 * 1024; // 10 MB per file
+                options.MaxRollingFiles = 7;                    // Keep 7 days
+                options.FormatLogFileName = name =>
+                {
+                    var ext = Path.GetExtension(name);
+                    var baseName = Path.GetFileNameWithoutExtension(name);
+                    var dir = Path.GetDirectoryName(name);
+                    return Path.Combine(dir!, $"{baseName}-{DateTime.Now:yyyy-MM-dd}{ext}");
+                };
+            });
         });
 
         // Infrastructure
