@@ -532,6 +532,90 @@ public class AiClientService : IAiClientService
         ).AsIChatClient();
     }
 
+    public async Task<string> GeneratePromptViaPiaCloudAsync(
+        string styleDescription,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        var serverUrl = settings.ServerUrl?.TrimEnd('/');
+
+        if (string.IsNullOrEmpty(serverUrl))
+            throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
+
+        var timeout = TimeSpan.FromSeconds(30);
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeoutCts.Token);
+
+        var httpClient = _httpClientFactory.CreateClient();
+
+        var requestBody = new { styleDescription };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
+        {
+            try
+            {
+                var token = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
+                httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
+            catch
+            {
+                // If decryption fails, proceed without auth
+            }
+        }
+
+        try
+        {
+            var response = await httpClient.PostAsync(
+                $"{serverUrl}/api/ai/generate-prompt", content, linkedCts.Token);
+
+            var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                var friendlyMessage = "Token limit reached.";
+                try
+                {
+                    using var errDoc = System.Text.Json.JsonDocument.Parse(responseJson);
+                    var root = errDoc.RootElement;
+                    if (root.TryGetProperty("resetsAt", out var resetsAtProp))
+                    {
+                        var resetsAt = resetsAtProp.GetDateTime();
+                        var remaining = resetsAt - DateTime.UtcNow;
+                        if (remaining.TotalMinutes > 60)
+                            friendlyMessage = $"Token limit reached. Resets in {remaining.Hours}h {remaining.Minutes}m.";
+                        else if (remaining.TotalMinutes > 1)
+                            friendlyMessage = $"Token limit reached. Resets in {(int)remaining.TotalMinutes} minutes.";
+                        else
+                            friendlyMessage = "Token limit reached. Resets shortly.";
+                    }
+                }
+                catch { }
+                throw new InvalidOperationException(friendlyMessage);
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("PiaCloud generate-prompt returned {StatusCode}: {Body}",
+                    (int)response.StatusCode, responseJson);
+                throw new HttpRequestException(
+                    $"PiaCloud prompt generation failed ({(int)response.StatusCode}): {responseJson}");
+            }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+            return doc.RootElement.GetProperty("prompt").GetString()
+                ?? throw new InvalidOperationException("Server returned empty prompt");
+        }
+        catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
+        {
+            throw new TimeoutException($"PiaCloud request timed out after {timeout.TotalSeconds} seconds");
+        }
+    }
+
     public async Task TestPiaCloudConnectionAsync(CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetSettingsAsync();

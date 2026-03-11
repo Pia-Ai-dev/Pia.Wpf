@@ -36,5 +36,9 @@ public interface IAiClientService
         bool isVoiceInput,
         CancellationToken cancellationToken = default);
 
+    Task<string> GeneratePromptViaPiaCloudAsync(
+        string styleDescription,
+        CancellationToken cancellationToken = default);
+
     Task TestPiaCloudConnectionAsync(CancellationToken cancellationToken = default);
 }

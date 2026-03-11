@@ -93,6 +93,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         LoadMoreCommand = new AsyncRelayCommand(ExecuteLoadMore, CanLoadMore);
 
         PropertyChanged += OnPropertyChanged;
+        _historyService.SessionsChanged += OnSessionsChanged;
     }
 
     public void OnNavigatedTo(object? parameter)
@@ -318,6 +319,12 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         LoadMoreCommand.NotifyCanExecuteChanged();
     }
 
+    private void OnSessionsChanged(object? sender, EventArgs e)
+    {
+        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            SafeFireAndForget(LoadSessionsAsync(0, 50)));
+    }
+
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(SelectedSession))
@@ -352,7 +359,8 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         _debounceCts?.Cancel();
         _debounceCts?.Dispose();
 
-        // Unsubscribe from own PropertyChanged event
+        // Unsubscribe from events
+        _historyService.SessionsChanged -= OnSessionsChanged;
         PropertyChanged -= OnPropertyChanged;
 
         GC.SuppressFinalize(this);

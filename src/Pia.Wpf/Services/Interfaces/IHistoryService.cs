@@ -4,6 +4,7 @@ namespace Pia.Services.Interfaces;
 
 public interface IHistoryService
 {
+    event EventHandler? SessionsChanged;
     Task AddSessionAsync(OptimizationSession session);
     Task<IReadOnlyList<OptimizationSession>> GetSessionsAsync(int offset = 0, int limit = 50);
     Task<IReadOnlyList<OptimizationSession>> SearchSessionsAsync(
