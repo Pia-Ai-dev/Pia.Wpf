@@ -1,3 +1,4 @@
+using Pia.Models;
 using Pia.Shared.E2EE;
 
 namespace Pia.Services.Interfaces;
@@ -19,8 +20,8 @@ public interface ISyncClientService
     /// </summary>
     event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
 
-    /// <summary>Triggers a full sync cycle (push then pull).</summary>
-    Task SyncNowAsync();
+    /// <summary>Triggers a full sync cycle (push then pull). Returns counts, or null if sync was skipped.</summary>
+    Task<SyncResult?> SyncNowAsync();
 
     /// <summary>Starts the background sync timer.</summary>
     void StartBackgroundSync();

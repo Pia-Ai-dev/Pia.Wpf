@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
@@ -84,18 +85,19 @@ public class SyncClientService : ISyncClientService, IDisposable
         _logger.LogInformation("Background sync stopped");
     }
 
-    public async Task SyncNowAsync()
+    public async Task<SyncResult?> SyncNowAsync()
     {
-        if (!_authService.IsLoggedIn) return;
+        if (!_authService.IsLoggedIn) return null;
 
         // Non-blocking: skip if another sync is already running
-        if (!await _syncLock.WaitAsync(0)) return;
+        if (!await _syncLock.WaitAsync(0)) return null;
 
+        SyncResult? result = null;
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
-                return;
+                return null;
 
             // E2EE initialization check: if E2EE is enabled but UMK not available,
             // this is a second device that needs onboarding before sync can proceed.
@@ -103,7 +105,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             {
                 _logger.LogWarning("E2EE enabled but UMK not available; onboarding required");
                 E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
-                return;
+                return null;
             }
 
             // One-time server E2EE check: if local E2EE is off, verify against server
@@ -117,22 +119,22 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     _logger.LogWarning("E2EE enabled on server but not locally; onboarding required");
                     E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
-                    return;
+                    return null;
                 }
             }
 
             var accessToken = await _authService.GetAccessTokenAsync();
             if (string.IsNullOrEmpty(accessToken))
-                return;
+                return null;
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
 
             // Push local changes
-            await PushChangesAsync(client, serverUrl, settings);
+            var pushed = await PushChangesAsync(client, serverUrl, settings);
 
             // Pull remote changes
-            await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors) = await PullChangesAsync(client, serverUrl, settings);
 
             // Update last sync timestamp
             settings.LastSyncTimestamp = DateTime.UtcNow;
@@ -144,6 +146,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 await CheckForPendingDevicesAsync();
             }
 
+            result = new SyncResult(pushed, pulled, decryptErrors);
             _logger.LogInformation("Sync cycle completed successfully");
         }
         catch (Exception ex)
@@ -154,6 +157,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             _syncLock.Release();
         }
+        return result;
     }
 
     public async Task PerformFirstSyncMigrationAsync()
@@ -253,7 +257,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _syncLock.Release();
     }
 
-    private async Task PushChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    private async Task<int> PushChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         // For the initial implementation, push all data.
         // A future optimization would track changed entities since last push
@@ -279,6 +283,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             LastSyncTimestamp = lastSync,
             DeviceId = settings.SyncDeviceId,
             IsE2EEEncrypted = isE2EE,
+            Settings = _mapper.ToSyncSettings(settings, userId),
             Templates = new SyncEntityChanges<SyncTemplate>
             {
                 Upserted = templates
@@ -313,15 +318,24 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
         };
 
+        var pushedCount = request.Templates.Upserted.Count
+            + request.Providers.Upserted.Count
+            + request.Sessions.Added.Count
+            + request.Memories.Upserted.Count
+            + request.Todos.Upserted.Count;
+
         var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
             _logger.LogWarning("Push failed with status {Status}: {Body}", response.StatusCode, body);
+            return 0;
         }
+
+        return pushedCount;
     }
 
-    private async Task PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    private async Task<(int Pulled, int DecryptionErrors)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
         var since = lastSync.ToString("O");
@@ -330,36 +344,54 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Pull failed with status {Status}", response.StatusCode);
-            return;
+            return (0, 0);
         }
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
-        if (pullResponse is null) return;
+        if (pullResponse is null) return (0, 0);
 
         var userId = settings.SyncUserId;
+
+        var decryptionErrors = 0;
 
         // Apply settings
         if (pullResponse.Settings is not null)
         {
-            var currentSettings = await _settingsService.GetSettingsAsync();
-            _mapper.ApplySyncSettings(pullResponse.Settings, currentSettings, userId);
-            await _settingsService.SaveSettingsAsync(currentSettings);
+            try
+            {
+                var currentSettings = await _settingsService.GetSettingsAsync();
+                _mapper.ApplySyncSettings(pullResponse.Settings, currentSettings, userId);
+                await _settingsService.SaveSettingsAsync(currentSettings);
+            }
+            catch (CryptographicException ex)
+            {
+                decryptionErrors++;
+                _logger.LogWarning(ex, "Failed to decrypt synced settings; skipping");
+            }
         }
 
         // Apply templates
         foreach (var template in pullResponse.Templates.Upserted)
         {
-            var local = _mapper.FromSyncTemplate(template, userId);
-            var existing = (await _templateService.GetTemplatesAsync())
-                .FirstOrDefault(t => t.Id == template.Id);
+            try
+            {
+                var local = _mapper.FromSyncTemplate(template, userId);
+                var existing = (await _templateService.GetTemplatesAsync())
+                    .FirstOrDefault(t => t.Id == template.Id);
 
-            if (existing is not null)
-            {
-                await _templateService.UpdateTemplateAsync(local);
+                if (existing is not null)
+                {
+                    await _templateService.UpdateTemplateAsync(local);
+                }
+                else
+                {
+                    await _templateService.AddTemplateAsync(local);
+                }
             }
-            else
+            catch (CryptographicException ex)
             {
-                await _templateService.AddTemplateAsync(local);
+                decryptionErrors++;
+                _logger.LogWarning(ex, "Failed to decrypt synced template {Id}; skipping", template.Id);
             }
         }
 
@@ -371,19 +403,27 @@ public class SyncClientService : ISyncClientService, IDisposable
         // Apply providers
         foreach (var provider in pullResponse.Providers.Upserted)
         {
-            var local = _mapper.FromSyncProvider(provider, userId);
-            var existing = await _providerService.GetProviderAsync(provider.Id);
+            try
+            {
+                var local = _mapper.FromSyncProvider(provider, userId);
+                var existing = await _providerService.GetProviderAsync(provider.Id);
 
-            if (existing is not null)
-            {
-                // When E2EE is active, the API key is already re-encrypted via DPAPI in FromSyncProvider
-                var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
-                await _providerService.UpdateProviderAsync(local, apiKey);
+                if (existing is not null)
+                {
+                    // When E2EE is active, the API key is already re-encrypted via DPAPI in FromSyncProvider
+                    var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
+                    await _providerService.UpdateProviderAsync(local, apiKey);
+                }
+                else
+                {
+                    var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
+                    await _providerService.AddProviderAsync(local, apiKey);
+                }
             }
-            else
+            catch (CryptographicException ex)
             {
-                var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
-                await _providerService.AddProviderAsync(local, apiKey);
+                decryptionErrors++;
+                _logger.LogWarning(ex, "Failed to decrypt synced provider {Id}; skipping", provider.Id);
             }
         }
 
@@ -395,11 +435,19 @@ public class SyncClientService : ISyncClientService, IDisposable
         // Apply sessions (append-only)
         foreach (var session in pullResponse.Sessions.Added)
         {
-            var local = _mapper.FromSyncSession(session, userId);
-            var existing = await _historyService.GetSessionAsync(session.Id);
-            if (existing is null)
+            try
             {
-                await _historyService.AddSessionAsync(local);
+                var local = _mapper.FromSyncSession(session, userId);
+                var existing = await _historyService.GetSessionAsync(session.Id);
+                if (existing is null)
+                {
+                    await _historyService.AddSessionAsync(local);
+                }
+            }
+            catch (CryptographicException ex)
+            {
+                decryptionErrors++;
+                _logger.LogWarning(ex, "Failed to decrypt synced session {Id}; skipping", session.Id);
             }
         }
 
@@ -411,16 +459,24 @@ public class SyncClientService : ISyncClientService, IDisposable
         // Apply memories
         foreach (var memory in pullResponse.Memories.Upserted)
         {
-            var local = _mapper.FromSyncMemory(memory, userId);
-            var existing = await _memoryService.GetObjectAsync(memory.Id);
+            try
+            {
+                var local = _mapper.FromSyncMemory(memory, userId);
+                var existing = await _memoryService.GetObjectAsync(memory.Id);
 
-            if (existing is not null)
-            {
-                await _memoryService.UpdateObjectDataAsync(local.Id, local.Label, local.Data);
+                if (existing is not null)
+                {
+                    await _memoryService.UpdateObjectDataAsync(local.Id, local.Label, local.Data);
+                }
+                else
+                {
+                    await _memoryService.ImportObjectAsync(local);
+                }
             }
-            else
+            catch (CryptographicException ex)
             {
-                await _memoryService.ImportObjectAsync(local);
+                decryptionErrors++;
+                _logger.LogWarning(ex, "Failed to decrypt synced memory {Id}; skipping", memory.Id);
             }
         }
 
@@ -434,16 +490,25 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             foreach (var todo in pullResponse.Todos.Upserted)
             {
-                var local = _mapper.FromSyncTodo(todo, userId);
-                var existing = await _todoService.GetAsync(todo.Id);
+                try
+                {
+                    var local = _mapper.FromSyncTodo(todo, userId);
+                    var existing = await _todoService.GetAsync(todo.Id);
 
-                if (existing is not null)
-                {
-                    await _todoService.UpdateAsync(local);
+                    if (existing is not null)
+                    {
+                        await _todoService.UpdateAsync(local);
+                    }
+                    else
+                    {
+                        await _todoService.ImportAsync(local);
+                    }
                 }
-                else
+                catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                            or System.Security.Cryptography.AuthenticationTagMismatchException)
                 {
-                    await _todoService.ImportAsync(local);
+                    decryptionErrors++;
+                    _logger.LogWarning(ex, "Failed to decrypt synced todo {Id}; skipping", todo.Id);
                 }
             }
 
@@ -453,12 +518,25 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
         }
 
+        if (decryptionErrors > 0)
+        {
+            _logger.LogWarning("Pull completed with {Count} decryption error(s) — data may have been encrypted with a different key", decryptionErrors);
+        }
+
+        var pulledCount = pullResponse.Templates.Upserted.Count
+            + pullResponse.Providers.Upserted.Count
+            + pullResponse.Sessions.Added.Count
+            + pullResponse.Memories.Upserted.Count
+            + pullResponse.Todos.Upserted.Count;
+
         _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {Todos}Todo",
             pullResponse.Templates.Upserted.Count,
             pullResponse.Providers.Upserted.Count,
             pullResponse.Sessions.Added.Count,
             pullResponse.Memories.Upserted.Count,
             pullResponse.Todos.Upserted.Count);
+
+        return (pulledCount, decryptionErrors);
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)
