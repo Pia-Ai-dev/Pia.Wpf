@@ -29,49 +29,7 @@
     <KeyBinding Key="D4" Modifiers="Control" Command="{Binding NavigationCommand}" CommandParameter="Shortcut4" />
   </Window.InputBindings>
   <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-    </Grid.RowDefinitions>
-
-    <!-- Update info bar -->
-    <Border Grid.Row="0"
-            Background="{DynamicResource SystemAccentColorPrimaryBrush}"
-            Padding="12,6"
-            Visibility="{Binding ShowUpdateBar, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-
-        <TextBlock Grid.Column="0"
-                   VerticalAlignment="Center"
-                   Foreground="White"
-                   FontSize="13">
-          <Run Text="Pia v"/>
-          <Run Text="{Binding UpdateVersion, Mode=OneWay}"/>
-          <Run Text=" is ready. Restart to update."/>
-        </TextBlock>
-
-        <ui:Button Grid.Column="1"
-                   Content="Restart Now"
-                   Command="{Binding RestartToUpdateCommand}"
-                   Appearance="Light"
-                   Margin="8,0"
-                   Padding="12,4"/>
-
-        <ui:Button Grid.Column="2"
-                   Content="&#x2715;"
-                   Command="{Binding DismissUpdateBarCommand}"
-                   Appearance="Transparent"
-                   Foreground="White"
-                   Padding="6,2"/>
-      </Grid>
-    </Border>
-
-    <Grid Grid.Row="1">
+    <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
@@ -80,9 +38,52 @@
       <views:NavigationSidebarView Grid.Column="0" />
 
     <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="36" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <!-- Update info bar -->
+      <Border Grid.Row="1"
+              Background="{DynamicResource SystemAccentColorPrimaryBrush}"
+              Padding="12,6"
+              Visibility="{Binding ShowUpdateBar, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <TextBlock Grid.Column="0"
+                     VerticalAlignment="Center"
+                     Foreground="White"
+                     FontSize="13">
+            <Run Text="Pia v"/>
+            <Run Text="{Binding UpdateVersion, Mode=OneWay}"/>
+            <Run Text=" is ready. Restart to update."/>
+          </TextBlock>
+
+          <ui:Button Grid.Column="1"
+                     Content="Restart Now"
+                     Command="{Binding RestartToUpdateCommand}"
+                     Appearance="Light"
+                     Margin="8,0"
+                     Padding="12,4"/>
+
+          <ui:Button Grid.Column="2"
+                     Content="&#x2715;"
+                     Command="{Binding DismissUpdateBarCommand}"
+                     Appearance="Transparent"
+                     Foreground="White"
+                     Padding="6,2"/>
+        </Grid>
+      </Border>
+
       <ContentPresenter x:Name="NavigationContentPresenter"
-                        Content="{Binding CurrentView, NotifyOnTargetUpdated=True}"
-                        Margin="0,36,0,0">
+                        Grid.Row="2"
+                        Content="{Binding CurrentView, NotifyOnTargetUpdated=True}">
         <ContentPresenter.Style>
           <Style TargetType="ContentPresenter">
             <Style.Triggers>
@@ -106,8 +107,8 @@
       </ContentPresenter>
 
       <!-- Setup Required Overlay -->
-      <Border Panel.ZIndex="10"
-              Margin="0,36,0,0"
+      <Border Grid.Row="1" Grid.RowSpan="2"
+              Panel.ZIndex="10"
               Visibility="{Binding ShowSetupOverlay, Converter={StaticResource BooleanToVisibilityConverter}}"
               IsHitTestVisible="True">
         <Border.Background>
@@ -173,13 +174,11 @@
     </Grid>
 
     <controls:DialogOverlayHost x:Name="RootDialogOverlayHost"
-                                Grid.Row="0" Grid.RowSpan="2"
                                 Panel.ZIndex="20" />
-    <ui:ContentDialogHost x:Name="RootContentDialogPresenter" Grid.Row="0" Grid.RowSpan="2" />
-    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" Grid.Row="0" Grid.RowSpan="2" />
+    <ui:ContentDialogHost x:Name="RootContentDialogPresenter" />
+    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" />
     <ui:TitleBar x:Name="TitleBar"
                  Title="{Binding WindowTitle}"
-                 Grid.Row="0" Grid.RowSpan="2"
                  CloseWindowByDoubleClickOnIcon="True">
       <ui:TitleBar.Icon>
         <ui:ImageIcon Source="pack://application:,,,/Resources/Icons/Pia.ico" />
