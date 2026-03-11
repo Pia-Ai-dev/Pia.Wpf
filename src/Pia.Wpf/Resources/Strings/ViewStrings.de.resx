@@ -307,6 +307,15 @@
   <data name="Sync_SignedInAs" xml:space="preserve"><value>Angemeldet als </value></data>
   <data name="Sync_Provider" xml:space="preserve"><value>Anbieter: </value></data>
   <data name="Sync_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <data name="Sync_NeverSynced" xml:space="preserve"><value>Noch nie synchronisiert</value></data>
+  <data name="Sync_JustNow" xml:space="preserve"><value>Gerade eben</value></data>
+  <data name="Sync_MinutesAgo" xml:space="preserve"><value>Vor {0} Minute(n)</value></data>
+  <data name="Sync_HoursAgo" xml:space="preserve"><value>Vor {0} Stunde(n)</value></data>
+  <data name="Sync_DaysAgo" xml:space="preserve"><value>Vor {0} Tag(en)</value></data>
+  <data name="Sync_ItemCounts" xml:space="preserve"><value>↑ {0} gesendet · ↓ {1} empfangen</value></data>
+  <data name="Sync_SyncNow" xml:space="preserve"><value>Jetzt synchronisieren</value></data>
+  <data name="Sync_Syncing" xml:space="preserve"><value>Synchronisiere...</value></data>
+  <data name="Sync_LastSynced" xml:space="preserve"><value>Letzte Synchronisierung: </value></data>
   <!-- Dialogs -->
   <data name="Dialog_Optimizing_Title" xml:space="preserve"><value>Optimierung</value></data>
   <data name="Dialog_Optimizing_Processing" xml:space="preserve"><value>Verarbeitung...</value></data>

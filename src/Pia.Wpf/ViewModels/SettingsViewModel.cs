@@ -161,6 +161,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         ServerUrl = settings.ServerUrl ?? "";
         TrustSelfSignedCertificates = settings.TrustSelfSignedCertificates;
         UpdateSyncState();
+        LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
 
         // Load E2EE state
         IsE2EEEnabled = settings.IsE2EEEnabled;
@@ -237,6 +238,16 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
     [ObservableProperty]
     private bool _isE2EEOnboardingRequired;
+
+    // Sync status properties
+    [ObservableProperty]
+    private string _lastSyncText = "";
+
+    [ObservableProperty]
+    private string? _lastSyncItemsText;
+
+    [ObservableProperty]
+    private bool _isSyncing;
 
     [ObservableProperty]
     private int _selectedTabIndex;
@@ -1021,6 +1032,36 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     }
 
     [RelayCommand]
+    private async Task SyncNowAsync()
+    {
+        if (IsSyncing) return;
+
+        try
+        {
+            IsSyncing = true;
+            var result = await _syncClientService.SyncNowAsync();
+
+            var settings = await _settingsService.GetSettingsAsync();
+            LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
+
+            if (result is not null)
+            {
+                LastSyncItemsText = string.Format(
+                    _localizationService["Sync_ItemCounts"],
+                    result.PushedCount, result.PulledCount);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Manual sync failed");
+        }
+        finally
+        {
+            IsSyncing = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task SyncLogoutAsync()
     {
         _syncClientService.StopBackgroundSync();
@@ -1108,6 +1149,19 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         SyncUserEmail = _authService.UserEmail;
         SyncUserDisplayName = _authService.UserDisplayName;
         SyncProvider = _authService.Provider;
+    }
+
+    private string FormatRelativeTime(DateTime? utcTimestamp)
+    {
+        if (utcTimestamp is null)
+            return _localizationService["Sync_NeverSynced"];
+
+        var elapsed = DateTime.UtcNow - utcTimestamp.Value;
+
+        return elapsed.TotalSeconds < 60 ? _localizationService["Sync_JustNow"]
+            : elapsed.TotalMinutes < 60 ? string.Format(_localizationService["Sync_MinutesAgo"], (int)elapsed.TotalMinutes)
+            : elapsed.TotalHours < 24 ? string.Format(_localizationService["Sync_HoursAgo"], (int)elapsed.TotalHours)
+            : string.Format(_localizationService["Sync_DaysAgo"], (int)elapsed.TotalDays);
     }
 
     partial void OnIsE2EEEnabledChanged(bool value)

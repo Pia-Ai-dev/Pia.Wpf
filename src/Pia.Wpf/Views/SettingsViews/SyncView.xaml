@@ -151,6 +151,35 @@
             </TextBlock>
           </StackPanel>
         </ui:Card>
+        <!-- Sync status -->
+        <StackPanel Margin="0,0,0,12">
+          <TextBlock Opacity="0.7" FontSize="12" Margin="0,0,0,2">
+            <Run Text="{loc:Str Sync_LastSynced}"/>
+            <Run Text="{Binding LastSyncText, Mode=OneWay}"/>
+          </TextBlock>
+          <TextBlock Text="{Binding LastSyncItemsText}"
+                     Opacity="0.5"
+                     FontSize="12"
+                     Margin="0,0,0,8"
+                     Visibility="{Binding LastSyncItemsText, Converter={StaticResource NullToVisibilityConverter}}"/>
+          <StackPanel Orientation="Horizontal">
+            <ui:Button Content="{loc:Str Sync_SyncNow}"
+                       Icon="{ui:SymbolIcon ArrowSync24}"
+                       Command="{Binding SyncNowCommand}"
+                       IsEnabled="{Binding IsSyncing, Converter={StaticResource InverseBooleanConverter}}"
+                       Margin="0,0,8,0"/>
+            <ui:ProgressRing IsIndeterminate="True"
+                             Width="16" Height="16"
+                             Margin="0,0,8,0"
+                             Visibility="{Binding IsSyncing, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            <TextBlock Text="{loc:Str Sync_Syncing}"
+                       VerticalAlignment="Center"
+                       Opacity="0.7"
+                       FontSize="12"
+                       Visibility="{Binding IsSyncing, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+          </StackPanel>
+        </StackPanel>
+
         <ui:Button Content="{loc:Str Sync_SignOut}"
                    Command="{Binding SyncLogoutCommand}"
                    Appearance="Danger"/>
