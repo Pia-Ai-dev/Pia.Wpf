@@ -105,10 +105,15 @@ public class TextOptimizationService : ITextOptimizationService
     {
         var provider = providerId.HasValue
             ? await _providerService.GetProviderAsync(providerId.Value)
-            : await _providerService.GetDefaultProviderAsync();
+            : await _providerService.GetDefaultProviderForModeAsync(WindowMode.Optimize);
 
         if (provider is null)
             throw new InvalidOperationException("No AI provider configured");
+
+        if (provider.ProviderType == AiProviderType.PiaCloud)
+        {
+            return await _aiClientService.GeneratePromptViaPiaCloudAsync(styleDescription);
+        }
 
         var extractionPrompt = $@"Based on the following style description, create a concise prompt (2-4 sentences) that instructs an AI to rewrite any input text to match the described style. The prompt should capture:
 1. The tone (formal, casual, professional, friendly, etc.)

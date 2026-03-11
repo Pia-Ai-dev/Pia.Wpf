@@ -386,13 +386,25 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                 if (existing is not null)
                 {
-                    await _templateService.UpdateTemplateAsync(local);
+                    var remoteTime = (local.ModifiedAt ?? local.CreatedAt).ToUniversalTime();
+                    var localTime = (existing.ModifiedAt ?? existing.CreatedAt).ToUniversalTime();
+
+                    if (remoteTime >= localTime)
+                    {
+                        await _templateService.UpdateTemplateAsync(local);
+                        _logger.LogInformation("Updated template {Id}: {Name}", template.Id, local.Name);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Skipped template {Id}: local is newer (local={Local}, remote={Remote})",
+                            template.Id, localTime, remoteTime);
+                    }
                 }
                 else
                 {
                     await _templateService.AddTemplateAsync(local);
+                    _logger.LogInformation("Imported template {Id}: {Name}", template.Id, local.Name);
                 }
-                _logger.LogInformation("Imported template {Id}: {Name}", template.Id, local.Name);
             }
             catch (CryptographicException ex)
             {
@@ -416,16 +428,24 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                 if (existing is not null)
                 {
-                    // When E2EE is active, the API key is already re-encrypted via DPAPI in FromSyncProvider
-                    var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
-                    await _providerService.UpdateProviderAsync(local, apiKey);
+                    if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
+                    {
+                        var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
+                        await _providerService.UpdateProviderAsync(local, apiKey);
+                        _logger.LogInformation("Updated provider {Id}: {Name}", provider.Id, local.Name);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Skipped provider {Id}: local is newer (local={Local}, remote={Remote})",
+                            provider.Id, existing.UpdatedAt, local.UpdatedAt);
+                    }
                 }
                 else
                 {
                     var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
                     await _providerService.AddProviderAsync(local, apiKey);
+                    _logger.LogInformation("Imported provider {Id}: {Name}", provider.Id, local.Name);
                 }
-                _logger.LogInformation("Imported provider {Id}: {Name}", provider.Id, local.Name);
             }
             catch (CryptographicException ex)
             {
@@ -474,13 +494,22 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                 if (existing is not null)
                 {
-                    await _memoryService.UpdateObjectDataAsync(local.Id, local.Label, local.Data);
+                    if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
+                    {
+                        await _memoryService.UpdateObjectDataAsync(local.Id, local.Label, local.Data);
+                        _logger.LogInformation("Updated memory {Id}: {Label}", memory.Id, local.Label);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Skipped memory {Id}: local is newer (local={Local}, remote={Remote})",
+                            memory.Id, existing.UpdatedAt, local.UpdatedAt);
+                    }
                 }
                 else
                 {
                     await _memoryService.ImportObjectAsync(local);
+                    _logger.LogInformation("Imported memory {Id}: {Label}", memory.Id, local.Label);
                 }
-                _logger.LogInformation("Imported memory {Id}: {Label}", memory.Id, local.Label);
             }
             catch (CryptographicException ex)
             {
@@ -506,7 +535,16 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                     if (existing is not null)
                     {
-                        await _todoService.UpdateAsync(local);
+                        if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
+                        {
+                            await _todoService.ImportAsync(local);
+                            _logger.LogInformation("Updated todo {Id}: {Title}", todo.Id, local.Title);
+                        }
+                        else
+                        {
+                            _logger.LogDebug("Skipped todo {Id}: local is newer (local={Local}, remote={Remote})",
+                                todo.Id, existing.UpdatedAt, local.UpdatedAt);
+                        }
                     }
                     else
                     {

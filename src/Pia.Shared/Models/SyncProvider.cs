@@ -15,6 +15,7 @@ public class SyncProvider
     public string? AzureDeploymentName { get; set; }
     public bool SupportsToolCalling { get; set; } = true;
     public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
     /// <summary>
     /// Base64: AES-GCM encrypted entity payload (nonce‖ciphertext‖tag).

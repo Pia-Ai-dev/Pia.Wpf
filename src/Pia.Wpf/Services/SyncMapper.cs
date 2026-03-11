@@ -105,7 +105,8 @@ public class SyncMapper
         var sync = new SyncProvider
         {
             Id = provider.Id,
-            CreatedAt = ToUtc(provider.CreatedAt)
+            CreatedAt = ToUtc(provider.CreatedAt),
+            UpdatedAt = ToUtc(provider.UpdatedAt)
         };
 
         if (IsE2EEActive && userId is not null)
@@ -163,7 +164,8 @@ public class SyncMapper
                     ? _dpapiHelper.Encrypt(decrypted.ApiKey) : null,
                 AzureDeploymentName = decrypted.AzureDeploymentName,
                 SupportsToolCalling = decrypted.SupportsToolCalling,
-                CreatedAt = sync.CreatedAt
+                CreatedAt = sync.CreatedAt,
+                UpdatedAt = sync.UpdatedAt
             };
         }
 
@@ -178,7 +180,8 @@ public class SyncMapper
                 ? _dpapiHelper.Encrypt(sync.ApiKey) : null,
             AzureDeploymentName = sync.AzureDeploymentName,
             SupportsToolCalling = sync.SupportsToolCalling,
-            CreatedAt = sync.CreatedAt
+            CreatedAt = sync.CreatedAt,
+            UpdatedAt = sync.UpdatedAt
         };
     }
 

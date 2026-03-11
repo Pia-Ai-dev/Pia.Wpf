@@ -175,6 +175,9 @@ public class TokenizingAiClientService : IAiClientService
         return TryGetTokenMapService()!.Detokenize(result);
     }
 
+    public Task<string> GeneratePromptViaPiaCloudAsync(string styleDescription, CancellationToken cancellationToken = default)
+        => _inner.GeneratePromptViaPiaCloudAsync(styleDescription, cancellationToken);
+
     public Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
         => _inner.TestToolCallingAsync(provider, cancellationToken);
 
