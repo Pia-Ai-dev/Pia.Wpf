@@ -20,6 +20,12 @@ public interface ISyncClientService
     /// </summary>
     event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
 
+    /// <summary>
+    /// Raised when the current device is no longer in the server's device list
+    /// (or has been revoked). Subscribers should disable E2EE locally.
+    /// </summary>
+    event EventHandler? CurrentDeviceRevoked;
+
     /// <summary>Triggers a full sync cycle (push then pull). Returns counts, or null if sync was skipped.</summary>
     Task<SyncResult?> SyncNowAsync();
 
