@@ -9,10 +9,14 @@ public class HistoryService : IHistoryService
 {
     private readonly SqliteContext _context;
 
+    public event EventHandler? SessionsChanged;
+
     public HistoryService(SqliteContext context)
     {
         _context = context;
     }
+
+    private void OnSessionsChanged() => SessionsChanged?.Invoke(this, EventArgs.Empty);
 
     public async Task AddSessionAsync(OptimizationSession session)
     {
@@ -38,6 +42,7 @@ public class HistoryService : IHistoryService
         command.Parameters.AddWithValue("@ProcessingTimeMs", session.ProcessingTimeMs);
 
         await command.ExecuteNonQueryAsync();
+        OnSessionsChanged();
     }
 
     public async Task<IReadOnlyList<OptimizationSession>> GetSessionsAsync(int offset = 0, int limit = 50)
@@ -109,6 +114,7 @@ public class HistoryService : IHistoryService
         command.CommandText = "DELETE FROM Sessions WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
         await command.ExecuteNonQueryAsync();
+        OnSessionsChanged();
     }
 
     public async Task<int> GetSessionCountAsync()

@@ -366,6 +366,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 var currentSettings = await _settingsService.GetSettingsAsync();
                 _mapper.ApplySyncSettings(pullResponse.Settings, currentSettings, userId);
                 await _settingsService.SaveSettingsAsync(currentSettings);
+                _logger.LogInformation("Imported synced settings");
             }
             catch (CryptographicException ex)
             {
@@ -391,6 +392,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     await _templateService.AddTemplateAsync(local);
                 }
+                _logger.LogInformation("Imported template {Id}: {Name}", template.Id, local.Name);
             }
             catch (CryptographicException ex)
             {
@@ -423,6 +425,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
                     await _providerService.AddProviderAsync(local, apiKey);
                 }
+                _logger.LogInformation("Imported provider {Id}: {Name}", provider.Id, local.Name);
             }
             catch (CryptographicException ex)
             {
@@ -446,6 +449,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 if (existing is null)
                 {
                     await _historyService.AddSessionAsync(local);
+                    _logger.LogInformation("Imported session {Id}", session.Id);
                 }
             }
             catch (CryptographicException ex)
@@ -476,6 +480,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     await _memoryService.ImportObjectAsync(local);
                 }
+                _logger.LogInformation("Imported memory {Id}: {Label}", memory.Id, local.Label);
             }
             catch (CryptographicException ex)
             {
