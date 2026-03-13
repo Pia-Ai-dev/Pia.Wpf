@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using System.Reflection;
 
 namespace Pia.ViewModels;
 
@@ -57,7 +58,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool ShowUpdateBar => IsUpdateReady && !IsUpdateBarDismissed;
 
-    public string WindowTitle => $"Pia - {Mode}";
+    public string WindowTitle => $"Pia - {Mode} (v{AppVersion})";
+
+    public static string AppVersion { get; } =
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+        ?? "unknown";
 
     public IRelayCommand<string> NavigationCommand { get; }
     public IRelayCommand ToggleThemeCommand { get; }
