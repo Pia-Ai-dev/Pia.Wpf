@@ -57,7 +57,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool ShowUpdateBar => IsUpdateReady && !IsUpdateBarDismissed;
 
-    public string WindowTitle => $"Pia - {Mode}";
+    public string WindowTitle => $"Pia - {Mode} (v{AppVersion})";
+
+    public static string AppVersion { get; } =
+        System.Reflection.CustomAttributeExtensions
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+                System.Reflection.Assembly.GetExecutingAssembly())?.InformationalVersion
+        ?? System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+        ?? "0.0.0";
 
     public IRelayCommand<string> NavigationCommand { get; }
     public IRelayCommand ToggleThemeCommand { get; }
