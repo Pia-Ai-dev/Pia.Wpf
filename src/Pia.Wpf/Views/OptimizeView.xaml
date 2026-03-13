@@ -27,14 +27,12 @@
 
       <Grid x:Name="InputViewGrid" Grid.Row="0"
             Visibility="{Binding IsComparisonView, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-        <Grid HorizontalAlignment="Center"
-              MaxWidth="700"
-              Margin="40,40,40,20">
+        <Grid Margin="40,40,40,20">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="150" MinHeight="80" />
+            <RowDefinition Height="*" MinHeight="80" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
 
           <!-- Welcome Header (always visible) -->
@@ -63,10 +61,10 @@
                       Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                       PlaceholderText="{loc:Str Optimize_InputPlaceholder}"
                       PlaceholderEnabled="True"
-                      TextWrapping="Wrap"
+                      TextWrapping="NoWrap"
                       AcceptsReturn="True"
                       VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
+                      HorizontalScrollBarVisibility="Auto"
                       FontSize="14"
                       Padding="15"
                       ClearButtonEnabled="False" />
@@ -96,7 +94,7 @@
           <StackPanel Grid.Row="3"
                       Orientation="Horizontal"
                       HorizontalAlignment="Center"
-                      VerticalAlignment="Top"
+                      VerticalAlignment="Bottom"
                       Margin="0,4,0,0">
             <ui:Button Command="{Binding ClearInputCommand}"
                        Appearance="Secondary"
