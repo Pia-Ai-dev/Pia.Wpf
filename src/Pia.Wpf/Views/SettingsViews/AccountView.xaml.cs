@@ -3,16 +3,16 @@ using Pia.ViewModels;
 
 namespace Pia.Views.SettingsViews;
 
-public partial class SyncView : UserControl
+public partial class AccountView : UserControl
 {
-    public SyncView()
+    public AccountView()
     {
         InitializeComponent();
     }
 
     private void LoginPasswordBox_PasswordChanged(object sender, System.Windows.RoutedEventArgs e)
     {
-        if (DataContext is SettingsViewModel vm)
+        if (DataContext is AccountSettingsViewModel vm)
             vm.LoginPassword = ((PasswordBox)sender).Password;
     }
 }

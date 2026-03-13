@@ -203,6 +203,15 @@
   <data name="Settings_Tab_TextToSpeech" xml:space="preserve"><value>Sprachausgabe</value></data>
   <data name="Settings_Tab_CloudSync" xml:space="preserve"><value>Cloud-Synchronisierung</value></data>
   <data name="Settings_Tab_Privacy" xml:space="preserve"><value>Datenschutz</value></data>
+  <data name="Settings_Tab_Optimize" xml:space="preserve"><value>Optimieren</value></data>
+  <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistent</value></data>
+  <data name="Settings_Tab_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Settings_Tab_Account" xml:space="preserve"><value>Konto</value></data>
+  <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Darstellung</value></data>
+  <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Tastenkürzel</value></data>
+  <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Sprache</value></data>
+  <data name="Settings_InnerTab_CloudSync" xml:space="preserve"><value>Cloud-Synchronisierung</value></data>
+  <data name="Settings_InnerTab_Privacy" xml:space="preserve"><value>Datenschutz</value></data>
   <data name="Settings_PrivacyTitle" xml:space="preserve"><value>Datenschutz-Einstellungen</value></data>
   <data name="Settings_Privacy_Tokenization" xml:space="preserve"><value>PII-Tokenisierung</value></data>
   <data name="Settings_Privacy_TokenizationEnabled" xml:space="preserve"><value>Persönliche Daten durch Tokens ersetzen, bevor sie an die KI gesendet werden</value></data>
