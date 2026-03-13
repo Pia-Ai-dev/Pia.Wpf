@@ -5,14 +5,9 @@
              xmlns:loc="clr-namespace:Pia.Localization">
   <ScrollViewer Margin="16">
     <StackPanel MaxWidth="600" HorizontalAlignment="Left">
-      <TextBlock Text="{loc:Str Settings_Tab_Research}"
-                 FontSize="20"
-                 FontWeight="SemiBold"
-                 Margin="0,0,0,24"/>
-
       <!-- Provider selector for Research mode -->
       <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Providers_Research}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Text="{loc:Str Settings_Tab_Providers}" FontWeight="SemiBold" Margin="0,0,0,8"/>
         <ComboBox ItemsSource="{Binding ProvidersVm.NonCloudProviders}"
                   SelectedValue="{Binding ProvidersVm.ResearchProviderId}"
                   SelectedValuePath="Id"

@@ -9,14 +9,9 @@
   </UserControl.Resources>
   <ScrollViewer Margin="16">
     <StackPanel MaxWidth="600" HorizontalAlignment="Left">
-      <TextBlock Text="{loc:Str Settings_Tab_Optimize}"
-                 FontSize="20"
-                 FontWeight="SemiBold"
-                 Margin="0,0,0,24"/>
-
       <!-- Provider selector for Optimize mode -->
       <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Providers_Optimize}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Text="{loc:Str Settings_Tab_Providers}" FontWeight="SemiBold" Margin="0,0,0,8"/>
         <ComboBox ItemsSource="{Binding ProvidersVm.Providers}"
                   SelectedValue="{Binding ProvidersVm.OptimizeProviderId}"
                   SelectedValuePath="Id"

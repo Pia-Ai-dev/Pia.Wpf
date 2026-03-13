@@ -11,9 +11,9 @@
     <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
   </UserControl.Resources>
   <Grid Margin="16">
-    <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}">
+    <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
       <!-- Appearance tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Appearance}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Appearance}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer>
           <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
             <StackPanel Margin="0,0,0,24">
@@ -51,7 +51,7 @@
       </TabItem>
 
       <!-- Hotkeys tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Hotkeys}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Hotkeys}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer>
           <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
             <TextBlock Text="{loc:Str Settings_GlobalHotkeys}" FontWeight="SemiBold" Margin="0,0,0,8"/>
@@ -130,9 +130,15 @@
       </TabItem>
 
       <!-- Speech tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Speech}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Speech}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer>
           <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
+            <!-- Speech-to-Text title -->
+            <TextBlock Text="{loc:Str Stt_Title}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+
             <!-- Whisper Model -->
             <StackPanel Margin="0,0,0,24">
               <TextBlock Text="{loc:Str Settings_WhisperModel}" FontWeight="SemiBold" Margin="0,0,0,8"/>

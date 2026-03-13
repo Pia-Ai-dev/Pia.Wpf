@@ -9,20 +9,11 @@
     <locConverters:CategoryDisplayConverter x:Key="CategoryDisplayConverter"/>
   </UserControl.Resources>
   <Grid Margin="16">
-    <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}">
+    <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
       <!-- Cloud Sync tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_CloudSync}">
+      <TabItem Header="{loc:Str Settings_InnerTab_CloudSync}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer>
           <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
-            <TextBlock Text="{loc:Str Sync_Title}"
-                       FontSize="20"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,8"/>
-            <TextBlock Text="{loc:Str Sync_Description}"
-                       Opacity="0.7"
-                       FontSize="12"
-                       Margin="0,0,0,24"/>
-
             <!-- Server URL (dev mode only) -->
             <StackPanel Margin="0,0,0,24"
                         Visibility="{Binding IsDevMode, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -255,14 +246,9 @@
       </TabItem>
 
       <!-- Privacy tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Privacy}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Privacy}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer>
           <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
-            <TextBlock Text="{loc:Str Settings_PrivacyTitle}"
-                       FontSize="20"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,24"/>
-
             <!-- Tokenization Toggle -->
             <StackPanel Margin="0,0,0,24">
               <TextBlock Text="{loc:Str Settings_Privacy_Tokenization}" FontWeight="SemiBold" Margin="0,0,0,8"/>

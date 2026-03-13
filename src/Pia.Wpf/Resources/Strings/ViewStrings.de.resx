@@ -280,6 +280,8 @@
   <data name="Templates_SetDefault" xml:space="preserve"><value>Als Standard festlegen</value></data>
   <data name="Templates_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
   <data name="Templates_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <!-- STT Settings -->
+  <data name="Stt_Title" xml:space="preserve"><value>Spracheingabe</value></data>
   <!-- TTS Settings -->
   <data name="Tts_Title" xml:space="preserve"><value>Sprachausgabe</value></data>
   <data name="Tts_Description" xml:space="preserve"><value>Wähle eine Stimme zum Vorlesen von Assistenten-Antworten. Lade zuerst ein Stimmmodell herunter und wähle es dann als aktiv.</value></data>

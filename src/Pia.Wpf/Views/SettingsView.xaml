@@ -29,17 +29,35 @@
              Margin="0,0,8,0">
       <ListBox.ItemContainerStyle>
         <Style TargetType="ListBoxItem">
-          <Setter Property="Padding" Value="12,10"/>
-          <Setter Property="Margin" Value="0,1"/>
+          <Setter Property="Padding" Value="10,9"/>
+          <Setter Property="Margin" Value="0,2"/>
           <Setter Property="Cursor" Value="Hand"/>
+          <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
           <Setter Property="Template">
             <Setter.Value>
               <ControlTemplate TargetType="ListBoxItem">
                 <Border x:Name="Bd"
                         Background="Transparent"
-                        CornerRadius="4"
+                        CornerRadius="6"
                         Padding="{TemplateBinding Padding}">
-                  <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="Indicator"
+                            Grid.Column="0"
+                            Width="3"
+                            Height="16"
+                            CornerRadius="1.5"
+                            Background="{DynamicResource AccentBrush}"
+                            Margin="0,0,10,0"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed"/>
+                    <ContentPresenter Grid.Column="1"
+                                      HorizontalAlignment="Left"
+                                      VerticalAlignment="Center"/>
+                  </Grid>
                 </Border>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True">
@@ -47,6 +65,8 @@
                   </Trigger>
                   <Trigger Property="IsSelected" Value="True">
                     <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
+                    <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                   </Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -54,12 +74,42 @@
           </Setter>
         </Style>
       </ListBox.ItemContainerStyle>
-      <ListBoxItem Content="{loc:Str Settings_Tab_Providers}"/>
-      <ListBoxItem Content="{loc:Str Settings_Tab_Optimize}"/>
-      <ListBoxItem Content="{loc:Str Settings_Tab_Assistant}"/>
-      <ListBoxItem Content="{loc:Str Settings_Tab_Research}"/>
-      <ListBoxItem Content="{loc:Str Settings_Tab_General}"/>
-      <ListBoxItem Content="{loc:Str Settings_Tab_Account}"/>
+      <ListBoxItem>
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16" Margin="0,0,10,0"/>
+          <TextBlock Text="{loc:Str Settings_Tab_Providers}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ListBoxItem>
+      <ListBoxItem>
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,10,0"/>
+          <TextBlock Text="{loc:Str Settings_Tab_Optimize}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ListBoxItem>
+      <ListBoxItem>
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,10,0"/>
+          <TextBlock Text="{loc:Str Settings_Tab_Assistant}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ListBoxItem>
+      <ListBoxItem>
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Search24" FontSize="16" Margin="0,0,10,0"/>
+          <TextBlock Text="{loc:Str Settings_Tab_Research}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ListBoxItem>
+      <ListBoxItem>
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Settings24" FontSize="16" Margin="0,0,10,0"/>
+          <TextBlock Text="{loc:Str Settings_Tab_General}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ListBoxItem>
+      <ListBoxItem>
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Person24" FontSize="16" Margin="0,0,10,0"/>
+          <TextBlock Text="{loc:Str Settings_Tab_Account}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ListBoxItem>
     </ListBox>
 
     <!-- Content area -->
