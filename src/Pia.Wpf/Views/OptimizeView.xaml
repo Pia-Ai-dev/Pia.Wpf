@@ -27,9 +27,7 @@
 
       <Grid x:Name="InputViewGrid" Grid.Row="0"
             Visibility="{Binding IsComparisonView, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-        <Grid HorizontalAlignment="Center"
-              MaxWidth="700"
-              Margin="40,40,40,20">
+        <Grid Margin="40,40,40,20">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="150" MinHeight="80" />
@@ -63,10 +61,10 @@
                       Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                       PlaceholderText="{loc:Str Optimize_InputPlaceholder}"
                       PlaceholderEnabled="True"
-                      TextWrapping="Wrap"
+                      TextWrapping="NoWrap"
                       AcceptsReturn="True"
                       VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
+                      HorizontalScrollBarVisibility="Auto"
                       FontSize="14"
                       Padding="15"
                       ClearButtonEnabled="False" />
