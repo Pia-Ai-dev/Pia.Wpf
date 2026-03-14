@@ -218,6 +218,16 @@
   <data name="Settings_Privacy_Category_Address" xml:space="preserve"><value>Adresse</value></data>
   <data name="Settings_Privacy_Category_Date" xml:space="preserve"><value>Date</value></data>
   <data name="Settings_Privacy_Category_Custom" xml:space="preserve"><value>Personnalisé</value></data>
+  <data name="Settings_Privacy_PromptLogging" xml:space="preserve"><value>Journalisation des prompts</value></data>
+  <data name="Settings_Privacy_PromptLoggingEnabled" xml:space="preserve"><value>Enregistrer toutes les données envoyées aux fournisseurs d'IA</value></data>
+  <data name="Settings_Privacy_PromptLoggingDescription" xml:space="preserve"><value>Lorsqu'elle est activée, chaque requête envoyée aux fournisseurs d'IA ou au Pia Cloud est enregistrée dans un fichier texte. Parcourez le dossier des journaux pour vérifier exactement quelles données quittent votre appareil.</value></data>
+  <data name="Settings_Privacy_OpenLogFolder" xml:space="preserve"><value>Ouvrir le dossier des journaux</value></data>
+  <data name="Settings_Privacy_LogSize" xml:space="preserve"><value>Taille des journaux :</value></data>
+  <data name="Settings_Privacy_Housekeeping" xml:space="preserve"><value>Maintenance</value></data>
+  <data name="Settings_Privacy_AutoCleanup" xml:space="preserve"><value>Supprimer automatiquement les anciens journaux au démarrage</value></data>
+  <data name="Settings_Privacy_RetentionDays" xml:space="preserve"><value>Conserver les journaux (jours) :</value></data>
+  <data name="Settings_Privacy_DeleteOldLogs" xml:space="preserve"><value>Supprimer les anciens journaux</value></data>
+  <data name="Settings_Privacy_DeleteAllLogs" xml:space="preserve"><value>Supprimer tous les journaux</value></data>
   <data name="Settings_UiLanguage" xml:space="preserve"><value>Langue de l'interface</value></data>
   <data name="Settings_UiLanguage_Description" xml:space="preserve"><value>Langue utilisée pour les menus, boutons et libellés</value></data>
   <data name="Settings_GeneralTitle" xml:space="preserve"><value>Paramètres généraux</value></data>

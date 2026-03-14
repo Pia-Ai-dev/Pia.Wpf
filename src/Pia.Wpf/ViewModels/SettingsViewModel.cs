@@ -31,6 +31,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     private readonly ILocalizationService _localizationService;
     private readonly IDeviceManagementService _deviceManagement;
     private readonly IDeviceKeyService _deviceKeys;
+    private readonly IPromptLogService _promptLogService;
     private bool _isLoading;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
@@ -53,6 +54,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         ILocalizationService localizationService,
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
+        IPromptLogService promptLogService,
         E2EEOnboardingViewModel onboardingViewModel)
     {
         _logger = logger;
@@ -72,6 +74,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         _localizationService = localizationService;
         _deviceManagement = deviceManagement;
         _deviceKeys = deviceKeys;
+        _promptLogService = promptLogService;
         OnboardingViewModel = onboardingViewModel;
 
         // When onboarding completes, resume sync
@@ -200,6 +203,12 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         foreach (var entry in entries)
             entry.PropertyChanged += OnPiiKeywordEntryChanged;
         PiiKeywords = new ObservableCollection<PiiKeywordEntry>(entries);
+
+        // Load prompt logging settings
+        PromptLoggingEnabled = settings.Privacy.PromptLoggingEnabled;
+        PromptLogAutoCleanup = settings.Privacy.PromptLogAutoCleanup;
+        PromptLogRetentionDays = settings.Privacy.PromptLogRetentionDays;
+        await RefreshPromptLogSizeAsync();
 
         await RefreshProviderDisplayItemsAsync();
 
@@ -377,6 +386,19 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
     public List<string> AvailableCategories { get; } = ["Person", "Nickname", "Email", "Phone", "Address", "Date", "Custom"];
 
+    // Prompt logging properties
+    [ObservableProperty]
+    private bool _promptLoggingEnabled;
+
+    [ObservableProperty]
+    private bool _promptLogAutoCleanup;
+
+    [ObservableProperty]
+    private int _promptLogRetentionDays = 30;
+
+    [ObservableProperty]
+    private string _promptLogSize = "";
+
     public IEnumerable<OutputAction> OutputActions => Enum.GetValues<OutputAction>();
     public IEnumerable<WhisperModelSize> WhisperModels => Enum.GetValues<WhisperModelSize>();
     public IEnumerable<TargetSpeechLanguage> TargetSpeechLanguages => Enum.GetValues<TargetSpeechLanguage>();
@@ -426,6 +448,59 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         if (!_isLoading && e.PropertyName == nameof(PiiKeywordEntry.Category))
             SafeFireAndForget(SaveGeneralSettingsAsync());
     }
+
+    partial void OnPromptLoggingEnabledChanged(bool value)
+    {
+        if (!_isLoading) SafeFireAndForget(SaveGeneralSettingsAsync());
+    }
+
+    partial void OnPromptLogAutoCleanupChanged(bool value)
+    {
+        if (!_isLoading) SafeFireAndForget(SaveGeneralSettingsAsync());
+    }
+
+    partial void OnPromptLogRetentionDaysChanged(int value)
+    {
+        if (!_isLoading) SafeFireAndForget(SaveGeneralSettingsAsync());
+    }
+
+    [RelayCommand]
+    private void OpenPromptLogFolder()
+    {
+        var path = _promptLogService.GetLogFolderPath();
+        Directory.CreateDirectory(path);
+        System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+    }
+
+    [RelayCommand]
+    private async Task DeleteOldPromptLogsAsync()
+    {
+        await _promptLogService.DeleteLogsOlderThanAsync(PromptLogRetentionDays);
+        await RefreshPromptLogSizeAsync();
+    }
+
+    [RelayCommand]
+    private async Task DeleteAllPromptLogsAsync()
+    {
+        await _promptLogService.DeleteAllLogsAsync();
+        await RefreshPromptLogSizeAsync();
+    }
+
+    [RelayCommand]
+    private async Task RefreshPromptLogSizeAsync()
+    {
+        var bytes = await _promptLogService.GetTotalLogSizeAsync();
+        PromptLogSize = FormatFileSize(bytes);
+    }
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"
+    };
 
     partial void OnOptimizeProviderIdChanged(Guid? value)
     {
@@ -1441,6 +1516,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         settings.Privacy.TokenizationEnabled = TokenizationEnabled;
         settings.Privacy.PiiKeywords = PiiKeywords.Select(e => new PiiKeywordEntry { Keyword = e.Keyword, Category = e.Category }).ToList();
+        settings.Privacy.PromptLoggingEnabled = PromptLoggingEnabled;
+        settings.Privacy.PromptLogAutoCleanup = PromptLogAutoCleanup;
+        settings.Privacy.PromptLogRetentionDays = PromptLogRetentionDays;
 
         await _settingsService.SaveSettingsAsync(settings);
     }

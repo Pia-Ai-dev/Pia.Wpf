@@ -111,6 +111,15 @@ public partial class App : Application
             syncService.StartBackgroundSync();
         }
 
+        // Auto-cleanup prompt logs if enabled
+        var promptLogSettings = (await Bootstrapper.ServiceProvider
+            .GetRequiredService<ISettingsService>().GetSettingsAsync()).Privacy;
+        if (promptLogSettings.PromptLogAutoCleanup)
+        {
+            var promptLogService = Bootstrapper.ServiceProvider.GetRequiredService<IPromptLogService>();
+            _ = promptLogService.DeleteLogsOlderThanAsync(promptLogSettings.PromptLogRetentionDays);
+        }
+
         // Silently check for updates in the background
         _ = CheckForUpdateOnStartupAsync();
     }

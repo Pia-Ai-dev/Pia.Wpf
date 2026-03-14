@@ -218,6 +218,16 @@
   <data name="Settings_Privacy_Category_Address" xml:space="preserve"><value>Adresse</value></data>
   <data name="Settings_Privacy_Category_Date" xml:space="preserve"><value>Datum</value></data>
   <data name="Settings_Privacy_Category_Custom" xml:space="preserve"><value>Benutzerdefiniert</value></data>
+  <data name="Settings_Privacy_PromptLogging" xml:space="preserve"><value>Prompt-Protokollierung</value></data>
+  <data name="Settings_Privacy_PromptLoggingEnabled" xml:space="preserve"><value>Alle an KI-Anbieter gesendeten Daten protokollieren</value></data>
+  <data name="Settings_Privacy_PromptLoggingDescription" xml:space="preserve"><value>Wenn aktiviert, wird jede Anfrage an KI-Anbieter oder die Pia Cloud als Textdatei gespeichert. Öffnen Sie den Protokollordner, um genau zu sehen, welche Daten Ihr Gerät verlassen.</value></data>
+  <data name="Settings_Privacy_OpenLogFolder" xml:space="preserve"><value>Protokollordner öffnen</value></data>
+  <data name="Settings_Privacy_LogSize" xml:space="preserve"><value>Protokollgröße:</value></data>
+  <data name="Settings_Privacy_Housekeeping" xml:space="preserve"><value>Bereinigung</value></data>
+  <data name="Settings_Privacy_AutoCleanup" xml:space="preserve"><value>Alte Protokolle beim Start automatisch löschen</value></data>
+  <data name="Settings_Privacy_RetentionDays" xml:space="preserve"><value>Protokolle aufbewahren (Tage):</value></data>
+  <data name="Settings_Privacy_DeleteOldLogs" xml:space="preserve"><value>Alte Protokolle löschen</value></data>
+  <data name="Settings_Privacy_DeleteAllLogs" xml:space="preserve"><value>Alle Protokolle löschen</value></data>
   <data name="Settings_UiLanguage" xml:space="preserve"><value>Oberflächensprache</value></data>
   <data name="Settings_UiLanguage_Description" xml:space="preserve"><value>Sprache für Menüs, Schaltflächen und Beschriftungen</value></data>
   <data name="Settings_GeneralTitle" xml:space="preserve"><value>Allgemeine Einstellungen</value></data>

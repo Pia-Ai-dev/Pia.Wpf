@@ -111,6 +111,90 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </StackPanel>
+
+      <!-- Separator -->
+      <Border BorderThickness="0,1,0,0"
+              BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+              Margin="0,8,0,24" />
+
+      <!-- Prompt Logging -->
+      <StackPanel Margin="0,0,0,24">
+        <TextBlock Text="{loc:Str Settings_Privacy_PromptLogging}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <CheckBox Content="{loc:Str Settings_Privacy_PromptLoggingEnabled}"
+                  IsChecked="{Binding PromptLoggingEnabled}"
+                  Margin="0,4,0,0"/>
+        <TextBlock Text="{loc:Str Settings_Privacy_PromptLoggingDescription}"
+                   Opacity="0.7"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Margin="20,4,0,12"/>
+
+        <!-- Log folder & size -->
+        <Grid Margin="0,0,0,12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0"
+                     VerticalAlignment="Center"
+                     Margin="0,0,12,0">
+            <Run Text="{loc:Str Settings_Privacy_LogSize}"/>
+            <Run Text="{Binding PromptLogSize, Mode=OneWay}"/>
+          </TextBlock>
+          <ui:Button Grid.Column="2"
+                     Command="{Binding OpenPromptLogFolderCommand}"
+                     Appearance="Secondary">
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="FolderOpen24" FontSize="16" Margin="0,0,6,0"/>
+              <TextBlock Text="{loc:Str Settings_Privacy_OpenLogFolder}"/>
+            </StackPanel>
+          </ui:Button>
+        </Grid>
+
+        <!-- Housekeeping -->
+        <TextBlock Text="{loc:Str Settings_Privacy_Housekeeping}"
+                   FontWeight="SemiBold"
+                   Margin="0,8,0,8"/>
+
+        <CheckBox Content="{loc:Str Settings_Privacy_AutoCleanup}"
+                  IsChecked="{Binding PromptLogAutoCleanup}"
+                  Margin="0,4,0,8"/>
+
+        <Grid Margin="0,0,0,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0"
+                     Text="{loc:Str Settings_Privacy_RetentionDays}"
+                     VerticalAlignment="Center"
+                     Margin="0,0,8,0"/>
+          <ui:NumberBox Grid.Column="1"
+                        Value="{Binding PromptLogRetentionDays}"
+                        Minimum="1"
+                        Maximum="365"
+                        SpinButtonPlacementMode="Compact"
+                        Width="120"
+                        Margin="0,0,12,0"/>
+          <ui:Button Grid.Column="2"
+                     Command="{Binding DeleteOldPromptLogsCommand}"
+                     Appearance="Secondary">
+            <TextBlock Text="{loc:Str Settings_Privacy_DeleteOldLogs}"/>
+          </ui:Button>
+        </Grid>
+
+        <ui:Button Command="{Binding DeleteAllPromptLogsCommand}"
+                   Appearance="Danger"
+                   Margin="0,4,0,0">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,6,0"/>
+            <TextBlock Text="{loc:Str Settings_Privacy_DeleteAllLogs}"/>
+          </StackPanel>
+        </ui:Button>
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

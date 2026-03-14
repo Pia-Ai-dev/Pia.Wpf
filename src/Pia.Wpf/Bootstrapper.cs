@@ -130,13 +130,18 @@ public static class Bootstrapper
         services.AddScoped<ISnackbarService, SnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
 
-        // AI Client (decorator applies PII tokenization transparently)
+        // Prompt logging
+        services.AddSingleton<IPromptLogService, PromptLogService>();
+
+        // AI Client (decorator chain: AiClient → Tokenization → Logging)
         services.AddTransient<AiClientService>();
         services.AddTransient<IAiClientService>(sp =>
-            new TokenizingAiClientService(
-                sp.GetRequiredService<AiClientService>(),
-                sp,
-                sp.GetRequiredService<ISettingsService>()));
+            new LoggingAiClientService(
+                new TokenizingAiClientService(
+                    sp.GetRequiredService<AiClientService>(),
+                    sp,
+                    sp.GetRequiredService<ISettingsService>()),
+                sp.GetRequiredService<IPromptLogService>()));
 
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
