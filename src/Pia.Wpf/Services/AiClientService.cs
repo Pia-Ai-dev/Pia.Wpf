@@ -467,7 +467,7 @@ public class AiClientService : IAiClientService
 
         return provider.ProviderType switch
         {
-            AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Ollama =>
+            AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Ollama or AiProviderType.Mistral =>
                 new ChatClient(
                     model: provider.ModelName ?? "gpt-3.5-turbo",
                     credential: new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "unused" : apiKey),

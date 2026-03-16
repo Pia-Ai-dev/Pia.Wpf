@@ -54,15 +54,25 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private string? _fetchModelsError;
 
-    partial void OnProviderTypeChanged(AiProviderType value)
+    private static readonly Dictionary<AiProviderType, string> DefaultEndpoints = new()
     {
-        if (value == AiProviderType.Ollama && string.IsNullOrEmpty(Endpoint))
+        [AiProviderType.Ollama] = "http://localhost:11434/v1",
+        [AiProviderType.OpenRouter] = "https://openrouter.ai/api/v1",
+        [AiProviderType.OpenAI] = "https://api.openai.com/v1",
+        [AiProviderType.Mistral] = "https://api.mistral.ai/v1",
+    };
+
+    partial void OnProviderTypeChanged(AiProviderType oldValue, AiProviderType newValue)
+    {
+        if (!DefaultEndpoints.TryGetValue(newValue, out var newDefault))
+            return;
+
+        var isOldDefault = string.IsNullOrEmpty(Endpoint)
+            || (DefaultEndpoints.TryGetValue(oldValue, out var oldDefault) && Endpoint == oldDefault);
+
+        if (isOldDefault)
         {
-            Endpoint = "http://localhost:11434/v1";
-        }
-        else if (value == AiProviderType.OpenRouter && string.IsNullOrEmpty(Endpoint))
-        {
-            Endpoint = "https://openrouter.ai/api/v1";
+            Endpoint = newDefault;
         }
     }
 

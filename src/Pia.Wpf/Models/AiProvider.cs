@@ -7,7 +7,8 @@ public enum AiProviderType
     AzureOpenAI,
     Ollama,
     OpenRouter,
-    OpenAICompatible
+    OpenAICompatible,
+    Mistral
 }
 
 public class AiProvider
