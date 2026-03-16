@@ -15,6 +15,7 @@ public class UpdateService : IUpdateService
 
     public bool IsUpdateReady { get; private set; }
     public string? AvailableVersion { get; private set; }
+    public string? CurrentVersion { get; }
 
     public UpdateService(ILogger<UpdateService> logger, IOptions<AutoUpdateOptions> options)
     {
@@ -23,6 +24,10 @@ public class UpdateService : IUpdateService
         var opts = options.Value;
         _updateManager = new UpdateManager(
             new GithubSource(opts.GitHubRepoUrl, opts.AccessToken, opts.Prerelease));
+
+        CurrentVersion = _updateManager.IsInstalled
+            ? _updateManager.CurrentVersion?.ToString()
+            : null;
     }
 
     public async Task<bool> CheckAndDownloadUpdateAsync()
