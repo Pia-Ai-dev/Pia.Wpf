@@ -29,6 +29,12 @@ public partial class OptimizeView : UserControl
                 ViewModel.RequestFocus();
             }
         }
+
+        var parentWindow = Window.GetWindow(this);
+        if (parentWindow is not null)
+        {
+            parentWindow.Activated += OnParentWindowActivated;
+        }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -37,6 +43,20 @@ public partial class OptimizeView : UserControl
         {
             ViewModel.PropertyChanged -= OnPropertyChanged;
             ViewModel.FocusInputRequested -= OnFocusInputRequested;
+        }
+
+        var parentWindow = Window.GetWindow(this);
+        if (parentWindow is not null)
+        {
+            parentWindow.Activated -= OnParentWindowActivated;
+        }
+    }
+
+    private void OnParentWindowActivated(object? sender, EventArgs e)
+    {
+        if (ViewModel is not null && string.IsNullOrEmpty(ViewModel.InputText) && !ViewModel.IsComparisonView)
+        {
+            ViewModel.RequestFocus();
         }
     }
 

@@ -61,7 +61,8 @@ public class TextOptimizationService : ITextOptimizationService
                 ? "The following input was transcribed from spoken word. Clean it up by removing filler words (um, uh, like, you know, etc.), false starts, repetitions, and other speech artifacts that wouldn't appear in written text. Make the text flow naturally as written prose while preserving the original meaning and intent.\n\n"
                 : "";
 
-            var prompt = $"Base prompt: {template.Prompt}\n\n{voiceCleanupPrompt}{languagePrompt}\n\n{processedInput}";
+            var outputInstruction = "IMPORTANT: Output ONLY the transformed text. Do not include any introductions, explanations, labels, or commentary such as 'Here is the result:' — just the final text itself.";
+            var prompt = $"Base prompt: {template.Prompt}\n\n{outputInstruction}\n\n{voiceCleanupPrompt}{languagePrompt}\n\n{processedInput}";
             optimizedText = await _aiClientService.SendRequestAsync(provider, prompt, cancellationToken);
         }
 
