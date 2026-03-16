@@ -2,9 +2,9 @@ using System.Windows.Controls;
 
 namespace Pia.Views.SettingsViews;
 
-public partial class PrivacyView : UserControl
+public partial class AssistantView : UserControl
 {
-    public PrivacyView()
+    public AssistantView()
     {
         InitializeComponent();
     }

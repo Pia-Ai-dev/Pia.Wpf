@@ -7,244 +7,300 @@
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
     <converters:LanguageToFlagConverter x:Key="LanguageToFlagConverter"/>
+    <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
   </UserControl.Resources>
-  <ScrollViewer Margin="16">
-    <StackPanel MaxWidth="600" HorizontalAlignment="Left">
-      <TextBlock Text="{loc:Str Settings_GeneralTitle}"
-                  FontSize="20"
-                  FontWeight="SemiBold"
-                  Margin="0,0,0,24"/>
+  <Grid Margin="16">
+    <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
+      <!-- Appearance tab -->
+      <TabItem Header="{loc:Str Settings_InnerTab_Appearance}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer>
+          <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
+            <StackPanel Margin="0,0,0,24">
+              <TextBlock Text="{loc:Str Settings_UiLanguage}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <ComboBox ItemsSource="{Binding UiLanguages}"
+                        SelectedItem="{Binding UiLanguage}"
+                        Width="400">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="{Binding Converter={StaticResource LanguageToFlagConverter}}" Margin="0,0,8,0"/>
+                      <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
+                    </StackPanel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{loc:Str Settings_UiLanguage_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         Margin="0,4,0,0"/>
+            </StackPanel>
 
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_UiLanguage}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <ComboBox ItemsSource="{Binding UiLanguages}"
-                  SelectedItem="{Binding UiLanguage}"
-                  Width="400">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding Converter={StaticResource LanguageToFlagConverter}}" Margin="0,0,8,0"/>
-                <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
-              </StackPanel>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-        <TextBlock Text="{loc:Str Settings_UiLanguage_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,4,0,0"/>
-      </StackPanel>
-
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_OutputAction}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <ComboBox ItemsSource="{Binding OutputActions}"
-                  SelectedItem="{Binding OutputAction}"
-                  Width="400">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-      </StackPanel>
-
-      <StackPanel Margin="0,0,0,24">
-        <StackPanel.Style>
-          <Style TargetType="StackPanel">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding OutputAction}" Value="AutoType">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </StackPanel.Style>
-        <TextBlock Text="{loc:Str Settings_AutoTypeDelay}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <ui:NumberBox Value="{Binding AutoTypeDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                      Minimum="5"
-                      Maximum="100"
-                      Width="200"/>
-        <TextBlock Text="{loc:Str Settings_AutoTypeDelay_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,4,0,0"/>
-      </StackPanel>
-
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_WhisperModel}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <ComboBox ItemsSource="{Binding WhisperModels}"
-                  SelectedItem="{Binding WhisperModel}"
-                  Width="400">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-        <TextBlock Text="{loc:Str Settings_WhisperModel_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,4,0,0"/>
-        <ui:Button Command="{Binding DownloadWhisperModelCommand}"
-                   Margin="0,8,0,0"
-                   HorizontalAlignment="Left">
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" Margin="0,0,8,0"/>
-            <TextBlock Text="{loc:Str Settings_DownloadModel}"/>
+            <StackPanel Margin="0,0,0,24">
+              <TextBlock Text="{loc:Str Settings_ApplicationBehavior}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <CheckBox Content="{loc:Str Settings_StartMinimized}"
+                        IsChecked="{Binding StartMinimized}"
+                        Margin="0,4,0,0"/>
+              <TextBlock Text="{loc:Str Settings_StartMinimized_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         Margin="20,4,0,0"/>
+            </StackPanel>
           </StackPanel>
-        </ui:Button>
-      </StackPanel>
+        </ScrollViewer>
+      </TabItem>
 
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_SpeechToTextLanguage}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <ComboBox ItemsSource="{Binding TargetSpeechLanguages}"
-                  SelectedItem="{Binding TargetSpeechLanguage}"
-                  Width="400">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-        <TextBlock Text="{loc:Str Settings_SpeechToTextLanguage_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,4,0,0"/>
-      </StackPanel>
+      <!-- Hotkeys tab -->
+      <TabItem Header="{loc:Str Settings_InnerTab_Hotkeys}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer>
+          <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
+            <TextBlock Text="{loc:Str Settings_GlobalHotkeys}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBlock Text="{loc:Str Settings_GlobalHotkeys_Description}"
+                       Opacity="0.7"
+                       FontSize="12"
+                       Margin="0,0,0,12"/>
 
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_DefaultWindowMode}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <ComboBox ItemsSource="{Binding WindowModes}"
-                  SelectedItem="{Binding DefaultWindowMode}"
-                  Width="400">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-        <TextBlock Text="{loc:Str Settings_DefaultWindowMode_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,4,0,0"/>
-      </StackPanel>
+            <ui:Card Padding="16" Margin="0,0,0,8">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{loc:Str Settings_Hotkey_Optimize}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="1" Text="{Binding OptimizeHotkeyDisplayText}" VerticalAlignment="Center" FontSize="14"/>
+                <ui:Button Grid.Column="2" Command="{Binding CaptureOptimizeHotkeyCommand}" Appearance="Secondary" Margin="0,0,4,0">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
+                    <TextBlock Text="{loc:Str Settings_Hotkey_Change}"/>
+                  </StackPanel>
+                </ui:Button>
+                <ui:Button Grid.Column="3" Command="{Binding ClearOptimizeHotkeyCommand}" Appearance="Secondary" ToolTip="{loc:Str Settings_Hotkey_ResetToDefault}">
+                  <ui:SymbolIcon Symbol="ArrowReset24" FontSize="14"/>
+                </ui:Button>
+              </Grid>
+            </ui:Card>
 
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_ApplicationBehavior}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <CheckBox Content="{loc:Str Settings_StartMinimized}"
-                  IsChecked="{Binding StartMinimized}"
-                  Margin="0,4,0,0"/>
-        <TextBlock Text="{loc:Str Settings_StartMinimized_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="20,4,0,0"/>
-        <CheckBox Content="{loc:Str Settings_ShowTodoPanelButton}"
-                  IsChecked="{Binding ShowTodoPanelButton}"
-                  Margin="0,12,0,0"/>
-        <TextBlock Text="{loc:Str Settings_ShowTodoPanelButton_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="20,4,0,0"/>
-      </StackPanel>
+            <ui:Card Padding="16" Margin="0,0,0,8">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{loc:Str Settings_Hotkey_Assistant}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="1" Text="{Binding AssistantHotkeyDisplayText}" VerticalAlignment="Center" FontSize="14"/>
+                <ui:Button Grid.Column="2" Command="{Binding CaptureAssistantHotkeyCommand}" Appearance="Secondary" Margin="0,0,4,0">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
+                    <TextBlock Text="{loc:Str Settings_Hotkey_Change}"/>
+                  </StackPanel>
+                </ui:Button>
+                <ui:Button Grid.Column="3" Command="{Binding ClearAssistantHotkeyCommand}" Appearance="Secondary" ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
+                  <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
+                </ui:Button>
+              </Grid>
+            </ui:Card>
 
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_GlobalHotkeys}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <TextBlock Text="{loc:Str Settings_GlobalHotkeys_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,0,0,12"/>
-
-        <ui:Card Padding="16" Margin="0,0,0,8">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="120"/>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="{loc:Str Settings_Hotkey_Optimize}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="1" Text="{Binding OptimizeHotkeyDisplayText}" VerticalAlignment="Center" FontSize="14"/>
-            <ui:Button Grid.Column="2" Command="{Binding CaptureOptimizeHotkeyCommand}" Appearance="Secondary" Margin="0,0,4,0">
-              <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
-                <TextBlock Text="{loc:Str Settings_Hotkey_Change}"/>
-              </StackPanel>
-            </ui:Button>
-            <ui:Button Grid.Column="3" Command="{Binding ClearOptimizeHotkeyCommand}" Appearance="Secondary" ToolTip="{loc:Str Settings_Hotkey_ResetToDefault}">
-              <ui:SymbolIcon Symbol="ArrowReset24" FontSize="14"/>
-            </ui:Button>
-          </Grid>
-        </ui:Card>
-
-        <ui:Card Padding="16" Margin="0,0,0,8">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="120"/>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="{loc:Str Settings_Hotkey_Assistant}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="1" Text="{Binding AssistantHotkeyDisplayText}" VerticalAlignment="Center" FontSize="14"/>
-            <ui:Button Grid.Column="2" Command="{Binding CaptureAssistantHotkeyCommand}" Appearance="Secondary" Margin="0,0,4,0">
-              <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
-                <TextBlock Text="{loc:Str Settings_Hotkey_Change}"/>
-              </StackPanel>
-            </ui:Button>
-            <ui:Button Grid.Column="3" Command="{Binding ClearAssistantHotkeyCommand}" Appearance="Secondary" ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
-              <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
-            </ui:Button>
-          </Grid>
-        </ui:Card>
-
-        <ui:Card Padding="16" Margin="0,0,0,8">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="120"/>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="{loc:Str Settings_Hotkey_Research}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="1" Text="{Binding ResearchHotkeyDisplayText}" VerticalAlignment="Center" FontSize="14"/>
-            <ui:Button Grid.Column="2" Command="{Binding CaptureResearchHotkeyCommand}" Appearance="Secondary" Margin="0,0,4,0">
-              <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
-                <TextBlock Text="{loc:Str Settings_Hotkey_Change}"/>
-              </StackPanel>
-            </ui:Button>
-            <ui:Button Grid.Column="3" Command="{Binding ClearResearchHotkeyCommand}" Appearance="Secondary" ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
-              <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
-            </ui:Button>
-          </Grid>
-        </ui:Card>
-      </StackPanel>
-
-      <!-- Separator -->
-      <Border BorderThickness="0,1,0,0"
-              BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-              Margin="0,8,0,24" />
-
-      <!-- Reset Application -->
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_ResetAppData}"
-                   FontWeight="SemiBold"
-                   Margin="0,0,0,8" />
-        <TextBlock Text="{loc:Str Settings_ResetAppData_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   TextWrapping="Wrap"
-                   Margin="0,0,0,12" />
-        <ui:Button Command="{Binding ResetAppDataCommand}"
-                   Appearance="Danger"
-                   HorizontalAlignment="Left">
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,8,0" />
-            <TextBlock Text="{loc:Str Settings_ResetAppData_Button}" />
+            <ui:Card Padding="16" Margin="0,0,0,8">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{loc:Str Settings_Hotkey_Research}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="1" Text="{Binding ResearchHotkeyDisplayText}" VerticalAlignment="Center" FontSize="14"/>
+                <ui:Button Grid.Column="2" Command="{Binding CaptureResearchHotkeyCommand}" Appearance="Secondary" Margin="0,0,4,0">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
+                    <TextBlock Text="{loc:Str Settings_Hotkey_Change}"/>
+                  </StackPanel>
+                </ui:Button>
+                <ui:Button Grid.Column="3" Command="{Binding ClearResearchHotkeyCommand}" Appearance="Secondary" ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
+                  <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
+                </ui:Button>
+              </Grid>
+            </ui:Card>
           </StackPanel>
-        </ui:Button>
-      </StackPanel>
-    </StackPanel>
-  </ScrollViewer>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Speech tab -->
+      <TabItem Header="{loc:Str Settings_InnerTab_Speech}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer>
+          <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
+            <!-- Speech-to-Text title -->
+            <TextBlock Text="{loc:Str Stt_Title}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+
+            <!-- Whisper Model -->
+            <StackPanel Margin="0,0,0,24">
+              <TextBlock Text="{loc:Str Settings_WhisperModel}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <ComboBox ItemsSource="{Binding WhisperModels}"
+                        SelectedItem="{Binding WhisperModel}"
+                        Width="400">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{loc:Str Settings_WhisperModel_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         Margin="0,4,0,0"/>
+              <ui:Button Command="{Binding DownloadWhisperModelCommand}"
+                         Margin="0,8,0,0"
+                         HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" Margin="0,0,8,0"/>
+                  <TextBlock Text="{loc:Str Settings_DownloadModel}"/>
+                </StackPanel>
+              </ui:Button>
+            </StackPanel>
+
+            <!-- STT Language -->
+            <StackPanel Margin="0,0,0,24">
+              <TextBlock Text="{loc:Str Settings_SpeechToTextLanguage}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <ComboBox ItemsSource="{Binding TargetSpeechLanguages}"
+                        SelectedItem="{Binding TargetSpeechLanguage}"
+                        Width="400">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{loc:Str Settings_SpeechToTextLanguage_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         Margin="0,4,0,0"/>
+            </StackPanel>
+
+            <!-- Separator -->
+            <Border BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    Margin="0,8,0,24" />
+
+            <!-- TTS Voice Selection -->
+            <TextBlock Text="{loc:Str Tts_Title}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+            <TextBlock Text="{loc:Str Tts_Description}"
+                       Opacity="0.7"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,24"/>
+
+            <TextBlock Text="{loc:Str Tts_VoiceSelection}"
+                       FontWeight="SemiBold"
+                       FontSize="14"
+                       Margin="0,0,0,12"/>
+
+            <ItemsControl ItemsSource="{Binding TtsVoices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <ui:Card Padding="12" Margin="0,0,0,8">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="{Binding DisplayName}"
+                                     FontWeight="SemiBold"
+                                     FontSize="14"/>
+                          <Border Padding="6,2"
+                                  Margin="8,0,0,0"
+                                  CornerRadius="8"
+                                  Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                  Visibility="{Binding IsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="{loc:Str Tts_Active}"
+                                       FontSize="10"
+                                       Foreground="White"/>
+                          </Border>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                          <TextBlock Text="{Binding Language}" FontSize="12" Opacity="0.7"/>
+                          <TextBlock Text=" · " FontSize="12" Opacity="0.5"/>
+                          <TextBlock Text="{Binding Gender}" FontSize="12" Opacity="0.7"/>
+                          <TextBlock Text=" · " FontSize="12" Opacity="0.5"/>
+                          <TextBlock Text="{Binding Quality}" FontSize="12" Opacity="0.7"/>
+                        </StackPanel>
+                        <ProgressBar Value="{Binding DownloadProgress}"
+                                     Maximum="100"
+                                     Height="4"
+                                     Margin="0,8,0,0"
+                                     Visibility="{Binding IsDownloading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                      </StackPanel>
+
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button Command="{Binding DataContext.DownloadVoiceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   CommandParameter="{Binding}"
+                                   Appearance="Secondary"
+                                   Visibility="{Binding IsDownloaded, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                          <ui:Button.Style>
+                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDownloading}" Value="True">
+                                  <Setter Property="IsEnabled" Value="False"/>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:Button.Style>
+                          <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="14" Margin="0,0,6,0"/>
+                            <TextBlock Text="{loc:Str Tts_Download}"/>
+                          </StackPanel>
+                        </ui:Button>
+
+                        <ui:Button Command="{Binding DataContext.SelectVoiceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   CommandParameter="{Binding}"
+                                   Appearance="Secondary"
+                                   Visibility="{Binding IsDownloaded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <ui:Button.Style>
+                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                  <Setter Property="IsEnabled" Value="False"/>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:Button.Style>
+                          <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Checkmark24" FontSize="14" Margin="0,0,6,0"/>
+                            <TextBlock>
+                              <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                  <Setter Property="Text" Value="{loc:Str Tts_Select}"/>
+                                  <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                      <Setter Property="Text" Value="{loc:Str Tts_Selected}"/>
+                                    </DataTrigger>
+                                  </Style.Triggers>
+                                </Style>
+                              </TextBlock.Style>
+                            </TextBlock>
+                          </StackPanel>
+                        </ui:Button>
+                      </StackPanel>
+                    </Grid>
+                  </ui:Card>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </Grid>
 </UserControl>

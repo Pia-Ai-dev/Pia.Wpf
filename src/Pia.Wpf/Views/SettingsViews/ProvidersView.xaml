@@ -28,7 +28,7 @@
                   IsChecked="{Binding UseSameProviderForAllModes}"
                   Margin="0,0,0,12"/>
 
-        <!-- Optimize / All Modes dropdown (single ComboBox, no duplicate binding) -->
+        <!-- Optimize / All Modes dropdown -->
         <TextBlock Text="{Binding OptimizeProviderLabel}"
                    Opacity="0.7"
                    Margin="0,0,0,4"/>
