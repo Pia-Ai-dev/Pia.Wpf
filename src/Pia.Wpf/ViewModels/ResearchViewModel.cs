@@ -1,7 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
@@ -14,6 +16,8 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
     private readonly IProviderService _providerService;
     private readonly IOutputService _outputService;
     private readonly IVoiceInputService _voiceInputService;
+    private readonly IResearchExportService _exportService;
+    private readonly IResearchHistoryService _researchHistoryService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<ResearchViewModel> _logger;
@@ -44,6 +48,8 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         IProviderService providerService,
         IOutputService outputService,
         IVoiceInputService voiceInputService,
+        IResearchExportService exportService,
+        IResearchHistoryService researchHistoryService,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         ILogger<ResearchViewModel> logger)
@@ -52,6 +58,8 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         _providerService = providerService;
         _outputService = outputService;
         _voiceInputService = voiceInputService;
+        _exportService = exportService;
+        _researchHistoryService = researchHistoryService;
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _logger = logger;
@@ -98,6 +106,9 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         try
         {
             await _researchService.ExecuteResearchAsync(session, provider, _researchCts.Token);
+
+            // Save completed session to history
+            await SaveSessionToHistoryAsync(session, provider);
         }
         catch (OperationCanceledException)
         {
@@ -157,20 +168,38 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
 
         try
         {
-            var sb = new StringBuilder();
-            sb.AppendLine($"# Research: {CurrentSession.Query}");
-            sb.AppendLine();
-
-            foreach (var step in CurrentSession.Steps)
+            var dialog = new SaveFileDialog
             {
-                sb.AppendLine($"## Step {step.StepNumber}: {step.Title}");
-                sb.AppendLine();
-                sb.AppendLine(step.Content);
-                sb.AppendLine();
+                Title = _localizationService["Research_ExportAll"],
+                FileName = $"Research_{CurrentSession.CreatedAt:yyyyMMdd_HHmmss}",
+                Filter = "Markdown (*.md)|*.md|HTML (*.html)|*.html|PDF (*.xps)|*.xps",
+                FilterIndex = 1,
+                DefaultExt = ".md"
+            };
+
+            if (dialog.ShowDialog() != true)
+                return;
+
+            var filePath = dialog.FileName;
+            var filterIndex = dialog.FilterIndex;
+
+            switch (filterIndex)
+            {
+                case 1: // Markdown
+                    await _exportService.ExportAsMarkdownAsync(CurrentSession, filePath);
+                    break;
+                case 2: // HTML
+                    await _exportService.ExportAsHtmlAsync(CurrentSession, filePath);
+                    break;
+                case 3: // PDF/XPS
+                    await _exportService.ExportAsPdfAsync(CurrentSession, filePath);
+                    break;
             }
 
-            await _outputService.CopyToClipboardAsync(sb.ToString());
-            _snackbarService.Show(_localizationService["Msg_Research_Exported"], _localizationService["Msg_Research_FullResearchExported"], Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
+            _snackbarService.Show(
+                _localizationService["Msg_Research_Exported"],
+                _localizationService.Format("Msg_Research_ExportedToFile", filePath),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
         }
         catch (Exception ex)
         {
@@ -185,6 +214,38 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         QueryText = string.Empty;
         ErrorMessage = null;
         IsResearching = false;
+    }
+
+    private async Task SaveSessionToHistoryAsync(ResearchSession session, AiProvider provider)
+    {
+        try
+        {
+            var historyEntry = new ResearchHistoryEntry
+            {
+                Id = session.Id,
+                Query = session.Query,
+                SynthesizedResult = session.SynthesizedResult,
+                StepsJson = JsonSerializer.Serialize(
+                    session.Steps.Select(s => new ResearchStepDto
+                    {
+                        StepNumber = s.StepNumber,
+                        Title = s.Title,
+                        Content = s.Content,
+                        Status = s.Status.ToString()
+                    }).ToList()),
+                ProviderId = provider.Id,
+                ProviderName = provider.Name,
+                Status = session.Status.ToString(),
+                StepCount = session.Steps.Count,
+                CreatedAt = session.CreatedAt,
+                CompletedAt = session.CompletedAt ?? DateTime.Now
+            };
+            await _researchHistoryService.AddEntryAsync(historyEntry);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save research session to history");
+        }
     }
 
     public void OnNavigatedTo(object? parameter)

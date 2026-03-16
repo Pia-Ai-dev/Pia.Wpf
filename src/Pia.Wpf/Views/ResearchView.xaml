@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:local="clr-namespace:Pia.Views"
+             xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:models="clr-namespace:Pia.Models"
              xmlns:nav="clr-namespace:Pia.Navigation"
              xmlns:loc="clr-namespace:Pia.Localization"
@@ -282,17 +283,15 @@
                     </ContentControl.Style>
                   </ContentControl>
 
-                  <!-- Content (collapsed when Pending) -->
-                  <TextBlock Grid.Column="0"
-                             Grid.ColumnSpan="3"
-                             Grid.Row="1"
-                             Text="{Binding Content}"
-                             TextWrapping="Wrap"
-                             FontSize="13"
-                             Margin="40,8,0,0"
-                             Foreground="{DynamicResource TextSecondaryBrush}">
-                    <TextBlock.Style>
-                      <Style TargetType="TextBlock">
+                  <!-- Content (collapsed when Pending) - rendered as Markdown -->
+                  <controls:MarkdownMessageControl Grid.Column="0"
+                                                    Grid.ColumnSpan="3"
+                                                    Grid.Row="1"
+                                                    MarkdownText="{Binding Content}"
+                                                    IsStreaming="{Binding IsStreaming}"
+                                                    Margin="40,8,0,0">
+                    <controls:MarkdownMessageControl.Style>
+                      <Style TargetType="controls:MarkdownMessageControl">
                         <Setter Property="Visibility" Value="Visible" />
                         <Style.Triggers>
                           <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Pending}">
@@ -300,8 +299,8 @@
                           </DataTrigger>
                         </Style.Triggers>
                       </Style>
-                    </TextBlock.Style>
-                  </TextBlock>
+                    </controls:MarkdownMessageControl.Style>
+                  </controls:MarkdownMessageControl>
                 </Grid>
               </Border>
             </DataTemplate>

@@ -239,13 +239,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             {
                 WindowMode.Optimize => "History",
                 WindowMode.Assistant => "Memory",
-                WindowMode.Research => "Settings",
+                WindowMode.Research => "ResearchHistory",
                 _ => null
             },
             "Shortcut3" => Mode switch
             {
                 WindowMode.Optimize => "Settings",
                 WindowMode.Assistant => "Reminders",
+                WindowMode.Research => "Settings",
                 _ => null
             },
             "Shortcut4" => Mode switch
@@ -272,6 +273,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 break;
             case "Research":
                 _navigationService.NavigateTo<ResearchViewModel>();
+                break;
+            case "ResearchHistory":
+                _navigationService.NavigateTo<ResearchHistoryViewModel>();
                 break;
             case "Memory":
                 _navigationService.NavigateTo<MemoryViewModel>();

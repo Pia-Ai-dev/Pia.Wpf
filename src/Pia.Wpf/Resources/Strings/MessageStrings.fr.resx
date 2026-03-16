@@ -118,6 +118,10 @@
   <data name="Msg_Research_Exported" xml:space="preserve"><value>Exporté</value></data>
   <data name="Msg_Research_Failed" xml:space="preserve"><value>La recherche a échoué : {0}</value></data>
   <data name="Msg_Research_FullResearchExported" xml:space="preserve"><value>Recherche complète exportée dans le presse-papiers.</value></data>
+  <data name="Msg_Research_ExportedToFile" xml:space="preserve"><value>Recherche exportée vers {0}</value></data>
+  <data name="Msg_ResearchHistory_ConfirmDeleteTitle" xml:space="preserve"><value>Supprimer la recherche</value></data>
+  <data name="Msg_ResearchHistory_ConfirmDeleteMessage" xml:space="preserve"><value>Êtes-vous sûr de vouloir supprimer cette session de recherche ? Cette action est irréversible.</value></data>
+  <data name="Msg_ResearchHistory_DeleteFailed" xml:space="preserve"><value>Échec de la suppression de la session de recherche : {0}</value></data>
   <data name="Msg_Research_NoProviderConfigured" xml:space="preserve"><value>Aucun fournisseur d'IA configuré pour le mode Recherche. Veuillez en ajouter un dans les Paramètres.</value></data>
   <data name="Msg_Research_ResultCopied" xml:space="preserve"><value>Résultat de recherche copié dans le presse-papiers.</value></data>
   <!-- Settings messages -->

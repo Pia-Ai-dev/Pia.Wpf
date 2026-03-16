@@ -123,6 +123,10 @@
   <data name="Msg_Research_Exported" xml:space="preserve"><value>Exported</value></data>
   <data name="Msg_Research_Failed" xml:space="preserve"><value>Research failed: {0}</value></data>
   <data name="Msg_Research_FullResearchExported" xml:space="preserve"><value>Full research exported to clipboard.</value></data>
+  <data name="Msg_Research_ExportedToFile" xml:space="preserve"><value>Research exported to {0}</value></data>
+  <data name="Msg_ResearchHistory_ConfirmDeleteTitle" xml:space="preserve"><value>Delete Research</value></data>
+  <data name="Msg_ResearchHistory_ConfirmDeleteMessage" xml:space="preserve"><value>Are you sure you want to delete this research session? This action cannot be undone.</value></data>
+  <data name="Msg_ResearchHistory_DeleteFailed" xml:space="preserve"><value>Failed to delete research session: {0}</value></data>
   <data name="Msg_Research_NoProviderConfigured" xml:space="preserve"><value>No AI provider configured for Research mode. Please add one in Settings.</value></data>
   <data name="Msg_Research_ResultCopied" xml:space="preserve"><value>Research result copied to clipboard.</value></data>
 

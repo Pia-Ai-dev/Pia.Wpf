@@ -149,6 +149,8 @@ public static class Bootstrapper
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<IHistoryService, HistoryService>();
+        services.AddSingleton<IResearchHistoryService, ResearchHistoryService>();
+        services.AddTransient<IResearchExportService, ResearchExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
         services.AddSingleton<ITrayIconService, TrayIconService>();
@@ -200,6 +202,7 @@ public static class Bootstrapper
         services.AddScoped<HistoryViewModel>();
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<ResearchViewModel>();
+        services.AddScoped<ResearchHistoryViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();
         services.AddScoped<TodoViewModel>();

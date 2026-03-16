@@ -103,6 +103,26 @@
   <data name="Research_ExportAll" xml:space="preserve"><value>Export All</value></data>
   <data name="Research_NewResearch" xml:space="preserve"><value>New Research</value></data>
   <data name="Research_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
+  <!-- Research History View -->
+  <data name="ResearchHistory_Title" xml:space="preserve"><value>Research History</value></data>
+  <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Search research sessions...</value></data>
+  <data name="ResearchHistory_DateColumn" xml:space="preserve"><value>Date</value></data>
+  <data name="ResearchHistory_QueryColumn" xml:space="preserve"><value>Research Question</value></data>
+  <data name="ResearchHistory_ProviderColumn" xml:space="preserve"><value>Provider</value></data>
+  <data name="ResearchHistory_StepsColumn" xml:space="preserve"><value>Steps</value></data>
+  <data name="ResearchHistory_StatusColumn" xml:space="preserve"><value>Status</value></data>
+  <data name="ResearchHistory_NoSessions" xml:space="preserve"><value>No research sessions found</value></data>
+  <data name="ResearchHistory_Loading" xml:space="preserve"><value>Loading research sessions...</value></data>
+  <data name="ResearchHistory_LoadMore" xml:space="preserve"><value>Load More</value></data>
+  <data name="ResearchHistory_View" xml:space="preserve"><value>View</value></data>
+  <data name="ResearchHistory_Export" xml:space="preserve"><value>Export</value></data>
+  <data name="ResearchHistory_Delete" xml:space="preserve"><value>Delete</value></data>
+  <data name="ResearchHistory_Refresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="ResearchHistory_ClearFilters" xml:space="preserve"><value>Clear Filters</value></data>
+  <data name="ResearchHistory_DateRangeTo" xml:space="preserve"><value>to</value></data>
+  <data name="ResearchHistory_ViewDetail" xml:space="preserve"><value>View Detail</value></data>
+  <data name="ResearchHistory_CopyResult" xml:space="preserve"><value>Copy Result</value></data>
+  <data name="Nav_ResearchHistory" xml:space="preserve"><value>History</value></data>
   <!-- History View -->
   <data name="History_Title" xml:space="preserve"><value>History</value></data>
   <data name="History_DateRangeTo" xml:space="preserve"><value>to</value></data>

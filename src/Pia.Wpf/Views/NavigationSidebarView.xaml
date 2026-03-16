@@ -58,6 +58,17 @@
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
+      <!-- Research History (Research only) -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_ResearchHistory}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="ResearchHistory"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=ResearchHistory}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Research}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Clock24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
       <!-- Memory (Assistant only) -->
       <ui:NavigationViewItem Content="{loc:Str Nav_Memory}"
                              Command="{Binding NavigationCommand}"

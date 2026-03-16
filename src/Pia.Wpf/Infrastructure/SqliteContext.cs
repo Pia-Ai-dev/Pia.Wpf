@@ -105,6 +105,21 @@ public class SqliteContext : IDisposable
             CREATE INDEX IF NOT EXISTS IX_Todos_Status ON Todos(Status);
             CREATE INDEX IF NOT EXISTS IX_Todos_Priority ON Todos(Priority);
             CREATE INDEX IF NOT EXISTS IX_Todos_DueDate ON Todos(DueDate);
+
+            CREATE TABLE IF NOT EXISTS ResearchSessions (
+                Id TEXT PRIMARY KEY,
+                Query TEXT NOT NULL,
+                SynthesizedResult TEXT NOT NULL DEFAULT '',
+                StepsJson TEXT NOT NULL DEFAULT '[]',
+                ProviderId TEXT NOT NULL,
+                ProviderName TEXT,
+                Status TEXT NOT NULL DEFAULT 'Completed',
+                StepCount INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL,
+                CompletedAt TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_ResearchSessions_CreatedAt ON ResearchSessions(CreatedAt);
             """;
         command.ExecuteNonQuery();
 

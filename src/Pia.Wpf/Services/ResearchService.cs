@@ -62,7 +62,7 @@ public class ResearchService : IResearchService
                 researchStep.IsStreaming = true;
 
                 conversationHistory.Add(new ChatMessage(ChatRole.User,
-                    $"Now research and provide a detailed answer to this sub-question: {subQuestion}"));
+                    $"Now research and provide a detailed answer to this sub-question. Use Markdown formatting (headings, lists, bold, code blocks) for clarity: {subQuestion}"));
 
                 await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
                 {
@@ -86,7 +86,7 @@ public class ResearchService : IResearchService
             synthesizeStep.IsStreaming = true;
 
             conversationHistory.Add(new ChatMessage(ChatRole.User,
-                "Now synthesize all the research findings above into a comprehensive, well-structured answer to the original question. Use clear headings and organize the information logically. Include key findings, conclusions, and any important caveats."));
+                "Now synthesize all the research findings above into a comprehensive, well-structured answer to the original question. Format your response in Markdown with clear headings (##), bullet points, bold key terms, and code blocks where appropriate. Organize the information logically. Include key findings, conclusions, and any important caveats."));
 
             await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
             {

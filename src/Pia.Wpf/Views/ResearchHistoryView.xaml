@@ -1,0 +1,395 @@
+<UserControl x:Class="Pia.Views.ResearchHistoryView"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+              xmlns:controls="clr-namespace:Pia.Controls"
+              xmlns:loc="clr-namespace:Pia.Localization"
+              xmlns:nav="clr-namespace:Pia.Navigation"
+              mc:Ignorable="d"
+              d:DesignHeight="600" d:DesignWidth="900"
+              nav:ViewModelLocator.AutoWireViewModel="True">
+
+  <Grid Background="{DynamicResource PrimaryBackgroundBrush}"
+        Margin="20,45,20,20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Grid.Row="0"
+               Text="{loc:Str ResearchHistory_Title}"
+               Style="{StaticResource H1TextStyle}"
+               Margin="20,20,20,10" />
+
+    <!-- Filters -->
+    <Border Grid.Row="1"
+            Background="{DynamicResource SecondaryBackgroundBrush}"
+            BorderBrush="{DynamicResource CardBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            Margin="20,0,20,10"
+            Padding="10">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <DatePicker Grid.Column="0"
+                   SelectedDate="{Binding FilterStartDate}"
+                   Width="180"
+                   Margin="0,0,4,0" />
+
+        <TextBlock Grid.Column="1"
+                  Text="{loc:Str ResearchHistory_DateRangeTo}"
+                  VerticalAlignment="Center"
+                  Margin="0,0,4,0" />
+
+        <DatePicker Grid.Column="2"
+                   SelectedDate="{Binding FilterEndDate}"
+                   Width="180"
+                   Margin="0,0,8,0" />
+
+        <ui:TextBox Grid.Column="3"
+                    Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                    PlaceholderText="{loc:Str ResearchHistory_SearchPlaceholder}"
+                    PlaceholderEnabled="True"
+                    ClearButtonEnabled="False"
+                    MinWidth="100"
+                    Margin="0,0,8,0" />
+
+        <ui:Button Grid.Column="4"
+                   Command="{Binding RefreshCommand}"
+                   Appearance="Secondary"
+                   Width="36"
+                   Height="36"
+                   Padding="0"
+                   Margin="0,0,4,0"
+                   ToolTip="{loc:Str ResearchHistory_Refresh}">
+          <Grid>
+            <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"
+                           Visibility="{Binding IsLoading, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+            <ui:ProgressRing IsIndeterminate="True"
+                             Width="16" Height="16"
+                             Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          </Grid>
+        </ui:Button>
+
+        <ui:Button Grid.Column="5"
+                   Command="{Binding ClearFilterCommand}"
+                   Appearance="Secondary"
+                   Width="36"
+                   Height="36"
+                   Padding="0"
+                   ToolTip="{loc:Str ResearchHistory_ClearFilters}">
+          <ui:SymbolIcon Symbol="FilterDismiss24" FontSize="16" />
+        </ui:Button>
+      </Grid>
+    </Border>
+
+    <!-- Main Content: List + Detail -->
+    <Grid Grid.Row="2" Margin="20,0,20,10">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" MinWidth="300" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="1.5*">
+          <ColumnDefinition.Style>
+            <Style TargetType="ColumnDefinition">
+              <Setter Property="Width" Value="0" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsDetailOpen}" Value="True">
+                  <Setter Property="Width" Value="1.5*" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </ColumnDefinition.Style>
+        </ColumnDefinition>
+      </Grid.ColumnDefinitions>
+
+      <!-- Session List -->
+      <ListBox Grid.Column="0"
+               ItemsSource="{Binding Entries}"
+               SelectedItem="{Binding SelectedEntry}"
+               Background="{DynamicResource PrimaryBackgroundBrush}"
+               BorderBrush="{DynamicResource CardBorderBrush}"
+               BorderThickness="1"
+               VirtualizingPanel.IsVirtualizing="True"
+               VirtualizingPanel.VirtualizationMode="Recycling"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+        <ListBox.InputBindings>
+          <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding ViewDetailCommand}" />
+        </ListBox.InputBindings>
+        <ListBox.ContextMenu>
+          <ContextMenu Background="{DynamicResource SecondaryBackgroundBrush}">
+            <MenuItem Header="{loc:Str ResearchHistory_ViewDetail}" Command="{Binding ViewDetailCommand}">
+              <MenuItem.Icon>
+                <ui:SymbolIcon Symbol="Eye24" FontSize="16"/>
+              </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="{loc:Str ResearchHistory_CopyResult}" Command="{Binding CopyResultCommand}">
+              <MenuItem.Icon>
+                <ui:SymbolIcon Symbol="Copy24" FontSize="16"/>
+              </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="{loc:Str ResearchHistory_Export}" Command="{Binding ExportEntryCommand}">
+              <MenuItem.Icon>
+                <ui:SymbolIcon Symbol="ArrowExportUp24" FontSize="16"/>
+              </MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="{loc:Str ResearchHistory_Delete}" Command="{Binding DeleteEntryCommand}">
+              <MenuItem.Icon>
+                <ui:SymbolIcon Symbol="Delete24" FontSize="16"/>
+              </MenuItem.Icon>
+            </MenuItem>
+          </ContextMenu>
+        </ListBox.ContextMenu>
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Border Padding="12,10"
+                    Margin="0,0,0,2">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Date + Status Row -->
+                <Grid Grid.Row="0" Margin="0,0,0,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0"
+                             Text="{Binding CreatedAt, StringFormat='{}{0:g}'}"
+                             FontSize="11"
+                             Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding ProviderName}"
+                             FontSize="11"
+                             Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                             Margin="8,0" />
+                  <Border Grid.Column="2"
+                          Background="{DynamicResource AccentFillColorDefaultBrush}"
+                          CornerRadius="8"
+                          Padding="6,2">
+                    <TextBlock Text="{Binding StepCount, StringFormat='{}{0} steps'}"
+                               FontSize="10"
+                               Foreground="White" />
+                  </Border>
+                </Grid>
+
+                <!-- Query -->
+                <TextBlock Grid.Row="1"
+                           Text="{Binding Query}"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
+                           MaxHeight="40"
+                           Margin="0,0,0,4" />
+
+                <!-- Result Preview -->
+                <TextBlock Grid.Row="2"
+                           Text="{Binding ResultPreview}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
+                           MaxHeight="36" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <!-- Splitter -->
+      <GridSplitter Grid.Column="1"
+                    Width="4"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Stretch"
+                    Background="Transparent"
+                    Visibility="{Binding IsDetailOpen, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+      <!-- Detail Panel -->
+      <Border Grid.Column="2"
+              Background="{DynamicResource SecondaryBackgroundBrush}"
+              BorderBrush="{DynamicResource CardBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="4"
+              Visibility="{Binding IsDetailOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <!-- Detail Header -->
+          <Border Grid.Row="0"
+                  BorderThickness="0,0,0,1"
+                  BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                  Padding="16,10">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding DetailEntry.CreatedAt, StringFormat='{}{0:f}'}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                           Margin="0,0,0,2" />
+                <TextBlock Text="{Binding DetailEntry.Query}"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
+                           MaxHeight="60" />
+              </StackPanel>
+              <ui:Button Grid.Column="1"
+                         Command="{Binding CloseDetailCommand}"
+                         Appearance="Secondary"
+                         Width="32"
+                         Height="32"
+                         Padding="0">
+                <ui:SymbolIcon Symbol="Dismiss24" FontSize="16" />
+              </ui:Button>
+            </Grid>
+          </Border>
+
+          <!-- Detail Content: Steps with Markdown -->
+          <ScrollViewer Grid.Row="1"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled"
+                        Padding="16,8">
+            <ItemsControl ItemsSource="{Binding DetailSteps}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="0,0,0,12"
+                          Padding="12,8"
+                          CornerRadius="6"
+                          Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                          BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                          BorderThickness="1">
+                    <StackPanel>
+                      <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Border Width="24"
+                                Height="24"
+                                CornerRadius="12"
+                                Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                Margin="0,0,8,0">
+                          <TextBlock Text="{Binding StepNumber}"
+                                     HorizontalAlignment="Center"
+                                     VerticalAlignment="Center"
+                                     FontSize="11"
+                                     FontWeight="SemiBold"
+                                     Foreground="White" />
+                        </Border>
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap" />
+                      </StackPanel>
+                      <controls:MarkdownMessageControl MarkdownText="{Binding Content}"
+                                                        IsStreaming="False"
+                                                        Margin="32,0,0,0" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+
+          <!-- Detail Actions -->
+          <Border Grid.Row="2"
+                  BorderThickness="0,1,0,0"
+                  BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                  Padding="16,8">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <ui:Button Command="{Binding CopyResultCommand}"
+                         Appearance="Primary"
+                         Height="32"
+                         Margin="0,0,8,0"
+                         Padding="12,0">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="Copy24" FontSize="14" Margin="0,0,6,0" />
+                  <TextBlock Text="{loc:Str ResearchHistory_CopyResult}" VerticalAlignment="Center" FontSize="12" />
+                </StackPanel>
+              </ui:Button>
+              <ui:Button Command="{Binding ExportEntryCommand}"
+                         Appearance="Secondary"
+                         Height="32"
+                         Margin="0,0,8,0"
+                         Padding="12,0">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="ArrowExportUp24" FontSize="14" Margin="0,0,6,0" />
+                  <TextBlock Text="{loc:Str ResearchHistory_Export}" VerticalAlignment="Center" FontSize="12" />
+                </StackPanel>
+              </ui:Button>
+              <ui:Button Command="{Binding DeleteEntryCommand}"
+                         Appearance="Secondary"
+                         Height="32"
+                         Padding="12,0">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="Delete24" FontSize="14" Margin="0,0,6,0" />
+                  <TextBlock Text="{loc:Str ResearchHistory_Delete}" VerticalAlignment="Center" FontSize="12" />
+                </StackPanel>
+              </ui:Button>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+
+      <!-- Empty state overlay -->
+      <TextBlock Grid.Column="0"
+                 Text="{loc:Str ResearchHistory_NoSessions}"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"
+                 FontSize="16"
+                 Visibility="{Binding Entries.Count, Converter={StaticResource ZeroToVisibilityConverter}}" />
+
+      <!-- Loading overlay -->
+      <StackPanel Grid.Column="0"
+                 Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 Background="{DynamicResource PrimaryBackgroundBrush}"
+                 Opacity="0.8">
+        <TextBlock Text="{loc:Str ResearchHistory_Loading}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   FontSize="16"
+                   Margin="20" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Load More -->
+    <StackPanel Grid.Row="3"
+               Orientation="Horizontal"
+               HorizontalAlignment="Center"
+               Margin="20">
+      <Button Command="{Binding LoadMoreCommand}"
+              Width="150"
+              Margin="5"
+              Visibility="{Binding IsLoading, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="ChevronDown24" FontSize="16" Margin="0,0,8,0"/>
+          <TextBlock Text="{loc:Str ResearchHistory_LoadMore}"/>
+        </StackPanel>
+      </Button>
+      <TextBlock Text="{Binding TotalCount, StringFormat='Showing {0} sessions'}"
+                 VerticalAlignment="Center"
+                 Margin="10" />
+    </StackPanel>
+  </Grid>
+</UserControl>
