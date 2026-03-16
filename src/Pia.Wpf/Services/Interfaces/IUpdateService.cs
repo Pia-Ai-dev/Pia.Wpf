@@ -6,6 +6,11 @@ public interface IUpdateService
     string? AvailableVersion { get; }
 
     /// <summary>
+    /// Returns the currently installed Velopack version, or null if running in development.
+    /// </summary>
+    string? CurrentVersion { get; }
+
+    /// <summary>
     /// Silently checks for updates, downloads if available.
     /// Returns true if an update was downloaded and is ready to install.
     /// </summary>

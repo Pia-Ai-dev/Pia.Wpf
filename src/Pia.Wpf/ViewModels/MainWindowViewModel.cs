@@ -60,9 +60,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public string WindowTitle => $"Pia - {Mode} (v{AppVersion})";
 
-    public static string AppVersion { get; } =
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-        ?? "unknown";
+    public string AppVersion { get; }
 
     public IRelayCommand<string> NavigationCommand { get; }
     public IRelayCommand ToggleThemeCommand { get; }
@@ -88,6 +86,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _updateService = updateService;
         _providerService = providerService;
         _authService = authService;
+
+        AppVersion = updateService.CurrentVersion
+            ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+            ?? "unknown";
 
         NavigationCommand = new RelayCommand<string>(ExecuteNavigationCommand);
         ToggleThemeCommand = new AsyncRelayCommand(ExecuteToggleThemeAsync);
