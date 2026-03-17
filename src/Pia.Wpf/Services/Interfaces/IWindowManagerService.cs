@@ -16,4 +16,6 @@ public interface IWindowManagerService
     void HideAllWindows();
     void CloseAndDisposeAll();
     bool IsVisible(WindowMode mode);
+    bool IsInForeground(WindowMode mode);
+    bool CanDismissWithHotkey(WindowMode mode);
 }

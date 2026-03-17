@@ -212,10 +212,35 @@
           </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="1" Grid.ColumnSpan="3"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,15,0,0">
+        <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,15,0,0">
+          <StackPanel Orientation="Horizontal"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Left"
+                      Visibility="{Binding ShowTrackedWindowIndicator, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ui:SymbolIcon Symbol="ArrowRight12"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                           Margin="0,0,6,0"
+                           VerticalAlignment="Center" />
+            <TextBlock Text="{Binding TrackedWindowInfo}"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       MaxWidth="250"
+                       ToolTip="{Binding TrackedWindowInfo}" />
+          </StackPanel>
+
+          <StackPanel Orientation="Horizontal"
+                      HorizontalAlignment="Right">
+          <ui:Button Command="{Binding AcceptCommand}"
+                     Appearance="Primary"
+                     Width="40"
+                     Height="40"
+                     Margin="0,0,10,0"
+                     ToolTip="{loc:Str Optimize_Accept_Tooltip}">
+            <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="16" />
+          </ui:Button>
           <ui:Button x:Name="SendToButton"
                      Appearance="Secondary"
                      Width="40"
@@ -243,14 +268,6 @@
               </ContextMenu>
             </ui:Button.ContextMenu>
           </ui:Button>
-          <ui:Button Command="{Binding AcceptCommand}"
-                     Appearance="Primary"
-                     Width="40"
-                     Height="40"
-                     Margin="0,0,10,0"
-                     ToolTip="{loc:Str Optimize_Accept_Tooltip}">
-            <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="16" />
-          </ui:Button>
           <ui:Button Command="{Binding RejectCommand}"
                      Appearance="Secondary"
                      Width="40"
@@ -263,10 +280,12 @@
                      Appearance="Secondary"
                      Width="40"
                      Height="40"
+                     Visibility="{Binding ShowCopyButton, Converter={StaticResource BooleanToVisibilityConverter}}"
                      ToolTip="{loc:Str Optimize_Copy_Tooltip}">
             <ui:SymbolIcon Symbol="Copy24" FontSize="16" />
           </ui:Button>
-        </StackPanel>
+          </StackPanel>
+        </Grid>
       </Grid>
     </Grid>
     </Grid>

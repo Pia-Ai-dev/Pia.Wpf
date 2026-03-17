@@ -110,7 +110,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _isLoading = true;
 
         var settings = await _settingsService.GetSettingsAsync();
-        UiLanguage = settings.UiLanguage;
+        UiLanguage = _localizationService.CurrentLanguage;
         StartMinimized = settings.StartMinimized;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
