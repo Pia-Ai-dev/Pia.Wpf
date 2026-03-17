@@ -144,6 +144,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     {
         _isLoading = true;
 
+        Providers.Clear();
         var providersList = await _providerService.GetProvidersAsync();
         foreach (var provider in providersList)
             Providers.Add(provider);
