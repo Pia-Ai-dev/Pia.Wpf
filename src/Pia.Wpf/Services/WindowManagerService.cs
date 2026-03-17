@@ -1,4 +1,6 @@
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using Microsoft.Extensions.DependencyInjection;
 using Pia.Models;
 using Pia.Navigation;
@@ -7,8 +9,11 @@ using Pia.ViewModels;
 
 namespace Pia.Services;
 
-public class WindowManagerService : IWindowManagerService
+public partial class WindowManagerService : IWindowManagerService
 {
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetForegroundWindow();
+
     private readonly IServiceProvider _rootProvider;
     private readonly Dictionary<WindowMode, ManagedWindow> _windows = new();
     private bool _isShuttingDown;
@@ -160,5 +165,29 @@ public class WindowManagerService : IWindowManagerService
     {
         return _windows.TryGetValue(mode, out var managed)
             && managed.Window.Visibility == Visibility.Visible;
+    }
+
+    public bool IsInForeground(WindowMode mode)
+    {
+        if (!_windows.TryGetValue(mode, out var managed))
+            return false;
+
+        var foreground = GetForegroundWindow();
+        var windowHandle = new WindowInteropHelper(managed.Window).Handle;
+        return foreground == windowHandle;
+    }
+
+    public bool CanDismissWithHotkey(WindowMode mode)
+    {
+        if (!_windows.TryGetValue(mode, out var managed))
+            return false;
+
+        if (mode == WindowMode.Optimize)
+        {
+            var vm = managed.Scope.ServiceProvider.GetRequiredService<OptimizeViewModel>();
+            return string.IsNullOrWhiteSpace(vm.InputText) && !vm.IsComparisonView && !vm.IsOptimizing;
+        }
+
+        return false;
     }
 }

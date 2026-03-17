@@ -29,6 +29,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     private readonly INavigationService _navigationService;
     private readonly IDialogService _dialogService;
     private readonly IWindowManagerService _windowManagerService;
+    private readonly IWindowTrackingService _windowTrackingService;
+    private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
@@ -161,6 +163,15 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     [ObservableProperty]
     private bool _showTemplatePrompt;
 
+    [ObservableProperty]
+    private string? _trackedWindowInfo;
+
+    [ObservableProperty]
+    private bool _showTrackedWindowIndicator;
+
+    [ObservableProperty]
+    private bool _showCopyButton = true;
+
     private ObservableCollection<OptimizationTemplate> _templates = new();
 
     public ObservableCollection<OptimizationTemplate> Templates => _templates;
@@ -187,6 +198,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         INavigationService navigationService,
         IDialogService dialogService,
         IWindowManagerService windowManagerService,
+        IWindowTrackingService windowTrackingService,
+        ILocalizationService localizationService,
         IVoiceInputService voiceInputService,
         Wpf.Ui.ISnackbarService snackbarService)
     {
@@ -200,6 +213,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         _navigationService = navigationService;
         _dialogService = dialogService;
         _windowManagerService = windowManagerService;
+        _windowTrackingService = windowTrackingService;
+        _localizationService = localizationService;
         _voiceInputService = voiceInputService;
         _snackbarService = snackbarService;
 
@@ -245,7 +260,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                 if (!dialogCompleted)
                 {
                     _optimizationCancellationToken.Cancel();
-                    _snackbarService.Show("Cancelled", "Optimization was cancelled", Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                    _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Optimize_Cancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                 }
             }
             else
@@ -276,6 +291,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                 cancellationToken);
 
             OptimizedText = session.OptimizedText;
+            await UpdateTrackedWindowInfoAsync();
             IsComparisonView = true;
             dialogCancellation.Cancel();
         }
@@ -286,7 +302,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         catch (Exception ex)
         {
             dialogCancellation.Cancel();
-            _snackbarService.Show("Error", $"Optimization failed: {ex.Message}", Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+            _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Optimize_Failed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
         }
     }
 
@@ -338,7 +354,22 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                     await _outputService.AutoTypeAsync(OptimizedText);
                     break;
                 case OutputAction.PasteToPreviousWindow:
-                    await _outputService.PasteToPreviousWindowAsync(OptimizedText);
+                    try
+                    {
+                        await _outputService.PasteToPreviousWindowAsync(OptimizedText);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Paste to previous window failed, falling back to clipboard");
+                        await _outputService.CopyToClipboardAsync(OptimizedText);
+                        var windowName = _windowTrackingService.GetTrackedWindowTitle() ?? _localizationService["Msg_Optimize_UnknownWindow"];
+                        _snackbarService.Show(
+                            _localizationService["Msg_Optimize_PasteFailed_Title"],
+                            _localizationService.Format("Msg_Optimize_PasteFailed", windowName),
+                            Wpf.Ui.Controls.ControlAppearance.Caution,
+                            null,
+                            TimeSpan.FromSeconds(5));
+                    }
                     break;
             }
 
@@ -351,6 +382,41 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         catch (Exception ex)
         {
             ErrorMessage = $"Output failed: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateTrackedWindowInfoAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+
+        switch (settings.DefaultOutputAction)
+        {
+            case OutputAction.PasteToPreviousWindow:
+            case OutputAction.AutoType:
+                if (_windowTrackingService.HasTrackedWindow)
+                {
+                    var title = _windowTrackingService.GetTrackedWindowTitle();
+                    var process = _windowTrackingService.GetTrackedWindowProcessName();
+                    TrackedWindowInfo = !string.IsNullOrEmpty(title) ? title : process ?? _localizationService["Msg_Optimize_UnknownWindow"];
+                    ShowTrackedWindowIndicator = true;
+                }
+                else
+                {
+                    TrackedWindowInfo = null;
+                    ShowTrackedWindowIndicator = false;
+                }
+                ShowCopyButton = true;
+                break;
+            case OutputAction.CopyToClipboard:
+                TrackedWindowInfo = _localizationService["Msg_Optimize_SentToClipboard"];
+                ShowTrackedWindowIndicator = true;
+                ShowCopyButton = false;
+                break;
+            default:
+                TrackedWindowInfo = null;
+                ShowTrackedWindowIndicator = false;
+                ShowCopyButton = true;
+                break;
         }
     }
 
@@ -393,11 +459,11 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         try
         {
             await _outputService.CopyToClipboardAsync(OptimizedText);
-            ErrorMessage = "Copied to clipboard";
+            ErrorMessage = _localizationService["Msg_Optimize_CopiedToClipboard"];
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Copy failed: {ex.Message}";
+            ErrorMessage = _localizationService.Format("Msg_Optimize_CopyFailed", ex.Message);
         }
     }
 
@@ -520,8 +586,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         {
             _logger.LogError(ex, "Failed to load templates");
             _snackbarService.Show(
-                "Error",
-                "Failed to load templates. Please check your configuration.",
+                _localizationService["Msg_Error"],
+                _localizationService["Msg_Optimize_LoadTemplatesFailed"],
                 Wpf.Ui.Controls.ControlAppearance.Danger,
                 null,
                 TimeSpan.FromSeconds(4));

@@ -1,5 +1,6 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Windows;
+using Microsoft.Extensions.Logging;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -8,11 +9,16 @@ public partial class OutputService : IOutputService
 {
     private readonly IWindowTrackingService _windowTracking;
     private readonly ISettingsService _settingsService;
+    private readonly ILogger<OutputService> _logger;
 
-    public OutputService(IWindowTrackingService windowTracking, ISettingsService settingsService)
+    public OutputService(
+        IWindowTrackingService windowTracking,
+        ISettingsService settingsService,
+        ILogger<OutputService> logger)
     {
         _windowTracking = windowTracking;
         _settingsService = settingsService;
+        _logger = logger;
     }
 
     public Task CopyToClipboardAsync(string text)
@@ -25,6 +31,7 @@ public partial class OutputService : IOutputService
             Clipboard.SetText(text);
         });
 
+        _logger.LogDebug("Copied {Length} chars to clipboard", text.Length);
         return Task.CompletedTask;
     }
 
@@ -33,21 +40,15 @@ public partial class OutputService : IOutputService
         if (string.IsNullOrEmpty(text))
             return;
 
-        if (_windowTracking.HasTrackedWindow)
-        {
-            if (!_windowTracking.RestorePreviousWindow())
-                throw new InvalidOperationException("Failed to restore previous window");
-        }
-        else
-        {
-            PressAltTab();
-        }
+        RestoreOrSwitchWindow("AutoType");
 
         // Small delay to allow window to gain focus
         await Task.Delay(100, cancellationToken);
 
         var settings = await _settingsService.GetSettingsAsync();
         var delay = settings.AutoTypeDelayMs;
+
+        _logger.LogInformation("AutoType: typing {Length} chars with {Delay}ms delay", text.Length, delay);
 
         foreach (var c in text)
         {
@@ -70,21 +71,45 @@ public partial class OutputService : IOutputService
         await CopyToClipboardAsync(text);
 
         // Switch to previous window
+        RestoreOrSwitchWindow("PasteToPreviousWindow");
+
+        // Delay to allow window to gain focus (200ms for Electron apps)
+        await Task.Delay(200, cancellationToken);
+
+        // Paste with Ctrl+V
+        var result = PressCtrlV();
+        if (result == 0)
+        {
+            var error = Marshal.GetLastWin32Error();
+            _logger.LogWarning("PasteToPreviousWindow: SendInput for Ctrl+V returned 0, Win32 error: {Error}", error);
+            throw new InvalidOperationException($"SendInput failed (Win32 error {error})");
+        }
+
+        _logger.LogInformation("PasteToPreviousWindow: successfully sent Ctrl+V ({Result} events injected)", result);
+    }
+
+    private void RestoreOrSwitchWindow(string operation)
+    {
         if (_windowTracking.HasTrackedWindow)
         {
+            var title = _windowTracking.GetTrackedWindowTitle();
+            var process = _windowTracking.GetTrackedWindowProcessName();
+            _logger.LogInformation("{Operation}: restoring tracked window '{Title}' (process: {Process})",
+                operation, title, process);
+
             if (!_windowTracking.RestorePreviousWindow())
-                throw new InvalidOperationException("Failed to restore previous window");
+            {
+                _logger.LogWarning("{Operation}: RestorePreviousWindow failed for '{Title}' (process: {Process})",
+                    operation, title, process);
+                throw new InvalidOperationException(
+                    $"Failed to restore previous window '{title}' ({process})");
+            }
         }
         else
         {
+            _logger.LogInformation("{Operation}: no tracked window, using Alt+Tab", operation);
             PressAltTab();
         }
-
-        // Small delay to allow window to gain focus
-        await Task.Delay(100, cancellationToken);
-
-        // Paste with Ctrl+V
-        PressCtrlV();
     }
 
     private static void SendCharacter(char c)
@@ -137,7 +162,7 @@ public partial class OutputService : IOutputService
         SendInput(4, inputs, Marshal.SizeOf<INPUT>());
     }
 
-    private static void PressCtrlV()
+    private static uint PressCtrlV()
     {
         var inputs = new INPUT[4];
 
@@ -165,7 +190,7 @@ public partial class OutputService : IOutputService
         inputs[3].ki.wScan = 0;
         inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
 
-        SendInput(4, inputs, Marshal.SizeOf<INPUT>());
+        return SendInput(4, inputs, Marshal.SizeOf<INPUT>());
     }
 
     private const int INPUT_KEYBOARD = 1;

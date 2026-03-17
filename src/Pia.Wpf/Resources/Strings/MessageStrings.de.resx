@@ -181,4 +181,15 @@
   <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>„{0}" als {1} hinzugefügt</value></data>
   <data name="Msg_PiiKeyword_Exists_Title" xml:space="preserve"><value>Bereits vorhanden</value></data>
   <data name="Msg_PiiKeyword_Exists" xml:space="preserve"><value>„{0}" ist bereits in der PII-Liste</value></data>
+
+  <!-- Optimize messages -->
+  <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>Optimierung wurde abgebrochen</value></data>
+  <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Optimierung fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Einfügen fehlgeschlagen</value></data>
+  <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Konnte nicht in {0} einfügen. Text wurde stattdessen in die Zwischenablage kopiert.</value></data>
+  <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Unbekanntes Fenster</value></data>
+  <data name="Msg_Optimize_SentToClipboard" xml:space="preserve"><value>In Zwischenablage gesendet</value></data>
+  <data name="Msg_Optimize_CopiedToClipboard" xml:space="preserve"><value>In Zwischenablage kopiert</value></data>
+  <data name="Msg_Optimize_CopyFailed" xml:space="preserve"><value>Kopieren fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Optimize_LoadTemplatesFailed" xml:space="preserve"><value>Vorlagen konnten nicht geladen werden. Bitte überprüfen Sie Ihre Konfiguration.</value></data>
 </root>

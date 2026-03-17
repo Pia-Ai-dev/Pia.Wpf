@@ -181,4 +181,15 @@
   <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>« {0} » ajouté comme {1}</value></data>
   <data name="Msg_PiiKeyword_Exists_Title" xml:space="preserve"><value>Déjà existant</value></data>
   <data name="Msg_PiiKeyword_Exists" xml:space="preserve"><value>« {0} » est déjà dans la liste PII</value></data>
+
+  <!-- Optimize messages -->
+  <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>L'optimisation a été annulée</value></data>
+  <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Échec de l'optimisation : {0}</value></data>
+  <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Échec du collage</value></data>
+  <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Impossible de coller dans {0}. Le texte a été copié dans le presse-papiers.</value></data>
+  <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Fenêtre inconnue</value></data>
+  <data name="Msg_Optimize_SentToClipboard" xml:space="preserve"><value>Envoyé dans le presse-papiers</value></data>
+  <data name="Msg_Optimize_CopiedToClipboard" xml:space="preserve"><value>Copié dans le presse-papiers</value></data>
+  <data name="Msg_Optimize_CopyFailed" xml:space="preserve"><value>Échec de la copie : {0}</value></data>
+  <data name="Msg_Optimize_LoadTemplatesFailed" xml:space="preserve"><value>Impossible de charger les modèles. Veuillez vérifier votre configuration.</value></data>
 </root>

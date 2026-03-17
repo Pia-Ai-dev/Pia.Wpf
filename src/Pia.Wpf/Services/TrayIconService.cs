@@ -173,7 +173,19 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     private void OnHotkeyPressed(WindowMode mode)
     {
         if (_windowManagerService.IsVisible(mode))
+        {
+            if (_windowManagerService.IsInForeground(mode))
+            {
+                if (_windowManagerService.CanDismissWithHotkey(mode))
+                    _windowManagerService.HideWindow(mode);
+            }
+            else
+            {
+                _windowTrackingService.TrackWindowAtCursor();
+                _windowManagerService.ShowWindow(mode);
+            }
             return;
+        }
 
         var now = DateTime.UtcNow;
         if (now - _lastHotkeyOpenTime < HotkeyDebounceInterval)
