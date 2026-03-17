@@ -66,7 +66,7 @@ dotnet publish $ProjectFile `
     -r $Runtime `
     --self-contained true `
     -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:IncludeNativeLibrariesForSelfExtract=false `
     -o $PublishDir
 
 if ($LASTEXITCODE -ne 0) {
