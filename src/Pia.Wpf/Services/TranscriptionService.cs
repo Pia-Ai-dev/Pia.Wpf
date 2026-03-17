@@ -61,6 +61,18 @@ public class TranscriptionService : ITranscriptionService
                 return;
             }
         }
+
+        // Fallback: when IncludeNativeLibrariesForSelfExtract=true, native DLLs are
+        // extracted flat (no runtimes/ structure). Search for whisper.dll directly.
+        foreach (var dir in nativeDirs.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmedDir = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (File.Exists(Path.Combine(trimmedDir, "whisper.dll")))
+            {
+                RuntimeOptions.LibraryPath = trimmedDir;
+                return;
+            }
+        }
     }
 
     public async Task<string> TranscribeAsync(string audioFilePath, CancellationToken cancellationToken = default)
