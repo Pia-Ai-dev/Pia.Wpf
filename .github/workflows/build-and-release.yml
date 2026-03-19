@@ -16,6 +16,7 @@ permissions:
 jobs:
   build-and-release:
     runs-on: windows-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Checkout
@@ -82,12 +83,26 @@ jobs:
           --msiLogo src/Pia.Wpf/Resources/Installer/logo.bmp
           --msi
 
-      - name: Upload Velopack release to GitHub
-        run: >
-          vpk upload github
-          --repoUrl https://github.com/Pia-Ai-dev/Pia.Wpf
-          --publish
-          --releaseName "${{ steps.info.outputs.title }}"
-          --tag ${{ steps.info.outputs.tag }}
-          --token ${{ secrets.GITHUB_TOKEN }}
-          -xy
+      - name: Install git-cliff
+        uses: kenji-miyake/setup-git-cliff@v2
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p')
+          if [ -n "$PREV_TAG" ]; then
+            git cliff "$PREV_TAG"..HEAD --strip header -o release-notes.md
+          else
+            git cliff --strip header -o release-notes.md
+          fi
+          printf "\n---\n**Full Changelog:** [CHANGELOG.md](https://github.com/Pia-Ai-dev/Pia.Wpf/blob/main/CHANGELOG.md)\n" >> release-notes.md
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.info.outputs.tag }}" \
+            --title "${{ steps.info.outputs.title }}" \
+            --notes-file release-notes.md \
+            Releases/*
