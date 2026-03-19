@@ -432,13 +432,20 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     private async Task ExecuteRecordTodoAsync()
     {
-        var transcription = await _voiceInputService.CaptureVoiceInputAsync();
-        if (!string.IsNullOrWhiteSpace(transcription))
+        try
         {
-            NewTodoTitle = string.IsNullOrWhiteSpace(NewTodoTitle)
-                ? transcription
-                : $"{NewTodoTitle.TrimEnd()} {transcription}";
-            AddTodoCommand.NotifyCanExecuteChanged();
+            var transcription = await _voiceInputService.CaptureVoiceInputAsync();
+            if (!string.IsNullOrWhiteSpace(transcription))
+            {
+                NewTodoTitle = string.IsNullOrWhiteSpace(NewTodoTitle)
+                    ? transcription
+                    : $"{NewTodoTitle.TrimEnd()} {transcription}";
+                AddTodoCommand.NotifyCanExecuteChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to capture voice input for todo");
         }
     }
 
@@ -447,6 +454,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         if (oldIndex == newIndex || oldIndex < 0 || newIndex < 0
             || oldIndex >= PendingTodos.Count || newIndex >= PendingTodos.Count)
             return;
+
+        // Save original sort orders for revert
+        var originalOrders = PendingTodos.Select(t => (t.Id, t.SortOrder)).ToList();
 
         PendingTodos.Move(oldIndex, newIndex);
 
@@ -465,8 +475,14 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to persist reorder");
-            // Revert the move in the UI
+            // Revert the move and restore original sort orders
             PendingTodos.Move(newIndex, oldIndex);
+            foreach (var (id, sortOrder) in originalOrders)
+            {
+                var todo = PendingTodos.FirstOrDefault(t => t.Id == id);
+                if (todo is not null)
+                    todo.SortOrder = sortOrder;
+            }
         }
     }
 

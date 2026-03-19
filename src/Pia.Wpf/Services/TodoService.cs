@@ -79,7 +79,7 @@ public class TodoService : ITodoService
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
-            FROM Todos ORDER BY Priority DESC, CreatedAt ASC
+            FROM Todos ORDER BY SortOrder ASC, CreatedAt ASC
             """;
 
         return await ReadTodoItems(command);
