@@ -398,6 +398,46 @@
     <local:TodoPanelControl x:Name="ResearchTodoPanel"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Stretch"
-                            Visibility="{Binding DataContext.IsTodoPanelOpen, ElementName=ResearchTodoPanel, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            Width="0"
+                            Visibility="Collapsed">
+      <local:TodoPanelControl.Style>
+        <Style TargetType="local:TodoPanelControl">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding DataContext.IsTodoPanelOpen, ElementName=ResearchTodoPanel}" Value="True">
+              <DataTrigger.EnterActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility">
+                      <DiscreteObjectKeyFrame KeyTime="0:0:0" Value="{x:Static Visibility.Visible}" />
+                    </ObjectAnimationUsingKeyFrames>
+                    <DoubleAnimation Storyboard.TargetProperty="Width"
+                                     From="0" To="280" Duration="0:0:0.25">
+                      <DoubleAnimation.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                      </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                  </Storyboard>
+                </BeginStoryboard>
+              </DataTrigger.EnterActions>
+              <DataTrigger.ExitActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Width"
+                                     From="280" To="0" Duration="0:0:0.2">
+                      <DoubleAnimation.EasingFunction>
+                        <CubicEase EasingMode="EaseIn" />
+                      </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility">
+                      <DiscreteObjectKeyFrame KeyTime="0:0:0.2" Value="{x:Static Visibility.Collapsed}" />
+                    </ObjectAnimationUsingKeyFrames>
+                  </Storyboard>
+                </BeginStoryboard>
+              </DataTrigger.ExitActions>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </local:TodoPanelControl.Style>
+    </local:TodoPanelControl>
   </Grid>
 </UserControl>
