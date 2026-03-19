@@ -153,6 +153,9 @@
   <data name="TodoPanel_AddPlaceholder" xml:space="preserve"><value>Aufgabe hinzufügen...</value></data>
   <data name="TodoPanel_Add" xml:space="preserve"><value>Hinzufügen</value></data>
   <data name="TodoPanel_OpenFullView" xml:space="preserve"><value>Vollansicht öffnen</value></data>
+  <data name="TodoPanel_Record" xml:space="preserve">
+    <value>Spracheingabe aufnehmen</value>
+  </data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Gedächtnis</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Exportieren</value></data>
