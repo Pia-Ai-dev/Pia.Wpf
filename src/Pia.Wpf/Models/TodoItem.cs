@@ -15,4 +15,5 @@ public class TodoItem
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? CompletedAt { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
+    public int SortOrder { get; set; }
 }

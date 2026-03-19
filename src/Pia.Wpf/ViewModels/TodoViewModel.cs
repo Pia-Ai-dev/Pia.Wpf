@@ -17,6 +17,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     private readonly Navigation.INavigationService _navigationService;
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService _localizationService;
+    private readonly IVoiceInputService _voiceInputService;
     private bool _disposed;
     private bool _isRefreshing;
     private bool _suppressTodoChanged;
@@ -86,6 +87,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand AddTodoCommand { get; }
+    public IAsyncRelayCommand RecordTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> CompleteTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> UncompleteTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> DeleteTodoCommand { get; }
@@ -102,7 +104,8 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         Wpf.Ui.ISnackbarService snackbarService,
         Navigation.INavigationService navigationService,
         ISettingsService settingsService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IVoiceInputService voiceInputService)
     {
         _logger = logger;
         _todoService = todoService;
@@ -111,9 +114,11 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _navigationService = navigationService;
         _settingsService = settingsService;
         _localizationService = localizationService;
+        _voiceInputService = voiceInputService;
 
         RefreshCommand = new AsyncRelayCommand(LoadTodosAsync);
         AddTodoCommand = new AsyncRelayCommand(ExecuteAddTodoAsync, CanAddTodo);
+        RecordTodoCommand = new AsyncRelayCommand(ExecuteRecordTodoAsync);
         CompleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteCompleteTodoAsync);
         UncompleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteUncompleteTodoAsync);
         DeleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteDeleteTodoAsync);
@@ -418,20 +423,67 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     }
 
     /// <summary>
-    /// Gets the insertion index for a todo item in the pending list,
-    /// maintaining priority order (High first) then CreatedAt order.
+    /// New todos are appended to the end of the list (SortOrder-based).
     /// </summary>
     private int GetInsertIndex(TodoItem item)
     {
+        return PendingTodos.Count;
+    }
+
+    private async Task ExecuteRecordTodoAsync()
+    {
+        try
+        {
+            var transcription = await _voiceInputService.CaptureVoiceInputAsync();
+            if (!string.IsNullOrWhiteSpace(transcription))
+            {
+                NewTodoTitle = string.IsNullOrWhiteSpace(NewTodoTitle)
+                    ? transcription
+                    : $"{NewTodoTitle.TrimEnd()} {transcription}";
+                AddTodoCommand.NotifyCanExecuteChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to capture voice input for todo");
+        }
+    }
+
+    public async Task ReorderTodosAsync(int oldIndex, int newIndex)
+    {
+        if (oldIndex == newIndex || oldIndex < 0 || newIndex < 0
+            || oldIndex >= PendingTodos.Count || newIndex >= PendingTodos.Count)
+            return;
+
+        // Save original sort orders for revert
+        var originalOrders = PendingTodos.Select(t => (t.Id, t.SortOrder)).ToList();
+
+        PendingTodos.Move(oldIndex, newIndex);
+
+        // Recalculate sequential sort order
+        var updates = new List<(Guid Id, int SortOrder)>();
         for (var i = 0; i < PendingTodos.Count; i++)
         {
-            var existing = PendingTodos[i];
-            if (item.Priority > existing.Priority)
-                return i;
-            if (item.Priority == existing.Priority && item.CreatedAt < existing.CreatedAt)
-                return i;
+            PendingTodos[i].SortOrder = i;
+            updates.Add((PendingTodos[i].Id, i));
         }
-        return PendingTodos.Count;
+
+        try
+        {
+            await _todoService.UpdateSortOrderAsync(updates);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist reorder");
+            // Revert the move and restore original sort orders
+            PendingTodos.Move(newIndex, oldIndex);
+            foreach (var (id, sortOrder) in originalOrders)
+            {
+                var todo = PendingTodos.FirstOrDefault(t => t.Id == id);
+                if (todo is not null)
+                    todo.SortOrder = sortOrder;
+            }
+        }
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

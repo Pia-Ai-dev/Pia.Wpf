@@ -153,6 +153,9 @@
   <data name="TodoPanel_AddPlaceholder" xml:space="preserve"><value>Add todo...</value></data>
   <data name="TodoPanel_Add" xml:space="preserve"><value>Add</value></data>
   <data name="TodoPanel_OpenFullView" xml:space="preserve"><value>Open full view</value></data>
+  <data name="TodoPanel_Record" xml:space="preserve">
+    <value>Record voice input</value>
+  </data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Memory</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Export</value></data>
@@ -241,6 +244,8 @@
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Default Window Mode</value></data>
   <data name="Settings_DefaultWindowMode_Description" xml:space="preserve"><value>Mode used when opening a new window via the main button</value></data>
   <data name="Settings_ApplicationBehavior" xml:space="preserve"><value>Application Behavior</value></data>
+  <data name="Settings_LaunchAtStartup" xml:space="preserve"><value>Launch at Windows startup</value></data>
+  <data name="Settings_LaunchAtStartup_Description" xml:space="preserve"><value>Automatically start Pia when you sign in to Windows</value></data>
   <data name="Settings_StartMinimized" xml:space="preserve"><value>Start minimized to system tray</value></data>
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Application will start hidden in system tray on launch</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Show todo panel button</value></data>

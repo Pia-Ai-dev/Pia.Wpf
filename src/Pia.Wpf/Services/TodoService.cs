@@ -35,10 +35,17 @@ public class TodoService : ITodoService
         };
 
         var connection = _context.GetConnection();
+
+        // Assign SortOrder = max + 1 (append to end)
+        using var maxCmd = connection.CreateCommand();
+        maxCmd.CommandText = "SELECT COALESCE(MAX(SortOrder), -1) + 1 FROM Todos WHERE Status = 0";
+        var maxResult = await maxCmd.ExecuteScalarAsync();
+        todo.SortOrder = Convert.ToInt32(maxResult);
+
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt)
-            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt)
+            INSERT INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder)
+            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt, @SortOrder)
             """;
 
         AddTodoParameters(command, todo);
@@ -54,7 +61,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
             FROM Todos WHERE Id = @Id
             """;
         command.Parameters.AddWithValue("@Id", id.ToString());
@@ -71,8 +78,8 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt
-            FROM Todos ORDER BY Priority DESC, CreatedAt ASC
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
+            FROM Todos ORDER BY SortOrder ASC, CreatedAt ASC
             """;
 
         return await ReadTodoItems(command);
@@ -83,9 +90,9 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
             FROM Todos WHERE Status = 0
-            ORDER BY Priority DESC, CreatedAt ASC
+            ORDER BY SortOrder ASC, CreatedAt ASC
             """;
 
         return await ReadTodoItems(command);
@@ -96,7 +103,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
             FROM Todos WHERE Status = 1
             ORDER BY CompletedAt DESC
             """;
@@ -111,7 +118,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
             FROM Todos WHERE Status = 1 AND CompletedAt >= @Today
             ORDER BY CompletedAt DESC
             """;
@@ -139,7 +146,7 @@ public class TodoService : ITodoService
             UPDATE Todos
             SET Title = @Title, Notes = @Notes, Priority = @Priority, Status = @Status,
                 DueDate = @DueDate, LinkedReminderId = @LinkedReminderId,
-                CompletedAt = @CompletedAt, UpdatedAt = @UpdatedAt
+                CompletedAt = @CompletedAt, UpdatedAt = @UpdatedAt, SortOrder = @SortOrder
             WHERE Id = @Id
             """;
 
@@ -155,8 +162,8 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT OR REPLACE INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt)
-            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt)
+            INSERT OR REPLACE INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder)
+            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt, @SortOrder)
             """;
 
         AddTodoParameters(command, item);
@@ -279,6 +286,7 @@ public class TodoService : ITodoService
         command.Parameters.AddWithValue("@CreatedAt", todo.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("@CompletedAt", todo.CompletedAt.HasValue ? (object)todo.CompletedAt.Value.ToString("O") : DBNull.Value);
         command.Parameters.AddWithValue("@UpdatedAt", todo.UpdatedAt.ToString("O"));
+        command.Parameters.AddWithValue("@SortOrder", todo.SortOrder);
     }
 
     private static async Task<IReadOnlyList<TodoItem>> ReadTodoItems(SqliteCommand command)
@@ -305,7 +313,37 @@ public class TodoService : ITodoService
             LinkedReminderId = reader.IsDBNull(6) ? null : Guid.Parse(reader.GetString(6)),
             CreatedAt = DateTime.Parse(reader.GetString(7)),
             CompletedAt = reader.IsDBNull(8) ? null : DateTime.Parse(reader.GetString(8)),
-            UpdatedAt = DateTime.Parse(reader.GetString(9))
+            UpdatedAt = DateTime.Parse(reader.GetString(9)),
+            SortOrder = reader.GetInt32(10)
         };
+    }
+
+    public async Task UpdateSortOrderAsync(IReadOnlyList<(Guid Id, int SortOrder)> updates)
+    {
+        var connection = _context.GetConnection();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            foreach (var (id, sortOrder) in updates)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = "UPDATE Todos SET SortOrder = @SortOrder, UpdatedAt = @UpdatedAt WHERE Id = @Id";
+                command.Parameters.AddWithValue("@Id", id.ToString());
+                command.Parameters.AddWithValue("@SortOrder", sortOrder);
+                command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+                await command.ExecuteNonQueryAsync();
+            }
+
+            transaction.Commit();
+            _logger.LogInformation("Updated sort order for {Count} todos", updates.Count);
+            OnTodoChanged();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 }

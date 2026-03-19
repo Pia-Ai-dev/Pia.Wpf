@@ -99,7 +99,8 @@ public class SqliteContext : IDisposable
                 LinkedReminderId TEXT,
                 CreatedAt TEXT NOT NULL,
                 CompletedAt TEXT,
-                UpdatedAt TEXT NOT NULL
+                UpdatedAt TEXT NOT NULL,
+                SortOrder INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS IX_Todos_Status ON Todos(Status);
@@ -134,6 +135,41 @@ public class SqliteContext : IDisposable
             using var alter = _connection.CreateCommand();
             alter.CommandText = "ALTER TABLE Sessions ADD COLUMN ProcessingTimeMs INTEGER NOT NULL DEFAULT 0";
             alter.ExecuteNonQuery();
+        }
+
+        // Add SortOrder column to Todos if it doesn't exist
+        using var todoPragma = _connection!.CreateCommand();
+        todoPragma.CommandText = "PRAGMA table_info(Todos)";
+        using var todoReader = todoPragma.ExecuteReader();
+        var hasSortOrder = false;
+        while (todoReader.Read())
+        {
+            if (todoReader.GetString(1) == "SortOrder")
+            {
+                hasSortOrder = true;
+                break;
+            }
+        }
+        todoReader.Close();
+
+        if (!hasSortOrder)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE Todos ADD COLUMN SortOrder INTEGER NOT NULL DEFAULT 0";
+            addCol.ExecuteNonQuery();
+
+            // Backfill sort order from existing priority + creation order
+            using var backfill = _connection.CreateCommand();
+            backfill.CommandText = """
+                UPDATE Todos SET SortOrder = (
+                    SELECT COUNT(*) FROM Todos AS t2
+                    WHERE t2.Status = Todos.Status
+                    AND (t2.Priority > Todos.Priority
+                         OR (t2.Priority = Todos.Priority AND t2.CreatedAt < Todos.CreatedAt)
+                         OR (t2.Priority = Todos.Priority AND t2.CreatedAt = Todos.CreatedAt AND t2.Id < Todos.Id))
+                )
+                """;
+            backfill.ExecuteNonQuery();
         }
     }
 

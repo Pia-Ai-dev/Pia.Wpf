@@ -153,6 +153,9 @@
   <data name="TodoPanel_AddPlaceholder" xml:space="preserve"><value>Aufgabe hinzufügen...</value></data>
   <data name="TodoPanel_Add" xml:space="preserve"><value>Hinzufügen</value></data>
   <data name="TodoPanel_OpenFullView" xml:space="preserve"><value>Vollansicht öffnen</value></data>
+  <data name="TodoPanel_Record" xml:space="preserve">
+    <value>Spracheingabe aufnehmen</value>
+  </data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Gedächtnis</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Exportieren</value></data>
@@ -241,6 +244,8 @@
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Standard-Fenstermodus</value></data>
   <data name="Settings_DefaultWindowMode_Description" xml:space="preserve"><value>Modus beim Öffnen eines neuen Fensters über die Hauptschaltfläche</value></data>
   <data name="Settings_ApplicationBehavior" xml:space="preserve"><value>Anwendungsverhalten</value></data>
+  <data name="Settings_LaunchAtStartup" xml:space="preserve"><value>Bei Windows-Start ausführen</value></data>
+  <data name="Settings_LaunchAtStartup_Description" xml:space="preserve"><value>Pia automatisch starten, wenn Sie sich bei Windows anmelden</value></data>
   <data name="Settings_StartMinimized" xml:space="preserve"><value>Minimiert im Infobereich starten</value></data>
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Anwendung startet beim Start versteckt im Infobereich</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>

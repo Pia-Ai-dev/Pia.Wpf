@@ -8,6 +8,7 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:models="clr-namespace:Pia.Models"
              xmlns:nav="clr-namespace:Pia.Navigation"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
              nav:ViewModelLocator.AutoWireViewModel="True">
@@ -125,7 +126,9 @@
                     HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
           <!-- Pending todos -->
-          <ItemsControl ItemsSource="{Binding PendingTodos}">
+          <ItemsControl x:Name="PendingTodosList"
+                        ItemsSource="{Binding PendingTodos}"
+                        behaviors:DragDropReorderBehavior.IsEnabled="True">
             <ItemsControl.ItemTemplate>
               <DataTemplate DataType="{x:Type models:TodoItem}">
                 <Border x:Name="TodoItemBorder"
@@ -156,6 +159,7 @@
                       <ColumnDefinition Width="Auto" />
                       <ColumnDefinition Width="*" />
                       <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
                     <!-- Checkbox -->
@@ -163,8 +167,8 @@
                               IsChecked="False"
                               VerticalAlignment="Center"
                               Margin="0,0,8,0"
-                              Command="{Binding DataContext.CompleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding}">
+                              Checked="OnTodoCheckBoxChecked"
+                              Tag="{Binding}">
                       <CheckBox.RenderTransform>
                         <ScaleTransform ScaleX="1" ScaleY="1" />
                       </CheckBox.RenderTransform>
@@ -177,9 +181,20 @@
                     <!-- Title and info -->
                     <StackPanel Grid.Column="2"
                                 VerticalAlignment="Center">
-                      <TextBlock Text="{Binding Title}"
-                                 FontSize="14"
-                                 TextTrimming="CharacterEllipsis" />
+                      <Grid>
+                        <TextBlock x:Name="TodoTitle"
+                                   Text="{Binding Title}"
+                                   FontSize="14"
+                                   TextTrimming="CharacterEllipsis" />
+                        <Line x:Name="StrikethroughLine"
+                              Y1="0.5" Y2="0.5"
+                              X1="0" X2="0"
+                              Stroke="{DynamicResource TextPlaceholderColorBrush}"
+                              StrokeThickness="1.5"
+                              VerticalAlignment="Center"
+                              Stretch="None"
+                              Visibility="Collapsed" />
+                      </Grid>
                       <TextBlock Text="{Binding Notes}"
                                  FontSize="11"
                                  TextTrimming="CharacterEllipsis"
@@ -258,8 +273,23 @@
                         <ui:SymbolIcon Symbol="Delete24" FontSize="14" />
                       </ui:Button>
                     </StackPanel>
+
+                    <!-- Drag grip -->
+                    <ui:SymbolIcon Grid.Column="4"
+                                   Symbol="ReOrderDotsVertical24"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="4,0,0,0"
+                                   Opacity="0"
+                                   x:Name="DragGrip" />
                   </Grid>
                 </Border>
+                <DataTemplate.Triggers>
+                  <Trigger SourceName="TodoItemBorder" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="DragGrip" Property="Opacity" Value="0.6" />
+                  </Trigger>
+                </DataTemplate.Triggers>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
@@ -482,6 +512,7 @@
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <ui:TextBox Grid.Column="0"
@@ -510,6 +541,17 @@
                     ToolTip="{loc:Str Todo_DueDateTooltip}" />
 
         <ui:Button Grid.Column="3"
+                   Command="{Binding RecordTodoCommand}"
+                   Appearance="Secondary"
+                   Width="36"
+                   Height="36"
+                   Padding="0"
+                   Margin="0,0,8,0"
+                   ToolTip="{loc:Str TodoPanel_Record}">
+          <ui:SymbolIcon Symbol="Record24" FontSize="16" />
+        </ui:Button>
+
+        <ui:Button Grid.Column="4"
                    Command="{Binding AddTodoCommand}"
                    Appearance="Primary"
                    ToolTip="{loc:Str Todo_AddTooltip}">

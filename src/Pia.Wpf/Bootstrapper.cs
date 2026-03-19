@@ -182,6 +182,9 @@ public static class Bootstrapper
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
 
+        // Autostart
+        services.AddSingleton<IAutostartService, AutostartService>();
+
         // Services - Scoped (per-window)
         services.AddScoped<Navigation.INavigationService, Navigation.NavigationService>();
         services.AddScoped<IDialogService, DialogService>();

@@ -341,7 +341,8 @@ public class SyncMapper
         {
             Id = todo.Id,
             CreatedAt = ToUtc(todo.CreatedAt),
-            UpdatedAt = ToUtc(todo.UpdatedAt)
+            UpdatedAt = ToUtc(todo.UpdatedAt),
+            SortOrder = todo.SortOrder
         };
 
         if (IsE2EEActive && userId is not null)
@@ -394,7 +395,8 @@ public class SyncMapper
                 LinkedReminderId = decrypted.LinkedReminderId,
                 CreatedAt = sync.CreatedAt,
                 CompletedAt = decrypted.CompletedAt,
-                UpdatedAt = sync.UpdatedAt
+                UpdatedAt = sync.UpdatedAt,
+                SortOrder = sync.SortOrder
             };
         }
 
@@ -409,7 +411,8 @@ public class SyncMapper
             LinkedReminderId = sync.LinkedReminderId,
             CreatedAt = sync.CreatedAt,
             CompletedAt = sync.CompletedAt,
-            UpdatedAt = sync.UpdatedAt
+            UpdatedAt = sync.UpdatedAt,
+            SortOrder = sync.SortOrder
         };
     }
 

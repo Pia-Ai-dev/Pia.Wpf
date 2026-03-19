@@ -16,7 +16,11 @@ public partial class App : Application
     [STAThread]
     public static void Main(string[] args)
     {
-        VelopackApp.Build().Run();
+        VelopackApp.Build()
+            .OnAfterInstallFastCallback(v => AutostartService.EnableStatic())
+            .OnAfterUpdateFastCallback(v => AutostartService.UpdatePathIfEnabled())
+            .OnBeforeUninstallFastCallback(v => AutostartService.DisableStatic())
+            .Run();
 
         var app = new App();
         app.InitializeComponent();
@@ -86,6 +90,13 @@ public partial class App : Application
 
         var settingsService = Bootstrapper.ServiceProvider.GetRequiredService<ISettingsService>();
         var settings = await settingsService.GetSettingsAsync();
+
+        // Sync autostart registry state with setting (covers existing installs upgrading to this version)
+        var autostartService = Bootstrapper.ServiceProvider.GetRequiredService<IAutostartService>();
+        if (settings.LaunchAtStartup && !autostartService.IsEnabled())
+            autostartService.Enable();
+        else if (!settings.LaunchAtStartup && autostartService.IsEnabled())
+            autostartService.Disable();
 
         if (!settings.HasCompletedFirstRunWizard)
         {

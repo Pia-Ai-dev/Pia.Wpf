@@ -6,37 +6,24 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:models="clr-namespace:Pia.Models"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="500" d:DesignWidth="280"
              Background="{DynamicResource PrimaryBackgroundBrush}">
 
-  <UserControl.Resources>
-    <Style x:Key="PanelPriorityDotStyle" TargetType="Ellipse">
-      <Setter Property="Width" Value="8" />
-      <Setter Property="Height" Value="8" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="0,0,6,0" />
-      <Setter Property="Fill" Value="{DynamicResource TextPlaceholderColorBrush}" />
-      <Style.Triggers>
-        <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.High}">
-          <Setter Property="Fill" Value="{DynamicResource TodoPriorityHighBrush}" />
-        </DataTrigger>
-        <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.Medium}">
-          <Setter Property="Fill" Value="{DynamicResource TodoPriorityMediumBrush}" />
-        </DataTrigger>
-        <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.Low}">
-          <Setter Property="Fill" Value="{DynamicResource TodoPriorityLowBrush}" />
-        </DataTrigger>
-      </Style.Triggers>
-    </Style>
-  </UserControl.Resources>
-
   <Border Width="280"
           Background="{DynamicResource SecondaryBackgroundBrush}"
-          BorderBrush="{DynamicResource CardBorderBrush}"
-          BorderThickness="1,0,0,0"
+          CornerRadius="12,0,0,12"
           HorizontalAlignment="Right"
-          VerticalAlignment="Stretch">
+          VerticalAlignment="Stretch"
+          ClipToBounds="True">
+    <Border.Effect>
+      <DropShadowEffect ShadowDepth="0"
+                        BlurRadius="20"
+                        Direction="180"
+                        Color="{DynamicResource PanelShadowColor}"
+                        Opacity="{DynamicResource PanelShadowOpacity}" />
+    </Border.Effect>
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -86,14 +73,15 @@
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled"
                     Padding="4,0">
-        <ItemsControl ItemsSource="{Binding PendingTodos}">
+        <ItemsControl x:Name="PendingTodosList"
+                      ItemsSource="{Binding PendingTodos}"
+                      behaviors:DragDropReorderBehavior.IsEnabled="True">
           <ItemsControl.ItemTemplate>
             <DataTemplate DataType="{x:Type models:TodoItem}">
               <Border x:Name="PanelTodoItem"
                       Margin="8,0,8,3"
-                      Padding="8,6"
-                      Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                      CornerRadius="4"
+                      Background="{DynamicResource TertiaryBackgroundBrush}"
+                      CornerRadius="8"
                       Opacity="0">
                 <Border.Triggers>
                   <EventTrigger RoutedEvent="Loaded">
@@ -109,40 +97,79 @@
                     </BeginStoryboard>
                   </EventTrigger>
                 </Border.Triggers>
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
 
-                  <CheckBox Grid.Column="0"
-                            IsChecked="False"
+                <!-- Priority left border -->
+                <Border x:Name="PriorityBorder"
+                        BorderThickness="3,0,0,0"
+                        BorderBrush="{DynamicResource TextPlaceholderColorBrush}"
+                        CornerRadius="8"
+                        Padding="8,6">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <CheckBox Grid.Column="0"
+                              IsChecked="False"
+                              VerticalAlignment="Center"
+                              Margin="0,0,8,0"
+                              Checked="OnTodoCheckBoxChecked"
+                              Tag="{Binding}" />
+
+                    <Grid Grid.Column="1">
+                      <TextBlock x:Name="TodoTitle"
+                                 Text="{Binding Title}"
+                                 FontSize="13"
+                                 TextTrimming="CharacterEllipsis"
+                                 VerticalAlignment="Center">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding Notes, Converter={StaticResource StringNotNullOrEmptyToBoolConverter}}" Value="True">
+                                <Setter Property="ToolTip" Value="{Binding Notes}" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                      <Line x:Name="StrikethroughLine"
+                            Y1="0.5" Y2="0.5"
+                            X1="0" X2="0"
+                            Stroke="{DynamicResource TextPlaceholderColorBrush}"
+                            StrokeThickness="1.5"
                             VerticalAlignment="Center"
-                            Margin="0,0,4,0"
-                            Command="{Binding DataContext.CompleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                            CommandParameter="{Binding}" />
+                            Stretch="None"
+                            Visibility="Collapsed" />
+                    </Grid>
 
-                  <Ellipse Grid.Column="1"
-                           Style="{StaticResource PanelPriorityDotStyle}" />
-
-                  <TextBlock Grid.Column="2"
-                             Text="{Binding Title}"
-                             FontSize="13"
-                             TextTrimming="CharacterEllipsis"
-                             VerticalAlignment="Center">
-                    <TextBlock.Style>
-                      <Style TargetType="TextBlock">
-                        <Style.Triggers>
-                          <DataTrigger Binding="{Binding Notes, Converter={StaticResource StringNotNullOrEmptyToBoolConverter}}" Value="True">
-                            <Setter Property="ToolTip" Value="{Binding Notes}" />
-                          </DataTrigger>
-                        </Style.Triggers>
-                      </Style>
-                    </TextBlock.Style>
-                  </TextBlock>
-                </Grid>
+                    <!-- Drag grip icon (visible on hover) -->
+                    <ui:SymbolIcon Grid.Column="2"
+                                   Symbol="ReOrderDotsVertical24"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                                   VerticalAlignment="Center"
+                                   Opacity="0"
+                                   x:Name="DragGrip" />
+                  </Grid>
+                </Border>
               </Border>
+
+              <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.High}">
+                  <Setter TargetName="PriorityBorder" Property="BorderBrush" Value="{DynamicResource TodoPriorityHighBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.Medium}">
+                  <Setter TargetName="PriorityBorder" Property="BorderBrush" Value="{DynamicResource TodoPriorityMediumBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.Low}">
+                  <Setter TargetName="PriorityBorder" Property="BorderBrush" Value="{DynamicResource TodoPriorityLowBrush}" />
+                </DataTrigger>
+                <Trigger SourceName="PanelTodoItem" Property="IsMouseOver" Value="True">
+                  <Setter TargetName="DragGrip" Property="Opacity" Value="0.6" />
+                </Trigger>
+              </DataTemplate.Triggers>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
@@ -152,6 +179,7 @@
       <Grid Grid.Row="3" Margin="12,8,12,8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
@@ -169,6 +197,17 @@
         </ui:TextBox>
 
         <ui:Button Grid.Column="1"
+                   Command="{Binding RecordTodoCommand}"
+                   Appearance="Secondary"
+                   Width="32"
+                   Height="32"
+                   Padding="0"
+                   Margin="0,0,4,0"
+                   ToolTip="{loc:Str TodoPanel_Record}">
+          <ui:SymbolIcon Symbol="Record24" FontSize="14" />
+        </ui:Button>
+
+        <ui:Button Grid.Column="2"
                    Command="{Binding AddTodoCommand}"
                    Appearance="Primary"
                    Width="32"
