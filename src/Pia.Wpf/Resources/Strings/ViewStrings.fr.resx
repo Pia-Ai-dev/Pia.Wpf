@@ -244,6 +244,8 @@
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Mode de fenêtre par défaut</value></data>
   <data name="Settings_DefaultWindowMode_Description" xml:space="preserve"><value>Mode utilisé lors de l'ouverture d'une nouvelle fenêtre via le bouton principal</value></data>
   <data name="Settings_ApplicationBehavior" xml:space="preserve"><value>Comportement de l'application</value></data>
+  <data name="Settings_LaunchAtStartup" xml:space="preserve"><value>Lancer au démarrage de Windows</value></data>
+  <data name="Settings_LaunchAtStartup_Description" xml:space="preserve"><value>Démarrer Pia automatiquement lors de la connexion à Windows</value></data>
   <data name="Settings_StartMinimized" xml:space="preserve"><value>Démarrer minimisé dans la barre des tâches</value></data>
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>L'application démarrera masquée dans la zone de notification</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Afficher le bouton du panneau des tâches</value></data>

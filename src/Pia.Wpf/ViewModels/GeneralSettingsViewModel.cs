@@ -17,6 +17,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private readonly ITtsService _ttsService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
+    private readonly IAutostartService _autostartService;
     private bool _isLoading;
 
     public GeneralSettingsViewModel(
@@ -27,7 +28,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         ITrayIconService trayIconService,
         ITtsService ttsService,
         Wpf.Ui.ISnackbarService snackbarService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IAutostartService autostartService)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -37,6 +39,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _ttsService = ttsService;
         _snackbarService = snackbarService;
         _localizationService = localizationService;
+        _autostartService = autostartService;
     }
 
     // Appearance
@@ -45,6 +48,9 @@ public partial class GeneralSettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _startMinimized;
+
+    [ObservableProperty]
+    private bool _launchAtStartup;
 
     // Hotkeys
     [ObservableProperty]
@@ -95,6 +101,18 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
     }
 
+    partial void OnLaunchAtStartupChanged(bool value)
+    {
+        if (_isLoading) return;
+
+        if (value)
+            _autostartService.Enable();
+        else
+            _autostartService.Disable();
+
+        SafeFireAndForget(SaveSettingsAsync());
+    }
+
     partial void OnWhisperModelChanged(WhisperModelSize value)
     {
         if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
@@ -112,6 +130,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         var settings = await _settingsService.GetSettingsAsync();
         UiLanguage = _localizationService.CurrentLanguage;
         StartMinimized = settings.StartMinimized;
+        LaunchAtStartup = settings.LaunchAtStartup;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
 
@@ -326,6 +345,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         var settings = await _settingsService.GetSettingsAsync();
         settings.UiLanguage = UiLanguage;
         settings.StartMinimized = StartMinimized;
+        settings.LaunchAtStartup = LaunchAtStartup;
         settings.WhisperModel = WhisperModel;
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
         settings.OptimizeHotkey = _optimizeHotkey;

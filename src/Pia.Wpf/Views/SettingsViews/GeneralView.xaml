@@ -38,6 +38,13 @@
 
             <StackPanel Margin="0,0,0,24">
               <TextBlock Text="{loc:Str Settings_ApplicationBehavior}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <CheckBox Content="{loc:Str Settings_LaunchAtStartup}"
+                        IsChecked="{Binding LaunchAtStartup}"
+                        Margin="0,4,0,0"/>
+              <TextBlock Text="{loc:Str Settings_LaunchAtStartup_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         Margin="20,4,0,0"/>
               <CheckBox Content="{loc:Str Settings_StartMinimized}"
                         IsChecked="{Binding StartMinimized}"
                         Margin="0,4,0,0"/>
