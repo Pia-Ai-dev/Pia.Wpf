@@ -84,7 +84,12 @@ jobs:
           --msi
 
       - name: Install git-cliff
-        uses: kenji-miyake/setup-git-cliff@v2
+        shell: pwsh
+        run: |
+          $url = "https://github.com/orhun/git-cliff/releases/latest/download/git-cliff-2.12.0-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile git-cliff.zip
+          Expand-Archive git-cliff.zip -DestinationPath git-cliff-bin
+          echo "$PWD\git-cliff-bin\git-cliff-2.12.0" | Out-File -Append $env:GITHUB_PATH
 
       - name: Generate release notes
         shell: bash
