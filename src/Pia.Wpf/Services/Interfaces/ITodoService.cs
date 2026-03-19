@@ -14,6 +14,7 @@ public interface ITodoService
     Task<IReadOnlyList<TodoItem>> GetCompletedTodayAsync();
     Task<int> GetPendingCountAsync();
     Task UpdateAsync(TodoItem item);
+    Task UpdateSortOrderAsync(IReadOnlyList<(Guid Id, int SortOrder)> updates);
     Task ImportAsync(TodoItem item);
     Task CompleteAsync(Guid id);
     Task UncompleteAsync(Guid id);
