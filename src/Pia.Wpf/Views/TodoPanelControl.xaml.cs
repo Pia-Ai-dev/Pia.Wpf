@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -49,76 +50,88 @@ public partial class TodoPanelControl : UserControl
         if (sender is not CheckBox checkBox || checkBox.Tag is not TodoItem todo)
             return;
 
-        // Find the parent border (the todo item card)
-        var itemBorder = FindAncestor<Border>(checkBox);
-        if (itemBorder is null) return;
+        checkBox.IsEnabled = false;
 
-        // Find the strikethrough line and title
-        var strikethrough = FindChild<Line>(itemBorder, "StrikethroughLine");
-        var titleBlock = FindChild<TextBlock>(itemBorder, "TodoTitle");
-
-        if (strikethrough is not null && titleBlock is not null)
+        try
         {
-            strikethrough.Visibility = Visibility.Visible;
-            var titleWidth = titleBlock.ActualWidth;
+            // Find the parent border (the todo item card)
+            var itemBorder = FindAncestorByName<Border>(checkBox, "PanelTodoItem");
+            if (itemBorder is null) return;
 
-            var strikeAnim = new DoubleAnimation(0, titleWidth, TimeSpan.FromMilliseconds(200))
+            // Find the strikethrough line and title
+            var strikethrough = FindChild<Line>(itemBorder, "StrikethroughLine");
+            var titleBlock = FindChild<TextBlock>(itemBorder, "TodoTitle");
+
+            if (strikethrough is not null && titleBlock is not null)
             {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            strikethrough.BeginAnimation(Line.X2Property, strikeAnim);
+                strikethrough.Visibility = Visibility.Visible;
+                var titleWidth = titleBlock.ActualWidth;
 
-            await Task.Delay(200);
-        }
+                var strikeAnim = new DoubleAnimation(0, titleWidth, TimeSpan.FromMilliseconds(200))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                strikethrough.BeginAnimation(Line.X2Property, strikeAnim);
 
-        // Fade out
-        var fadeAnim = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(300))
-        {
-            BeginTime = TimeSpan.FromMilliseconds(150)
-        };
-
-        // Row collapse
-        var currentHeight = itemBorder.ActualHeight;
-        var collapseAnim = new DoubleAnimation(currentHeight, 0, TimeSpan.FromMilliseconds(250))
-        {
-            BeginTime = TimeSpan.FromMilliseconds(150),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-
-        var marginAnim = new ThicknessAnimation(itemBorder.Margin, new Thickness(0), TimeSpan.FromMilliseconds(250))
-        {
-            BeginTime = TimeSpan.FromMilliseconds(150),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-
-        var tcs = new TaskCompletionSource();
-        collapseAnim.Completed += (_, _) => tcs.SetResult();
-
-        itemBorder.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
-        itemBorder.BeginAnimation(FrameworkElement.MaxHeightProperty, collapseAnim);
-        itemBorder.BeginAnimation(FrameworkElement.MarginProperty, marginAnim);
-
-        await tcs.Task;
-
-        // Execute the complete command
-        if (DataContext is TodoViewModel vm)
-        {
-            var pendingCountBefore = vm.PendingTodos.Count;
-            await vm.CompleteTodoCommand.ExecuteAsync(todo);
-
-            // Check if the completion actually succeeded
-            if (vm.PendingTodos.Contains(todo) || vm.PendingTodos.Count == pendingCountBefore)
-            {
-                // Revert animation on failure
-                itemBorder.BeginAnimation(UIElement.OpacityProperty, null);
-                itemBorder.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
-                itemBorder.BeginAnimation(FrameworkElement.MarginProperty, null);
-                itemBorder.Opacity = 1;
-                itemBorder.Margin = new Thickness(8, 0, 8, 3);
-                if (strikethrough is not null)
-                    strikethrough.Visibility = Visibility.Collapsed;
-                checkBox.IsChecked = false;
+                await Task.Delay(200);
             }
+
+            // Fade out
+            var fadeAnim = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(300))
+            {
+                BeginTime = TimeSpan.FromMilliseconds(150)
+            };
+
+            // Row collapse
+            var currentHeight = itemBorder.ActualHeight;
+            var collapseAnim = new DoubleAnimation(currentHeight, 0, TimeSpan.FromMilliseconds(250))
+            {
+                BeginTime = TimeSpan.FromMilliseconds(150),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            };
+
+            var marginAnim = new ThicknessAnimation(itemBorder.Margin, new Thickness(0), TimeSpan.FromMilliseconds(250))
+            {
+                BeginTime = TimeSpan.FromMilliseconds(150),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            };
+
+            var tcs = new TaskCompletionSource();
+            collapseAnim.Completed += (_, _) => tcs.SetResult();
+
+            itemBorder.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
+            itemBorder.BeginAnimation(FrameworkElement.MaxHeightProperty, collapseAnim);
+            itemBorder.BeginAnimation(FrameworkElement.MarginProperty, marginAnim);
+
+            await tcs.Task;
+
+            // Execute the complete command
+            if (DataContext is TodoViewModel vm)
+            {
+                var pendingCountBefore = vm.PendingTodos.Count;
+                await vm.CompleteTodoCommand.ExecuteAsync(todo);
+
+                // Check if the completion actually succeeded
+                if (vm.PendingTodos.Any(t => t.Id == todo.Id) || vm.PendingTodos.Count == pendingCountBefore)
+                {
+                    // Revert animation on failure
+                    itemBorder.BeginAnimation(UIElement.OpacityProperty, null);
+                    itemBorder.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
+                    itemBorder.BeginAnimation(FrameworkElement.MarginProperty, null);
+                    itemBorder.Opacity = 1;
+                    itemBorder.Margin = new Thickness(8, 0, 8, 3);
+                    if (strikethrough is not null)
+                        strikethrough.Visibility = Visibility.Collapsed;
+                    checkBox.IsEnabled = true;
+                    checkBox.IsChecked = false;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Ensure checkbox is re-enabled on any unexpected error
+            checkBox.IsEnabled = true;
+            checkBox.IsChecked = false;
         }
     }
 
@@ -128,6 +141,16 @@ public partial class TodoPanelControl : UserControl
         {
             obj = VisualTreeHelper.GetParent(obj);
             if (obj is T target) return target;
+        }
+        return null;
+    }
+
+    private static T? FindAncestorByName<T>(DependencyObject? obj, string name) where T : FrameworkElement
+    {
+        while (obj is not null)
+        {
+            obj = VisualTreeHelper.GetParent(obj);
+            if (obj is T fe && fe.Name == name) return fe;
         }
         return null;
     }
