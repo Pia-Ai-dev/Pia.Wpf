@@ -16,6 +16,7 @@ public class SyncTodo
     public DateTime CreatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public int SortOrder { get; set; }
 
     /// <summary>
     /// Base64: AES-GCM encrypted entity payload (nonce‖ciphertext‖tag).
