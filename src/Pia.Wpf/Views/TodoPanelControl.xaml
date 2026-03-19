@@ -6,6 +6,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:models="clr-namespace:Pia.Models"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="500" d:DesignWidth="280"
              Background="{DynamicResource PrimaryBackgroundBrush}">
@@ -72,7 +73,9 @@
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled"
                     Padding="4,0">
-        <ItemsControl x:Name="PendingTodosList" ItemsSource="{Binding PendingTodos}">
+        <ItemsControl x:Name="PendingTodosList"
+                      ItemsSource="{Binding PendingTodos}"
+                      behaviors:DragDropReorderBehavior.IsEnabled="True">
           <ItemsControl.ItemTemplate>
             <DataTemplate DataType="{x:Type models:TodoItem}">
               <Border x:Name="PanelTodoItem"
@@ -112,24 +115,34 @@
                               IsChecked="False"
                               VerticalAlignment="Center"
                               Margin="0,0,8,0"
-                              Command="{Binding DataContext.CompleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding}" />
+                              Checked="OnTodoCheckBoxChecked"
+                              Tag="{Binding}" />
 
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding Title}"
-                               FontSize="13"
-                               TextTrimming="CharacterEllipsis"
-                               VerticalAlignment="Center">
-                      <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                          <Style.Triggers>
-                            <DataTrigger Binding="{Binding Notes, Converter={StaticResource StringNotNullOrEmptyToBoolConverter}}" Value="True">
-                              <Setter Property="ToolTip" Value="{Binding Notes}" />
-                            </DataTrigger>
-                          </Style.Triggers>
-                        </Style>
-                      </TextBlock.Style>
-                    </TextBlock>
+                    <Grid Grid.Column="1">
+                      <TextBlock x:Name="TodoTitle"
+                                 Text="{Binding Title}"
+                                 FontSize="13"
+                                 TextTrimming="CharacterEllipsis"
+                                 VerticalAlignment="Center">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding Notes, Converter={StaticResource StringNotNullOrEmptyToBoolConverter}}" Value="True">
+                                <Setter Property="ToolTip" Value="{Binding Notes}" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                      <Line x:Name="StrikethroughLine"
+                            Y1="0.5" Y2="0.5"
+                            X1="0" X2="0"
+                            Stroke="{DynamicResource TextPlaceholderColorBrush}"
+                            StrokeThickness="1.5"
+                            VerticalAlignment="Center"
+                            Stretch="None"
+                            Visibility="Collapsed" />
+                    </Grid>
 
                     <!-- Drag grip icon (visible on hover) -->
                     <ui:SymbolIcon Grid.Column="2"
