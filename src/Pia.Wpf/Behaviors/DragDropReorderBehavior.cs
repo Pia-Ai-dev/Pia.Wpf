@@ -14,6 +14,30 @@ public static class DragDropReorderBehavior
 {
     private static readonly TimeSpan HoldThreshold = TimeSpan.FromMilliseconds(150);
 
+    private class DragState
+    {
+        public Point StartPoint;
+        public int DragIndex = -1;
+        public bool IsDragging;
+        public bool HoldCompleted;
+        public DispatcherTimer? HoldTimer;
+        public UIElement? PressedElement;
+    }
+
+    private static readonly DependencyProperty DragStateProperty =
+        DependencyProperty.RegisterAttached("DragState", typeof(DragState), typeof(DragDropReorderBehavior));
+
+    private static DragState GetOrCreateState(DependencyObject obj)
+    {
+        var state = (DragState?)obj.GetValue(DragStateProperty);
+        if (state is null)
+        {
+            state = new DragState();
+            obj.SetValue(DragStateProperty, state);
+        }
+        return state;
+    }
+
     // Attached property: IsEnabled
     public static readonly DependencyProperty IsEnabledProperty =
         DependencyProperty.RegisterAttached("IsEnabled", typeof(bool), typeof(DragDropReorderBehavior),
@@ -28,12 +52,6 @@ public static class DragDropReorderBehavior
 
     public static Func<int, int, Task>? GetReorderCallback(DependencyObject obj) => (Func<int, int, Task>?)obj.GetValue(ReorderCallbackProperty);
     public static void SetReorderCallback(DependencyObject obj, Func<int, int, Task>? value) => obj.SetValue(ReorderCallbackProperty, value);
-
-    private static Point _startPoint;
-    private static int _dragIndex = -1;
-    private static bool _isDragging;
-    private static DispatcherTimer? _holdTimer;
-    private static UIElement? _pressedElement;
 
     private static void OnIsEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -61,6 +79,7 @@ public static class DragDropReorderBehavior
     private static void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not ItemsControl itemsControl) return;
+        var state = GetOrCreateState(itemsControl);
 
         // Don't start drag if clicking on a CheckBox
         if (e.OriginalSource is DependencyObject source && FindAncestor<CheckBox>(source) is not null)
@@ -69,41 +88,46 @@ public static class DragDropReorderBehavior
         var container = FindItemContainer(itemsControl, e.OriginalSource as DependencyObject);
         if (container is null) return;
 
-        _startPoint = e.GetPosition(itemsControl);
-        _dragIndex = itemsControl.ItemContainerGenerator.IndexFromContainer(container);
-        _pressedElement = container;
+        state.StartPoint = e.GetPosition(itemsControl);
+        state.DragIndex = itemsControl.ItemContainerGenerator.IndexFromContainer(container);
+        state.PressedElement = container;
+        state.HoldCompleted = false;
 
-        _holdTimer = new DispatcherTimer { Interval = HoldThreshold };
-        _holdTimer.Tick += (_, _) =>
+        state.HoldTimer = new DispatcherTimer { Interval = HoldThreshold };
+        state.HoldTimer.Tick += (_, _) =>
         {
-            _holdTimer.Stop();
+            state.HoldTimer.Stop();
+            state.HoldCompleted = true;
         };
-        _holdTimer.Start();
+        state.HoldTimer.Start();
     }
 
     private static void OnPreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_dragIndex < 0 || sender is not ItemsControl itemsControl) return;
-        if (_holdTimer is { IsEnabled: true }) return;
+        if (sender is not ItemsControl itemsControl) return;
+        var state = GetOrCreateState(itemsControl);
+
+        if (state.DragIndex < 0) return;
+        if (!state.HoldCompleted) return;
 
         var currentPos = e.GetPosition(itemsControl);
-        var diff = _startPoint - currentPos;
+        var diff = state.StartPoint - currentPos;
 
-        if (e.LeftButton == MouseButtonState.Pressed && !_isDragging
+        if (e.LeftButton == MouseButtonState.Pressed && !state.IsDragging
             && (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance
                 || Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance))
         {
-            _isDragging = true;
+            state.IsDragging = true;
 
-            if (_pressedElement is not null)
-                _pressedElement.Opacity = 0.4;
+            if (state.PressedElement is not null)
+                state.PressedElement.Opacity = 0.4;
 
-            var data = new DataObject("DragIndex", _dragIndex);
+            var data = new DataObject("DragIndex", state.DragIndex);
             DragDrop.DoDragDrop(itemsControl, data, DragDropEffects.Move);
 
-            if (_pressedElement is not null)
-                _pressedElement.Opacity = 1.0;
-            ResetState();
+            if (state.PressedElement is not null)
+                state.PressedElement.Opacity = 1.0;
+            ResetState(state);
         }
     }
 
@@ -131,17 +155,21 @@ public static class DragDropReorderBehavior
 
     private static void OnPreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
-        _holdTimer?.Stop();
-        if (!_isDragging) ResetState();
+        if (sender is not ItemsControl itemsControl) return;
+        var state = GetOrCreateState(itemsControl);
+
+        state.HoldTimer?.Stop();
+        ResetState(state);
     }
 
-    private static void ResetState()
+    private static void ResetState(DragState state)
     {
-        _dragIndex = -1;
-        _isDragging = false;
-        _pressedElement = null;
-        _holdTimer?.Stop();
-        _holdTimer = null;
+        state.DragIndex = -1;
+        state.IsDragging = false;
+        state.HoldCompleted = false;
+        state.PressedElement = null;
+        state.HoldTimer?.Stop();
+        state.HoldTimer = null;
     }
 
     private static FrameworkElement? FindItemContainer(ItemsControl itemsControl, DependencyObject? source)
