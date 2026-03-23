@@ -362,6 +362,16 @@
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Récupérer les modèles</value></data>
   <data name="Dialog_ProviderEdit_MaxCharacters" xml:space="preserve"><value>Caractères max.</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Délai d'attente (secondes)</value></data>
+  <data name="Dialog_ProviderEdit_AdvancedOptions" xml:space="preserve"><value>Options avancées</value></data>
+  <data name="Dialog_ProviderEdit_ReasoningEffort" xml:space="preserve"><value>Effort de raisonnement</value></data>
+  <data name="Dialog_ProviderEdit_ReasoningEffort_Hint" xml:space="preserve"><value>Contrôle l'effort du modèle pour le raisonnement (pour les modèles série o)</value></data>
+  <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Activer la recherche Web</value></data>
+  <data name="Dialog_ProviderEdit_WebSearch_Hint" xml:space="preserve"><value>Permettre au modèle de rechercher des informations actuelles sur le Web</value></data>
+  <data name="Dialog_ProviderEdit_ExtendedThinking" xml:space="preserve"><value>Activer la réflexion étendue</value></data>
+  <data name="Dialog_ProviderEdit_ExtendedThinking_Hint" xml:space="preserve"><value>Permettre au modèle d'utiliser des tokens supplémentaires pour un raisonnement plus approfondi</value></data>
+  <data name="Dialog_ProviderEdit_ThinkingBudget" xml:space="preserve"><value>Budget de réflexion (tokens)</value></data>
+  <data name="Dialog_ProviderEdit_PromptCaching" xml:space="preserve"><value>Activer la mise en cache des prompts</value></data>
+  <data name="Dialog_ProviderEdit_PromptCaching_Hint" xml:space="preserve"><value>Mettre en cache les prompts pour réduire les coûts des requêtes répétées</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Modifier le modèle</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Nom du modèle *</value></data>
   <data name="Dialog_TemplateEdit_StyleDescription" xml:space="preserve"><value>Description du style *</value></data>

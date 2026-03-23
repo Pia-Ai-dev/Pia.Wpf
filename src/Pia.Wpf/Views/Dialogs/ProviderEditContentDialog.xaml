@@ -107,5 +107,73 @@
                   Minimum="1"
                   Maximum="300"
                   Margin="0,0,0,16" />
+
+    <!-- Advanced Options separator -->
+    <Separator Margin="0,4,0,12" />
+    <TextBlock Text="{loc:Str Dialog_ProviderEdit_AdvancedOptions}"
+               FontSize="14"
+               FontWeight="SemiBold"
+               Margin="0,0,0,12" />
+
+    <!-- Reasoning Effort (OpenAI, Azure, OpenRouter) -->
+    <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=ReasoningEffort}">
+      <TextBlock Text="{loc:Str Dialog_ProviderEdit_ReasoningEffort}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <TextBlock Text="{loc:Str Dialog_ProviderEdit_ReasoningEffort_Hint}"
+                 Opacity="0.6"
+                 FontSize="11"
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,4" />
+      <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
+                SelectedItem="{Binding ReasoningEffort}"
+                Margin="0,0,0,16" />
+    </StackPanel>
+
+    <!-- Web Search (OpenAI, OpenRouter, Anthropic, Mistral) -->
+    <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=WebSearch}">
+      <CheckBox Content="{loc:Str Dialog_ProviderEdit_WebSearch}"
+                IsChecked="{Binding WebSearchEnabled}"
+                Margin="0,0,0,2" />
+      <TextBlock Text="{loc:Str Dialog_ProviderEdit_WebSearch_Hint}"
+                 Opacity="0.6"
+                 FontSize="11"
+                 TextWrapping="Wrap"
+                 Margin="24,0,0,16" />
+    </StackPanel>
+
+    <!-- Extended Thinking (Anthropic) -->
+    <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=ExtendedThinking}">
+      <CheckBox Content="{loc:Str Dialog_ProviderEdit_ExtendedThinking}"
+                IsChecked="{Binding ExtendedThinkingEnabled}"
+                Margin="0,0,0,2" />
+      <TextBlock Text="{loc:Str Dialog_ProviderEdit_ExtendedThinking_Hint}"
+                 Opacity="0.6"
+                 FontSize="11"
+                 TextWrapping="Wrap"
+                 Margin="24,0,0,8" />
+      <StackPanel Margin="24,0,0,16"
+                  Visibility="{Binding ExtendedThinkingEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Dialog_ProviderEdit_ThinkingBudget}"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4" />
+        <ui:NumberBox Value="{Binding ThinkingBudgetTokens}"
+                      Minimum="1024"
+                      Maximum="128000"
+                      Margin="0,0,0,0" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Prompt Caching (Anthropic) -->
+    <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=PromptCaching}">
+      <CheckBox Content="{loc:Str Dialog_ProviderEdit_PromptCaching}"
+                IsChecked="{Binding PromptCachingEnabled}"
+                Margin="0,0,0,2" />
+      <TextBlock Text="{loc:Str Dialog_ProviderEdit_PromptCaching_Hint}"
+                 Opacity="0.6"
+                 FontSize="11"
+                 TextWrapping="Wrap"
+                 Margin="24,0,0,16" />
+    </StackPanel>
   </StackPanel>
 </ui:ContentDialog>

@@ -8,7 +8,16 @@ public enum AiProviderType
     Ollama,
     OpenRouter,
     OpenAICompatible,
-    Mistral
+    Mistral,
+    Anthropic
+}
+
+public enum ReasoningEffort
+{
+    None,
+    Low,
+    Medium,
+    High
 }
 
 public class AiProvider
@@ -24,4 +33,11 @@ public class AiProvider
     public bool SupportsStreaming { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    // Provider-specific options
+    public ReasoningEffort ReasoningEffort { get; set; } = ReasoningEffort.None;
+    public bool WebSearchEnabled { get; set; }
+    public bool ExtendedThinkingEnabled { get; set; }
+    public int? ThinkingBudgetTokens { get; set; }
+    public bool PromptCachingEnabled { get; set; }
 }

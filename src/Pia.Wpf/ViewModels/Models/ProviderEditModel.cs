@@ -43,8 +43,28 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private bool _supportsStreaming = true;
 
+    // Provider-specific options
+    [ObservableProperty]
+    private ReasoningEffort _reasoningEffort = ReasoningEffort.None;
+
+    [ObservableProperty]
+    private bool _webSearchEnabled;
+
+    [ObservableProperty]
+    private bool _extendedThinkingEnabled;
+
+    [ObservableProperty]
+    [Range(1024, 128000, ErrorMessage = "Thinking budget must be between 1,024 and 128,000 tokens")]
+    private int? _thinkingBudgetTokens;
+
+    [ObservableProperty]
+    private bool _promptCachingEnabled;
+
     public static AiProviderType[] EditableProviderTypes { get; } =
         Enum.GetValues<AiProviderType>().Where(t => t != AiProviderType.PiaCloud).ToArray();
+
+    public static ReasoningEffort[] ReasoningEffortOptions { get; } =
+        Enum.GetValues<ReasoningEffort>();
 
     public ObservableCollection<string> AvailableModels { get; } = [];
 
@@ -60,6 +80,7 @@ public partial class ProviderEditModel : ObservableValidator
         [AiProviderType.OpenRouter] = "https://openrouter.ai/api/v1",
         [AiProviderType.OpenAI] = "https://api.openai.com/v1",
         [AiProviderType.Mistral] = "https://api.mistral.ai/v1",
+        [AiProviderType.Anthropic] = "https://api.anthropic.com/v1/",
     };
 
     partial void OnProviderTypeChanged(AiProviderType oldValue, AiProviderType newValue)
@@ -90,7 +111,12 @@ public partial class ProviderEditModel : ObservableValidator
             MaxCharacters = 2000,
             TimeoutSeconds = 30,
             SupportsToolCalling = provider.SupportsToolCalling,
-            SupportsStreaming = provider.SupportsStreaming
+            SupportsStreaming = provider.SupportsStreaming,
+            ReasoningEffort = provider.ReasoningEffort,
+            WebSearchEnabled = provider.WebSearchEnabled,
+            ExtendedThinkingEnabled = provider.ExtendedThinkingEnabled,
+            ThinkingBudgetTokens = provider.ThinkingBudgetTokens,
+            PromptCachingEnabled = provider.PromptCachingEnabled
         };
     }
 
@@ -105,7 +131,12 @@ public partial class ProviderEditModel : ObservableValidator
             ModelName = ModelName,
             AzureDeploymentName = AzureDeploymentName,
             SupportsToolCalling = SupportsToolCalling,
-            SupportsStreaming = SupportsStreaming
+            SupportsStreaming = SupportsStreaming,
+            ReasoningEffort = ReasoningEffort,
+            WebSearchEnabled = WebSearchEnabled,
+            ExtendedThinkingEnabled = ExtendedThinkingEnabled,
+            ThinkingBudgetTokens = ThinkingBudgetTokens,
+            PromptCachingEnabled = PromptCachingEnabled
         };
     }
 }

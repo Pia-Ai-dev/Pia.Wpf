@@ -75,10 +75,13 @@ public class AiClientService : IAiClientService
 
         var chatClient = await CreateChatClientAsync(provider, apiKey);
 
+        var options = new ChatOptions();
+        ApplyProviderOptions(options, provider);
+
         IAsyncEnumerable<ChatResponseUpdate> stream;
         try
         {
-            stream = chatClient.GetStreamingResponseAsync(messages, cancellationToken: linkedCts.Token);
+            stream = chatClient.GetStreamingResponseAsync(messages, options, linkedCts.Token);
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
@@ -117,6 +120,7 @@ public class AiClientService : IAiClientService
             {
                 options.Tools = [.. tools!];
             }
+            ApplyProviderOptions(options, provider);
 
             try
             {
@@ -157,6 +161,7 @@ public class AiClientService : IAiClientService
         {
             options.Tools = [.. tools!];
         }
+        ApplyProviderOptions(options, provider);
 
         const int maxToolRounds = 10;
         var workingMessages = new List<Microsoft.Extensions.AI.ChatMessage>(messages);
@@ -433,6 +438,62 @@ public class AiClientService : IAiClientService
         }
     }
 
+    private static void ApplyProviderOptions(ChatOptions options, AiProvider provider)
+    {
+        // Reasoning effort (OpenAI o-series, Azure, OpenRouter)
+        if (provider.ReasoningEffort != ReasoningEffort.None &&
+            provider.ProviderType is AiProviderType.OpenAI or AiProviderType.AzureOpenAI or AiProviderType.OpenRouter)
+        {
+            options.AdditionalProperties ??= [];
+            options.AdditionalProperties["reasoning_effort"] = provider.ReasoningEffort switch
+            {
+                ReasoningEffort.Low => "low",
+                ReasoningEffort.Medium => "medium",
+                ReasoningEffort.High => "high",
+                _ => null
+            };
+        }
+
+        // Web search — inject provider-specific tool definition
+        if (provider.WebSearchEnabled)
+        {
+            options.AdditionalProperties ??= [];
+            switch (provider.ProviderType)
+            {
+                case AiProviderType.OpenAI:
+                    options.AdditionalProperties["web_search_options"] = new { search_context_size = "medium" };
+                    break;
+                case AiProviderType.Anthropic:
+                    options.AdditionalProperties["web_search"] = new { type = "web_search_20250305", name = "web_search" };
+                    break;
+                case AiProviderType.Mistral:
+                    options.AdditionalProperties["web_search"] = new { type = "web_search" };
+                    break;
+                case AiProviderType.OpenRouter:
+                    options.AdditionalProperties["web_search_options"] = new { search_context_size = "medium" };
+                    break;
+            }
+        }
+
+        // Extended thinking (Anthropic)
+        if (provider.ExtendedThinkingEnabled && provider.ProviderType == AiProviderType.Anthropic)
+        {
+            options.AdditionalProperties ??= [];
+            options.AdditionalProperties["thinking"] = new
+            {
+                type = "enabled",
+                budget_tokens = provider.ThinkingBudgetTokens ?? 10000
+            };
+        }
+
+        // Prompt caching (Anthropic)
+        if (provider.PromptCachingEnabled && provider.ProviderType == AiProviderType.Anthropic)
+        {
+            options.AdditionalProperties ??= [];
+            options.AdditionalProperties["prompt_caching"] = true;
+        }
+    }
+
     private static bool IsToolNotSupportedError(Exception ex)
     {
         if (ex is ClientResultException clientEx)
@@ -467,7 +528,7 @@ public class AiClientService : IAiClientService
 
         return provider.ProviderType switch
         {
-            AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Ollama or AiProviderType.Mistral =>
+            AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Ollama or AiProviderType.Mistral or AiProviderType.Anthropic =>
                 new ChatClient(
                     model: provider.ModelName ?? "gpt-3.5-turbo",
                     credential: new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "unused" : apiKey),

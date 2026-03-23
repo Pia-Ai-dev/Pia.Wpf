@@ -362,6 +362,16 @@
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Modelle abrufen</value></data>
   <data name="Dialog_ProviderEdit_MaxCharacters" xml:space="preserve"><value>Max. Zeichen</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Zeitlimit (Sekunden)</value></data>
+  <data name="Dialog_ProviderEdit_AdvancedOptions" xml:space="preserve"><value>Erweiterte Optionen</value></data>
+  <data name="Dialog_ProviderEdit_ReasoningEffort" xml:space="preserve"><value>Reasoning-Aufwand</value></data>
+  <data name="Dialog_ProviderEdit_ReasoningEffort_Hint" xml:space="preserve"><value>Steuert den Aufwand des Modells für Reasoning (für o-Serie Modelle)</value></data>
+  <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Websuche aktivieren</value></data>
+  <data name="Dialog_ProviderEdit_WebSearch_Hint" xml:space="preserve"><value>Dem Modell erlauben, im Web nach aktuellen Informationen zu suchen</value></data>
+  <data name="Dialog_ProviderEdit_ExtendedThinking" xml:space="preserve"><value>Erweitertes Denken aktivieren</value></data>
+  <data name="Dialog_ProviderEdit_ExtendedThinking_Hint" xml:space="preserve"><value>Dem Modell zusätzliche Tokens für tieferes Reasoning erlauben</value></data>
+  <data name="Dialog_ProviderEdit_ThinkingBudget" xml:space="preserve"><value>Denkbudget (Tokens)</value></data>
+  <data name="Dialog_ProviderEdit_PromptCaching" xml:space="preserve"><value>Prompt-Caching aktivieren</value></data>
+  <data name="Dialog_ProviderEdit_PromptCaching_Hint" xml:space="preserve"><value>Prompts zwischenspeichern, um Kosten bei wiederholten Anfragen zu reduzieren</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Vorlage bearbeiten</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Vorlagenname *</value></data>
   <data name="Dialog_TemplateEdit_StyleDescription" xml:space="preserve"><value>Stilbeschreibung *</value></data>

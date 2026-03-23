@@ -17,6 +17,13 @@ public class SyncProvider
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
+    // Provider-specific options
+    public int ReasoningEffort { get; set; }
+    public bool WebSearchEnabled { get; set; }
+    public bool ExtendedThinkingEnabled { get; set; }
+    public int? ThinkingBudgetTokens { get; set; }
+    public bool PromptCachingEnabled { get; set; }
+
     /// <summary>
     /// Base64: AES-GCM encrypted entity payload (nonce‖ciphertext‖tag).
     /// Non-null when E2EE is active; plaintext fields will be null.

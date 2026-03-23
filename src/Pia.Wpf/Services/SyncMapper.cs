@@ -123,7 +123,12 @@ public class SyncMapper
                 provider.ModelName,
                 ApiKey = apiKey,
                 provider.AzureDeploymentName,
-                provider.SupportsToolCalling
+                provider.SupportsToolCalling,
+                ReasoningEffort = (int)provider.ReasoningEffort,
+                provider.WebSearchEnabled,
+                provider.ExtendedThinkingEnabled,
+                provider.ThinkingBudgetTokens,
+                provider.PromptCachingEnabled
             };
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
                 plainPayload, userId, "provider", provider.Id.ToString());
@@ -138,6 +143,11 @@ public class SyncMapper
                 ? _dpapiHelper.Decrypt(provider.EncryptedApiKey) : null;
             sync.AzureDeploymentName = provider.AzureDeploymentName;
             sync.SupportsToolCalling = provider.SupportsToolCalling;
+            sync.ReasoningEffort = (int)provider.ReasoningEffort;
+            sync.WebSearchEnabled = provider.WebSearchEnabled;
+            sync.ExtendedThinkingEnabled = provider.ExtendedThinkingEnabled;
+            sync.ThinkingBudgetTokens = provider.ThinkingBudgetTokens;
+            sync.PromptCachingEnabled = provider.PromptCachingEnabled;
         }
 
         return sync;
@@ -165,7 +175,12 @@ public class SyncMapper
                 AzureDeploymentName = decrypted.AzureDeploymentName,
                 SupportsToolCalling = decrypted.SupportsToolCalling,
                 CreatedAt = sync.CreatedAt,
-                UpdatedAt = sync.UpdatedAt
+                UpdatedAt = sync.UpdatedAt,
+                ReasoningEffort = (ReasoningEffort)decrypted.ReasoningEffort,
+                WebSearchEnabled = decrypted.WebSearchEnabled,
+                ExtendedThinkingEnabled = decrypted.ExtendedThinkingEnabled,
+                ThinkingBudgetTokens = decrypted.ThinkingBudgetTokens,
+                PromptCachingEnabled = decrypted.PromptCachingEnabled
             };
         }
 
@@ -181,7 +196,12 @@ public class SyncMapper
             AzureDeploymentName = sync.AzureDeploymentName,
             SupportsToolCalling = sync.SupportsToolCalling,
             CreatedAt = sync.CreatedAt,
-            UpdatedAt = sync.UpdatedAt
+            UpdatedAt = sync.UpdatedAt,
+            ReasoningEffort = (ReasoningEffort)sync.ReasoningEffort,
+            WebSearchEnabled = sync.WebSearchEnabled,
+            ExtendedThinkingEnabled = sync.ExtendedThinkingEnabled,
+            ThinkingBudgetTokens = sync.ThinkingBudgetTokens,
+            PromptCachingEnabled = sync.PromptCachingEnabled
         };
     }
 

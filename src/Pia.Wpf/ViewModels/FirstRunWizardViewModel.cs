@@ -148,7 +148,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     /// <summary>Provider types available in wizard (excludes PiaCloud).</summary>
     public IReadOnlyList<AiProviderType> WizardProviderTypes { get; } =
-        [AiProviderType.OpenAI, AiProviderType.AzureOpenAI, AiProviderType.Ollama, AiProviderType.OpenRouter, AiProviderType.OpenAICompatible, AiProviderType.Mistral];
+        [AiProviderType.OpenAI, AiProviderType.Anthropic, AiProviderType.AzureOpenAI, AiProviderType.Ollama, AiProviderType.OpenRouter, AiProviderType.OpenAICompatible, AiProviderType.Mistral];
 
     partial void OnSelectedProviderTypeChanged(AiProviderType value)
     {
@@ -163,6 +163,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         {
             AiProviderType.Ollama => "http://localhost:11434/v1",
             AiProviderType.OpenAI => "https://api.openai.com/v1",
+            AiProviderType.Anthropic => "https://api.anthropic.com/v1/",
             AiProviderType.OpenRouter => "https://openrouter.ai/api/v1",
             AiProviderType.Mistral => "https://api.mistral.ai/v1",
             _ => ProviderEndpoint
