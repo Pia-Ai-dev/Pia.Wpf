@@ -24,7 +24,7 @@ public class HttpLoggingHandlerTests
         => new(method ?? HttpMethod.Get, url ?? "https://example.com/api/test");
 
     [Fact]
-    public async Task SendAsync_SuccessfulRequest_LogsAtInformationLevel()
+    public async Task SendAsync_SuccessfulRequest_LogsAtDebugLevel()
     {
         var handler = CreateHandler(new StubHandler(HttpStatusCode.OK));
         var invoker = CreateInvoker(handler);
@@ -32,7 +32,7 @@ public class HttpLoggingHandlerTests
         await invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
         _logger.Entries.Should().ContainSingle();
-        _logger.Entries[0].Level.Should().Be(LogLevel.Information);
+        _logger.Entries[0].Level.Should().Be(LogLevel.Debug);
     }
 
     [Fact]

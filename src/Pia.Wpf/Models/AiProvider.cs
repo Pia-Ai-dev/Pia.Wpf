@@ -22,6 +22,7 @@ public class AiProvider
     public string? AzureDeploymentName { get; set; }
     public bool SupportsToolCalling { get; set; } = true;
     public bool SupportsStreaming { get; set; } = true;
+    public int TimeoutSeconds { get; set; } = 30;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
