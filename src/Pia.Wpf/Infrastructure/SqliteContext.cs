@@ -106,6 +106,16 @@ public class SqliteContext : IDisposable
             CREATE INDEX IF NOT EXISTS IX_Todos_Status ON Todos(Status);
             CREATE INDEX IF NOT EXISTS IX_Todos_Priority ON Todos(Priority);
             CREATE INDEX IF NOT EXISTS IX_Todos_DueDate ON Todos(DueDate);
+
+            CREATE TABLE IF NOT EXISTS KanbanColumns (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                SortOrder INTEGER NOT NULL DEFAULT 0,
+                IsDefaultView INTEGER NOT NULL DEFAULT 0,
+                IsClosedColumn INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
 
@@ -170,6 +180,60 @@ public class SqliteContext : IDisposable
                 )
                 """;
             backfill.ExecuteNonQuery();
+        }
+
+        // Seed default KanbanColumns if table is empty
+        using var countCmd = _connection!.CreateCommand();
+        countCmd.CommandText = "SELECT COUNT(*) FROM KanbanColumns";
+        var columnCount = Convert.ToInt64(countCmd.ExecuteScalar());
+
+        if (columnCount == 0)
+        {
+            var now = DateTime.UtcNow.ToString("O");
+
+            using var seedCmd = _connection.CreateCommand();
+            seedCmd.CommandText = $"""
+                INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
+                VALUES ('00000000-0000-0000-0000-000000000001', 'To Do', 0, 1, 0, '{now}', '{now}');
+
+                INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
+                VALUES ('00000000-0000-0000-0000-000000000002', 'Closed', 2147483647, 0, 1, '{now}', '{now}');
+                """;
+            seedCmd.ExecuteNonQuery();
+        }
+
+        // Add ColumnId column to Todos if it doesn't exist
+        using var columnIdPragma = _connection!.CreateCommand();
+        columnIdPragma.CommandText = "PRAGMA table_info(Todos)";
+        using var columnIdReader = columnIdPragma.ExecuteReader();
+        var hasColumnId = false;
+        while (columnIdReader.Read())
+        {
+            if (columnIdReader.GetString(1) == "ColumnId")
+            {
+                hasColumnId = true;
+                break;
+            }
+        }
+        columnIdReader.Close();
+
+        if (!hasColumnId)
+        {
+            using var addColumnId = _connection.CreateCommand();
+            addColumnId.CommandText = "ALTER TABLE Todos ADD COLUMN ColumnId TEXT";
+            addColumnId.ExecuteNonQuery();
+
+            using var backfillPending = _connection.CreateCommand();
+            backfillPending.CommandText = "UPDATE Todos SET ColumnId = '00000000-0000-0000-0000-000000000001' WHERE Status = 0 AND ColumnId IS NULL";
+            backfillPending.ExecuteNonQuery();
+
+            using var backfillCompleted = _connection.CreateCommand();
+            backfillCompleted.CommandText = "UPDATE Todos SET ColumnId = '00000000-0000-0000-0000-000000000002' WHERE Status = 1 AND ColumnId IS NULL";
+            backfillCompleted.ExecuteNonQuery();
+
+            using var createIndex = _connection.CreateCommand();
+            createIndex.CommandText = "CREATE INDEX IF NOT EXISTS IX_Todos_ColumnId ON Todos(ColumnId)";
+            createIndex.ExecuteNonQuery();
         }
     }
 

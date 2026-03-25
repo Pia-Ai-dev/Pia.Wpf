@@ -16,6 +16,7 @@ public interface IDialogService
     Task<KeyboardShortcut?> ShowHotkeyCaptureDialogAsync();
     Task<bool> ShowRecordingDialogAsync(CancellationToken cancellationToken);
     Task<bool> ShowTranscribingDialogAsync(CancellationToken cancellationToken);
+    Task<string?> ShowInputDialogAsync(string title, string prompt);
 }
 
 public record ModelDownloadResult(bool Completed, bool Cancelled);

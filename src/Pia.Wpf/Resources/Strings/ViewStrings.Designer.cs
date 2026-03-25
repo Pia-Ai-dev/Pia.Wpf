@@ -1094,7 +1094,52 @@ namespace Pia.Resources.Strings {
                 return ResourceManager.GetString("History_ViewDetail", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Add Column.
+        /// </summary>
+        public static string Kanban_AddColumn {
+            get {
+                return ResourceManager.GetString("Kanban_AddColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Column.
+        /// </summary>
+        public static string Kanban_AddColumnShort {
+            get {
+                return ResourceManager.GetString("Kanban_AddColumnShort", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Delete Column.
+        /// </summary>
+        public static string Kanban_DeleteColumn {
+            get {
+                return ResourceManager.GetString("Kanban_DeleteColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Rename Column.
+        /// </summary>
+        public static string Kanban_RenameColumn {
+            get {
+                return ResourceManager.GetString("Kanban_RenameColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Set as Default View.
+        /// </summary>
+        public static string Kanban_SetDefault {
+            get {
+                return ResourceManager.GetString("Kanban_SetDefault", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Cancel.
         /// </summary>

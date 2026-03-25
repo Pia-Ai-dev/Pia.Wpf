@@ -21,6 +21,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IHistoryService _historyService;
     private readonly IMemoryService _memoryService;
     private readonly ITodoService? _todoService;
+    private readonly IKanbanColumnService? _columnService;
     private readonly IE2EEService? _e2ee;
     private readonly IDeviceManagementService? _deviceMgmt;
     private readonly IDeviceKeyService? _deviceKeys;
@@ -49,6 +50,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         IHttpClientFactory httpClientFactory,
         ILogger<SyncClientService> logger,
         ITodoService? todoService = null,
+        IKanbanColumnService? columnService = null,
         IE2EEService? e2ee = null,
         IDeviceManagementService? deviceMgmt = null,
         IDeviceKeyService? deviceKeys = null)
@@ -60,6 +62,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _historyService = historyService;
         _memoryService = memoryService;
         _todoService = todoService;
+        _columnService = columnService;
         _e2ee = e2ee;
         _deviceMgmt = deviceMgmt;
         _deviceKeys = deviceKeys;
@@ -188,6 +191,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             var providers = await _providerService.GetProvidersAsync();
             var sessions = await _historyService.GetSessionsAsync(0, 10_000);
             var memories = await _memoryService.GetAllObjectsAsync();
+            var kanbanColumns = _columnService is not null
+                ? await _columnService.GetAllAsync()
+                : Array.Empty<KanbanColumn>();
             var todos = _todoService is not null
                 ? await _todoService.GetAllAsync()
                 : [];
@@ -228,6 +234,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                         .Select(m => _mapper.ToSyncMemory(m, userId))
                         .ToList()
                 },
+                KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
+                {
+                    Upserted = kanbanColumns
+                        .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
+                        .ToList()
+                },
                 Todos = new SyncEntityChanges<SyncTodo>
                 {
                     Upserted = todos
@@ -242,10 +254,10 @@ public class SyncClientService : ISyncClientService, IDisposable
             settings.LastSyncTimestamp = DateTime.UtcNow;
             await _settingsService.SaveSettingsAsync(settings);
 
-            _logger.LogInformation("First-sync migration completed (templates: {Templates}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, todos: {Todos})",
+            _logger.LogInformation("First-sync migration completed (templates: {Templates}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos})",
                 request.Templates.Upserted.Count, request.Providers.Upserted.Count,
                 request.Sessions.Added.Count, request.Memories.Upserted.Count,
-                request.Todos.Upserted.Count);
+                request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count);
         }
         finally
         {
@@ -274,6 +286,9 @@ public class SyncClientService : ISyncClientService, IDisposable
         var sessions = await _historyService.SearchSessionsAsync(fromDate: lastSync);
 
         var memories = await _memoryService.GetAllObjectsAsync();
+        var kanbanColumns = _columnService is not null
+            ? await _columnService.GetAllAsync()
+            : Array.Empty<KanbanColumn>();
         var todos = _todoService is not null
             ? await _todoService.GetAllAsync()
             : [];
@@ -314,6 +329,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                     .Select(m => _mapper.ToSyncMemory(m, userId))
                     .ToList()
             },
+            KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
+            {
+                Upserted = kanbanColumns
+                    .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
+                    .ToList()
+            },
             Todos = new SyncEntityChanges<SyncTodo>
             {
                 Upserted = todos
@@ -326,6 +347,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             + request.Providers.Upserted.Count
             + request.Sessions.Added.Count
             + request.Memories.Upserted.Count
+            + request.KanbanColumns.Upserted.Count
             + request.Todos.Upserted.Count;
 
         var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
@@ -523,6 +545,43 @@ public class SyncClientService : ISyncClientService, IDisposable
             await _memoryService.DeleteObjectAsync(deletedId);
         }
 
+        // Apply kanban columns (BEFORE todos, since todos reference columns)
+        if (_columnService is not null)
+        {
+            foreach (var syncColumn in pullResponse.KanbanColumns.Upserted)
+            {
+                try
+                {
+                    var local = _mapper.FromSyncKanbanColumn(syncColumn, userId);
+                    var existing = await _columnService.GetAsync(syncColumn.Id);
+
+                    if (existing is not null)
+                    {
+                        if (local.UpdatedAt >= existing.UpdatedAt)
+                        {
+                            await _columnService.ImportAsync(local);
+                            _logger.LogInformation("Updated kanban column {Id}: {Name}", syncColumn.Id, local.Name);
+                        }
+                        else
+                        {
+                            _logger.LogDebug("Skipped kanban column {Id}: local is newer", syncColumn.Id);
+                        }
+                    }
+                    else
+                    {
+                        await _columnService.ImportAsync(local);
+                    }
+                }
+                catch (CryptographicException ex)
+                {
+                    _logger.LogWarning(ex, "Failed to decrypt synced kanban column {Id}; skipping", syncColumn.Id);
+                }
+            }
+
+            // Note: we don't process KanbanColumns.Deleted since column deletion
+            // is only allowed for empty columns and is enforced client-side
+        }
+
         // Apply todos
         if (_todoService is not null)
         {
@@ -531,6 +590,22 @@ public class SyncClientService : ISyncClientService, IDisposable
                 try
                 {
                     var local = _mapper.FromSyncTodo(todo, userId);
+
+                    // Backward compat: assign column based on status if no ColumnId
+                    if (!local.ColumnId.HasValue && _columnService is not null)
+                    {
+                        if (local.Status == TodoStatus.Completed)
+                        {
+                            var closedCol = await _columnService.GetClosedColumnAsync();
+                            local.ColumnId = closedCol.Id;
+                        }
+                        else
+                        {
+                            var defaultCol = await _columnService.GetDefaultViewColumnAsync();
+                            local.ColumnId = defaultCol.Id;
+                        }
+                    }
+
                     var existing = await _todoService.GetAsync(todo.Id);
 
                     if (existing is not null)
@@ -574,13 +649,15 @@ public class SyncClientService : ISyncClientService, IDisposable
             + pullResponse.Providers.Upserted.Count
             + pullResponse.Sessions.Added.Count
             + pullResponse.Memories.Upserted.Count
+            + pullResponse.KanbanColumns.Upserted.Count
             + pullResponse.Todos.Upserted.Count;
 
-        _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {Todos}Todo",
+        _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanColumns}KC, {Todos}Todo",
             pullResponse.Templates.Upserted.Count,
             pullResponse.Providers.Upserted.Count,
             pullResponse.Sessions.Added.Count,
             pullResponse.Memories.Upserted.Count,
+            pullResponse.KanbanColumns.Upserted.Count,
             pullResponse.Todos.Upserted.Count);
 
         return (pulledCount, decryptionErrors);

@@ -156,6 +156,12 @@
   <data name="TodoPanel_Record" xml:space="preserve">
     <value>Spracheingabe aufnehmen</value>
   </data>
+  <!-- Kanban View -->
+  <data name="Kanban_AddColumn" xml:space="preserve"><value>Spalte hinzufügen</value></data>
+  <data name="Kanban_AddColumnShort" xml:space="preserve"><value>Spalte</value></data>
+  <data name="Kanban_RenameColumn" xml:space="preserve"><value>Spalte umbenennen</value></data>
+  <data name="Kanban_DeleteColumn" xml:space="preserve"><value>Spalte löschen</value></data>
+  <data name="Kanban_SetDefault" xml:space="preserve"><value>Als Standardansicht festlegen</value></data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Gedächtnis</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Exportieren</value></data>

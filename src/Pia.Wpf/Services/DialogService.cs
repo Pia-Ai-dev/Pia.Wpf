@@ -172,4 +172,27 @@ public class DialogService : IDialogService
         await host.ShowAsync<OverlayDialogResult>(panel, cancellationToken);
         return cancellationToken.IsCancellationRequested;
     }
+
+    public async Task<string?> ShowInputDialogAsync(string title, string prompt)
+    {
+        var textBox = new System.Windows.Controls.TextBox
+        {
+            Margin = new System.Windows.Thickness(0, 8, 0, 0)
+        };
+
+        var stackPanel = new System.Windows.Controls.StackPanel();
+        stackPanel.Children.Add(new System.Windows.Controls.TextBlock { Text = prompt });
+        stackPanel.Children.Add(textBox);
+
+        var result = await _contentDialogService.ShowSimpleDialogAsync(
+            new SimpleContentDialogCreateOptions
+            {
+                Title = title,
+                Content = stackPanel,
+                PrimaryButtonText = _localizationService["Common_OK"],
+                CloseButtonText = _localizationService["Common_Cancel"]
+            });
+
+        return result == ContentDialogResult.Primary ? textBox.Text : null;
+    }
 }

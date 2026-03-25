@@ -159,6 +159,12 @@
   <data name="Msg_Todo_UncompleteFailed" xml:space="preserve"><value>Rückgängigmachen der Aufgabe fehlgeschlagen: {0}</value></data>
   <data name="Msg_Todo_UpdateFailed" xml:space="preserve"><value>Aktualisieren der Aufgabe fehlgeschlagen: {0}</value></data>
   <data name="Msg_Todo_Updated" xml:space="preserve"><value>Aktualisiert</value></data>
+  <!-- Kanban messages -->
+  <data name="Kanban_ColumnNamePrompt" xml:space="preserve"><value>Spaltenname eingeben:</value></data>
+  <data name="Kanban_ColumnNotEmpty" xml:space="preserve"><value>Eine Spalte mit Todos kann nicht gelöscht werden. Verschieben oder löschen Sie zuerst alle Todos.</value></data>
+  <data name="Kanban_DeleteColumnConfirm" xml:space="preserve"><value>Möchten Sie die Spalte „{0}" wirklich löschen?</value></data>
+  <data name="Kanban_ColumnAdded" xml:space="preserve"><value>Spalte hinzugefügt</value></data>
+  <data name="Kanban_ColumnAddedDetail" xml:space="preserve"><value>Spalte „{0}" wurde dem Board hinzugefügt.</value></data>
   <!-- Tray icon -->
   <data name="Tray_CloseAssistant" xml:space="preserve"><value>Assistent schließen</value></data>
   <data name="Tray_CloseOptimize" xml:space="preserve"><value>Optimieren schließen</value></data>

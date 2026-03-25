@@ -1,23 +1,17 @@
 namespace Pia.Shared.Models;
 
 /// <summary>
-/// Sync DTO for todo items.
-/// LinkedReminderId is synced as-is (reminder may only exist locally).
+/// Sync DTO for kanban columns.
 /// </summary>
-public class SyncTodo
+public class SyncKanbanColumn
 {
     public Guid Id { get; set; }
-    public string? Title { get; set; }
-    public string? Notes { get; set; }
-    public int Priority { get; set; }
-    public int Status { get; set; }
-    public DateTime? DueDate { get; set; }
-    public Guid? LinkedReminderId { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime? CompletedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public string? Name { get; set; }
     public int SortOrder { get; set; }
-    public Guid? ColumnId { get; set; }
+    public bool IsDefaultView { get; set; }
+    public bool IsClosedColumn { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
     /// <summary>
     /// Base64: AES-GCM encrypted entity payload (nonce‖ciphertext‖tag).

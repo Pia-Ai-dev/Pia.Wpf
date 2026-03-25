@@ -10,19 +10,21 @@ public class TodoService : ITodoService
 {
     private readonly SqliteContext _context;
     private readonly ILogger<TodoService> _logger;
+    private readonly IKanbanColumnService _columnService;
 
     public event EventHandler? TodoChanged;
 
-    public TodoService(SqliteContext context, ILogger<TodoService> logger)
+    public TodoService(SqliteContext context, ILogger<TodoService> logger, IKanbanColumnService columnService)
     {
         _context = context;
         _logger = logger;
+        _columnService = columnService;
     }
 
     private void OnTodoChanged() => TodoChanged?.Invoke(this, EventArgs.Empty);
 
     public async Task<TodoItem> CreateAsync(string title, TodoPriority priority = TodoPriority.Medium,
-                                             string? notes = null, DateTime? dueDate = null)
+                                             string? notes = null, DateTime? dueDate = null, Guid? columnId = null)
     {
         var todo = new TodoItem
         {
@@ -34,6 +36,14 @@ public class TodoService : ITodoService
             UpdatedAt = DateTime.Now
         };
 
+        if (columnId.HasValue)
+            todo.ColumnId = columnId.Value;
+        else
+        {
+            var defaultColumn = await _columnService.GetDefaultViewColumnAsync();
+            todo.ColumnId = defaultColumn.Id;
+        }
+
         var connection = _context.GetConnection();
 
         // Assign SortOrder = max + 1 (append to end)
@@ -44,8 +54,8 @@ public class TodoService : ITodoService
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder)
-            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt, @SortOrder)
+            INSERT INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId)
+            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt, @SortOrder, @ColumnId)
             """;
 
         AddTodoParameters(command, todo);
@@ -61,7 +71,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId
             FROM Todos WHERE Id = @Id
             """;
         command.Parameters.AddWithValue("@Id", id.ToString());
@@ -78,7 +88,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId
             FROM Todos ORDER BY SortOrder ASC, CreatedAt ASC
             """;
 
@@ -90,7 +100,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId
             FROM Todos WHERE Status = 0
             ORDER BY SortOrder ASC, CreatedAt ASC
             """;
@@ -103,7 +113,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId
             FROM Todos WHERE Status = 1
             ORDER BY CompletedAt DESC
             """;
@@ -118,7 +128,7 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId
             FROM Todos WHERE Status = 1 AND CompletedAt >= @Today
             ORDER BY CompletedAt DESC
             """;
@@ -146,7 +156,8 @@ public class TodoService : ITodoService
             UPDATE Todos
             SET Title = @Title, Notes = @Notes, Priority = @Priority, Status = @Status,
                 DueDate = @DueDate, LinkedReminderId = @LinkedReminderId,
-                CompletedAt = @CompletedAt, UpdatedAt = @UpdatedAt, SortOrder = @SortOrder
+                CompletedAt = @CompletedAt, UpdatedAt = @UpdatedAt, SortOrder = @SortOrder,
+                ColumnId = @ColumnId
             WHERE Id = @Id
             """;
 
@@ -162,8 +173,8 @@ public class TodoService : ITodoService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT OR REPLACE INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder)
-            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt, @SortOrder)
+            INSERT OR REPLACE INTO Todos (Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId)
+            VALUES (@Id, @Title, @Notes, @Priority, @Status, @DueDate, @LinkedReminderId, @CreatedAt, @CompletedAt, @UpdatedAt, @SortOrder, @ColumnId)
             """;
 
         AddTodoParameters(command, item);
@@ -176,16 +187,18 @@ public class TodoService : ITodoService
     public async Task CompleteAsync(Guid id)
     {
         var now = DateTime.Now;
+        var closedColumn = await _columnService.GetClosedColumnAsync();
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE Todos SET Status = 1, CompletedAt = @CompletedAt, UpdatedAt = @UpdatedAt
+            UPDATE Todos SET Status = 1, CompletedAt = @CompletedAt, UpdatedAt = @UpdatedAt, ColumnId = @ColumnId
             WHERE Id = @Id
             """;
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@CompletedAt", now.ToString("O"));
         command.Parameters.AddWithValue("@UpdatedAt", now.ToString("O"));
+        command.Parameters.AddWithValue("@ColumnId", closedColumn.Id.ToString());
 
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Completed todo {Id}", id);
@@ -195,15 +208,17 @@ public class TodoService : ITodoService
     public async Task UncompleteAsync(Guid id)
     {
         var now = DateTime.Now;
+        var defaultColumn = await _columnService.GetDefaultViewColumnAsync();
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE Todos SET Status = 0, CompletedAt = NULL, UpdatedAt = @UpdatedAt
+            UPDATE Todos SET Status = 0, CompletedAt = NULL, UpdatedAt = @UpdatedAt, ColumnId = @ColumnId
             WHERE Id = @Id
             """;
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@UpdatedAt", now.ToString("O"));
+        command.Parameters.AddWithValue("@ColumnId", defaultColumn.Id.ToString());
 
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Uncompleted todo {Id}", id);
@@ -287,6 +302,7 @@ public class TodoService : ITodoService
         command.Parameters.AddWithValue("@CompletedAt", todo.CompletedAt.HasValue ? (object)todo.CompletedAt.Value.ToString("O") : DBNull.Value);
         command.Parameters.AddWithValue("@UpdatedAt", todo.UpdatedAt.ToString("O"));
         command.Parameters.AddWithValue("@SortOrder", todo.SortOrder);
+        command.Parameters.AddWithValue("@ColumnId", todo.ColumnId.HasValue ? (object)todo.ColumnId.Value.ToString() : DBNull.Value);
     }
 
     private static async Task<IReadOnlyList<TodoItem>> ReadTodoItems(SqliteCommand command)
@@ -314,8 +330,76 @@ public class TodoService : ITodoService
             CreatedAt = DateTime.Parse(reader.GetString(7)),
             CompletedAt = reader.IsDBNull(8) ? null : DateTime.Parse(reader.GetString(8)),
             UpdatedAt = DateTime.Parse(reader.GetString(9)),
-            SortOrder = reader.GetInt32(10)
+            SortOrder = reader.GetInt32(10),
+            ColumnId = reader.IsDBNull(11) ? null : Guid.Parse(reader.GetString(11))
         };
+    }
+
+    public async Task<IReadOnlyList<TodoItem>> GetByColumnAsync(Guid columnId)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, Title, Notes, Priority, Status, DueDate, LinkedReminderId, CreatedAt, CompletedAt, UpdatedAt, SortOrder, ColumnId
+            FROM Todos WHERE ColumnId = @ColumnId
+            ORDER BY SortOrder ASC, CreatedAt ASC
+            """;
+        command.Parameters.AddWithValue("@ColumnId", columnId.ToString());
+        return await ReadTodoItems(command);
+    }
+
+    public async Task MoveToColumnAsync(Guid todoId, Guid targetColumnId)
+    {
+        var closedColumn = await _columnService.GetClosedColumnAsync();
+        var now = DateTime.Now;
+        var connection = _context.GetConnection();
+
+        // Check if we're moving TO the closed column (completing)
+        if (targetColumnId == closedColumn.Id)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE Todos SET ColumnId = @ColumnId, Status = 1, CompletedAt = @CompletedAt, UpdatedAt = @UpdatedAt
+                WHERE Id = @Id
+                """;
+            command.Parameters.AddWithValue("@Id", todoId.ToString());
+            command.Parameters.AddWithValue("@ColumnId", targetColumnId.ToString());
+            command.Parameters.AddWithValue("@CompletedAt", now.ToString("O"));
+            command.Parameters.AddWithValue("@UpdatedAt", now.ToString("O"));
+            await command.ExecuteNonQueryAsync();
+        }
+        else
+        {
+            // Check if we're moving FROM the closed column (uncompleting)
+            using var checkCmd = connection.CreateCommand();
+            checkCmd.CommandText = "SELECT ColumnId FROM Todos WHERE Id = @Id";
+            checkCmd.Parameters.AddWithValue("@Id", todoId.ToString());
+            var currentColumnIdStr = (string?)await checkCmd.ExecuteScalarAsync();
+            var isFromClosed = currentColumnIdStr == closedColumn.Id.ToString();
+
+            using var command = connection.CreateCommand();
+            if (isFromClosed)
+            {
+                command.CommandText = """
+                    UPDATE Todos SET ColumnId = @ColumnId, Status = 0, CompletedAt = NULL, UpdatedAt = @UpdatedAt
+                    WHERE Id = @Id
+                    """;
+            }
+            else
+            {
+                command.CommandText = """
+                    UPDATE Todos SET ColumnId = @ColumnId, UpdatedAt = @UpdatedAt
+                    WHERE Id = @Id
+                    """;
+            }
+            command.Parameters.AddWithValue("@Id", todoId.ToString());
+            command.Parameters.AddWithValue("@ColumnId", targetColumnId.ToString());
+            command.Parameters.AddWithValue("@UpdatedAt", now.ToString("O"));
+            await command.ExecuteNonQueryAsync();
+        }
+
+        _logger.LogInformation("Moved todo {Id} to column {ColumnId}", todoId, targetColumnId);
+        OnTodoChanged();
     }
 
     public async Task UpdateSortOrderAsync(IReadOnlyList<(Guid Id, int SortOrder)> updates)

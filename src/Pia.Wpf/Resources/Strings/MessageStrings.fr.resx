@@ -159,6 +159,12 @@
   <data name="Msg_Todo_UncompleteFailed" xml:space="preserve"><value>Échec de l'annulation de la tâche : {0}</value></data>
   <data name="Msg_Todo_UpdateFailed" xml:space="preserve"><value>Échec de la mise à jour de la tâche : {0}</value></data>
   <data name="Msg_Todo_Updated" xml:space="preserve"><value>Mis à jour</value></data>
+  <!-- Kanban messages -->
+  <data name="Kanban_ColumnNamePrompt" xml:space="preserve"><value>Entrez le nom de la colonne :</value></data>
+  <data name="Kanban_ColumnNotEmpty" xml:space="preserve"><value>Impossible de supprimer une colonne contenant des tâches. Déplacez ou supprimez d'abord toutes les tâches.</value></data>
+  <data name="Kanban_DeleteColumnConfirm" xml:space="preserve"><value>Voulez-vous vraiment supprimer la colonne « {0} » ?</value></data>
+  <data name="Kanban_ColumnAdded" xml:space="preserve"><value>Colonne ajoutée</value></data>
+  <data name="Kanban_ColumnAddedDetail" xml:space="preserve"><value>La colonne « {0} » a été ajoutée au tableau.</value></data>
   <!-- Tray icon -->
   <data name="Tray_CloseAssistant" xml:space="preserve"><value>Fermer l'Assistant</value></data>
   <data name="Tray_CloseOptimize" xml:space="preserve"><value>Fermer Optimiser</value></data>
