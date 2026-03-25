@@ -29,6 +29,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private AppTheme _theme = AppTheme.System;
 
     [ObservableProperty]
+    private string _optimizeHotkeyHint = string.Empty;
+
+    [ObservableProperty]
+    private string _assistantHotkeyHint = string.Empty;
+
+    [ObservableProperty]
+    private string _researchHotkeyHint = string.Empty;
+
+    [ObservableProperty]
     private ObservableObject? _currentView;
 
     [ObservableProperty]
@@ -127,6 +136,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         Theme = settings.Theme;
         _themeService.ApplyTheme(Theme);
 
+        UpdateHotkeyHints(settings);
+
         await RefreshSetupRequiredAsync();
 
         if (Mode == WindowMode.Assistant)
@@ -179,9 +190,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 _themeService.ApplyTheme(Theme);
             }
 
+            UpdateHotkeyHints(settings);
+
             // Provider defaults may have changed — re-check setup state
             _ = RefreshSetupRequiredAsync();
         }, null);
+    }
+
+    private void UpdateHotkeyHints(AppSettings settings)
+    {
+        OptimizeHotkeyHint = settings.OptimizeHotkey.DisplayText;
+        AssistantHotkeyHint = settings.AssistantHotkey?.DisplayText ?? string.Empty;
+        ResearchHotkeyHint = settings.ResearchHotkey?.DisplayText ?? string.Empty;
     }
 
     private void OnViewModelChanged(ObservableObject? viewModel)

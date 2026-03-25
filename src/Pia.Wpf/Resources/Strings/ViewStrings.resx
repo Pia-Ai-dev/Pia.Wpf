@@ -52,6 +52,7 @@
   <data name="Optimize_Clear_Tooltip" xml:space="preserve"><value>Clear</value></data>
   <data name="Optimize_Template_Tooltip" xml:space="preserve"><value>Template</value></data>
   <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Output language</value></data>
+  <data name="Optimize_Optimize_Tooltip" xml:space="preserve"><value>Optimize (Ctrl+Enter)</value></data>
   <data name="Optimize_Record_Tooltip" xml:space="preserve"><value>Record</value></data>
   <data name="Optimize_Accept_Tooltip" xml:space="preserve"><value>Accept</value></data>
   <data name="Optimize_Reject_Tooltip" xml:space="preserve"><value>Reject</value></data>
@@ -85,7 +86,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Toggle text-to-speech</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Record</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
-  <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send</value></data>
+  <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Research Mode</value></data>
@@ -360,7 +361,6 @@
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Model Name</value></data>
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure Deployment Name</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Fetch Models</value></data>
-  <data name="Dialog_ProviderEdit_MaxCharacters" xml:space="preserve"><value>Max Characters</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Timeout (seconds)</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Edit Template</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Template Name *</value></data>
