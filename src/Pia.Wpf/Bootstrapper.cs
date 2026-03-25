@@ -102,11 +102,13 @@ public static class Bootstrapper
         // Infrastructure
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<DpapiHelper>();
+        services.AddTransient<HttpLoggingHandler>();
 
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
             {
                 var handler = new HttpClientHandler();
