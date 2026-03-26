@@ -92,8 +92,7 @@
             <Grid Margin="0,0,0,12">
               <!-- User message (right-aligned) -->
               <StackPanel HorizontalAlignment="Right"
-                          MaxWidth="500"
-                          Margin="80,0,0,0"
+                          MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}"
                           x:Name="UserMessagePanel">
                 <StackPanel.Style>
                   <Style TargetType="StackPanel">
@@ -139,8 +138,7 @@
 
               <!-- Assistant message (left-aligned) -->
               <StackPanel HorizontalAlignment="Left"
-                          MaxWidth="500"
-                          Margin="0,0,80,0"
+                          MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}"
                           x:Name="AssistantMessagePanel">
                 <StackPanel.Style>
                   <Style TargetType="StackPanel">
