@@ -60,12 +60,12 @@ public class TodoToolHandler : ITodoToolHandler
 #endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        var (result, pending) = toolCall.Name switch
+        (object? result, TodoToolCall? pending) = toolCall.Name switch
         {
-            "query_todos" => (await HandleQueryTodos(args), (TodoToolCall?)null),
-            "list_columns" => (await HandleListColumns(), null),
-            "move_todo" => (null, await PrepareMoveTodo(args)),
-            "create_todo" => ((object?)null, PrepareCreateTodo(args)),
+            "query_todos" => ((object?)await HandleQueryTodos(args), (TodoToolCall?)null),
+            "list_columns" => ((object?)await HandleListColumns(), (TodoToolCall?)null),
+            "move_todo" => ((object?)null, await PrepareMoveTodo(args)),
+            "create_todo" => ((object?)null, await PrepareCreateTodo(args)),
             "complete_todo" => ((object?)null, await PrepareCompleteTodo(args)),
             "update_todo" => ((object?)null, await PrepareUpdateTodo(args)),
             "delete_todo" => ((object?)null, await PrepareDeleteTodo(args)),
