@@ -15,33 +15,51 @@
 
     <ui:NavigationView.MenuItems>
       <!-- Optimize mode items -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Optimize}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Optimize"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Optimize}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
+        <ui:NavigationViewItem.Content>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{loc:Str Nav_Optimize}" />
+            <TextBlock Text="{Binding OptimizeHotkeyHint, StringFormat=' ({0})'}"
+                       Opacity="0.5" />
+          </StackPanel>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Sparkle24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Assistant mode items -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Assistant}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Assistant"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Assistant}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Content>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{loc:Str Nav_Assistant}" />
+            <TextBlock Text="{Binding AssistantHotkeyHint, StringFormat=' ({0})'}"
+                       Opacity="0.5" />
+          </StackPanel>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Chat24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Research mode items -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Research}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Research"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Research}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Research}">
+        <ui:NavigationViewItem.Content>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{loc:Str Nav_Research}" />
+            <TextBlock Text="{Binding ResearchHotkeyHint, StringFormat=' ({0})'}"
+                       Opacity="0.5" />
+          </StackPanel>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Search24" />
         </ui:NavigationViewItem.Icon>
@@ -111,7 +129,8 @@
           <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
             <MenuItem Header="{loc:Str Nav_Optimize}"
                       Command="{Binding OpenNewWindowCommand}"
-                      CommandParameter="{x:Static models:WindowMode.Optimize}">
+                      CommandParameter="{x:Static models:WindowMode.Optimize}"
+                      InputGestureText="{Binding OptimizeHotkeyHint}">
               <MenuItem.Icon>
                 <ui:SymbolIcon Symbol="Sparkle24" />
               </MenuItem.Icon>
@@ -127,7 +146,8 @@
             </MenuItem>
             <MenuItem Header="{loc:Str Nav_Assistant}"
                       Command="{Binding OpenNewWindowCommand}"
-                      CommandParameter="{x:Static models:WindowMode.Assistant}">
+                      CommandParameter="{x:Static models:WindowMode.Assistant}"
+                      InputGestureText="{Binding AssistantHotkeyHint}">
               <MenuItem.Icon>
                 <ui:SymbolIcon Symbol="Chat24" />
               </MenuItem.Icon>
@@ -143,7 +163,8 @@
             </MenuItem>
             <MenuItem Header="{loc:Str Nav_Research}"
                       Command="{Binding OpenNewWindowCommand}"
-                      CommandParameter="{x:Static models:WindowMode.Research}">
+                      CommandParameter="{x:Static models:WindowMode.Research}"
+                      InputGestureText="{Binding ResearchHotkeyHint}">
               <MenuItem.Icon>
                 <ui:SymbolIcon Symbol="Search24" />
               </MenuItem.Icon>

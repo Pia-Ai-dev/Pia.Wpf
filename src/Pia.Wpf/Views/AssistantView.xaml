@@ -8,6 +8,7 @@
              xmlns:nav="clr-namespace:Pia.Navigation"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:controls="clr-namespace:Pia.Controls"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
              nav:ViewModelLocator.AutoWireViewModel="True">
@@ -92,8 +93,7 @@
             <Grid Margin="0,0,0,12">
               <!-- User message (right-aligned) -->
               <StackPanel HorizontalAlignment="Right"
-                          MaxWidth="500"
-                          Margin="80,0,0,0"
+                          MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}"
                           x:Name="UserMessagePanel">
                 <StackPanel.Style>
                   <Style TargetType="StackPanel">
@@ -108,7 +108,7 @@
                 <Border Padding="12,8"
                         CornerRadius="12,12,0,12"
                         Background="{DynamicResource AccentFillColorDefaultBrush}">
-                  <TextBlock Text="{Binding Content}"
+                  <TextBlock behaviors:AtCommandHighlightBehavior.Text="{Binding Content}"
                              TextWrapping="Wrap"
                              FontSize="14"
                              Foreground="White" />
@@ -139,8 +139,7 @@
 
               <!-- Assistant message (left-aligned) -->
               <StackPanel HorizontalAlignment="Left"
-                          MaxWidth="500"
-                          Margin="0,0,80,0"
+                          MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}"
                           x:Name="AssistantMessagePanel">
                 <StackPanel.Style>
                   <Style TargetType="StackPanel">
@@ -303,20 +302,24 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <ui:TextBox x:Name="InputTextBox"
-                    Grid.Column="0"
-                    Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                    PlaceholderText="{loc:Str Assistant_InputPlaceholder}"
-                    PlaceholderEnabled="True"
-                    TextWrapping="Wrap"
-                    AcceptsReturn="True"
-                    MaxHeight="120"
-                    VerticalScrollBarVisibility="Auto"
-                    FontSize="14"
-                    Padding="12,8"
-                    Margin="0,0,8,0"
-                    ClearButtonEnabled="False"
-                    PreviewKeyDown="InputTextBox_PreviewKeyDown" />
+        <Grid Grid.Column="0" Margin="0,0,8,0">
+          <ui:TextBox x:Name="InputTextBox"
+                      Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                      PlaceholderText="{loc:Str Assistant_InputPlaceholder}"
+                      PlaceholderEnabled="True"
+                      TextWrapping="Wrap"
+                      AcceptsReturn="True"
+                      MaxHeight="120"
+                      VerticalScrollBarVisibility="Auto"
+                      FontSize="14"
+                      Padding="12,8"
+                      ClearButtonEnabled="False"
+                      PreviewKeyDown="InputTextBox_PreviewKeyDown"
+                      behaviors:AtCommandAutocompleteBehavior.IsEnabled="True"
+                      behaviors:AtCommandAutocompleteBehavior.PopupControl="{Binding ElementName=AtCommandPopup}"
+                      behaviors:AtCommandAutocompleteBehavior.AutocompleteService="{Binding AutocompleteService}" />
+          <controls:AutocompletePopup x:Name="AtCommandPopup" />
+        </Grid>
 
         <StackPanel Grid.Column="1"
                     Orientation="Horizontal"

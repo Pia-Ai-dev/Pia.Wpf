@@ -76,7 +76,7 @@ public static class Bootstrapper
         services.AddLogging(builder =>
         {
             builder.AddDebug();
-            builder.SetMinimumLevel(LogLevel.Information);
+            builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
             var logDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -86,7 +86,7 @@ public static class Bootstrapper
             builder.AddFile(Path.Combine(logDirectory, "pia.log"), options =>
             {
                 options.Append = true;
-                options.MinLevel = LogLevel.Information;
+                options.MinLevel = IsDevMode ? LogLevel.Debug : LogLevel.Information;
                 options.FileSizeLimitBytes = 10 * 1024 * 1024; // 10 MB per file
                 options.MaxRollingFiles = 7;                    // Keep 7 days
                 options.FormatLogFileName = name =>
@@ -102,11 +102,13 @@ public static class Bootstrapper
         // Infrastructure
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<DpapiHelper>();
+        services.AddTransient<HttpLoggingHandler>();
 
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
             {
                 var handler = new HttpClientHandler();
@@ -136,7 +138,8 @@ public static class Bootstrapper
             new TokenizingAiClientService(
                 sp.GetRequiredService<AiClientService>(),
                 sp,
-                sp.GetRequiredService<ISettingsService>()));
+                sp.GetRequiredService<ISettingsService>(),
+                sp.GetRequiredService<ILogger<TokenizingAiClientService>>()));
 
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
@@ -147,6 +150,7 @@ public static class Bootstrapper
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<IHistoryService, HistoryService>();

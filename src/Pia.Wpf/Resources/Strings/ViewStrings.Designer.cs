@@ -241,7 +241,7 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Send.
+        ///   Looks up a localized string similar to Send (Enter).
         /// </summary>
         public static string Assistant_Send_Tooltip {
             get {
@@ -525,15 +525,6 @@ namespace Pia.Resources.Strings {
         public static string Dialog_ProviderEdit_FetchModels {
             get {
                 return ResourceManager.GetString("Dialog_ProviderEdit_FetchModels", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Max Characters.
-        /// </summary>
-        public static string Dialog_ProviderEdit_MaxCharacters {
-            get {
-                return ResourceManager.GetString("Dialog_ProviderEdit_MaxCharacters", resourceCulture);
             }
         }
         
@@ -1527,6 +1518,15 @@ namespace Pia.Resources.Strings {
             }
         }
         
+        /// <summary>
+        ///   Looks up a localized string similar to Optimize (Ctrl+Enter).
+        /// </summary>
+        public static string Optimize_Optimize_Tooltip {
+            get {
+                return ResourceManager.GetString("Optimize_Optimize_Tooltip", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Optimized.
         /// </summary>

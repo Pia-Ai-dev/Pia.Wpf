@@ -123,7 +123,8 @@ public class SyncMapper
                 provider.ModelName,
                 ApiKey = apiKey,
                 provider.AzureDeploymentName,
-                provider.SupportsToolCalling
+                provider.SupportsToolCalling,
+                provider.TimeoutSeconds
             };
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
                 plainPayload, userId, "provider", provider.Id.ToString());
@@ -138,6 +139,7 @@ public class SyncMapper
                 ? _dpapiHelper.Decrypt(provider.EncryptedApiKey) : null;
             sync.AzureDeploymentName = provider.AzureDeploymentName;
             sync.SupportsToolCalling = provider.SupportsToolCalling;
+            sync.TimeoutSeconds = provider.TimeoutSeconds;
         }
 
         return sync;
@@ -164,6 +166,7 @@ public class SyncMapper
                     ? _dpapiHelper.Encrypt(decrypted.ApiKey) : null,
                 AzureDeploymentName = decrypted.AzureDeploymentName,
                 SupportsToolCalling = decrypted.SupportsToolCalling,
+                TimeoutSeconds = decrypted.TimeoutSeconds is > 0 ? decrypted.TimeoutSeconds : 30,
                 CreatedAt = sync.CreatedAt,
                 UpdatedAt = sync.UpdatedAt
             };
@@ -180,6 +183,7 @@ public class SyncMapper
                 ? _dpapiHelper.Encrypt(sync.ApiKey) : null,
             AzureDeploymentName = sync.AzureDeploymentName,
             SupportsToolCalling = sync.SupportsToolCalling,
+            TimeoutSeconds = sync.TimeoutSeconds is > 0 ? sync.TimeoutSeconds : 30,
             CreatedAt = sync.CreatedAt,
             UpdatedAt = sync.UpdatedAt
         };

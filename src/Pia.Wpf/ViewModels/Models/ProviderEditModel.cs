@@ -30,9 +30,6 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private string? _azureDeploymentName;
 
-    [ObservableProperty]
-    private int _maxCharacters = 2000;
-
     [Range(1, 300, ErrorMessage = "Timeout must be between 1 and 300 seconds")]
     [ObservableProperty]
     private int _timeoutSeconds = 30;
@@ -87,8 +84,7 @@ public partial class ProviderEditModel : ObservableValidator
             ApiKey = null,
             ModelName = provider.ModelName,
             AzureDeploymentName = provider.AzureDeploymentName,
-            MaxCharacters = 2000,
-            TimeoutSeconds = 30,
+            TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 300 ? provider.TimeoutSeconds : 30,
             SupportsToolCalling = provider.SupportsToolCalling,
             SupportsStreaming = provider.SupportsStreaming
         };
@@ -105,7 +101,8 @@ public partial class ProviderEditModel : ObservableValidator
             ModelName = ModelName,
             AzureDeploymentName = AzureDeploymentName,
             SupportsToolCalling = SupportsToolCalling,
-            SupportsStreaming = SupportsStreaming
+            SupportsStreaming = SupportsStreaming,
+            TimeoutSeconds = TimeoutSeconds
         };
     }
 }

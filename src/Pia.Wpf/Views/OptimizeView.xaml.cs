@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.DependencyInjection;
 using Pia.ViewModels;
 
@@ -91,6 +92,18 @@ public partial class OptimizeView : UserControl
         if (Window.GetWindow(this) is Window window)
         {
             window.DragMove();
+        }
+    }
+
+    private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (ViewModel?.OptimizeCommand.CanExecute(null) == true)
+            {
+                ViewModel.OptimizeCommand.Execute(null);
+                e.Handled = true;
+            }
         }
     }
 

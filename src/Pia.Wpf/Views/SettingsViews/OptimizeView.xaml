@@ -7,8 +7,9 @@
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
   </UserControl.Resources>
-  <ScrollViewer Margin="16">
-    <StackPanel MaxWidth="600" HorizontalAlignment="Left">
+  <ScrollViewer Margin="16"
+                HorizontalScrollBarVisibility="Auto">
+    <StackPanel MinWidth="500">
       <!-- Provider selector for Optimize mode -->
       <StackPanel Margin="0,0,0,24">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}" FontWeight="SemiBold" Margin="0,0,0,8"/>
@@ -90,21 +91,65 @@
                     BorderBrush="{DynamicResource CardStrokeColorBrush}"
                     BorderThickness="1"
                     CornerRadius="4"
-                    Padding="16"
-                    Margin="0,0,0,8">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0">
-                  <TextBlock FontSize="16" FontWeight="SemiBold" Text="{Binding Name}"/>
-                  <TextBlock Text="{Binding Description}"
-                             Opacity="0.7"
-                             Margin="0,4,0,0"
-                             TextWrapping="Wrap"/>
-                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    Padding="10"
+                    Margin="0,0,0,4">
+              <StackPanel>
+                <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}"/>
+                <TextBlock Text="{Binding Description}"
+                           Opacity="0.7"
+                           FontSize="12"
+                           Margin="0,2,0,0"
+                           TextWrapping="Wrap"/>
+                <DockPanel Margin="0,6,0,0">
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:Button Command="{Binding DataContext.ViewTemplatePromptCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}"
+                              Appearance="Caution"
+                              Height="30"
+                              Padding="8,0"
+                              FontSize="12"
+                              Margin="0,0,4,0">
+                      <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Code24" FontSize="14" Margin="0,0,4,0"/>
+                        <TextBlock Text="{loc:Str Templates_ViewPrompt}" FontSize="12"/>
+                      </StackPanel>
+                    </ui:Button>
+                    <ui:Button Command="{Binding DataContext.SetDefaultTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}"
+                              Height="30"
+                              Padding="8,0"
+                              FontSize="12"
+                              Margin="0,0,4,0">
+                      <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Star24" FontSize="14" Margin="0,0,4,0" Filled="True"/>
+                        <TextBlock Text="{loc:Str Templates_SetDefault}" FontSize="12"/>
+                      </StackPanel>
+                    </ui:Button>
+                    <ui:Button Command="{Binding DataContext.EditTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}"
+                              Appearance="Secondary"
+                              Width="30"
+                              Height="30"
+                              Margin="0,0,4,0"
+                              Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                      <ui:SymbolIcon Symbol="Edit24" FontSize="14"/>
+                      <ui:Button.ToolTip>
+                        <ToolTip Content="{loc:Str Templates_Edit}"/>
+                      </ui:Button.ToolTip>
+                    </ui:Button>
+                    <ui:Button Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              CommandParameter="{Binding}"
+                              Appearance="Danger"
+                              Width="30"
+                              Height="30"
+                              Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                      <ui:SymbolIcon Symbol="Delete24" FontSize="14"/>
+                      <ui:Button.ToolTip>
+                        <ToolTip Content="{loc:Str Templates_Delete}"/>
+                      </ui:Button.ToolTip>
+                    </ui:Button>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:Badge Content="{loc:Str Templates_BuiltIn}"
                               Visibility="{Binding IsBuiltIn, Converter={StaticResource BooleanToVisibilityConverter}}"
                               Appearance="Caution"
@@ -119,51 +164,8 @@
                       </ui:Badge.Visibility>
                     </ui:Badge>
                   </StackPanel>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                  <ui:Button Command="{Binding DataContext.ViewTemplatePromptCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                            CommandParameter="{Binding}"
-                            Appearance="Caution"
-                            Margin="0,0,8,0">
-                    <StackPanel Orientation="Horizontal">
-                      <ui:SymbolIcon Symbol="Code24" FontSize="16" Margin="0,0,8,0"/>
-                      <TextBlock Text="{loc:Str Templates_ViewPrompt}"/>
-                    </StackPanel>
-                  </ui:Button>
-                  <ui:Button Command="{Binding DataContext.SetDefaultTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                            CommandParameter="{Binding}"
-                            Margin="0,0,8,0">
-                    <StackPanel Orientation="Horizontal">
-                      <ui:SymbolIcon Symbol="Star24" FontSize="16" Margin="0,0,8,0" Filled="True"/>
-                      <TextBlock Text="{loc:Str Templates_SetDefault}"/>
-                    </StackPanel>
-                  </ui:Button>
-                  <ui:Button Command="{Binding DataContext.EditTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                            CommandParameter="{Binding}"
-                            Appearance="Secondary"
-                            Width="40"
-                            Height="40"
-                            Margin="0,0,8,0"
-                            IsEnabled="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanConverter}}">
-                    <ui:SymbolIcon Symbol="Edit24" FontSize="16"/>
-                    <ui:Button.ToolTip>
-                      <ToolTip Content="{loc:Str Templates_Edit}"/>
-                    </ui:Button.ToolTip>
-                  </ui:Button>
-                  <ui:Button Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                            CommandParameter="{Binding}"
-                            Appearance="Danger"
-                            Width="40"
-                            Height="40"
-                            IsEnabled="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanConverter}}">
-                    <ui:SymbolIcon Symbol="Delete24" FontSize="16"/>
-                    <ui:Button.ToolTip>
-                      <ToolTip Content="{loc:Str Templates_Delete}"/>
-                    </ui:Button.ToolTip>
-                  </ui:Button>
-                </StackPanel>
-              </Grid>
+                </DockPanel>
+              </StackPanel>
             </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

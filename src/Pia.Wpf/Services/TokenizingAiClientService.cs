@@ -2,6 +2,7 @@
 using System.Text;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -19,6 +20,7 @@ public class TokenizingAiClientService : IAiClientService
     private readonly IAiClientService _inner;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISettingsService _settingsService;
+    private readonly ILogger<TokenizingAiClientService> _logger;
     private bool? _enabled;
     private IServiceScope? _scope;
     private ITokenMapService? _tokenMapService;
@@ -26,11 +28,13 @@ public class TokenizingAiClientService : IAiClientService
     public TokenizingAiClientService(
         IAiClientService inner,
         IServiceProvider serviceProvider,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        ILogger<TokenizingAiClientService> logger)
     {
         _inner = inner;
         _scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         _settingsService = settingsService;
+        _logger = logger;
     }
 
     private ITokenMapService? TryGetTokenMapService()
@@ -140,11 +144,13 @@ public class TokenizingAiClientService : IAiClientService
     {
         if (!await IsEnabledAsync())
         {
+            _logger.LogDebug("Tokenization disabled, passing through tool completion");
             await foreach (var token in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, cancellationToken))
                 yield return token;
             yield break;
         }
 
+        _logger.LogDebug("Tokenization active, wrapping tool handler");
         var tokenizedMessages = TokenizeMessages(messages);
         var wrappedHandler = toolHandler is not null ? WrapToolHandler(toolHandler) : null;
         var tokenBuffer = new StringBuilder();
@@ -210,7 +216,10 @@ public class TokenizingAiClientService : IAiClientService
         {
             // Detokenize string arguments on write operations
             if (IsWriteOperation(toolCall.Name))
+            {
+                _logger.LogDebug("Detokenizing write-operation arguments for {ToolName}", toolCall.Name);
                 DetokenizeToolCallArguments(toolCall);
+            }
 
             var result = await handler(toolCall);
 

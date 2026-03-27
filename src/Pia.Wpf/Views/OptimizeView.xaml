@@ -67,7 +67,8 @@
                       HorizontalScrollBarVisibility="Auto"
                       FontSize="14"
                       Padding="15"
-                      ClearButtonEnabled="False" />
+                      ClearButtonEnabled="False"
+                      PreviewKeyDown="InputTextBox_PreviewKeyDown" />
 
           <!-- Resize Handle -->
           <GridSplitter Grid.Row="2"
@@ -145,7 +146,8 @@
             <ui:Button Command="{Binding OptimizeCommand}"
                        Appearance="Primary"
                        Height="40"
-                       Padding="16,0">
+                       Padding="16,0"
+                       ToolTip="{loc:Str Optimize_Optimize_Tooltip}">
               <StackPanel Orientation="Horizontal">
                 <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0" />
                 <TextBlock Text="{loc:Str Optimize_Optimize}" VerticalAlignment="Center" />

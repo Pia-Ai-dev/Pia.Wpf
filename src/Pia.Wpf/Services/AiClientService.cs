@@ -1,6 +1,8 @@
 ﻿using System.ClientModel;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -36,7 +38,7 @@ public class AiClientService : IAiClientService
         CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -67,7 +69,7 @@ public class AiClientService : IAiClientService
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(60);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -101,7 +103,7 @@ public class AiClientService : IAiClientService
         CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(60);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -142,8 +144,11 @@ public class AiClientService : IAiClientService
         Func<FunctionCallContent, Task<object?>>? toolHandler = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
+            provider.Name, tools?.Count ?? 0);
+
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(120);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -163,6 +168,7 @@ public class AiClientService : IAiClientService
 
         for (var round = 0; round < maxToolRounds; round++)
         {
+            _logger.LogDebug("Tool round {Round}/{MaxRounds} starting", round + 1, maxToolRounds);
             ChatResponse response;
 
             if (provider.SupportsStreaming)
@@ -244,6 +250,13 @@ public class AiClientService : IAiClientService
 
             if (toolCalls.Count > 0 && toolHandler is not null)
             {
+                _logger.LogInformation("Round {Round}: {ToolCallCount} tool call(s) detected: {ToolNames}",
+                    round + 1, toolCalls.Count, string.Join(", ", toolCalls.Select(t => t.Name)));
+#if DEBUG
+                foreach (var tc in toolCalls)
+                    Debug.WriteLine($"[Tool Args] {tc.Name}: {JsonSerializer.Serialize(tc.Arguments)}");
+#endif
+
                 // Add assistant messages with tool calls to working messages
                 foreach (var msg in response.Messages)
                 {
@@ -253,7 +266,10 @@ public class AiClientService : IAiClientService
                 // Process tool calls
                 foreach (var toolCall in toolCalls)
                 {
+                    _logger.LogDebug("Invoking tool handler for {ToolName} (callId={CallId})", toolCall.Name, toolCall.CallId);
                     var result = await toolHandler(toolCall);
+                    _logger.LogDebug("Tool handler returned for {ToolName}, resultType={ResultType}",
+                        toolCall.Name, result?.GetType().Name ?? "null");
                     var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
                         ChatRole.Tool,
                         [new FunctionResultContent(toolCall.CallId, result)]);
@@ -264,14 +280,17 @@ public class AiClientService : IAiClientService
                 continue;
             }
 
+            _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
             yield break;
         }
+
+        _logger.LogWarning("Tool loop exhausted max rounds ({MaxRounds}) without final response", maxToolRounds);
     }
 
     public async Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -307,7 +326,7 @@ public class AiClientService : IAiClientService
     public async Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
@@ -53,26 +54,46 @@ public class TodoToolHandler : ITodoToolHandler
         FunctionCallContent toolCall,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("TodoToolHandler dispatching: {ToolName}", toolCall.Name);
+#if DEBUG
+        Debug.WriteLine($"[TodoToolHandler Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        return toolCall.Name switch
+        var (result, pending) = toolCall.Name switch
         {
-            "query_todos" => (await HandleQueryTodos(args), null),
+            "query_todos" => (await HandleQueryTodos(args), (TodoToolCall?)null),
             "list_columns" => (await HandleListColumns(), null),
             "move_todo" => (null, await PrepareMoveTodo(args)),
-            "create_todo" => (null, await PrepareCreateTodo(args)),
-            "complete_todo" => (null, await PrepareCompleteTodo(args)),
-            "update_todo" => (null, await PrepareUpdateTodo(args)),
-            "delete_todo" => (null, await PrepareDeleteTodo(args)),
-            _ => ($"Unknown tool: {toolCall.Name}", null)
+            "create_todo" => ((object?)null, PrepareCreateTodo(args)),
+            "complete_todo" => ((object?)null, await PrepareCompleteTodo(args)),
+            "update_todo" => ((object?)null, await PrepareUpdateTodo(args)),
+            "delete_todo" => ((object?)null, await PrepareDeleteTodo(args)),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (TodoToolCall?)null)
         };
+
+        // Error cases (invalid ID, not found) produce a pending action with no TargetTodoId.
+        // Return them as immediate results so no action card is shown to the user.
+        if (pending is not null && pending.TargetTodoId is null && toolCall.Name is not "create_todo")
+        {
+            _logger.LogWarning("TodoToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            return (await pending.Execute(), null);
+        }
+
+        _logger.LogDebug("TodoToolHandler {ToolName} result: hasResult={HasResult}, hasPending={HasPending}",
+            toolCall.Name, result is not null, pending is not null);
+        return (result, pending);
     }
 
     public async Task<object?> ExecutePendingActionAsync(TodoToolCall pendingAction)
     {
+        _logger.LogDebug("Executing todo action: {ToolName}, targetId={TargetTodoId}",
+            pendingAction.ToolName, pendingAction.TargetTodoId);
         try
         {
-            return await pendingAction.Execute();
+            var result = await pendingAction.Execute();
+            _logger.LogInformation("Todo action completed: {ToolName}", pendingAction.ToolName);
+            return result;
         }
         catch (Exception ex)
         {
@@ -186,8 +207,11 @@ public class TodoToolHandler : ITodoToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("complete_todo called with invalid ID: '{IdValue}'", idStr);
             return new TodoToolCall("complete_todo", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid todo ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid todo ID format. You provided '{idStr}' which is not a valid GUID. Use query_todos to get valid IDs."));
+        }
 
         var existing = await _todoService.GetAsync(id);
         if (existing is null)
@@ -210,8 +234,11 @@ public class TodoToolHandler : ITodoToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("update_todo called with invalid ID: '{IdValue}'", idStr);
             return new TodoToolCall("update_todo", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid todo ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid todo ID format. You provided '{idStr}' which is not a valid GUID. Use query_todos to get valid IDs."));
+        }
 
         var existing = await _todoService.GetAsync(id);
         if (existing is null)
@@ -253,8 +280,11 @@ public class TodoToolHandler : ITodoToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("delete_todo called with invalid ID: '{IdValue}'", idStr);
             return new TodoToolCall("delete_todo", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid todo ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid todo ID format. You provided '{idStr}' which is not a valid GUID. Use query_todos to get valid IDs."));
+        }
 
         var existing = await _todoService.GetAsync(id);
         if (existing is null)

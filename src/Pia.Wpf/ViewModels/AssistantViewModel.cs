@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.AI;
@@ -32,11 +34,26 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         so they don't forget. Use the create_reminder tool if they agree.
         When listing todos, highlight any that are overdue (past due date, still pending).
 
+        TOOL SELECTION — follow this decision tree strictly:
+        1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
+           YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
+           NO → Continue to step 2.
+        2. Does the request involve a TASK, ACTION ITEM, or something to DO?
+           YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
+           NO → Continue to step 3.
+        3. Does the request involve STORING, RECALLING, or UPDATING personal information?
+           YES → Use Memory tools (remember: query first, then create/update).
+           NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+           NO → Respond conversationally without tools.
+
         Key principles:
-        - Before creating a new memory, check if a related one already exists (use query_memory), then
-          update instead of duplicating.
-        - When the user asks to be reminded of something, parse it into structured fields and use
-          create_reminder.
+        - Memory workflow — ALWAYS follow this sequence when storing information:
+          1. First call query_memory to check if a related memory already exists.
+          2. If a match is found, use update_object to modify it (do NOT create a duplicate).
+          3. Only if no related memory exists, use create_object to store it as new.
+          This applies whenever the user shares a fact, preference, or personal detail — even if
+          they say "remember" or "erstelle" or "create". The intent is to keep memory up to date,
+          not to accumulate duplicates.
         - When the user asks about their reminders, use query_reminders. To modify or cancel, first
           query to find the ID.
         - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge
@@ -51,6 +68,31 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         the person's actual name.
         """ : "")}
         """;
+
+    private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
+    {
+        if (commands.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("USER TOOL HINTS (the user explicitly requested these tools — prioritize them):");
+        foreach (var cmd in commands)
+        {
+            var domainName = cmd.Domain switch
+            {
+                Pia.Models.AtCommandDomain.Memory => "Memory",
+                Pia.Models.AtCommandDomain.Todo => "Todo",
+                Pia.Models.AtCommandDomain.Reminder => "Reminder",
+                _ => "Unknown"
+            };
+
+            if (cmd.ItemTitle is not null)
+                sb.AppendLine($"- Use the {domainName} tools, specifically for item '{cmd.ItemTitle}'. Query for it first.");
+            else
+                sb.AppendLine($"- Use the {domainName} tools for this request.");
+        }
+        return sb.ToString();
+    }
 
     private static string BuildSystemPromptNoTools() => $"""
         You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
@@ -73,6 +115,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly ITokenMapService _tokenMapService;
+    private readonly IAutocompleteService _autocompleteService;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
     private bool _tokenizationEnabled;
@@ -128,6 +171,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         "Assistant_Suggestion_Memory5"
     ];
 
+    public IAutocompleteService AutocompleteService => _autocompleteService;
+
     public ObservableCollection<AssistantMessage> Messages { get; } = new();
 
     public IAsyncRelayCommand SendMessageCommand { get; }
@@ -157,7 +202,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ILoggerFactory loggerFactory,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
-        ITokenMapService tokenMapService)
+        ITokenMapService tokenMapService,
+        IAutocompleteService autocompleteService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -175,6 +221,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
+        _autocompleteService = autocompleteService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -218,6 +265,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var userText = InputText.Trim();
         InputText = string.Empty;
 
+        // Parse @-commands — keep full text for display (highlighted by view),
+        // but strip commands from what the AI sees as the user message
+        var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
+
         var userMessage = new AssistantMessage(ChatRole.User, userText);
         Messages.Add(userMessage);
         HasMessages = true;
@@ -249,7 +300,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             if (supportsTools)
             {
-                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled);
+                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled)
+                    + BuildAtCommandHint(atCommands);
                 tools = [.. _memoryToolHandler.GetTools(), .. _reminderToolHandler.GetTools(), .. _todoToolHandler.GetTools()];
             }
             else
@@ -257,6 +309,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 fullSystemPrompt = BuildSystemPromptNoTools();
                 tools = null;
             }
+
+            _logger.LogInformation("SendMessage: provider={ProviderName}, supportsTools={SupportsTools}, toolCount={ToolCount}",
+                provider.Name, supportsTools, tools?.Count ?? 0);
 
             var chatMessages = new List<ChatMessage>
             {
@@ -268,7 +323,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 if (msg == assistantMessage)
                     continue;
 
-                chatMessages.Add(msg.ToChatMessage());
+                // Strip @-commands from the latest user message sent to the AI
+                // (the hint is already in the system prompt)
+                if (msg == userMessage && atCommands.Count > 0)
+                    chatMessages.Add(new ChatMessage(ChatRole.User,
+                        Pia.Services.AtCommandParser.StripCommands(msg.Content)));
+                else
+                    chatMessages.Add(msg.ToChatMessage());
             }
 
             // Use tool-aware completion with think-tag parsing
@@ -396,6 +457,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task<object?> HandleToolCall(FunctionCallContent toolCall, AssistantMessage message)
     {
         _logger.LogInformation("Handling tool call: {ToolName}", toolCall.Name);
+        _logger.LogDebug("Tool call {ToolName} with {ArgCount} arguments", toolCall.Name, toolCall.Arguments?.Count ?? 0);
+#if DEBUG
+        Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
 
         // Route to the appropriate tool handler
         if (toolCall.Name is "create_reminder" or "query_reminders" or "update_reminder" or "delete_reminder")
@@ -409,6 +474,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
 
         var (result, pendingAction) = await _memoryToolHandler.HandleToolCallAsync(toolCall);
+        _logger.LogDebug("MemoryToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
+            result is not null, pendingAction is not null);
 
         if (result is not null)
             return result;
@@ -426,12 +493,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
                 confirmed = false;
             }
 
             if (confirmed)
             {
+                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
                 var actionResult = await _memoryToolHandler.ExecutePendingActionAsync(pendingAction);
+                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
                 _snackbarService.Show(_localizationService["Msg_Assistant_MemoryUpdated"],
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -447,6 +517,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
+                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
                 return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }
@@ -457,6 +528,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task<object?> HandleReminderToolCall(FunctionCallContent toolCall, AssistantMessage message)
     {
         var (result, pendingAction) = await _reminderToolHandler.HandleToolCallAsync(toolCall);
+        _logger.LogDebug("ReminderToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
+            result is not null, pendingAction is not null);
 
         if (result is not null)
             return result;
@@ -474,12 +547,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
                 confirmed = false;
             }
 
             if (confirmed)
             {
+                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
                 var actionResult = await _reminderToolHandler.ExecutePendingActionAsync(pendingAction);
+                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
                 _snackbarService.Show(_localizationService["Msg_Assistant_ReminderUpdated"],
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -487,6 +563,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
+                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
                 return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }
@@ -522,6 +599,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task<object?> HandleTodoToolCall(FunctionCallContent toolCall, AssistantMessage message)
     {
         var (result, pendingAction) = await _todoToolHandler.HandleToolCallAsync(toolCall);
+        _logger.LogDebug("TodoToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
+            result is not null, pendingAction is not null);
 
         // If it's a read-only operation (query_todos), return result directly
         if (result is not null)
@@ -540,12 +619,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
                 confirmed = false;
             }
 
             if (confirmed)
             {
+                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
                 var actionResult = await _todoToolHandler.ExecutePendingActionAsync(pendingAction);
+                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
                 _snackbarService.Show(_localizationService["Msg_Assistant_TodoUpdated"],
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -553,6 +635,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
+                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
                 return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }
