@@ -147,6 +147,7 @@ public static class Bootstrapper
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
+        services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();

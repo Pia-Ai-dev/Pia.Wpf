@@ -26,4 +26,5 @@ public class SyncPushRequest
     public SyncSessionChanges Sessions { get; set; } = new();
     public SyncEntityChanges<SyncMemory> Memories { get; set; } = new();
     public SyncEntityChanges<SyncTodo> Todos { get; set; } = new();
+    public SyncEntityChanges<SyncKanbanColumn> KanbanColumns { get; set; } = new();
 }

@@ -94,6 +94,7 @@ public abstract class ToolPipelineTestBase
 
         _todoToolHandler = new TodoToolHandler(
             TodoService,
+            Substitute.For<IKanbanColumnService>(),
             NullLogger<TodoToolHandler>.Instance);
 
         _reminderToolHandler = new ReminderToolHandler(

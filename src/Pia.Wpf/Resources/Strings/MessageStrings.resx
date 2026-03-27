@@ -167,6 +167,13 @@
   <data name="Msg_Todo_UpdateFailed" xml:space="preserve"><value>Failed to update todo: {0}</value></data>
   <data name="Msg_Todo_Updated" xml:space="preserve"><value>Updated</value></data>
 
+  <!-- Kanban messages -->
+  <data name="Kanban_ColumnNamePrompt" xml:space="preserve"><value>Enter column name:</value></data>
+  <data name="Kanban_ColumnNotEmpty" xml:space="preserve"><value>Cannot delete a column that contains todos. Move or delete all todos first.</value></data>
+  <data name="Kanban_DeleteColumnConfirm" xml:space="preserve"><value>Are you sure you want to delete the column "{0}"?</value></data>
+  <data name="Kanban_ColumnAdded" xml:space="preserve"><value>Column Added</value></data>
+  <data name="Kanban_ColumnAddedDetail" xml:space="preserve"><value>Column "{0}" has been added to the board.</value></data>
+
   <!-- Tray icon messages -->
   <data name="Tray_CloseAssistant" xml:space="preserve"><value>Close Assistant</value></data>
   <data name="Tray_CloseOptimize" xml:space="preserve"><value>Close Optimize</value></data>

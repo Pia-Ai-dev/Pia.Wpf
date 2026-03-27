@@ -346,7 +346,8 @@ public class SyncMapper
             Id = todo.Id,
             CreatedAt = ToUtc(todo.CreatedAt),
             UpdatedAt = ToUtc(todo.UpdatedAt),
-            SortOrder = todo.SortOrder
+            SortOrder = todo.SortOrder,
+            ColumnId = todo.ColumnId
         };
 
         if (IsE2EEActive && userId is not null)
@@ -359,7 +360,8 @@ public class SyncMapper
                 Status = (int)todo.Status,
                 todo.DueDate,
                 todo.LinkedReminderId,
-                todo.CompletedAt
+                todo.CompletedAt,
+                todo.ColumnId
             };
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
                 plainPayload, userId, "todo", todo.Id.ToString());
@@ -400,7 +402,8 @@ public class SyncMapper
                 CreatedAt = sync.CreatedAt,
                 CompletedAt = decrypted.CompletedAt,
                 UpdatedAt = sync.UpdatedAt,
-                SortOrder = sync.SortOrder
+                SortOrder = sync.SortOrder,
+                ColumnId = decrypted.ColumnId ?? sync.ColumnId
             };
         }
 
@@ -416,7 +419,73 @@ public class SyncMapper
             CreatedAt = sync.CreatedAt,
             CompletedAt = sync.CompletedAt,
             UpdatedAt = sync.UpdatedAt,
-            SortOrder = sync.SortOrder
+            SortOrder = sync.SortOrder,
+            ColumnId = sync.ColumnId
+        };
+    }
+
+    // --- Kanban Columns ---
+
+    public SyncKanbanColumn ToSyncKanbanColumn(KanbanColumn column, string? userId = null)
+    {
+        var sync = new SyncKanbanColumn
+        {
+            Id = column.Id,
+            SortOrder = column.SortOrder,
+            IsDefaultView = column.IsDefaultView,
+            IsClosedColumn = column.IsClosedColumn,
+            CreatedAt = ToUtc(column.CreatedAt),
+            UpdatedAt = ToUtc(column.UpdatedAt)
+        };
+
+        if (IsE2EEActive && userId is not null)
+        {
+            var plainPayload = new
+            {
+                column.Name
+            };
+            (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
+                plainPayload, userId, "kanban_column", column.Id.ToString());
+        }
+        else
+        {
+            sync.Name = column.Name;
+        }
+
+        return sync;
+    }
+
+    public KanbanColumn FromSyncKanbanColumn(SyncKanbanColumn sync, string? userId = null)
+    {
+        if (IsE2EEActive
+            && sync.EncryptedPayload is not null
+            && sync.WrappedDek is not null
+            && userId is not null)
+        {
+            var decrypted = _e2ee!.DecryptRecord<SyncKanbanColumn>(
+                sync.EncryptedPayload, sync.WrappedDek, userId, "kanban_column", sync.Id.ToString());
+
+            return new KanbanColumn
+            {
+                Id = sync.Id,
+                Name = decrypted.Name ?? "",
+                SortOrder = sync.SortOrder,
+                IsDefaultView = sync.IsDefaultView,
+                IsClosedColumn = sync.IsClosedColumn,
+                CreatedAt = sync.CreatedAt,
+                UpdatedAt = sync.UpdatedAt
+            };
+        }
+
+        return new KanbanColumn
+        {
+            Id = sync.Id,
+            Name = sync.Name ?? "",
+            SortOrder = sync.SortOrder,
+            IsDefaultView = sync.IsDefaultView,
+            IsClosedColumn = sync.IsClosedColumn,
+            CreatedAt = sync.CreatedAt,
+            UpdatedAt = sync.UpdatedAt
         };
     }
 

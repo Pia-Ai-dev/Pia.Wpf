@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Pia.Models;
@@ -125,8 +126,24 @@ public partial class App : Application
         // Silently check for updates in the background
         _ = CheckForUpdateOnStartupAsync();
 
+        // Periodically re-check for updates (randomized 4–6 hour interval)
+        _ = StartPeriodicUpdateCheckAsync();
+
         // Pre-download embedding model in background
         _ = EnsureEmbeddingModelAsync();
+    }
+
+    private async Task StartPeriodicUpdateCheckAsync()
+    {
+        var updateService = Bootstrapper.ServiceProvider.GetRequiredService<IUpdateService>();
+
+        while (!updateService.IsUpdateReady)
+        {
+            var delayMinutes = RandomNumberGenerator.GetInt32(240, 361); // 4–6 hours
+            System.Diagnostics.Debug.WriteLine($"Next update check in {delayMinutes} minutes");
+            await Task.Delay(TimeSpan.FromMinutes(delayMinutes));
+            await CheckForUpdateOnStartupAsync();
+        }
     }
 
     private async Task CheckForUpdateOnStartupAsync()

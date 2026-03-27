@@ -157,6 +157,12 @@
   <data name="TodoPanel_Record" xml:space="preserve">
     <value>Enregistrer la saisie vocale</value>
   </data>
+  <!-- Kanban View -->
+  <data name="Kanban_AddColumn" xml:space="preserve"><value>Ajouter une colonne</value></data>
+  <data name="Kanban_AddColumnShort" xml:space="preserve"><value>Colonne</value></data>
+  <data name="Kanban_RenameColumn" xml:space="preserve"><value>Renommer la colonne</value></data>
+  <data name="Kanban_DeleteColumn" xml:space="preserve"><value>Supprimer la colonne</value></data>
+  <data name="Kanban_SetDefault" xml:space="preserve"><value>Définir comme vue par défaut</value></data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Mémoire</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Exporter</value></data>

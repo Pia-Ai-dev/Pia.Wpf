@@ -16,4 +16,5 @@ public class TodoItem
     public DateTime? CompletedAt { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
     public int SortOrder { get; set; }
+    public Guid? ColumnId { get; set; }
 }

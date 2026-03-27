@@ -4,8 +4,11 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using Microsoft.Extensions.DependencyInjection;
 using Pia.Models;
+using Pia.Services.Interfaces;
 using Pia.ViewModels;
+using Pia.ViewModels.Models;
 
 namespace Pia.Views;
 
@@ -14,18 +17,44 @@ public partial class TodoView : UserControl
     public TodoView()
     {
         InitializeComponent();
-        Loaded += OnLoaded;
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnColumnTodoListLoaded(object sender, RoutedEventArgs e)
     {
-        Loaded -= OnLoaded;
+        if (sender is not ItemsControl itemsControl || DataContext is not TodoViewModel vm)
+            return;
 
-        if (DataContext is TodoViewModel vm && FindName("PendingTodosList") is ItemsControl todoList)
-        {
-            Behaviors.DragDropReorderBehavior.SetReorderCallback(todoList,
-                async (oldIndex, newIndex) => await vm.ReorderTodosAsync(oldIndex, newIndex));
-        }
+        var columnVm = itemsControl.DataContext as KanbanColumnViewModel;
+        if (columnVm is null) return;
+
+        Behaviors.KanbanDragDropBehavior.SetReorderCallback(itemsControl,
+            async (oldIndex, newIndex) => await vm.ReorderWithinColumnAsync(columnVm.Id, oldIndex, newIndex));
+
+        Behaviors.KanbanDragDropBehavior.SetMoveToColumnCallback(itemsControl,
+            async (dragItem, targetColumnId, dropIndex) =>
+            {
+                if (dragItem is TodoItem todo && Guid.TryParse(targetColumnId, out var targetGuid))
+                    await vm.MoveTodoToColumnAsync(todo, targetGuid, dropIndex);
+            });
+    }
+
+    private void OnTodoCheckBoxLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox && checkBox.Tag is TodoItem todo)
+            checkBox.IsChecked = todo.Status == TodoStatus.Completed;
+    }
+
+    private async void OnTodoCheckBoxUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox checkBox || checkBox.Tag is not TodoItem todo)
+            return;
+
+        // Skip if already pending (e.g., initial load for non-completed items)
+        if (todo.Status == TodoStatus.Pending)
+            return;
+
+        if (DataContext is TodoViewModel vm)
+            await vm.UncompleteTodoCommand.ExecuteAsync(todo);
     }
 
     private async void OnTodoCheckBoxChecked(object sender, RoutedEventArgs e)
@@ -33,11 +62,15 @@ public partial class TodoView : UserControl
         if (sender is not CheckBox checkBox || checkBox.Tag is not TodoItem todo)
             return;
 
+        // Skip if already completed (e.g., initial load setting IsChecked in closed column)
+        if (todo.Status == TodoStatus.Completed)
+            return;
+
         checkBox.IsEnabled = false;
 
         try
         {
-            var itemBorder = FindAncestorByName<Border>(checkBox, "TodoItemBorder");
+            var itemBorder = FindAncestorByName<Border>(checkBox, "TodoCardBorder");
             if (itemBorder is null) return;
 
             var strikethrough = FindChild<Line>(itemBorder, "StrikethroughLine");
@@ -86,27 +119,72 @@ public partial class TodoView : UserControl
 
             if (DataContext is TodoViewModel vm)
             {
-                var pendingCountBefore = vm.PendingTodos.Count;
                 await vm.CompleteTodoCommand.ExecuteAsync(todo);
-
-                if (vm.PendingTodos.Any(t => t.Id == todo.Id) || vm.PendingTodos.Count == pendingCountBefore)
-                {
-                    itemBorder.BeginAnimation(UIElement.OpacityProperty, null);
-                    itemBorder.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
-                    itemBorder.BeginAnimation(FrameworkElement.MarginProperty, null);
-                    itemBorder.Opacity = 1;
-                    itemBorder.Margin = new Thickness(0, 0, 0, 4);
-                    if (strikethrough is not null)
-                        strikethrough.Visibility = Visibility.Collapsed;
-                    checkBox.IsChecked = false;
-                    checkBox.IsEnabled = true;
-                }
             }
         }
         catch (Exception)
         {
             checkBox.IsEnabled = true;
             checkBox.IsChecked = false;
+        }
+    }
+
+    private void OnClosedColumnClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is KanbanColumnViewModel columnVm)
+            columnVm.IsExpanded = true;
+    }
+
+    private void OnCollapseClosedClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is KanbanColumnViewModel columnVm)
+            columnVm.IsExpanded = false;
+    }
+
+    private void OnColumnMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.ContextMenu is not null)
+        {
+            fe.ContextMenu.PlacementTarget = fe;
+            fe.ContextMenu.IsOpen = true;
+        }
+    }
+
+    private async void OnSetDefaultColumnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: KanbanColumnViewModel columnVm }
+            && DataContext is TodoViewModel vm)
+            await vm.SetDefaultViewColumnCommand.ExecuteAsync(columnVm);
+    }
+
+    private async void OnDeleteColumnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: KanbanColumnViewModel columnVm }
+            && DataContext is TodoViewModel vm)
+            await vm.DeleteColumnCommand.ExecuteAsync(columnVm);
+    }
+
+    private async void OnRenameColumnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: KanbanColumnViewModel columnVm }
+            || DataContext is not TodoViewModel vm)
+            return;
+
+        try
+        {
+            var dialogService = Bootstrapper.ServiceProvider.GetRequiredService<IDialogService>();
+            var locService = Bootstrapper.ServiceProvider.GetRequiredService<ILocalizationService>();
+
+            var newName = await dialogService.ShowInputDialogAsync(
+                locService["Kanban_RenameColumn"],
+                locService["Kanban_ColumnNamePrompt"]);
+
+            if (!string.IsNullOrWhiteSpace(newName))
+                await vm.RenameColumnAsync(columnVm, newName);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Rename failed: {ex.Message}");
         }
     }
 
