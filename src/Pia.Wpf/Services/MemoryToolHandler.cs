@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -151,6 +152,21 @@ public class MemoryToolHandler : IMemoryToolHandler
             return "Error: query parameter is required";
 
         float[]? queryEmbedding = null;
+
+        // Auto-download embedding model on first use
+        if (!_embeddingService.IsModelAvailable)
+        {
+            try
+            {
+                _logger.LogInformation("Embedding model not found, downloading automatically...");
+                await _embeddingService.DownloadModelAsync(cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to download embedding model, continuing with text search only");
+            }
+        }
+
         if (_embeddingService.IsModelAvailable)
         {
             try
@@ -169,6 +185,22 @@ public class MemoryToolHandler : IMemoryToolHandler
         foreach (var result in results)
         {
             await _memoryService.TouchAccessTimeAsync(result.Id);
+        }
+
+        // Backfill embeddings for memories that don't have them yet
+        if (_embeddingService.IsModelAvailable)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await BackfillEmbeddingsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to backfill embeddings");
+                }
+            }, CancellationToken.None);
         }
 
         if (results.Count == 0)
@@ -311,6 +343,52 @@ public class MemoryToolHandler : IMemoryToolHandler
     [Description("Delete a memory object by ID")]
     private static string DeleteObjectSchema(
         [Description("The ID of the memory object to delete")] string id) => "";
+
+    private async Task BackfillEmbeddingsAsync()
+    {
+        var forceRegenerate = await CheckModelVersionChangedAsync();
+
+        var allMemories = await _memoryService.GetAllObjectsAsync();
+        foreach (var memory in allMemories)
+        {
+            if (!forceRegenerate && memory.Embedding is not null) continue;
+
+            try
+            {
+                var textToEmbed = $"{memory.Label} {memory.Data}";
+                var embedding = await _embeddingService.GenerateEmbeddingAsync(textToEmbed);
+                await _memoryService.UpdateEmbeddingAsync(memory.Id, _embeddingService.FloatsToBytes(embedding));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to backfill embedding for memory {Id}", memory.Id);
+            }
+        }
+    }
+
+    private static async Task<bool> CheckModelVersionChangedAsync()
+    {
+        const string currentModel = "paraphrase-multilingual-MiniLM-L12-v2";
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var markerPath = Path.Combine(localAppData, "Pia", "Models", "Embeddings", "model_version.txt");
+
+        try
+        {
+            if (File.Exists(markerPath))
+            {
+                var storedModel = await File.ReadAllTextAsync(markerPath);
+                if (storedModel.Trim() == currentModel)
+                    return false;
+            }
+
+            await File.WriteAllTextAsync(markerPath, currentModel);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {
