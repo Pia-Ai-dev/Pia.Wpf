@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -64,25 +66,44 @@ public class MemoryToolHandler : IMemoryToolHandler
         FunctionCallContent toolCall,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("MemoryToolHandler dispatching: {ToolName}", toolCall.Name);
+#if DEBUG
+        Debug.WriteLine($"[MemoryToolHandler Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        return toolCall.Name switch
+        var (result, pending) = toolCall.Name switch
         {
-            "list_memories" => (await HandleListMemories(args), null),
-            "query_memory" => (await HandleQueryMemory(args, cancellationToken), null),
-            "create_object" => (null, await PrepareCreateObject(args)),
-            "update_object" => (null, await PrepareUpdateObject(args)),
-            "append_to_list" => (null, await PrepareAppendToList(args)),
-            "delete_object" => (null, await PrepareDeleteObject(args)),
-            _ => ($"Unknown tool: {toolCall.Name}", null)
+            "list_memories" => (await HandleListMemories(args), (MemoryToolCall?)null),
+            "query_memory" => (await HandleQueryMemory(args, cancellationToken), (MemoryToolCall?)null),
+            "create_object" => ((object?)null, await PrepareCreateObject(args)),
+            "update_object" => ((object?)null, await PrepareUpdateObject(args)),
+            "append_to_list" => ((object?)null, await PrepareAppendToList(args)),
+            "delete_object" => ((object?)null, await PrepareDeleteObject(args)),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (MemoryToolCall?)null)
         };
+
+        // Error cases (invalid ID, not found) produce a pending action with no TargetObjectId.
+        // Return them as immediate results so no action card is shown to the user.
+        if (pending is not null && pending.TargetObjectId is null && toolCall.Name is not "create_object")
+        {
+            _logger.LogWarning("MemoryToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            return (await pending.Execute(), null);
+        }
+
+        _logger.LogDebug("MemoryToolHandler {ToolName} result: hasResult={HasResult}, hasPending={HasPending}",
+            toolCall.Name, result is not null, pending is not null);
+        return (result, pending);
     }
 
     public async Task<object?> ExecutePendingActionAsync(MemoryToolCall pendingAction)
     {
+        _logger.LogDebug("Executing memory action: {ToolName}, targetId={TargetObjectId}",
+            pendingAction.ToolName, pendingAction.TargetObjectId);
         try
         {
             var result = await pendingAction.Execute();
+            _logger.LogInformation("Memory action completed: {ToolName}", pendingAction.ToolName);
 
             // Generate embedding for the affected object if applicable
             if (pendingAction.TargetObjectId.HasValue && _embeddingService.IsModelAvailable)
@@ -151,6 +172,21 @@ public class MemoryToolHandler : IMemoryToolHandler
             return "Error: query parameter is required";
 
         float[]? queryEmbedding = null;
+
+        // Auto-download embedding model on first use
+        if (!_embeddingService.IsModelAvailable)
+        {
+            try
+            {
+                _logger.LogInformation("Embedding model not found, downloading automatically...");
+                await _embeddingService.DownloadModelAsync(cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to download embedding model, continuing with text search only");
+            }
+        }
+
         if (_embeddingService.IsModelAvailable)
         {
             try
@@ -169,6 +205,22 @@ public class MemoryToolHandler : IMemoryToolHandler
         foreach (var result in results)
         {
             await _memoryService.TouchAccessTimeAsync(result.Id);
+        }
+
+        // Backfill embeddings for memories that don't have them yet
+        if (_embeddingService.IsModelAvailable)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await BackfillEmbeddingsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to backfill embeddings");
+                }
+            }, CancellationToken.None);
         }
 
         if (results.Count == 0)
@@ -209,8 +261,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("update_object called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("update_object", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var mergePatch = GetStringArg(args, "data");
 
@@ -236,8 +291,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("append_to_list called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("append_to_list", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var entry = GetStringArg(args, "entry");
 
@@ -263,8 +321,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("delete_object called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("delete_object", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var existing = await _memoryService.GetObjectAsync(id);
         if (existing is null)
@@ -311,6 +372,52 @@ public class MemoryToolHandler : IMemoryToolHandler
     [Description("Delete a memory object by ID")]
     private static string DeleteObjectSchema(
         [Description("The ID of the memory object to delete")] string id) => "";
+
+    private async Task BackfillEmbeddingsAsync()
+    {
+        var forceRegenerate = await CheckModelVersionChangedAsync();
+
+        var allMemories = await _memoryService.GetAllObjectsAsync();
+        foreach (var memory in allMemories)
+        {
+            if (!forceRegenerate && memory.Embedding is not null) continue;
+
+            try
+            {
+                var textToEmbed = $"{memory.Label} {memory.Data}";
+                var embedding = await _embeddingService.GenerateEmbeddingAsync(textToEmbed);
+                await _memoryService.UpdateEmbeddingAsync(memory.Id, _embeddingService.FloatsToBytes(embedding));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to backfill embedding for memory {Id}", memory.Id);
+            }
+        }
+    }
+
+    private static async Task<bool> CheckModelVersionChangedAsync()
+    {
+        const string currentModel = "paraphrase-multilingual-MiniLM-L12-v2";
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var markerPath = Path.Combine(localAppData, "Pia", "Models", "Embeddings", "model_version.txt");
+
+        try
+        {
+            if (File.Exists(markerPath))
+            {
+                var storedModel = await File.ReadAllTextAsync(markerPath);
+                if (storedModel.Trim() == currentModel)
+                    return false;
+            }
+
+            await File.WriteAllTextAsync(markerPath, currentModel);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {

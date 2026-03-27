@@ -124,6 +124,9 @@ public partial class App : Application
 
         // Silently check for updates in the background
         _ = CheckForUpdateOnStartupAsync();
+
+        // Pre-download embedding model in background
+        _ = EnsureEmbeddingModelAsync();
     }
 
     private async Task CheckForUpdateOnStartupAsync()
@@ -161,6 +164,41 @@ public partial class App : Application
                 settings.HasCompletedFirstRunWizard = true;
                 await settingsService.SaveSettingsAsync(settings);
             }
+        }
+    }
+
+    private async Task EnsureEmbeddingModelAsync()
+    {
+        try
+        {
+            var embeddingService = Bootstrapper.ServiceProvider.GetRequiredService<IEmbeddingService>();
+            if (embeddingService.IsModelAvailable)
+            {
+                CleanupOldEmbeddingModel();
+                return;
+            }
+
+            await embeddingService.DownloadModelAsync();
+            CleanupOldEmbeddingModel();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Embedding model download failed: {ex.Message}");
+        }
+    }
+
+    private static void CleanupOldEmbeddingModel()
+    {
+        try
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var oldModelPath = System.IO.Path.Combine(localAppData, "Pia", "Models", "Embeddings", "all-MiniLM-L6-v2.onnx");
+            if (System.IO.File.Exists(oldModelPath))
+                System.IO.File.Delete(oldModelPath);
+        }
+        catch
+        {
+            // Best-effort cleanup
         }
     }
 

@@ -38,6 +38,7 @@
       <converters:StringEqualsBoolConverter x:Key="StringEqualsBoolConverter" />
       <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+      <converters:MultiplyConverter x:Key="MultiplyConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

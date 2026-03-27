@@ -182,7 +182,7 @@
   <data name="Memory_ModelNotAvailable" xml:space="preserve"><value>Not available</value></data>
   <data name="Memory_ModelReady" xml:space="preserve"><value>Ready</value></data>
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Download Model</value></data>
-  <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Download all-MiniLM-L6-v2 embedding model for semantic search</value></data>
+  <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Download multilingual embedding model for semantic search</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Regenerate Embeddings</value></data>
   <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Regenerate embeddings for all memory objects</value></data>
   <!-- Reminders View -->
