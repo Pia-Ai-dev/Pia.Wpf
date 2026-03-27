@@ -38,9 +38,32 @@ public partial class TodoView : UserControl
             });
     }
 
+    private void OnTodoCheckBoxLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox && checkBox.Tag is TodoItem todo)
+            checkBox.IsChecked = todo.Status == TodoStatus.Completed;
+    }
+
+    private async void OnTodoCheckBoxUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox checkBox || checkBox.Tag is not TodoItem todo)
+            return;
+
+        // Skip if already pending (e.g., initial load for non-completed items)
+        if (todo.Status == TodoStatus.Pending)
+            return;
+
+        if (DataContext is TodoViewModel vm)
+            await vm.UncompleteTodoCommand.ExecuteAsync(todo);
+    }
+
     private async void OnTodoCheckBoxChecked(object sender, RoutedEventArgs e)
     {
         if (sender is not CheckBox checkBox || checkBox.Tag is not TodoItem todo)
+            return;
+
+        // Skip if already completed (e.g., initial load setting IsChecked in closed column)
+        if (todo.Status == TodoStatus.Completed)
             return;
 
         checkBox.IsEnabled = false;
@@ -116,6 +139,15 @@ public partial class TodoView : UserControl
     {
         if (sender is FrameworkElement fe && fe.DataContext is KanbanColumnViewModel columnVm)
             columnVm.IsExpanded = false;
+    }
+
+    private void OnColumnMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.ContextMenu is not null)
+        {
+            fe.ContextMenu.PlacementTarget = fe;
+            fe.ContextMenu.IsOpen = true;
+        }
     }
 
     private async void OnSetDefaultColumnClick(object sender, RoutedEventArgs e)

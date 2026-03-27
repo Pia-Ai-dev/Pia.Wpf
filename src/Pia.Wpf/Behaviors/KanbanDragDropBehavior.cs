@@ -164,6 +164,8 @@ public static class KanbanDragDropBehavior
         if (sender is not ItemsControl itemsControl) return;
         if (!e.Data.GetDataPresent("DragIndex") || !e.Data.GetDataPresent("SourceColumnId")) return;
 
+        e.Handled = true;
+
         var oldIndex = (int)e.Data.GetData("DragIndex")!;
         var sourceColumnId = (string)e.Data.GetData("SourceColumnId")!;
         var targetColumnId = GetColumnId(itemsControl);

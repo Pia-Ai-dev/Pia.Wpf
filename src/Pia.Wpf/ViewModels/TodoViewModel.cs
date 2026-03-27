@@ -683,10 +683,15 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             _suppressTodoChanged = true;
             await _todoService.MoveToColumnAsync(todo.Id, targetColumnId);
 
-            // Update in-memory kanban columns
-            var sourceColumnVm = Columns.FirstOrDefault(c => c.Todos.Contains(todo));
+            // Update in-memory kanban columns (use ID-based lookup to handle collection reloads)
+            var sourceColumnVm = Columns.FirstOrDefault(c => c.Todos.Any(t => t.Id == todo.Id));
             var targetColumnVm = Columns.FirstOrDefault(c => c.Id == targetColumnId);
-            sourceColumnVm?.Todos.Remove(todo);
+            if (sourceColumnVm is not null)
+            {
+                var itemInSource = sourceColumnVm.Todos.FirstOrDefault(t => t.Id == todo.Id);
+                if (itemInSource is not null)
+                    sourceColumnVm.Todos.Remove(itemInSource);
+            }
 
             if (targetColumnVm is not null)
             {

@@ -223,7 +223,8 @@
                                    Appearance="Transparent"
                                    Padding="4"
                                    FontSize="14"
-                                   VerticalAlignment="Center">
+                                   VerticalAlignment="Center"
+                                   Click="OnColumnMenuClick">
                           <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                               <Setter Property="Visibility" Value="Visible" />
@@ -277,10 +278,12 @@
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
                                   Padding="6">
-                      <ItemsControl ItemsSource="{Binding Todos}"
-                                    Loaded="OnColumnTodoListLoaded"
-                                    behaviors:KanbanDragDropBehavior.IsEnabled="True"
-                                    behaviors:KanbanDragDropBehavior.ColumnId="{Binding Id}">
+                      <Grid MinHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+                        <ItemsControl ItemsSource="{Binding Todos}"
+                                      Background="Transparent"
+                                      Loaded="OnColumnTodoListLoaded"
+                                      behaviors:KanbanDragDropBehavior.IsEnabled="True"
+                                      behaviors:KanbanDragDropBehavior.ColumnId="{Binding Id}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate DataType="{x:Type models:TodoItem}">
                             <Border x:Name="TodoCardBorder"
@@ -315,10 +318,11 @@
 
                                 <!-- Checkbox -->
                                 <CheckBox Grid.Column="0"
-                                          IsChecked="False"
                                           VerticalAlignment="Center"
                                           Margin="0,0,6,0"
+                                          Loaded="OnTodoCheckBoxLoaded"
                                           Checked="OnTodoCheckBoxChecked"
+                                          Unchecked="OnTodoCheckBoxUnchecked"
                                           Tag="{Binding}">
                                   <CheckBox.RenderTransform>
                                     <ScaleTransform ScaleX="1" ScaleY="1" />
@@ -428,7 +432,8 @@
                             </Border>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
-                      </ItemsControl>
+                        </ItemsControl>
+                      </Grid>
                     </ScrollViewer>
                   </Grid>
                 </Border>
