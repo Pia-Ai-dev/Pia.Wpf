@@ -74,6 +74,10 @@ public partial class AssistantView : UserControl
 
     private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Let the autocomplete popup handle Enter/Escape when it's open
+        if (AtCommandPopup.IsOpen)
+            return;
+
         if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
         {
             if (ViewModel?.SendMessageCommand.CanExecute(null) == true)

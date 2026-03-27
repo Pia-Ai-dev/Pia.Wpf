@@ -32,6 +32,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         so they don't forget. Use the create_reminder tool if they agree.
         When listing todos, highlight any that are overdue (past due date, still pending).
 
+        TOOL SELECTION — follow this decision tree strictly:
+        1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
+           YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
+           NO → Continue to step 2.
+        2. Does the request involve a TASK, ACTION ITEM, or something to DO?
+           YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
+           NO → Continue to step 3.
+        3. Does the request involve STORING, RECALLING, or UPDATING personal information?
+           YES → Use Memory tools (remember: query first, then create/update).
+           NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+           NO → Respond conversationally without tools.
+
         Key principles:
         - Memory workflow — ALWAYS follow this sequence when storing information:
           1. First call query_memory to check if a related memory already exists.
@@ -40,15 +52,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
           This applies whenever the user shares a fact, preference, or personal detail — even if
           they say "remember" or "erstelle" or "create". The intent is to keep memory up to date,
           not to accumulate duplicates.
-        - Distinguish between reminders and memories carefully:
-          - REMINDER (create_reminder): The user wants to be notified at a specific time or on a schedule.
-            There must be a time component (e.g., "tomorrow", "at 3 PM", "every day", "on Friday").
-            Examples: "Remind me to call the dentist tomorrow", "Erinnere mich um 15 Uhr ans Meeting".
-          - MEMORY (create_object/update_object): The user wants you to store a fact, preference, or
-            personal detail for future reference. There is NO time component — just information to retain.
-            Examples: "Remember I'm allergic to nuts", "Erstelle eine Erinnerung, dass ich keine Nüsse mag",
-            "Rappelle-toi que je n'aime pas les noix".
-          - When in doubt (no explicit time/schedule mentioned), prefer memory over reminder.
         - When the user asks about their reminders, use query_reminders. To modify or cancel, first
           query to find the ID.
         - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge
@@ -63,6 +66,31 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         the person's actual name.
         """ : "")}
         """;
+
+    private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
+    {
+        if (commands.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("USER TOOL HINTS (the user explicitly requested these tools — prioritize them):");
+        foreach (var cmd in commands)
+        {
+            var domainName = cmd.Domain switch
+            {
+                Pia.Models.AtCommandDomain.Memory => "Memory",
+                Pia.Models.AtCommandDomain.Todo => "Todo",
+                Pia.Models.AtCommandDomain.Reminder => "Reminder",
+                _ => "Unknown"
+            };
+
+            if (cmd.ItemTitle is not null)
+                sb.AppendLine($"- Use the {domainName} tools, specifically for item '{cmd.ItemTitle}'. Query for it first.");
+            else
+                sb.AppendLine($"- Use the {domainName} tools for this request.");
+        }
+        return sb.ToString();
+    }
 
     private static string BuildSystemPromptNoTools() => $"""
         You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
@@ -85,6 +113,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly ITokenMapService _tokenMapService;
+    private readonly IAutocompleteService _autocompleteService;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
     private bool _tokenizationEnabled;
@@ -140,6 +169,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         "Assistant_Suggestion_Memory5"
     ];
 
+    public IAutocompleteService AutocompleteService => _autocompleteService;
+
     public ObservableCollection<AssistantMessage> Messages { get; } = new();
 
     public IAsyncRelayCommand SendMessageCommand { get; }
@@ -169,7 +200,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ILoggerFactory loggerFactory,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
-        ITokenMapService tokenMapService)
+        ITokenMapService tokenMapService,
+        IAutocompleteService autocompleteService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -187,6 +219,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
+        _autocompleteService = autocompleteService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -230,6 +263,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var userText = InputText.Trim();
         InputText = string.Empty;
 
+        // Parse @-commands — keep full text for display (highlighted by view),
+        // but strip commands from what the AI sees as the user message
+        var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
+
         var userMessage = new AssistantMessage(ChatRole.User, userText);
         Messages.Add(userMessage);
         HasMessages = true;
@@ -261,7 +298,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             if (supportsTools)
             {
-                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled);
+                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled)
+                    + BuildAtCommandHint(atCommands);
                 tools = [.. _memoryToolHandler.GetTools(), .. _reminderToolHandler.GetTools(), .. _todoToolHandler.GetTools()];
             }
             else
@@ -280,7 +318,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 if (msg == assistantMessage)
                     continue;
 
-                chatMessages.Add(msg.ToChatMessage());
+                // Strip @-commands from the latest user message sent to the AI
+                // (the hint is already in the system prompt)
+                if (msg == userMessage && atCommands.Count > 0)
+                    chatMessages.Add(new ChatMessage(ChatRole.User,
+                        Pia.Services.AtCommandParser.StripCommands(msg.Content)));
+                else
+                    chatMessages.Add(msg.ToChatMessage());
             }
 
             // Use tool-aware completion with think-tag parsing
