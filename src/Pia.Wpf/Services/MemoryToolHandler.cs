@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -65,25 +66,44 @@ public class MemoryToolHandler : IMemoryToolHandler
         FunctionCallContent toolCall,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("MemoryToolHandler dispatching: {ToolName}", toolCall.Name);
+#if DEBUG
+        Debug.WriteLine($"[MemoryToolHandler Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        return toolCall.Name switch
+        var (result, pending) = toolCall.Name switch
         {
-            "list_memories" => (await HandleListMemories(args), null),
-            "query_memory" => (await HandleQueryMemory(args, cancellationToken), null),
-            "create_object" => (null, await PrepareCreateObject(args)),
-            "update_object" => (null, await PrepareUpdateObject(args)),
-            "append_to_list" => (null, await PrepareAppendToList(args)),
-            "delete_object" => (null, await PrepareDeleteObject(args)),
-            _ => ($"Unknown tool: {toolCall.Name}", null)
+            "list_memories" => (await HandleListMemories(args), (MemoryToolCall?)null),
+            "query_memory" => (await HandleQueryMemory(args, cancellationToken), (MemoryToolCall?)null),
+            "create_object" => ((object?)null, await PrepareCreateObject(args)),
+            "update_object" => ((object?)null, await PrepareUpdateObject(args)),
+            "append_to_list" => ((object?)null, await PrepareAppendToList(args)),
+            "delete_object" => ((object?)null, await PrepareDeleteObject(args)),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (MemoryToolCall?)null)
         };
+
+        // Error cases (invalid ID, not found) produce a pending action with no TargetObjectId.
+        // Return them as immediate results so no action card is shown to the user.
+        if (pending is not null && pending.TargetObjectId is null && toolCall.Name is not "create_object")
+        {
+            _logger.LogWarning("MemoryToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            return (await pending.Execute(), null);
+        }
+
+        _logger.LogDebug("MemoryToolHandler {ToolName} result: hasResult={HasResult}, hasPending={HasPending}",
+            toolCall.Name, result is not null, pending is not null);
+        return (result, pending);
     }
 
     public async Task<object?> ExecutePendingActionAsync(MemoryToolCall pendingAction)
     {
+        _logger.LogDebug("Executing memory action: {ToolName}, targetId={TargetObjectId}",
+            pendingAction.ToolName, pendingAction.TargetObjectId);
         try
         {
             var result = await pendingAction.Execute();
+            _logger.LogInformation("Memory action completed: {ToolName}", pendingAction.ToolName);
 
             // Generate embedding for the affected object if applicable
             if (pendingAction.TargetObjectId.HasValue && _embeddingService.IsModelAvailable)
@@ -241,8 +261,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("update_object called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("update_object", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var mergePatch = GetStringArg(args, "data");
 
@@ -268,8 +291,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("append_to_list called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("append_to_list", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var entry = GetStringArg(args, "entry");
 
@@ -295,8 +321,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("delete_object called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("delete_object", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var existing = await _memoryService.GetObjectAsync(id);
         if (existing is null)

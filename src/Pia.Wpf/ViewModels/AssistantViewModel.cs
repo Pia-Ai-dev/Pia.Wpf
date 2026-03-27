@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.AI;
@@ -308,6 +310,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 tools = null;
             }
 
+            _logger.LogInformation("SendMessage: provider={ProviderName}, supportsTools={SupportsTools}, toolCount={ToolCount}",
+                provider.Name, supportsTools, tools?.Count ?? 0);
+
             var chatMessages = new List<ChatMessage>
             {
                 new(ChatRole.System, fullSystemPrompt)
@@ -452,6 +457,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task<object?> HandleToolCall(FunctionCallContent toolCall, AssistantMessage message)
     {
         _logger.LogInformation("Handling tool call: {ToolName}", toolCall.Name);
+        _logger.LogDebug("Tool call {ToolName} with {ArgCount} arguments", toolCall.Name, toolCall.Arguments?.Count ?? 0);
+#if DEBUG
+        Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
 
         // Route to the appropriate tool handler
         if (toolCall.Name is "create_reminder" or "query_reminders" or "update_reminder" or "delete_reminder")
@@ -465,6 +474,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
 
         var (result, pendingAction) = await _memoryToolHandler.HandleToolCallAsync(toolCall);
+        _logger.LogDebug("MemoryToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
+            result is not null, pendingAction is not null);
 
         if (result is not null)
             return result;
@@ -482,12 +493,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
                 confirmed = false;
             }
 
             if (confirmed)
             {
+                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
                 var actionResult = await _memoryToolHandler.ExecutePendingActionAsync(pendingAction);
+                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
                 _snackbarService.Show(_localizationService["Msg_Assistant_MemoryUpdated"],
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -503,6 +517,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
+                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
                 return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }
@@ -513,6 +528,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task<object?> HandleReminderToolCall(FunctionCallContent toolCall, AssistantMessage message)
     {
         var (result, pendingAction) = await _reminderToolHandler.HandleToolCallAsync(toolCall);
+        _logger.LogDebug("ReminderToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
+            result is not null, pendingAction is not null);
 
         if (result is not null)
             return result;
@@ -530,12 +547,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
                 confirmed = false;
             }
 
             if (confirmed)
             {
+                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
                 var actionResult = await _reminderToolHandler.ExecutePendingActionAsync(pendingAction);
+                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
                 _snackbarService.Show(_localizationService["Msg_Assistant_ReminderUpdated"],
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -543,6 +563,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
+                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
                 return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }
@@ -578,6 +599,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task<object?> HandleTodoToolCall(FunctionCallContent toolCall, AssistantMessage message)
     {
         var (result, pendingAction) = await _todoToolHandler.HandleToolCallAsync(toolCall);
+        _logger.LogDebug("TodoToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
+            result is not null, pendingAction is not null);
 
         // If it's a read-only operation (query_todos), return result directly
         if (result is not null)
@@ -596,12 +619,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
                 confirmed = false;
             }
 
             if (confirmed)
             {
+                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
                 var actionResult = await _todoToolHandler.ExecutePendingActionAsync(pendingAction);
+                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
                 _snackbarService.Show(_localizationService["Msg_Assistant_TodoUpdated"],
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -609,6 +635,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
+                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
                 return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }

@@ -76,7 +76,7 @@ public static class Bootstrapper
         services.AddLogging(builder =>
         {
             builder.AddDebug();
-            builder.SetMinimumLevel(LogLevel.Information);
+            builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
             var logDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -86,7 +86,7 @@ public static class Bootstrapper
             builder.AddFile(Path.Combine(logDirectory, "pia.log"), options =>
             {
                 options.Append = true;
-                options.MinLevel = LogLevel.Information;
+                options.MinLevel = IsDevMode ? LogLevel.Debug : LogLevel.Information;
                 options.FileSizeLimitBytes = 10 * 1024 * 1024; // 10 MB per file
                 options.MaxRollingFiles = 7;                    // Keep 7 days
                 options.FormatLogFileName = name =>
@@ -138,7 +138,8 @@ public static class Bootstrapper
             new TokenizingAiClientService(
                 sp.GetRequiredService<AiClientService>(),
                 sp,
-                sp.GetRequiredService<ISettingsService>()));
+                sp.GetRequiredService<ISettingsService>(),
+                sp.GetRequiredService<ILogger<TokenizingAiClientService>>()));
 
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
@@ -45,23 +46,43 @@ public class ReminderToolHandler : IReminderToolHandler
         FunctionCallContent toolCall,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("ReminderToolHandler dispatching: {ToolName}", toolCall.Name);
+#if DEBUG
+        Debug.WriteLine($"[ReminderToolHandler Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        return toolCall.Name switch
+        var (result, pending) = toolCall.Name switch
         {
-            "query_reminders" => (await HandleQueryReminders(args), null),
-            "create_reminder" => (null, PrepareCreateReminder(args)),
-            "update_reminder" => (null, await PrepareUpdateReminder(args)),
-            "delete_reminder" => (null, await PrepareDeleteReminder(args)),
-            _ => ($"Unknown tool: {toolCall.Name}", null)
+            "query_reminders" => (await HandleQueryReminders(args), (ReminderToolCall?)null),
+            "create_reminder" => ((object?)null, PrepareCreateReminder(args)),
+            "update_reminder" => ((object?)null, await PrepareUpdateReminder(args)),
+            "delete_reminder" => ((object?)null, await PrepareDeleteReminder(args)),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (ReminderToolCall?)null)
         };
+
+        // Error cases (invalid ID, not found) produce a pending action with no TargetReminderId.
+        // Return them as immediate results so no action card is shown to the user.
+        if (pending is not null && pending.TargetReminderId is null && toolCall.Name is not "create_reminder")
+        {
+            _logger.LogWarning("ReminderToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            return (await pending.Execute(), null);
+        }
+
+        _logger.LogDebug("ReminderToolHandler {ToolName} result: hasResult={HasResult}, hasPending={HasPending}",
+            toolCall.Name, result is not null, pending is not null);
+        return (result, pending);
     }
 
     public async Task<object?> ExecutePendingActionAsync(ReminderToolCall pendingAction)
     {
+        _logger.LogDebug("Executing reminder action: {ToolName}, targetId={TargetReminderId}",
+            pendingAction.ToolName, pendingAction.TargetReminderId);
         try
         {
-            return await pendingAction.Execute();
+            var result = await pendingAction.Execute();
+            _logger.LogInformation("Reminder action completed: {ToolName}", pendingAction.ToolName);
+            return result;
         }
         catch (Exception ex)
         {
@@ -140,8 +161,11 @@ public class ReminderToolHandler : IReminderToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("update_reminder called with invalid ID: '{IdValue}'", idStr);
             return new ReminderToolCall("update_reminder", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid reminder ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid reminder ID format. You provided '{idStr}' which is not a valid GUID. Use query_reminders to get valid IDs."));
+        }
 
         var existing = await _reminderService.GetAsync(id);
         if (existing is null)
@@ -177,8 +201,11 @@ public class ReminderToolHandler : IReminderToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("delete_reminder called with invalid ID: '{IdValue}'", idStr);
             return new ReminderToolCall("delete_reminder", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid reminder ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid reminder ID format. You provided '{idStr}' which is not a valid GUID. Use query_reminders to get valid IDs."));
+        }
 
         var existing = await _reminderService.GetAsync(id);
         if (existing is null)
