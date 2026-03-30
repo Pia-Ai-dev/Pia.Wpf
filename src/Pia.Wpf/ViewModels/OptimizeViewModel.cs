@@ -613,7 +613,9 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         {
             var settings = await _settingsService.GetSettingsAsync();
             _lastKnownDefaultTemplateId = settings.DefaultTemplateId;
-            var templateId = settings.DefaultTemplateId ?? _templates[0].Id;
+            var templateId = settings.DefaultTemplateId
+                ?? _templates.FirstOrDefault(t => t.Id == Shared.BuiltInTemplates.ClarityAndGrammarId)?.Id
+                ?? _templates[0].Id;
             SelectedTemplateId = templateId;
             await UpdateSelectedTemplateAsync();
 

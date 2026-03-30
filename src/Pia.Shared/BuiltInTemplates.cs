@@ -4,6 +4,8 @@ namespace Pia.Shared;
 
 public static class BuiltInTemplates
 {
+    public static readonly Guid ClarityAndGrammarId = Guid.Parse("00000001-0000-0000-0000-000000000005");
+
     public static IReadOnlyList<BuiltInTemplate> All { get; } =
     [
         new(

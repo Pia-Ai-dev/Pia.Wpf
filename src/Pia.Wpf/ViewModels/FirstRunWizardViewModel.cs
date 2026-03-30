@@ -524,6 +524,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             IsCompleting = true;
             var settings = await _settingsService.GetSettingsAsync();
             settings.HasCompletedFirstRunWizard = true;
+            settings.DefaultTemplateId ??= Shared.BuiltInTemplates.ClarityAndGrammarId;
             await _settingsService.SaveSettingsAsync(settings);
             WizardCompleted?.Invoke();
         }
@@ -595,6 +596,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             var settings = await _settingsService.GetSettingsAsync();
             settings.HasCompletedFirstRunWizard = true;
             settings.UserOperatingMode = OperatingMode;
+            settings.DefaultTemplateId ??= Shared.BuiltInTemplates.ClarityAndGrammarId;
             await _settingsService.SaveSettingsAsync(settings);
 
             WizardCompleted?.Invoke();
