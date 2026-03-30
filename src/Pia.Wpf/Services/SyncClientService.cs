@@ -103,6 +103,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            _logger.LogInformation("SyncNowAsync started — LastSyncTimestamp: {LastSync}", settings.LastSyncTimestamp);
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return null;
 
@@ -141,11 +142,20 @@ public class SyncClientService : ISyncClientService, IDisposable
             var pushed = await PushChangesAsync(client, serverUrl, settings);
 
             // Pull remote changes
-            var (pulled, decryptErrors) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk) = await PullChangesAsync(client, serverUrl, settings);
 
-            // Update last sync timestamp
-            settings.LastSyncTimestamp = DateTime.UtcNow;
-            await _settingsService.SaveSettingsAsync(settings);
+            // Only advance the sync cursor if the pull HTTP request succeeded.
+            // If pull failed (network error, server 500, etc.), keep the old timestamp
+            // so the next sync retries from the same point instead of permanently missing data.
+            if (pullOk)
+            {
+                settings.LastSyncTimestamp = DateTime.UtcNow;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
+            else
+            {
+                _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
+            }
 
             // Check for pending devices (only if this device is active with E2EE)
             if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
@@ -154,7 +164,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
 
             result = new SyncResult(pushed, pulled, decryptErrors);
-            _logger.LogInformation("Sync cycle completed successfully");
+            _logger.LogInformation("SyncNowAsync completed — Pushed: {Pushed}, Pulled: {Pulled}, DecryptionErrors: {DecryptErrors}",
+                result.PushedCount, result.PulledCount, result.DecryptionErrors);
         }
         catch (Exception ex)
         {
@@ -176,6 +187,10 @@ public class SyncClientService : ISyncClientService, IDisposable
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            _logger.LogInformation("PerformFirstSyncMigrationAsync: SyncEnabled={Enabled}, ServerUrl={Url}, LastSyncTimestamp={LastSync}, IsE2EEEnabled={E2EE}",
+                settings.SyncEnabled, settings.ServerUrl ?? "(null)",
+                settings.LastSyncTimestamp?.ToString("O") ?? "(null)", settings.IsE2EEEnabled);
+
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return;
 
@@ -251,18 +266,47 @@ public class SyncClientService : ISyncClientService, IDisposable
             var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
             await EnsureSuccessAsync(response, "First-sync push");
 
-            settings.LastSyncTimestamp = DateTime.UtcNow;
-            await _settingsService.SaveSettingsAsync(settings);
-
-            _logger.LogInformation("First-sync migration completed (templates: {Templates}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos})",
+            _logger.LogInformation("First-sync push completed (templates: {Templates}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos})",
                 request.Templates.Upserted.Count, request.Providers.Upserted.Count,
                 request.Sessions.Added.Count, request.Memories.Upserted.Count,
                 request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count);
+
+            // Pull all data from server (including other devices' data)
+            var (pulled, decryptErrors, pullOk) = await PullChangesAsync(client, serverUrl, settings);
+            _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
+
+            if (pullOk)
+            {
+                settings.LastSyncTimestamp = DateTime.UtcNow;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
+            else
+            {
+                _logger.LogWarning("First-sync pull failed — LastSyncTimestamp NOT updated; next sync will retry full pull");
+            }
         }
         finally
         {
             _syncLock.Release();
         }
+    }
+
+    public async Task ForceFullResyncAsync()
+    {
+        _logger.LogInformation("ForceFullResyncAsync: resetting LastSyncTimestamp to trigger full pull");
+        await _syncLock.WaitAsync();
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            settings.LastSyncTimestamp = null;
+            await _settingsService.SaveSettingsAsync(settings);
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
+
+        await SyncNowAsync();
     }
 
     public async Task StopBackgroundSyncAndWaitAsync()
@@ -350,6 +394,13 @@ public class SyncClientService : ISyncClientService, IDisposable
             + request.KanbanColumns.Upserted.Count
             + request.Todos.Upserted.Count;
 
+        _logger.LogInformation(
+            "Push request — Templates: {Templates}, Providers: {Providers}, Sessions: {Sessions}, Memories: {Memories}, KanbanColumns: {KanbanColumns}, Todos: {Todos}, LastSync: {LastSync}, DeviceId: {DeviceId}, IsE2EE: {IsE2EE}",
+            request.Templates.Upserted.Count, request.Providers.Upserted.Count,
+            request.Sessions.Added.Count, request.Memories.Upserted.Count,
+            request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count,
+            request.LastSyncTimestamp, request.DeviceId, request.IsE2EEEncrypted);
+
         var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
         if (!response.IsSuccessStatusCode)
         {
@@ -358,23 +409,44 @@ public class SyncClientService : ISyncClientService, IDisposable
             return 0;
         }
 
+        var pushResponse = await response.Content.ReadFromJsonAsync<SyncPushResponse>();
+        if (pushResponse is not null && pushResponse.Conflicts.Count > 0)
+        {
+            _logger.LogWarning("Push returned {ConflictCount} conflict(s)", pushResponse.Conflicts.Count);
+        }
+
         return pushedCount;
     }
 
-    private async Task<(int Pulled, int DecryptionErrors)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
+        // Ensure UTC Kind so ToString("O") includes the Z suffix — prevents Npgsql
+        // timestamptz comparison failures when the server uses PostgreSQL.
+        if (lastSync.Kind != DateTimeKind.Utc)
+            lastSync = DateTime.SpecifyKind(lastSync, DateTimeKind.Utc);
         var since = lastSync.ToString("O");
 
+        _logger.LogInformation("Pull requesting: {Url}", $"{serverUrl}/api/sync/pull?since={since}");
         var response = await client.GetAsync($"{serverUrl}/api/sync/pull?since={since}");
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Pull failed with status {Status}", response.StatusCode);
-            return (0, 0);
+            return (0, 0, false);
         }
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
-        if (pullResponse is null) return (0, 0);
+        if (pullResponse is null) return (0, 0, false);
+
+        _logger.LogInformation(
+            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d",
+            pullResponse.ServerTimestamp,
+            pullResponse.Templates.Upserted.Count, pullResponse.Templates.Deleted.Count,
+            pullResponse.Providers.Upserted.Count, pullResponse.Providers.Deleted.Count,
+            pullResponse.Sessions.Added.Count, pullResponse.Sessions.Deleted.Count,
+            pullResponse.Memories.Upserted.Count, pullResponse.Memories.Deleted.Count,
+            pullResponse.KanbanColumns.Upserted.Count, pullResponse.KanbanColumns.Deleted.Count,
+            pullResponse.Todos.Upserted.Count, pullResponse.Todos.Deleted.Count);
 
         var userId = settings.SyncUserId;
 
@@ -660,7 +732,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             pullResponse.KanbanColumns.Upserted.Count,
             pullResponse.Todos.Upserted.Count);
 
-        return (pulledCount, decryptionErrors);
+        return (pulledCount, decryptionErrors, true);
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)

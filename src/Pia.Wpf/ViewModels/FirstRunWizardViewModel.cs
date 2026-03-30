@@ -235,8 +235,15 @@ public partial class FirstRunWizardViewModel : ObservableObject
         // When E2EE onboarding completes in wizard, start sync
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
         {
-            IsE2EEOnboardingRequired = false;
-            await _syncClientService.PerformFirstSyncMigrationAsync();
+            try
+            {
+                IsE2EEOnboardingRequired = false;
+                await _syncClientService.PerformFirstSyncMigrationAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "First sync after E2EE onboarding failed in wizard");
+            }
             _syncClientService.StartBackgroundSync();
         };
 

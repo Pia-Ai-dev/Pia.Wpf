@@ -23,7 +23,7 @@ public class SyncMapper
     private bool IsE2EEActive => _e2ee?.IsReady() == true;
 
     private static DateTime ToUtc(DateTime dt) =>
-        dt.Kind == DateTimeKind.Utc ? dt : DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        dt.Kind == DateTimeKind.Utc ? dt : dt.ToUniversalTime();
 
     private static DateTime? ToUtc(DateTime? dt) =>
         dt.HasValue ? ToUtc(dt.Value) : null;

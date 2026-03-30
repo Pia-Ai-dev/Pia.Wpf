@@ -50,10 +50,17 @@ public partial class AccountSettingsViewModel : ObservableObject
 
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
         {
-            IsE2EEOnboardingRequired = false;
-            IsE2EEEnabled = true;
-            DeviceFingerprint = _deviceKeys.GetFingerprint();
-            await _syncClientService.PerformFirstSyncMigrationAsync();
+            try
+            {
+                IsE2EEOnboardingRequired = false;
+                IsE2EEEnabled = true;
+                DeviceFingerprint = _deviceKeys.GetFingerprint();
+                await _syncClientService.PerformFirstSyncMigrationAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "First sync after E2EE onboarding failed");
+            }
             _syncClientService.StartBackgroundSync();
         };
 
@@ -395,6 +402,37 @@ public partial class AccountSettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Manual sync failed");
+        }
+        finally
+        {
+            IsSyncing = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ForceFullResyncAsync()
+    {
+        if (IsSyncing) return;
+
+        try
+        {
+            IsSyncing = true;
+            _logger.LogInformation("Force full re-sync requested by user");
+            await _syncClientService.ForceFullResyncAsync();
+
+            var settings = await _settingsService.GetSettingsAsync();
+            LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
+
+            _snackbarService.Show(
+                _localizationService["Sync_ResyncTitle"] ?? "Re-sync",
+                _localizationService["Sync_ResyncComplete"] ?? "Full re-sync completed",
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Force full re-sync failed");
+            _snackbarService.Show("Error", $"Re-sync failed: {ex.Message}",
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
         }
         finally
         {

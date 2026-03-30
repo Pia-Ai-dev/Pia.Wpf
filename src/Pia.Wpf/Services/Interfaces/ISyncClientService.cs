@@ -40,4 +40,10 @@ public interface ISyncClientService
 
     /// <summary>Performs first-sync migration (uploads all local data to server).</summary>
     Task PerformFirstSyncMigrationAsync();
+
+    /// <summary>
+    /// Resets the sync cursor and performs a full pull from the server.
+    /// Use when a previous sync failed to receive data.
+    /// </summary>
+    Task ForceFullResyncAsync();
 }
