@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
@@ -146,7 +147,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _settingsService.SettingsChanged += OnSettingsChanged;
         _columnService.ColumnsChanged += OnColumnsChanged;
 
-        SafeFireAndForget(LoadVisibilitySettingAsync());
+        LoadVisibilitySettingAsync().SafeFireAndForget(_logger);
     }
 
     private async Task LoadVisibilitySettingAsync()
@@ -180,7 +181,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             return;
 
         System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            SafeFireAndForget(LoadTodosAsync()));
+            LoadTodosAsync().SafeFireAndForget(_logger));
     }
 
     private void OnColumnsChanged(object? sender, EventArgs e)
@@ -189,13 +190,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             return;
 
         System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            SafeFireAndForget(LoadTodosAsync()));
-    }
-
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
+            LoadTodosAsync().SafeFireAndForget(_logger));
     }
 
     public async Task LoadTodosAsync()

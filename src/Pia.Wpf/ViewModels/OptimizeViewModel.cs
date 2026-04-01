@@ -4,6 +4,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Navigation;
@@ -476,7 +477,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
             _syncContext.Post(_ =>
             {
                 SelectedTemplateId = settings.DefaultTemplateId.Value;
-                SafeFireAndForget(UpdateSelectedTemplateAsync());
+                UpdateSelectedTemplateAsync().SafeFireAndForget(_logger);
             }, null);
         }
     }
@@ -485,7 +486,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     {
         _syncContext.Post(_ =>
         {
-            SafeFireAndForget(ExecuteLoadTemplates());
+            ExecuteLoadTemplates().SafeFireAndForget(_logger);
         }, null);
     }
 
@@ -494,20 +495,13 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         _debounceCts?.Cancel();
         _debounceCts = new CancellationTokenSource();
         var token = _debounceCts.Token;
-        SafeFireAndForget(DebounceAsync(500, SaveDraftAsync, token));
+        DebounceAsync(500, SaveDraftAsync, token).SafeFireAndForget(_logger);
     }
 
     private static async Task DebounceAsync(int delayMs, Func<Task> action, CancellationToken ct)
     {
         await Task.Delay(delayMs, ct);
         await action();
-    }
-
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
     }
 
     private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -525,12 +519,12 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
 
         if (e.PropertyName == nameof(SelectedTemplateId))
         {
-            SafeFireAndForget(UpdateSelectedTemplateAsync());
+            UpdateSelectedTemplateAsync().SafeFireAndForget(_logger);
         }
 
         if (e.PropertyName == nameof(SelectedLanguage))
         {
-            SafeFireAndForget(SaveLanguageAsync());
+            SaveLanguageAsync().SafeFireAndForget(_logger);
         }
     }
     private async Task UpdateSelectedTemplateAsync()

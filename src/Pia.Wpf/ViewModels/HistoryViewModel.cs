@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
@@ -207,20 +208,13 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         _debounceCts?.Cancel();
         _debounceCts = new CancellationTokenSource();
         var token = _debounceCts.Token;
-        SafeFireAndForget(DebounceAsync(500, () => LoadSessionsAsync(0, 50), token));
+        DebounceAsync(500, () => LoadSessionsAsync(0, 50), token).SafeFireAndForget(_logger);
     }
 
     private static async Task DebounceAsync(int delayMs, Func<Task> action, CancellationToken ct)
     {
         await Task.Delay(delayMs, ct);
         await action();
-    }
-
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
     }
 
     private async Task ExecuteViewDetailAsync()
@@ -322,7 +316,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
     private void OnSessionsChanged(object? sender, EventArgs e)
     {
         System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            SafeFireAndForget(LoadSessionsAsync(0, 50)));
+            LoadSessionsAsync(0, 50).SafeFireAndForget(_logger));
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

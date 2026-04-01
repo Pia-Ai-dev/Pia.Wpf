@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Helpers;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using System.Collections.ObjectModel;
@@ -175,7 +176,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     partial void OnTokenizationEnabledChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SavePrivacySettingsAsync());
+        if (!_isLoading) SavePrivacySettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnIsE2EEEnabledChanged(bool value)
@@ -190,7 +191,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     partial void OnTrustSelfSignedCertificatesChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSyncSettingsAsync());
+        if (!_isLoading) SaveSyncSettingsAsync().SafeFireAndForget(_logger);
     }
 
     public async Task InitializeAsync()
@@ -627,7 +628,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private void OnPiiKeywordEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (!_isLoading && e.PropertyName == nameof(PiiKeywordEntry.Category))
-            SafeFireAndForget(SavePrivacySettingsAsync());
+            SavePrivacySettingsAsync().SafeFireAndForget(_logger);
     }
 
     // Reset app data
@@ -693,9 +694,4 @@ public partial class AccountSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }
