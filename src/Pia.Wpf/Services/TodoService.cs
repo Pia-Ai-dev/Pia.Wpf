@@ -11,14 +11,16 @@ public class TodoService : ITodoService
     private readonly SqliteContext _context;
     private readonly ILogger<TodoService> _logger;
     private readonly IKanbanColumnService _columnService;
+    private readonly SyncDeleteTracker _deleteTracker;
 
     public event EventHandler? TodoChanged;
 
-    public TodoService(SqliteContext context, ILogger<TodoService> logger, IKanbanColumnService columnService)
+    public TodoService(SqliteContext context, ILogger<TodoService> logger, IKanbanColumnService columnService, SyncDeleteTracker deleteTracker)
     {
         _context = context;
         _logger = logger;
         _columnService = columnService;
+        _deleteTracker = deleteTracker;
     }
 
     private void OnTodoChanged() => TodoChanged?.Invoke(this, EventArgs.Empty);
@@ -233,6 +235,7 @@ public class TodoService : ITodoService
         command.Parameters.AddWithValue("@Id", id.ToString());
 
         await command.ExecuteNonQueryAsync();
+        _deleteTracker.TrackDeletion("todos", id);
         _logger.LogInformation("Deleted todo {Id}", id);
         OnTodoChanged();
     }

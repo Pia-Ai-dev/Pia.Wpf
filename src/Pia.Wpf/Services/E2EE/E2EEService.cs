@@ -1,3 +1,5 @@
+using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -77,12 +79,21 @@ public class E2EEService : IE2EEService
         // Serialize record to JSON bytes
         var plaintext = JsonSerializer.SerializeToUtf8Bytes(record);
 
+        // Compress before encryption — encrypted data is random and incompressible
+        using var compressedStream = new MemoryStream();
+        compressedStream.WriteByte(0x01); // Format marker: compressed
+        using (var zlibStream = new ZLibStream(compressedStream, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            zlibStream.Write(plaintext);
+        }
+        var compressedPayload = compressedStream.ToArray();
+
         // Generate random DEK
         var dek = _crypto.GenerateRandomBytes(32);
 
-        // Encrypt plaintext with DEK
+        // Encrypt compressed payload with DEK
         var recordAad = Encoding.UTF8.GetBytes($"pia-e2ee-v1:{userId}:{entityType}:{entityId}");
-        var encryptedPayload = _crypto.Encrypt(dek, plaintext, recordAad);
+        var encryptedPayload = _crypto.Encrypt(dek, compressedPayload, recordAad);
 
         // Wrap DEK with UMK
         var dekAad = Encoding.UTF8.GetBytes($"pia-dek-wrap-v1:{entityType}:{entityId}");
@@ -106,12 +117,29 @@ public class E2EEService : IE2EEService
 
         // Decrypt record
         var recordAad = Encoding.UTF8.GetBytes($"pia-e2ee-v1:{userId}:{entityType}:{entityId}");
-        var plaintext = _crypto.Decrypt(dek, encryptedPayload, recordAad);
+        var decryptedBytes = _crypto.Decrypt(dek, encryptedPayload, recordAad);
 
         // Clear DEK
         Array.Clear(dek);
 
-        return JsonSerializer.Deserialize<T>(plaintext)
+        // Handle both compressed (0x01 prefix) and legacy uncompressed formats
+        byte[] jsonBytes;
+        if (decryptedBytes.Length > 0 && decryptedBytes[0] == 0x01)
+        {
+            // Compressed format: skip marker byte, decompress rest
+            using var input = new MemoryStream(decryptedBytes, 1, decryptedBytes.Length - 1);
+            using var zlibStream = new ZLibStream(input, CompressionMode.Decompress);
+            using var resultStream = new MemoryStream();
+            zlibStream.CopyTo(resultStream);
+            jsonBytes = resultStream.ToArray();
+        }
+        else
+        {
+            // Legacy uncompressed format (raw JSON starting with '{' or '[')
+            jsonBytes = decryptedBytes;
+        }
+
+        return JsonSerializer.Deserialize<T>(jsonBytes)
             ?? throw new InvalidOperationException("Failed to deserialize decrypted record");
     }
 

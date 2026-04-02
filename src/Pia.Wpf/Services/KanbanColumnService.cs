@@ -10,13 +10,15 @@ public class KanbanColumnService : IKanbanColumnService
 {
     private readonly SqliteContext _context;
     private readonly ILogger<KanbanColumnService> _logger;
+    private readonly SyncDeleteTracker _deleteTracker;
 
     public event EventHandler? ColumnsChanged;
 
-    public KanbanColumnService(SqliteContext context, ILogger<KanbanColumnService> logger)
+    public KanbanColumnService(SqliteContext context, ILogger<KanbanColumnService> logger, SyncDeleteTracker deleteTracker)
     {
         _context = context;
         _logger = logger;
+        _deleteTracker = deleteTracker;
     }
 
     private void OnColumnsChanged() => ColumnsChanged?.Invoke(this, EventArgs.Empty);
@@ -198,6 +200,7 @@ public class KanbanColumnService : IKanbanColumnService
         command.CommandText = "DELETE FROM KanbanColumns WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
         await command.ExecuteNonQueryAsync();
+        _deleteTracker.TrackDeletion("kanbanColumns", id);
 
         _logger.LogInformation("Deleted kanban column {Id}", id);
         OnColumnsChanged();

@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Net;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -111,7 +112,10 @@ public static class Bootstrapper
             builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
             {
-                var handler = new HttpClientHandler();
+                var handler = new HttpClientHandler
+                {
+                    AutomaticDecompression = DecompressionMethods.All
+                };
                 var settingsService = sp.GetService<ISettingsService>();
                 if (settingsService != null)
                 {
@@ -177,6 +181,12 @@ public static class Bootstrapper
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
 
         // Sync services
+        services.AddSingleton<SyncDeleteTracker>(sp =>
+        {
+            var dataDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
+            return new SyncDeleteTracker(dataDirectory);
+        });
         services.AddSingleton<SyncMapper>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();

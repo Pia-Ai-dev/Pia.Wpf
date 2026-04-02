@@ -27,19 +27,22 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     private readonly DpapiHelper _dpapiHelper;
     private readonly ISettingsService _settingsService;
     private readonly IAuthService _authService;
+    private readonly SyncDeleteTracker _deleteTracker;
 
     public ProviderService(
         ILogger<ProviderService> logger,
         IAiClientService aiClientService,
         DpapiHelper dpapiHelper,
         ISettingsService settingsService,
-        IAuthService authService)
+        IAuthService authService,
+        SyncDeleteTracker deleteTracker)
     {
         _logger = logger;
         _aiClientService = aiClientService;
         _dpapiHelper = dpapiHelper;
         _settingsService = settingsService;
         _authService = authService;
+        _deleteTracker = deleteTracker;
     }
 
     public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
@@ -175,6 +178,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         providers.Remove(provider);
         await SaveAsync(providers);
+        _deleteTracker.TrackDeletion("providers", id);
         ProvidersChanged?.Invoke(this, EventArgs.Empty);
 
         // Clean up any mode defaults pointing to deleted provider
