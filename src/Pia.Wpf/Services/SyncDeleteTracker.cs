@@ -1,16 +1,19 @@
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Pia.Services;
 
 public class SyncDeleteTracker
 {
     private readonly string _filePath;
+    private readonly ILogger<SyncDeleteTracker> _logger;
     private Dictionary<string, HashSet<Guid>> _pendingDeletes = new();
     private readonly object _lock = new();
 
-    public SyncDeleteTracker(string dataDirectory)
+    public SyncDeleteTracker(string dataDirectory, ILogger<SyncDeleteTracker> logger)
     {
+        _logger = logger;
         _filePath = Path.Combine(dataDirectory, "pending-sync-deletes.json");
         Load();
     }
@@ -22,6 +25,8 @@ public class SyncDeleteTracker
             if (!_pendingDeletes.ContainsKey(entityType))
                 _pendingDeletes[entityType] = [];
             _pendingDeletes[entityType].Add(id);
+            var totalPending = _pendingDeletes.Values.Sum(s => s.Count);
+            _logger.LogInformation("Delete tracked: {EntityType} {Id} (pending: {TotalCount})", entityType, id, totalPending);
             Save();
         }
     }
@@ -30,9 +35,12 @@ public class SyncDeleteTracker
     {
         lock (_lock)
         {
-            return _pendingDeletes.ToDictionary(
+            var result = _pendingDeletes.ToDictionary(
                 kvp => kvp.Key,
                 kvp => kvp.Value.ToList());
+            var summary = string.Join(", ", result.Select(kvp => $"{kvp.Key}={kvp.Value.Count}"));
+            _logger.LogDebug("Pending deletes retrieved: {Counts}", summary);
+            return result;
         }
     }
 
@@ -40,7 +48,9 @@ public class SyncDeleteTracker
     {
         lock (_lock)
         {
+            var count = _pendingDeletes.Values.Sum(s => s.Count);
             _pendingDeletes.Clear();
+            _logger.LogInformation("Pending deletes cleared after successful push ({TotalCount} total)", count);
             Save();
         }
     }
@@ -57,22 +67,32 @@ public class SyncDeleteTracker
                 _pendingDeletes = data.ToDictionary(
                     kvp => kvp.Key,
                     kvp => new HashSet<Guid>(kvp.Value));
+                var count = _pendingDeletes.Values.Sum(s => s.Count);
+                _logger.LogDebug("Loaded {Count} pending deletes from disk", count);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to load pending deletes from {Path}", _filePath);
             _pendingDeletes = new();
         }
     }
 
     private void Save()
     {
-        var dir = Path.GetDirectoryName(_filePath);
-        if (dir is not null && !Directory.Exists(dir))
-            Directory.CreateDirectory(dir);
-        var data = _pendingDeletes.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.ToList());
-        File.WriteAllText(_filePath, JsonSerializer.Serialize(data));
+        try
+        {
+            var dir = Path.GetDirectoryName(_filePath);
+            if (dir is not null && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+            var data = _pendingDeletes.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.ToList());
+            File.WriteAllText(_filePath, JsonSerializer.Serialize(data));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to save pending deletes to {Path}", _filePath);
+        }
     }
 }

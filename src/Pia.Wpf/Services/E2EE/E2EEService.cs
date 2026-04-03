@@ -87,6 +87,9 @@ public class E2EEService : IE2EEService
             zlibStream.Write(plaintext);
         }
         var compressedPayload = compressedStream.ToArray();
+        var ratio = plaintext.Length > 0 ? (int)((1.0 - (double)compressedPayload.Length / plaintext.Length) * 100) : 0;
+        _logger.LogDebug("E2EE encrypt: {EntityType}/{EntityId}, plaintext={PlaintextSize}B, compressed={CompressedSize}B, ratio={Ratio}%",
+            entityType, entityId, plaintext.Length, compressedPayload.Length, ratio);
 
         // Generate random DEK
         var dek = _crypto.GenerateRandomBytes(32);
@@ -109,38 +112,50 @@ public class E2EEService : IE2EEService
         string encryptedPayload, string wrappedDek,
         string userId, string entityType, string entityId)
     {
-        var umk = LoadUmk() ?? throw new InvalidOperationException("UMK not available");
-
-        // Unwrap DEK
-        var dekAad = Encoding.UTF8.GetBytes($"pia-dek-wrap-v1:{entityType}:{entityId}");
-        var dek = _crypto.Decrypt(umk, wrappedDek, dekAad);
-
-        // Decrypt record
-        var recordAad = Encoding.UTF8.GetBytes($"pia-e2ee-v1:{userId}:{entityType}:{entityId}");
-        var decryptedBytes = _crypto.Decrypt(dek, encryptedPayload, recordAad);
-
-        // Clear DEK
-        Array.Clear(dek);
-
-        // Handle both compressed (0x01 prefix) and legacy uncompressed formats
-        byte[] jsonBytes;
-        if (decryptedBytes.Length > 0 && decryptedBytes[0] == 0x01)
+        try
         {
-            // Compressed format: skip marker byte, decompress rest
-            using var input = new MemoryStream(decryptedBytes, 1, decryptedBytes.Length - 1);
-            using var zlibStream = new ZLibStream(input, CompressionMode.Decompress);
-            using var resultStream = new MemoryStream();
-            zlibStream.CopyTo(resultStream);
-            jsonBytes = resultStream.ToArray();
-        }
-        else
-        {
-            // Legacy uncompressed format (raw JSON starting with '{' or '[')
-            jsonBytes = decryptedBytes;
-        }
+            var umk = LoadUmk() ?? throw new InvalidOperationException("UMK not available");
 
-        return JsonSerializer.Deserialize<T>(jsonBytes)
-            ?? throw new InvalidOperationException("Failed to deserialize decrypted record");
+            // Unwrap DEK
+            var dekAad = Encoding.UTF8.GetBytes($"pia-dek-wrap-v1:{entityType}:{entityId}");
+            var dek = _crypto.Decrypt(umk, wrappedDek, dekAad);
+
+            // Decrypt record
+            var recordAad = Encoding.UTF8.GetBytes($"pia-e2ee-v1:{userId}:{entityType}:{entityId}");
+            var decryptedBytes = _crypto.Decrypt(dek, encryptedPayload, recordAad);
+
+            // Clear DEK
+            Array.Clear(dek);
+
+            // Handle both compressed (0x01 prefix) and legacy uncompressed formats
+            byte[] jsonBytes;
+            var isCompressed = decryptedBytes.Length > 0 && decryptedBytes[0] == 0x01;
+            if (isCompressed)
+            {
+                // Compressed format: skip marker byte, decompress rest
+                using var input = new MemoryStream(decryptedBytes, 1, decryptedBytes.Length - 1);
+                using var zlibStream = new ZLibStream(input, CompressionMode.Decompress);
+                using var resultStream = new MemoryStream();
+                zlibStream.CopyTo(resultStream);
+                jsonBytes = resultStream.ToArray();
+            }
+            else
+            {
+                // Legacy uncompressed format (raw JSON starting with '{' or '[')
+                jsonBytes = decryptedBytes;
+            }
+
+            _logger.LogDebug("E2EE decrypt: {EntityType}/{EntityId}, format={Format}, size={Size}B",
+                entityType, entityId, isCompressed ? "compressed" : "legacy", jsonBytes.Length);
+
+            return JsonSerializer.Deserialize<T>(jsonBytes)
+                ?? throw new InvalidOperationException("Failed to deserialize decrypted record");
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "E2EE decrypt failed: {EntityType}/{EntityId}", entityType, entityId);
+            throw;
+        }
     }
 
     public (string Ciphertext, string HkdfSalt) WrapUmkForSelf()

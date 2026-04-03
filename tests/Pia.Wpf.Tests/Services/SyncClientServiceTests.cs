@@ -35,7 +35,7 @@ public class SyncClientServiceTests
             NullLogger<DpapiHelper>.Instance);
         var mapper = new SyncMapper(dpapiHelper);
 
-        var deleteTracker = new SyncDeleteTracker(Path.GetTempPath());
+        var deleteTracker = new SyncDeleteTracker(Path.GetTempPath(), NullLogger<SyncDeleteTracker>.Instance);
         _sut = new SyncClientService(
             _authService, _settingsService, _templateService,
             _providerService, _historyService, _memoryService,
@@ -78,7 +78,7 @@ public class SyncClientServiceDeviceRevokedTests
             NullLogger<DpapiHelper>.Instance);
         var mapper = new SyncMapper(dpapiHelper);
 
-        var deleteTracker = new SyncDeleteTracker(Path.GetTempPath());
+        var deleteTracker = new SyncDeleteTracker(Path.GetTempPath(), NullLogger<SyncDeleteTracker>.Instance);
         return new SyncClientService(
             Substitute.For<IAuthService>(),
             Substitute.For<ISettingsService>(),
@@ -196,7 +196,7 @@ public class SyncClientServicePullConflictTests
             NullLogger<DpapiHelper>.Instance);
         var mapper = new SyncMapper(dpapiHelper);
 
-        var deleteTracker = new SyncDeleteTracker(Path.GetTempPath());
+        var deleteTracker = new SyncDeleteTracker(Path.GetTempPath(), NullLogger<SyncDeleteTracker>.Instance);
         return new SyncClientService(
             Substitute.For<IAuthService>(),
             Substitute.For<ISettingsService>(),

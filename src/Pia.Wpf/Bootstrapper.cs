@@ -185,7 +185,8 @@ public static class Bootstrapper
         {
             var dataDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
-            return new SyncDeleteTracker(dataDirectory);
+            var logger = sp.GetRequiredService<ILogger<SyncDeleteTracker>>();
+            return new SyncDeleteTracker(dataDirectory, logger);
         });
         services.AddSingleton<SyncMapper>();
         services.AddSingleton<IAuthService, AuthService>();
