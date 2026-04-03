@@ -1,0 +1,20 @@
+{
+  "defaults": {
+    "theme": "Dark",
+    "uiLanguage": "DE",
+    "targetLanguage": "DE",
+    "syncEnabled": true,
+    "autoUpdateEnabled": true,
+    "ttsEnabled": false,
+    "startMinimized": false,
+    "launchAtStartup": true
+  },
+  "enforce": {
+    "serverUrl": "https://pia.corp.example.com",
+    "trustSelfSignedCertificates": false,
+    "privacy": {
+      "tokenizationEnabled": true
+    },
+    "autoUpdateEnabled": true
+  }
+}

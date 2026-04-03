@@ -40,19 +40,20 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
         E2EEOnboardingViewModel onboardingViewModel,
-        IAutostartService autostartService)
+        IAutostartService autostartService,
+        IPolicyService policyService)
     {
         _logger = logger;
 
-        ProvidersVm = new ProvidersSettingsViewModel(this, logger, providerService, settingsService, dialogService, snackbarService, authService, localizationService);
+        ProvidersVm = new ProvidersSettingsViewModel(this, logger, providerService, settingsService, dialogService, snackbarService, authService, localizationService, policyService);
 
-        OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService);
+        OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService);
 
         AssistantVm = new AssistantSettingsViewModel(ProvidersVm, logger, settingsService);
 
         ResearchVm = new ResearchSettingsViewModel(ProvidersVm);
 
-        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService);
+        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService);
 
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, onboardingViewModel);
     }

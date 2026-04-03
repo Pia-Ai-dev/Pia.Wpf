@@ -17,6 +17,7 @@ public partial class OptimizeSettingsViewModel : ObservableObject
     private readonly IDialogService _dialogService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
+    private readonly IPolicyService _policyService;
     private readonly ProvidersSettingsViewModel _providersVm;
     private bool _isLoading;
 
@@ -28,7 +29,8 @@ public partial class OptimizeSettingsViewModel : ObservableObject
         ITextOptimizationService textOptimizationService,
         IDialogService dialogService,
         Wpf.Ui.ISnackbarService snackbarService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IPolicyService policyService)
     {
         _providersVm = providersVm;
         _logger = logger;
@@ -38,8 +40,13 @@ public partial class OptimizeSettingsViewModel : ObservableObject
         _dialogService = dialogService;
         _snackbarService = snackbarService;
         _localizationService = localizationService;
+        _policyService = policyService;
         Templates = new ObservableCollection<OptimizationTemplate>();
     }
+
+    // Enterprise policy enforcement
+    public bool IsOutputActionEnforced => _policyService.IsEnforced(nameof(AppSettings.DefaultOutputAction));
+    public bool IsAutoTypeDelayEnforced => _policyService.IsEnforced(nameof(AppSettings.AutoTypeDelayMs));
 
     // Expose provider VM for bindings
     public ProvidersSettingsViewModel ProvidersVm => _providersVm;

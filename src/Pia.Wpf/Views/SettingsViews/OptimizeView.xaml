@@ -6,6 +6,7 @@
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
+    <converters:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
   </UserControl.Resources>
   <ScrollViewer Margin="16"
                 HorizontalScrollBarVisibility="Auto">
@@ -25,6 +26,7 @@
         <TextBlock Text="{loc:Str Settings_OutputAction}" FontWeight="SemiBold" Margin="0,0,0,8"/>
         <ComboBox ItemsSource="{Binding OutputActions}"
                   SelectedItem="{Binding OutputAction}"
+                  IsEnabled="{Binding IsOutputActionEnforced, Converter={StaticResource InverseBooleanConverter}}"
                   Width="400">
           <ComboBox.ItemTemplate>
             <DataTemplate>
@@ -48,6 +50,7 @@
         </StackPanel.Style>
         <TextBlock Text="{loc:Str Settings_AutoTypeDelay}" FontWeight="SemiBold" Margin="0,0,0,8"/>
         <ui:NumberBox Value="{Binding AutoTypeDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      IsEnabled="{Binding IsAutoTypeDelayEnforced, Converter={StaticResource InverseBooleanConverter}}"
                       Minimum="5"
                       Maximum="100"
                       Width="200"/>

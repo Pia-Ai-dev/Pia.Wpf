@@ -141,6 +141,9 @@ public static class Bootstrapper
                 sp.GetRequiredService<ISettingsService>(),
                 sp.GetRequiredService<ILogger<TokenizingAiClientService>>()));
 
+        // Enterprise policy
+        services.AddSingleton<IPolicyService, PolicyService>();
+
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
