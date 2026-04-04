@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
@@ -105,18 +106,18 @@ public partial class ProvidersSettingsViewModel : ObservableObject
                     _isLoading = false;
                 }
             }
-            SafeFireAndForget(SaveProviderSettingsAsync());
+            SaveProviderSettingsAsync().SafeFireAndForget(_logger);
         }
     }
 
     partial void OnAssistantProviderIdChanged(Guid? value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveProviderSettingsAsync());
+        if (!_isLoading) SaveProviderSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnResearchProviderIdChanged(Guid? value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveProviderSettingsAsync());
+        if (!_isLoading) SaveProviderSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnUseSameProviderForAllModesChanged(bool value)
@@ -136,7 +137,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
                     _isLoading = false;
                 }
             }
-            SafeFireAndForget(SaveProviderSettingsAsync());
+            SaveProviderSettingsAsync().SafeFireAndForget(_logger);
         }
     }
 
@@ -177,7 +178,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
             var providerToTest = Providers.FirstOrDefault(p => p.Id == savedProvider.Id);
             if (providerToTest != null)
-                SafeFireAndForget(TestConnectionAsync(providerToTest));
+                TestConnectionAsync(providerToTest).SafeFireAndForget(_logger);
         }
     }
 
@@ -196,7 +197,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
             var providerToTest = Providers.FirstOrDefault(p => p.Id == provider.Id);
             if (providerToTest != null)
-                SafeFireAndForget(TestConnectionAsync(providerToTest));
+                TestConnectionAsync(providerToTest).SafeFireAndForget(_logger);
         }
     }
 
@@ -341,9 +342,4 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }

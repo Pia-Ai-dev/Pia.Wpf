@@ -3,10 +3,12 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Helpers;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Threading;
 
 namespace Pia.ViewModels;
 
@@ -21,6 +23,8 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IDeviceManagementService _deviceManagement;
     private readonly IDeviceKeyService _deviceKeys;
+    private readonly IOutputService _outputService;
+    private readonly SynchronizationContext _syncContext;
     private bool _isLoading;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
@@ -35,6 +39,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         ILocalizationService localizationService,
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
+        IOutputService outputService,
         E2EEOnboardingViewModel onboardingViewModel)
     {
         _logger = logger;
@@ -46,6 +51,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _deviceManagement = deviceManagement;
         _deviceKeys = deviceKeys;
+        _outputService = outputService;
+        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         OnboardingViewModel = onboardingViewModel;
 
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
@@ -66,21 +73,21 @@ public partial class AccountSettingsViewModel : ObservableObject
 
         _syncClientService.E2EEOnboardingRequired += (_, _) =>
         {
-            System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
+            _syncContext.Post(_ =>
             {
                 IsE2EEOnboardingRequired = true;
-            });
+            }, null);
         };
 
         _syncClientService.PendingDeviceDetected += (_, args) =>
         {
-            System.Windows.Application.Current?.Dispatcher.InvokeAsync(
-                () => HandlePendingDevicesAsync(args.PendingDevices));
+            _syncContext.Post(_ =>
+                HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger), null);
         };
 
         _syncClientService.CurrentDeviceRevoked += (_, _) =>
         {
-            System.Windows.Application.Current?.Dispatcher.InvokeAsync(async () =>
+            _syncContext.Post(async _ =>
             {
                 _isLoading = true;
                 IsE2EEEnabled = false;
@@ -94,7 +101,7 @@ public partial class AccountSettingsViewModel : ObservableObject
                 _snackbarService.Show("E2EE Disabled",
                     "This device was removed from E2EE. Encryption has been disabled.",
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(8));
-            });
+            }, null);
         };
     }
 
@@ -121,7 +128,12 @@ public partial class AccountSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _trustSelfSignedCertificates;
 
-    public bool IsDevMode => Bootstrapper.IsDevMode;
+    public bool IsDevMode =>
+#if DEBUG
+        true;
+#else
+        false;
+#endif
 
     [ObservableProperty]
     private bool _isSyncLoggingIn;
@@ -175,7 +187,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     partial void OnTokenizationEnabledChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SavePrivacySettingsAsync());
+        if (!_isLoading) SavePrivacySettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnIsE2EEEnabledChanged(bool value)
@@ -190,7 +202,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     partial void OnTrustSelfSignedCertificatesChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSyncSettingsAsync());
+        if (!_isLoading) SaveSyncSettingsAsync().SafeFireAndForget(_logger);
     }
 
     public async Task InitializeAsync()
@@ -545,7 +557,7 @@ public partial class AccountSettingsViewModel : ObservableObject
                 "Recovery Code",
                 $"Save this recovery code in a safe place. It is the ONLY way to recover your encrypted data if you lose all devices.\n\n{recoveryCode}\n\nIf you lose this code and all your devices, your encrypted data cannot be recovered.");
             if (copyRequested)
-                System.Windows.Clipboard.SetText(recoveryCode);
+                await _outputService.CopyToClipboardAsync(recoveryCode);
 
             await _syncClientService.PerformFirstSyncMigrationAsync();
         }
@@ -627,7 +639,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private void OnPiiKeywordEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (!_isLoading && e.PropertyName == nameof(PiiKeywordEntry.Category))
-            SafeFireAndForget(SavePrivacySettingsAsync());
+            SavePrivacySettingsAsync().SafeFireAndForget(_logger);
     }
 
     // Reset app data
@@ -659,7 +671,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (exePath is not null)
             {
                 System.Diagnostics.Process.Start(exePath);
-                System.Windows.Application.Current.Shutdown();
+                Environment.Exit(0);
             }
         }
         catch (Exception ex)
@@ -693,9 +705,4 @@ public partial class AccountSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }

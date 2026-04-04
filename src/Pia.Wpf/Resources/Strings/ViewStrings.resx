@@ -339,6 +339,8 @@
   <data name="Sync_SyncNow" xml:space="preserve"><value>Sync Now</value></data>
   <data name="Sync_Syncing" xml:space="preserve"><value>Syncing...</value></data>
   <data name="Sync_LastSynced" xml:space="preserve"><value>Last synced: </value></data>
+  <data name="Sync_ResyncTitle" xml:space="preserve"><value>Re-sync</value></data>
+  <data name="Sync_ResyncComplete" xml:space="preserve"><value>Full re-sync completed</value></data>
   <!-- Dialogs -->
   <data name="Dialog_Optimizing_Title" xml:space="preserve"><value>Optimizing</value></data>
   <data name="Dialog_Optimizing_Processing" xml:space="preserve"><value>Processing...</value></data>

@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
@@ -60,17 +61,17 @@ public partial class OptimizeSettingsViewModel : ObservableObject
 
     partial void OnDefaultTemplateIdChanged(Guid? value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnOutputActionChanged(OutputAction value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnAutoTypeDelayMsChanged(int value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     public async Task InitializeAsync()
@@ -194,9 +195,4 @@ public partial class OptimizeSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }

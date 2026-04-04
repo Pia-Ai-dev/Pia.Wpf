@@ -95,10 +95,10 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     protected override void OnLeftDoubleClick()
     {
         base.OnLeftDoubleClick();
-        ToggleDefaultWindow();
+        _ = ToggleDefaultWindowAsync();
     }
 
-    private async void ToggleDefaultWindow()
+    private async Task ToggleDefaultWindowAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
         var defaultMode = settings.DefaultWindowMode;

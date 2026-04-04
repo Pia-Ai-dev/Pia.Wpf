@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
@@ -20,6 +21,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     private readonly ILocalizationService _localizationService;
     private readonly IVoiceInputService _voiceInputService;
     private readonly IKanbanColumnService _columnService;
+    private readonly SynchronizationContext _syncContext;
     private bool _disposed;
     private bool _isRefreshing;
     private bool _suppressTodoChanged;
@@ -125,6 +127,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _localizationService = localizationService;
         _voiceInputService = voiceInputService;
         _columnService = columnService;
+        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         RefreshCommand = new AsyncRelayCommand(LoadTodosAsync);
         AddTodoCommand = new AsyncRelayCommand(ExecuteAddTodoAsync, CanAddTodo);
@@ -146,7 +149,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _settingsService.SettingsChanged += OnSettingsChanged;
         _columnService.ColumnsChanged += OnColumnsChanged;
 
-        SafeFireAndForget(LoadVisibilitySettingAsync());
+        LoadVisibilitySettingAsync().SafeFireAndForget(_logger);
     }
 
     private async Task LoadVisibilitySettingAsync()
@@ -166,12 +169,11 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-        {
+        _syncContext.Post(_ => {
             IsTodoButtonVisible = settings.ShowTodoPanelButton;
             if (!IsTodoButtonVisible)
                 IsTodoPanelOpen = false;
-        });
+        }, null);
     }
 
     private void OnTodoChanged(object? sender, EventArgs e)
@@ -179,8 +181,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         if (_isRefreshing || _suppressTodoChanged)
             return;
 
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            SafeFireAndForget(LoadTodosAsync()));
+        _syncContext.Post(_ => LoadTodosAsync().SafeFireAndForget(_logger), null);
     }
 
     private void OnColumnsChanged(object? sender, EventArgs e)
@@ -188,14 +189,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         if (_isRefreshing || _suppressTodoChanged)
             return;
 
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            SafeFireAndForget(LoadTodosAsync()));
-    }
-
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
+        _syncContext.Post(_ => LoadTodosAsync().SafeFireAndForget(_logger), null);
     }
 
     public async Task LoadTodosAsync()

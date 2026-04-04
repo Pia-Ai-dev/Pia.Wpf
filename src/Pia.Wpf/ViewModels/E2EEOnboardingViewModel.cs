@@ -2,21 +2,12 @@ using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 
 namespace Pia.ViewModels;
-
-public enum OnboardingState
-{
-    Initial,
-    WaitingForApproval,
-    EnteringRecoveryCode,
-    Activating,
-    Success,
-    Error
-}
 
 public partial class E2EEOnboardingViewModel : ObservableObject
 {
