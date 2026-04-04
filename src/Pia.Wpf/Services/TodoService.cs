@@ -34,8 +34,8 @@ public class TodoService : ITodoService
             Priority = priority,
             Notes = notes,
             DueDate = dueDate,
-            CreatedAt = DateTime.Now,
-            UpdatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         if (columnId.HasValue)
@@ -150,7 +150,7 @@ public class TodoService : ITodoService
 
     public async Task UpdateAsync(TodoItem item)
     {
-        item.UpdatedAt = DateTime.Now;
+        item.UpdatedAt = DateTime.UtcNow;
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -188,7 +188,7 @@ public class TodoService : ITodoService
 
     public async Task CompleteAsync(Guid id)
     {
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var closedColumn = await _columnService.GetClosedColumnAsync();
 
         var connection = _context.GetConnection();
@@ -209,7 +209,7 @@ public class TodoService : ITodoService
 
     public async Task UncompleteAsync(Guid id)
     {
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var defaultColumn = await _columnService.GetDefaultViewColumnAsync();
 
         var connection = _context.GetConnection();
@@ -242,7 +242,7 @@ public class TodoService : ITodoService
 
     public async Task LinkReminderAsync(Guid todoId, Guid reminderId)
     {
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -260,7 +260,7 @@ public class TodoService : ITodoService
 
     public async Task UnlinkReminderAsync(Guid todoId)
     {
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -354,7 +354,7 @@ public class TodoService : ITodoService
     public async Task MoveToColumnAsync(Guid todoId, Guid targetColumnId)
     {
         var closedColumn = await _columnService.GetClosedColumnAsync();
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var connection = _context.GetConnection();
 
         // Check if we're moving TO the closed column (completing)
@@ -419,7 +419,7 @@ public class TodoService : ITodoService
                 command.CommandText = "UPDATE Todos SET SortOrder = @SortOrder, UpdatedAt = @UpdatedAt WHERE Id = @Id";
                 command.Parameters.AddWithValue("@Id", id.ToString());
                 command.Parameters.AddWithValue("@SortOrder", sortOrder);
-                command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+                command.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow.ToString("O"));
                 await command.ExecuteNonQueryAsync();
             }
 

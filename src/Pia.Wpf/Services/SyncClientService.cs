@@ -344,12 +344,12 @@ public class SyncClientService : ISyncClientService, IDisposable
             ? await _todoService.GetAllAsync()
             : [];
 
-        var dirtyTemplates = templates.Where(t => !t.IsBuiltIn).Where(t => (t.ModifiedAt ?? t.CreatedAt) >= lastSync).Count();
-        var dirtyProviders = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Where(p => p.UpdatedAt >= lastSync).Count();
+        var dirtyTemplates = templates.Where(t => !t.IsBuiltIn).Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync).Count();
+        var dirtyProviders = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtySessions = sessions.Count;
-        var dirtyMemories = memories.Where(m => m.UpdatedAt >= lastSync).Count();
-        var dirtyKanbanCols = kanbanColumns.Where(c => c.UpdatedAt >= lastSync).Count();
-        var dirtyTodos = todos.Where(t => t.UpdatedAt >= lastSync).Count();
+        var dirtyMemories = memories.Where(m => m.UpdatedAt.ToUniversalTime() >= lastSync).Count();
+        var dirtyKanbanCols = kanbanColumns.Where(c => c.UpdatedAt.ToUniversalTime() >= lastSync).Count();
+        var dirtyTodos = todos.Where(t => t.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         _logger.LogInformation("Push dirty tracking: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanCols}K, {Todos}Todo changed since {LastSync}",
             dirtyTemplates, dirtyProviders, dirtySessions, dirtyMemories, dirtyKanbanCols, dirtyTodos, lastSync);
 
@@ -369,7 +369,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             {
                 Upserted = templates
                     .Where(t => !t.IsBuiltIn)
-                    .Where(t => (t.ModifiedAt ?? t.CreatedAt) >= lastSync)
+                    .Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync)
                     .Select(t => _mapper.ToSyncTemplate(t, userId))
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("templates", [])
@@ -378,7 +378,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             {
                 Upserted = providers
                     .Where(p => p.ProviderType != AiProviderType.PiaCloud)
-                    .Where(p => p.UpdatedAt >= lastSync)
+                    .Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(p => _mapper.ToSyncProvider(p, userId))
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("providers", [])
@@ -392,7 +392,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             Memories = new SyncEntityChanges<SyncMemory>
             {
                 Upserted = memories
-                    .Where(m => m.UpdatedAt >= lastSync)
+                    .Where(m => m.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(m => _mapper.ToSyncMemory(m, userId))
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("memories", [])
@@ -400,7 +400,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
             {
                 Upserted = kanbanColumns
-                    .Where(c => c.UpdatedAt >= lastSync)
+                    .Where(c => c.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("kanbanColumns", [])
@@ -408,7 +408,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             Todos = new SyncEntityChanges<SyncTodo>
             {
                 Upserted = todos
-                    .Where(t => t.UpdatedAt >= lastSync)
+                    .Where(t => t.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(t => _mapper.ToSyncTodo(t, userId))
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("todos", [])
@@ -433,6 +433,13 @@ public class SyncClientService : ISyncClientService, IDisposable
             request.Sessions.Added.Count, request.Memories.Upserted.Count,
             request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count,
             request.LastSyncTimestamp, request.DeviceId, request.IsE2EEEncrypted);
+
+        // Short-circuit: skip HTTP POST when there are no changes to push
+        if (pushedCount == 0 && pendingDeletes.Values.All(v => v.Count == 0))
+        {
+            _logger.LogInformation("Push short-circuited: no changes to push");
+            return 0;
+        }
 
         var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(request);
         using var compressedStream = new MemoryStream();
@@ -740,7 +747,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                     if (existing is not null)
                     {
-                        if (local.UpdatedAt >= existing.UpdatedAt)
+                        if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
                         {
                             await _columnService.ImportAsync(local);
                             mergeUpdated++;

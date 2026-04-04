@@ -116,8 +116,8 @@ public class KanbanColumnService : IKanbanColumnService
             SortOrder = sortOrder,
             IsDefaultView = false,
             IsClosedColumn = false,
-            CreatedAt = DateTime.Now,
-            UpdatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         using var command = connection.CreateCommand();
@@ -142,7 +142,7 @@ public class KanbanColumnService : IKanbanColumnService
         if (column.IsClosedColumn)
             throw new InvalidOperationException("Cannot rename the Closed column");
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -192,7 +192,7 @@ public class KanbanColumnService : IKanbanColumnService
                 ORDER BY SortOrder ASC LIMIT 1
                 """;
             reassignCmd.Parameters.AddWithValue("@Id", id.ToString());
-            reassignCmd.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+            reassignCmd.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow.ToString("O"));
             await reassignCmd.ExecuteNonQueryAsync();
         }
 
@@ -214,7 +214,7 @@ public class KanbanColumnService : IKanbanColumnService
         if (column.IsClosedColumn)
             throw new InvalidOperationException("Cannot set the Closed column as default view");
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var connection = _context.GetConnection();
         using var transaction = connection.BeginTransaction();
 
