@@ -1,7 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using System.Reflection;
@@ -20,6 +19,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly Services.Interfaces.IUpdateService _updateService;
     private readonly Services.Interfaces.IProviderService _providerService;
     private readonly Services.Interfaces.IAuthService _authService;
+    private Timer? _updateTimer;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
@@ -112,21 +112,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _authService.LoginStateChanged += OnLoginStateChanged;
 
         // Poll for update readiness (background download is fire-and-forget)
-        var updateTimer = new System.Windows.Threading.DispatcherTimer
+        _updateTimer = new Timer(_ =>
         {
-            Interval = TimeSpan.FromSeconds(30)
-        };
-        updateTimer.Tick += (_, _) =>
-        {
-            if (_updateService.IsUpdateReady && !IsUpdateReady)
+            _syncContext.Post(_ =>
             {
-                IsUpdateReady = true;
-                UpdateVersion = _updateService.AvailableVersion;
-            }
-            if (IsUpdateReady)
-                updateTimer.Stop();
-        };
-        updateTimer.Start();
+                if (_updateService.IsUpdateReady && !IsUpdateReady)
+                {
+                    IsUpdateReady = true;
+                    UpdateVersion = _updateService.AvailableVersion;
+                }
+                if (IsUpdateReady)
+                    _updateTimer?.Dispose();
+            }, null);
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
     public async Task InitializeAsync()
@@ -233,11 +231,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         try
         {
-            using var scope = Bootstrapper.ServiceProvider.CreateScope();
-            var wizard = scope.ServiceProvider.GetRequiredService<Views.FirstRunWizardWindow>();
-            wizard.ShowDialog();
-
-            // Refresh setup state after wizard closes
+            _windowManagerService.ShowFirstRunWizard();
             _ = RefreshSetupRequiredAsync();
         }
         catch (Exception ex)
@@ -365,6 +359,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _disposed = true;
 
+        _updateTimer?.Dispose();
         _navigationService.ViewModelChanged -= OnViewModelChanged;
         _settingsService.SettingsChanged -= OnSettingsChanged;
         _providerService.ProvidersChanged -= OnProvidersChanged;

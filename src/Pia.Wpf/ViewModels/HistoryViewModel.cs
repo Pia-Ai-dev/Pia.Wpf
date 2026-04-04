@@ -13,6 +13,7 @@ namespace Pia.ViewModels;
 public partial class HistoryViewModel : ObservableObject, IDisposable, INavigationAware
 {
     private readonly ILogger<HistoryViewModel> _logger;
+    private readonly SynchronizationContext _syncContext;
     private bool _disposed;
     private readonly IHistoryService _historyService;
     private readonly ITemplateService _templateService;
@@ -83,6 +84,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         _outputService = outputService;
         _dialogService = dialogService;
         _localizationService = localizationService;
+        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         ViewDetailCommand = new AsyncRelayCommand(ExecuteViewDetailAsync, CanExecuteAction);
         CopyOriginalCommand = new AsyncRelayCommand(ExecuteCopyOriginal, CanExecuteAction);
@@ -315,8 +317,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
 
     private void OnSessionsChanged(object? sender, EventArgs e)
     {
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            LoadSessionsAsync(0, 50).SafeFireAndForget(_logger));
+        _syncContext.Post(_ => LoadSessionsAsync(0, 50).SafeFireAndForget(_logger), null);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

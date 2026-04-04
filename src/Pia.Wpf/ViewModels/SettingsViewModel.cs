@@ -40,7 +40,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
         E2EEOnboardingViewModel onboardingViewModel,
-        IAutostartService autostartService)
+        IAutostartService autostartService,
+        IOutputService outputService)
     {
         _logger = logger;
 
@@ -54,7 +55,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, onboardingViewModel);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, outputService, onboardingViewModel);
     }
 
     public void OnNavigatedTo(object? parameter)
