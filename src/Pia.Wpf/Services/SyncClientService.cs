@@ -201,67 +201,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
 
-            // Build full push request with all local data
-            var templates = await _templateService.GetTemplatesAsync();
-            var providers = await _providerService.GetProvidersAsync();
-            var sessions = await _historyService.GetSessionsAsync(0, 10_000);
-            var memories = await _memoryService.GetAllObjectsAsync();
-            var kanbanColumns = _columnService is not null
-                ? await _columnService.GetAllAsync()
-                : Array.Empty<KanbanColumn>();
-            var todos = _todoService is not null
-                ? await _todoService.GetAllAsync()
-                : [];
-
-            var isE2EE = _e2ee?.IsReady() == true;
-            var userId = isE2EE ? settings.SyncUserId : null;
-
-            var request = new SyncPushRequest
-            {
-                ClientTimestamp = DateTime.UtcNow,
-                LastSyncTimestamp = DateTime.MinValue,
-                DeviceId = settings.SyncDeviceId,
-                IsE2EEEncrypted = isE2EE,
-                Settings = _mapper.ToSyncSettings(settings, userId),
-                Templates = new SyncEntityChanges<SyncTemplate>
-                {
-                    Upserted = templates
-                        .Where(t => !t.IsBuiltIn)
-                        .Select(t => _mapper.ToSyncTemplate(t, userId))
-                        .ToList()
-                },
-                Providers = new SyncEntityChanges<SyncProvider>
-                {
-                    Upserted = providers
-                        .Where(p => p.ProviderType != AiProviderType.PiaCloud)
-                        .Select(p => _mapper.ToSyncProvider(p, userId))
-                        .ToList()
-                },
-                Sessions = new SyncSessionChanges
-                {
-                    Added = sessions
-                        .Select(s => _mapper.ToSyncSession(s, userId))
-                        .ToList()
-                },
-                Memories = new SyncEntityChanges<SyncMemory>
-                {
-                    Upserted = memories
-                        .Select(m => _mapper.ToSyncMemory(m, userId))
-                        .ToList()
-                },
-                KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
-                {
-                    Upserted = kanbanColumns
-                        .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
-                        .ToList()
-                },
-                Todos = new SyncEntityChanges<SyncTodo>
-                {
-                    Upserted = todos
-                        .Select(t => _mapper.ToSyncTodo(t, userId))
-                        .ToList()
-                }
-            };
+            var request = await BuildPushRequestAsync(settings, DateTime.MinValue, sinceForSessions: null);
 
             var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
             await EnsureSuccessAsync(response, "First-sync push");
@@ -319,73 +259,8 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     private async Task<int> PushChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
-        // For the initial implementation, push all data.
-        // A future optimization would track changed entities since last push
-        // and only send those (using a local change queue).
-        var templates = await _templateService.GetTemplatesAsync();
-        var providers = await _providerService.GetProvidersAsync();
-
-        // Only push sessions created since last sync
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
-        var sessions = await _historyService.SearchSessionsAsync(fromDate: lastSync);
-
-        var memories = await _memoryService.GetAllObjectsAsync();
-        var kanbanColumns = _columnService is not null
-            ? await _columnService.GetAllAsync()
-            : Array.Empty<KanbanColumn>();
-        var todos = _todoService is not null
-            ? await _todoService.GetAllAsync()
-            : [];
-
-        var isE2EE = _e2ee?.IsReady() == true;
-        var userId = isE2EE ? settings.SyncUserId : null;
-
-        var request = new SyncPushRequest
-        {
-            ClientTimestamp = DateTime.UtcNow,
-            LastSyncTimestamp = lastSync,
-            DeviceId = settings.SyncDeviceId,
-            IsE2EEEncrypted = isE2EE,
-            Settings = _mapper.ToSyncSettings(settings, userId),
-            Templates = new SyncEntityChanges<SyncTemplate>
-            {
-                Upserted = templates
-                    .Where(t => !t.IsBuiltIn)
-                    .Select(t => _mapper.ToSyncTemplate(t, userId))
-                    .ToList()
-            },
-            Providers = new SyncEntityChanges<SyncProvider>
-            {
-                Upserted = providers
-                    .Where(p => p.ProviderType != AiProviderType.PiaCloud)
-                    .Select(p => _mapper.ToSyncProvider(p, userId))
-                    .ToList()
-            },
-            Sessions = new SyncSessionChanges
-            {
-                Added = sessions
-                    .Select(s => _mapper.ToSyncSession(s, userId))
-                    .ToList()
-            },
-            Memories = new SyncEntityChanges<SyncMemory>
-            {
-                Upserted = memories
-                    .Select(m => _mapper.ToSyncMemory(m, userId))
-                    .ToList()
-            },
-            KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
-            {
-                Upserted = kanbanColumns
-                    .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
-                    .ToList()
-            },
-            Todos = new SyncEntityChanges<SyncTodo>
-            {
-                Upserted = todos
-                    .Select(t => _mapper.ToSyncTodo(t, userId))
-                    .ToList()
-            }
-        };
+        var request = await BuildPushRequestAsync(settings, lastSync, sinceForSessions: lastSync);
 
         var pushedCount = request.Templates.Upserted.Count
             + request.Providers.Upserted.Count
@@ -449,28 +324,61 @@ public class SyncClientService : ISyncClientService, IDisposable
             pullResponse.Todos.Upserted.Count, pullResponse.Todos.Deleted.Count);
 
         var userId = settings.SyncUserId;
+        var counters = new MergeCounters();
 
-        var decryptionErrors = 0;
+        await ApplySettingsAsync(pullResponse.Settings, userId, counters);
+        await ApplyTemplatesAsync(pullResponse.Templates, userId, counters);
+        await ApplyProvidersAsync(pullResponse.Providers, userId, counters);
+        await ApplySessionsAsync(pullResponse.Sessions, userId, counters);
+        await ApplyMemoriesAsync(pullResponse.Memories, userId, counters);
+        // Apply kanban columns BEFORE todos, since todos reference columns
+        await ApplyKanbanColumnsAsync(pullResponse.KanbanColumns, userId, counters);
+        await ApplyTodosAsync(pullResponse.Todos, userId, counters);
 
-        // Apply settings
-        if (pullResponse.Settings is not null)
+        if (counters.DecryptionErrors > 0)
         {
-            try
-            {
-                var currentSettings = await _settingsService.GetSettingsAsync();
-                _mapper.ApplySyncSettings(pullResponse.Settings, currentSettings, userId);
-                await _settingsService.SaveSettingsAsync(currentSettings);
-                _logger.LogInformation("Imported synced settings");
-            }
-            catch (CryptographicException ex)
-            {
-                decryptionErrors++;
-                _logger.LogWarning(ex, "Failed to decrypt synced settings; skipping");
-            }
+            _logger.LogWarning("Pull completed with {Count} decryption error(s) — data may have been encrypted with a different key", counters.DecryptionErrors);
         }
 
-        // Apply templates
-        foreach (var template in pullResponse.Templates.Upserted)
+        var pulledCount = pullResponse.Templates.Upserted.Count
+            + pullResponse.Providers.Upserted.Count
+            + pullResponse.Sessions.Added.Count
+            + pullResponse.Memories.Upserted.Count
+            + pullResponse.KanbanColumns.Upserted.Count
+            + pullResponse.Todos.Upserted.Count;
+
+        _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanColumns}KC, {Todos}Todo",
+            pullResponse.Templates.Upserted.Count,
+            pullResponse.Providers.Upserted.Count,
+            pullResponse.Sessions.Added.Count,
+            pullResponse.Memories.Upserted.Count,
+            pullResponse.KanbanColumns.Upserted.Count,
+            pullResponse.Todos.Upserted.Count);
+
+        return (pulledCount, counters.DecryptionErrors, true);
+    }
+
+    private async Task ApplySettingsAsync(SyncSettings? syncSettings, string? userId, MergeCounters counters)
+    {
+        if (syncSettings is null) return;
+
+        try
+        {
+            var currentSettings = await _settingsService.GetSettingsAsync();
+            _mapper.ApplySyncSettings(syncSettings, currentSettings, userId);
+            await _settingsService.SaveSettingsAsync(currentSettings);
+            _logger.LogInformation("Imported synced settings");
+        }
+        catch (CryptographicException ex)
+        {
+            counters.DecryptionErrors++;
+            _logger.LogWarning(ex, "Failed to decrypt synced settings; skipping");
+        }
+    }
+
+    private async Task ApplyTemplatesAsync(SyncEntityChanges<SyncTemplate> changes, string? userId, MergeCounters counters)
+    {
+        foreach (var template in changes.Upserted)
         {
             try
             {
@@ -502,18 +410,20 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
             catch (CryptographicException ex)
             {
-                decryptionErrors++;
+                counters.DecryptionErrors++;
                 _logger.LogWarning(ex, "Failed to decrypt synced template {Id}; skipping", template.Id);
             }
         }
 
-        foreach (var deletedId in pullResponse.Templates.Deleted)
+        foreach (var deletedId in changes.Deleted)
         {
             await _templateService.DeleteTemplateAsync(deletedId);
         }
+    }
 
-        // Apply providers
-        foreach (var provider in pullResponse.Providers.Upserted)
+    private async Task ApplyProvidersAsync(SyncEntityChanges<SyncProvider> changes, string? userId, MergeCounters counters)
+    {
+        foreach (var provider in changes.Upserted)
         {
             try
             {
@@ -543,18 +453,20 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
             catch (CryptographicException ex)
             {
-                decryptionErrors++;
+                counters.DecryptionErrors++;
                 _logger.LogWarning(ex, "Failed to decrypt synced provider {Id}; skipping", provider.Id);
             }
         }
 
-        foreach (var deletedId in pullResponse.Providers.Deleted)
+        foreach (var deletedId in changes.Deleted)
         {
             await _providerService.DeleteProviderAsync(deletedId);
         }
+    }
 
-        // Apply sessions (append-only)
-        foreach (var session in pullResponse.Sessions.Added)
+    private async Task ApplySessionsAsync(SyncSessionChanges changes, string? userId, MergeCounters counters)
+    {
+        foreach (var session in changes.Added)
         {
             try
             {
@@ -568,18 +480,20 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
             catch (CryptographicException ex)
             {
-                decryptionErrors++;
+                counters.DecryptionErrors++;
                 _logger.LogWarning(ex, "Failed to decrypt synced session {Id}; skipping", session.Id);
             }
         }
 
-        foreach (var deletedId in pullResponse.Sessions.Deleted)
+        foreach (var deletedId in changes.Deleted)
         {
             await _historyService.DeleteSessionAsync(deletedId);
         }
+    }
 
-        // Apply memories
-        foreach (var memory in pullResponse.Memories.Upserted)
+    private async Task ApplyMemoriesAsync(SyncEntityChanges<SyncMemory> changes, string? userId, MergeCounters counters)
+    {
+        foreach (var memory in changes.Upserted)
         {
             try
             {
@@ -607,132 +521,180 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
             catch (CryptographicException ex)
             {
-                decryptionErrors++;
+                counters.DecryptionErrors++;
                 _logger.LogWarning(ex, "Failed to decrypt synced memory {Id}; skipping", memory.Id);
             }
         }
 
-        foreach (var deletedId in pullResponse.Memories.Deleted)
+        foreach (var deletedId in changes.Deleted)
         {
             await _memoryService.DeleteObjectAsync(deletedId);
         }
+    }
 
-        // Apply kanban columns (BEFORE todos, since todos reference columns)
-        if (_columnService is not null)
+    private async Task ApplyKanbanColumnsAsync(SyncEntityChanges<SyncKanbanColumn> changes, string? userId, MergeCounters counters)
+    {
+        if (_columnService is null) return;
+
+        foreach (var syncColumn in changes.Upserted)
         {
-            foreach (var syncColumn in pullResponse.KanbanColumns.Upserted)
+            try
             {
-                try
-                {
-                    var local = _mapper.FromSyncKanbanColumn(syncColumn, userId);
-                    var existing = await _columnService.GetAsync(syncColumn.Id);
+                var local = _mapper.FromSyncKanbanColumn(syncColumn, userId);
+                var existing = await _columnService.GetAsync(syncColumn.Id);
 
-                    if (existing is not null)
-                    {
-                        if (local.UpdatedAt >= existing.UpdatedAt)
-                        {
-                            await _columnService.ImportAsync(local);
-                            _logger.LogInformation("Updated kanban column {Id}: {Name}", syncColumn.Id, local.Name);
-                        }
-                        else
-                        {
-                            _logger.LogDebug("Skipped kanban column {Id}: local is newer", syncColumn.Id);
-                        }
-                    }
-                    else
+                if (existing is not null)
+                {
+                    if (local.UpdatedAt >= existing.UpdatedAt)
                     {
                         await _columnService.ImportAsync(local);
-                    }
-                }
-                catch (CryptographicException ex)
-                {
-                    _logger.LogWarning(ex, "Failed to decrypt synced kanban column {Id}; skipping", syncColumn.Id);
-                }
-            }
-
-            // Note: we don't process KanbanColumns.Deleted since column deletion
-            // is only allowed for empty columns and is enforced client-side
-        }
-
-        // Apply todos
-        if (_todoService is not null)
-        {
-            foreach (var todo in pullResponse.Todos.Upserted)
-            {
-                try
-                {
-                    var local = _mapper.FromSyncTodo(todo, userId);
-
-                    // Backward compat: assign column based on status if no ColumnId
-                    if (!local.ColumnId.HasValue && _columnService is not null)
-                    {
-                        if (local.Status == TodoStatus.Completed)
-                        {
-                            var closedCol = await _columnService.GetClosedColumnAsync();
-                            local.ColumnId = closedCol.Id;
-                        }
-                        else
-                        {
-                            var defaultCol = await _columnService.GetDefaultViewColumnAsync();
-                            local.ColumnId = defaultCol.Id;
-                        }
-                    }
-
-                    var existing = await _todoService.GetAsync(todo.Id);
-
-                    if (existing is not null)
-                    {
-                        if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
-                        {
-                            await _todoService.ImportAsync(local);
-                            _logger.LogInformation("Updated todo {Id}: {Title}", todo.Id, local.Title);
-                        }
-                        else
-                        {
-                            _logger.LogDebug("Skipped todo {Id}: local is newer (local={Local}, remote={Remote})",
-                                todo.Id, existing.UpdatedAt, local.UpdatedAt);
-                        }
+                        _logger.LogInformation("Updated kanban column {Id}: {Name}", syncColumn.Id, local.Name);
                     }
                     else
                     {
-                        await _todoService.ImportAsync(local);
+                        _logger.LogDebug("Skipped kanban column {Id}: local is newer", syncColumn.Id);
                     }
                 }
-                catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
-                                            or System.Security.Cryptography.AuthenticationTagMismatchException)
+                else
                 {
-                    decryptionErrors++;
-                    _logger.LogWarning(ex, "Failed to decrypt synced todo {Id}; skipping", todo.Id);
+                    await _columnService.ImportAsync(local);
                 }
             }
-
-            foreach (var deletedId in pullResponse.Todos.Deleted)
+            catch (CryptographicException ex)
             {
-                await _todoService.DeleteAsync(deletedId);
+                _logger.LogWarning(ex, "Failed to decrypt synced kanban column {Id}; skipping", syncColumn.Id);
             }
         }
 
-        if (decryptionErrors > 0)
+        // Note: we don't process KanbanColumns.Deleted since column deletion
+        // is only allowed for empty columns and is enforced client-side
+    }
+
+    private async Task ApplyTodosAsync(SyncEntityChanges<SyncTodo> changes, string? userId, MergeCounters counters)
+    {
+        if (_todoService is null) return;
+
+        foreach (var todo in changes.Upserted)
         {
-            _logger.LogWarning("Pull completed with {Count} decryption error(s) — data may have been encrypted with a different key", decryptionErrors);
+            try
+            {
+                var local = _mapper.FromSyncTodo(todo, userId);
+
+                // Backward compat: assign column based on status if no ColumnId
+                if (!local.ColumnId.HasValue && _columnService is not null)
+                {
+                    if (local.Status == TodoStatus.Completed)
+                    {
+                        var closedCol = await _columnService.GetClosedColumnAsync();
+                        local.ColumnId = closedCol.Id;
+                    }
+                    else
+                    {
+                        var defaultCol = await _columnService.GetDefaultViewColumnAsync();
+                        local.ColumnId = defaultCol.Id;
+                    }
+                }
+
+                var existing = await _todoService.GetAsync(todo.Id);
+
+                if (existing is not null)
+                {
+                    if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
+                    {
+                        await _todoService.ImportAsync(local);
+                        _logger.LogInformation("Updated todo {Id}: {Title}", todo.Id, local.Title);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Skipped todo {Id}: local is newer (local={Local}, remote={Remote})",
+                            todo.Id, existing.UpdatedAt, local.UpdatedAt);
+                    }
+                }
+                else
+                {
+                    await _todoService.ImportAsync(local);
+                }
+            }
+            catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                        or System.Security.Cryptography.AuthenticationTagMismatchException)
+            {
+                counters.DecryptionErrors++;
+                _logger.LogWarning(ex, "Failed to decrypt synced todo {Id}; skipping", todo.Id);
+            }
         }
 
-        var pulledCount = pullResponse.Templates.Upserted.Count
-            + pullResponse.Providers.Upserted.Count
-            + pullResponse.Sessions.Added.Count
-            + pullResponse.Memories.Upserted.Count
-            + pullResponse.KanbanColumns.Upserted.Count
-            + pullResponse.Todos.Upserted.Count;
+        foreach (var deletedId in changes.Deleted)
+        {
+            await _todoService.DeleteAsync(deletedId);
+        }
+    }
 
-        _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanColumns}KC, {Todos}Todo",
-            pullResponse.Templates.Upserted.Count,
-            pullResponse.Providers.Upserted.Count,
-            pullResponse.Sessions.Added.Count,
-            pullResponse.Memories.Upserted.Count,
-            pullResponse.KanbanColumns.Upserted.Count,
-            pullResponse.Todos.Upserted.Count);
+    private async Task<SyncPushRequest> BuildPushRequestAsync(AppSettings settings, DateTime lastSyncTimestamp, DateTime? sinceForSessions)
+    {
+        var templates = await _templateService.GetTemplatesAsync();
+        var providers = await _providerService.GetProvidersAsync();
 
-        return (pulledCount, decryptionErrors, true);
+        var sessions = sinceForSessions.HasValue
+            ? await _historyService.SearchSessionsAsync(fromDate: sinceForSessions.Value)
+            : await _historyService.GetSessionsAsync(0, 10_000);
+
+        var memories = await _memoryService.GetAllObjectsAsync();
+        var kanbanColumns = _columnService is not null
+            ? await _columnService.GetAllAsync()
+            : Array.Empty<KanbanColumn>();
+        var todos = _todoService is not null
+            ? await _todoService.GetAllAsync()
+            : [];
+
+        var isE2EE = _e2ee?.IsReady() == true;
+        var userId = isE2EE ? settings.SyncUserId : null;
+
+        return new SyncPushRequest
+        {
+            ClientTimestamp = DateTime.UtcNow,
+            LastSyncTimestamp = lastSyncTimestamp,
+            DeviceId = settings.SyncDeviceId,
+            IsE2EEEncrypted = isE2EE,
+            Settings = _mapper.ToSyncSettings(settings, userId),
+            Templates = new SyncEntityChanges<SyncTemplate>
+            {
+                Upserted = templates
+                    .Where(t => !t.IsBuiltIn)
+                    .Select(t => _mapper.ToSyncTemplate(t, userId))
+                    .ToList()
+            },
+            Providers = new SyncEntityChanges<SyncProvider>
+            {
+                Upserted = providers
+                    .Where(p => p.ProviderType != AiProviderType.PiaCloud)
+                    .Select(p => _mapper.ToSyncProvider(p, userId))
+                    .ToList()
+            },
+            Sessions = new SyncSessionChanges
+            {
+                Added = sessions
+                    .Select(s => _mapper.ToSyncSession(s, userId))
+                    .ToList()
+            },
+            Memories = new SyncEntityChanges<SyncMemory>
+            {
+                Upserted = memories
+                    .Select(m => _mapper.ToSyncMemory(m, userId))
+                    .ToList()
+            },
+            KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
+            {
+                Upserted = kanbanColumns
+                    .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
+                    .ToList()
+            },
+            Todos = new SyncEntityChanges<SyncTodo>
+            {
+                Upserted = todos
+                    .Select(t => _mapper.ToSyncTodo(t, userId))
+                    .ToList()
+            }
+        };
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)
@@ -801,5 +763,10 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         _syncTimer?.Dispose();
         _syncLock.Dispose();
+    }
+
+    private class MergeCounters
+    {
+        public int DecryptionErrors;
     }
 }
