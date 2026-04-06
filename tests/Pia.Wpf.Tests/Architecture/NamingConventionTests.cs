@@ -27,7 +27,7 @@ public class NamingConventionTests
     [Fact]
     public void ServiceClasses_MustFollowNamingConvention()
     {
-        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory" };
+        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client" };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ServicesNamespace)

@@ -523,32 +523,22 @@ public class AiClientService : IAiClientService
         if (string.IsNullOrEmpty(serverUrl))
             throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
 
-        // Use JWT token as credential if logged in, otherwise use placeholder for unauthenticated access
-        var credential = "anonymous";
+        string? accessToken = null;
         if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
         {
             try
             {
-                credential = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
+                accessToken = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
             }
             catch
             {
-                // If decryption fails, fall back to unauthenticated
+                // If decryption fails, proceed without auth
             }
         }
 
-        var endpoint = new Uri($"{serverUrl}/api/ai");
-        _logger.LogInformation("PiaCloud: creating ChatClient with endpoint={Endpoint}, model=pia-cloud", endpoint);
+        _logger.LogInformation("PiaCloud: creating PiaCloudChatClient with endpoint={ServerUrl}/api/ai/chat", serverUrl);
 
-        return new ChatClient(
-            model: "pia-cloud",
-            credential: new ApiKeyCredential(credential),
-            options: new OpenAI.OpenAIClientOptions
-            {
-                Endpoint = endpoint,
-                Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient)
-            }
-        ).AsIChatClient();
+        return new PiaCloudChatClient(httpClient, serverUrl, accessToken, _logger);
     }
 
     public async Task<string> GeneratePromptViaPiaCloudAsync(

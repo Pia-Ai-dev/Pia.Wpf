@@ -211,8 +211,6 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     public async Task EnsureBuiltInProviderAsync()
     {
         var providers = await LoadAsync();
-        if (providers.Any(p => p.Id == PiaCloudProviderId))
-            return;
 
         var piaCloud = new AiProvider
         {
@@ -220,7 +218,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             Name = "Pia Cloud",
             ProviderType = AiProviderType.PiaCloud,
             Endpoint = "",
-            SupportsToolCalling = false,
+            SupportsToolCalling = true,
+            SupportsStreaming = true,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -264,10 +263,10 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
                 throw new InvalidOperationException($"Connection test failed: {ex.Message}", ex);
             }
 
-            provider.SupportsToolCalling = false;
-            provider.SupportsStreaming = false;
+            provider.SupportsToolCalling = true;
+            provider.SupportsStreaming = true;
             if (persist) await UpdateProviderAsync(provider);
-            return new TestConnectionResult(true, false, false);
+            return new TestConnectionResult(true, true, true);
         }
 
         try
