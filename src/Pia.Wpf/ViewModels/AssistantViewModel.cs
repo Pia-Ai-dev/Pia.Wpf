@@ -17,57 +17,41 @@ namespace Pia.ViewModels;
 
 public partial class AssistantViewModel : ObservableObject, INavigationAware, IDisposable
 {
-    private static string BuildSystemPrompt(bool tokenizationEnabled) => $"""
-        You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
-        The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+    private string BuildSystemPrompt(bool tokenizationEnabled)
+    {
+        var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
+        return $"""
+            You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
+            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
 
-        You have a persistent memory system. When the user asks about something personal or tells you
-        something to remember, use your memory tools to look it up or store it. Use list_memories to see
-        what's stored, and query_memory to retrieve details.
+            {pluginPrompts}
 
-        You have access to a todo list for managing the user's tasks.
+            TOOL SELECTION — follow this decision tree strictly:
+            1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
+               YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
+               NO → Continue to step 2.
+            2. Does the request involve a TASK, ACTION ITEM, or something to DO?
+               YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
+               NO → Continue to step 3.
+            3. Does the request involve STORING, RECALLING, or UPDATING personal information?
+               YES → Use Memory tools (remember: query first, then create/update).
+               NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+               NO → Respond conversationally without tools.
 
-        Tools: create_todo, query_todos, complete_todo, update_todo, delete_todo.
+            Key principles:
+            - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge
+              the decline and ask the user what they would like to do differently or if they want to adjust
+              the details.
+            {(tokenizationEnabled ? """
 
-        When a user mentions something they need to do, offer to add it as a todo.
-        When creating or updating a todo with a due date, suggest setting a reminder
-        so they don't forget. Use the create_reminder tool if they agree.
-        When listing todos, highlight any that are overdue (past due date, still pending).
-
-        TOOL SELECTION — follow this decision tree strictly:
-        1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
-           YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
-           NO → Continue to step 2.
-        2. Does the request involve a TASK, ACTION ITEM, or something to DO?
-           YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
-           NO → Continue to step 3.
-        3. Does the request involve STORING, RECALLING, or UPDATING personal information?
-           YES → Use Memory tools (remember: query first, then create/update).
-           NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
-           NO → Respond conversationally without tools.
-
-        Key principles:
-        - Memory workflow — ALWAYS follow this sequence when storing information:
-          1. First call query_memory to check if a related memory already exists.
-          2. If a match is found, use update_object to modify it (do NOT create a duplicate).
-          3. Only if no related memory exists, use create_object to store it as new.
-          This applies whenever the user shares a fact, preference, or personal detail — even if
-          they say "remember" or "erstelle" or "create". The intent is to keep memory up to date,
-          not to accumulate duplicates.
-        - When the user asks about their reminders, use query_reminders. To modify or cancel, first
-          query to find the ID.
-        - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge
-          the decline and ask the user what they would like to do differently or if they want to adjust
-          the details.
-        {(tokenizationEnabled ? """
-
-        When memory or contact data is returned, personal details (names, emails, phones, addresses,
-        dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens
-        naturally in your responses — they will be resolved back to real values before the user sees
-        your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were
-        the person's actual name.
-        """ : "")}
-        """;
+            When memory or contact data is returned, personal details (names, emails, phones, addresses,
+            dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens
+            naturally in your responses — they will be resolved back to real values before the user sees
+            your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were
+            the person's actual name.
+            """ : "")}
+            """;
+    }
 
     private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
     {
@@ -104,9 +88,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IProviderService _providerService;
     private readonly ISettingsService _settingsService;
     private readonly IOutputService _outputService;
-    private readonly IMemoryToolHandler _memoryToolHandler;
-    private readonly IReminderToolHandler _reminderToolHandler;
-    private readonly ITodoToolHandler _todoToolHandler;
+    private readonly IPluginService _pluginService;
     private readonly IVoiceInputService _voiceInputService;
     private readonly ITtsService _ttsService;
     private readonly IAudioRecordingService _audioRecordingService;
@@ -192,9 +174,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IProviderService providerService,
         ISettingsService settingsService,
         IOutputService outputService,
-        IMemoryToolHandler memoryToolHandler,
-        IReminderToolHandler reminderToolHandler,
-        ITodoToolHandler todoToolHandler,
+        IPluginService pluginService,
         IVoiceInputService voiceInputService,
         ITtsService ttsService,
         IAudioRecordingService audioRecordingService,
@@ -210,9 +190,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _providerService = providerService;
         _settingsService = settingsService;
         _outputService = outputService;
-        _memoryToolHandler = memoryToolHandler;
-        _reminderToolHandler = reminderToolHandler;
-        _todoToolHandler = todoToolHandler;
+        _pluginService = pluginService;
         _voiceInputService = voiceInputService;
         _ttsService = ttsService;
         _audioRecordingService = audioRecordingService;
@@ -302,7 +280,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             {
                 fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled)
                     + BuildAtCommandHint(atCommands);
-                tools = [.. _memoryToolHandler.GetTools(), .. _reminderToolHandler.GetTools(), .. _todoToolHandler.GetTools()];
+                tools = [.. _pluginService.GetAllTools()];
             }
             else
             {
@@ -462,19 +440,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
 #endif
 
-        // Route to the appropriate tool handler
-        if (toolCall.Name is "create_reminder" or "query_reminders" or "update_reminder" or "delete_reminder")
+        // Route through plugin service
+        var routeResult = await _pluginService.RouteToolCallAsync(toolCall);
+        if (routeResult is null)
         {
-            return await HandleReminderToolCall(toolCall, message);
+            _logger.LogWarning("No handler found for tool {ToolName}", toolCall.Name);
+            return "Unknown tool.";
         }
 
-        if (toolCall.Name is "create_todo" or "query_todos" or "complete_todo" or "update_todo" or "delete_todo")
-        {
-            return await HandleTodoToolCall(toolCall, message);
-        }
-
-        var (result, pendingAction) = await _memoryToolHandler.HandleToolCallAsync(toolCall);
-        _logger.LogDebug("MemoryToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
+        var (result, pendingAction) = routeResult.Value;
+        _logger.LogDebug("Plugin route returned: hasResult={HasResult}, hasPending={HasPending}",
             result is not null, pendingAction is not null);
 
         if (result is not null)
@@ -483,7 +458,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // For write operations, show inline action card
         if (pendingAction is not null)
         {
-            var card = BuildMemoryActionCard(pendingAction);
+            var card = BuildPluginActionCard(pendingAction);
             await App.Current.Dispatcher.InvokeAsync(() => message.ActionCards.Add(card));
 
             bool confirmed;
@@ -500,14 +475,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             if (confirmed)
             {
                 _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
-                var actionResult = await _memoryToolHandler.ExecutePendingActionAsync(pendingAction);
+                var actionResult = await pendingAction.Execute();
                 _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
-                _snackbarService.Show(_localizationService["Msg_Assistant_MemoryUpdated"],
+
+                var snackbarTitle = pendingAction.PluginName switch
+                {
+                    "memory" => _localizationService["Msg_Assistant_MemoryUpdated"],
+                    "todo" => _localizationService["Msg_Assistant_TodoUpdated"],
+                    "reminder" => _localizationService["Msg_Assistant_ReminderUpdated"],
+                    _ => _localizationService["Msg_Assistant_StatusProcessing"]
+                };
+                _snackbarService.Show(snackbarTitle,
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
 
                 // Re-scan for new PII after memory write
-                if (_tokenizationEnabled)
+                if (_tokenizationEnabled && pendingAction.PluginName == "memory")
                 {
                     try { await _tokenMapService.InitializeAsync(); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after memory write"); }
@@ -525,166 +508,44 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return "Tool call handled.";
     }
 
-    private async Task<object?> HandleReminderToolCall(FunctionCallContent toolCall, AssistantMessage message)
+    private ActionCardInfo BuildPluginActionCard(PluginToolCall pendingAction)
     {
-        var (result, pendingAction) = await _reminderToolHandler.HandleToolCallAsync(toolCall);
-        _logger.LogDebug("ReminderToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
-            result is not null, pendingAction is not null);
-
-        if (result is not null)
-            return result;
-
-        // For write operations, show inline action card
-        if (pendingAction is not null)
+        var category = pendingAction.PluginName switch
         {
-            var card = BuildReminderActionCard(pendingAction);
-            await App.Current.Dispatcher.InvokeAsync(() => message.ActionCards.Add(card));
-
-            bool confirmed;
-            try
-            {
-                confirmed = await card.WaitForUserDecisionAsync();
-            }
-            catch (TaskCanceledException)
-            {
-                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
-                confirmed = false;
-            }
-
-            if (confirmed)
-            {
-                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
-                var actionResult = await _reminderToolHandler.ExecutePendingActionAsync(pendingAction);
-                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
-                _snackbarService.Show(_localizationService["Msg_Assistant_ReminderUpdated"],
-                    DetokenizeForDisplay(pendingAction.Description),
-                    Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-                return actionResult;
-            }
-            else
-            {
-                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
-                return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
-            }
-        }
-
-        return "Tool call handled.";
-    }
-
-    private ActionCardInfo BuildMemoryActionCard(MemoryToolCall pendingAction)
-    {
-        var isDelete = pendingAction.ToolName == "delete_object";
-
-        var card = new ActionCardInfo
-        {
-            Title = FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Memory),
-            Summary = DetokenizeForDisplay(pendingAction.Description),
-            Category = ActionCardCategory.Memory,
-            ToolName = pendingAction.ToolName,
-            IsDestructive = isDelete,
-            WarningText = isDelete ? _localizationService["Msg_Assistant_PermanentDeleteMemory"] : null,
-            Details = pendingAction.NewValue is not null
-                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.NewValue)))
-                : [],
-            OldValueDetails = pendingAction.OldValue is not null
-                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.OldValue)))
-                : [],
-            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Memory)),
-            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Memory)),
+            "memory" => ActionCardCategory.Memory,
+            "todo" => ActionCardCategory.Todo,
+            "reminder" => ActionCardCategory.Reminder,
+            _ => ActionCardCategory.Memory
         };
 
-        return card;
-    }
+        var isDelete = pendingAction.ToolName.Contains("delete");
 
-    private async Task<object?> HandleTodoToolCall(FunctionCallContent toolCall, AssistantMessage message)
-    {
-        var (result, pendingAction) = await _todoToolHandler.HandleToolCallAsync(toolCall);
-        _logger.LogDebug("TodoToolHandler returned: hasResult={HasResult}, hasPending={HasPending}",
-            result is not null, pendingAction is not null);
-
-        // If it's a read-only operation (query_todos), return result directly
-        if (result is not null)
-            return result;
-
-        // For write operations, show inline action card
-        if (pendingAction is not null)
+        var warningText = isDelete ? pendingAction.PluginName switch
         {
-            var card = BuildTodoActionCard(pendingAction);
-            await App.Current.Dispatcher.InvokeAsync(() => message.ActionCards.Add(card));
+            "memory" => _localizationService["Msg_Assistant_PermanentDeleteMemory"],
+            "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
+            "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
+            _ => null
+        } : null;
 
-            bool confirmed;
-            try
-            {
-                confirmed = await card.WaitForUserDecisionAsync();
-            }
-            catch (TaskCanceledException)
-            {
-                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
-                confirmed = false;
-            }
+        var details = pendingAction.Details is not null
+            ? pendingAction.PluginName == "memory"
+                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.Details)))
+                : new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details)))
+            : new System.Collections.ObjectModel.ObservableCollection<ActionCardDetail>();
 
-            if (confirmed)
-            {
-                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
-                var actionResult = await _todoToolHandler.ExecutePendingActionAsync(pendingAction);
-                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
-                _snackbarService.Show(_localizationService["Msg_Assistant_TodoUpdated"],
-                    DetokenizeForDisplay(pendingAction.Description),
-                    Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-                return actionResult;
-            }
-            else
-            {
-                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
-                return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
-            }
-        }
-
-        return "Tool call handled.";
-    }
-
-    private ActionCardInfo BuildTodoActionCard(TodoToolCall pendingAction)
-    {
-        var isDelete = pendingAction.ToolName == "delete_todo";
-
-        var card = new ActionCardInfo
+        return new ActionCardInfo
         {
-            Title = FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Todo),
+            Title = FormatToolTitle(pendingAction.ToolName, category),
             Summary = DetokenizeForDisplay(pendingAction.Description),
-            Category = ActionCardCategory.Todo,
+            Category = category,
             ToolName = pendingAction.ToolName,
             IsDestructive = isDelete,
-            WarningText = isDelete ? _localizationService["Msg_Assistant_PermanentDeleteTodo"] : null,
-            Details = pendingAction.Details is not null
-                ? new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details)))
-                : [],
-            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Todo)),
-            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Todo)),
+            WarningText = warningText,
+            Details = details,
+            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, category)),
+            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, category)),
         };
-
-        return card;
-    }
-
-    private ActionCardInfo BuildReminderActionCard(ReminderToolCall pendingAction)
-    {
-        var isDelete = pendingAction.ToolName == "delete_reminder";
-
-        var card = new ActionCardInfo
-        {
-            Title = FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Reminder),
-            Summary = DetokenizeForDisplay(pendingAction.Description),
-            Category = ActionCardCategory.Reminder,
-            ToolName = pendingAction.ToolName,
-            IsDestructive = isDelete,
-            WarningText = isDelete ? _localizationService["Msg_Assistant_PermanentDeleteReminder"] : null,
-            Details = pendingAction.Details is not null
-                ? new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details)))
-                : [],
-            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Reminder)),
-            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, ActionCardCategory.Reminder)),
-        };
-
-        return card;
     }
 
     private string FormatToolTitle(string toolName, ActionCardCategory category)
@@ -1002,7 +863,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (supportsTools)
         {
             fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled);
-            tools = [.. _memoryToolHandler.GetTools(), .. _reminderToolHandler.GetTools()];
+            tools = [.. _pluginService.GetAllTools()];
         }
         else
         {
@@ -1048,42 +909,21 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         _logger.LogInformation("Voice mode tool call: {ToolName}", toolCall.Name);
 
-        if (toolCall.Name is "create_reminder" or "query_reminders" or "update_reminder" or "delete_reminder")
-        {
-            var (result, pendingAction) = await _reminderToolHandler.HandleToolCallAsync(toolCall);
-            if (result is not null)
-                return result;
+        var routeResult = await _pluginService.RouteToolCallAsync(toolCall);
+        if (routeResult is null)
+            return $"Unknown tool: {toolCall.Name}";
 
-            // Auto-approve write operations in voice mode (no dialog)
-            if (pendingAction is not null)
-                return await _reminderToolHandler.ExecutePendingActionAsync(pendingAction);
-
-            return "Tool call handled.";
-        }
-
-        if (toolCall.Name is "create_todo" or "query_todos" or "complete_todo" or "update_todo" or "delete_todo")
-        {
-            var (result, pendingAction) = await _todoToolHandler.HandleToolCallAsync(toolCall);
-            if (result is not null)
-                return result;
-
-            if (pendingAction is not null)
-                return await _todoToolHandler.ExecutePendingActionAsync(pendingAction);
-
-            return "Tool call handled.";
-        }
-
-        var (memResult, memPending) = await _memoryToolHandler.HandleToolCallAsync(toolCall);
-        if (memResult is not null)
-            return memResult;
+        var (result, pendingAction) = routeResult.Value;
+        if (result is not null)
+            return result;
 
         // Auto-approve write operations in voice mode (no dialog)
-        if (memPending is not null)
+        if (pendingAction is not null)
         {
-            var actionResult = await _memoryToolHandler.ExecutePendingActionAsync(memPending);
+            var actionResult = await pendingAction.Execute();
 
             // Re-scan for new PII after memory write
-            if (_tokenizationEnabled)
+            if (_tokenizationEnabled && pendingAction.PluginName == "memory")
             {
                 try { await _tokenMapService.InitializeAsync(); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after voice mode memory write"); }

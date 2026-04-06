@@ -25,6 +25,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IE2EEService? _e2ee;
     private readonly IDeviceManagementService? _deviceMgmt;
     private readonly IDeviceKeyService? _deviceKeys;
+    private readonly IPluginService? _pluginService;
     private readonly SyncMapper _mapper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
@@ -53,7 +54,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         IKanbanColumnService? columnService = null,
         IE2EEService? e2ee = null,
         IDeviceManagementService? deviceMgmt = null,
-        IDeviceKeyService? deviceKeys = null)
+        IDeviceKeyService? deviceKeys = null,
+        IPluginService? pluginService = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -66,6 +68,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _e2ee = e2ee;
         _deviceMgmt = deviceMgmt;
         _deviceKeys = deviceKeys;
+        _pluginService = pluginService;
         _mapper = mapper;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -384,7 +387,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 Upserted = todos
                     .Select(t => _mapper.ToSyncTodo(t, userId))
                     .ToList()
-            }
+            },
+            PluginPreferences = _pluginService?.GetPendingPreferenceChanges() ?? []
         };
 
         var pushedCount = request.Templates.Upserted.Count
@@ -439,14 +443,15 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (pullResponse is null) return (0, 0, false);
 
         _logger.LogInformation(
-            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d",
+            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d",
             pullResponse.ServerTimestamp,
             pullResponse.Templates.Upserted.Count, pullResponse.Templates.Deleted.Count,
             pullResponse.Providers.Upserted.Count, pullResponse.Providers.Deleted.Count,
             pullResponse.Sessions.Added.Count, pullResponse.Sessions.Deleted.Count,
             pullResponse.Memories.Upserted.Count, pullResponse.Memories.Deleted.Count,
             pullResponse.KanbanColumns.Upserted.Count, pullResponse.KanbanColumns.Deleted.Count,
-            pullResponse.Todos.Upserted.Count, pullResponse.Todos.Deleted.Count);
+            pullResponse.Todos.Upserted.Count, pullResponse.Todos.Deleted.Count,
+            pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
 
         var userId = settings.SyncUserId;
 
@@ -717,20 +722,32 @@ public class SyncClientService : ISyncClientService, IDisposable
             _logger.LogWarning("Pull completed with {Count} decryption error(s) — data may have been encrypted with a different key", decryptionErrors);
         }
 
+        // Apply plugins
+        if (_pluginService is not null &&
+            (pullResponse.Plugins.Upserted.Count > 0 || pullResponse.Plugins.Deleted.Count > 0))
+        {
+            await _pluginService.ApplyServerPluginsAsync(
+                pullResponse.Plugins.Upserted, pullResponse.Plugins.Deleted);
+            _logger.LogInformation("Applied {Upserted} plugin upserts, {Deleted} plugin deletions",
+                pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
+        }
+
         var pulledCount = pullResponse.Templates.Upserted.Count
             + pullResponse.Providers.Upserted.Count
             + pullResponse.Sessions.Added.Count
             + pullResponse.Memories.Upserted.Count
             + pullResponse.KanbanColumns.Upserted.Count
-            + pullResponse.Todos.Upserted.Count;
+            + pullResponse.Todos.Upserted.Count
+            + pullResponse.Plugins.Upserted.Count;
 
-        _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanColumns}KC, {Todos}Todo",
+        _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanColumns}KC, {Todos}Todo, {Plugins}Pl",
             pullResponse.Templates.Upserted.Count,
             pullResponse.Providers.Upserted.Count,
             pullResponse.Sessions.Added.Count,
             pullResponse.Memories.Upserted.Count,
             pullResponse.KanbanColumns.Upserted.Count,
-            pullResponse.Todos.Upserted.Count);
+            pullResponse.Todos.Upserted.Count,
+            pullResponse.Plugins.Upserted.Count);
 
         return (pulledCount, decryptionErrors, true);
     }
