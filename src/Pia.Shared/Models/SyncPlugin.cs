@@ -31,4 +31,10 @@ public class SyncPlugin
     public bool? UserEnabled { get; set; }
 
     public DateTime UpdatedAt { get; set; }
+
+    /// <summary>SHA-256 hash of the .cab file, hex-encoded. Null if no cab.</summary>
+    public string? CabHash { get; set; }
+
+    /// <summary>Size of the .cab file in bytes. Null if no cab.</summary>
+    public long? CabSize { get; set; }
 }

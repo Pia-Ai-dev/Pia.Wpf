@@ -207,8 +207,25 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     public async Task EnsureBuiltInProviderAsync()
     {
         var providers = await LoadAsync();
-        if (providers.Any(p => p.Id == PiaCloudProviderId))
+        var existing = providers.FirstOrDefault(p => p.Id == PiaCloudProviderId);
+        if (existing is not null)
+        {
+            // Migrate: PiaCloud capabilities are server-determined, ensure they're enabled
+            var updated = false;
+            if (!existing.SupportsToolCalling)
+            {
+                existing.SupportsToolCalling = true;
+                updated = true;
+            }
+            if (!existing.SupportsStreaming)
+            {
+                existing.SupportsStreaming = true;
+                updated = true;
+            }
+            if (updated)
+                await SaveAsync(providers);
             return;
+        }
 
         var piaCloud = new AiProvider
         {
@@ -216,7 +233,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             Name = "Pia Cloud",
             ProviderType = AiProviderType.PiaCloud,
             Endpoint = "",
-            SupportsToolCalling = false,
+            SupportsToolCalling = true,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -248,7 +265,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     private async Task<TestConnectionResult> TestConnectionCoreAsync(AiProvider provider, bool persist)
     {
-        // PiaCloud: just hit /api/ai/status — no chat completions endpoint
+        // PiaCloud: verify server reachability first, then run standard probes
         if (provider.ProviderType == AiProviderType.PiaCloud)
         {
             try
@@ -259,23 +276,20 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             {
                 throw new InvalidOperationException($"Connection test failed: {ex.Message}", ex);
             }
-
-            provider.SupportsToolCalling = false;
-            provider.SupportsStreaming = false;
-            if (persist) await UpdateProviderAsync(provider);
-            return new TestConnectionResult(true, false, false);
         }
-
-        try
+        else
         {
-            var testPrompt = "Say 'Connection successful' if you can read this.";
-            var response = await _aiClientService.SendRequestAsync(provider, testPrompt);
-            if (string.IsNullOrWhiteSpace(response))
-                throw new InvalidOperationException("Provider returned empty response");
-        }
+            try
+            {
+                var testPrompt = "Say 'Connection successful' if you can read this.";
+                var response = await _aiClientService.SendRequestAsync(provider, testPrompt);
+                if (string.IsNullOrWhiteSpace(response))
+                    throw new InvalidOperationException("Provider returned empty response");
+            }
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Connection test failed: {ex.Message}", ex);
+            }
         }
 
         // Probe tool calling support

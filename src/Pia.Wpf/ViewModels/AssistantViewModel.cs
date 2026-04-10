@@ -291,6 +291,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _logger.LogInformation("SendMessage: provider={ProviderName}, supportsTools={SupportsTools}, toolCount={ToolCount}",
                 provider.Name, supportsTools, tools?.Count ?? 0);
 
+            if (tools is { Count: > 0 })
+                _logger.LogDebug("Tools being sent to AI: [{ToolNames}]",
+                    string.Join(", ", tools.Select(t => t.Name)));
+
             var chatMessages = new List<ChatMessage>
             {
                 new(ChatRole.System, fullSystemPrompt)
@@ -341,6 +345,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         finally
         {
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+                _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
+
             assistantMessage.IsStreaming = false;
             IsStreaming = false;
             _streamingCts?.Dispose();
@@ -451,6 +458,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var (result, pendingAction) = routeResult.Value;
         _logger.LogDebug("Plugin route returned: hasResult={HasResult}, hasPending={HasPending}",
             result is not null, pendingAction is not null);
+
+        if (result is string resultStr)
+        {
+            var preview = resultStr.Length > 500 ? resultStr[..500] + "..." : resultStr;
+            _logger.LogDebug("Tool {ToolName} result ({Length} chars): {Preview}",
+                toolCall.Name, resultStr.Length, preview);
+        }
 
         if (result is not null)
             return result;
