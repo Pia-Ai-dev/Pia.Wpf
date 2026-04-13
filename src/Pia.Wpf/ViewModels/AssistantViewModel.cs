@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -346,7 +346,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         finally
         {
             if (string.IsNullOrEmpty(assistantMessage.Content))
+            {
                 _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
+                assistantMessage.Content = _localizationService["Msg_Assistant_EmptyResponse"];
+                _snackbarService.Show(
+                    _localizationService["Msg_Warning"],
+                    _localizationService["Msg_Assistant_EmptyResponse"],
+                    Wpf.Ui.Controls.ControlAppearance.Caution,
+                    null,
+                    TimeSpan.FromSeconds(2));
+            }
 
             assistantMessage.IsStreaming = false;
             IsStreaming = false;
