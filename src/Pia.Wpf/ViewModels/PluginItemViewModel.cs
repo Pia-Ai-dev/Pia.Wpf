@@ -1,7 +1,11 @@
+using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Pia.Shared.Models;
+using Pia.Services.Interfaces;
 using Wpf.Ui.Controls;
 
 namespace Pia.ViewModels;
@@ -44,13 +48,14 @@ public partial class PluginItemViewModel : ObservableObject
         _ => Kind
     };
 
-    public PluginItemViewModel(SyncPlugin plugin, string? serverUrl)
+    public PluginItemViewModel(SyncPlugin plugin, string? serverUrl,
+        IHttpClientFactory? httpClientFactory = null, IAuthService? authService = null)
     {
         _plugin = plugin;
         _isEnabled = plugin.UserEnabled ?? true;
         _statusText = plugin.IsActive ? "Active" : "Inactive";
         FallbackIcon = MapFallbackIcon(plugin);
-        LoadIcon(plugin.IconUrl, serverUrl);
+        _ = LoadIconAsync(plugin.IconUrl, serverUrl, httpClientFactory, authService);
     }
 
     public void UpdateStatus(string status)
@@ -58,7 +63,8 @@ public partial class PluginItemViewModel : ObservableObject
         StatusText = status;
     }
 
-    private void LoadIcon(string? iconUrl, string? serverUrl)
+    private async Task LoadIconAsync(string? iconUrl, string? serverUrl,
+        IHttpClientFactory? httpClientFactory, IAuthService? authService)
     {
         if (string.IsNullOrEmpty(iconUrl))
             return;
@@ -73,14 +79,46 @@ public partial class PluginItemViewModel : ObservableObject
             if (fullUrl.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.UriSource = new Uri(fullUrl, UriKind.Absolute);
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.DecodePixelWidth = 48;
-            bitmap.EndInit();
-            IconImage = bitmap;
-            OnPropertyChanged(nameof(HasIcon));
+            byte[]? imageBytes = null;
+
+            // Use authenticated download for server API endpoints
+            if (httpClientFactory is not null && authService is not null
+                && iconUrl.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+            {
+                var accessToken = await authService.GetAccessTokenAsync();
+                if (!string.IsNullOrEmpty(accessToken))
+                {
+                    using var client = httpClientFactory.CreateClient();
+                    client.DefaultRequestHeaders.Authorization =
+                        new AuthenticationHeaderValue("Bearer", accessToken);
+                    client.Timeout = TimeSpan.FromSeconds(10);
+                    var response = await client.GetAsync(fullUrl);
+                    if (response.IsSuccessStatusCode)
+                        imageBytes = await response.Content.ReadAsByteArrayAsync();
+                }
+            }
+
+            App.Current.Dispatcher.Invoke(() =>
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.DecodePixelWidth = 48;
+
+                if (imageBytes is not null)
+                {
+                    bitmap.StreamSource = new MemoryStream(imageBytes);
+                }
+                else
+                {
+                    bitmap.UriSource = new Uri(fullUrl, UriKind.Absolute);
+                }
+
+                bitmap.EndInit();
+                bitmap.Freeze();
+                IconImage = bitmap;
+                OnPropertyChanged(nameof(HasIcon));
+            });
         }
         catch
         {

@@ -1,3 +1,4 @@
+using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
@@ -42,7 +43,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IDeviceKeyService deviceKeys,
         E2EEOnboardingViewModel onboardingViewModel,
         IAutostartService autostartService,
-        IPluginService pluginService)
+        IPluginService pluginService,
+        IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
 
@@ -58,7 +60,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, onboardingViewModel);
 
-        PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService);
+        PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, httpClientFactory);
     }
 
     public void OnNavigatedTo(object? parameter)

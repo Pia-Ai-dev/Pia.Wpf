@@ -1,8 +1,9 @@
+using System.Collections.ObjectModel;
+using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Services.Interfaces;
-using System.Collections.ObjectModel;
 
 namespace Pia.ViewModels;
 
@@ -16,6 +17,7 @@ public partial class PluginsSettingsViewModel : ObservableObject
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     [ObservableProperty]
     private ObservableCollection<PluginItemViewModel> _plugins = [];
@@ -34,7 +36,8 @@ public partial class PluginsSettingsViewModel : ObservableObject
         ISettingsService settingsService,
         IDialogService dialogService,
         ILocalizationService localizationService,
-        Wpf.Ui.ISnackbarService snackbarService)
+        Wpf.Ui.ISnackbarService snackbarService,
+        IHttpClientFactory httpClientFactory)
     {
         _parent = parent;
         _logger = logger;
@@ -44,10 +47,14 @@ public partial class PluginsSettingsViewModel : ObservableObject
         _dialogService = dialogService;
         _localizationService = localizationService;
         _snackbarService = snackbarService;
+        _httpClientFactory = httpClientFactory;
 
         _isCloudConnected = _authService.IsLoggedIn;
         _authService.LoginStateChanged += OnLoginStateChanged;
+        _pluginService.PluginsChanged += OnPluginsChanged;
     }
+
+    private void OnPluginsChanged(object? sender, EventArgs e) => _ = LoadPluginsAsync();
 
     private void OnLoginStateChanged(object? sender, bool isLoggedIn)
     {
@@ -74,7 +81,7 @@ public partial class PluginsSettingsViewModel : ObservableObject
             var items = configs
                 .OrderByDescending(p => p.IsPreloaded)
                 .ThenBy(p => p.Name)
-                .Select(p => new PluginItemViewModel(p, serverUrl))
+                .Select(p => new PluginItemViewModel(p, serverUrl, _httpClientFactory, _authService))
                 .ToList();
 
             App.Current.Dispatcher.Invoke(() =>
