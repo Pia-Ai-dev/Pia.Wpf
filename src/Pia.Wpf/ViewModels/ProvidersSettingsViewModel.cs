@@ -42,8 +42,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
         {
-            OnPropertyChanged(nameof(NonCloudProviders));
-            OnPropertyChanged(nameof(OptimizeProviderOptions));
             OnPropertyChanged(nameof(ShowCloudSetupBanner));
         };
     }
@@ -76,11 +74,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     public bool IsTestConnectionInProgress => TestingProviderId.HasValue;
 
-    public List<AiProvider> NonCloudProviders =>
-        Providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).ToList();
-
-    public List<AiProvider> OptimizeProviderOptions =>
-        UseSameProviderForAllModes ? NonCloudProviders : Providers.ToList();
+    public List<AiProvider> OptimizeProviderOptions => Providers.ToList();
 
     public string OptimizeProviderLabel =>
         UseSameProviderForAllModes
@@ -96,14 +90,10 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         {
             if (UseSameProviderForAllModes && value.HasValue)
             {
-                var isPiaCloud = Providers.Any(p => p.Id == value && p.ProviderType == AiProviderType.PiaCloud);
-                if (!isPiaCloud)
-                {
-                    _isLoading = true;
-                    AssistantProviderId = value;
-                    ResearchProviderId = value;
-                    _isLoading = false;
-                }
+                _isLoading = true;
+                AssistantProviderId = value;
+                ResearchProviderId = value;
+                _isLoading = false;
             }
             SafeFireAndForget(SaveProviderSettingsAsync());
         }
@@ -121,20 +111,15 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     partial void OnUseSameProviderForAllModesChanged(bool value)
     {
-        OnPropertyChanged(nameof(OptimizeProviderOptions));
         OnPropertyChanged(nameof(OptimizeProviderLabel));
         if (!_isLoading)
         {
             if (value && OptimizeProviderId.HasValue)
             {
-                var isPiaCloud = Providers.Any(p => p.Id == OptimizeProviderId && p.ProviderType == AiProviderType.PiaCloud);
-                if (!isPiaCloud)
-                {
-                    _isLoading = true;
-                    AssistantProviderId = OptimizeProviderId;
-                    ResearchProviderId = OptimizeProviderId;
-                    _isLoading = false;
-                }
+                _isLoading = true;
+                AssistantProviderId = OptimizeProviderId;
+                ResearchProviderId = OptimizeProviderId;
+                _isLoading = false;
             }
             SafeFireAndForget(SaveProviderSettingsAsync());
         }
