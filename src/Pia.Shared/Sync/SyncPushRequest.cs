@@ -27,4 +27,7 @@ public class SyncPushRequest
     public SyncEntityChanges<SyncMemory> Memories { get; set; } = new();
     public SyncEntityChanges<SyncTodo> Todos { get; set; } = new();
     public SyncEntityChanges<SyncKanbanColumn> KanbanColumns { get; set; } = new();
+
+    /// <summary>Plugin preference changes only (clients cannot modify plugin definitions).</summary>
+    public List<SyncPluginPreference> PluginPreferences { get; set; } = [];
 }

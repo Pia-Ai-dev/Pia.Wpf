@@ -161,6 +161,13 @@ public class AiClientService : IAiClientService
         if (useTools)
         {
             options.Tools = [.. tools!];
+            _logger.LogDebug("Tool schemas being sent: [{ToolNames}]",
+                string.Join(", ", tools!.Select(t => t.Name)));
+        }
+        else
+        {
+            _logger.LogWarning("Tools NOT included in request: SupportsToolCalling={SupportsToolCalling}, toolCount={ToolCount}",
+                provider.SupportsToolCalling, tools?.Count ?? 0);
         }
 
         const int maxToolRounds = 10;
@@ -168,7 +175,8 @@ public class AiClientService : IAiClientService
 
         for (var round = 0; round < maxToolRounds; round++)
         {
-            _logger.LogDebug("Tool round {Round}/{MaxRounds} starting", round + 1, maxToolRounds);
+            _logger.LogDebug("Tool round {Round}/{MaxRounds} starting, path={Path}",
+                round + 1, maxToolRounds, provider.SupportsStreaming ? "streaming" : "non-streaming");
             ChatResponse response;
 
             if (provider.SupportsStreaming)
@@ -219,6 +227,8 @@ public class AiClientService : IAiClientService
                 }
 
                 response = updates.ToChatResponse();
+                _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}",
+                    round + 1, response.Messages.Count, response.Text?.Length ?? 0);
             }
             else
             {
@@ -236,6 +246,8 @@ public class AiClientService : IAiClientService
                 }
 
                 var text = response.Text;
+                _logger.LogDebug("Round {Round} non-streaming done: {MsgCount} messages, textLength={TextLen}",
+                    round + 1, response.Messages.Count, text?.Length ?? 0);
                 if (!string.IsNullOrEmpty(text))
                 {
                     yield return text;
@@ -243,6 +255,13 @@ public class AiClientService : IAiClientService
             }
 
             // Check if there are tool calls in the response
+            var contentTypes = response.Messages
+                .SelectMany(m => m.Contents)
+                .Select(c => c.GetType().Name)
+                .Distinct();
+            _logger.LogDebug("Round {Round} response content types: [{ContentTypes}]",
+                round + 1, string.Join(", ", contentTypes));
+
             var toolCalls = response.Messages
                 .SelectMany(m => m.Contents)
                 .OfType<FunctionCallContent>()
@@ -252,10 +271,13 @@ public class AiClientService : IAiClientService
             {
                 _logger.LogInformation("Round {Round}: {ToolCallCount} tool call(s) detected: {ToolNames}",
                     round + 1, toolCalls.Count, string.Join(", ", toolCalls.Select(t => t.Name)));
-#if DEBUG
+
                 foreach (var tc in toolCalls)
-                    Debug.WriteLine($"[Tool Args] {tc.Name}: {JsonSerializer.Serialize(tc.Arguments)}");
-#endif
+                {
+                    var args = tc.Arguments is not null ? JsonSerializer.Serialize(tc.Arguments) : "<null>";
+                    _logger.LogDebug("Tool call {ToolName} (callId={CallId}) args: {Args}",
+                        tc.Name, tc.CallId, args.Length > 500 ? args[..500] + "..." : args);
+                }
 
                 // Add assistant messages with tool calls to working messages
                 foreach (var msg in response.Messages)
@@ -268,14 +290,18 @@ public class AiClientService : IAiClientService
                 {
                     _logger.LogDebug("Invoking tool handler for {ToolName} (callId={CallId})", toolCall.Name, toolCall.CallId);
                     var result = await toolHandler(toolCall);
-                    _logger.LogDebug("Tool handler returned for {ToolName}, resultType={ResultType}",
-                        toolCall.Name, result?.GetType().Name ?? "null");
+                    var resultPreview = result?.ToString() ?? "<null>";
+                    _logger.LogDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
+                        toolCall.Name, resultPreview.Length,
+                        resultPreview.Length > 500 ? resultPreview[..500] + "..." : resultPreview);
                     var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
                         ChatRole.Tool,
                         [new FunctionResultContent(toolCall.CallId, result)]);
                     workingMessages.Add(resultMessage);
                 }
 
+                _logger.LogDebug("Round {Round} complete, continuing with {MessageCount} working messages",
+                    round + 1, workingMessages.Count);
                 // Continue the loop to get the AI's response after tool execution
                 continue;
             }

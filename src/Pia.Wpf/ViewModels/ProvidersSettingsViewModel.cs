@@ -75,6 +75,9 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     public bool IsTestConnectionInProgress => TestingProviderId.HasValue;
 
+    public List<AiProvider> OptimizeProviderOptions => Providers.ToList();
+
+
     public string OptimizeProviderLabel =>
         UseSameProviderForAllModes
             ? Localization.LocalizationSource.Instance["Providers_AllModes"]

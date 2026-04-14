@@ -9,11 +9,16 @@ namespace Pia.Services;
 public class ResearchService : IResearchService
 {
     private readonly IAiClientService _aiClientService;
+    private readonly IPluginService _pluginService;
     private readonly ILogger<ResearchService> _logger;
 
-    public ResearchService(IAiClientService aiClientService, ILogger<ResearchService> logger)
+    public ResearchService(
+        IAiClientService aiClientService,
+        IPluginService pluginService,
+        ILogger<ResearchService> logger)
     {
         _aiClientService = aiClientService;
+        _pluginService = pluginService;
         _logger = logger;
     }
 
@@ -21,6 +26,8 @@ public class ResearchService : IResearchService
     {
         var conversationHistory = new List<ChatMessage>();
         var stepNumber = 1;
+        var tools = _pluginService.GetAllTools();
+        var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
 
         session.Status = ResearchStatus.InProgress;
 
@@ -33,8 +40,9 @@ public class ResearchService : IResearchService
             decomposeStep.StartedAt = DateTime.Now;
             decomposeStep.IsStreaming = true;
 
-            conversationHistory.Add(new ChatMessage(ChatRole.System,
-                "You are a research assistant. When given a research question, break it down into 3-5 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text."));
+            var decomposePrompt = "You are a research assistant. When given a research question, break it down into 3-5 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text.";
+
+            conversationHistory.Add(new ChatMessage(ChatRole.System, decomposePrompt));
             conversationHistory.Add(new ChatMessage(ChatRole.User, session.Query));
 
             await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
@@ -50,7 +58,16 @@ public class ResearchService : IResearchService
 
             var subQuestions = ParseSubQuestions(decomposeStep.Content);
 
-            // Phase 2: Research each sub-question
+            // Phase 2: Research each sub-question (with tools if available)
+            // Replace the system prompt for research phase to include tool instructions
+            if (tools.Count > 0)
+            {
+                var researchSystemPrompt = "You are a research assistant with access to tools. Use available tools to gather accurate, up-to-date information for answering research questions. Provide detailed, well-sourced answers.";
+                if (!string.IsNullOrEmpty(pluginPrompts))
+                    researchSystemPrompt += "\n\n" + pluginPrompts;
+                conversationHistory[0] = new ChatMessage(ChatRole.System, researchSystemPrompt);
+            }
+
             foreach (var subQuestion in subQuestions)
             {
                 ct.ThrowIfCancellationRequested();
@@ -64,9 +81,22 @@ public class ResearchService : IResearchService
                 conversationHistory.Add(new ChatMessage(ChatRole.User,
                     $"Now research and provide a detailed answer to this sub-question: {subQuestion}"));
 
-                await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
+                if (tools.Count > 0)
                 {
-                    researchStep.Content += token;
+                    await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
+                        conversationHistory, provider, tools,
+                        toolCall => HandleResearchToolCallAsync(toolCall, ct),
+                        ct))
+                    {
+                        researchStep.Content += token;
+                    }
+                }
+                else
+                {
+                    await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
+                    {
+                        researchStep.Content += token;
+                    }
                 }
 
                 researchStep.IsStreaming = false;
@@ -114,6 +144,25 @@ public class ResearchService : IResearchService
             session.Status = ResearchStatus.Failed;
             throw;
         }
+    }
+
+    private async Task<object?> HandleResearchToolCallAsync(FunctionCallContent toolCall, CancellationToken ct)
+    {
+        _logger.LogInformation("Research tool call: {Tool}", toolCall.Name);
+
+        var result = await _pluginService.RouteToolCallAsync(toolCall, ct);
+        if (result is null)
+            return "Unknown tool.";
+
+        var (directResult, pendingAction) = result.Value;
+        if (directResult is not null)
+            return directResult;
+
+        // In research mode, auto-execute without user confirmation
+        if (pendingAction is not null)
+            return await pendingAction.Execute();
+
+        return "Tool call handled.";
     }
 
     private static List<string> ParseSubQuestions(string content)

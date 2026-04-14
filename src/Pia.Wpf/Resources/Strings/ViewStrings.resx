@@ -217,6 +217,12 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Research</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Account</value></data>
+  <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Plugins</value></data>
+  <data name="Plugins_Subtitle" xml:space="preserve"><value>Extend your assistant's capabilities with plugins.</value></data>
+  <data name="Plugins_NotConnected" xml:space="preserve"><value>Connect to Pia Cloud to manage plugins.</value></data>
+  <data name="Plugins_GoToAccount" xml:space="preserve"><value>Go to Account</value></data>
+  <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>Disable Built-in Plugin</value></data>
+  <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' is a built-in plugin. Disabling it will break default assistant functionality. Are you sure?</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Appearance</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Hotkeys</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Speech</value></data>

@@ -104,11 +104,13 @@ public static class Bootstrapper
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<DpapiHelper>();
         services.AddTransient<HttpLoggingHandler>();
+        services.AddTransient<RateLimitRetryHandler>();
 
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.AddHttpMessageHandler<RateLimitRetryHandler>();
             builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
             {
@@ -154,6 +156,9 @@ public static class Bootstrapper
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCache>();
+        services.AddSingleton<Pia.Services.Plugins.CabManager>();
+        services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<ITemplateService, TemplateService>();

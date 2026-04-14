@@ -142,6 +142,8 @@ public class TokenizingAiClientService : IAiClientService
         Func<FunctionCallContent, Task<object?>>? toolHandler = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        _logger.LogDebug("TokenizingAiClientService: relaying GetChatCompletionWithToolsAsync with {ToolCount} tools, tokenization={Enabled}",
+            tools?.Count ?? 0, _enabled ?? false);
         if (!await IsEnabledAsync())
         {
             _logger.LogDebug("Tokenization disabled, passing through tool completion");

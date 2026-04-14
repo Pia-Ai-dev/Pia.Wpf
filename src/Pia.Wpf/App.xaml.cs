@@ -115,6 +115,10 @@ public partial class App : Application
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);
 
+        // Initialize persisted MCP plugins from local database
+        var pluginService = Bootstrapper.ServiceProvider.GetRequiredService<IPluginService>();
+        _ = pluginService.InitializePersistedPluginsAsync();
+
         // Start background sync if user is logged in
         var authService = Bootstrapper.ServiceProvider.GetRequiredService<IAuthService>();
         if (authService.IsLoggedIn)
