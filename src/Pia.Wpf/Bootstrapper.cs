@@ -103,11 +103,13 @@ public static class Bootstrapper
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<DpapiHelper>();
         services.AddTransient<HttpLoggingHandler>();
+        services.AddTransient<RateLimitRetryHandler>();
 
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.AddHttpMessageHandler<RateLimitRetryHandler>();
             builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
             {

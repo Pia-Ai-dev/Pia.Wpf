@@ -5,6 +5,7 @@ namespace Pia.Services.Interfaces;
 
 public interface IPluginService
 {
+    event EventHandler? PluginsChanged;
     IReadOnlyList<IPluginToolHandler> ActiveHandlers { get; }
     IList<AITool> GetAllTools();
     string GetCombinedSystemPromptAdditions();

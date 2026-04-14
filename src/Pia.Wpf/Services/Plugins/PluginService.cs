@@ -11,6 +11,8 @@ namespace Pia.Services.Plugins;
 
 public class PluginService : IPluginService
 {
+    public event EventHandler? PluginsChanged;
+
     private readonly IMemoryToolHandler _memoryToolHandler;
     private readonly ITodoToolHandler _todoToolHandler;
     private readonly IReminderToolHandler _reminderToolHandler;
@@ -314,6 +316,8 @@ public class PluginService : IPluginService
 
         _logger.LogInformation("Applied server plugins: {Upserted} upserted, {Deleted} deleted",
             upserted.Count, deleted.Count);
+
+        PluginsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private async Task HandleNewServerPluginAsync(SyncPlugin plugin)
