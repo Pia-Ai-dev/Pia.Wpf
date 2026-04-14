@@ -211,6 +211,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     public async Task EnsureBuiltInProviderAsync()
     {
         var providers = await LoadAsync();
+        if (providers.Any(p => p.Id == PiaCloudProviderId))
+            return;
 
         var piaCloud = new AiProvider
         {

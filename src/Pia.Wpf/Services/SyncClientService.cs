@@ -150,17 +150,18 @@ public class SyncClientService : ISyncClientService, IDisposable
             var pushed = await PushChangesAsync(client, serverUrl, settings);
 
             // Pull remote changes
-            var (pulled, decryptErrors, pullOk) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
 
             // Only advance the sync cursor if the pull HTTP request succeeded.
+            // Use the server's timestamp as the cursor to avoid clock-skew issues between devices.
             // If pull failed (network error, server 500, etc.), keep the old timestamp
             // so the next sync retries from the same point instead of permanently missing data.
-            if (pullOk)
+            if (pullOk && serverTimestamp.HasValue)
             {
-                settings.LastSyncTimestamp = DateTime.UtcNow;
+                settings.LastSyncTimestamp = serverTimestamp.Value;
                 await _settingsService.SaveSettingsAsync(settings);
             }
-            else
+            else if (!pullOk)
             {
                 _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
             }
@@ -281,12 +282,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                 request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count);
 
             // Pull all data from server (including other devices' data)
-            var (pulled, decryptErrors, pullOk) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
             _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
 
-            if (pullOk)
+            if (pullOk && serverTimestamp.HasValue)
             {
-                settings.LastSyncTimestamp = DateTime.UtcNow;
+                settings.LastSyncTimestamp = serverTimestamp.Value;
                 await _settingsService.SaveSettingsAsync(settings);
             }
             else
@@ -479,7 +480,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         return pushedCount;
     }
 
-    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
         // Ensure UTC Kind so ToString("O") includes the Z suffix — prevents Npgsql
@@ -503,13 +504,13 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
         {
             _logger.LogDebug("Pull returned 304 Not Modified — no changes since last sync");
-            return (0, 0, true);
+            return (0, 0, true, null);
         }
 
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Pull failed with status {Status}", response.StatusCode);
-            return (0, 0, false);
+            return (0, 0, false, null);
         }
 
         if (response.Headers.ETag is not null)
@@ -520,7 +521,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
-        if (pullResponse is null) return (0, 0, false);
+        if (pullResponse is null) return (0, 0, false, null);
 
         _logger.LogInformation(
             "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d",
@@ -856,7 +857,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _logger.LogInformation("Pull merge: {Inserted} inserted, {Updated} updated, {Skipped} skipped, {Deleted} deleted, {DecryptErrors} decrypt errors",
             mergeInserted, mergeUpdated, mergeSkipped, mergeDeleted, decryptionErrors);
 
-        return (pulledCount, decryptionErrors, true);
+        return (pulledCount, decryptionErrors, true, pullResponse.ServerTimestamp);
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)
