@@ -289,6 +289,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                 SelectedTemplateId,
                 provider?.Id,
                 SelectedLanguage,
+                nameof(WindowMode.Optimize),
                 cancellationToken);
 
             OptimizedText = session.OptimizedText;

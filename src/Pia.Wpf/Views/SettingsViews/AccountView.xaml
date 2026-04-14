@@ -165,7 +165,7 @@
                   <ui:Button Content="{loc:Str Sync_SyncNow}"
                              Icon="{ui:SymbolIcon ArrowSync24}"
                              Command="{Binding SyncNowCommand}"
-                             IsEnabled="{Binding IsSyncing, Converter={StaticResource InverseBooleanConverter}}"
+                             IsEnabled="{Binding CanSyncNow}"
                              Margin="0,0,8,0"/>
                   <ui:ProgressRing IsIndeterminate="True"
                                    Width="16" Height="16"

@@ -60,9 +60,14 @@ public partial class AccountSettingsViewModel : ObservableObject
             try
             {
                 IsE2EEOnboardingRequired = false;
+                _isLoading = true;
                 IsE2EEEnabled = true;
+                _isLoading = false;
                 DeviceFingerprint = _deviceKeys.GetFingerprint();
                 await _syncClientService.PerformFirstSyncMigrationAsync();
+
+                var settings = await _settingsService.GetSettingsAsync();
+                LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
             }
             catch (Exception ex)
             {
@@ -158,6 +163,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private string _deviceFingerprint = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSyncNow))]
     private bool _isE2EEOnboardingRequired;
 
     // Sync status
@@ -168,7 +174,10 @@ public partial class AccountSettingsViewModel : ObservableObject
     private string? _lastSyncItemsText;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSyncNow))]
     private bool _isSyncing;
+
+    public bool CanSyncNow => !IsSyncing && !IsE2EEOnboardingRequired;
 
     // Privacy properties
     [ObservableProperty]
@@ -394,7 +403,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [RelayCommand]
     private async Task SyncNowAsync()
     {
-        if (IsSyncing) return;
+        if (IsSyncing || IsE2EEOnboardingRequired) return;
 
         try
         {
@@ -424,7 +433,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [RelayCommand]
     private async Task ForceFullResyncAsync()
     {
-        if (IsSyncing) return;
+        if (IsSyncing || IsE2EEOnboardingRequired) return;
 
         try
         {

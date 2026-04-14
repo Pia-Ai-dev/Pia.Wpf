@@ -10,12 +10,14 @@ public interface IAiClientService
     IAsyncEnumerable<string> StreamChatCompletionAsync(
         IList<ChatMessage> messages,
         AiProvider provider,
+        string? mode = null,
         CancellationToken cancellationToken = default);
 
     Task<ChatResponse> GetChatResponseAsync(
         IList<ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
+        string? mode = null,
         CancellationToken cancellationToken = default);
 
     IAsyncEnumerable<string> GetChatCompletionWithToolsAsync(
@@ -23,6 +25,7 @@ public interface IAiClientService
         AiProvider provider,
         IList<AITool>? tools = null,
         Func<FunctionCallContent, Task<object?>>? toolHandler = null,
+        string? mode = null,
         CancellationToken cancellationToken = default);
 
     Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default);
@@ -34,10 +37,12 @@ public interface IAiClientService
         Guid templateId,
         string language,
         bool isVoiceInput,
+        string? mode = null,
         CancellationToken cancellationToken = default);
 
     Task<string> GeneratePromptViaPiaCloudAsync(
         string styleDescription,
+        string? mode = null,
         CancellationToken cancellationToken = default);
 
     Task TestPiaCloudConnectionAsync(CancellationToken cancellationToken = default);

@@ -320,6 +320,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
                 chatMessages, provider, tools,
                 supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage) : null,
+                nameof(WindowMode.Assistant),
                 _streamingCts.Token))
             {
                 rawBuffer.Append(token);
@@ -913,6 +914,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
             chatMessages, provider, tools,
             supportsTools ? HandleVoiceModeToolCall : null,
+            nameof(WindowMode.Assistant),
             cancellationToken))
         {
             rawBuffer.Append(token);

@@ -18,18 +18,25 @@ public sealed class PiaCloudChatClient : IChatClient
 {
     private readonly HttpClient _httpClient;
     private readonly string _chatUrl;
+    private readonly string? _mode;
     private readonly ILogger _logger;
 
-    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, string? accessToken, ILogger logger)
+    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, string? accessToken, ILogger logger, string? mode = null)
     {
         _httpClient = httpClient;
         _chatUrl = $"{serverUrl.TrimEnd('/')}/api/ai/chat";
+        _mode = mode;
         _logger = logger;
 
         if (!string.IsNullOrEmpty(accessToken))
         {
             _httpClient.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", accessToken);
+        }
+
+        if (!string.IsNullOrEmpty(mode))
+        {
+            _httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
         }
     }
 

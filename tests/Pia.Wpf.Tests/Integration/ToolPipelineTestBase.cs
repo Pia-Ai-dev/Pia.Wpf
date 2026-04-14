@@ -159,7 +159,7 @@ public abstract class ToolPipelineTestBase
         await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
             messages, provider, tools,
             async toolCall => await HandleToolCallAsync(toolCall, toolCalls),
-            cancellationToken))
+            cancellationToken: cancellationToken))
         {
             responseBuilder.Append(token);
         }

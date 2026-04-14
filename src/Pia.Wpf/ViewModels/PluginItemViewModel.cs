@@ -75,16 +75,18 @@ public partial class PluginItemViewModel : ObservableObject
                 ? iconUrl
                 : $"{serverUrl?.TrimEnd('/')}{iconUrl}";
 
-            // Skip SVG — WPF can't render it natively
-            if (fullUrl.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+            // Skip formats WPF can't decode natively
+            if (fullUrl.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
+                || fullUrl.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
+                || fullUrl.EndsWith(".avif", StringComparison.OrdinalIgnoreCase))
                 return;
 
             byte[]? imageBytes = null;
 
-            // Use authenticated download for server API endpoints
             if (httpClientFactory is not null && authService is not null
                 && iconUrl.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
             {
+                // Authenticated download for server API endpoints
                 var accessToken = await authService.GetAccessTokenAsync();
                 if (!string.IsNullOrEmpty(accessToken))
                 {
@@ -97,6 +99,18 @@ public partial class PluginItemViewModel : ObservableObject
                         imageBytes = await response.Content.ReadAsByteArrayAsync();
                 }
             }
+            else
+            {
+                // Download external URLs ourselves so we can validate before decoding
+                using var client = httpClientFactory?.CreateClient() ?? new HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(10);
+                var response = await client.GetAsync(fullUrl);
+                if (response.IsSuccessStatusCode)
+                    imageBytes = await response.Content.ReadAsByteArrayAsync();
+            }
+
+            if (imageBytes is null || !IsSupportedImage(imageBytes))
+                return;
 
             App.Current.Dispatcher.Invoke(() =>
             {
@@ -104,16 +118,7 @@ public partial class PluginItemViewModel : ObservableObject
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
                 bitmap.DecodePixelWidth = 48;
-
-                if (imageBytes is not null)
-                {
-                    bitmap.StreamSource = new MemoryStream(imageBytes);
-                }
-                else
-                {
-                    bitmap.UriSource = new Uri(fullUrl, UriKind.Absolute);
-                }
-
+                bitmap.StreamSource = new MemoryStream(imageBytes);
                 bitmap.EndInit();
                 bitmap.Freeze();
                 IconImage = bitmap;
@@ -124,6 +129,34 @@ public partial class PluginItemViewModel : ObservableObject
         {
             // Fall back to symbol icon
         }
+    }
+
+    private static bool IsSupportedImage(byte[] data)
+    {
+        if (data.Length < 8)
+            return false;
+
+        // PNG: 89 50 4E 47
+        if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
+            return true;
+        // JPEG: FF D8 FF
+        if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
+            return true;
+        // GIF: GIF8
+        if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38)
+            return true;
+        // BMP: BM
+        if (data[0] == 0x42 && data[1] == 0x4D)
+            return true;
+        // ICO: 00 00 01 00
+        if (data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 && data[3] == 0x00)
+            return true;
+        // TIFF: 49 49 2A 00 or 4D 4D 00 2A
+        if ((data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00)
+            || (data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A))
+            return true;
+
+        return false;
     }
 
     private static SymbolRegular MapFallbackIcon(SyncPlugin plugin)

@@ -45,7 +45,7 @@ public class ResearchService : IResearchService
             conversationHistory.Add(new ChatMessage(ChatRole.System, decomposePrompt));
             conversationHistory.Add(new ChatMessage(ChatRole.User, session.Query));
 
-            await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
+            await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
             {
                 decomposeStep.Content += token;
             }
@@ -86,6 +86,7 @@ public class ResearchService : IResearchService
                     await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
                         conversationHistory, provider, tools,
                         toolCall => HandleResearchToolCallAsync(toolCall, ct),
+                        nameof(WindowMode.Research),
                         ct))
                     {
                         researchStep.Content += token;
@@ -93,7 +94,7 @@ public class ResearchService : IResearchService
                 }
                 else
                 {
-                    await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
+                    await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
                     {
                         researchStep.Content += token;
                     }
@@ -118,7 +119,7 @@ public class ResearchService : IResearchService
             conversationHistory.Add(new ChatMessage(ChatRole.User,
                 "Now synthesize all the research findings above into a comprehensive, well-structured answer to the original question. Use clear headings and organize the information logically. Include key findings, conclusions, and any important caveats."));
 
-            await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, ct))
+            await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
             {
                 synthesizeStep.Content += token;
                 session.SynthesizedResult += token;

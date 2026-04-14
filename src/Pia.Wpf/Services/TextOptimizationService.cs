@@ -28,6 +28,7 @@ public class TextOptimizationService : ITextOptimizationService
         Guid templateId,
         Guid? providerId = null,
         string targetLanguage = "EN",
+        string? mode = null,
         CancellationToken cancellationToken = default)
     {
         var template = await _templateService.GetTemplateAsync(templateId)
@@ -51,7 +52,7 @@ public class TextOptimizationService : ITextOptimizationService
         {
             // Server builds the prompt — send raw text + template ID
             optimizedText = await _aiClientService.OptimizeViaPiaCloudAsync(
-                processedInput, templateId, targetLanguage, isVoiceInput, cancellationToken);
+                processedInput, templateId, targetLanguage, isVoiceInput, mode, cancellationToken);
         }
         else
         {
