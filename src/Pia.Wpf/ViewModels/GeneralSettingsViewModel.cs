@@ -19,6 +19,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IAutostartService _autostartService;
+    private readonly IPolicyService _policyService;
     private bool _isLoading;
 
     public GeneralSettingsViewModel(
@@ -30,7 +31,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         ITtsService ttsService,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
-        IAutostartService autostartService)
+        IAutostartService autostartService,
+        IPolicyService policyService)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -41,7 +43,16 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _autostartService = autostartService;
+        _policyService = policyService;
     }
+
+    // Enterprise policy enforcement
+    public bool IsUiLanguageEnforced => _policyService.IsEnforced(nameof(AppSettings.UiLanguage));
+    public bool IsStartMinimizedEnforced => _policyService.IsEnforced(nameof(AppSettings.StartMinimized));
+    public bool IsLaunchAtStartupEnforced => _policyService.IsEnforced(nameof(AppSettings.LaunchAtStartup));
+    public bool IsWhisperModelEnforced => _policyService.IsEnforced(nameof(AppSettings.WhisperModel));
+    public bool IsTargetSpeechLanguageEnforced => _policyService.IsEnforced(nameof(AppSettings.TargetSpeechLanguage));
+    public bool IsThemeEnforced => _policyService.IsEnforced(nameof(AppSettings.Theme));
 
     // Appearance
     [ObservableProperty]

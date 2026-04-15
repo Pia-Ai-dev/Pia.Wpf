@@ -18,6 +18,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly IAuthService _authService;
     private readonly ILocalizationService _localizationService;
+    private readonly IPolicyService _policyService;
     private bool _isLoading;
 
     private readonly SettingsViewModel _parent;
@@ -29,7 +30,8 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         IDialogService dialogService,
         Wpf.Ui.ISnackbarService snackbarService,
         IAuthService authService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IPolicyService policyService)
     {
         _parent = parent;
         _logger = logger;
@@ -39,6 +41,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         _snackbarService = snackbarService;
         _authService = authService;
         _localizationService = localizationService;
+        _policyService = policyService;
 
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
@@ -75,7 +78,13 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     public bool IsTestConnectionInProgress => TestingProviderId.HasValue;
 
+    // Enterprise policy enforcement
+    public bool IsUseSameProviderEnforced => _policyService.IsEnforced(nameof(AppSettings.UseSameProviderForAllModes));
+
     public List<AiProvider> OptimizeProviderOptions => Providers.ToList();
+
+    public List<AiProvider> NonCloudProviders =>
+        Providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).ToList();
 
 
     public string OptimizeProviderLabel =>

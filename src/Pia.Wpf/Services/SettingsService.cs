@@ -7,6 +7,7 @@ namespace Pia.Services;
 public class SettingsService : JsonPersistenceService<AppSettings>, ISettingsService
 {
     private readonly ILogger<SettingsService> _logger;
+    private readonly IPolicyService _policyService;
 
     public event EventHandler<AppSettings>? SettingsChanged;
 
@@ -14,17 +15,22 @@ public class SettingsService : JsonPersistenceService<AppSettings>, ISettingsSer
 
     protected override AppSettings CreateDefault() => new AppSettings();
 
-    public SettingsService(ILogger<SettingsService> logger)
+    public SettingsService(ILogger<SettingsService> logger, IPolicyService policyService)
     {
         _logger = logger;
+        _policyService = policyService;
     }
 
     public async Task<AppSettings> GetSettingsAsync()
     {
         try
         {
+            // Ensure the policy is loaded before applying it
+            await _policyService.GetPolicyAsync();
+
             var settings = await LoadAsync(true);
             settings.MigrateFromLegacyDefault();
+            _policyService.ApplyPolicy(settings);
             return settings;
         }
         catch (Exception ex)
@@ -36,6 +42,8 @@ public class SettingsService : JsonPersistenceService<AppSettings>, ISettingsSer
 
     public async Task SaveSettingsAsync(AppSettings settings)
     {
+        // Re-apply enforced values before saving to prevent circumvention
+        _policyService.ApplyPolicy(settings);
         await SaveAsync(settings);
         SettingsChanged?.Invoke(this, settings);
     }
