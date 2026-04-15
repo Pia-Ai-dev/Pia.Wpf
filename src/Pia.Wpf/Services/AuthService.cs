@@ -16,6 +16,7 @@ public class AuthService : IAuthService
     private readonly DpapiHelper _dpapiHelper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AuthService> _logger;
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private string? _accessToken;
     private string? _refreshToken;
@@ -277,9 +278,12 @@ public class AuthService : IAuthService
         if (_accessToken is not null && _accessTokenExpiry > DateTime.UtcNow)
             return _accessToken;
 
-        // Refresh the access token
+        await _refreshLock.WaitAsync();
         try
         {
+            if (_accessToken is not null && _accessTokenExpiry > DateTime.UtcNow)
+                return _accessToken;
+
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
             if (string.IsNullOrEmpty(serverUrl))
@@ -315,6 +319,10 @@ public class AuthService : IAuthService
         {
             _logger.LogError(ex, "Token refresh failed");
             return null;
+        }
+        finally
+        {
+            _refreshLock.Release();
         }
     }
 
