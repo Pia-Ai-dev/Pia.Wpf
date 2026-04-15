@@ -19,6 +19,7 @@ public partial class OptimizeSettingsViewModel : ObservableObject
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IPolicyService _policyService;
+    private readonly IAuthService _authService;
     private readonly ProvidersSettingsViewModel _providersVm;
     private bool _isLoading;
 
@@ -31,7 +32,8 @@ public partial class OptimizeSettingsViewModel : ObservableObject
         IDialogService dialogService,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IAuthService authService)
     {
         _providersVm = providersVm;
         _logger = logger;
@@ -42,7 +44,22 @@ public partial class OptimizeSettingsViewModel : ObservableObject
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _policyService = policyService;
+        _authService = authService;
         Templates = new ObservableCollection<OptimizationTemplate>();
+
+        _templateService.TemplatesChanged += OnTemplatesChanged;
+        _authService.LoginStateChanged += OnLoginStateChanged;
+    }
+
+    private void OnTemplatesChanged(object? sender, EventArgs e)
+    {
+        RefreshTemplatesAsync().SafeFireAndForget(_logger);
+    }
+
+    private void OnLoginStateChanged(object? sender, bool isLoggedIn)
+    {
+        if (isLoggedIn)
+            RefreshTemplatesAsync().SafeFireAndForget(_logger);
     }
 
     // Enterprise policy enforcement
@@ -85,6 +102,7 @@ public partial class OptimizeSettingsViewModel : ObservableObject
     {
         _isLoading = true;
 
+        Templates.Clear();
         var templatesList = await _templateService.GetTemplatesAsync();
         foreach (var template in templatesList)
             Templates.Add(template);

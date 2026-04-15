@@ -123,7 +123,7 @@
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <ui:Button Command="{Binding LoginWithGoogleCommand}"
                      MinWidth="180"
-                     IsEnabled="{Binding IsLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                     IsEnabled="False"
                      Margin="0,0,8,0">
             <StackPanel Orientation="Horizontal">
               <Image Source="{StaticResource GoogleIcon}" Width="16" Height="16" Margin="0,0,8,0"/>

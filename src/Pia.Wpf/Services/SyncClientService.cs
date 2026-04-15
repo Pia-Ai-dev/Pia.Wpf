@@ -574,6 +574,13 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                 if (existing is not null)
                 {
+                    if (existing.IsBuiltIn)
+                    {
+                        mergeSkipped++;
+                        _logger.LogDebug("Skipped template {Id}: built-in templates cannot be updated via sync", template.Id);
+                        continue;
+                    }
+
                     var remoteTime = (local.ModifiedAt ?? local.CreatedAt).ToUniversalTime();
                     var localTime = (existing.ModifiedAt ?? existing.CreatedAt).ToUniversalTime();
 

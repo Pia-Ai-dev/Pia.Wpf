@@ -16,15 +16,18 @@ public class MemoryToolHandler : IMemoryToolHandler
 {
     private readonly IMemoryService _memoryService;
     private readonly IEmbeddingService _embeddingService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<MemoryToolHandler> _logger;
 
     public MemoryToolHandler(
         IMemoryService memoryService,
         IEmbeddingService embeddingService,
+        ILocalizationService localizationService,
         ILogger<MemoryToolHandler> logger)
     {
         _memoryService = memoryService;
         _embeddingService = embeddingService;
+        _localizationService = localizationService;
         _logger = logger;
     }
 
@@ -258,14 +261,14 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return Task.FromResult(new MemoryToolCall(
             ToolName: "create_object",
-            Description: $"Create new {MemoryObjectTypes.GetDisplayName(type)}: {label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Create", MemoryObjectTypes.GetDisplayName(type), label),
             OldValue: null,
             NewValue: JsonHelper.FormatJson(data),
             TargetObjectId: null,
             Execute: async () =>
             {
                 var created = await _memoryService.CreateObjectAsync(type, label, data);
-                return $"Memory object created successfully with ID: {created.Id}";
+                return _localizationService.Format("Tool_Memory_Exec_Created", created.Id);
             }));
     }
 
@@ -288,14 +291,14 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return new MemoryToolCall(
             ToolName: "update_object",
-            Description: $"Update {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Update", MemoryObjectTypes.GetDisplayName(existing.Type), existing.Label),
             OldValue: JsonHelper.FormatJson(existing.Data),
             NewValue: FormatMergedJson(existing.Data, mergePatch),
             TargetObjectId: id,
             Execute: async () =>
             {
                 await _memoryService.UpdateObjectAsync(id, mergePatch);
-                return $"Memory object {id} updated successfully.";
+                return _localizationService.Format("Tool_Memory_Exec_Updated", id);
             });
     }
 
@@ -318,14 +321,14 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return new MemoryToolCall(
             ToolName: "append_to_list",
-            Description: $"Add entry to {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Append", MemoryObjectTypes.GetDisplayName(existing.Type), existing.Label),
             OldValue: JsonHelper.FormatJson(existing.Data),
             NewValue: $"+ {JsonHelper.FormatJson(entry)}",
             TargetObjectId: id,
             Execute: async () =>
             {
                 await _memoryService.AppendToListAsync(id, entry);
-                return $"Entry appended to memory object {id} successfully.";
+                return _localizationService.Format("Tool_Memory_Exec_Appended", id);
             });
     }
 
@@ -346,14 +349,14 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return new MemoryToolCall(
             ToolName: "delete_object",
-            Description: $"Delete {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Delete", MemoryObjectTypes.GetDisplayName(existing.Type), existing.Label),
             OldValue: JsonHelper.FormatJson(existing.Data),
             NewValue: null,
             TargetObjectId: id,
             Execute: async () =>
             {
                 await _memoryService.DeleteObjectAsync(id);
-                return $"Memory object {id} deleted successfully.";
+                return _localizationService.Format("Tool_Memory_Exec_Deleted", id);
             });
     }
 
@@ -476,7 +479,7 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return new MemoryToolCall(
             ToolName: "merge_memories",
-            Description: $"Merge {objects.Count} memories into: {label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Merge", objects.Count, label),
             OldValue: oldSb.ToString().TrimEnd(),
             NewValue: JsonHelper.FormatJson(data),
             TargetObjectId: survivor.Id,
@@ -485,7 +488,7 @@ public class MemoryToolHandler : IMemoryToolHandler
                 await _memoryService.UpdateObjectDataAsync(survivor.Id, label, data);
                 foreach (var obj in toDelete)
                     await _memoryService.DeleteObjectAsync(obj.Id);
-                return $"Merged {objects.Count} memories into '{label}' (ID: {survivor.Id}). {toDelete.Count} duplicate(s) deleted.";
+                return _localizationService.Format("Tool_Memory_Exec_Merged", objects.Count, label, survivor.Id, toDelete.Count);
             });
     }
 

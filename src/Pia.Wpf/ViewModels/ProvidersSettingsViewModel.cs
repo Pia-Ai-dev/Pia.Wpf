@@ -48,6 +48,21 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(ShowCloudSetupBanner));
         };
+
+        _authService.LoginStateChanged += OnLoginStateChanged;
+        _providerService.ProvidersChanged += OnProvidersChanged;
+    }
+
+    private void OnLoginStateChanged(object? sender, bool isLoggedIn)
+    {
+        IsSyncLoggedIn = isLoggedIn;
+        if (isLoggedIn)
+            RefreshProvidersAsync().SafeFireAndForget(_logger);
+    }
+
+    private void OnProvidersChanged(object? sender, EventArgs e)
+    {
+        RefreshProvidersAsync().SafeFireAndForget(_logger);
     }
 
     [ObservableProperty]

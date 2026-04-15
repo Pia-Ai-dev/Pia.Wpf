@@ -95,7 +95,7 @@
               <!-- OAuth buttons -->
               <StackPanel Orientation="Horizontal">
                 <ui:Button Command="{Binding LoginWithGoogleCommand}"
-                           IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                           IsEnabled="False"
                            Margin="0,0,8,0">
                   <StackPanel Orientation="Horizontal">
                     <Image Source="{StaticResource GoogleIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
