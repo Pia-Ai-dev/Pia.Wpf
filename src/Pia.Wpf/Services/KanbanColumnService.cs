@@ -10,13 +10,15 @@ public class KanbanColumnService : IKanbanColumnService
 {
     private readonly SqliteContext _context;
     private readonly ILogger<KanbanColumnService> _logger;
+    private readonly SyncDeleteTracker _deleteTracker;
 
     public event EventHandler? ColumnsChanged;
 
-    public KanbanColumnService(SqliteContext context, ILogger<KanbanColumnService> logger)
+    public KanbanColumnService(SqliteContext context, ILogger<KanbanColumnService> logger, SyncDeleteTracker deleteTracker)
     {
         _context = context;
         _logger = logger;
+        _deleteTracker = deleteTracker;
     }
 
     private void OnColumnsChanged() => ColumnsChanged?.Invoke(this, EventArgs.Empty);
@@ -114,8 +116,8 @@ public class KanbanColumnService : IKanbanColumnService
             SortOrder = sortOrder,
             IsDefaultView = false,
             IsClosedColumn = false,
-            CreatedAt = DateTime.Now,
-            UpdatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         using var command = connection.CreateCommand();
@@ -140,7 +142,7 @@ public class KanbanColumnService : IKanbanColumnService
         if (column.IsClosedColumn)
             throw new InvalidOperationException("Cannot rename the Closed column");
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -190,7 +192,7 @@ public class KanbanColumnService : IKanbanColumnService
                 ORDER BY SortOrder ASC LIMIT 1
                 """;
             reassignCmd.Parameters.AddWithValue("@Id", id.ToString());
-            reassignCmd.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+            reassignCmd.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow.ToString("O"));
             await reassignCmd.ExecuteNonQueryAsync();
         }
 
@@ -198,6 +200,7 @@ public class KanbanColumnService : IKanbanColumnService
         command.CommandText = "DELETE FROM KanbanColumns WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
         await command.ExecuteNonQueryAsync();
+        _deleteTracker.TrackDeletion("kanbanColumns", id);
 
         _logger.LogInformation("Deleted kanban column {Id}", id);
         OnColumnsChanged();
@@ -211,7 +214,7 @@ public class KanbanColumnService : IKanbanColumnService
         if (column.IsClosedColumn)
             throw new InvalidOperationException("Cannot set the Closed column as default view");
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var connection = _context.GetConnection();
         using var transaction = connection.BeginTransaction();
 

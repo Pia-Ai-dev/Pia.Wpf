@@ -116,6 +116,20 @@ public class SqliteContext : IDisposable
                 CreatedAt TEXT NOT NULL,
                 UpdatedAt TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS Plugins (
+                Id TEXT PRIMARY KEY,
+                Kind TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                Description TEXT,
+                IconUrl TEXT,
+                ConfigJson TEXT NOT NULL DEFAULT '{}',
+                Version TEXT NOT NULL DEFAULT '1.0.0',
+                IsPreloaded INTEGER NOT NULL DEFAULT 0,
+                IsActive INTEGER NOT NULL DEFAULT 1,
+                UserEnabled INTEGER,
+                UpdatedAt TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
 

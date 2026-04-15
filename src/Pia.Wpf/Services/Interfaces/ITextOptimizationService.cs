@@ -9,6 +9,7 @@ public interface ITextOptimizationService
         Guid templateId,
         Guid? providerId = null,
         string targetLanguage = "EN",
+        string? mode = null,
         CancellationToken cancellationToken = default);
 
     Task<bool> ValidateInputAsync(string inputText, Guid templateId);

@@ -53,6 +53,7 @@
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Diese Aufgabe wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Erinnerung aktualisiert</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>Antwortgenerierung wurde abgebrochen.</value></data>
+  <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>Der Assistent hat keine Antwort geliefert. Bitte versuche es erneut.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Fehler beim Abrufen der KI-Antwort: {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Gedächtnis wird überprüft...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Erinnerungen werden überprüft...</value></data>
@@ -198,4 +199,56 @@
   <data name="Msg_Optimize_CopiedToClipboard" xml:space="preserve"><value>In Zwischenablage kopiert</value></data>
   <data name="Msg_Optimize_CopyFailed" xml:space="preserve"><value>Kopieren fehlgeschlagen: {0}</value></data>
   <data name="Msg_Optimize_LoadTemplatesFailed" xml:space="preserve"><value>Vorlagen konnten nicht geladen werden. Bitte überprüfen Sie Ihre Konfiguration.</value></data>
+  <!-- TodoToolHandler -->
+  <data name="Tool_Todo_Desc_Create" xml:space="preserve"><value>Aufgabe mit Priorität {0} erstellen: {1}</value></data>
+  <data name="Tool_Todo_Desc_Complete" xml:space="preserve"><value>Aufgabe abschließen: {0}</value></data>
+  <data name="Tool_Todo_Desc_Update" xml:space="preserve"><value>Aufgabe aktualisieren: {0}</value></data>
+  <data name="Tool_Todo_Desc_Delete" xml:space="preserve"><value>Aufgabe löschen: {0}</value></data>
+  <data name="Tool_Todo_Desc_Move" xml:space="preserve"><value>„{0}" in Spalte „{1}" verschieben</value></data>
+  <data name="Tool_Todo_Detail_Title" xml:space="preserve"><value>Titel</value></data>
+  <data name="Tool_Todo_Detail_Priority" xml:space="preserve"><value>Priorität</value></data>
+  <data name="Tool_Todo_Detail_Notes" xml:space="preserve"><value>Notizen</value></data>
+  <data name="Tool_Todo_Detail_Due" xml:space="preserve"><value>Fällig</value></data>
+  <data name="Tool_Todo_Detail_Column" xml:space="preserve"><value>Spalte</value></data>
+  <data name="Tool_Todo_Detail_MarkCompleted" xml:space="preserve"><value>Diese Aufgabe mit Priorität {0} als erledigt markieren.</value></data>
+  <data name="Tool_Todo_Detail_CurrentStatus" xml:space="preserve"><value>Aktuell: Priorität {0}, Status {1}
+Änderungen werden übernommen.</value></data>
+  <data name="Tool_Todo_Detail_PermanentDelete" xml:space="preserve"><value>Diese Aufgabe mit Priorität {0} wird dauerhaft gelöscht.</value></data>
+  <data name="Tool_Todo_Detail_MoveToColumn" xml:space="preserve"><value>Die Aufgabe wird aus der aktuellen Spalte in „{0}" verschoben.</value></data>
+  <data name="Tool_Todo_Detail_WillComplete" xml:space="preserve"><value>Die Aufgabe wird als erledigt markiert.</value></data>
+  <data name="Tool_Todo_Exec_Created" xml:space="preserve"><value>Aufgabe erfolgreich erstellt (ID: {0}).</value></data>
+  <data name="Tool_Todo_Exec_DueDateHint" xml:space="preserve"><value> Diese Aufgabe hat ein Fälligkeitsdatum. Möchten Sie eine Erinnerung vorschlagen?</value></data>
+  <data name="Tool_Todo_Exec_Completed" xml:space="preserve"><value>Aufgabe „{0}" als erledigt markiert.</value></data>
+  <data name="Tool_Todo_Exec_Updated" xml:space="preserve"><value>Aufgabe {0} erfolgreich aktualisiert.</value></data>
+  <data name="Tool_Todo_Exec_Deleted" xml:space="preserve"><value>Aufgabe „{0}" erfolgreich gelöscht.</value></data>
+  <data name="Tool_Todo_Exec_Moved" xml:space="preserve"><value>Aufgabe „{0}" nach „{1}" verschoben.</value></data>
+  <data name="Tool_Todo_Exec_MovedAndCompleted" xml:space="preserve"><value> Die Aufgabe wurde als erledigt markiert.</value></data>
+  <!-- ReminderToolHandler -->
+  <data name="Tool_Reminder_Desc_Create" xml:space="preserve"><value>Erinnerung erstellen ({0}): {1}</value></data>
+  <data name="Tool_Reminder_Desc_Update" xml:space="preserve"><value>Erinnerung aktualisieren: {0}</value></data>
+  <data name="Tool_Reminder_Desc_Delete" xml:space="preserve"><value>Erinnerung löschen: {0}</value></data>
+  <data name="Tool_Reminder_Detail_Description" xml:space="preserve"><value>Beschreibung</value></data>
+  <data name="Tool_Reminder_Detail_Recurrence" xml:space="preserve"><value>Wiederholung</value></data>
+  <data name="Tool_Reminder_Detail_Time" xml:space="preserve"><value>Uhrzeit</value></data>
+  <data name="Tool_Reminder_Detail_DayOfWeek" xml:space="preserve"><value>Wochentag</value></data>
+  <data name="Tool_Reminder_Detail_DayOfMonth" xml:space="preserve"><value>Tag des Monats</value></data>
+  <data name="Tool_Reminder_Detail_Month" xml:space="preserve"><value>Monat</value></data>
+  <data name="Tool_Reminder_Detail_Date" xml:space="preserve"><value>Datum</value></data>
+  <data name="Tool_Reminder_Detail_CurrentStatus" xml:space="preserve"><value>Aktuell: {0} um {1}
+Änderungen werden übernommen.</value></data>
+  <data name="Tool_Reminder_Detail_PermanentDelete" xml:space="preserve"><value>Diese {0}-Erinnerung ({1}) wird dauerhaft gelöscht.</value></data>
+  <data name="Tool_Reminder_Exec_Created" xml:space="preserve"><value>Erinnerung erfolgreich erstellt (ID: {0}). Nächste Auslösung: {1}</value></data>
+  <data name="Tool_Reminder_Exec_Updated" xml:space="preserve"><value>Erinnerung {0} erfolgreich aktualisiert.</value></data>
+  <data name="Tool_Reminder_Exec_Deleted" xml:space="preserve"><value>Erinnerung {0} erfolgreich gelöscht.</value></data>
+  <!-- MemoryToolHandler -->
+  <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Neues {0} erstellen: {1}</value></data>
+  <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>{0} aktualisieren: {1}</value></data>
+  <data name="Tool_Memory_Desc_Append" xml:space="preserve"><value>Eintrag hinzufügen zu {0}: {1}</value></data>
+  <data name="Tool_Memory_Desc_Delete" xml:space="preserve"><value>{0} löschen: {1}</value></data>
+  <data name="Tool_Memory_Desc_Merge" xml:space="preserve"><value>{0} Erinnerungen zusammenführen zu: {1}</value></data>
+  <data name="Tool_Memory_Exec_Created" xml:space="preserve"><value>Speicherobjekt erfolgreich erstellt mit ID: {0}</value></data>
+  <data name="Tool_Memory_Exec_Updated" xml:space="preserve"><value>Speicherobjekt {0} erfolgreich aktualisiert.</value></data>
+  <data name="Tool_Memory_Exec_Appended" xml:space="preserve"><value>Eintrag erfolgreich zu Speicherobjekt {0} hinzugefügt.</value></data>
+  <data name="Tool_Memory_Exec_Deleted" xml:space="preserve"><value>Speicherobjekt {0} erfolgreich gelöscht.</value></data>
+  <data name="Tool_Memory_Exec_Merged" xml:space="preserve"><value>{0} Erinnerungen zu '{1}' zusammengeführt (ID: {2}). {3} Duplikat(e) gelöscht.</value></data>
 </root>

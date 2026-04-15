@@ -86,6 +86,7 @@ public int AutoTypeDelayMs { get; set; } = 10;
     public string? SyncUserDisplayName { get; set; }
     public string? SyncProvider { get; set; }
     public DateTime? LastSyncTimestamp { get; set; }
+    public string? LastPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
     // E2EE settings

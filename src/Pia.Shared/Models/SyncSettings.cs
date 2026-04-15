@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Pia.Shared.Models;
 
 /// <summary>
@@ -24,11 +26,13 @@ public class SyncSettings
     /// Base64: AES-GCM encrypted settings JSON (nonce‖ciphertext‖tag).
     /// Non-null when E2EE is active.
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EncryptedPayload { get; set; }
 
     /// <summary>
     /// Base64: DEK wrapped with UMK via AES-GCM (nonce‖wrapped-DEK‖tag).
     /// Non-null when E2EE is active.
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? WrappedDek { get; set; }
 }

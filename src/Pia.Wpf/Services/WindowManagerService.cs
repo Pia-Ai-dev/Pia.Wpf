@@ -177,6 +177,13 @@ public partial class WindowManagerService : IWindowManagerService
         return foreground == windowHandle;
     }
 
+    public void ShowFirstRunWizard()
+    {
+        using var scope = _rootProvider.CreateScope();
+        var wizard = scope.ServiceProvider.GetRequiredService<Views.FirstRunWizardWindow>();
+        wizard.ShowDialog();
+    }
+
     public bool CanDismissWithHotkey(WindowMode mode)
     {
         if (!_windows.TryGetValue(mode, out var managed))

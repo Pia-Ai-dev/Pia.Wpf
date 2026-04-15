@@ -12,7 +12,7 @@
       <!-- Provider selector for Assistant mode -->
       <StackPanel Margin="0,0,0,24">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <ComboBox ItemsSource="{Binding ProvidersVm.NonCloudProviders}"
+        <ComboBox ItemsSource="{Binding ProvidersVm.Providers}"
                   SelectedValue="{Binding ProvidersVm.AssistantProviderId}"
                   SelectedValuePath="Id"
                   DisplayMemberPath="Name"

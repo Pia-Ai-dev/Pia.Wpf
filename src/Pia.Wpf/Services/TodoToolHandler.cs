@@ -13,12 +13,14 @@ public class TodoToolHandler : ITodoToolHandler
 {
     private readonly ITodoService _todoService;
     private readonly IKanbanColumnService _columnService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<TodoToolHandler> _logger;
 
-    public TodoToolHandler(ITodoService todoService, IKanbanColumnService columnService, ILogger<TodoToolHandler> logger)
+    public TodoToolHandler(ITodoService todoService, IKanbanColumnService columnService, ILocalizationService localizationService, ILogger<TodoToolHandler> logger)
     {
         _todoService = todoService;
         _columnService = columnService;
+        _localizationService = localizationService;
         _logger = logger;
     }
 
@@ -182,23 +184,23 @@ public class TodoToolHandler : ITodoToolHandler
         }
 
         var detailSb = new StringBuilder();
-        detailSb.AppendLine($"Title: {title}");
-        detailSb.AppendLine($"Priority: {priority}");
-        if (notes is not null) detailSb.AppendLine($"Notes: {notes}");
-        if (dueDate.HasValue) detailSb.AppendLine($"Due: {dueDate.Value:g}");
-        if (columnName is not null) detailSb.AppendLine($"Column: {columnName}");
+        detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Title"]}: {title}");
+        detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Priority"]}: {priority}");
+        if (notes is not null) detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Notes"]}: {notes}");
+        if (dueDate.HasValue) detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Due"]}: {dueDate.Value:g}");
+        if (columnName is not null) detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Column"]}: {columnName}");
 
         return new TodoToolCall(
             ToolName: "create_todo",
-            Description: $"Create {priority.ToString().ToLower()} priority todo: {title}",
+            Description: _localizationService.Format("Tool_Todo_Desc_Create", priority.ToString().ToLower(), title),
             Details: detailSb.ToString(),
             TargetTodoId: null,
             Execute: async () =>
             {
                 var created = await _todoService.CreateAsync(title, priority, notes, dueDate, columnId);
-                var result = $"Todo created successfully (ID: {created.Id}).";
+                var result = _localizationService.Format("Tool_Todo_Exec_Created", created.Id);
                 if (dueDate.HasValue)
-                    result += " This task has a due date. You may want to suggest a reminder.";
+                    result += _localizationService["Tool_Todo_Exec_DueDateHint"];
                 return result;
             });
     }
@@ -220,13 +222,13 @@ public class TodoToolHandler : ITodoToolHandler
 
         return new TodoToolCall(
             ToolName: "complete_todo",
-            Description: $"Complete todo: {existing.Title}",
-            Details: $"Mark this {existing.Priority.ToString().ToLower()} priority task as completed.",
+            Description: _localizationService.Format("Tool_Todo_Desc_Complete", existing.Title),
+            Details: _localizationService.Format("Tool_Todo_Detail_MarkCompleted", existing.Priority.ToString().ToLower()),
             TargetTodoId: id,
             Execute: async () =>
             {
                 await _todoService.CompleteAsync(id);
-                return $"Todo \"{existing.Title}\" marked as completed.";
+                return _localizationService.Format("Tool_Todo_Exec_Completed", existing.Title);
             });
     }
 
@@ -253,8 +255,8 @@ public class TodoToolHandler : ITodoToolHandler
 
         return new TodoToolCall(
             ToolName: "update_todo",
-            Description: $"Update todo: {existing.Title}",
-            Details: $"Current: {existing.Priority} priority, {existing.Status} status\nChanges will be applied.",
+            Description: _localizationService.Format("Tool_Todo_Desc_Update", existing.Title),
+            Details: _localizationService.Format("Tool_Todo_Detail_CurrentStatus", existing.Priority, existing.Status),
             TargetTodoId: id,
             Execute: async () =>
             {
@@ -269,9 +271,9 @@ public class TodoToolHandler : ITodoToolHandler
 
                 await _todoService.UpdateAsync(existing);
 
-                var result = $"Todo {id} updated successfully.";
+                var result = _localizationService.Format("Tool_Todo_Exec_Updated", id);
                 if (dueDateStr is not null && existing.DueDate.HasValue)
-                    result += " This task has a due date. You may want to suggest a reminder.";
+                    result += _localizationService["Tool_Todo_Exec_DueDateHint"];
                 return result;
             });
     }
@@ -293,13 +295,13 @@ public class TodoToolHandler : ITodoToolHandler
 
         return new TodoToolCall(
             ToolName: "delete_todo",
-            Description: $"Delete todo: {existing.Title}",
-            Details: $"This will permanently delete this {existing.Priority.ToString().ToLower()} priority task.",
+            Description: _localizationService.Format("Tool_Todo_Desc_Delete", existing.Title),
+            Details: _localizationService.Format("Tool_Todo_Detail_PermanentDelete", existing.Priority.ToString().ToLower()),
             TargetTodoId: id,
             Execute: async () =>
             {
                 await _todoService.DeleteAsync(id);
-                return $"Todo \"{existing.Title}\" deleted successfully.";
+                return _localizationService.Format("Tool_Todo_Exec_Deleted", existing.Title);
             });
     }
 
@@ -345,16 +347,16 @@ public class TodoToolHandler : ITodoToolHandler
 
         return new TodoToolCall(
             ToolName: "move_todo",
-            Description: $"Move \"{existing.Title}\" to column \"{targetColumn.Name}\"",
-            Details: $"This will move the todo from its current column to \"{targetColumn.Name}\"." +
-                     (targetColumn.IsClosedColumn ? " This will mark the todo as completed." : ""),
+            Description: _localizationService.Format("Tool_Todo_Desc_Move", existing.Title, targetColumn.Name),
+            Details: _localizationService.Format("Tool_Todo_Detail_MoveToColumn", targetColumn.Name) +
+                     (targetColumn.IsClosedColumn ? _localizationService["Tool_Todo_Detail_WillComplete"] : ""),
             TargetTodoId: id,
             Execute: async () =>
             {
                 await _todoService.MoveToColumnAsync(id, targetColumn.Id);
-                var result = $"Todo \"{existing.Title}\" moved to \"{targetColumn.Name}\".";
+                var result = _localizationService.Format("Tool_Todo_Exec_Moved", existing.Title, targetColumn.Name);
                 if (targetColumn.IsClosedColumn)
-                    result += " The todo has been marked as completed.";
+                    result += _localizationService["Tool_Todo_Exec_MovedAndCompleted"];
                 return result;
             });
     }

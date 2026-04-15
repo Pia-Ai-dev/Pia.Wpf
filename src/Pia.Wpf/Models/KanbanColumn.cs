@@ -7,6 +7,6 @@ public class KanbanColumn
     public int SortOrder { get; set; }
     public bool IsDefaultView { get; set; }
     public bool IsClosedColumn { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
-    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -14,17 +14,19 @@ public class MemoryService : IMemoryService
     private readonly SqliteContext _context;
     private readonly ILogger<MemoryService> _logger;
     private readonly IEmbeddingService _embeddingService;
+    private readonly SyncDeleteTracker _deleteTracker;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
     };
 
-    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService)
+    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTracker deleteTracker)
     {
         _context = context;
         _logger = logger;
         _embeddingService = embeddingService;
+        _deleteTracker = deleteTracker;
     }
 
     public async Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData)
@@ -209,6 +211,7 @@ public class MemoryService : IMemoryService
         command.Parameters.AddWithValue("@Id", id.ToString());
 
         await command.ExecuteNonQueryAsync();
+        _deleteTracker.TrackDeletion("memories", id);
 
         _logger.LogInformation("Deleted memory object {Id}", id);
     }

@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Net;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -103,15 +104,20 @@ public static class Bootstrapper
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<DpapiHelper>();
         services.AddTransient<HttpLoggingHandler>();
+        services.AddTransient<RateLimitRetryHandler>();
 
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.AddHttpMessageHandler<RateLimitRetryHandler>();
             builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
             {
-                var handler = new HttpClientHandler();
+                var handler = new HttpClientHandler
+                {
+                    AutomaticDecompression = DecompressionMethods.All
+                };
                 var settingsService = sp.GetService<ISettingsService>();
                 if (settingsService != null)
                 {
@@ -141,6 +147,9 @@ public static class Bootstrapper
                 sp.GetRequiredService<ISettingsService>(),
                 sp.GetRequiredService<ILogger<TokenizingAiClientService>>()));
 
+        // Enterprise policy
+        services.AddSingleton<IPolicyService, PolicyService>();
+
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
@@ -150,6 +159,9 @@ public static class Bootstrapper
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCache>();
+        services.AddSingleton<Pia.Services.Plugins.CabManager>();
+        services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<ITemplateService, TemplateService>();
@@ -177,6 +189,13 @@ public static class Bootstrapper
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
 
         // Sync services
+        services.AddSingleton<SyncDeleteTracker>(sp =>
+        {
+            var dataDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
+            var logger = sp.GetRequiredService<ILogger<SyncDeleteTracker>>();
+            return new SyncDeleteTracker(dataDirectory, logger);
+        });
         services.AddSingleton<SyncMapper>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();

@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using System.Collections.ObjectModel;
@@ -18,6 +19,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IAutostartService _autostartService;
+    private readonly IPolicyService _policyService;
     private bool _isLoading;
 
     public GeneralSettingsViewModel(
@@ -29,7 +31,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         ITtsService ttsService,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
-        IAutostartService autostartService)
+        IAutostartService autostartService,
+        IPolicyService policyService)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -40,7 +43,16 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _autostartService = autostartService;
+        _policyService = policyService;
     }
+
+    // Enterprise policy enforcement
+    public bool IsUiLanguageEnforced => _policyService.IsEnforced(nameof(AppSettings.UiLanguage));
+    public bool IsStartMinimizedEnforced => _policyService.IsEnforced(nameof(AppSettings.StartMinimized));
+    public bool IsLaunchAtStartupEnforced => _policyService.IsEnforced(nameof(AppSettings.LaunchAtStartup));
+    public bool IsWhisperModelEnforced => _policyService.IsEnforced(nameof(AppSettings.WhisperModel));
+    public bool IsTargetSpeechLanguageEnforced => _policyService.IsEnforced(nameof(AppSettings.TargetSpeechLanguage));
+    public bool IsThemeEnforced => _policyService.IsEnforced(nameof(AppSettings.Theme));
 
     // Appearance
     [ObservableProperty]
@@ -92,13 +104,13 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (!_isLoading)
         {
             _localizationService.SetLanguage(value);
-            SafeFireAndForget(SaveSettingsAsync());
+            SaveSettingsAsync().SafeFireAndForget(_logger);
         }
     }
 
     partial void OnStartMinimizedChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnLaunchAtStartupChanged(bool value)
@@ -110,17 +122,17 @@ public partial class GeneralSettingsViewModel : ObservableObject
         else
             _autostartService.Disable();
 
-        SafeFireAndForget(SaveSettingsAsync());
+        SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnWhisperModelChanged(WhisperModelSize value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnTargetSpeechLanguageChanged(TargetSpeechLanguage value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     public async Task InitializeAsync()
@@ -354,9 +366,4 @@ public partial class GeneralSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }

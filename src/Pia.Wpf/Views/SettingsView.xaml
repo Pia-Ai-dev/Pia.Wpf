@@ -110,6 +110,12 @@
           <TextBlock Text="{loc:Str Settings_Tab_Account}" VerticalAlignment="Center"/>
         </StackPanel>
       </ListBoxItem>
+      <ListBoxItem IsEnabled="{Binding PluginsVm.IsCloudConnected}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="AppFolder24" FontSize="16" Margin="0,0,10,0"/>
+          <TextBlock Text="{loc:Str Settings_Tab_Plugins}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ListBoxItem>
     </ListBox>
 
     <!-- Content area -->
@@ -191,6 +197,19 @@
           </Style>
         </localSettings:AccountView.Style>
       </localSettings:AccountView>
+
+      <localSettings:PluginsView DataContext="{Binding PluginsVm}">
+        <localSettings:PluginsView.Style>
+          <Style TargetType="localSettings:PluginsView">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="6">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </localSettings:PluginsView.Style>
+      </localSettings:PluginsView>
     </Grid>
   </Grid>
 </UserControl>

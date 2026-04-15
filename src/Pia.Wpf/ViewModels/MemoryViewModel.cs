@@ -452,20 +452,13 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         _debounceCts?.Cancel();
         _debounceCts = new CancellationTokenSource();
         var token = _debounceCts.Token;
-        SafeFireAndForget(DebounceAsync(500, LoadMemoriesAsync, token));
+        DebounceAsync(500, LoadMemoriesAsync, token).SafeFireAndForget(_logger);
     }
 
     private static async Task DebounceAsync(int delayMs, Func<Task> action, CancellationToken ct)
     {
         await Task.Delay(delayMs, ct);
         await action();
-    }
-
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

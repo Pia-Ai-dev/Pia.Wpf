@@ -217,6 +217,12 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Research</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Account</value></data>
+  <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Plugins</value></data>
+  <data name="Plugins_Subtitle" xml:space="preserve"><value>Extend your assistant's capabilities with plugins.</value></data>
+  <data name="Plugins_NotConnected" xml:space="preserve"><value>Connect to Pia Cloud to manage plugins.</value></data>
+  <data name="Plugins_GoToAccount" xml:space="preserve"><value>Go to Account</value></data>
+  <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>Disable Built-in Plugin</value></data>
+  <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' is a built-in plugin. Disabling it will break default assistant functionality. Are you sure?</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Appearance</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Hotkeys</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Speech</value></data>
@@ -339,6 +345,8 @@
   <data name="Sync_SyncNow" xml:space="preserve"><value>Sync Now</value></data>
   <data name="Sync_Syncing" xml:space="preserve"><value>Syncing...</value></data>
   <data name="Sync_LastSynced" xml:space="preserve"><value>Last synced: </value></data>
+  <data name="Sync_ResyncTitle" xml:space="preserve"><value>Re-sync</value></data>
+  <data name="Sync_ResyncComplete" xml:space="preserve"><value>Full re-sync completed</value></data>
   <!-- Dialogs -->
   <data name="Dialog_Optimizing_Title" xml:space="preserve"><value>Optimizing</value></data>
   <data name="Dialog_Optimizing_Processing" xml:space="preserve"><value>Processing...</value></data>

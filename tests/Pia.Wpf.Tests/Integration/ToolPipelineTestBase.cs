@@ -87,18 +87,26 @@ public abstract class ToolPipelineTestBase
     {
         EmbeddingService.IsModelAvailable.Returns(false);
 
+        var localizationService = Substitute.For<ILocalizationService>();
+        localizationService[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
+        localizationService.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => string.Format(ci.ArgAt<string>(0), ci.ArgAt<object[]>(1)));
+
         _memoryToolHandler = new MemoryToolHandler(
             MemoryService,
             EmbeddingService,
+            localizationService,
             NullLogger<MemoryToolHandler>.Instance);
 
         _todoToolHandler = new TodoToolHandler(
             TodoService,
             Substitute.For<IKanbanColumnService>(),
+            localizationService,
             NullLogger<TodoToolHandler>.Instance);
 
         _reminderToolHandler = new ReminderToolHandler(
             ReminderService,
+            localizationService,
             NullLogger<ReminderToolHandler>.Instance);
 
         var dpapiHelper = Substitute.ForPartsOf<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
@@ -159,7 +167,7 @@ public abstract class ToolPipelineTestBase
         await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
             messages, provider, tools,
             async toolCall => await HandleToolCallAsync(toolCall, toolCalls),
-            cancellationToken))
+            cancellationToken: cancellationToken))
         {
             responseBuilder.Append(token);
         }
