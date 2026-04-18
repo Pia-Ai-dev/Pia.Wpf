@@ -45,7 +45,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IAutostartService autostartService,
         IOutputService outputService,
         IPluginService pluginService,
-        IHttpClientFactory httpClientFactory,
+        IPluginIconLoader pluginIconLoader,
         IPolicyService policyService)
     {
         _logger = logger;
@@ -62,7 +62,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, outputService, onboardingViewModel);
 
-        PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, httpClientFactory);
+        PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }
 
     public void OnNavigatedTo(object? parameter)

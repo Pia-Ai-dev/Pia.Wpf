@@ -4,14 +4,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Pia.Services;
 
-public class SyncDeleteTracker
+public class SyncDeleteTrackerService
 {
     private readonly string _filePath;
-    private readonly ILogger<SyncDeleteTracker> _logger;
+    private readonly ILogger<SyncDeleteTrackerService> _logger;
     private Dictionary<string, HashSet<Guid>> _pendingDeletes = new();
     private readonly object _lock = new();
 
-    public SyncDeleteTracker(string dataDirectory, ILogger<SyncDeleteTracker> logger)
+    public SyncDeleteTrackerService(string dataDirectory, ILogger<SyncDeleteTrackerService> logger)
     {
         _logger = logger;
         _filePath = Path.Combine(dataDirectory, "pending-sync-deletes.json");

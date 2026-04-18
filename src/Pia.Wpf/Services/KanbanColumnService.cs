@@ -10,11 +10,11 @@ public class KanbanColumnService : IKanbanColumnService
 {
     private readonly SqliteContext _context;
     private readonly ILogger<KanbanColumnService> _logger;
-    private readonly SyncDeleteTracker _deleteTracker;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     public event EventHandler? ColumnsChanged;
 
-    public KanbanColumnService(SqliteContext context, ILogger<KanbanColumnService> logger, SyncDeleteTracker deleteTracker)
+    public KanbanColumnService(SqliteContext context, ILogger<KanbanColumnService> logger, SyncDeleteTrackerService deleteTracker)
     {
         _context = context;
         _logger = logger;

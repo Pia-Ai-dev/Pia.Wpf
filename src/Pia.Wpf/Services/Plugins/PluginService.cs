@@ -18,7 +18,7 @@ public class PluginService : IPluginService
     private readonly IReminderToolHandler _reminderToolHandler;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
-    private readonly CabManager? _cabManager;
+    private readonly CabManagerService? _cabManager;
 
     private readonly Dictionary<Guid, IPluginToolHandler> _handlers = new();
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
@@ -40,7 +40,7 @@ public class PluginService : IPluginService
         IReminderToolHandler reminderToolHandler,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
-        CabManager? cabManager = null)
+        CabManagerService? cabManager = null)
     {
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
@@ -61,9 +61,9 @@ public class PluginService : IPluginService
 
             IPluginToolHandler adapter = GetHandlerId(config.ConfigJson) switch
             {
-                "memory" => BuiltInPluginAdapter.FromMemoryHandler(_memoryToolHandler, config),
-                "todo" => BuiltInPluginAdapter.FromTodoHandler(_todoToolHandler, config),
-                "reminder" => BuiltInPluginAdapter.FromReminderHandler(_reminderToolHandler, config),
+                "memory" => BuiltInPluginHandler.FromMemoryHandler(_memoryToolHandler, config),
+                "todo" => BuiltInPluginHandler.FromTodoHandler(_todoToolHandler, config),
+                "reminder" => BuiltInPluginHandler.FromReminderHandler(_reminderToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

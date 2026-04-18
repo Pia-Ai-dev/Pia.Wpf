@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -17,7 +16,8 @@ public partial class PluginsSettingsViewModel : ObservableObject
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IPluginIconLoader _pluginIconLoader;
+    private readonly SynchronizationContext _uiContext;
 
     [ObservableProperty]
     private ObservableCollection<PluginItemViewModel> _plugins = [];
@@ -37,7 +37,7 @@ public partial class PluginsSettingsViewModel : ObservableObject
         IDialogService dialogService,
         ILocalizationService localizationService,
         Wpf.Ui.ISnackbarService snackbarService,
-        IHttpClientFactory httpClientFactory)
+        IPluginIconLoader pluginIconLoader)
     {
         _parent = parent;
         _logger = logger;
@@ -47,7 +47,9 @@ public partial class PluginsSettingsViewModel : ObservableObject
         _dialogService = dialogService;
         _localizationService = localizationService;
         _snackbarService = snackbarService;
-        _httpClientFactory = httpClientFactory;
+        _pluginIconLoader = pluginIconLoader;
+        _uiContext = SynchronizationContext.Current
+            ?? throw new InvalidOperationException("PluginsSettingsViewModel must be created on the UI thread");
 
         _isCloudConnected = _authService.IsLoggedIn;
         _authService.LoginStateChanged += OnLoginStateChanged;
@@ -81,15 +83,20 @@ public partial class PluginsSettingsViewModel : ObservableObject
             var items = configs
                 .OrderByDescending(p => p.IsPreloaded)
                 .ThenBy(p => p.Name)
-                .Select(p => new PluginItemViewModel(p, serverUrl, _httpClientFactory, _authService))
+                .Select(p =>
+                {
+                    var vm = new PluginItemViewModel(_pluginIconLoader);
+                    vm.Initialize(p, serverUrl);
+                    return vm;
+                })
                 .ToList();
 
-            App.Current.Dispatcher.Invoke(() =>
+            _uiContext.Post(_ =>
             {
                 Plugins.Clear();
                 foreach (var item in items)
                     Plugins.Add(item);
-            });
+            }, null);
         }
         catch (Exception ex)
         {
@@ -106,7 +113,6 @@ public partial class PluginsSettingsViewModel : ObservableObject
     {
         if (plugin is null) return;
 
-        // Warn when disabling a built-in plugin
         if (plugin.IsPreloaded && !plugin.IsEnabled)
         {
             var confirmed = await _dialogService.ShowConfirmationDialogAsync(
@@ -115,7 +121,7 @@ public partial class PluginsSettingsViewModel : ObservableObject
 
             if (!confirmed)
             {
-                plugin.IsEnabled = true; // revert toggle
+                plugin.IsEnabled = true;
                 return;
             }
         }
@@ -130,7 +136,7 @@ public partial class PluginsSettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to toggle plugin {Name}", plugin.Name);
-            plugin.IsEnabled = !plugin.IsEnabled; // revert
+            plugin.IsEnabled = !plugin.IsEnabled;
             plugin.UpdateStatus("Error");
             _snackbarService.Show("Plugin Error",
                 $"Failed to toggle {plugin.Name}: {ex.Message}",

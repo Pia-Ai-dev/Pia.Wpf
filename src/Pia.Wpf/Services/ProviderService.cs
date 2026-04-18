@@ -27,7 +27,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     private readonly DpapiHelper _dpapiHelper;
     private readonly ISettingsService _settingsService;
     private readonly IAuthService _authService;
-    private readonly SyncDeleteTracker _deleteTracker;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     public ProviderService(
         ILogger<ProviderService> logger,
@@ -35,7 +35,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         DpapiHelper dpapiHelper,
         ISettingsService settingsService,
         IAuthService authService,
-        SyncDeleteTracker deleteTracker)
+        SyncDeleteTrackerService deleteTracker)
     {
         _logger = logger;
         _aiClientService = aiClientService;

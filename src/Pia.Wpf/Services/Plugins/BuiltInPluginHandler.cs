@@ -10,7 +10,7 @@ namespace Pia.Services.Plugins;
 /// Applies server-provided metadata overrides (system prompt, descriptions) without
 /// changing the underlying handler code.
 /// </summary>
-public class BuiltInPluginAdapter : IPluginToolHandler
+public class BuiltInPluginHandler : IPluginToolHandler
 {
     private readonly Func<IList<AITool>> _getTools;
     private readonly Func<FunctionCallContent, CancellationToken, Task<(object?, PluginToolCall?)>> _handleCall;
@@ -20,7 +20,7 @@ public class BuiltInPluginAdapter : IPluginToolHandler
     public Guid PluginId { get; }
     public string PluginName { get; private set; }
 
-    public BuiltInPluginAdapter(
+    public BuiltInPluginHandler(
         Guid pluginId,
         string pluginName,
         Func<IList<AITool>> getTools,
@@ -70,10 +70,10 @@ public class BuiltInPluginAdapter : IPluginToolHandler
     /// <summary>
     /// Factory: creates adapter wrapping IMemoryToolHandler.
     /// </summary>
-    public static BuiltInPluginAdapter FromMemoryHandler(
+    public static BuiltInPluginHandler FromMemoryHandler(
         IMemoryToolHandler handler, SyncPlugin config)
     {
-        return new BuiltInPluginAdapter(
+        return new BuiltInPluginHandler(
             config.Id,
             config.Name,
             handler.GetTools,
@@ -91,10 +91,10 @@ public class BuiltInPluginAdapter : IPluginToolHandler
     /// <summary>
     /// Factory: creates adapter wrapping ITodoToolHandler.
     /// </summary>
-    public static BuiltInPluginAdapter FromTodoHandler(
+    public static BuiltInPluginHandler FromTodoHandler(
         ITodoToolHandler handler, SyncPlugin config)
     {
-        return new BuiltInPluginAdapter(
+        return new BuiltInPluginHandler(
             config.Id,
             config.Name,
             handler.GetTools,
@@ -112,10 +112,10 @@ public class BuiltInPluginAdapter : IPluginToolHandler
     /// <summary>
     /// Factory: creates adapter wrapping IReminderToolHandler.
     /// </summary>
-    public static BuiltInPluginAdapter FromReminderHandler(
+    public static BuiltInPluginHandler FromReminderHandler(
         IReminderToolHandler handler, SyncPlugin config)
     {
-        return new BuiltInPluginAdapter(
+        return new BuiltInPluginHandler(
             config.Id,
             config.Name,
             handler.GetTools,

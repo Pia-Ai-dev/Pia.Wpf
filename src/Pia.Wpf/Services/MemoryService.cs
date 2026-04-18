@@ -14,14 +14,14 @@ public class MemoryService : IMemoryService
     private readonly SqliteContext _context;
     private readonly ILogger<MemoryService> _logger;
     private readonly IEmbeddingService _embeddingService;
-    private readonly SyncDeleteTracker _deleteTracker;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
     };
 
-    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTracker deleteTracker)
+    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker)
     {
         _context = context;
         _logger = logger;

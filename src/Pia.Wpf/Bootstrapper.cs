@@ -159,8 +159,9 @@ public static class Bootstrapper
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
-        services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCache>();
-        services.AddSingleton<Pia.Services.Plugins.CabManager>();
+        services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
+        services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
+        services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();
         services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
@@ -189,12 +190,12 @@ public static class Bootstrapper
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
 
         // Sync services
-        services.AddSingleton<SyncDeleteTracker>(sp =>
+        services.AddSingleton<SyncDeleteTrackerService>(sp =>
         {
             var dataDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
-            var logger = sp.GetRequiredService<ILogger<SyncDeleteTracker>>();
-            return new SyncDeleteTracker(dataDirectory, logger);
+            var logger = sp.GetRequiredService<ILogger<SyncDeleteTrackerService>>();
+            return new SyncDeleteTrackerService(dataDirectory, logger);
         });
         services.AddSingleton<SyncMapper>();
         services.AddSingleton<IAuthService, AuthService>();

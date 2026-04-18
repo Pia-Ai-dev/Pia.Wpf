@@ -7,9 +7,9 @@ using Pia.Shared.Models;
 
 namespace Pia.Services.Plugins;
 
-public class TrustedCertificateCache
+public class TrustedCertificateCacheService
 {
-    private readonly ILogger<TrustedCertificateCache> _logger;
+    private readonly ILogger<TrustedCertificateCacheService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAuthService _authService;
     private readonly ISettingsService _settingsService;
@@ -17,8 +17,8 @@ public class TrustedCertificateCache
     private DateTime _lastFetched = DateTime.MinValue;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-    public TrustedCertificateCache(
-        ILogger<TrustedCertificateCache> logger,
+    public TrustedCertificateCacheService(
+        ILogger<TrustedCertificateCacheService> logger,
         IHttpClientFactory httpClientFactory,
         IAuthService authService,
         ISettingsService settingsService)

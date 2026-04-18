@@ -11,10 +11,10 @@ using Pia.Shared.Models;
 
 namespace Pia.Services.Plugins;
 
-public class CabManager
+public class CabManagerService
 {
-    private readonly ILogger<CabManager> _logger;
-    private readonly TrustedCertificateCache _certCache;
+    private readonly ILogger<CabManagerService> _logger;
+    private readonly TrustedCertificateCacheService _certCache;
     private readonly IConfiguration _configuration;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAuthService _authService;
@@ -26,9 +26,9 @@ public class CabManager
 
     private bool SigningRequired => _configuration.GetValue<bool>("Plugins:SigningRequired", true);
 
-    public CabManager(
-        ILogger<CabManager> logger,
-        TrustedCertificateCache certCache,
+    public CabManagerService(
+        ILogger<CabManagerService> logger,
+        TrustedCertificateCacheService certCache,
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory,
         IAuthService authService,

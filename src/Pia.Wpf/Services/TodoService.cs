@@ -11,11 +11,11 @@ public class TodoService : ITodoService
     private readonly SqliteContext _context;
     private readonly ILogger<TodoService> _logger;
     private readonly IKanbanColumnService _columnService;
-    private readonly SyncDeleteTracker _deleteTracker;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     public event EventHandler? TodoChanged;
 
-    public TodoService(SqliteContext context, ILogger<TodoService> logger, IKanbanColumnService columnService, SyncDeleteTracker deleteTracker)
+    public TodoService(SqliteContext context, ILogger<TodoService> logger, IKanbanColumnService columnService, SyncDeleteTrackerService deleteTracker)
     {
         _context = context;
         _logger = logger;

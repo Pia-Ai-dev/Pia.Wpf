@@ -42,8 +42,9 @@ public class DiRegistrationTests
 
         var allInterfaces = serviceInterfaces.Concat(e2eeInterfaces);
 
-        // INativeHotkeyService is created by INativeHotkeyServiceFactory, not registered directly
-        var factoryCreated = new HashSet<string> { "INativeHotkeyService" };
+        // INativeHotkeyService is created by INativeHotkeyServiceFactory, not registered directly.
+        // IPluginToolHandler implementations are created by PluginService based on plugin kind.
+        var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler" };
 
         var unregistered = allInterfaces
             .Where(i => !factoryCreated.Contains(i.Name))

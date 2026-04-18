@@ -33,7 +33,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly SyncMapper _mapper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
-    private readonly SyncDeleteTracker _deleteTracker;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     private Timer? _syncTimer;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
@@ -55,7 +55,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         SyncMapper mapper,
         IHttpClientFactory httpClientFactory,
         ILogger<SyncClientService> logger,
-        SyncDeleteTracker deleteTracker,
+        SyncDeleteTrackerService deleteTracker,
         ITodoService? todoService = null,
         IKanbanColumnService? columnService = null,
         IE2EEService? e2ee = null,
