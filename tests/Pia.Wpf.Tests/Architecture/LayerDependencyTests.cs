@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NetArchTest.Rules;
 using Xunit;
 using static Pia.Tests.Architecture.ArchitectureTestBase;
@@ -15,9 +14,8 @@ public class LayerDependencyTests
             .ShouldNot().HaveDependencyOn(InfrastructureNamespace)
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "ViewModels must not depend on Infrastructure, but these types do: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"ViewModels must not depend on Infrastructure, but these types do: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -32,9 +30,8 @@ public class LayerDependencyTests
             .ShouldNot().HaveDependencyOn(ViewModelsNamespace)
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "Services must not depend on ViewModels, but these types do: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"Services must not depend on ViewModels, but these types do: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -45,9 +42,8 @@ public class LayerDependencyTests
             .ShouldNot().HaveDependencyOn(ServicesNamespace)
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "Models must not depend on Services, but these types do: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"Models must not depend on Services, but these types do: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -58,9 +54,8 @@ public class LayerDependencyTests
             .ShouldNot().HaveDependencyOn(ViewModelsNamespace)
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "Models must not depend on ViewModels, but these types do: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"Models must not depend on ViewModels, but these types do: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -71,9 +66,8 @@ public class LayerDependencyTests
             .ShouldNot().HaveDependencyOn(ViewModelsNamespace)
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "Infrastructure must not depend on ViewModels, but these types do: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"Infrastructure must not depend on ViewModels, but these types do: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -84,8 +78,7 @@ public class LayerDependencyTests
             .ShouldNot().HaveDependencyOn(ServicesNamespace)
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "Infrastructure must not depend on Services, but these types do: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"Infrastructure must not depend on Services, but these types do: {FormatFailingTypes(result)}");
     }
 }

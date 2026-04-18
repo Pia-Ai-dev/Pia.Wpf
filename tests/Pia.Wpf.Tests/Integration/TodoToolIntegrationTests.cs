@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NSubstitute;
 using Pia.Models;
 using Xunit;
@@ -33,13 +32,11 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
             "Add a todo to buy milk.", cts.Token);
 
         // Assert
-        toolCalls.Should().Contain(tc => tc.ToolName == "create_todo",
-            "LLM should call create_todo for a task request");
+        Assert.Contains(toolCalls, tc => tc.ToolName == "create_todo");
 
         var createCall = toolCalls.First(tc => tc.ToolName == "create_todo");
         var titleArg = createCall.Arguments?["title"]?.ToString() ?? "";
-        titleArg.Should().ContainEquivalentOf("milk",
-            "the todo title should mention milk");
+        Assert.Contains("milk", titleArg, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -80,8 +77,7 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
             "What are my todos?", cts.Token);
 
         // Assert
-        toolCalls.Should().Contain(tc => tc.ToolName == "query_todos",
-            "LLM should call query_todos when asked about tasks");
+        Assert.Contains(toolCalls, tc => tc.ToolName == "query_todos");
     }
 
     [Fact]
@@ -115,23 +111,18 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
         var queryIndex = toolCalls.ToList().FindIndex(tc => tc.ToolName == "query_todos");
         var completeIndex = toolCalls.ToList().FindIndex(tc => tc.ToolName == "complete_todo");
 
-        toolCalls.Should().Contain(tc => tc.ToolName == "query_todos",
-            "LLM should query todos first to find the ID");
+        Assert.Contains(toolCalls, tc => tc.ToolName == "query_todos");
 
-        toolCalls.Should().Contain(tc => tc.ToolName == "complete_todo",
-            "LLM should call complete_todo to mark it done");
+        Assert.Contains(toolCalls, tc => tc.ToolName == "complete_todo");
 
         if (queryIndex >= 0 && completeIndex >= 0)
         {
-            queryIndex.Should().BeLessThan(completeIndex,
-                "query should come before complete");
+            Assert.True(queryIndex < completeIndex);
         }
 
         var completeCall = toolCalls.First(tc => tc.ToolName == "complete_todo");
         var idArg = completeCall.Arguments?["id"]?.ToString() ?? "";
-        Guid.TryParse(idArg, out var parsedId).Should().BeTrue(
-            "the ID argument should be a valid GUID");
-        parsedId.Should().Be(knownGuid,
-            "the complete call should target the existing todo");
+        Assert.True(Guid.TryParse(idArg, out var parsedId));
+        Assert.Equal(knownGuid, parsedId);
     }
 }

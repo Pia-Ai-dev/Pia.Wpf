@@ -1,6 +1,5 @@
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
-using FluentAssertions;
 using NetArchTest.Rules;
 using Xunit;
 using static Pia.Tests.Architecture.ArchitectureTestBase;
@@ -20,9 +19,8 @@ public class MvvmPatternTests
             .Should().Inherit(typeof(ObservableObject))
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "all ViewModel classes must inherit ObservableObject, but these don't: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"all ViewModel classes must inherit ObservableObject, but these don't: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -51,8 +49,7 @@ public class MvvmPatternTests
             }
         }
 
-        violations.Should().BeEmpty(
-            "injected interface fields in ViewModels must be readonly, but these aren't: {0}",
-            string.Join(", ", violations));
+        Assert.True(violations.Count == 0,
+            $"injected interface fields in ViewModels must be readonly, but these aren't: {string.Join(", ", violations)}");
     }
 }

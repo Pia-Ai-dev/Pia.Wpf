@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Pia.Helpers;
@@ -19,9 +18,9 @@ public class TaskExtensionsTests
         tcs.Task.SafeFireAndForget(_logger);
 
         // Give the fire-and-forget a moment to complete
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
-        _logger.ReceivedCalls().Should().BeEmpty();
+        Assert.Empty(_logger.ReceivedCalls());
     }
 
     [Fact]
@@ -32,7 +31,7 @@ public class TaskExtensionsTests
 
         tcs.Task.SafeFireAndForget(_logger);
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         _logger.Received().Log(
             LogLevel.Error,
@@ -50,10 +49,10 @@ public class TaskExtensionsTests
 
         tcs.Task.SafeFireAndForget(_logger);
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         // OperationCanceledException should be silently suppressed
-        _logger.ReceivedCalls().Should().BeEmpty();
+        Assert.Empty(_logger.ReceivedCalls());
     }
 
     [Fact]
@@ -72,10 +71,10 @@ public class TaskExtensionsTests
         SlowOperation().SafeFireAndForget(_logger);
 
         // Should return immediately without blocking
-        started.Should().BeTrue();
-        completed.Should().BeFalse();
+        Assert.True(started);
+        Assert.False(completed);
 
-        await Task.Delay(300);
-        completed.Should().BeTrue();
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+        Assert.True(completed);
     }
 }

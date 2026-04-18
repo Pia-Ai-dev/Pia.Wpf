@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NSubstitute;
 using Pia.Models;
 using Xunit;
@@ -35,17 +34,14 @@ public class ReminderToolIntegrationTests : ToolPipelineTestBase
             "Remind me to call mom tomorrow at 5pm.", cts.Token);
 
         // Assert
-        toolCalls.Should().Contain(tc => tc.ToolName == "create_reminder",
-            "LLM should call create_reminder for a time-based reminder request");
+        Assert.Contains(toolCalls, tc => tc.ToolName == "create_reminder");
 
         var createCall = toolCalls.First(tc => tc.ToolName == "create_reminder");
         var descArg = createCall.Arguments?["description"]?.ToString() ?? "";
-        descArg.Should().ContainEquivalentOf("call",
-            "the reminder description should reference calling");
+        Assert.Contains("call", descArg, StringComparison.OrdinalIgnoreCase);
 
         var recurrenceArg = createCall.Arguments?["recurrence"]?.ToString() ?? "";
-        recurrenceArg.Should().ContainEquivalentOf("Once",
-            "a one-time reminder should have 'Once' recurrence");
+        Assert.Contains("Once", recurrenceArg, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -88,7 +84,6 @@ public class ReminderToolIntegrationTests : ToolPipelineTestBase
             "What reminders do I have?", cts.Token);
 
         // Assert
-        toolCalls.Should().Contain(tc => tc.ToolName == "query_reminders",
-            "LLM should call query_reminders when asked about reminders");
+        Assert.Contains(toolCalls, tc => tc.ToolName == "query_reminders");
     }
 }

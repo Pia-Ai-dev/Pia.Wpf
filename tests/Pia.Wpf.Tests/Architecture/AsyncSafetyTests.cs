@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using FluentAssertions;
 using NetArchTest.Rules;
 using Xunit;
 using static Pia.Tests.Architecture.ArchitectureTestBase;
@@ -51,9 +50,8 @@ public class AsyncSafetyTests
 
         var violations = FindAsyncVoidMethods(serviceTypes);
 
-        violations.Should().BeEmpty(
-            "service classes must not have async void methods (use async Task instead): {0}",
-            string.Join(", ", violations));
+        Assert.True(violations.Count == 0,
+            $"service classes must not have async void methods (use async Task instead): {string.Join(", ", violations)}");
     }
 
     [Fact]
@@ -70,10 +68,9 @@ public class AsyncSafetyTests
 
         var violations = FindAsyncVoidMethods(viewModelTypes, allowedNames);
 
-        violations.Should().BeEmpty(
+        Assert.True(violations.Count == 0,
             "ViewModel async void methods must be limited to known patterns (OnNavigatedTo, OnNavigatedFrom), " +
-            "but found unexpected async void methods: {0}",
-            string.Join(", ", violations));
+            $"but found unexpected async void methods: {string.Join(", ", violations)}");
     }
 
     [Fact]
@@ -86,8 +83,7 @@ public class AsyncSafetyTests
 
         var violations = FindAsyncVoidMethods(infraTypes);
 
-        violations.Should().BeEmpty(
-            "infrastructure classes must not have async void methods: {0}",
-            string.Join(", ", violations));
+        Assert.True(violations.Count == 0,
+            $"infrastructure classes must not have async void methods: {string.Join(", ", violations)}");
     }
 }

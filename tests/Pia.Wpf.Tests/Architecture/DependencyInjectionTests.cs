@@ -1,6 +1,5 @@
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NetArchTest.Rules;
 using Xunit;
@@ -23,9 +22,8 @@ public class DependencyInjectionTests
             .ShouldNot().HaveDependencyOn("System.Windows")
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "ViewModels must not reference System.Windows (use SynchronizationContext instead), but these do: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"ViewModels must not reference System.Windows (use SynchronizationContext instead), but these do: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -67,9 +65,8 @@ public class DependencyInjectionTests
             }
         }
 
-        violations.Should().BeEmpty(
-            "ViewModels must not access Bootstrapper (use injected services instead), but these do: {0}",
-            string.Join(", ", violations));
+        Assert.True(violations.Count == 0,
+            $"ViewModels must not access Bootstrapper (use injected services instead), but these do: {string.Join(", ", violations)}");
     }
 
     [Fact]
@@ -111,9 +108,8 @@ public class DependencyInjectionTests
             }
         }
 
-        violations.Should().BeEmpty(
-            "ViewModel constructors must only accept interfaces or ViewModels, but found: {0}",
-            string.Join("; ", violations));
+        Assert.True(violations.Count == 0,
+            $"ViewModel constructors must only accept interfaces or ViewModels, but found: {string.Join("; ", violations)}");
     }
 
     [Fact]
@@ -141,9 +137,8 @@ public class DependencyInjectionTests
             }
         }
 
-        violations.Should().BeEmpty(
-            "Services must not inject ViewModels, but found: {0}",
-            string.Join("; ", violations));
+        Assert.True(violations.Count == 0,
+            $"Services must not inject ViewModels, but found: {string.Join("; ", violations)}");
     }
 
     [Fact]
@@ -171,8 +166,7 @@ public class DependencyInjectionTests
             }
         }
 
-        violations.Should().BeEmpty(
-            "ViewModels must not inject infrastructure types, but found: {0}",
-            string.Join("; ", violations));
+        Assert.True(violations.Count == 0,
+            $"ViewModels must not inject infrastructure types, but found: {string.Join("; ", violations)}");
     }
 }

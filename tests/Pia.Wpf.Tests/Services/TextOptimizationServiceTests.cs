@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -56,9 +55,9 @@ public class TextOptimizationServiceTests
             .Returns("Optimized via PiaCloud");
 
         var service = CreateService();
-        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        result.OptimizedText.Should().Be("Optimized via PiaCloud");
+        Assert.Equal("Optimized via PiaCloud", result.OptimizedText);
         await _aiClientService.Received(1).OptimizeViaPiaCloudAsync(
             "hello world", BusinessEmailTemplateId, "EN", false, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().SendRequestAsync(
@@ -77,9 +76,9 @@ public class TextOptimizationServiceTests
             .Returns("Optimized via OpenAI");
 
         var service = CreateService();
-        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        result.OptimizedText.Should().Be("Optimized via OpenAI");
+        Assert.Equal("Optimized via OpenAI", result.OptimizedText);
         await _aiClientService.Received(1).SendRequestAsync(
             OpenAiProvider, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().OptimizeViaPiaCloudAsync(
@@ -98,7 +97,7 @@ public class TextOptimizationServiceTests
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
         // PiaCloud path should send raw text, not the constructed prompt
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
@@ -122,7 +121,7 @@ public class TextOptimizationServiceTests
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("<voice>um hello world</voice>", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("<voice>um hello world</voice>", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
         // Should strip voice tags and set isVoiceInput = true
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
@@ -146,7 +145,7 @@ public class TextOptimizationServiceTests
             .Returns("Ergebnis");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("hello", BusinessEmailTemplateId, targetLanguage: "DE");
+        await service.OptimizeTextAsync("hello", BusinessEmailTemplateId, targetLanguage: "DE", cancellationToken: TestContext.Current.CancellationToken);
 
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
             "hello",
@@ -169,7 +168,7 @@ public class TextOptimizationServiceTests
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
         // OpenAI path should build the full prompt client-side
         await _aiClientService.Received().SendRequestAsync(
@@ -193,7 +192,7 @@ public class TextOptimizationServiceTests
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("<voice>um hello</voice>", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("<voice>um hello</voice>", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
         await _aiClientService.Received().SendRequestAsync(
             OpenAiProvider,

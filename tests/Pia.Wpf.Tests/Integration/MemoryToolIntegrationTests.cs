@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -43,23 +42,20 @@ public class MemoryToolIntegrationTests : ToolPipelineTestBase
         var createIndex = toolCalls.ToList().FindIndex(tc =>
             tc.ToolName == "create_object");
 
-        toolCalls.Should().Contain(tc =>
-            tc.ToolName == "query_memory" || tc.ToolName == "list_memories",
-            "LLM should check existing memories before creating");
+        Assert.Contains(toolCalls, tc =>
+            tc.ToolName == "query_memory" || tc.ToolName == "list_memories");
 
-        toolCalls.Should().Contain(tc =>
-            tc.ToolName == "create_object",
-            "LLM should create a memory object for the name");
+        Assert.Contains(toolCalls, tc =>
+            tc.ToolName == "create_object");
 
         if (queryIndex >= 0 && createIndex >= 0)
         {
-            queryIndex.Should().BeLessThan(createIndex,
-                "query should come before create (memory workflow)");
+            Assert.True(queryIndex < createIndex);
         }
 
         var createCall = toolCalls.First(tc => tc.ToolName == "create_object");
         var dataArg = createCall.Arguments?["data"]?.ToString() ?? "";
-        dataArg.Should().Contain("John", "the stored data should include the user's name");
+        Assert.Contains("John", dataArg);
     }
 
     [Fact]
@@ -90,11 +86,9 @@ public class MemoryToolIntegrationTests : ToolPipelineTestBase
             "What is my name?", cts.Token);
 
         // Assert
-        toolCalls.Should().Contain(tc => tc.ToolName == "query_memory",
-            "LLM should query memory to look up the user's name");
+        Assert.Contains(toolCalls, tc => tc.ToolName == "query_memory");
 
-        response.Should().Contain("John",
-            "response should include the name from memory");
+        Assert.Contains("John", response);
     }
 
     [Fact]
@@ -132,25 +126,19 @@ public class MemoryToolIntegrationTests : ToolPipelineTestBase
             "My name changed to Jane.", cts.Token);
 
         // Assert: should query first, then update with correct ID
-        toolCalls.Should().Contain(tc =>
-            tc.ToolName == "query_memory" || tc.ToolName == "list_memories",
-            "LLM should look up existing memory first");
+        Assert.Contains(toolCalls, tc =>
+            tc.ToolName == "query_memory" || tc.ToolName == "list_memories");
 
         var updateCall = toolCalls.FirstOrDefault(tc => tc.ToolName == "update_object");
         if (updateCall is not null)
         {
             var idArg = updateCall.Arguments?["id"]?.ToString() ?? "";
-            Guid.TryParse(idArg, out var parsedId).Should().BeTrue(
-                "the ID argument should be a valid GUID");
-            parsedId.Should().Be(knownGuid,
-                "the update should target the existing memory object");
+            Assert.True(Guid.TryParse(idArg, out var parsedId));
+            Assert.Equal(knownGuid, parsedId);
         }
         else
         {
-            // LLM might choose create_object instead — that's acceptable behavior
-            // as long as it queried first
-            toolCalls.Should().Contain(tc => tc.ToolName == "create_object",
-                "if no update_object, LLM should at least create a new object");
+            Assert.Contains(toolCalls, tc => tc.ToolName == "create_object");
         }
     }
 }

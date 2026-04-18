@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Pia.Models;
@@ -53,9 +52,9 @@ public class PolicyServiceTests : IDisposable
 
         var policy = await service.GetPolicyAsync();
 
-        policy.Should().NotBeNull();
-        policy.Defaults.Should().BeNull();
-        policy.Enforce.Should().BeNull();
+        Assert.NotNull(policy);
+        Assert.Null(policy.Defaults);
+        Assert.Null(policy.Enforce);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public class PolicyServiceTests : IDisposable
 
         service.ApplyPolicy(settings);
 
-        settings.Theme.Should().Be(AppTheme.Light);
+        Assert.Equal(AppTheme.Light, settings.Theme);
     }
 
     [Fact]
@@ -74,7 +73,7 @@ public class PolicyServiceTests : IDisposable
     {
         var service = CreateService();
 
-        service.IsEnforced(nameof(AppSettings.Theme)).Should().BeFalse();
+        Assert.False(service.IsEnforced(nameof(AppSettings.Theme)));
     }
 
     [Fact]
@@ -90,7 +89,7 @@ public class PolicyServiceTests : IDisposable
         var settings = new AppSettings(); // Theme = System (built-in default)
         service.ApplyPolicy(settings);
 
-        settings.Theme.Should().Be(AppTheme.Dark);
+        Assert.Equal(AppTheme.Dark, settings.Theme);
     }
 
     [Fact]
@@ -106,7 +105,7 @@ public class PolicyServiceTests : IDisposable
         var settings = new AppSettings { Theme = AppTheme.Light };
         service.ApplyPolicy(settings);
 
-        settings.Theme.Should().Be(AppTheme.Light);
+        Assert.Equal(AppTheme.Light, settings.Theme);
     }
 
     [Fact]
@@ -122,7 +121,7 @@ public class PolicyServiceTests : IDisposable
         var settings = new AppSettings { Theme = AppTheme.Light };
         service.ApplyPolicy(settings);
 
-        settings.Theme.Should().Be(AppTheme.Dark);
+        Assert.Equal(AppTheme.Dark, settings.Theme);
     }
 
     [Fact]
@@ -135,7 +134,7 @@ public class PolicyServiceTests : IDisposable
         var service = CreateService();
         await service.GetPolicyAsync();
 
-        service.IsEnforced(nameof(AppSettings.Theme)).Should().BeTrue();
+        Assert.True(service.IsEnforced(nameof(AppSettings.Theme)));
     }
 
     [Fact]
@@ -148,7 +147,7 @@ public class PolicyServiceTests : IDisposable
         var service = CreateService();
         await service.GetPolicyAsync();
 
-        service.IsEnforced(nameof(AppSettings.StartMinimized)).Should().BeFalse();
+        Assert.False(service.IsEnforced(nameof(AppSettings.StartMinimized)));
     }
 
     [Fact]
@@ -165,8 +164,8 @@ public class PolicyServiceTests : IDisposable
         var settings = new AppSettings();
         service.ApplyPolicy(settings);
 
-        settings.Theme.Should().Be(AppTheme.Dark);
-        settings.StartMinimized.Should().BeTrue();
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+        Assert.True(settings.StartMinimized);
     }
 
     [Fact]
@@ -177,9 +176,9 @@ public class PolicyServiceTests : IDisposable
 
         var policy = await service.GetPolicyAsync();
 
-        policy.Should().NotBeNull();
-        policy.Defaults.Should().BeNull();
-        policy.Enforce.Should().BeNull();
+        Assert.NotNull(policy);
+        Assert.Null(policy.Defaults);
+        Assert.Null(policy.Enforce);
     }
 
     [Fact]
@@ -195,7 +194,7 @@ public class PolicyServiceTests : IDisposable
         var settings = new AppSettings { AutoUpdateEnabled = true };
         service.ApplyPolicy(settings);
 
-        settings.AutoUpdateEnabled.Should().BeFalse();
+        Assert.False(settings.AutoUpdateEnabled);
     }
 
     [Fact]
@@ -210,6 +209,6 @@ public class PolicyServiceTests : IDisposable
         var first = await service.GetPolicyAsync();
         var second = await service.GetPolicyAsync();
 
-        first.Should().BeSameAs(second);
+        Assert.Same(second, first);
     }
 }

@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Pia.Models;
 using Pia.Services;
 using Xunit;
@@ -13,61 +12,61 @@ public class AtCommandParserTests
     public void ShouldShowAutocomplete_AtStartOfText_ReturnsTrue()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("@", 1, out var fragment);
-        result.Should().BeTrue();
-        fragment.Should().BeEmpty();
+        Assert.True(result);
+        Assert.Empty(fragment);
     }
 
     [Fact]
     public void ShouldShowAutocomplete_AtAfterSpace_ReturnsTrue()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("hello @M", 8, out var fragment);
-        result.Should().BeTrue();
-        fragment.Should().Be("M");
+        Assert.True(result);
+        Assert.Equal("M", fragment);
     }
 
     [Fact]
     public void ShouldShowAutocomplete_AtAfterNewline_ReturnsTrue()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("hello\n@Mem", 10, out var fragment);
-        result.Should().BeTrue();
-        fragment.Should().Be("Mem");
+        Assert.True(result);
+        Assert.Equal("Mem", fragment);
     }
 
     [Fact]
     public void ShouldShowAutocomplete_AtInMiddleOfWord_ReturnsFalse()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("email@domain", 6, out _);
-        result.Should().BeFalse();
+        Assert.False(result);
     }
 
     [Fact]
     public void ShouldShowAutocomplete_WithDomainAndColon_ReturnsTrue()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("@Memory:", 8, out var fragment);
-        result.Should().BeTrue();
-        fragment.Should().Be("Memory:");
+        Assert.True(result);
+        Assert.Equal("Memory:", fragment);
     }
 
     [Fact]
     public void ShouldShowAutocomplete_WithDomainColonAndFilter_ReturnsTrue()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("@Memory:Proj", 12, out var fragment);
-        result.Should().BeTrue();
-        fragment.Should().Be("Memory:Proj");
+        Assert.True(result);
+        Assert.Equal("Memory:Proj", fragment);
     }
 
     [Fact]
     public void ShouldShowAutocomplete_EmptyText_ReturnsFalse()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("", 0, out _);
-        result.Should().BeFalse();
+        Assert.False(result);
     }
 
     [Fact]
     public void ShouldShowAutocomplete_CaretNotAtTrigger_ReturnsFalse()
     {
         var result = AtCommandParser.ShouldShowAutocomplete("@Memory hello", 13, out _);
-        result.Should().BeFalse();
+        Assert.False(result);
     }
 
     // --- ParseTriggerFragment ---
@@ -76,56 +75,56 @@ public class AtCommandParserTests
     public void ParseTriggerFragment_Empty_ReturnsNulls()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("");
-        domain.Should().BeNull();
-        filter.Should().BeNull();
+        Assert.Null(domain);
+        Assert.Null(filter);
     }
 
     [Fact]
     public void ParseTriggerFragment_PartialDomain_ReturnsTier1Filter()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("Mem");
-        domain.Should().BeNull();
-        filter.Should().Be("Mem");
+        Assert.Null(domain);
+        Assert.Equal("Mem", filter);
     }
 
     [Fact]
     public void ParseTriggerFragment_ExactDomain_ReturnsDomainNoFilter()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("Memory");
-        domain.Should().Be(AtCommandDomain.Memory);
-        filter.Should().BeNull();
+        Assert.Equal(AtCommandDomain.Memory, domain);
+        Assert.Null(filter);
     }
 
     [Fact]
     public void ParseTriggerFragment_DomainWithColon_ReturnsDomainEmptyFilter()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("Memory:");
-        domain.Should().Be(AtCommandDomain.Memory);
-        filter.Should().BeEmpty();
+        Assert.Equal(AtCommandDomain.Memory, domain);
+        Assert.Empty(filter!);
     }
 
     [Fact]
     public void ParseTriggerFragment_DomainWithFilter_ReturnsBoth()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("Todo:Buy");
-        domain.Should().Be(AtCommandDomain.Todo);
-        filter.Should().Be("Buy");
+        Assert.Equal(AtCommandDomain.Todo, domain);
+        Assert.Equal("Buy", filter);
     }
 
     [Fact]
     public void ParseTriggerFragment_CaseInsensitive()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("reminder:Call");
-        domain.Should().Be(AtCommandDomain.Reminder);
-        filter.Should().Be("Call");
+        Assert.Equal(AtCommandDomain.Reminder, domain);
+        Assert.Equal("Call", filter);
     }
 
     [Fact]
     public void ParseTriggerFragment_InvalidDomainWithColon_ReturnsNulls()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("Unknown:stuff");
-        domain.Should().BeNull();
-        filter.Should().BeNull();
+        Assert.Null(domain);
+        Assert.Null(filter);
     }
 
     // --- ExtractAllCommands ---
@@ -134,49 +133,49 @@ public class AtCommandParserTests
     public void ExtractAllCommands_SingleDomainOnly_ReturnsOne()
     {
         var commands = AtCommandParser.ExtractAllCommands("@Memory please save this");
-        commands.Should().HaveCount(1);
-        commands[0].Domain.Should().Be(AtCommandDomain.Memory);
-        commands[0].ItemTitle.Should().BeNull();
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Memory, commands[0].Domain);
+        Assert.Null(commands[0].ItemTitle);
     }
 
     [Fact]
     public void ExtractAllCommands_DomainWithItem_ReturnsWithTitle()
     {
         var commands = AtCommandParser.ExtractAllCommands("@Todo:Groceries add milk");
-        commands.Should().HaveCount(1);
-        commands[0].Domain.Should().Be(AtCommandDomain.Todo);
-        commands[0].ItemTitle.Should().Be("Groceries");
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Todo, commands[0].Domain);
+        Assert.Equal("Groceries", commands[0].ItemTitle);
     }
 
     [Fact]
     public void ExtractAllCommands_MultipleCommands_ReturnsAll()
     {
         var commands = AtCommandParser.ExtractAllCommands("@Memory check @Todo list items");
-        commands.Should().HaveCount(2);
-        commands[0].Domain.Should().Be(AtCommandDomain.Memory);
-        commands[1].Domain.Should().Be(AtCommandDomain.Todo);
+        Assert.Equal(2, commands.Count);
+        Assert.Equal(AtCommandDomain.Memory, commands[0].Domain);
+        Assert.Equal(AtCommandDomain.Todo, commands[1].Domain);
     }
 
     [Fact]
     public void ExtractAllCommands_NoCommands_ReturnsEmpty()
     {
         var commands = AtCommandParser.ExtractAllCommands("just a normal message");
-        commands.Should().BeEmpty();
+        Assert.Empty(commands);
     }
 
     [Fact]
     public void ExtractAllCommands_EmailAddress_NotTreatedAsCommand()
     {
         var commands = AtCommandParser.ExtractAllCommands("send to user@memory.com");
-        commands.Should().BeEmpty();
+        Assert.Empty(commands);
     }
 
     [Fact]
     public void ExtractAllCommands_AtStartOfNewline_Works()
     {
         var commands = AtCommandParser.ExtractAllCommands("first line\n@Reminder call Bob");
-        commands.Should().HaveCount(1);
-        commands[0].Domain.Should().Be(AtCommandDomain.Reminder);
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Reminder, commands[0].Domain);
     }
 
     // --- StripCommands ---
@@ -185,28 +184,28 @@ public class AtCommandParserTests
     public void StripCommands_RemovesCommandPreservesText()
     {
         var result = AtCommandParser.StripCommands("@Memory remember I like coffee");
-        result.Should().Be("remember I like coffee");
+        Assert.Equal("remember I like coffee", result);
     }
 
     [Fact]
     public void StripCommands_RemovesDomainWithItem()
     {
         var result = AtCommandParser.StripCommands("@Todo:Groceries add milk please");
-        result.Should().Be("add milk please");
+        Assert.Equal("add milk please", result);
     }
 
     [Fact]
     public void StripCommands_MultipleCommands_RemovesAll()
     {
         var result = AtCommandParser.StripCommands("@Memory check @Todo stuff");
-        result.Should().Be("check stuff");
+        Assert.Equal("check stuff", result);
     }
 
     [Fact]
     public void StripCommands_NoCommands_ReturnsOriginal()
     {
         var result = AtCommandParser.StripCommands("just a normal message");
-        result.Should().Be("just a normal message");
+        Assert.Equal("just a normal message", result);
     }
 
     // --- Quoted multi-word titles ---
@@ -215,38 +214,38 @@ public class AtCommandParserTests
     public void ExtractAllCommands_QuotedMultiWordTitle_ExtractsFull()
     {
         var commands = AtCommandParser.ExtractAllCommands("""@Memory:"Favorite color" change to yellow""");
-        commands.Should().HaveCount(1);
-        commands[0].Domain.Should().Be(AtCommandDomain.Memory);
-        commands[0].ItemTitle.Should().Be("Favorite color");
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Memory, commands[0].Domain);
+        Assert.Equal("Favorite color", commands[0].ItemTitle);
     }
 
     [Fact]
     public void StripCommands_QuotedTitle_RemovesCommandPreservesText()
     {
         var result = AtCommandParser.StripCommands("""@Memory:"Favorite color" change to yellow""");
-        result.Should().Be("change to yellow");
+        Assert.Equal("change to yellow", result);
     }
 
     [Fact]
     public void ParseTriggerFragment_QuotedFilter_StripsQuotes()
     {
         var (domain, filter) = AtCommandParser.ParseTriggerFragment("""Memory:"Fav""");
-        domain.Should().Be(AtCommandDomain.Memory);
-        filter.Should().Be("Fav");
+        Assert.Equal(AtCommandDomain.Memory, domain);
+        Assert.Equal("Fav", filter);
     }
 
     [Fact]
     public void FormatItemTitle_SingleWord_NoQuotes()
     {
         var result = AtCommandParser.FormatItemTitle("Groceries");
-        result.Should().Be("Groceries");
+        Assert.Equal("Groceries", result);
     }
 
     [Fact]
     public void FormatItemTitle_MultiWord_AddsQuotes()
     {
         var result = AtCommandParser.FormatItemTitle("Favorite color");
-        result.Should().Be("\"Favorite color\"");
+        Assert.Equal("\"Favorite color\"", result);
     }
 
     // --- GetTriggerStartIndex ---
@@ -255,20 +254,20 @@ public class AtCommandParserTests
     public void GetTriggerStartIndex_FindsAt()
     {
         var index = AtCommandParser.GetTriggerStartIndex("hello @Mem", 10);
-        index.Should().Be(6);
+        Assert.Equal(6, index);
     }
 
     [Fact]
     public void GetTriggerStartIndex_AtStart()
     {
         var index = AtCommandParser.GetTriggerStartIndex("@Todo", 5);
-        index.Should().Be(0);
+        Assert.Equal(0, index);
     }
 
     [Fact]
     public void GetTriggerStartIndex_NoAt_ReturnsNegative()
     {
         var index = AtCommandParser.GetTriggerStartIndex("hello", 5);
-        index.Should().Be(-1);
+        Assert.Equal(-1, index);
     }
 }

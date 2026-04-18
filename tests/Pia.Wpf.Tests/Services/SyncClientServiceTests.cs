@@ -1,5 +1,4 @@
 using System.IO;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
@@ -51,7 +50,7 @@ public class SyncClientServiceTests
 
         var result = await _sut.SyncNowAsync();
 
-        result.Should().BeNull();
+        Assert.Null(result);
     }
 
     [Fact]
@@ -63,7 +62,7 @@ public class SyncClientServiceTests
 
         var result = await _sut.SyncNowAsync();
 
-        result.Should().BeNull();
+        Assert.Null(result);
     }
 }
 
@@ -125,7 +124,7 @@ public class SyncClientServiceDeviceRevokedTests
 
         await InvokeCheckForPendingDevicesAsync(sut);
 
-        eventRaised.Should().BeTrue();
+        Assert.True(eventRaised);
     }
 
     [Fact]
@@ -152,7 +151,7 @@ public class SyncClientServiceDeviceRevokedTests
 
         await InvokeCheckForPendingDevicesAsync(sut);
 
-        eventRaised.Should().BeTrue();
+        Assert.True(eventRaised);
     }
 
     [Fact]
@@ -179,7 +178,7 @@ public class SyncClientServiceDeviceRevokedTests
 
         await InvokeCheckForPendingDevicesAsync(sut);
 
-        eventRaised.Should().BeFalse();
+        Assert.False(eventRaised);
     }
 }
 

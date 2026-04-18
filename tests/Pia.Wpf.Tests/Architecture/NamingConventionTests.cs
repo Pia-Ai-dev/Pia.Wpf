@@ -1,6 +1,5 @@
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
-using FluentAssertions;
 using NetArchTest.Rules;
 using Xunit;
 using static Pia.Tests.Architecture.ArchitectureTestBase;
@@ -19,9 +18,8 @@ public class NamingConventionTests
             .Should().HaveNameEndingWith("ViewModel")
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "ObservableObject subclasses in ViewModels must end with 'ViewModel', but these don't: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"ObservableObject subclasses in ViewModels must end with 'ViewModel', but these don't: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -43,10 +41,8 @@ public class NamingConventionTests
             .Select(t => t.Name)
             .ToList();
 
-        violations.Should().BeEmpty(
-            "service classes must end with one of [{0}], but these don't: {1}",
-            string.Join(", ", allowedSuffixes),
-            string.Join(", ", violations));
+        Assert.True(violations.Count == 0,
+            $"service classes must end with one of [{string.Join(", ", allowedSuffixes)}], but these don't: {string.Join(", ", violations)}");
     }
 
     [Fact]
@@ -58,9 +54,8 @@ public class NamingConventionTests
             .Should().HaveNameStartingWith("I")
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "service interfaces must start with 'I', but these don't: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"service interfaces must start with 'I', but these don't: {FormatFailingTypes(result)}");
     }
 
     [Fact]
@@ -72,8 +67,7 @@ public class NamingConventionTests
             .Should().HaveNameEndingWith("Converter")
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            "converter classes must end with 'Converter', but these don't: {0}",
-            FormatFailingTypes(result));
+        Assert.True(result.IsSuccessful,
+            $"converter classes must end with 'Converter', but these don't: {FormatFailingTypes(result)}");
     }
 }

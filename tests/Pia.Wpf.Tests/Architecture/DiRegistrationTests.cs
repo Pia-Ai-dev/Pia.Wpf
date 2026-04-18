@@ -1,5 +1,4 @@
 using System.Reflection;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NetArchTest.Rules;
 using Xunit;
@@ -15,7 +14,7 @@ public class DiRegistrationTests
             "ConfigureServices",
             BindingFlags.NonPublic | BindingFlags.Static);
 
-        configureMethod.Should().NotBeNull("Bootstrapper.ConfigureServices must exist");
+        Assert.NotNull(configureMethod);
 
         var services = new ServiceCollection();
         configureMethod!.Invoke(null, [services]);
@@ -52,8 +51,7 @@ public class DiRegistrationTests
             .Select(i => i.Name)
             .ToList();
 
-        unregistered.Should().BeEmpty(
-            "all service interfaces must be registered in DI, but these are missing: {0}",
-            string.Join(", ", unregistered));
+        Assert.True(unregistered.Count == 0,
+            $"all service interfaces must be registered in DI, but these are missing: {string.Join(", ", unregistered)}");
     }
 }

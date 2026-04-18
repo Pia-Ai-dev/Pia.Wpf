@@ -3,7 +3,6 @@ using System.Globalization;
 using System.IO;
 using System.Resources;
 using System.Text.RegularExpressions;
-using FluentAssertions;
 using Pia.Resources.Strings;
 using Xunit;
 
@@ -68,9 +67,8 @@ public class LocalizationTests
             }
         }
 
-        missing.Should().BeEmpty(
-            "all XAML localization keys must exist in resource files, but these are missing: {0}",
-            string.Join(", ", missing));
+        Assert.True(missing.Count == 0,
+            $"all XAML localization keys must exist in resource files, but these are missing: {string.Join(", ", missing)}");
     }
 
     [Fact]
@@ -107,9 +105,8 @@ public class LocalizationTests
             }
         }
 
-        missing.Should().BeEmpty(
-            "all C# localization keys must exist in resource files, but these are missing: {0}",
-            string.Join(", ", missing));
+        Assert.True(missing.Count == 0,
+            $"all C# localization keys must exist in resource files, but these are missing: {string.Join(", ", missing)}");
     }
 
     [Fact]
@@ -148,13 +145,11 @@ public class LocalizationTests
             }
         }
 
-        missingTranslations.Should().BeEmpty(
-            "all base keys must have translations, but these are missing: {0}",
-            string.Join(", ", missingTranslations));
+        Assert.True(missingTranslations.Count == 0,
+            $"all base keys must have translations, but these are missing: {string.Join(", ", missingTranslations)}");
 
-        orphanedTranslations.Should().BeEmpty(
-            "translation files should not contain keys absent from the base file: {0}",
-            string.Join(", ", orphanedTranslations));
+        Assert.True(orphanedTranslations.Count == 0,
+            $"translation files should not contain keys absent from the base file: {string.Join(", ", orphanedTranslations)}");
     }
 
     [Fact]
@@ -192,8 +187,7 @@ public class LocalizationTests
             .Where(key => !allKeys.Contains(key))
             .ToList();
 
-        missing.Should().BeEmpty(
-            "all dynamically constructed localization keys must exist in resources, but these are missing: {0}",
-            string.Join(", ", missing));
+        Assert.True(missing.Count == 0,
+            $"all dynamically constructed localization keys must exist in resources, but these are missing: {string.Join(", ", missing)}");
     }
 }

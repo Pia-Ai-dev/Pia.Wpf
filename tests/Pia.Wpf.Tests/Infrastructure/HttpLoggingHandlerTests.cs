@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http;
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Xunit;
@@ -31,8 +30,8 @@ public class HttpLoggingHandlerTests
 
         await invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
-        _logger.Entries.Should().ContainSingle();
-        _logger.Entries[0].Level.Should().Be(LogLevel.Debug);
+        Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Debug, _logger.Entries[0].Level);
     }
 
     [Fact]
@@ -43,8 +42,8 @@ public class HttpLoggingHandlerTests
 
         await invoker.SendAsync(CreateRequest(HttpMethod.Post, "https://cloud.pia-ai.de/api/ai"), CancellationToken.None);
 
-        _logger.Entries[0].Message.Should().Contain("POST");
-        _logger.Entries[0].Message.Should().Contain("https://cloud.pia-ai.de/api/ai");
+        Assert.Contains("POST", _logger.Entries[0].Message);
+        Assert.Contains("https://cloud.pia-ai.de/api/ai", _logger.Entries[0].Message);
     }
 
     [Fact]
@@ -55,7 +54,7 @@ public class HttpLoggingHandlerTests
 
         await invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
-        _logger.Entries[0].Message.Should().Contain("ms");
+        Assert.Contains("ms", _logger.Entries[0].Message);
     }
 
     [Theory]
@@ -69,8 +68,8 @@ public class HttpLoggingHandlerTests
 
         await invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
-        _logger.Entries.Should().ContainSingle();
-        _logger.Entries[0].Level.Should().Be(LogLevel.Warning);
+        Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Warning, _logger.Entries[0].Level);
     }
 
     [Fact]
@@ -83,12 +82,12 @@ public class HttpLoggingHandlerTests
         };
         var invoker = CreateInvoker(handler);
 
-        var act = () => invoker.SendAsync(CreateRequest(), CancellationToken.None);
-
-        await act.Should().ThrowAsync<HttpRequestException>().WithMessage("Connection refused");
-        _logger.Entries.Should().ContainSingle();
-        _logger.Entries[0].Level.Should().Be(LogLevel.Error);
-        _logger.Entries[0].Exception.Should().BeSameAs(expectedEx);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => invoker.SendAsync(CreateRequest(), CancellationToken.None));
+        Assert.Equal("Connection refused", ex.Message);
+        Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Error, _logger.Entries[0].Level);
+        Assert.Same(expectedEx, _logger.Entries[0].Exception);
     }
 
     [Fact]
@@ -100,8 +99,8 @@ public class HttpLoggingHandlerTests
 
         await invoker.SendAsync(CreateRequest(url: $"https://example.com/{longPath}"), CancellationToken.None);
 
-        _logger.Entries[0].Message.Should().Contain("...");
-        _logger.Entries[0].Message.Should().NotContain(longPath);
+        Assert.Contains("...", _logger.Entries[0].Message);
+        Assert.DoesNotContain(longPath, _logger.Entries[0].Message);
     }
 
     [Fact]
@@ -114,7 +113,7 @@ public class HttpLoggingHandlerTests
 
         await invoker.SendAsync(request, CancellationToken.None);
 
-        _logger.Entries[0].Message.Should().NotContain("secret-token-12345");
+        Assert.DoesNotContain("secret-token-12345", _logger.Entries[0].Message);
     }
 
     private class StubHandler(HttpStatusCode statusCode) : HttpMessageHandler
