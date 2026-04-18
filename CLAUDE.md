@@ -28,7 +28,7 @@ dotnet test                                            # Run all tests
 
 ## Git Workflow
 
-Main: `master`. Features: `feature/<name>`.
+Main: `main`. Features: `feature/<name>`.
 
 ## Rules
 
