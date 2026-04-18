@@ -30,10 +30,6 @@ dotnet test                                            # Run all tests
 
 Main: `master`. Features: `feature/<name>`.
 
-## Submodules
-
-- `lib/MdXaml/` — Markdown rendering library. Clone with `--recurse-submodules`.
-
 ## Rules
 
 - Do not read entire large files in a first run. Use grep or read file signatures first.
