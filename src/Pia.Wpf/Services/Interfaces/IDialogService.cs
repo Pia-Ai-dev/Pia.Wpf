@@ -10,7 +10,7 @@ public interface IDialogService
     Task ShowSessionDetailDialogAsync(OptimizationSession session);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
     Task ShowMessageDialogAsync(string title, string message);
-    Task<bool> ShowMessageWithCopyDialogAsync(string title, string message);
+    Task ShowRecoveryCodeDialogAsync(string recoveryCode);
     Task<ModelDownloadResult> ShowModelDownloadDialogAsync(string modelName, IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken);
     Task<bool> ShowOptimizingDialogAsync(string[] messages, CancellationToken cancellationToken);
     Task<KeyboardShortcut?> ShowHotkeyCaptureDialogAsync();

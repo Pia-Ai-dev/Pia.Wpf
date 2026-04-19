@@ -83,18 +83,12 @@ public class DialogService : IDialogService
             });
     }
 
-    public async Task<bool> ShowMessageWithCopyDialogAsync(string title, string message)
+    public async Task ShowRecoveryCodeDialogAsync(string recoveryCode)
     {
-        var result = await _contentDialogService.ShowSimpleDialogAsync(
-            new SimpleContentDialogCreateOptions
-            {
-                Title = title,
-                Content = message,
-                PrimaryButtonText = _localizationService["Enum_CopyToClipboard"],
-                CloseButtonText = _localizationService["Common_OK"]
-            });
-
-        return result == ContentDialogResult.Primary;
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new RecoveryCodeContentDialog(dialogHost, recoveryCode, _outputService);
+        await dialog.ShowAsync();
     }
 
     public async Task<ModelDownloadResult> ShowModelDownloadDialogAsync(

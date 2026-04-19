@@ -209,7 +209,17 @@
     <controls:DialogOverlayHost x:Name="RootDialogOverlayHost"
                                 Panel.ZIndex="20" />
     <ui:ContentDialogHost x:Name="RootContentDialogPresenter" />
-    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" />
+    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Top"
+                          Margin="0,36,0,0"
+                          Panel.ZIndex="15">
+      <ui:SnackbarPresenter.Resources>
+        <Style TargetType="ui:Snackbar" BasedOn="{StaticResource {x:Type ui:Snackbar}}">
+          <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+      </ui:SnackbarPresenter.Resources>
+    </ui:SnackbarPresenter>
     <ui:TitleBar x:Name="TitleBar"
                  Title="{Binding WindowTitle}"
                  CloseWindowByDoubleClickOnIcon="True">

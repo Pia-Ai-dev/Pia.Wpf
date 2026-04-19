@@ -43,7 +43,6 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IDeviceKeyService deviceKeys,
         E2EEOnboardingViewModel onboardingViewModel,
         IAutostartService autostartService,
-        IOutputService outputService,
         IPluginService pluginService,
         IPluginIconLoader pluginIconLoader,
         IPolicyService policyService)
@@ -60,7 +59,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, outputService, onboardingViewModel);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, onboardingViewModel);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }

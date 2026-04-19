@@ -23,7 +23,6 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IDeviceManagementService _deviceManagement;
     private readonly IDeviceKeyService _deviceKeys;
-    private readonly IOutputService _outputService;
     private readonly SynchronizationContext _syncContext;
     private bool _isLoading;
 
@@ -39,7 +38,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         ILocalizationService localizationService,
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
-        IOutputService outputService,
         E2EEOnboardingViewModel onboardingViewModel)
     {
         _logger = logger;
@@ -51,7 +49,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _deviceManagement = deviceManagement;
         _deviceKeys = deviceKeys;
-        _outputService = outputService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         OnboardingViewModel = onboardingViewModel;
 
@@ -565,11 +562,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
             DeviceFingerprint = _deviceKeys.GetFingerprint();
 
-            var copyRequested = await _dialogService.ShowMessageWithCopyDialogAsync(
-                "Recovery Code",
-                $"Save this recovery code in a safe place. It is the ONLY way to recover your encrypted data if you lose all devices.\n\n{recoveryCode}\n\nIf you lose this code and all your devices, your encrypted data cannot be recovered.");
-            if (copyRequested)
-                await _outputService.CopyToClipboardAsync(recoveryCode);
+            await _dialogService.ShowRecoveryCodeDialogAsync(recoveryCode);
 
             await _syncClientService.PerformFirstSyncMigrationAsync();
         }

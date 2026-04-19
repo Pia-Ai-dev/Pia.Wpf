@@ -546,4 +546,11 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Your data is being synced. This may take a moment.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Try again</value></data>
+  <!-- Recovery code dialog (shown when enabling E2EE from settings) -->
+  <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Recovery Code</value></data>
+  <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Save Your Recovery Code</value></data>
+  <data name="Dialog_Recovery_Description" xml:space="preserve"><value>This recovery code is the ONLY way to access your encrypted data if you lose all your devices. Write it down and store it somewhere safe.</value></data>
+  <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>If you lose this code and all your devices, your encrypted data cannot be recovered. The server cannot decrypt your data.</value></data>
+  <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>I have saved this recovery code in a safe place</value></data>
 </root>

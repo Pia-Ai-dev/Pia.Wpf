@@ -546,4 +546,11 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Deine Daten werden synchronisiert. Das kann einen Moment dauern.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Erneut versuchen</value></data>
+  <!-- Wiederherstellungscode-Dialog (beim Aktivieren der E2EE in den Einstellungen) -->
+  <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode</value></data>
+  <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Wiederherstellungscode speichern</value></data>
+  <data name="Dialog_Recovery_Description" xml:space="preserve"><value>Dieser Wiederherstellungscode ist die EINZIGE Möglichkeit, auf deine verschlüsselten Daten zuzugreifen, wenn du alle Geräte verlierst. Notiere ihn und bewahre ihn an einem sicheren Ort auf.</value></data>
+  <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Wichtig</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Wenn du diesen Code und alle Geräte verlierst, können deine verschlüsselten Daten nicht wiederhergestellt werden. Der Server kann deine Daten nicht entschlüsseln.</value></data>
+  <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>Ich habe diesen Wiederherstellungscode an einem sicheren Ort gespeichert</value></data>
 </root>
