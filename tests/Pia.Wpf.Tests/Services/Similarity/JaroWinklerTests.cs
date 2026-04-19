@@ -1,4 +1,4 @@
-using F23.StringSimilarity;
+using Pia.Services.Similarity;
 using Xunit;
 
 namespace Pia.Tests.Services.Similarity;
@@ -7,7 +7,7 @@ public class JaroWinklerTests
 {
     private const double Tolerance = 1e-3;
 
-    private static double Sim(string a, string b) => new JaroWinkler().Similarity(a, b);
+    private static double Sim(string a, string b) => JaroWinkler.Similarity(a, b);
 
     [Fact]
     public void IdenticalStrings_ReturnsOne()

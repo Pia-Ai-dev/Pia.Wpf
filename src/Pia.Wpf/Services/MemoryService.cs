@@ -1,11 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using F23.StringSimilarity;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Similarity;
 
 namespace Pia.Services;
 
@@ -616,7 +616,6 @@ public class MemoryService : IMemoryService
         if (queryTokens.Length == 0) return [];
 
         var allMemories = await GetAllObjectsAsync();
-        var jw = new JaroWinkler();
         var results = new List<(MemoryObject Memory, float Score)>();
 
         foreach (var memory in allMemories)
@@ -638,7 +637,7 @@ public class MemoryService : IMemoryService
                 foreach (var lt in allTokens)
                 {
                     // Jaro-Winkler similarity
-                    var jwScore = (float)jw.Similarity(qt, lt);
+                    var jwScore = (float)JaroWinkler.Similarity(qt, lt);
                     if (jwScore > bestScore) bestScore = jwScore;
 
                     // Substring containment (handles compound words)
