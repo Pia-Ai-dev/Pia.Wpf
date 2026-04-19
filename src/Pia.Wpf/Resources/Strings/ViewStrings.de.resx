@@ -515,4 +515,35 @@
   <data name="PiiCategory_Address" xml:space="preserve"><value>Adresse</value></data>
   <data name="PiiCategory_Date" xml:space="preserve"><value>Datum</value></data>
   <data name="PiiCategory_Custom" xml:space="preserve"><value>Benutzerdefiniert</value></data>
+  <!-- E2EE: app-wide onboarding required bar -->
+  <data name="E2EE_Onboarding_Bar_Message" xml:space="preserve"><value>Einrichtung der Ende-zu-Ende-Verschlüsselung erforderlich, um deine Daten zu synchronisieren.</value></data>
+  <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Jetzt einrichten</value></data>
+  <!-- Settings: E2EE section -->
+  <data name="Settings_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, werden alle synchronisierten Daten auf deinem Gerät verschlüsselt, bevor sie an den Server gesendet werden. Bei jeder Aktivierung werden ein neuer Schlüssel und ein neuer Wiederherstellungscode erzeugt. Das Umschalten dieser Einstellung löst eine vollständige Synchronisation aus.</value></data>
+  <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
+  <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Verschlüsselung wird aktualisiert und Daten werden synchronisiert...</value></data>
+  <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
+  <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Nach Geräteanfragen suchen</value></data>
+  <!-- E2EE onboarding view -->
+  <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung einrichten</value></data>
+  <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Dieses Konto verwendet Ende-zu-Ende-Verschlüsselung. Richte dieses Gerät ein, um auf deine verschlüsselten Daten zugreifen zu können.</value></data>
+  <data name="E2EE_Onboarding_Approve_Title" xml:space="preserve"><value>Von einem anderen Gerät bestätigen</value></data>
+  <data name="E2EE_Onboarding_Approve_Description" xml:space="preserve"><value>Wenn du ein anderes Gerät mit eingerichtetem Pia hast, kann es den Verschlüsselungsschlüssel sicher auf dieses Gerät übertragen.</value></data>
+  <data name="E2EE_Onboarding_Approve_Button" xml:space="preserve"><value>Auf Bestätigung warten</value></data>
+  <data name="E2EE_Onboarding_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode verwenden</value></data>
+  <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Gib den Wiederherstellungscode ein, den du beim ersten Aktivieren der Verschlüsselung gespeichert hast. Verwende diesen, wenn dein anderes Gerät nicht verfügbar ist.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
+  <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Dein Geräte-Fingerabdruck:</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Cloud-Sync &gt; Geräteverwaltung. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
+  <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
+  <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Stattdessen Wiederherstellungscode verwenden</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterDescription" xml:space="preserve"><value>Gib den Wiederherstellungscode ein, den du beim ersten Aktivieren der Verschlüsselung gespeichert hast.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Activate" xml:space="preserve"><value>Aktivieren</value></data>
+  <data name="E2EE_Onboarding_Back" xml:space="preserve"><value>Zurück</value></data>
+  <data name="E2EE_Onboarding_Success_Title" xml:space="preserve"><value>Gerät aktiviert!</value></data>
+  <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Deine Daten werden synchronisiert. Das kann einen Moment dauern.</value></data>
+  <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
+  <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Erneut versuchen</value></data>
 </root>

@@ -19,6 +19,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly Services.Interfaces.IUpdateService _updateService;
     private readonly Services.Interfaces.IProviderService _providerService;
     private readonly Services.Interfaces.IAuthService _authService;
+    private readonly Services.Interfaces.ISyncClientService _syncClientService;
     private Timer? _updateTimer;
 
     [ObservableProperty]
@@ -53,6 +54,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _isUpdateBarDismissed;
 
     [ObservableProperty]
+    private bool _isE2EEOnboardingRequired;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSetupOverlay))]
     private bool _isSetupRequired;
 
@@ -67,6 +71,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool ShowSetupOverlay => IsSetupRequired && IsOnFeatureView;
 
     public bool ShowUpdateBar => IsUpdateReady && !IsUpdateBarDismissed;
+
+    public bool ShowE2EEOnboardingBar => IsE2EEOnboardingRequired;
 
     public string WindowTitle => $"Pia - {Mode} (v{AppVersion})";
 
@@ -85,7 +91,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         Pia.Services.Interfaces.IWindowManagerService windowManagerService,
         Pia.Services.Interfaces.IUpdateService updateService,
         Pia.Services.Interfaces.IProviderService providerService,
-        Pia.Services.Interfaces.IAuthService authService)
+        Pia.Services.Interfaces.IAuthService authService,
+        Pia.Services.Interfaces.ISyncClientService syncClientService)
     {
         _logger = logger;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
@@ -96,6 +103,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _updateService = updateService;
         _providerService = providerService;
         _authService = authService;
+        _syncClientService = syncClientService;
+        IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
 
         AppVersion = updateService.CurrentVersion
             ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
@@ -110,6 +119,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _settingsService.SettingsChanged += OnSettingsChanged;
         _providerService.ProvidersChanged += OnProvidersChanged;
         _authService.LoginStateChanged += OnLoginStateChanged;
+        _syncClientService.E2EEOnboardingRequired += OnE2EEOnboardingRequired;
+        _syncClientService.E2EEOnboardingCleared += OnE2EEOnboardingCleared;
 
         // Poll for update readiness (background download is fire-and-forget)
         _updateTimer = new Timer(_ =>
@@ -339,6 +350,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnIsUpdateReadyChanged(bool value) => OnPropertyChanged(nameof(ShowUpdateBar));
     partial void OnIsUpdateBarDismissedChanged(bool value) => OnPropertyChanged(nameof(ShowUpdateBar));
+    partial void OnIsE2EEOnboardingRequiredChanged(bool value) => OnPropertyChanged(nameof(ShowE2EEOnboardingBar));
+
+    private void OnE2EEOnboardingRequired(object? sender, EventArgs e)
+    {
+        _syncContext.Post(_ => IsE2EEOnboardingRequired = true, null);
+    }
+
+    private void OnE2EEOnboardingCleared(object? sender, EventArgs e)
+    {
+        _syncContext.Post(_ => IsE2EEOnboardingRequired = false, null);
+    }
 
     [RelayCommand]
     private void RestartToUpdate()
@@ -350,6 +372,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void DismissUpdateBar()
     {
         IsUpdateBarDismissed = true;
+    }
+
+    [RelayCommand]
+    private void OpenE2EEOnboarding()
+    {
+        _navigationService.NavigateTo<SettingsViewModel, int>(0);
     }
 
     public void Dispose()
@@ -364,6 +392,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _settingsService.SettingsChanged -= OnSettingsChanged;
         _providerService.ProvidersChanged -= OnProvidersChanged;
         _authService.LoginStateChanged -= OnLoginStateChanged;
+        _syncClientService.E2EEOnboardingRequired -= OnE2EEOnboardingRequired;
+        _syncClientService.E2EEOnboardingCleared -= OnE2EEOnboardingCleared;
 
         GC.SuppressFinalize(this);
     }

@@ -515,4 +515,35 @@
   <data name="PiiCategory_Address" xml:space="preserve"><value>Adresse</value></data>
   <data name="PiiCategory_Date" xml:space="preserve"><value>Date</value></data>
   <data name="PiiCategory_Custom" xml:space="preserve"><value>Personnalisé</value></data>
+  <!-- E2EE: app-wide onboarding required bar -->
+  <data name="E2EE_Onboarding_Bar_Message" xml:space="preserve"><value>La configuration du chiffrement de bout en bout est requise pour synchroniser vos données.</value></data>
+  <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Configurer maintenant</value></data>
+  <!-- Settings: E2EE section -->
+  <data name="Settings_E2EE_Title" xml:space="preserve"><value>Chiffrement de bout en bout</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, toutes les données synchronisées sont chiffrées sur votre appareil avant d'être envoyées au serveur. Une nouvelle clé de chiffrement et un nouveau code de récupération sont générés à chaque activation. Basculer ce réglage déclenche une synchronisation complète.</value></data>
+  <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Activer le chiffrement de bout en bout</value></data>
+  <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Mise à jour du chiffrement et synchronisation des données...</value></data>
+  <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
+  <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Vérifier les demandes d'appareils</value></data>
+  <!-- E2EE onboarding view -->
+  <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Configuration du chiffrement de bout en bout</value></data>
+  <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Ce compte utilise le chiffrement de bout en bout. Configurez cet appareil pour accéder à vos données chiffrées.</value></data>
+  <data name="E2EE_Onboarding_Approve_Title" xml:space="preserve"><value>Approuver depuis un autre appareil</value></data>
+  <data name="E2EE_Onboarding_Approve_Description" xml:space="preserve"><value>Si vous avez un autre appareil déjà configuré avec Pia, il peut transférer la clé de chiffrement en toute sécurité vers cet appareil.</value></data>
+  <data name="E2EE_Onboarding_Approve_Button" xml:space="preserve"><value>Attendre l'approbation</value></data>
+  <data name="E2EE_Onboarding_Recovery_Title" xml:space="preserve"><value>Utiliser un code de récupération</value></data>
+  <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Saisissez le code de récupération que vous avez enregistré lors de la première activation du chiffrement. Utilisez-le si votre autre appareil n'est pas disponible.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Saisir le code de récupération</value></data>
+  <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Empreinte de votre appareil :</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Sur votre autre appareil, allez dans Paramètres &gt; Synchronisation cloud &gt; Gestion des appareils. Vérifiez que cette empreinte correspond avant d'approuver.</value></data>
+  <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Annuler</value></data>
+  <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Utiliser plutôt le code de récupération</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Saisissez votre code de récupération</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterDescription" xml:space="preserve"><value>Saisissez le code de récupération que vous avez enregistré lors de la première activation du chiffrement.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Activate" xml:space="preserve"><value>Activer</value></data>
+  <data name="E2EE_Onboarding_Back" xml:space="preserve"><value>Retour</value></data>
+  <data name="E2EE_Onboarding_Success_Title" xml:space="preserve"><value>Appareil activé !</value></data>
+  <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Vos données sont en cours de synchronisation. Cela peut prendre un moment.</value></data>
+  <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
+  <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Réessayer</value></data>
 </root>

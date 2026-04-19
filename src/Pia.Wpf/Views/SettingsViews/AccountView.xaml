@@ -205,17 +205,17 @@
                   </Style.Triggers>
                 </Style>
               </StackPanel.Style>
-              <TextBlock Text="End-to-End Encryption"
+              <TextBlock Text="{loc:Str Settings_E2EE_Title}"
                          FontWeight="SemiBold"
                          Margin="0,0,0,8"/>
               <TextBlock TextWrapping="Wrap"
                          Opacity="0.7"
                          FontSize="12"
                          Margin="0,0,0,12"
-                         Text="When enabled, all synced data is encrypted on your device before being sent to the server. A new encryption key and recovery code is generated each time encryption is enabled. Toggling this setting triggers a full sync."/>
+                         Text="{loc:Str Settings_E2EE_Description}"/>
               <ui:ToggleSwitch IsChecked="{Binding IsE2EEEnabled, Mode=TwoWay}"
                                IsEnabled="{Binding CanToggleE2EE}"
-                               Content="Enable End-to-End Encryption"
+                               Content="{loc:Str Settings_E2EE_Toggle}"
                                Margin="0,0,0,8"/>
               <StackPanel Orientation="Horizontal"
                           Margin="0,0,0,8"
@@ -223,7 +223,7 @@
                 <ui:ProgressRing IsIndeterminate="True"
                                  Width="16" Height="16"
                                  Margin="0,0,8,0"/>
-                <TextBlock Text="Updating encryption and syncing data..."
+                <TextBlock Text="{loc:Str Settings_E2EE_Updating}"
                            VerticalAlignment="Center"
                            Opacity="0.7"
                            FontSize="12"/>
@@ -232,11 +232,11 @@
                          Opacity="0.7"
                          FontSize="12"
                          Margin="0,0,0,8">
-                <Run Text="Device fingerprint: "/>
+                <Run Text="{loc:Str Settings_E2EE_FingerprintLabel}"/>
                 <Run Text="{Binding DeviceFingerprint, Mode=OneWay}" FontFamily="Consolas"/>
               </TextBlock>
               <ui:Button Visibility="{Binding IsE2EEEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
-                         Content="Check for device requests"
+                         Content="{loc:Str Settings_E2EE_CheckDeviceRequests}"
                          Icon="{ui:SymbolIcon PeopleSearch24}"
                          Command="{Binding CheckForPendingDevicesCommand}"
                          Margin="0,0,0,8"/>

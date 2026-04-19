@@ -41,9 +41,25 @@ public class SyncClientService : ISyncClientService, IDisposable
     private bool _hasVerifiedServerE2EEStatus;
 
     public bool IsSyncActive => _syncTimer is not null;
+    public bool IsE2EEOnboardingRequired { get; private set; }
     public event EventHandler? E2EEOnboardingRequired;
+    public event EventHandler? E2EEOnboardingCleared;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
     public event EventHandler? CurrentDeviceRevoked;
+
+    public void NotifyE2EEOnboardingRequired()
+    {
+        if (IsE2EEOnboardingRequired) return;
+        IsE2EEOnboardingRequired = true;
+        E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void NotifyE2EEOnboardingCompleted()
+    {
+        if (!IsE2EEOnboardingRequired) return;
+        IsE2EEOnboardingRequired = false;
+        E2EEOnboardingCleared?.Invoke(this, EventArgs.Empty);
+    }
 
     public SyncClientService(
         IAuthService authService,
@@ -123,7 +139,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
             {
                 _logger.LogWarning("E2EE enabled but UMK not available; onboarding required");
-                E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
+                NotifyE2EEOnboardingRequired();
                 return null;
             }
 
@@ -137,7 +153,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 if (serverStatus is { IsEnabled: true })
                 {
                     _logger.LogWarning("E2EE enabled on server but not locally; onboarding required");
-                    E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
+                    NotifyE2EEOnboardingRequired();
                     return null;
                 }
             }

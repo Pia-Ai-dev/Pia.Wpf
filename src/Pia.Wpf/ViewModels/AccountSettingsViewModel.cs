@@ -60,6 +60,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             try
             {
                 IsE2EEOnboardingRequired = false;
+                _syncClientService.NotifyE2EEOnboardingCompleted();
                 _isLoading = true;
                 IsE2EEEnabled = true;
                 _isLoading = false;
@@ -393,6 +394,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         {
             _logger.LogInformation("E2EE enabled on account but UMK not available; onboarding required");
             IsE2EEOnboardingRequired = true;
+            _syncClientService.NotifyE2EEOnboardingRequired();
             return;
         }
 
@@ -555,6 +557,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (serverStatus is { IsEnabled: true })
             {
                 IsE2EEOnboardingRequired = true;
+                _syncClientService.NotifyE2EEOnboardingRequired();
                 return;
             }
 
@@ -581,6 +584,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (serverStatus is { IsEnabled: true })
             {
                 IsE2EEOnboardingRequired = true;
+                _syncClientService.NotifyE2EEOnboardingRequired();
             }
             else
             {

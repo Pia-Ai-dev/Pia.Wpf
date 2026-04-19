@@ -238,6 +238,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             try
             {
                 IsE2EEOnboardingRequired = false;
+                _syncClientService.NotifyE2EEOnboardingCompleted();
                 await _syncClientService.PerformFirstSyncMigrationAsync();
             }
             catch (Exception ex)
@@ -441,6 +442,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         {
             _logger.LogInformation("E2EE enabled on account but UMK not available; showing onboarding in wizard");
             IsE2EEOnboardingRequired = true;
+            _syncClientService.NotifyE2EEOnboardingRequired();
             return;
         }
 

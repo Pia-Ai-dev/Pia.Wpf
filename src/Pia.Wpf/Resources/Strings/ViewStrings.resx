@@ -515,4 +515,35 @@
   <data name="PiiCategory_Address" xml:space="preserve"><value>Address</value></data>
   <data name="PiiCategory_Date" xml:space="preserve"><value>Date</value></data>
   <data name="PiiCategory_Custom" xml:space="preserve"><value>Custom</value></data>
+  <!-- E2EE: app-wide onboarding required bar -->
+  <data name="E2EE_Onboarding_Bar_Message" xml:space="preserve"><value>End-to-end encryption setup required to sync your data.</value></data>
+  <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Set up now</value></data>
+  <!-- Settings: E2EE section -->
+  <data name="Settings_E2EE_Title" xml:space="preserve"><value>End-to-End Encryption</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, all synced data is encrypted on your device before being sent to the server. A new encryption key and recovery code is generated each time encryption is enabled. Toggling this setting triggers a full sync.</value></data>
+  <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Enable End-to-End Encryption</value></data>
+  <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Updating encryption and syncing data...</value></data>
+  <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Device fingerprint: </value></data>
+  <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Check for device requests</value></data>
+  <!-- E2EE onboarding view -->
+  <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>End-to-End Encryption Setup</value></data>
+  <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>This account uses end-to-end encryption. Set up this device to access your encrypted data.</value></data>
+  <data name="E2EE_Onboarding_Approve_Title" xml:space="preserve"><value>Approve from another device</value></data>
+  <data name="E2EE_Onboarding_Approve_Description" xml:space="preserve"><value>If you have another device with Pia already set up, it can securely transfer the encryption key to this device.</value></data>
+  <data name="E2EE_Onboarding_Approve_Button" xml:space="preserve"><value>Wait for approval</value></data>
+  <data name="E2EE_Onboarding_Recovery_Title" xml:space="preserve"><value>Use recovery code</value></data>
+  <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Enter the recovery code you saved when you first enabled encryption. Use this if your other device is unavailable.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Enter recovery code</value></data>
+  <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Your device fingerprint:</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Cloud Sync &gt; Device Management. Verify this fingerprint matches before approving.</value></data>
+  <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Use recovery code instead</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Enter your recovery code</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterDescription" xml:space="preserve"><value>Enter the recovery code you saved when encryption was first enabled.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Activate" xml:space="preserve"><value>Activate</value></data>
+  <data name="E2EE_Onboarding_Back" xml:space="preserve"><value>Back</value></data>
+  <data name="E2EE_Onboarding_Success_Title" xml:space="preserve"><value>Device activated!</value></data>
+  <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Your data is being synced. This may take a moment.</value></data>
+  <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Device fingerprint: </value></data>
+  <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Try again</value></data>
 </root>
