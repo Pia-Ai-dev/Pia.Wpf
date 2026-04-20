@@ -42,10 +42,21 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public bool IsSyncActive => _syncTimer is not null;
     public bool IsE2EEOnboardingRequired { get; private set; }
+    public bool IsDisabledByLicense { get; private set; }
     public event EventHandler? E2EEOnboardingRequired;
     public event EventHandler? E2EEOnboardingCleared;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
     public event EventHandler? CurrentDeviceRevoked;
+    public event EventHandler? DisabledByLicense;
+
+    public void DisableByLicense()
+    {
+        if (IsDisabledByLicense) return;
+        IsDisabledByLicense = true;
+        StopBackgroundSync();
+        _logger.LogWarning("Sync disabled by server license; background sync stopped for this session");
+        DisabledByLicense?.Invoke(this, EventArgs.Empty);
+    }
 
     public void NotifyE2EEOnboardingRequired()
     {
@@ -121,6 +132,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     public async Task<SyncResult?> SyncNowAsync()
     {
         if (!_authService.IsLoggedIn) return null;
+        if (IsDisabledByLicense) return null;
 
         // Non-blocking: skip if another sync is already running
         if (!await _syncLock.WaitAsync(0)) return null;

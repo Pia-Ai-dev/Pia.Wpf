@@ -88,6 +88,12 @@ public partial class AccountSettingsViewModel : ObservableObject
                 HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger), null);
         };
 
+        IsSyncDisabledByLicense = _syncClientService.IsDisabledByLicense;
+        _syncClientService.DisabledByLicense += (_, _) =>
+        {
+            _syncContext.Post(_ => IsSyncDisabledByLicense = true, null);
+        };
+
         _syncClientService.CurrentDeviceRevoked += (_, _) =>
         {
             _syncContext.Post(async _ =>
@@ -115,6 +121,14 @@ public partial class AccountSettingsViewModel : ObservableObject
     // Sync properties
     [ObservableProperty]
     private bool _isSyncLoggedIn;
+
+    /// <summary>
+    /// True once the server has reported that Sync is not part of its license
+    /// (<c>feature_not_licensed</c>). Bound views should disable the sync
+    /// controls and indicate the reason.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSyncDisabledByLicense;
 
     [ObservableProperty]
     private string? _syncUserEmail;

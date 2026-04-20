@@ -11,6 +11,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Shared.Licensing;
 using Pia.ViewModels;
 using Wpf.Ui;
 
@@ -43,6 +44,10 @@ public static class Bootstrapper
 #endif
 
         _serviceProvider = services.BuildServiceProvider(options);
+
+        // Eagerly construct the license-error listener so it subscribes to the bus
+        // before any HTTP call can fire an event.
+        _serviceProvider.GetRequiredService<LicenseErrorViewModel>();
 
         // In production, enforce the hardcoded server URL
         if (!IsDevMode)
@@ -105,11 +110,16 @@ public static class Bootstrapper
         services.AddSingleton<DpapiHelper>();
         services.AddTransient<HttpLoggingHandler>();
         services.AddTransient<RateLimitRetryHandler>();
+        services.AddTransient<LicenseErrorHandler>();
+        services.AddSingleton<ILicenseErrorBus, LicenseErrorBus>();
 
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            // LicenseErrorHandler sits outermost so it only sees each response once,
+            // before retries replay them.
+            builder.AddHttpMessageHandler<LicenseErrorHandler>();
             builder.AddHttpMessageHandler<RateLimitRetryHandler>();
             builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
@@ -174,6 +184,7 @@ public static class Bootstrapper
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
         services.AddSingleton<ITranscriptionService, TranscriptionService>();
         services.AddSingleton<INotificationService, NotificationService>();
+        services.AddSingleton<LicenseErrorViewModel>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
         services.AddSingleton<ITtsService, TtsService>();

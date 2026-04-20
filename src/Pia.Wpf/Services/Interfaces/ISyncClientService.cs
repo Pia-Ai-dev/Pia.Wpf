@@ -9,6 +9,23 @@ public interface ISyncClientService
     bool IsSyncActive { get; }
 
     /// <summary>
+    /// True once the server has reported that Sync is not included in its license
+    /// (<c>feature_not_licensed</c> with <c>feature=Sync</c>). Set for the remainder
+    /// of the session; a restart or logout/login clears it implicitly.
+    /// </summary>
+    bool IsDisabledByLicense { get; }
+
+    /// <summary>Raised once when <see cref="IsDisabledByLicense"/> transitions to true.</summary>
+    event EventHandler? DisabledByLicense;
+
+    /// <summary>
+    /// Marks sync as disabled by server license: stops the background timer and
+    /// makes <see cref="SyncNowAsync"/> a no-op for the rest of the session.
+    /// Idempotent.
+    /// </summary>
+    void DisableByLicense();
+
+    /// <summary>
     /// Whether this device currently needs to complete E2EE onboarding before
     /// sync can proceed. Set to true when <see cref="E2EEOnboardingRequired"/>
     /// fires and back to false after <see cref="NotifyE2EEOnboardingCompleted"/>.

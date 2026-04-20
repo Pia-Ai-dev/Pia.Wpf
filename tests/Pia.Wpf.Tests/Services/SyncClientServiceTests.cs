@@ -64,6 +64,31 @@ public class SyncClientServiceTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task SyncNowAsync_ReturnsNull_WhenDisabledByLicense()
+    {
+        _authService.IsLoggedIn.Returns(true);
+
+        _sut.DisableByLicense();
+        var result = await _sut.SyncNowAsync();
+
+        Assert.Null(result);
+        Assert.True(_sut.IsDisabledByLicense);
+        Assert.False(_sut.IsSyncActive);
+    }
+
+    [Fact]
+    public void DisableByLicense_IsIdempotent_AndRaisesEventOnce()
+    {
+        var raised = 0;
+        _sut.DisabledByLicense += (_, _) => raised++;
+
+        _sut.DisableByLicense();
+        _sut.DisableByLicense();
+
+        Assert.Equal(1, raised);
+    }
 }
 
 public class SyncClientServiceDeviceRevokedTests

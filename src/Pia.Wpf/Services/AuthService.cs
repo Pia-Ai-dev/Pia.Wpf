@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Services.Interfaces;
 using Pia.Shared.Auth;
+using Pia.Shared.Licensing;
 
 namespace Pia.Services;
 
@@ -16,6 +18,7 @@ public class AuthService : IAuthService
     private readonly DpapiHelper _dpapiHelper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AuthService> _logger;
+    private readonly ILicenseErrorBus _licenseErrorBus;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private string? _accessToken;
@@ -33,12 +36,14 @@ public class AuthService : IAuthService
         ISettingsService settingsService,
         DpapiHelper dpapiHelper,
         IHttpClientFactory httpClientFactory,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        ILicenseErrorBus licenseErrorBus)
     {
         _settingsService = settingsService;
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _licenseErrorBus = licenseErrorBus;
 
         _ = LoadStoredTokensAsync();
     }
@@ -107,10 +112,28 @@ public class AuthService : IAuthService
             var displayName = query["display_name"];
             var userId = query["user_id"];
 
+            // Defensive: if the server returns a JSON 403 straight to the loopback (no
+            // redirect), read the body too. Only runs when no query-string error was set
+            // and the request actually has a JSON body.
+            if (string.IsNullOrEmpty(error) && context.Request.HasEntityBody)
+            {
+                var (bodyErr, bodyMsg) = await TryReadLicenseErrorBodyAsync(context.Request);
+                if (bodyErr is not null)
+                {
+                    error = bodyErr;
+                    errorMessage = bodyMsg ?? errorMessage;
+                }
+            }
+
+            // If the error matches a known license shape, build a typed event for the bus.
+            var licenseError = TryBuildLicenseError(error, errorMessage, query);
+
             // Send appropriate response to the browser
             var browserHtml = string.IsNullOrEmpty(error)
                 ? BuildLoginSuccessHtml(displayName)
-                : BuildLoginErrorHtml(errorMessage ?? "Login failed");
+                : BuildLoginErrorHtml(licenseError is not null
+                    ? BuildLicenseMessage(licenseError)
+                    : errorMessage ?? "Login failed");
             var responseBytes = System.Text.Encoding.UTF8.GetBytes(browserHtml);
             context.Response.ContentType = "text/html; charset=utf-8";
             context.Response.ContentLength64 = responseBytes.Length;
@@ -121,6 +144,11 @@ public class AuthService : IAuthService
             if (!string.IsNullOrEmpty(error))
             {
                 _logger.LogWarning("OAuth callback returned error: {Error} - {Message}", error, errorMessage);
+                if (licenseError is not null)
+                {
+                    _licenseErrorBus.Publish(licenseError);
+                    return (false, BuildLicenseMessage(licenseError));
+                }
                 return (false, errorMessage ?? "Login failed");
             }
 
@@ -335,6 +363,59 @@ public class AuthService : IAuthService
         listener.Stop();
         return port;
     }
+
+    private static async Task<(string? Error, string? Message)> TryReadLicenseErrorBodyAsync(HttpListenerRequest request)
+    {
+        var contentType = request.ContentType;
+        if (contentType is null || !contentType.Contains("application/json", StringComparison.OrdinalIgnoreCase))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+            var body = await reader.ReadToEndAsync();
+            if (string.IsNullOrWhiteSpace(body)) return (null, null);
+
+            var parsed = JsonSerializer.Deserialize<LicenseErrorResponse>(
+                body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (parsed is null || !LicenseErrorKeys.IsKnown(parsed.Error)) return (null, null);
+            return (parsed.Error, parsed.Message);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
+    private static LicenseErrorResponse? TryBuildLicenseError(string? error, string? message, System.Collections.Specialized.NameValueCollection query)
+    {
+        if (!LicenseErrorKeys.IsKnown(error)) return null;
+
+        var result = new LicenseErrorResponse
+        {
+            Error = error!,
+            Message = message,
+            Feature = query["feature"],
+            SetupUrl = query["setup_url"] ?? query["setupUrl"]
+        };
+        if (int.TryParse(query["limit"], out var limit)) result.Limit = limit;
+        return result;
+    }
+
+    private static string BuildLicenseMessage(LicenseErrorResponse error) => error.Error switch
+    {
+        LicenseErrorKeys.UserLimitReached when error.Limit.HasValue =>
+            $"This server is full ({error.Limit} users maximum).",
+        LicenseErrorKeys.UserLimitReached => "This server is full.",
+        LicenseErrorKeys.NoLicense when !string.IsNullOrWhiteSpace(error.SetupUrl) =>
+            $"This server hasn't been activated. Admin setup: {error.SetupUrl}",
+        LicenseErrorKeys.NoLicense => "This server hasn't been activated.",
+        LicenseErrorKeys.FeatureNotLicensed =>
+            $"The '{error.Feature ?? "requested"}' feature is not enabled on this server's license.",
+        _ => error.Message ?? "Login failed"
+    };
 
     private static string BuildLoginSuccessHtml(string? displayName)
     {
