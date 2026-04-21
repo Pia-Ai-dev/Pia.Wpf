@@ -446,6 +446,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
                 LoginDisplayName = _authService.UserDisplayName;
                 LoginEmail = _authService.UserEmail;
 
+                if (string.IsNullOrWhiteSpace(UserName) && !string.IsNullOrWhiteSpace(_authService.UserDisplayName))
+                    UserName = _authService.UserDisplayName;
+
                 await _providerService.EnsureBuiltInProviderAsync();
                 await HandlePostLoginSyncAsync();
 
