@@ -39,100 +39,12 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     private bool _isInitialized;
     private Guid? _lastKnownDefaultTemplateId;
 
-    private static readonly Dictionary<string, string[]> OptimizingMessages = new()
+    private static readonly Dictionary<string, string> OptimizingMessageResourceKeys = new()
     {
-        ["Business Email"] =
-        [
-            "Applying business tone...",
-            "Converting to office speech...",
-            "Adding corporate polish...",
-            "Inserting professional jargon...",
-            "Calibrating formality levels...",
-            "Removing casual vibes...",
-            "Translating to manager-speak...",
-            "Adding appropriate regards...",
-            "Ensuring inbox-worthiness...",
-            "Polishing executive summary...",
-            "Checking synergy levels...",
-            "Optimizing action items...",
-            "Aligning with best practices...",
-            "Adding circle-back potential...",
-            "Maximizing meeting avoidance...",
-            "Ensuring email trail compliance...",
-            "Buffing professional sheen...",
-            "Removing accidental personality...",
-            "Adding strategic ambiguity...",
-            "Preparing for reply-all survival..."
-        ],
-        ["Community Article"] =
-        [
-            "Loading customer vibes...",
-            "Adding meaningful characters...",
-            "Sprinkling engagement magic...",
-            "Optimizing scroll-worthiness...",
-            "Charging community batteries...",
-            "Infusing relatability...",
-            "Calibrating authenticity meter...",
-            "Adding human touch...",
-            "Boosting shareability factor...",
-            "Generating warm fuzzies...",
-            "Ensuring comment-bait quality...",
-            "Polishing storytelling hooks...",
-            "Maximizing emoji potential...",
-            "Adding conversation starters...",
-            "Checking inclusivity levels...",
-            "Tuning friendly frequency...",
-            "Brewing connection juice...",
-            "Amplifying community spirit...",
-            "Loading appreciation tokens...",
-            "Preparing for viral potential..."
-        ],
-        ["Message to Friend"] =
-        [
-            "Activating bestie mode...",
-            "Translating to friend language...",
-            "Adding inside joke placeholders...",
-            "Removing unnecessary formality...",
-            "Injecting chill vibes...",
-            "Calibrating casualness...",
-            "Loading emoji suggestions...",
-            "Checking banter levels...",
-            "Adding friendly chaos...",
-            "Optimizing chat energy...",
-            "Ensuring laugh potential...",
-            "Sprinkling friendship dust...",
-            "Removing awkward politeness...",
-            "Adding genuine feels...",
-            "Tuning support frequencies...",
-            "Charging hangout potential...",
-            "Maximizing reply speed...",
-            "Adding random tangent support...",
-            "Ensuring meme compatibility...",
-            "Preparing for instant response..."
-        ],
-        ["Default"] =
-        [
-            "Processing your text...",
-            "Working the magic...",
-            "Analyzing content...",
-            "Applying optimizations...",
-            "Crunching the words...",
-            "Enhancing your message...",
-            "Polishing the prose...",
-            "Refining the content...",
-            "Adding finishing touches...",
-            "Almost there...",
-            "Making it shine...",
-            "Perfecting the output...",
-            "Fine-tuning results...",
-            "Generating goodness...",
-            "Crafting excellence...",
-            "Brewing perfection...",
-            "Loading awesomeness...",
-            "Summoning creativity...",
-            "Channeling inspiration...",
-            "Preparing masterpiece..."
-        ]
+        ["Business Email"] = "Optimizing_Messages_BusinessEmail",
+        ["Community Article"] = "Optimizing_Messages_CommunityArticle",
+        ["Message to Friend"] = "Optimizing_Messages_MessageToFriend",
+        ["Default"] = "Optimizing_Messages_Default",
     };
 
     [ObservableProperty]
@@ -311,11 +223,12 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     private string[] GetOptimizingMessages()
     {
         var templateName = SelectedTemplate?.Name ?? "Default";
-        if (!OptimizingMessages.TryGetValue(templateName, out var messages))
+        if (!OptimizingMessageResourceKeys.TryGetValue(templateName, out var resourceKey))
         {
-            messages = OptimizingMessages["Default"];
+            resourceKey = OptimizingMessageResourceKeys["Default"];
         }
-        return messages;
+        var localized = _localizationService[resourceKey];
+        return localized.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private bool CanExecuteOptimize()
