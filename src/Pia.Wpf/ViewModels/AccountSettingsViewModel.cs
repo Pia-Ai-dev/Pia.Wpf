@@ -150,6 +150,22 @@ public partial class AccountSettingsViewModel : ObservableObject
     [ObservableProperty]
     private string? _loginErrorMessage;
 
+    // Allowed login methods (controlled by enterprise policy; null = all allowed)
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMultipleLoginMethodsAllowed))]
+    private bool _isLocalLoginAllowed = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMultipleLoginMethodsAllowed))]
+    private bool _isMicrosoftLoginAllowed = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMultipleLoginMethodsAllowed))]
+    private bool _isGoogleLoginAllowed = true;
+
+    public bool HasMultipleLoginMethodsAllowed =>
+        (IsLocalLoginAllowed ? 1 : 0) + (IsMicrosoftLoginAllowed ? 1 : 0) + (IsGoogleLoginAllowed ? 1 : 0) > 1;
+
     // E2EE properties
     [ObservableProperty]
     private bool _isE2EEEnabled;
@@ -221,6 +237,9 @@ public partial class AccountSettingsViewModel : ObservableObject
         // Sync state
         ServerUrl = settings.ServerUrl ?? "";
         TrustSelfSignedCertificates = settings.TrustSelfSignedCertificates;
+        IsLocalLoginAllowed = settings.IsLoginProviderAllowed("local");
+        IsMicrosoftLoginAllowed = settings.IsLoginProviderAllowed("microsoft");
+        IsGoogleLoginAllowed = settings.IsLoginProviderAllowed("google");
         UpdateSyncState();
         LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
 

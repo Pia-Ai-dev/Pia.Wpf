@@ -15,6 +15,7 @@
     "privacy": {
       "tokenizationEnabled": true
     },
-    "autoUpdateEnabled": true
+    "autoUpdateEnabled": true,
+    "allowedLoginProviders": ["microsoft"]
   }
 }

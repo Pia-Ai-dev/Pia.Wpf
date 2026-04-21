@@ -77,6 +77,19 @@ All properties from `AppSettings` can be used in both `defaults` and `enforce`. 
 | `useSameProviderForAllModes` | bool | Use same AI provider for all modes |
 | `ttsEnabled` | bool | Enable text-to-speech |
 | `whisperModel` | "Tiny" / "Base" / "Small" / "Medium" / "Large" | Speech-to-text model size |
+| `allowedLoginProviders` | string[] | Restricts sign-in methods shown in the UI. Values: `"local"`, `"microsoft"`, `"google"`. Omit or set to `null` to allow all. |
+
+### Restricting login methods
+
+Set `allowedLoginProviders` (usually under `enforce`) to a subset of `["local", "microsoft", "google"]`. Disallowed methods are removed from the sign-in UI (both the settings page and first-run wizard), and `AuthService` rejects any attempt to use them. If the currently signed-in user authenticated via a method that the policy no longer allows, the client clears the stored tokens on next launch (auto-logoff).
+
+```json
+{
+  "enforce": {
+    "allowedLoginProviders": ["microsoft"]
+  }
+}
+```
 
 ## Deployment Methods
 

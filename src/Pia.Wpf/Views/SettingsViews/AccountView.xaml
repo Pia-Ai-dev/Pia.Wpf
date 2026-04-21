@@ -42,7 +42,8 @@
               <TextBlock Text="{loc:Str Sync_SignIn}" FontWeight="SemiBold" Margin="0,0,0,8"/>
 
               <!-- Local auth form -->
-              <StackPanel Margin="0,0,0,12" Width="400" HorizontalAlignment="Left">
+              <StackPanel Margin="0,0,0,12" Width="400" HorizontalAlignment="Left"
+                          Visibility="{Binding IsLocalLoginAllowed, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <TextBlock Text="{loc:Str Sync_LocalAuth_Email}"
                            FontSize="12"
                            Opacity="0.7"
@@ -79,11 +80,32 @@
                 </StackPanel>
               </StackPanel>
 
-              <!-- Divider -->
+              <!-- Divider (only shown when both local and at least one OAuth method are available) -->
               <StackPanel Orientation="Horizontal"
                           Margin="0,8,0,12"
                           Width="400"
                           HorizontalAlignment="Left">
+                <StackPanel.Style>
+                  <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                      <MultiDataTrigger>
+                        <MultiDataTrigger.Conditions>
+                          <Condition Binding="{Binding IsLocalLoginAllowed}" Value="True"/>
+                          <Condition Binding="{Binding IsMicrosoftLoginAllowed}" Value="True"/>
+                        </MultiDataTrigger.Conditions>
+                        <Setter Property="Visibility" Value="Visible"/>
+                      </MultiDataTrigger>
+                      <MultiDataTrigger>
+                        <MultiDataTrigger.Conditions>
+                          <Condition Binding="{Binding IsLocalLoginAllowed}" Value="True"/>
+                          <Condition Binding="{Binding IsGoogleLoginAllowed}" Value="True"/>
+                        </MultiDataTrigger.Conditions>
+                        <Setter Property="Visibility" Value="Visible"/>
+                      </MultiDataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </StackPanel.Style>
                 <Border Height="1" Background="#2a2d3a" Width="170" VerticalAlignment="Center"/>
                 <TextBlock Text="{loc:Str Sync_Or}"
                            Opacity="0.5"
@@ -96,14 +118,16 @@
               <StackPanel Orientation="Horizontal">
                 <ui:Button Command="{Binding LoginWithGoogleCommand}"
                            IsEnabled="False"
-                           Margin="0,0,8,0">
+                           Margin="0,0,8,0"
+                           Visibility="{Binding IsGoogleLoginAllowed, Converter={StaticResource BooleanToVisibilityConverter}}">
                   <StackPanel Orientation="Horizontal">
                     <Image Source="{StaticResource GoogleIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
                     <TextBlock Text="{loc:Str Sync_SignInWithGoogle}"/>
                   </StackPanel>
                 </ui:Button>
                 <ui:Button Command="{Binding LoginWithMicrosoftCommand}"
-                           IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}">
+                           IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                           Visibility="{Binding IsMicrosoftLoginAllowed, Converter={StaticResource BooleanToVisibilityConverter}}">
                   <StackPanel Orientation="Horizontal">
                     <Image Source="{StaticResource MicrosoftIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
                     <TextBlock Text="{loc:Str Sync_SignInWithMicrosoft}"/>

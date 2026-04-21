@@ -79,6 +79,13 @@ public int AutoTypeDelayMs { get; set; } = 10;
     public bool SyncEnabled { get; set; } = false;
     public bool TrustSelfSignedCertificates { get; set; } = false;
     public string? ServerUrl { get; set; }
+
+    /// <summary>
+    /// Login methods permitted by enterprise policy. Null means all methods are allowed.
+    /// Known values: "local", "microsoft", "google". Matching is case-insensitive.
+    /// </summary>
+    public List<string>? AllowedLoginProviders { get; set; }
+
     public string? EncryptedAccessToken { get; set; }
     public string? EncryptedRefreshToken { get; set; }
     public string? SyncUserId { get; set; }
@@ -98,6 +105,17 @@ public int AutoTypeDelayMs { get; set; } = 10;
 
     // Privacy settings
     public PrivacySettings Privacy { get; set; } = new();
+
+    /// <summary>
+    /// Whether the given login provider id (e.g. "local", "microsoft", "google") is allowed by policy.
+    /// Returns true when <see cref="AllowedLoginProviders"/> is null (no restriction).
+    /// </summary>
+    public bool IsLoginProviderAllowed(string providerId)
+    {
+        if (AllowedLoginProviders is null)
+            return true;
+        return AllowedLoginProviders.Any(p => string.Equals(p, providerId, StringComparison.OrdinalIgnoreCase));
+    }
 
     public Guid? GetProviderForMode(WindowMode mode)
     {

@@ -198,6 +198,44 @@ public class PolicyServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPolicy_EnforcedAllowedLoginProviders_OverwritesNullDefault()
+    {
+        WritePolicyFile(new PolicySettings
+        {
+            Enforce = new AppSettings { AllowedLoginProviders = ["microsoft"] }
+        });
+        var service = CreateService();
+        await service.GetPolicyAsync();
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.NotNull(settings.AllowedLoginProviders);
+        Assert.Single(settings.AllowedLoginProviders);
+        Assert.Equal("microsoft", settings.AllowedLoginProviders[0]);
+        Assert.True(service.IsEnforced(nameof(AppSettings.AllowedLoginProviders)));
+    }
+
+    [Fact]
+    public void IsLoginProviderAllowed_NullList_AllowsAll()
+    {
+        var settings = new AppSettings();
+        Assert.True(settings.IsLoginProviderAllowed("local"));
+        Assert.True(settings.IsLoginProviderAllowed("microsoft"));
+        Assert.True(settings.IsLoginProviderAllowed("google"));
+    }
+
+    [Fact]
+    public void IsLoginProviderAllowed_RestrictedList_AllowsOnlyListed()
+    {
+        var settings = new AppSettings { AllowedLoginProviders = ["microsoft"] };
+        Assert.False(settings.IsLoginProviderAllowed("local"));
+        Assert.True(settings.IsLoginProviderAllowed("microsoft"));
+        Assert.True(settings.IsLoginProviderAllowed("Microsoft")); // case-insensitive
+        Assert.False(settings.IsLoginProviderAllowed("google"));
+    }
+
+    [Fact]
     public async Task GetPolicyAsync_CachesResult()
     {
         WritePolicyFile(new PolicySettings

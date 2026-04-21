@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.Auth;
 
@@ -51,6 +52,17 @@ public class AuthService : IAuthService
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.EncryptedRefreshToken))
                 return;
 
+            // Auto-logoff if the current provider is no longer permitted by policy.
+            if (!string.IsNullOrEmpty(settings.SyncProvider)
+                && !settings.IsLoginProviderAllowed(settings.SyncProvider))
+            {
+                _logger.LogWarning(
+                    "Stored login provider '{Provider}' is disallowed by policy; clearing credentials",
+                    settings.SyncProvider);
+                await ClearStoredCredentialsAsync(settings);
+                return;
+            }
+
             _refreshToken = _dpapiHelper.Decrypt(settings.EncryptedRefreshToken);
             UserDisplayName = settings.SyncUserDisplayName;
             UserEmail = settings.SyncUserEmail;
@@ -68,11 +80,30 @@ public class AuthService : IAuthService
         }
     }
 
+    private async Task ClearStoredCredentialsAsync(AppSettings settings)
+    {
+        settings.SyncEnabled = false;
+        settings.EncryptedAccessToken = null;
+        settings.EncryptedRefreshToken = null;
+        settings.SyncUserId = null;
+        settings.SyncUserEmail = null;
+        settings.SyncUserDisplayName = null;
+        settings.SyncProvider = null;
+        settings.LastSyncTimestamp = null;
+        await _settingsService.SaveSettingsAsync(settings);
+    }
+
     public async Task<(bool Success, string? ErrorMessage)> LoginAsync(string provider)
     {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            if (!settings.IsLoginProviderAllowed(provider))
+            {
+                _logger.LogWarning("Login provider {Provider} is disabled by policy", provider);
+                return (false, "This sign-in method is disabled by policy");
+            }
+
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
             if (string.IsNullOrEmpty(serverUrl))
             {
@@ -170,6 +201,12 @@ public class AuthService : IAuthService
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            if (!settings.IsLoginProviderAllowed("local"))
+            {
+                _logger.LogWarning("Local password login is disabled by policy");
+                return (false, "This sign-in method is disabled by policy");
+            }
+
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
             if (string.IsNullOrEmpty(serverUrl))
             {

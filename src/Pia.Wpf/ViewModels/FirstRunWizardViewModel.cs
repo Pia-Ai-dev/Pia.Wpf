@@ -109,6 +109,22 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     public string LoginPassword { get; set; } = string.Empty;
 
+    // Allowed login methods (controlled by enterprise policy; null = all allowed)
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMultipleLoginMethodsAllowed))]
+    private bool _isLocalLoginAllowed = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMultipleLoginMethodsAllowed))]
+    private bool _isMicrosoftLoginAllowed = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMultipleLoginMethodsAllowed))]
+    private bool _isGoogleLoginAllowed = true;
+
+    public bool HasMultipleLoginMethodsAllowed =>
+        (IsLocalLoginAllowed ? 1 : 0) + (IsMicrosoftLoginAllowed ? 1 : 0) + (IsGoogleLoginAllowed ? 1 : 0) > 1;
+
     // --- Provider Setup (step 2) ---
 
     [ObservableProperty]
@@ -263,6 +279,23 @@ public partial class FirstRunWizardViewModel : ObservableObject
         OpenForgotPasswordCommand = new RelayCommand(ExecuteOpenForgotPassword);
         TestProviderConnectionCommand = new AsyncRelayCommand(TestProviderConnectionAsync);
         FetchModelsCommand = new AsyncRelayCommand(FetchModelsAsync);
+
+        _ = LoadAllowedLoginProvidersAsync();
+    }
+
+    private async Task LoadAllowedLoginProvidersAsync()
+    {
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            IsLocalLoginAllowed = settings.IsLoginProviderAllowed("local");
+            IsMicrosoftLoginAllowed = settings.IsLoginProviderAllowed("microsoft");
+            IsGoogleLoginAllowed = settings.IsLoginProviderAllowed("google");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read AllowedLoginProviders policy; defaulting to all allowed");
+        }
     }
 
     // --- Navigation ---
