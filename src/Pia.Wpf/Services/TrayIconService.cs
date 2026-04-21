@@ -182,7 +182,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
             else
             {
                 _windowTrackingService.TrackWindowAtCursor();
-                _windowManagerService.ShowWindow(mode);
+                _windowManagerService.ShowWindow(mode, navigateToMain: true);
             }
             return;
         }
@@ -193,7 +193,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         _lastHotkeyOpenTime = now;
 
         _windowTrackingService.TrackWindowAtCursor();
-        _windowManagerService.ShowWindow(mode);
+        _windowManagerService.ShowWindow(mode, navigateToMain: true);
     }
 
     private void UpdateTooltip()

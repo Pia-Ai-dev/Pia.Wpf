@@ -10,7 +10,7 @@ public interface IWindowManagerService
     event EventHandler<ManagedWindow>? WindowClosed;
     event EventHandler? WindowVisibilityChanged;
 
-    void ShowWindow(WindowMode mode);
+    void ShowWindow(WindowMode mode, bool navigateToMain = false);
     void ShowWindowWithText(WindowMode mode, string text);
     void ShowFirstRunWizard();
     void HideWindow(WindowMode mode);
@@ -19,4 +19,5 @@ public interface IWindowManagerService
     bool IsVisible(WindowMode mode);
     bool IsInForeground(WindowMode mode);
     bool CanDismissWithHotkey(WindowMode mode);
+    bool TryChangeWindowMode(WindowMode oldMode, WindowMode newMode);
 }

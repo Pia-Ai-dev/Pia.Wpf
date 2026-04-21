@@ -32,7 +32,7 @@ public partial class WindowManagerService : IWindowManagerService
         _rootProvider = rootProvider;
     }
 
-    public void ShowWindow(WindowMode mode)
+    public void ShowWindow(WindowMode mode, bool navigateToMain = false)
     {
         if (_windows.TryGetValue(mode, out var existing))
         {
@@ -43,6 +43,10 @@ public partial class WindowManagerService : IWindowManagerService
             existing.Window.Activate();
             existing.Window.Focus();
             existing.Window.Topmost = false;
+
+            if (navigateToMain)
+                NavigateToMainView(existing, mode);
+
             WindowVisibilityChanged?.Invoke(this, EventArgs.Empty);
             return;
         }
@@ -124,6 +128,48 @@ public partial class WindowManagerService : IWindowManagerService
                 break;
             case WindowMode.Research:
                 navigationService.NavigateTo<ResearchViewModel, string>(text);
+                break;
+        }
+    }
+
+    public bool TryChangeWindowMode(WindowMode oldMode, WindowMode newMode)
+    {
+        if (oldMode == newMode)
+            return true;
+
+        if (!_windows.TryGetValue(oldMode, out var managed))
+            return false;
+
+        if (_windows.TryGetValue(newMode, out var other) && !ReferenceEquals(other, managed))
+        {
+            ShowWindow(newMode);
+            return false;
+        }
+
+        _windows.Remove(oldMode);
+        managed.Mode = newMode;
+        _windows[newMode] = managed;
+
+        if (managed.Window.DataContext is MainWindowViewModel vm)
+            vm.Mode = newMode;
+
+        WindowVisibilityChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    private static void NavigateToMainView(ManagedWindow managed, WindowMode mode)
+    {
+        var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
+        switch (mode)
+        {
+            case WindowMode.Optimize:
+                navigationService.NavigateTo<OptimizeViewModel>();
+                break;
+            case WindowMode.Assistant:
+                navigationService.NavigateTo<AssistantViewModel>();
+                break;
+            case WindowMode.Research:
+                navigationService.NavigateTo<ResearchViewModel>();
                 break;
         }
     }

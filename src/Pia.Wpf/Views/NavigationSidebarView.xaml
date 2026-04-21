@@ -14,11 +14,10 @@
                      Transition="FadeInWithSlide">
 
     <ui:NavigationView.MenuItems>
-      <!-- Optimize mode items -->
+      <!-- Optimize (always visible, sub-menu renders only in Optimize mode) -->
       <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Optimize"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Optimize}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Optimize}">
         <ui:NavigationViewItem.Content>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="{loc:Str Nav_Optimize}" />
@@ -29,13 +28,23 @@
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Sparkle24" />
         </ui:NavigationViewItem.Icon>
+        <ui:NavigationViewItem.MenuItems>
+          <ui:NavigationViewItem Content="{loc:Str Nav_History}"
+                                 Command="{Binding NavigationCommand}"
+                                 CommandParameter="History"
+                                 IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=History}"
+                                 Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
+            <ui:NavigationViewItem.Icon>
+              <ui:SymbolIcon Symbol="Clock24" />
+            </ui:NavigationViewItem.Icon>
+          </ui:NavigationViewItem>
+        </ui:NavigationViewItem.MenuItems>
       </ui:NavigationViewItem>
 
-      <!-- Assistant mode items -->
+      <!-- Assistant (always visible, sub-menu renders only in Assistant mode) -->
       <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Assistant"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Assistant}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Assistant}">
         <ui:NavigationViewItem.Content>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="{loc:Str Nav_Assistant}" />
@@ -46,13 +55,32 @@
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Chat24" />
         </ui:NavigationViewItem.Icon>
+        <ui:NavigationViewItem.MenuItems>
+          <ui:NavigationViewItem Content="{loc:Str Nav_Memory}"
+                                 Command="{Binding NavigationCommand}"
+                                 CommandParameter="Memory"
+                                 IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Memory}"
+                                 Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+            <ui:NavigationViewItem.Icon>
+              <ui:SymbolIcon Symbol="BrainCircuit24" />
+            </ui:NavigationViewItem.Icon>
+          </ui:NavigationViewItem>
+          <ui:NavigationViewItem Content="{loc:Str Nav_Reminders}"
+                                 Command="{Binding NavigationCommand}"
+                                 CommandParameter="Reminders"
+                                 IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Reminders}"
+                                 Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+            <ui:NavigationViewItem.Icon>
+              <ui:SymbolIcon Symbol="Alert24" />
+            </ui:NavigationViewItem.Icon>
+          </ui:NavigationViewItem>
+        </ui:NavigationViewItem.MenuItems>
       </ui:NavigationViewItem>
 
-      <!-- Research mode items -->
+      <!-- Research (always visible, no sub-items today) -->
       <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Research"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Research}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Research}">
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Research}">
         <ui:NavigationViewItem.Content>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="{loc:Str Nav_Research}" />
@@ -65,43 +93,11 @@
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
-      <!-- History (Optimize only) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_History}"
-                             Command="{Binding NavigationCommand}"
-                             CommandParameter="History"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=History}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
-        <ui:NavigationViewItem.Icon>
-          <ui:SymbolIcon Symbol="Clock24" />
-        </ui:NavigationViewItem.Icon>
-      </ui:NavigationViewItem>
-
-      <!-- Memory (Assistant only) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Memory}"
-                             Command="{Binding NavigationCommand}"
-                             CommandParameter="Memory"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Memory}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
-        <ui:NavigationViewItem.Icon>
-          <ui:SymbolIcon Symbol="BrainCircuit24" />
-        </ui:NavigationViewItem.Icon>
-      </ui:NavigationViewItem>
-
-      <!-- Reminders (Assistant only) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Reminders}"
-                             Command="{Binding NavigationCommand}"
-                             CommandParameter="Reminders"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Reminders}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
-        <ui:NavigationViewItem.Icon>
-          <ui:SymbolIcon Symbol="Alert24" />
-        </ui:NavigationViewItem.Icon>
-      </ui:NavigationViewItem>
-
       <!-- Todo (all modes) -->
       <ui:NavigationViewItem Content="{loc:Str Nav_Todo}"
                              Command="{Binding NavigationCommand}"
-                             CommandParameter="Todo">
+                             CommandParameter="Todo"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Todo}">
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="TaskListSquareLtr24" />
         </ui:NavigationViewItem.Icon>

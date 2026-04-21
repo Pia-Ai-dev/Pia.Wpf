@@ -5,7 +5,7 @@ namespace Pia.Models;
 public class ManagedWindow : IDisposable
 {
     public Guid Id { get; }
-    public WindowMode Mode { get; }
+    public WindowMode Mode { get; internal set; }
     public MainWindow Window { get; }
     public IServiceScope Scope { get; }
 

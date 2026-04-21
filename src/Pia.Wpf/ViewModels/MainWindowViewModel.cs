@@ -253,53 +253,31 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void ExecuteNavigationCommand(string? destination)
     {
-        // Map keyboard shortcut indices to mode-specific destinations
         var resolved = destination switch
         {
-            "Shortcut1" => Mode switch
-            {
-                WindowMode.Optimize => "Optimize",
-                WindowMode.Assistant => "Assistant",
-                WindowMode.Research => "Research",
-                _ => null
-            },
-            "Shortcut2" => Mode switch
-            {
-                WindowMode.Optimize => "History",
-                WindowMode.Assistant => "Memory",
-                WindowMode.Research => "Settings",
-                _ => null
-            },
-            "Shortcut3" => Mode switch
-            {
-                WindowMode.Optimize => "Settings",
-                WindowMode.Assistant => "Reminders",
-                _ => null
-            },
-            "Shortcut4" => Mode switch
-            {
-                WindowMode.Assistant => "Settings",
-                _ => null
-            },
+            "Shortcut1" => "Optimize",
+            "Shortcut2" => "Assistant",
+            "Shortcut3" => "Research",
+            "Shortcut4" => "Settings",
             _ => destination
         };
 
         switch (resolved)
         {
             case "Optimize":
-                _navigationService.NavigateTo<OptimizeViewModel>();
+                NavigateToPrimary(WindowMode.Optimize);
+                break;
+            case "Assistant":
+                NavigateToPrimary(WindowMode.Assistant);
+                break;
+            case "Research":
+                NavigateToPrimary(WindowMode.Research);
                 break;
             case "History":
                 _navigationService.NavigateTo<HistoryViewModel>();
                 break;
             case "Settings":
                 _navigationService.NavigateTo<SettingsViewModel>();
-                break;
-            case "Assistant":
-                _navigationService.NavigateTo<AssistantViewModel>();
-                break;
-            case "Research":
-                _navigationService.NavigateTo<ResearchViewModel>();
                 break;
             case "Memory":
                 _navigationService.NavigateTo<MemoryViewModel>();
@@ -309,6 +287,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 break;
             case "Todo":
                 _navigationService.NavigateTo<TodoViewModel>();
+                break;
+        }
+    }
+
+    private void NavigateToPrimary(WindowMode target)
+    {
+        if (target != Mode && !_windowManagerService.TryChangeWindowMode(Mode, target))
+            return;
+
+        switch (target)
+        {
+            case WindowMode.Optimize:
+                _navigationService.NavigateTo<OptimizeViewModel>();
+                break;
+            case WindowMode.Assistant:
+                _navigationService.NavigateTo<AssistantViewModel>();
+                break;
+            case WindowMode.Research:
+                _navigationService.NavigateTo<ResearchViewModel>();
                 break;
         }
     }
