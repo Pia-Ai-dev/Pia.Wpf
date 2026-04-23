@@ -44,6 +44,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _autostartService = autostartService;
         _policyService = policyService;
+
+        _uiLanguage = _localizationService.CurrentLanguage;
     }
 
     // Enterprise policy enforcement

@@ -5,8 +5,8 @@ using System.Resources;
 namespace Pia.Localization;
 
 /// <summary>
-/// Singleton source for XAML string bindings. Provides an indexer that resolves
-/// localized strings from multiple ResourceManagers based on CurrentUICulture.
+/// Singleton source for XAML string bindings. Owns the active UI culture so
+/// lookups are not affected by thread-local <c>CurrentUICulture</c> drift.
 /// </summary>
 public class LocalizationSource : INotifyPropertyChanged
 {
@@ -14,6 +14,7 @@ public class LocalizationSource : INotifyPropertyChanged
     public static LocalizationSource Instance => _instance;
 
     private readonly ResourceManager[] _resourceManagers;
+    private CultureInfo _culture = CultureInfo.InvariantCulture;
 
     private LocalizationSource()
     {
@@ -26,13 +27,19 @@ public class LocalizationSource : INotifyPropertyChanged
         ];
     }
 
+    public void SetCulture(CultureInfo culture)
+    {
+        _culture = culture;
+        Refresh();
+    }
+
     public string this[string key]
     {
         get
         {
             foreach (var rm in _resourceManagers)
             {
-                var value = rm.GetString(key, CultureInfo.CurrentUICulture);
+                var value = rm.GetString(key, _culture);
                 if (value is not null)
                     return value;
             }
@@ -43,8 +50,8 @@ public class LocalizationSource : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
-    /// Call after changing CurrentUICulture to force all XAML bindings to re-evaluate.
-    /// "Item[]" is required for indexer bindings — "" or null only refreshes named properties.
+    /// Force all XAML bindings to re-evaluate. "Item[]" is required for indexer
+    /// bindings — "" or null only refreshes named properties.
     /// </summary>
     public void Refresh()
     {
