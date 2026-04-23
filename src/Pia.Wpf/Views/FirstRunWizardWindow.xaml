@@ -291,6 +291,10 @@
 
     <!-- Dialog & Snackbar Presenters -->
     <ui:ContentDialogHost x:Name="RootContentDialogPresenter" Grid.Row="0" Grid.RowSpan="4" />
-    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" Grid.Row="0" Grid.RowSpan="4" />
+    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter"
+                          Grid.Row="0" Grid.RowSpan="4"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Top"
+                          Margin="0,36,0,0" />
   </Grid>
 </ui:FluentWindow>
