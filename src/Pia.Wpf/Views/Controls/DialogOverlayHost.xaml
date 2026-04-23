@@ -9,9 +9,11 @@
 
   <Grid>
     <!-- Semi-transparent dark backdrop -->
-    <Border x:Name="Backdrop"
-            Background="#A0000000"
-            Opacity="0" />
+    <Border x:Name="Backdrop" Opacity="0">
+      <Border.Background>
+        <SolidColorBrush Color="{DynamicResource SmokeFillColorDefault}" />
+      </Border.Background>
+    </Border>
 
     <!-- Centered dialog content -->
     <ContentPresenter x:Name="DialogContentPresenter"

@@ -116,28 +116,8 @@
 
       <ContentPresenter x:Name="NavigationContentPresenter"
                         Grid.Row="3"
-                        Content="{Binding CurrentView, NotifyOnTargetUpdated=True}">
-        <ContentPresenter.Style>
-          <Style TargetType="ContentPresenter">
-            <Style.Triggers>
-              <EventTrigger RoutedEvent="Binding.TargetUpdated">
-                <BeginStoryboard>
-                  <Storyboard>
-                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                   From="0"
-                                   To="1"
-                                   Duration="0:0:0.2">
-                      <DoubleAnimation.EasingFunction>
-                        <CubicEase EasingMode="EaseOut" />
-                      </DoubleAnimation.EasingFunction>
-                    </DoubleAnimation>
-                  </Storyboard>
-                </BeginStoryboard>
-              </EventTrigger>
-            </Style.Triggers>
-          </Style>
-        </ContentPresenter.Style>
-      </ContentPresenter>
+                        Content="{Binding CurrentView, NotifyOnTargetUpdated=True}"
+                        Style="{StaticResource NavigationFadeContentPresenterStyle}" />
 
       <!-- Setup Required Overlay -->
       <Border Grid.Row="1" Grid.RowSpan="3"
