@@ -57,4 +57,15 @@
   <data name="Common_End" xml:space="preserve"><value>Fin</value></data>
   <data name="Common_Finish" xml:space="preserve"><value>Terminer</value></data>
   <data name="Common_Dismiss" xml:space="preserve"><value>Ignorer</value></data>
+  <data name="LiveTrans_Title" xml:space="preserve"><value>Transcription en direct</value></data>
+  <data name="LiveTrans_OtherSpeaker_Label" xml:space="preserve"><value>Autre interlocuteur :</value></data>
+  <data name="LiveTrans_OtherSpeaker_Placeholder" xml:space="preserve"><value>autre</value></data>
+  <data name="LiveTrans_ToggleButton_Tooltip" xml:space="preserve"><value>Transcrire la réunion en direct</value></data>
+  <data name="LiveTrans_Stop" xml:space="preserve"><value>Arrêter</value></data>
+  <data name="LiveTrans_Close" xml:space="preserve"><value>Fermer</value></data>
+  <data name="LiveTrans_Status_Idle" xml:space="preserve"><value>Inactif</value></data>
+  <data name="LiveTrans_Status_Starting" xml:space="preserve"><value>Démarrage…</value></data>
+  <data name="LiveTrans_Status_Listening" xml:space="preserve"><value>À l'écoute…</value></data>
+  <data name="LiveTrans_Status_Stopping" xml:space="preserve"><value>Arrêt en cours…</value></data>
+  <data name="LiveTrans_Status_Error" xml:space="preserve"><value>Erreur</value></data>
 </root>

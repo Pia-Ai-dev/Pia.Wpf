@@ -124,6 +124,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private bool _isVoiceModeActive;
 
     [ObservableProperty]
+    private bool _isLiveTranscriptionVisible;
+
+    public LiveTranscriptionViewModel LiveTranscription { get; }
+
+    [ObservableProperty]
     private string _suggestionReminder = string.Empty;
 
     [ObservableProperty]
@@ -167,6 +172,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
+    public IAsyncRelayCommand ToggleLiveTranscriptionCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -183,7 +189,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         ITokenMapService tokenMapService,
-        IAutocompleteService autocompleteService)
+        IAutocompleteService autocompleteService,
+        LiveTranscriptionViewModel liveTranscription)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -200,6 +207,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
         _autocompleteService = autocompleteService;
+        LiveTranscription = liveTranscription;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -211,9 +219,45 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
+        ToggleLiveTranscriptionCommand = new AsyncRelayCommand(ExecuteToggleLiveTranscription);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
+        LiveTranscription.CloseRequested += OnLiveTranscriptionCloseRequested;
         PropertyChanged += OnPropertyChanged;
+    }
+
+    private async Task ExecuteToggleLiveTranscription()
+    {
+        if (IsLiveTranscriptionVisible)
+        {
+            // Closing the overlay also stops the underlying session.
+            await LiveTranscription.StopAsync();
+            IsLiveTranscriptionVisible = false;
+            return;
+        }
+
+        IsLiveTranscriptionVisible = true;
+        try
+        {
+            await LiveTranscription.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start live transcription");
+            _snackbarService.Show(
+                _localizationService["Common_Error"],
+                ex.Message,
+                Wpf.Ui.Controls.ControlAppearance.Danger,
+                null,
+                TimeSpan.FromSeconds(5));
+            IsLiveTranscriptionVisible = false;
+        }
+    }
+
+    private void OnLiveTranscriptionCloseRequested(object? sender, EventArgs e)
+    {
+        // Fire-and-forget: stop the session and hide the overlay.
+        _ = ExecuteToggleLiveTranscription();
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -977,6 +1021,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         VoiceMode = null;
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
+        LiveTranscription.CloseRequested -= OnLiveTranscriptionCloseRequested;
+        LiveTranscription.Dispose();
         PropertyChanged -= OnPropertyChanged;
         _streamingCts?.Cancel();
         _streamingCts?.Dispose();

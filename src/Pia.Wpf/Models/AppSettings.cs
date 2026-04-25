@@ -72,6 +72,9 @@ public int AutoTypeDelayMs { get; set; } = 10;
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
 
+    // Live transcription settings
+    public string? LastCounterpartName { get; set; }
+
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
 
