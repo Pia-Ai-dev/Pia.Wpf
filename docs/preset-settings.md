@@ -7,9 +7,14 @@ Pia supports enterprise policy-based settings management through a layered polic
 Settings are resolved in the following priority order (highest wins):
 
 1. **Policy enforced values** - Always applied, users cannot override
-2. **User settings** - Individual user preferences (`%AppData%/Pia/settings.json`)
-3. **Policy default values** - Applied only when the user hasn't changed a setting
-4. **Built-in defaults** - Hardcoded application defaults
+2. **`PIA_CLOUD_SERVER_URL` env var** - Developer-only override for `serverUrl` (see below)
+3. **User settings** - Individual user preferences (`%AppData%/Pia/settings.json`)
+4. **Policy default values** - Applied only when the user hasn't changed a setting
+5. **Built-in defaults** - Hardcoded application defaults
+
+### Developer override (`PIA_CLOUD_SERVER_URL`)
+
+For local development, setting the `PIA_CLOUD_SERVER_URL` environment variable overrides the saved `serverUrl` on startup. It sits **between** policy enforcement and user settings — `enforce.serverUrl` always wins. When the env var is suppressed by an enforced policy, an info-level line is written to `%LocalAppData%\Pia\Logs\pia.log`.
 
 ## Policy File Location
 

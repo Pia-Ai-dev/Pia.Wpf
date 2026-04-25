@@ -377,7 +377,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void OpenE2EEOnboarding()
     {
-        _navigationService.NavigateTo<SettingsViewModel, int>(0);
+        _navigationService.NavigateTo<SettingsViewModel, int>(5);
     }
 
     public void Dispose()

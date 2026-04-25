@@ -18,7 +18,13 @@ namespace Pia;
 
 public static class Bootstrapper
 {
-    public const string ProductionServerUrl = "https://cloud.pia-ai.de";
+    public const string DefaultProductionServerUrl = "https://cloud.pia-ai.de";
+    public const string ServerUrlEnvVar = "PIA_CLOUD_SERVER_URL";
+
+    public static string ProductionServerUrl =>
+        Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl
+            ? envUrl
+            : DefaultProductionServerUrl;
 
 #if DEBUG
     public static bool IsDevMode => true;
@@ -44,16 +50,61 @@ public static class Bootstrapper
 
         _serviceProvider = services.BuildServiceProvider(options);
 
-        // In production, enforce the hardcoded server URL
+        var bootstrapLogger = _serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrapper");
+        var envServerUrl = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
+        bootstrapLogger.LogInformation(
+            "Server URL resolution: IsDevMode={IsDevMode}, {EnvVar}={EnvValue}, EffectiveProductionServerUrl={Effective}",
+            IsDevMode, ServerUrlEnvVar, envServerUrl ?? "(unset)", ProductionServerUrl);
+
+        // Resolve enforcement up-front so both branches can short-circuit cleanly.
+        // Enterprise policy.enforce.serverUrl always wins over both the hardcoded production URL
+        // and the PIA_CLOUD_SERVER_URL dev override (precedence chain in docs/preset-settings.md).
+        var policyService = _serviceProvider.GetRequiredService<IPolicyService>();
+        await policyService.GetPolicyAsync();
+        var serverUrlEnforced = policyService.IsEnforced(nameof(AppSettings.ServerUrl));
+
         if (!IsDevMode)
         {
-            var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
-            var settings = await settingsService.GetSettingsAsync();
-            if (settings.ServerUrl != ProductionServerUrl)
+            if (serverUrlEnforced)
             {
-                settings.ServerUrl = ProductionServerUrl;
-                settings.TrustSelfSignedCertificates = false;
-                await settingsService.SaveSettingsAsync(settings);
+                bootstrapLogger.LogInformation(
+                    "ServerUrl is enforced by enterprise policy; skipping production URL write");
+            }
+            else
+            {
+                // ProductionServerUrl honors the PIA_CLOUD_SERVER_URL env var override (for dev/staging).
+                var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
+                var settings = await settingsService.GetSettingsAsync();
+                if (settings.ServerUrl != ProductionServerUrl)
+                {
+                    settings.ServerUrl = ProductionServerUrl;
+                    settings.TrustSelfSignedCertificates = false;
+                    await settingsService.SaveSettingsAsync(settings);
+                }
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(envServerUrl))
+        {
+            if (serverUrlEnforced)
+            {
+                bootstrapLogger.LogInformation(
+                    "{EnvVar} is set but ServerUrl is enforced by enterprise policy; env var override ignored",
+                    ServerUrlEnvVar);
+            }
+            else
+            {
+                // In dev mode, apply the PIA_CLOUD_SERVER_URL env var override if set,
+                // overriding whatever URL was previously saved via the Account Settings UI.
+                var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
+                var settings = await settingsService.GetSettingsAsync();
+                if (settings.ServerUrl != envServerUrl)
+                {
+                    bootstrapLogger.LogInformation(
+                        "Applying {EnvVar} override to settings.ServerUrl (was {Old}, now {New})",
+                        ServerUrlEnvVar, settings.ServerUrl ?? "(null)", envServerUrl);
+                    settings.ServerUrl = envServerUrl;
+                    await settingsService.SaveSettingsAsync(settings);
+                }
             }
         }
 

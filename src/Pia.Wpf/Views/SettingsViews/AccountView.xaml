@@ -20,7 +20,7 @@
               <TextBlock Text="{loc:Str Sync_ServerUrl}" FontWeight="SemiBold" Margin="0,0,0,8"/>
               <ui:TextBox PlaceholderText="{loc:Str Sync_ServerUrl_Placeholder}"
                           Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                          IsEnabled="{Binding IsSyncLoggedIn, Converter={StaticResource InverseBooleanConverter}}"
+                          IsEnabled="{Binding IsServerUrlEditable}"
                           Width="400"/>
               <TextBlock Text="{loc:Str Sync_ServerUrl_Description}"
                          Opacity="0.7"

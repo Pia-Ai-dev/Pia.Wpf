@@ -8,6 +8,7 @@ using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 
 namespace Pia.ViewModels;
@@ -23,6 +24,8 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IDeviceManagementService _deviceManagement;
     private readonly IDeviceKeyService _deviceKeys;
+    private readonly IMemoryService _memoryService;
+    private readonly IPolicyService _policyService;
     private readonly SynchronizationContext _syncContext;
     private bool _isLoading;
 
@@ -38,6 +41,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         ILocalizationService localizationService,
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
+        IMemoryService memoryService,
+        IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel)
     {
         _logger = logger;
@@ -49,6 +54,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _deviceManagement = deviceManagement;
         _deviceKeys = deviceKeys;
+        _memoryService = memoryService;
+        _policyService = policyService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         OnboardingViewModel = onboardingViewModel;
 
@@ -73,6 +80,10 @@ public partial class AccountSettingsViewModel : ObservableObject
             }
             _syncClientService.StartBackgroundSync();
         };
+
+        // Seed from current service state — the event may have fired before this
+        // VM was constructed (e.g. during wizard login that was then skipped).
+        IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
 
         _syncClientService.E2EEOnboardingRequired += (_, _) =>
         {
@@ -114,7 +125,13 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     // Sync properties
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsServerUrlEditable))]
     private bool _isSyncLoggedIn;
+
+    // Enterprise policy enforcement
+    public bool IsServerUrlEnforced => _policyService.IsEnforced(nameof(AppSettings.ServerUrl));
+
+    public bool IsServerUrlEditable => !IsSyncLoggedIn && !IsServerUrlEnforced;
 
     [ObservableProperty]
     private string? _syncUserEmail;
@@ -280,6 +297,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (success)
             {
                 await HandlePostLoginAsync();
+                await TrySeedPersonalProfileFromAuthAsync();
             }
             else if (errorMessage is not null)
             {
@@ -309,6 +327,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (success)
             {
                 await HandlePostLoginAsync();
+                await TrySeedPersonalProfileFromAuthAsync();
             }
             else if (errorMessage is not null)
             {
@@ -397,6 +416,34 @@ public partial class AccountSettingsViewModel : ObservableObject
 
         await _syncClientService.PerformFirstSyncMigrationAsync();
         _syncClientService.StartBackgroundSync();
+    }
+
+    private async Task TrySeedPersonalProfileFromAuthAsync()
+    {
+        try
+        {
+            var displayName = _authService.UserDisplayName;
+            if (string.IsNullOrWhiteSpace(displayName)) return;
+
+            var existing = await _memoryService.GetObjectsByTypeAsync(MemoryObjectTypes.PersonalProfile);
+            if (existing.Count > 0) return;
+
+            var trimmed = displayName.Trim();
+            var profileData = new
+            {
+                name = trimmed,
+                nickname = "",
+                location = "",
+                operating_mode = UserOperatingMode.Personal.ToString().ToLowerInvariant(),
+                preferred_name = trimmed
+            };
+            var jsonData = JsonSerializer.Serialize(profileData);
+            await _memoryService.CreateObjectAsync(MemoryObjectTypes.PersonalProfile, "Personal Profile", jsonData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to seed personal profile from OAuth display name");
+        }
     }
 
     [RelayCommand]
