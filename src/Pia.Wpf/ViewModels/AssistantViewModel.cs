@@ -1022,7 +1022,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         LiveTranscription.CloseRequested -= OnLiveTranscriptionCloseRequested;
-        LiveTranscription.Dispose();
         PropertyChanged -= OnPropertyChanged;
         _streamingCts?.Cancel();
         _streamingCts?.Dispose();
