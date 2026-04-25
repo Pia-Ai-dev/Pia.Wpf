@@ -16,7 +16,6 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<LiveTranscriptionViewModel> _logger;
-    private readonly SynchronizationContext? _uiContext;
 
     private CancellationTokenSource? _readerCts;
     private Task? _readerTask;
@@ -47,7 +46,6 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         _settingsService = settingsService;
         _localizationService = localizationService;
         _logger = logger;
-        _uiContext = SynchronizationContext.Current;
 
         StopCommand = new AsyncRelayCommand(StopAsync);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
@@ -157,10 +155,11 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         });
     }
 
-    private void DispatchToUi(Action action)
+    private static void DispatchToUi(Action action)
     {
-        if (_uiContext is null || SynchronizationContext.Current == _uiContext) action();
-        else _uiContext.Post(_ => action(), null);
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess()) action();
+        else dispatcher.BeginInvoke(action);
     }
 
     public void Dispose()
