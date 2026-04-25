@@ -24,7 +24,8 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private readonly Channel<float[]> _segmentQueue;
     private Task? _readerLoop;
     private Task? _segmentLoop;
-    private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _readerCts;
+    private CancellationTokenSource? _segmentCts;
 
     public LiveTranscriptionEngineService(
         TranscriptSpeaker speaker,
@@ -58,17 +59,15 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
-        if (_cts is not null) throw new InvalidOperationException("Engine already started");
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var token = _cts.Token;
+        if (_readerCts is not null) throw new InvalidOperationException("Engine already started");
+        _readerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _segmentCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         _readerLoop = Task.Factory.StartNew(
-            () => RunReaderLoopAsync(token),
+            () => RunReaderLoopAsync(_readerCts.Token),
             TaskCreationOptions.LongRunning).Unwrap();
 
-        _segmentLoop = Task.Factory.StartNew(
-            () => RunSegmentLoopAsync(token),
-            TaskCreationOptions.LongRunning).Unwrap();
+        _segmentLoop = Task.Run(() => RunSegmentLoopAsync(_segmentCts.Token));
 
         return Task.CompletedTask;
     }
@@ -140,11 +139,15 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        try { _cts?.Cancel(); }
-        catch { /* ignore */ }
-
+        // 1. Stop accepting new audio: cancel the reader, which will drain the VAD,
+        //    enqueue any trailing segment, and complete the segment-queue writer.
+        try { _readerCts?.Cancel(); } catch { /* ignore */ }
         try { if (_readerLoop is not null) await _readerLoop.ConfigureAwait(false); }
         catch { /* swallow on shutdown */ }
+
+        // 2. Wait for the segment loop to finish processing whatever is left in the
+        //    queue (it observes writer-completion via ReadAllAsync). We do not cancel
+        //    its token — the writer being completed is what stops the loop.
         try { if (_segmentLoop is not null) await _segmentLoop.ConfigureAwait(false); }
         catch { /* swallow on shutdown */ }
 
@@ -152,6 +155,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _vad.Dispose();
         _processor.Dispose();
         _whisperFactory.Dispose();
-        _cts?.Dispose();
+        _readerCts?.Dispose();
+        _segmentCts?.Dispose();
     }
 }
