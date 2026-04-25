@@ -21,7 +21,11 @@ public interface ILiveMeetingService
     LiveMeetingState State { get; }
     event EventHandler<LiveMeetingState>? StateChanged;
 
-    /// <summary>Reader of the merged utterance stream. Stable across start/stop cycles.</summary>
+    /// <summary>
+    /// Reader of the merged utterance stream. The reader instance is stable for the
+    /// lifetime of the service — engines write into the same channel across all
+    /// start/stop cycles. The channel is completed only on <see cref="IAsyncDisposable.DisposeAsync"/>.
+    /// </summary>
     ChannelReader<TranscriptUtterance> Utterances { get; }
 
     Task StartAsync(CancellationToken cancellationToken = default);

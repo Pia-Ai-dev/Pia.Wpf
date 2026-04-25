@@ -13,7 +13,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<LiveMeetingService> _logger;
 
-    private Channel<TranscriptUtterance> _utterances;
+    private readonly Channel<TranscriptUtterance> _utterances;
     private LiveMeetingState _state = LiveMeetingState.Idle;
     private readonly object _stateLock = new();
 
@@ -54,10 +54,6 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
 
         try
         {
-            // Reset the utterance channel for a fresh session.
-            _utterances.Writer.TryComplete();
-            _utterances = CreateUtterancesChannel();
-
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
             var languageCode = LanguageCode(settings.TargetSpeechLanguage);
 
@@ -122,7 +118,6 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             if (_loopbackSource is not null) await _loopbackSource.StopAsync(cancellationToken).ConfigureAwait(false);
 
             await DisposeAllAsync().ConfigureAwait(false);
-            _utterances.Writer.TryComplete();
 
             lock (_stateLock) SetStateLocked(LiveMeetingState.Idle);
             _logger.LogInformation("Live meeting transcription stopped");
@@ -189,5 +184,9 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _ => "auto",
     };
 
-    public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync().ConfigureAwait(false);
+        _utterances.Writer.TryComplete();
+    }
 }
