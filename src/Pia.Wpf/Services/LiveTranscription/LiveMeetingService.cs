@@ -49,8 +49,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         {
             if (_state is LiveMeetingState.Running or LiveMeetingState.Starting)
                 throw new InvalidOperationException($"Cannot start while {_state}");
-            SetStateLocked(LiveMeetingState.Starting);
         }
+        TransitionState(LiveMeetingState.Starting);
 
         try
         {
@@ -91,14 +91,14 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             await _micEngine.StartAsync(cancellationToken).ConfigureAwait(false);
             await _loopbackEngine.StartAsync(cancellationToken).ConfigureAwait(false);
 
-            lock (_stateLock) SetStateLocked(LiveMeetingState.Running);
+            TransitionState(LiveMeetingState.Running);
             _logger.LogInformation("Live meeting transcription started");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to start live meeting service");
             await DisposeAllAsync().ConfigureAwait(false);
-            lock (_stateLock) SetStateLocked(LiveMeetingState.Error);
+            TransitionState(LiveMeetingState.Error);
             throw;
         }
     }
@@ -108,8 +108,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         lock (_stateLock)
         {
             if (_state is LiveMeetingState.Idle or LiveMeetingState.Stopping) return;
-            SetStateLocked(LiveMeetingState.Stopping);
         }
+        TransitionState(LiveMeetingState.Stopping);
 
         try
         {
@@ -119,13 +119,13 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
 
             await DisposeAllAsync().ConfigureAwait(false);
 
-            lock (_stateLock) SetStateLocked(LiveMeetingState.Idle);
+            TransitionState(LiveMeetingState.Idle);
             _logger.LogInformation("Live meeting transcription stopped");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error stopping live meeting service");
-            lock (_stateLock) SetStateLocked(LiveMeetingState.Error);
+            TransitionState(LiveMeetingState.Error);
             throw;
         }
     }
@@ -158,13 +158,16 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         }
     }
 
-    private void SetStateLocked(LiveMeetingState newState)
+    private void TransitionState(LiveMeetingState newState)
     {
-        if (_state == newState) return;
-        _state = newState;
-        // Raise outside the lock to avoid re-entrancy if a subscriber inspects State.
-        var handler = StateChanged;
-        Task.Run(() => handler?.Invoke(this, newState));
+        EventHandler<LiveMeetingState>? handler;
+        lock (_stateLock)
+        {
+            if (_state == newState) return;
+            _state = newState;
+            handler = StateChanged;
+        }
+        handler?.Invoke(this, newState);
     }
 
     private static Channel<TranscriptUtterance> CreateUtterancesChannel()
