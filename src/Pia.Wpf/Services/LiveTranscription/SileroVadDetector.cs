@@ -29,8 +29,10 @@ public sealed class SileroVadDetector : IDisposable
     private readonly DenseTensor<long> _srTensor;
     private float[] _state = new float[2 * 1 * 128];
 
-    // Rolling pending samples that have not yet been gathered into the current 512 window.
-    private readonly List<float> _pendingChunk = new(WindowSize * 2);
+    // Capacity must accommodate the largest expected single Process() call. Loopback emits
+    // ~50 ms hops at 16 kHz = 800 samples; mic emits the same. Plus one in-flight window.
+    // 4 KiB of float storage is negligible.
+    private readonly FloatRingBuffer _pendingChunk = new(capacity: WindowSize * 8);
 
     // Preroll ring (oldest → newest) of recently-seen non-speech windows.
     private readonly Queue<float[]> _preroll = new(PrerollWindows + 1);
@@ -55,21 +57,14 @@ public sealed class SileroVadDetector : IDisposable
     /// </summary>
     public void Process(ReadOnlySpan<float> samples)
     {
-        // Fast path: append to pending and consume in 512-sample windows.
-        for (int i = 0; i < samples.Length; i++)
-            _pendingChunk.Add(samples[i]);
+        _pendingChunk.Write(samples);
 
-        while (_pendingChunk.Count >= WindowSize)
+        var window = new float[WindowSize];
+        while (_pendingChunk.TryRead(window))
         {
-            var window = new float[WindowSize];
-            _pendingChunk.CopyTo(0, window, 0, WindowSize);
-            _pendingChunk.RemoveRange(0, WindowSize);
             ProcessWindow(window);
+            window = new float[WindowSize]; // fresh array per window — segments capture them
         }
-
-        // Compact when pending list grows abnormally (shouldn't happen, but defensive).
-        if (_pendingChunk.Capacity > WindowSize * 16 && _pendingChunk.Count < WindowSize)
-            _pendingChunk.TrimExcess();
     }
 
     private void ProcessWindow(float[] window)
@@ -155,6 +150,7 @@ public sealed class SileroVadDetector : IDisposable
         _preroll.Clear();
         _pendingChunk.Clear();
     }
+
 
     private float RunSilero(float[] window)
     {
