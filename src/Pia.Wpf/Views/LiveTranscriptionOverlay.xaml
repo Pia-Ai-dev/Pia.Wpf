@@ -76,7 +76,7 @@
                   Padding="20,16,20,8">
       <ItemsControl ItemsSource="{Binding Utterances}">
         <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="{x:Type models:TranscriptUtteranceViewModel}">
+          <DataTemplate DataType="{x:Type models:TranscriptUtterance}">
             <Grid Margin="0,0,0,10">
               <!-- "You" (right-aligned, accent) -->
               <StackPanel HorizontalAlignment="Right"
@@ -85,17 +85,24 @@
                   <Style TargetType="StackPanel">
                     <Setter Property="Visibility" Value="Collapsed" />
                     <Style.Triggers>
-                      <DataTrigger Binding="{Binding IsYou}" Value="True">
+                      <DataTrigger Binding="{Binding Speaker}" Value="{x:Static models:TranscriptSpeaker.You}">
                         <Setter Property="Visibility" Value="Visible" />
                       </DataTrigger>
                     </Style.Triggers>
                   </Style>
                 </StackPanel.Style>
-                <TextBlock Text="{Binding DisplayName}"
-                           FontSize="11"
+                <TextBlock FontSize="11"
                            HorizontalAlignment="Right"
                            Margin="0,0,4,2"
-                           Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                           Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                      <Binding Path="Speaker" />
+                      <Binding Path="DataContext.CounterpartName"
+                               RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
                 <Border Padding="12,8"
                         CornerRadius="12,12,0,12"
                         Background="{DynamicResource AccentFillColorDefaultBrush}">
@@ -113,17 +120,24 @@
                   <Style TargetType="StackPanel">
                     <Setter Property="Visibility" Value="Collapsed" />
                     <Style.Triggers>
-                      <DataTrigger Binding="{Binding IsYou}" Value="False">
+                      <DataTrigger Binding="{Binding Speaker}" Value="{x:Static models:TranscriptSpeaker.Them}">
                         <Setter Property="Visibility" Value="Visible" />
                       </DataTrigger>
                     </Style.Triggers>
                   </Style>
                 </StackPanel.Style>
-                <TextBlock Text="{Binding DisplayName}"
-                           FontSize="11"
+                <TextBlock FontSize="11"
                            HorizontalAlignment="Left"
                            Margin="4,0,0,2"
-                           Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                           Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                      <Binding Path="Speaker" />
+                      <Binding Path="DataContext.CounterpartName"
+                               RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
                 <Border Padding="12,8"
                         CornerRadius="12,12,12,0"
                         Background="{DynamicResource ControlFillColorSecondaryBrush}">

@@ -30,7 +30,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _statusText = string.Empty;
 
-    public ObservableCollection<TranscriptUtteranceViewModel> Utterances { get; } = [];
+    public ObservableCollection<TranscriptUtterance> Utterances { get; } = [];
 
     public IRelayCommand StopCommand { get; }
     public IRelayCommand CloseCommand { get; }
@@ -131,22 +131,12 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     {
         DispatchToUi(() =>
         {
-            var vm = new TranscriptUtteranceViewModel(utterance, () => CounterpartName);
-            Utterances.Add(vm);
+            Utterances.Add(utterance);
             if (Utterances.Count > MaxUtterances)
             {
                 for (int i = 0; i < TrimBatch && Utterances.Count > MaxUtterances - TrimBatch; i++)
                     Utterances.RemoveAt(0);
             }
-        });
-    }
-
-    partial void OnCounterpartNameChanged(string value)
-    {
-        // Broadcast to every bubble VM so every "them" label re-renders.
-        DispatchToUi(() =>
-        {
-            foreach (var u in Utterances) u.RefreshDisplayName();
         });
     }
 
