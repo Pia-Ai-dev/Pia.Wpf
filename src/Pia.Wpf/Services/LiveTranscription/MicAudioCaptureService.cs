@@ -1,8 +1,23 @@
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 
 namespace Pia.Services.LiveTranscription;
+
+public static class PcmConversion
+{
+    /// <summary>Converts a little-endian 16-bit PCM byte buffer to Float32 samples in [-1, 1].</summary>
+    public static float[] Pcm16LeToFloat(ReadOnlySpan<byte> pcm)
+    {
+        var sampleCount = pcm.Length / 2;
+        var output = new float[sampleCount];
+        var shorts = MemoryMarshal.Cast<byte, short>(pcm[..(sampleCount * 2)]);
+        for (int i = 0; i < shorts.Length; i++)
+            output[i] = shorts[i] / 32768f;
+        return output;
+    }
+}
 
 /// <summary>
 /// Captures the system default microphone at 16 kHz mono 16-bit PCM via NAudio's
@@ -75,15 +90,8 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        var sampleCount = e.BytesRecorded / 2;
-        if (sampleCount == 0) return;
-
-        var samples = new float[sampleCount];
-        for (int i = 0, j = 0; i < e.BytesRecorded - 1; i += 2, j++)
-        {
-            short s = (short)(e.Buffer[i] | (e.Buffer[i + 1] << 8));
-            samples[j] = s / 32768f;
-        }
+        if (e.BytesRecorded < 2) return;
+        var samples = PcmConversion.Pcm16LeToFloat(e.Buffer.AsSpan(0, e.BytesRecorded));
 
         if (!_channel.Writer.TryWrite(samples))
         {
