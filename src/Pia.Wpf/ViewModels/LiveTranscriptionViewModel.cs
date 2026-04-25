@@ -21,7 +21,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     private Task? _readerTask;
 
     [ObservableProperty]
-    private string _counterpartName = "them";
+    private string _counterpartName = string.Empty;
 
     [ObservableProperty]
     private bool _isRunning;
@@ -46,6 +46,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         _settingsService = settingsService;
         _localizationService = localizationService;
         _logger = logger;
+        _counterpartName = _localizationService["LiveTrans_OtherSpeaker_Placeholder"];
 
         StopCommand = new AsyncRelayCommand(StopAsync);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
