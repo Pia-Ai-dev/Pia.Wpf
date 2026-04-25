@@ -10,6 +10,7 @@ public partial class LiveTranscriptionOverlay : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        Unloaded += OnUnloaded;
     }
 
     private void OnDataContextChanged(object sender, System.Windows.DependencyPropertyChangedEventArgs e)
@@ -19,6 +20,14 @@ public partial class LiveTranscriptionOverlay : UserControl
 
         if (e.NewValue is LiveTranscriptionViewModel newVm)
             ((INotifyCollectionChanged)newVm.Utterances).CollectionChanged += OnUtterancesChanged;
+    }
+
+    private void OnUnloaded(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (DataContext is LiveTranscriptionViewModel vm)
+            ((INotifyCollectionChanged)vm.Utterances).CollectionChanged -= OnUtterancesChanged;
+        DataContextChanged -= OnDataContextChanged;
+        Unloaded -= OnUnloaded;
     }
 
     private void OnUtterancesChanged(object? sender, NotifyCollectionChangedEventArgs e)
