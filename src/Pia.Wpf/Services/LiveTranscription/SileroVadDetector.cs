@@ -32,7 +32,7 @@ public sealed class SileroVadDetector : IDisposable
     private const float SpeechEndThreshold = 0.35f;
     private const int SilenceWindowsToEnd = 16;   // ~512 ms of sub-threshold to close a segment
     private const int MinSegmentSamples = 8000;   // 0.5 s minimum to bother transcribing
-    private const int MaxSegmentSamples = 30 * 16000; // 30 s flush cap
+    private const int MaxSegmentSamples = 20 * 16000; // 30 s flush cap
     private const int LogEveryNWindows = 100;     // ~3.2 s of audio
 
     // Energy thresholds. RMS above SpeechCertainRmsDb is unambiguously speech (prob=1);
