@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -18,11 +19,12 @@ public sealed class SileroVadDetector : IDisposable
 {
     private const int WindowSize = 512;          // 32 ms at 16 kHz
     private const int PrerollWindows = 16;        // ~512 ms preroll
-    private const float SpeechStartThreshold = 0.5f;
+    private const float SpeechStartThreshold = 0.4f;
     private const float SpeechEndThreshold = 0.35f;
     private const int SilenceWindowsToEnd = 16;   // ~512 ms of sub-threshold to close a segment
-    private const int MinSegmentSamples = 16000;  // 1 s minimum to bother transcribing
+    private const int MinSegmentSamples = 8000;   // 0.5 s minimum to bother transcribing
     private const int MaxSegmentSamples = 30 * 16000; // 30 s flush cap
+    private const int LogEveryNWindows = 100;     // ~3.2 s of audio
 
     private readonly ILogger _logger;
     private readonly InferenceSession _session;
@@ -41,6 +43,12 @@ public sealed class SileroVadDetector : IDisposable
     private List<float>? _segment;
     private int _silentRunWindows;
 
+    // Diagnostics — sampled every LogEveryNWindows windows.
+    private long _windowsProcessed;
+    private float _maxProbInBatch;
+    private float _maxWindowRmsInBatch;
+    private float _maxWindowPeakInBatch;
+
     public event Action<float[]>? OnSegment;
 
     public SileroVadDetector(string modelPath, ILogger logger)
@@ -48,7 +56,19 @@ public sealed class SileroVadDetector : IDisposable
         _logger = logger;
         var options = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
         _session = new InferenceSession(modelPath, options);
-        _srTensor = new DenseTensor<long>(new[] { 16000L }, new[] { 1 });
+        // Silero v5 declares 'sr' as a rank-0 scalar (shape []). Passing a rank-1 [1]-shaped
+        // tensor does not throw, but the kernel reads it as 0 and the model collapses to ~0
+        // probability for every window.
+        _srTensor = new DenseTensor<long>(new[] { 16000L }, Array.Empty<int>());
+
+        foreach (var kv in _session.InputMetadata)
+            _logger.LogInformation(
+                "Silero input '{Name}': type={Type} shape=[{Shape}]",
+                kv.Key, kv.Value.ElementType, string.Join(",", kv.Value.Dimensions));
+        foreach (var kv in _session.OutputMetadata)
+            _logger.LogInformation(
+                "Silero output '{Name}': type={Type} shape=[{Shape}]",
+                kv.Key, kv.Value.ElementType, string.Join(",", kv.Value.Dimensions));
     }
 
     /// <summary>
@@ -70,6 +90,45 @@ public sealed class SileroVadDetector : IDisposable
     private void ProcessWindow(float[] window)
     {
         var prob = RunSilero(window);
+        _windowsProcessed++;
+        if (prob > _maxProbInBatch) _maxProbInBatch = prob;
+
+        // Window RMS — confirms audio is intact between capture and inference.
+        double sumSq = 0;
+        float peak = 0;
+        for (int i = 0; i < window.Length; i++)
+        {
+            var v = window[i];
+            sumSq += v * v;
+            var a = v < 0 ? -v : v;
+            if (a > peak) peak = a;
+        }
+        var rms = (float)Math.Sqrt(sumSq / window.Length);
+        if (rms > _maxWindowRmsInBatch) _maxWindowRmsInBatch = rms;
+        if (peak > _maxWindowPeakInBatch) _maxWindowPeakInBatch = peak;
+
+        if (_windowsProcessed == 1)
+        {
+            _logger.LogInformation(
+                "VAD first window: rms={Rms:E3} peak={Peak:E3} samples[0..3]=[{S0:F4}, {S1:F4}, {S2:F4}, {S3:F4}]",
+                rms, peak, window[0], window[1], window[2], window[3]);
+        }
+
+        if (_windowsProcessed % LogEveryNWindows == 0)
+        {
+            var rmsDb = _maxWindowRmsInBatch <= 1e-10f ? -200f : 20f * (float)Math.Log10(_maxWindowRmsInBatch);
+            var peakDb = _maxWindowPeakInBatch <= 1e-10f ? -200f : 20f * (float)Math.Log10(_maxWindowPeakInBatch);
+            float stateNorm = 0;
+            for (int i = 0; i < _state.Length; i++) stateNorm += _state[i] * _state[i];
+            _logger.LogDebug(
+                "VAD windows={N} maxProb={P:F3} rmsDb={Rms:F1} peakDb={Peak:F1} stateL2={SL:F2} segOpen={Open} segSamples={S}",
+                _windowsProcessed, _maxProbInBatch, rmsDb, peakDb, Math.Sqrt(stateNorm),
+                _segment is not null, _segment?.Count ?? 0);
+            _maxProbInBatch = 0f;
+            _maxWindowRmsInBatch = 0f;
+            _maxWindowPeakInBatch = 0f;
+        }
+
         bool isSpeech = _segment is null
             ? prob >= SpeechStartThreshold
             : prob >= SpeechEndThreshold; // hysteresis: easier to stay in speech once started
@@ -84,6 +143,9 @@ public sealed class SileroVadDetector : IDisposable
                     _segment.AddRange(pre);
                 _segment.AddRange(window);
                 _silentRunWindows = 0;
+                _logger.LogDebug(
+                    "VAD segment OPEN at prob={P:F2}, preroll={N} windows",
+                    prob, _preroll.Count);
             }
             else
             {
@@ -103,6 +165,15 @@ public sealed class SileroVadDetector : IDisposable
             _silentRunWindows++;
             if (_silentRunWindows >= SilenceWindowsToEnd)
             {
+                var samples = _segment.Count;
+                if (samples >= MinSegmentSamples)
+                    _logger.LogDebug(
+                        "VAD segment CLOSED (silence) samples={S} duration={Ms}ms",
+                        samples, samples * 1000 / 16000);
+                else
+                    _logger.LogDebug(
+                        "VAD segment DROPPED (too short) samples={S}",
+                        samples);
                 FlushSegment();
                 return;
             }
@@ -110,7 +181,7 @@ public sealed class SileroVadDetector : IDisposable
 
         if (_segment.Count >= MaxSegmentSamples)
         {
-            _logger.LogDebug("Silero: 30s segment cap hit, flushing");
+            _logger.LogInformation("Silero: 30s segment cap hit, flushing");
             FlushSegment();
         }
     }
@@ -145,12 +216,24 @@ public sealed class SileroVadDetector : IDisposable
     /// </summary>
     public void Drain()
     {
-        if (_segment is { Count: >= MinSegmentSamples }) FlushSegment();
-        else _segment = null;
+        if (_segment is { Count: >= MinSegmentSamples })
+        {
+            _logger.LogDebug("VAD drain: flushing trailing segment samples={S}", _segment.Count);
+            FlushSegment();
+        }
+        else
+        {
+            _logger.LogDebug(
+                "VAD drain: nothing to flush (segmentSamples={S})",
+                _segment?.Count ?? 0);
+            _segment = null;
+        }
         _preroll.Clear();
         _pendingChunk.Clear();
     }
 
+
+    private bool _firstInferenceLogged;
 
     private float RunSilero(float[] window)
     {
@@ -165,20 +248,40 @@ public sealed class SileroVadDetector : IDisposable
         });
 
         float prob = 0f;
+        int stateElementsCopied = 0;
+        bool sawOutput = false;
         foreach (var r in results)
         {
+            if (!_firstInferenceLogged)
+                _logger.LogInformation(
+                    "Silero first inference output '{Name}' type={Type}",
+                    r.Name, r.Value?.GetType().Name ?? "null");
+
             if (r.Name == "output")
             {
-                var t = r.AsTensor<float>();
-                prob = t.GetValue(0);
+                var dt = (DenseTensor<float>)r.AsTensor<float>();
+                if (dt.Buffer.Length > 0) prob = dt.Buffer.Span[0];
+                sawOutput = true;
             }
             else if (r.Name == "stateN")
             {
-                var t = r.AsTensor<float>();
-                // 2*1*128 = 256 floats
-                for (int i = 0; i < _state.Length; i++)
-                    _state[i] = t.GetValue(i);
+                var dt = (DenseTensor<float>)r.AsTensor<float>();
+                var span = dt.Buffer.Span;
+                stateElementsCopied = Math.Min(span.Length, _state.Length);
+                span.Slice(0, stateElementsCopied).CopyTo(_state.AsSpan());
             }
+        }
+
+        if (!_firstInferenceLogged)
+        {
+            _firstInferenceLogged = true;
+            if (!sawOutput) _logger.LogWarning("Silero: 'output' tensor not found in results — prob will always be 0");
+            float stateNorm = 0;
+            for (int i = 0; i < _state.Length; i++) stateNorm += _state[i] * _state[i];
+            _logger.LogInformation(
+                "Silero first inference: prob={P:F3} stateCopied={N}/{Total} stateL2={L:F3} state[0..3]=[{S0:F4},{S1:F4},{S2:F4},{S3:F4}]",
+                prob, stateElementsCopied, _state.Length, Math.Sqrt(stateNorm),
+                _state[0], _state[1], _state[2], _state[3]);
         }
         return prob;
     }

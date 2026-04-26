@@ -32,6 +32,9 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
     private readonly Channel<float[]> _channel;
     private WaveInEvent? _waveIn;
     private long _droppedFrames;
+    private long _frameCount;
+    private float _maxRmsInBatch;
+    private bool _firstFrameLogged;
 
     public int SampleRate => TargetSampleRate;
     public bool IsRunning => _waveIn is not null;
@@ -52,6 +55,8 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
     {
         if (IsRunning) throw new InvalidOperationException("Mic capture already running");
 
+        LogAvailableDevices();
+
         _waveIn = new WaveInEvent
         {
             WaveFormat = new WaveFormat(TargetSampleRate, 16, 1),
@@ -63,7 +68,9 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
         try
         {
             _waveIn.StartRecording();
-            _logger.LogInformation("Mic capture started at {Rate} Hz mono", TargetSampleRate);
+            _logger.LogInformation(
+                "Mic capture started at {Rate} Hz mono, bufferMs={BufferMs}",
+                TargetSampleRate, _waveIn.BufferMilliseconds);
         }
         catch
         {
@@ -93,6 +100,26 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
         if (e.BytesRecorded < 2) return;
         var samples = PcmConversion.Pcm16LeToFloat(e.Buffer.AsSpan(0, e.BytesRecorded));
 
+        var rms = ComputeRms(samples);
+        _frameCount++;
+        if (rms > _maxRmsInBatch) _maxRmsInBatch = rms;
+
+        if (!_firstFrameLogged)
+        {
+            _firstFrameLogged = true;
+            _logger.LogInformation(
+                "Mic first frame received: {Samples} samples, rmsDb={Db:F1}",
+                samples.Length, RmsToDb(rms));
+        }
+
+        if (_frameCount % 100 == 0)
+        {
+            _logger.LogDebug(
+                "Mic frames={Count} maxRmsDb={Db:F1} bytes={Bytes}",
+                _frameCount, RmsToDb(_maxRmsInBatch), e.BytesRecorded);
+            _maxRmsInBatch = 0f;
+        }
+
         if (!_channel.Writer.TryWrite(samples))
         {
             // BoundedChannel dropped the oldest frame to make room for this one.
@@ -107,8 +134,49 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
         if (e.Exception is not null)
             _logger.LogError(e.Exception, "Mic capture stopped with error");
 
+        _logger.LogInformation(
+            "Mic capture stopped: totalFrames={Frames} droppedFrames={Dropped}",
+            _frameCount, _droppedFrames);
+
         _channel.Writer.TryComplete();
     }
+
+    private void LogAvailableDevices()
+    {
+        try
+        {
+            var count = WaveIn.DeviceCount;
+            _logger.LogInformation("Mic enumeration: {Count} WaveIn device(s)", count);
+            for (int i = 0; i < count; i++)
+            {
+                var caps = WaveIn.GetCapabilities(i);
+                _logger.LogInformation(
+                    "  WaveIn[{Index}]: '{Name}' channels={Channels}",
+                    i, caps.ProductName, caps.Channels);
+            }
+            // WaveInEvent without DeviceNumber set uses index 0 (WAVE_MAPPER → system default).
+            if (count > 0)
+            {
+                var defaultCaps = WaveIn.GetCapabilities(0);
+                _logger.LogInformation("Mic selected (index 0 / WAVE_MAPPER): '{Name}'", defaultCaps.ProductName);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate mic devices");
+        }
+    }
+
+    private static float ComputeRms(float[] samples)
+    {
+        if (samples.Length == 0) return 0f;
+        double sumSq = 0;
+        for (int i = 0; i < samples.Length; i++) sumSq += samples[i] * samples[i];
+        return (float)Math.Sqrt(sumSq / samples.Length);
+    }
+
+    private static float RmsToDb(float rms)
+        => rms <= 1e-10f ? -200f : 20f * (float)Math.Log10(rms);
 
     public async ValueTask DisposeAsync()
     {

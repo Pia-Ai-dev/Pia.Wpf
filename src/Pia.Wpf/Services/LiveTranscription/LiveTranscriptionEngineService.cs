@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
@@ -40,6 +41,12 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _source = source;
         _sink = sink;
         _logger = logger;
+
+        long whisperSize = -1;
+        try { whisperSize = new FileInfo(whisperGgmlPath).Length; } catch { /* ignore */ }
+        _logger.LogInformation(
+            "Engine init: speaker={Speaker} lang={Lang} whisperPath='{Path}' whisperSize={Size}",
+            speaker, languageCode, whisperGgmlPath, whisperSize);
 
         _vad = new SileroVadDetector(sileroVadModelPath, logger);
         _vad.OnSegment += EnqueueSegmentForTranscription;
@@ -111,12 +118,16 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
     private void EnqueueSegmentForTranscription(float[] samples)
     {
-        if (!_segmentQueue.Writer.TryWrite(samples))
+        if (_segmentQueue.Writer.TryWrite(samples))
+            _logger.LogDebug("Segment queued for {Speaker}: {Samples} samples", _speaker, samples.Length);
+        else
             _logger.LogWarning("Dropped a segment from {Speaker} pipeline — transcription is falling behind", _speaker);
     }
 
     private async Task TranscribeSegmentAsync(float[] samples, CancellationToken cancellationToken)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _logger.LogDebug("Whisper start: {Speaker} {Samples} samples", _speaker, samples.Length);
         try
         {
             var pieces = new List<string>();
@@ -125,10 +136,22 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 if (!string.IsNullOrWhiteSpace(seg.Text)) pieces.Add(seg.Text.Trim());
             }
             var text = string.Join(" ", pieces).Trim();
-            if (text.Length == 0) return;
+            sw.Stop();
+            if (text.Length == 0)
+            {
+                _logger.LogDebug(
+                    "Whisper produced empty result for {Speaker} ({Ms}ms, {Pieces} pieces)",
+                    _speaker, sw.ElapsedMilliseconds, pieces.Count);
+                return;
+            }
+
+            _logger.LogDebug(
+                "Whisper done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
+                _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
 
             var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
+            _logger.LogDebug("Utterance written: {Speaker} '{Preview}'", _speaker, Truncate(text, 60));
         }
         catch (OperationCanceledException) { /* shutdown */ }
         catch (Exception ex)
@@ -158,4 +181,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _readerCts?.Dispose();
         _segmentCts?.Dispose();
     }
+
+    private static string Truncate(string text, int max)
+        => text.Length <= max ? text : text.Substring(0, max) + "…";
 }

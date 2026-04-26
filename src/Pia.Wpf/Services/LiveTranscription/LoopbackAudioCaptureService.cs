@@ -24,6 +24,10 @@ public sealed class LoopbackAudioCaptureService : IAudioCaptureSource
     private float[]? _readBuffer;
     private int _samplesPerHop;
     private long _droppedFrames;
+    private long _frameCount;
+    private long _hopCount;
+    private float _maxRmsInBatch;
+    private bool _firstFrameLogged;
 
     public int SampleRate => TargetSampleRate;
     public bool IsRunning => _capture is not null;
@@ -44,11 +48,13 @@ public sealed class LoopbackAudioCaptureService : IAudioCaptureSource
     {
         if (IsRunning) throw new InvalidOperationException("Loopback already running");
 
+        LogDefaultRenderDevice();
+
         _capture = new WasapiLoopbackCapture();
         var sourceFormat = _capture.WaveFormat;
         _logger.LogInformation(
-            "Loopback source format: {Rate} Hz, {Channels} ch, {Encoding}",
-            sourceFormat.SampleRate, sourceFormat.Channels, sourceFormat.Encoding);
+            "Loopback source format: {Rate} Hz, {Channels} ch, {Bits} bits, {Encoding}",
+            sourceFormat.SampleRate, sourceFormat.Channels, sourceFormat.BitsPerSample, sourceFormat.Encoding);
 
         _buffer = new BufferedWaveProvider(sourceFormat)
         {
@@ -94,6 +100,15 @@ public sealed class LoopbackAudioCaptureService : IAudioCaptureSource
         if (_buffer is null || _resampledMono is null || _readBuffer is null) return;
 
         _buffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
+        _frameCount++;
+
+        if (!_firstFrameLogged)
+        {
+            _firstFrameLogged = true;
+            _logger.LogInformation(
+                "Loopback first frame received: {Bytes} bytes from render device",
+                e.BytesRecorded);
+        }
 
         // Drain everything currently available from the resampler in fixed hops.
         while (true)
@@ -103,6 +118,19 @@ public sealed class LoopbackAudioCaptureService : IAudioCaptureSource
 
             var hop = new float[read];
             Array.Copy(_readBuffer, hop, read);
+
+            var rms = ComputeRms(hop);
+            if (rms > _maxRmsInBatch) _maxRmsInBatch = rms;
+            _hopCount++;
+
+            if (_hopCount % 100 == 0)
+            {
+                _logger.LogDebug(
+                    "Loopback hops={Hops} maxRmsDb={Db:F1} samplesPerHop={Samples}",
+                    _hopCount, RmsToDb(_maxRmsInBatch), read);
+                _maxRmsInBatch = 0f;
+            }
+
             if (!_channel.Writer.TryWrite(hop))
             {
                 _droppedFrames++;
@@ -119,8 +147,39 @@ public sealed class LoopbackAudioCaptureService : IAudioCaptureSource
         if (e.Exception is not null)
             _logger.LogError(e.Exception, "Loopback capture stopped with error");
 
+        _logger.LogInformation(
+            "Loopback capture stopped: totalFrames={Frames} totalHops={Hops} droppedFrames={Dropped}",
+            _frameCount, _hopCount, _droppedFrames);
+
         _channel.Writer.TryComplete();
     }
+
+    private void LogDefaultRenderDevice()
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            _logger.LogInformation(
+                "Loopback selected default render device: '{Name}' state={State} id={Id}",
+                device.FriendlyName, device.State, device.ID);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate default render device");
+        }
+    }
+
+    private static float ComputeRms(float[] samples)
+    {
+        if (samples.Length == 0) return 0f;
+        double sumSq = 0;
+        for (int i = 0; i < samples.Length; i++) sumSq += samples[i] * samples[i];
+        return (float)Math.Sqrt(sumSq / samples.Length);
+    }
+
+    private static float RmsToDb(float rms)
+        => rms <= 1e-10f ? -200f : 20f * (float)Math.Log10(rms);
 
     public async ValueTask DisposeAsync()
     {

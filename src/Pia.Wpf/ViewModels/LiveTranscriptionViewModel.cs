@@ -59,6 +59,8 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     {
         if (_service.State is LiveMeetingState.Running or LiveMeetingState.Starting) return;
 
+        _logger.LogInformation("LiveTranscription ViewModel: StartAsync invoked");
+
         // Restore last counterpart name if any.
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(settings.LastCounterpartName))
@@ -71,6 +73,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         });
 
         await _service.StartAsync(cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("LiveTranscription ViewModel: service started, launching consumer");
 
         _readerCts = new CancellationTokenSource();
         _readerTask = Task.Run(() => ConsumeUtterancesAsync(_readerCts.Token));
@@ -112,10 +115,14 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
 
     private async Task ConsumeUtterancesAsync(CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Live transcription consumer started");
         try
         {
             await foreach (var utt in _service.Utterances.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
+                _logger.LogDebug(
+                    "Consumer received utterance from {Speaker} (len={Len})",
+                    utt.Speaker, utt.Text?.Length ?? 0);
                 AddUtterance(utt);
             }
         }
@@ -124,17 +131,28 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         {
             _logger.LogError(ex, "Live transcription utterance consumer failed");
         }
+        finally
+        {
+            _logger.LogInformation("Live transcription consumer stopped");
+        }
     }
 
     private void AddUtterance(TranscriptUtterance utterance)
     {
         DispatchToUi(() =>
         {
-            Utterances.Add(utterance);
-            if (Utterances.Count > MaxUtterances)
+            try
             {
-                for (int i = 0; i < TrimBatch && Utterances.Count > MaxUtterances - TrimBatch; i++)
-                    Utterances.RemoveAt(0);
+                Utterances.Add(utterance);
+                if (Utterances.Count > MaxUtterances)
+                {
+                    for (int i = 0; i < TrimBatch && Utterances.Count > MaxUtterances - TrimBatch; i++)
+                        Utterances.RemoveAt(0);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to add utterance to UI collection");
             }
         });
     }
@@ -156,11 +174,18 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         });
     }
 
-    private static void DispatchToUi(Action action)
+    private void DispatchToUi(Action action)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) action();
-        else dispatcher.BeginInvoke(action);
+        try
+        {
+            if (dispatcher is null || dispatcher.CheckAccess()) action();
+            else dispatcher.BeginInvoke(action);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Dispatcher invoke failed");
+        }
     }
 
     public void Dispose()
