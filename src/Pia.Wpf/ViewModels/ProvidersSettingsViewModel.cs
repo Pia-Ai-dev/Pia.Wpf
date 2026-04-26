@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
@@ -17,6 +18,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly IAuthService _authService;
     private readonly ILocalizationService _localizationService;
+    private readonly IPolicyService _policyService;
     private bool _isLoading;
 
     private readonly SettingsViewModel _parent;
@@ -28,7 +30,8 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         IDialogService dialogService,
         Wpf.Ui.ISnackbarService snackbarService,
         IAuthService authService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IPolicyService policyService)
     {
         _parent = parent;
         _logger = logger;
@@ -38,14 +41,28 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         _snackbarService = snackbarService;
         _authService = authService;
         _localizationService = localizationService;
+        _policyService = policyService;
 
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
         {
-            OnPropertyChanged(nameof(NonCloudProviders));
-            OnPropertyChanged(nameof(OptimizeProviderOptions));
             OnPropertyChanged(nameof(ShowCloudSetupBanner));
         };
+
+        _authService.LoginStateChanged += OnLoginStateChanged;
+        _providerService.ProvidersChanged += OnProvidersChanged;
+    }
+
+    private void OnLoginStateChanged(object? sender, bool isLoggedIn)
+    {
+        IsSyncLoggedIn = isLoggedIn;
+        if (isLoggedIn)
+            RefreshProvidersAsync().SafeFireAndForget(_logger);
+    }
+
+    private void OnProvidersChanged(object? sender, EventArgs e)
+    {
+        RefreshProvidersAsync().SafeFireAndForget(_logger);
     }
 
     [ObservableProperty]
@@ -76,11 +93,14 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     public bool IsTestConnectionInProgress => TestingProviderId.HasValue;
 
+    // Enterprise policy enforcement
+    public bool IsUseSameProviderEnforced => _policyService.IsEnforced(nameof(AppSettings.UseSameProviderForAllModes));
+
+    public List<AiProvider> OptimizeProviderOptions => Providers.ToList();
+
     public List<AiProvider> NonCloudProviders =>
         Providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).ToList();
 
-    public List<AiProvider> OptimizeProviderOptions =>
-        UseSameProviderForAllModes ? NonCloudProviders : Providers.ToList();
 
     public string OptimizeProviderLabel =>
         UseSameProviderForAllModes
@@ -96,47 +116,38 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         {
             if (UseSameProviderForAllModes && value.HasValue)
             {
-                var isPiaCloud = Providers.Any(p => p.Id == value && p.ProviderType == AiProviderType.PiaCloud);
-                if (!isPiaCloud)
-                {
-                    _isLoading = true;
-                    AssistantProviderId = value;
-                    ResearchProviderId = value;
-                    _isLoading = false;
-                }
+                _isLoading = true;
+                AssistantProviderId = value;
+                ResearchProviderId = value;
+                _isLoading = false;
             }
-            SafeFireAndForget(SaveProviderSettingsAsync());
+            SaveProviderSettingsAsync().SafeFireAndForget(_logger);
         }
     }
 
     partial void OnAssistantProviderIdChanged(Guid? value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveProviderSettingsAsync());
+        if (!_isLoading) SaveProviderSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnResearchProviderIdChanged(Guid? value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveProviderSettingsAsync());
+        if (!_isLoading) SaveProviderSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnUseSameProviderForAllModesChanged(bool value)
     {
-        OnPropertyChanged(nameof(OptimizeProviderOptions));
         OnPropertyChanged(nameof(OptimizeProviderLabel));
         if (!_isLoading)
         {
             if (value && OptimizeProviderId.HasValue)
             {
-                var isPiaCloud = Providers.Any(p => p.Id == OptimizeProviderId && p.ProviderType == AiProviderType.PiaCloud);
-                if (!isPiaCloud)
-                {
-                    _isLoading = true;
-                    AssistantProviderId = OptimizeProviderId;
-                    ResearchProviderId = OptimizeProviderId;
-                    _isLoading = false;
-                }
+                _isLoading = true;
+                AssistantProviderId = OptimizeProviderId;
+                ResearchProviderId = OptimizeProviderId;
+                _isLoading = false;
             }
-            SafeFireAndForget(SaveProviderSettingsAsync());
+            SaveProviderSettingsAsync().SafeFireAndForget(_logger);
         }
     }
 
@@ -144,6 +155,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     {
         _isLoading = true;
 
+        Providers.Clear();
         var providersList = await _providerService.GetProvidersAsync();
         foreach (var provider in providersList)
             Providers.Add(provider);
@@ -176,7 +188,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
             var providerToTest = Providers.FirstOrDefault(p => p.Id == savedProvider.Id);
             if (providerToTest != null)
-                SafeFireAndForget(TestConnectionAsync(providerToTest));
+                TestConnectionAsync(providerToTest).SafeFireAndForget(_logger);
         }
     }
 
@@ -195,7 +207,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
             var providerToTest = Providers.FirstOrDefault(p => p.Id == provider.Id);
             if (providerToTest != null)
-                SafeFireAndForget(TestConnectionAsync(providerToTest));
+                TestConnectionAsync(providerToTest).SafeFireAndForget(_logger);
         }
     }
 
@@ -340,9 +352,4 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }

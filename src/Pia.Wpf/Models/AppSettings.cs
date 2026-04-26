@@ -54,6 +54,7 @@ public int AutoTypeDelayMs { get; set; } = 10;
     public double WindowTop { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.System;
     public bool StartMinimized { get; set; } = false;
+    public bool LaunchAtStartup { get; set; } = true;
     public bool ShowTodoPanelButton { get; set; } = true;
     public bool HasCompletedFirstRunWizard { get; set; } = false;
     public UserOperatingMode? UserOperatingMode { get; set; }
@@ -85,6 +86,7 @@ public int AutoTypeDelayMs { get; set; } = 10;
     public string? SyncUserDisplayName { get; set; }
     public string? SyncProvider { get; set; }
     public DateTime? LastSyncTimestamp { get; set; }
+    public string? LastPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
     // E2EE settings

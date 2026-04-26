@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Pia.Models;
@@ -16,7 +17,11 @@ public partial class App : Application
     [STAThread]
     public static void Main(string[] args)
     {
-        VelopackApp.Build().Run();
+        VelopackApp.Build()
+            .OnAfterInstallFastCallback(v => AutostartService.EnableStatic())
+            .OnAfterUpdateFastCallback(v => AutostartService.UpdatePathIfEnabled())
+            .OnBeforeUninstallFastCallback(v => AutostartService.DisableStatic())
+            .Run();
 
         var app = new App();
         app.InitializeComponent();
@@ -87,6 +92,13 @@ public partial class App : Application
         var settingsService = Bootstrapper.ServiceProvider.GetRequiredService<ISettingsService>();
         var settings = await settingsService.GetSettingsAsync();
 
+        // Sync autostart registry state with setting (covers existing installs upgrading to this version)
+        var autostartService = Bootstrapper.ServiceProvider.GetRequiredService<IAutostartService>();
+        if (settings.LaunchAtStartup && !autostartService.IsEnabled())
+            autostartService.Enable();
+        else if (!settings.LaunchAtStartup && autostartService.IsEnabled())
+            autostartService.Disable();
+
         if (!settings.HasCompletedFirstRunWizard)
         {
             await ShowFirstRunWizardAsync();
@@ -103,6 +115,10 @@ public partial class App : Application
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);
 
+        // Initialize persisted MCP plugins from local database
+        var pluginService = Bootstrapper.ServiceProvider.GetRequiredService<IPluginService>();
+        _ = pluginService.InitializePersistedPluginsAsync();
+
         // Start background sync if user is logged in
         var authService = Bootstrapper.ServiceProvider.GetRequiredService<IAuthService>();
         if (authService.IsLoggedIn)
@@ -113,6 +129,25 @@ public partial class App : Application
 
         // Silently check for updates in the background
         _ = CheckForUpdateOnStartupAsync();
+
+        // Periodically re-check for updates (randomized 4–6 hour interval)
+        _ = StartPeriodicUpdateCheckAsync();
+
+        // Pre-download embedding model in background
+        _ = EnsureEmbeddingModelAsync();
+    }
+
+    private async Task StartPeriodicUpdateCheckAsync()
+    {
+        var updateService = Bootstrapper.ServiceProvider.GetRequiredService<IUpdateService>();
+
+        while (!updateService.IsUpdateReady)
+        {
+            var delayMinutes = RandomNumberGenerator.GetInt32(240, 361); // 4–6 hours
+            System.Diagnostics.Debug.WriteLine($"Next update check in {delayMinutes} minutes");
+            await Task.Delay(TimeSpan.FromMinutes(delayMinutes));
+            await CheckForUpdateOnStartupAsync();
+        }
     }
 
     private async Task CheckForUpdateOnStartupAsync()
@@ -150,6 +185,41 @@ public partial class App : Application
                 settings.HasCompletedFirstRunWizard = true;
                 await settingsService.SaveSettingsAsync(settings);
             }
+        }
+    }
+
+    private async Task EnsureEmbeddingModelAsync()
+    {
+        try
+        {
+            var embeddingService = Bootstrapper.ServiceProvider.GetRequiredService<IEmbeddingService>();
+            if (embeddingService.IsModelAvailable)
+            {
+                CleanupOldEmbeddingModel();
+                return;
+            }
+
+            await embeddingService.DownloadModelAsync();
+            CleanupOldEmbeddingModel();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Embedding model download failed: {ex.Message}");
+        }
+    }
+
+    private static void CleanupOldEmbeddingModel()
+    {
+        try
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var oldModelPath = System.IO.Path.Combine(localAppData, "Pia", "Models", "Embeddings", "all-MiniLM-L6-v2.onnx");
+            if (System.IO.File.Exists(oldModelPath))
+                System.IO.File.Delete(oldModelPath);
+        }
+        catch
+        {
+            // Best-effort cleanup
         }
     }
 

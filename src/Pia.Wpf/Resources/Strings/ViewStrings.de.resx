@@ -52,6 +52,7 @@
   <data name="Optimize_Clear_Tooltip" xml:space="preserve"><value>Leeren</value></data>
   <data name="Optimize_Template_Tooltip" xml:space="preserve"><value>Vorlage</value></data>
   <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Ausgabesprache</value></data>
+  <data name="Optimize_Optimize_Tooltip" xml:space="preserve"><value>Optimieren (Strg+Eingabe)</value></data>
   <data name="Optimize_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
   <data name="Optimize_Accept_Tooltip" xml:space="preserve"><value>Annehmen</value></data>
   <data name="Optimize_Reject_Tooltip" xml:space="preserve"><value>Ablehnen</value></data>
@@ -85,7 +86,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Sprachausgabe ein-/ausschalten</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
-  <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden</value></data>
+  <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Recherchemodus</value></data>
@@ -173,6 +174,15 @@
   <data name="TodoPanel_AddPlaceholder" xml:space="preserve"><value>Aufgabe hinzufügen...</value></data>
   <data name="TodoPanel_Add" xml:space="preserve"><value>Hinzufügen</value></data>
   <data name="TodoPanel_OpenFullView" xml:space="preserve"><value>Vollansicht öffnen</value></data>
+  <data name="TodoPanel_Record" xml:space="preserve">
+    <value>Spracheingabe aufnehmen</value>
+  </data>
+  <!-- Kanban View -->
+  <data name="Kanban_AddColumn" xml:space="preserve"><value>Spalte hinzufügen</value></data>
+  <data name="Kanban_AddColumnShort" xml:space="preserve"><value>Spalte</value></data>
+  <data name="Kanban_RenameColumn" xml:space="preserve"><value>Spalte umbenennen</value></data>
+  <data name="Kanban_DeleteColumn" xml:space="preserve"><value>Spalte löschen</value></data>
+  <data name="Kanban_SetDefault" xml:space="preserve"><value>Als Standardansicht festlegen</value></data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Gedächtnis</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Exportieren</value></data>
@@ -198,7 +208,7 @@
   <data name="Memory_ModelNotAvailable" xml:space="preserve"><value>Nicht verfügbar</value></data>
   <data name="Memory_ModelReady" xml:space="preserve"><value>Bereit</value></data>
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Modell herunterladen</value></data>
-  <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>all-MiniLM-L6-v2 Embedding-Modell für semantische Suche herunterladen</value></data>
+  <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Mehrsprachiges Embedding-Modell für semantische Suche herunterladen</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Embeddings neu generieren</value></data>
   <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Embeddings für alle Gedächtnisobjekte neu generieren</value></data>
   <!-- Reminders View -->
@@ -227,6 +237,12 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistent</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Recherche</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Konto</value></data>
+  <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Erweiterungen</value></data>
+  <data name="Plugins_Subtitle" xml:space="preserve"><value>Erweitere die F&#228;higkeiten deines Assistenten mit Plugins.</value></data>
+  <data name="Plugins_NotConnected" xml:space="preserve"><value>Verbinde dich mit Pia Cloud, um Plugins zu verwalten.</value></data>
+  <data name="Plugins_GoToAccount" xml:space="preserve"><value>Zum Konto</value></data>
+  <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>Integriertes Plugin deaktivieren</value></data>
+  <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' ist ein integriertes Plugin. Das Deaktivieren beeintr&#228;chtigt die Standardfunktionen des Assistenten. Bist du sicher?</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Darstellung</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Tastenkürzel</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Sprache</value></data>
@@ -261,6 +277,8 @@
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Standard-Fenstermodus</value></data>
   <data name="Settings_DefaultWindowMode_Description" xml:space="preserve"><value>Modus beim Öffnen eines neuen Fensters über die Hauptschaltfläche</value></data>
   <data name="Settings_ApplicationBehavior" xml:space="preserve"><value>Anwendungsverhalten</value></data>
+  <data name="Settings_LaunchAtStartup" xml:space="preserve"><value>Bei Windows-Start ausführen</value></data>
+  <data name="Settings_LaunchAtStartup_Description" xml:space="preserve"><value>Pia automatisch starten, wenn Sie sich bei Windows anmelden</value></data>
   <data name="Settings_StartMinimized" xml:space="preserve"><value>Minimiert im Infobereich starten</value></data>
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Anwendung startet beim Start versteckt im Infobereich</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
@@ -347,6 +365,8 @@
   <data name="Sync_SyncNow" xml:space="preserve"><value>Jetzt synchronisieren</value></data>
   <data name="Sync_Syncing" xml:space="preserve"><value>Synchronisiere...</value></data>
   <data name="Sync_LastSynced" xml:space="preserve"><value>Letzte Synchronisierung: </value></data>
+  <data name="Sync_ResyncTitle" xml:space="preserve"><value>Erneut synchronisieren</value></data>
+  <data name="Sync_ResyncComplete" xml:space="preserve"><value>Vollständige Neusynchronisierung abgeschlossen</value></data>
   <!-- Dialogs -->
   <data name="Dialog_Optimizing_Title" xml:space="preserve"><value>Optimierung</value></data>
   <data name="Dialog_Optimizing_Processing" xml:space="preserve"><value>Verarbeitung...</value></data>
@@ -375,7 +395,6 @@
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Modellname</value></data>
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure-Bereitstellungsname</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Modelle abrufen</value></data>
-  <data name="Dialog_ProviderEdit_MaxCharacters" xml:space="preserve"><value>Max. Zeichen</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Zeitlimit (Sekunden)</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Vorlage bearbeiten</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Vorlagenname *</value></data>
@@ -516,4 +535,42 @@
   <data name="PiiCategory_Address" xml:space="preserve"><value>Adresse</value></data>
   <data name="PiiCategory_Date" xml:space="preserve"><value>Datum</value></data>
   <data name="PiiCategory_Custom" xml:space="preserve"><value>Benutzerdefiniert</value></data>
+  <!-- E2EE: app-wide onboarding required bar -->
+  <data name="E2EE_Onboarding_Bar_Message" xml:space="preserve"><value>Einrichtung der Ende-zu-Ende-Verschlüsselung erforderlich, um deine Daten zu synchronisieren.</value></data>
+  <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Jetzt einrichten</value></data>
+  <!-- Settings: E2EE section -->
+  <data name="Settings_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, werden alle synchronisierten Daten auf deinem Gerät verschlüsselt, bevor sie an den Server gesendet werden. Bei jeder Aktivierung werden ein neuer Schlüssel und ein neuer Wiederherstellungscode erzeugt. Das Umschalten dieser Einstellung löst eine vollständige Synchronisation aus.</value></data>
+  <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
+  <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Verschlüsselung wird aktualisiert und Daten werden synchronisiert...</value></data>
+  <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
+  <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Nach Geräteanfragen suchen</value></data>
+  <!-- E2EE onboarding view -->
+  <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung einrichten</value></data>
+  <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Dieses Konto verwendet Ende-zu-Ende-Verschlüsselung. Richte dieses Gerät ein, um auf deine verschlüsselten Daten zugreifen zu können.</value></data>
+  <data name="E2EE_Onboarding_Approve_Title" xml:space="preserve"><value>Von einem anderen Gerät bestätigen</value></data>
+  <data name="E2EE_Onboarding_Approve_Description" xml:space="preserve"><value>Wenn du ein anderes Gerät mit eingerichtetem Pia hast, kann es den Verschlüsselungsschlüssel sicher auf dieses Gerät übertragen.</value></data>
+  <data name="E2EE_Onboarding_Approve_Button" xml:space="preserve"><value>Auf Bestätigung warten</value></data>
+  <data name="E2EE_Onboarding_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode verwenden</value></data>
+  <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Gib den Wiederherstellungscode ein, den du beim ersten Aktivieren der Verschlüsselung gespeichert hast. Verwende diesen, wenn dein anderes Gerät nicht verfügbar ist.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
+  <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Dein Geräte-Fingerabdruck:</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Cloud-Sync &gt; Geräteverwaltung. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
+  <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
+  <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Stattdessen Wiederherstellungscode verwenden</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterDescription" xml:space="preserve"><value>Gib den Wiederherstellungscode ein, den du beim ersten Aktivieren der Verschlüsselung gespeichert hast.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Activate" xml:space="preserve"><value>Aktivieren</value></data>
+  <data name="E2EE_Onboarding_Back" xml:space="preserve"><value>Zurück</value></data>
+  <data name="E2EE_Onboarding_Success_Title" xml:space="preserve"><value>Gerät aktiviert!</value></data>
+  <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Deine Daten werden synchronisiert. Das kann einen Moment dauern.</value></data>
+  <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
+  <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Erneut versuchen</value></data>
+  <!-- Wiederherstellungscode-Dialog (beim Aktivieren der E2EE in den Einstellungen) -->
+  <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode</value></data>
+  <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Wiederherstellungscode speichern</value></data>
+  <data name="Dialog_Recovery_Description" xml:space="preserve"><value>Dieser Wiederherstellungscode ist die EINZIGE Möglichkeit, auf deine verschlüsselten Daten zuzugreifen, wenn du alle Geräte verlierst. Notiere ihn und bewahre ihn an einem sicheren Ort auf.</value></data>
+  <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Wichtig</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Wenn du diesen Code und alle Geräte verlierst, können deine verschlüsselten Daten nicht wiederhergestellt werden. Der Server kann deine Daten nicht entschlüsseln.</value></data>
+  <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>Ich habe diesen Wiederherstellungscode an einem sicheren Ort gespeichert</value></data>
 </root>

@@ -16,7 +16,7 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
 
         return field switch
         {
-            "ModelName" => providerType is AiProviderType.OpenAI or AiProviderType.Ollama or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible
+            "ModelName" => providerType is AiProviderType.OpenAI or AiProviderType.Ollama or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Mistral
                 ? Visibility.Visible : Visibility.Collapsed,
             "AzureDeployment" => providerType == AiProviderType.AzureOpenAI
                 ? Visibility.Visible : Visibility.Collapsed,

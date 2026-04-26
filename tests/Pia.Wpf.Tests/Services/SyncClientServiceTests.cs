@@ -1,4 +1,4 @@
-using FluentAssertions;
+using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
@@ -34,11 +34,13 @@ public class SyncClientServiceTests
             NullLogger<DpapiHelper>.Instance);
         var mapper = new SyncMapper(dpapiHelper);
 
+        var deleteTracker = new SyncDeleteTrackerService(Path.GetTempPath(), NullLogger<SyncDeleteTrackerService>.Instance);
         _sut = new SyncClientService(
             _authService, _settingsService, _templateService,
             _providerService, _historyService, _memoryService,
             mapper, _httpClientFactory,
-            NullLogger<SyncClientService>.Instance);
+            NullLogger<SyncClientService>.Instance,
+            deleteTracker);
     }
 
     [Fact]
@@ -48,7 +50,7 @@ public class SyncClientServiceTests
 
         var result = await _sut.SyncNowAsync();
 
-        result.Should().BeNull();
+        Assert.Null(result);
     }
 
     [Fact]
@@ -60,7 +62,7 @@ public class SyncClientServiceTests
 
         var result = await _sut.SyncNowAsync();
 
-        result.Should().BeNull();
+        Assert.Null(result);
     }
 }
 
@@ -75,6 +77,7 @@ public class SyncClientServiceDeviceRevokedTests
             NullLogger<DpapiHelper>.Instance);
         var mapper = new SyncMapper(dpapiHelper);
 
+        var deleteTracker = new SyncDeleteTrackerService(Path.GetTempPath(), NullLogger<SyncDeleteTrackerService>.Instance);
         return new SyncClientService(
             Substitute.For<IAuthService>(),
             Substitute.For<ISettingsService>(),
@@ -85,6 +88,7 @@ public class SyncClientServiceDeviceRevokedTests
             mapper,
             Substitute.For<IHttpClientFactory>(),
             NullLogger<SyncClientService>.Instance,
+            deleteTracker,
             deviceMgmt: _deviceMgmt,
             deviceKeys: _deviceKeys);
     }
@@ -120,7 +124,7 @@ public class SyncClientServiceDeviceRevokedTests
 
         await InvokeCheckForPendingDevicesAsync(sut);
 
-        eventRaised.Should().BeTrue();
+        Assert.True(eventRaised);
     }
 
     [Fact]
@@ -147,7 +151,7 @@ public class SyncClientServiceDeviceRevokedTests
 
         await InvokeCheckForPendingDevicesAsync(sut);
 
-        eventRaised.Should().BeTrue();
+        Assert.True(eventRaised);
     }
 
     [Fact]
@@ -174,7 +178,7 @@ public class SyncClientServiceDeviceRevokedTests
 
         await InvokeCheckForPendingDevicesAsync(sut);
 
-        eventRaised.Should().BeFalse();
+        Assert.False(eventRaised);
     }
 }
 
@@ -191,6 +195,7 @@ public class SyncClientServicePullConflictTests
             NullLogger<DpapiHelper>.Instance);
         var mapper = new SyncMapper(dpapiHelper);
 
+        var deleteTracker = new SyncDeleteTrackerService(Path.GetTempPath(), NullLogger<SyncDeleteTrackerService>.Instance);
         return new SyncClientService(
             Substitute.For<IAuthService>(),
             Substitute.For<ISettingsService>(),
@@ -201,10 +206,11 @@ public class SyncClientServicePullConflictTests
             mapper,
             Substitute.For<IHttpClientFactory>(),
             NullLogger<SyncClientService>.Instance,
+            deleteTracker,
             todoService: _todoService);
     }
 
-    private static async Task<(int Pulled, int DecryptionErrors)> InvokePullChangesAsync(
+    private static async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp)> InvokePullChangesAsync(
         SyncClientService sut, SyncPullResponse pullResponse)
     {
         var json = JsonSerializer.Serialize(pullResponse, new JsonSerializerOptions
@@ -220,12 +226,14 @@ public class SyncClientServicePullConflictTests
         var task = (Task)method.Invoke(sut, [client, "http://test", settings])!;
         await task;
 
-        // Extract the tuple result from Task<(int, int)>
+        // Extract the tuple result from Task<(int, int, bool, DateTime?)>
         var resultProperty = task.GetType().GetProperty("Result")!;
         var result = resultProperty.GetValue(task)!;
         var pulled = (int)result.GetType().GetField("Item1")!.GetValue(result)!;
         var errors = (int)result.GetType().GetField("Item2")!.GetValue(result)!;
-        return (pulled, errors);
+        var pullOk = (bool)result.GetType().GetField("Item3")!.GetValue(result)!;
+        var serverTs = (DateTime?)result.GetType().GetField("Item4")!.GetValue(result);
+        return (pulled, errors, pullOk, serverTs);
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 ﻿using System.Text.RegularExpressions;
-using F23.StringSimilarity;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Similarity;
 
 namespace Pia.Services;
 
@@ -100,14 +100,12 @@ public partial class TokenMapService : ITokenMapService
             if (_valueToToken.ContainsKey(word))
                 return word;
 
-            var jw = new JaroWinkler();
-
             string? bestKeyword = null;
             var bestSimilarity = 0.0;
 
             foreach (var keyword in _customKeywords)
             {
-                var similarity = jw.Similarity(word.ToLowerInvariant(), keyword.ToLowerInvariant());
+                var similarity = JaroWinkler.Similarity(word.ToLowerInvariant(), keyword.ToLowerInvariant());
                 if (similarity >= 0.85 && similarity < 1.0 && similarity > bestSimilarity)
                 {
                     bestSimilarity = similarity;

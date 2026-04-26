@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
@@ -11,11 +12,15 @@ namespace Pia.Services;
 public class TodoToolHandler : ITodoToolHandler
 {
     private readonly ITodoService _todoService;
+    private readonly IKanbanColumnService _columnService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<TodoToolHandler> _logger;
 
-    public TodoToolHandler(ITodoService todoService, ILogger<TodoToolHandler> logger)
+    public TodoToolHandler(ITodoService todoService, IKanbanColumnService columnService, ILocalizationService localizationService, ILogger<TodoToolHandler> logger)
     {
         _todoService = todoService;
+        _columnService = columnService;
+        _localizationService = localizationService;
         _logger = logger;
     }
 
@@ -37,7 +42,13 @@ public class TodoToolHandler : ITodoToolHandler
                 "Update an existing todo by ID. Only provide fields that need to change."),
 
             AIFunctionFactory.Create(DeleteTodoSchema, "delete_todo",
-                "Delete a todo by ID. Use when the user wants to permanently remove a task.")
+                "Delete a todo by ID. Use when the user wants to permanently remove a task."),
+
+            AIFunctionFactory.Create(ListColumnsSchema, "list_columns",
+                "List all kanban board columns with their names and todo counts."),
+
+            AIFunctionFactory.Create(MoveTodoSchema, "move_todo",
+                "Move a todo to a different kanban column by specifying the todo ID and column name.")
         ];
     }
 
@@ -45,24 +56,46 @@ public class TodoToolHandler : ITodoToolHandler
         FunctionCallContent toolCall,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("TodoToolHandler dispatching: {ToolName}", toolCall.Name);
+#if DEBUG
+        Debug.WriteLine($"[TodoToolHandler Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        return toolCall.Name switch
+        (object? result, TodoToolCall? pending) = toolCall.Name switch
         {
-            "query_todos" => (await HandleQueryTodos(args), null),
-            "create_todo" => (null, PrepareCreateTodo(args)),
-            "complete_todo" => (null, await PrepareCompleteTodo(args)),
-            "update_todo" => (null, await PrepareUpdateTodo(args)),
-            "delete_todo" => (null, await PrepareDeleteTodo(args)),
-            _ => ($"Unknown tool: {toolCall.Name}", null)
+            "query_todos" => ((object?)await HandleQueryTodos(args), (TodoToolCall?)null),
+            "list_columns" => ((object?)await HandleListColumns(), (TodoToolCall?)null),
+            "move_todo" => ((object?)null, await PrepareMoveTodo(args)),
+            "create_todo" => ((object?)null, await PrepareCreateTodo(args)),
+            "complete_todo" => ((object?)null, await PrepareCompleteTodo(args)),
+            "update_todo" => ((object?)null, await PrepareUpdateTodo(args)),
+            "delete_todo" => ((object?)null, await PrepareDeleteTodo(args)),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (TodoToolCall?)null)
         };
+
+        // Error cases (invalid ID, not found) produce a pending action with no TargetTodoId.
+        // Return them as immediate results so no action card is shown to the user.
+        if (pending is not null && pending.TargetTodoId is null && toolCall.Name is not "create_todo")
+        {
+            _logger.LogWarning("TodoToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            return (await pending.Execute(), null);
+        }
+
+        _logger.LogDebug("TodoToolHandler {ToolName} result: hasResult={HasResult}, hasPending={HasPending}",
+            toolCall.Name, result is not null, pending is not null);
+        return (result, pending);
     }
 
     public async Task<object?> ExecutePendingActionAsync(TodoToolCall pendingAction)
     {
+        _logger.LogDebug("Executing todo action: {ToolName}, targetId={TargetTodoId}",
+            pendingAction.ToolName, pendingAction.TargetTodoId);
         try
         {
-            return await pendingAction.Execute();
+            var result = await pendingAction.Execute();
+            _logger.LogInformation("Todo action completed: {ToolName}", pendingAction.ToolName);
+            return result;
         }
         catch (Exception ex)
         {
@@ -74,6 +107,7 @@ public class TodoToolHandler : ITodoToolHandler
     private async Task<object?> HandleQueryTodos(IDictionary<string, object?> args)
     {
         var filter = GetStringArg(args, "filter");
+        var columnName = GetOptionalStringArg(args, "column");
 
         IReadOnlyList<TodoItem> todos;
         if (filter.Equals("completed", StringComparison.OrdinalIgnoreCase))
@@ -82,6 +116,16 @@ public class TodoToolHandler : ITodoToolHandler
             todos = await _todoService.GetAllAsync();
         else
             todos = await _todoService.GetPendingAsync();
+
+        var columns = await _columnService.GetAllAsync();
+
+        if (columnName is not null)
+        {
+            var targetColumn = columns.FirstOrDefault(c =>
+                c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+            if (targetColumn is not null)
+                todos = todos.Where(t => t.ColumnId == targetColumn.Id).ToList().AsReadOnly();
+        }
 
         if (todos.Count == 0)
             return filter.Equals("completed", StringComparison.OrdinalIgnoreCase)
@@ -96,6 +140,12 @@ public class TodoToolHandler : ITodoToolHandler
         {
             sb.AppendLine($"\n[ID: {t.Id}] {t.Title}");
             sb.AppendLine($"  Priority: {t.Priority}, Status: {t.Status}");
+            if (t.ColumnId.HasValue)
+            {
+                var col = columns.FirstOrDefault(c => c.Id == t.ColumnId.Value);
+                if (col is not null)
+                    sb.AppendLine($"  Column: {col.Name}");
+            }
             if (t.DueDate.HasValue)
             {
                 var overdue = t.Status == TodoStatus.Pending && t.DueDate.Value < now;
@@ -112,7 +162,7 @@ public class TodoToolHandler : ITodoToolHandler
         return sb.ToString();
     }
 
-    private TodoToolCall PrepareCreateTodo(IDictionary<string, object?> args)
+    private async Task<TodoToolCall> PrepareCreateTodo(IDictionary<string, object?> args)
     {
         var title = GetStringArg(args, "title");
         var priorityStr = GetStringArg(args, "priority");
@@ -122,23 +172,35 @@ public class TodoToolHandler : ITodoToolHandler
         var priority = Enum.TryParse<TodoPriority>(priorityStr, true, out var p) ? p : TodoPriority.Medium;
         DateTime? dueDate = dueDateStr is not null && DateTime.TryParse(dueDateStr, out var dd) ? dd : null;
 
+        var columnName = GetOptionalStringArg(args, "column");
+        Guid? columnId = null;
+        if (columnName is not null)
+        {
+            var columns = await _columnService.GetAllAsync();
+            var targetColumn = columns.FirstOrDefault(c =>
+                c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+            if (targetColumn is not null)
+                columnId = targetColumn.Id;
+        }
+
         var detailSb = new StringBuilder();
-        detailSb.AppendLine($"Title: {title}");
-        detailSb.AppendLine($"Priority: {priority}");
-        if (notes is not null) detailSb.AppendLine($"Notes: {notes}");
-        if (dueDate.HasValue) detailSb.AppendLine($"Due: {dueDate.Value:g}");
+        detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Title"]}: {title}");
+        detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Priority"]}: {priority}");
+        if (notes is not null) detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Notes"]}: {notes}");
+        if (dueDate.HasValue) detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Due"]}: {dueDate.Value:g}");
+        if (columnName is not null) detailSb.AppendLine($"{_localizationService["Tool_Todo_Detail_Column"]}: {columnName}");
 
         return new TodoToolCall(
             ToolName: "create_todo",
-            Description: $"Create {priority.ToString().ToLower()} priority todo: {title}",
+            Description: _localizationService.Format("Tool_Todo_Desc_Create", priority.ToString().ToLower(), title),
             Details: detailSb.ToString(),
             TargetTodoId: null,
             Execute: async () =>
             {
-                var created = await _todoService.CreateAsync(title, priority, notes, dueDate);
-                var result = $"Todo created successfully (ID: {created.Id}).";
+                var created = await _todoService.CreateAsync(title, priority, notes, dueDate, columnId);
+                var result = _localizationService.Format("Tool_Todo_Exec_Created", created.Id);
                 if (dueDate.HasValue)
-                    result += " This task has a due date. You may want to suggest a reminder.";
+                    result += _localizationService["Tool_Todo_Exec_DueDateHint"];
                 return result;
             });
     }
@@ -147,8 +209,11 @@ public class TodoToolHandler : ITodoToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("complete_todo called with invalid ID: '{IdValue}'", idStr);
             return new TodoToolCall("complete_todo", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid todo ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid todo ID format. You provided '{idStr}' which is not a valid GUID. Use query_todos to get valid IDs."));
+        }
 
         var existing = await _todoService.GetAsync(id);
         if (existing is null)
@@ -157,13 +222,13 @@ public class TodoToolHandler : ITodoToolHandler
 
         return new TodoToolCall(
             ToolName: "complete_todo",
-            Description: $"Complete todo: {existing.Title}",
-            Details: $"Mark this {existing.Priority.ToString().ToLower()} priority task as completed.",
+            Description: _localizationService.Format("Tool_Todo_Desc_Complete", existing.Title),
+            Details: _localizationService.Format("Tool_Todo_Detail_MarkCompleted", existing.Priority.ToString().ToLower()),
             TargetTodoId: id,
             Execute: async () =>
             {
                 await _todoService.CompleteAsync(id);
-                return $"Todo \"{existing.Title}\" marked as completed.";
+                return _localizationService.Format("Tool_Todo_Exec_Completed", existing.Title);
             });
     }
 
@@ -171,8 +236,11 @@ public class TodoToolHandler : ITodoToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("update_todo called with invalid ID: '{IdValue}'", idStr);
             return new TodoToolCall("update_todo", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid todo ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid todo ID format. You provided '{idStr}' which is not a valid GUID. Use query_todos to get valid IDs."));
+        }
 
         var existing = await _todoService.GetAsync(id);
         if (existing is null)
@@ -187,8 +255,8 @@ public class TodoToolHandler : ITodoToolHandler
 
         return new TodoToolCall(
             ToolName: "update_todo",
-            Description: $"Update todo: {existing.Title}",
-            Details: $"Current: {existing.Priority} priority, {existing.Status} status\nChanges will be applied.",
+            Description: _localizationService.Format("Tool_Todo_Desc_Update", existing.Title),
+            Details: _localizationService.Format("Tool_Todo_Detail_CurrentStatus", existing.Priority, existing.Status),
             TargetTodoId: id,
             Execute: async () =>
             {
@@ -203,9 +271,9 @@ public class TodoToolHandler : ITodoToolHandler
 
                 await _todoService.UpdateAsync(existing);
 
-                var result = $"Todo {id} updated successfully.";
+                var result = _localizationService.Format("Tool_Todo_Exec_Updated", id);
                 if (dueDateStr is not null && existing.DueDate.HasValue)
-                    result += " This task has a due date. You may want to suggest a reminder.";
+                    result += _localizationService["Tool_Todo_Exec_DueDateHint"];
                 return result;
             });
     }
@@ -214,8 +282,11 @@ public class TodoToolHandler : ITodoToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("delete_todo called with invalid ID: '{IdValue}'", idStr);
             return new TodoToolCall("delete_todo", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid todo ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid todo ID format. You provided '{idStr}' which is not a valid GUID. Use query_todos to get valid IDs."));
+        }
 
         var existing = await _todoService.GetAsync(id);
         if (existing is null)
@@ -224,13 +295,69 @@ public class TodoToolHandler : ITodoToolHandler
 
         return new TodoToolCall(
             ToolName: "delete_todo",
-            Description: $"Delete todo: {existing.Title}",
-            Details: $"This will permanently delete this {existing.Priority.ToString().ToLower()} priority task.",
+            Description: _localizationService.Format("Tool_Todo_Desc_Delete", existing.Title),
+            Details: _localizationService.Format("Tool_Todo_Detail_PermanentDelete", existing.Priority.ToString().ToLower()),
             TargetTodoId: id,
             Execute: async () =>
             {
                 await _todoService.DeleteAsync(id);
-                return $"Todo \"{existing.Title}\" deleted successfully.";
+                return _localizationService.Format("Tool_Todo_Exec_Deleted", existing.Title);
+            });
+    }
+
+    private async Task<object?> HandleListColumns()
+    {
+        var columns = await _columnService.GetAllAsync();
+        var sb = new StringBuilder();
+        sb.AppendLine("Kanban board columns:");
+
+        foreach (var col in columns)
+        {
+            var count = await _columnService.GetTodoCountAsync(col.Id);
+            var markers = new List<string>();
+            if (col.IsDefaultView) markers.Add("default");
+            if (col.IsClosedColumn) markers.Add("closed");
+            var markerStr = markers.Count > 0 ? $" ({string.Join(", ", markers)})" : "";
+            sb.AppendLine($"  [{col.Id}] {col.Name}{markerStr} — {count} todo(s)");
+        }
+
+        return sb.ToString();
+    }
+
+    private async Task<TodoToolCall> PrepareMoveTodo(IDictionary<string, object?> args)
+    {
+        var idStr = GetStringArg(args, "id");
+        if (!Guid.TryParse(idStr, out var id))
+            return new TodoToolCall("move_todo", "Invalid ID format", null, null,
+                () => Task.FromResult<object?>("Error: Invalid todo ID format"));
+
+        var existing = await _todoService.GetAsync(id);
+        if (existing is null)
+            return new TodoToolCall("move_todo", "Todo not found", null, null,
+                () => Task.FromResult<object?>($"Error: Todo {id} not found"));
+
+        var columnName = GetStringArg(args, "column");
+        var columns = await _columnService.GetAllAsync();
+        var targetColumn = columns.FirstOrDefault(c =>
+            c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+
+        if (targetColumn is null)
+            return new TodoToolCall("move_todo", "Column not found", null, null,
+                () => Task.FromResult<object?>($"Error: Column '{columnName}' not found. Available columns: {string.Join(", ", columns.Select(c => c.Name))}"));
+
+        return new TodoToolCall(
+            ToolName: "move_todo",
+            Description: _localizationService.Format("Tool_Todo_Desc_Move", existing.Title, targetColumn.Name),
+            Details: _localizationService.Format("Tool_Todo_Detail_MoveToColumn", targetColumn.Name) +
+                     (targetColumn.IsClosedColumn ? _localizationService["Tool_Todo_Detail_WillComplete"] : ""),
+            TargetTodoId: id,
+            Execute: async () =>
+            {
+                await _todoService.MoveToColumnAsync(id, targetColumn.Id);
+                var result = _localizationService.Format("Tool_Todo_Exec_Moved", existing.Title, targetColumn.Name);
+                if (targetColumn.IsClosedColumn)
+                    result += _localizationService["Tool_Todo_Exec_MovedAndCompleted"];
+                return result;
             });
     }
 
@@ -240,11 +367,21 @@ public class TodoToolHandler : ITodoToolHandler
         [Description("Short task description")] string title,
         [Description("Priority: Low, Medium (default), High")] string? priority = null,
         [Description("Optional extra detail or notes")] string? notes = null,
-        [Description("Optional due date in yyyy-MM-dd or yyyy-MM-ddTHH:mm format")] string? dueDate = null) => "";
+        [Description("Optional due date in yyyy-MM-dd or yyyy-MM-ddTHH:mm format")] string? dueDate = null,
+        [Description("Optional kanban column name to create the todo in")] string? column = null) => "";
 
     [Description("List todos")]
     private static string QueryTodosSchema(
-        [Description("Filter: 'pending' (default), 'completed', or 'all'")] string filter = "pending") => "";
+        [Description("Filter: 'pending' (default), 'completed', or 'all'")] string filter = "pending",
+        [Description("Optional: filter by kanban column name")] string? column = null) => "";
+
+    [Description("List kanban board columns")]
+    private static string ListColumnsSchema() => "";
+
+    [Description("Move a todo to a different column")]
+    private static string MoveTodoSchema(
+        [Description("The ID of the todo to move")] string id,
+        [Description("Name of the target column")] string column) => "";
 
     [Description("Mark a todo as completed")]
     private static string CompleteTodoSchema(

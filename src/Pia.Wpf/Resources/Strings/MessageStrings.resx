@@ -55,6 +55,7 @@
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>This will permanently delete this todo.</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Reminder Updated</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>Response generation was cancelled.</value></data>
+  <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>The assistant did not provide a response. Please try again.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Failed to get AI response: {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Checking memory...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Checking reminders...</value></data>
@@ -171,6 +172,13 @@
   <data name="Msg_Todo_UpdateFailed" xml:space="preserve"><value>Failed to update todo: {0}</value></data>
   <data name="Msg_Todo_Updated" xml:space="preserve"><value>Updated</value></data>
 
+  <!-- Kanban messages -->
+  <data name="Kanban_ColumnNamePrompt" xml:space="preserve"><value>Enter column name:</value></data>
+  <data name="Kanban_ColumnNotEmpty" xml:space="preserve"><value>Cannot delete a column that contains todos. Move or delete all todos first.</value></data>
+  <data name="Kanban_DeleteColumnConfirm" xml:space="preserve"><value>Are you sure you want to delete the column "{0}"?</value></data>
+  <data name="Kanban_ColumnAdded" xml:space="preserve"><value>Column Added</value></data>
+  <data name="Kanban_ColumnAddedDetail" xml:space="preserve"><value>Column "{0}" has been added to the board.</value></data>
+
   <!-- Tray icon messages -->
   <data name="Tray_CloseAssistant" xml:space="preserve"><value>Close Assistant</value></data>
   <data name="Tray_CloseOptimize" xml:space="preserve"><value>Close Optimize</value></data>
@@ -194,4 +202,67 @@
   <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>"{0}" added as {1}</value></data>
   <data name="Msg_PiiKeyword_Exists_Title" xml:space="preserve"><value>Already Exists</value></data>
   <data name="Msg_PiiKeyword_Exists" xml:space="preserve"><value>"{0}" is already in the PII list</value></data>
+
+  <!-- Optimize messages -->
+  <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>Optimization was cancelled</value></data>
+  <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Optimization failed: {0}</value></data>
+  <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Paste failed</value></data>
+  <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Could not paste to {0}. Text copied to clipboard instead.</value></data>
+  <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Unknown window</value></data>
+  <data name="Msg_Optimize_SentToClipboard" xml:space="preserve"><value>Sent to clipboard</value></data>
+  <data name="Msg_Optimize_CopiedToClipboard" xml:space="preserve"><value>Copied to clipboard</value></data>
+  <data name="Msg_Optimize_CopyFailed" xml:space="preserve"><value>Copy failed: {0}</value></data>
+  <data name="Msg_Optimize_LoadTemplatesFailed" xml:space="preserve"><value>Failed to load templates. Please check your configuration.</value></data>
+  <!-- TodoToolHandler -->
+  <data name="Tool_Todo_Desc_Create" xml:space="preserve"><value>Create {0} priority todo: {1}</value></data>
+  <data name="Tool_Todo_Desc_Complete" xml:space="preserve"><value>Complete todo: {0}</value></data>
+  <data name="Tool_Todo_Desc_Update" xml:space="preserve"><value>Update todo: {0}</value></data>
+  <data name="Tool_Todo_Desc_Delete" xml:space="preserve"><value>Delete todo: {0}</value></data>
+  <data name="Tool_Todo_Desc_Move" xml:space="preserve"><value>Move "{0}" to column "{1}"</value></data>
+  <data name="Tool_Todo_Detail_Title" xml:space="preserve"><value>Title</value></data>
+  <data name="Tool_Todo_Detail_Priority" xml:space="preserve"><value>Priority</value></data>
+  <data name="Tool_Todo_Detail_Notes" xml:space="preserve"><value>Notes</value></data>
+  <data name="Tool_Todo_Detail_Due" xml:space="preserve"><value>Due</value></data>
+  <data name="Tool_Todo_Detail_Column" xml:space="preserve"><value>Column</value></data>
+  <data name="Tool_Todo_Detail_MarkCompleted" xml:space="preserve"><value>Mark this {0} priority task as completed.</value></data>
+  <data name="Tool_Todo_Detail_CurrentStatus" xml:space="preserve"><value>Current: {0} priority, {1} status
+Changes will be applied.</value></data>
+  <data name="Tool_Todo_Detail_PermanentDelete" xml:space="preserve"><value>This will permanently delete this {0} priority task.</value></data>
+  <data name="Tool_Todo_Detail_MoveToColumn" xml:space="preserve"><value>This will move the todo from its current column to "{0}".</value></data>
+  <data name="Tool_Todo_Detail_WillComplete" xml:space="preserve"><value>This will mark the todo as completed.</value></data>
+  <data name="Tool_Todo_Exec_Created" xml:space="preserve"><value>Todo created successfully (ID: {0}).</value></data>
+  <data name="Tool_Todo_Exec_DueDateHint" xml:space="preserve"><value> This task has a due date. You may want to suggest a reminder.</value></data>
+  <data name="Tool_Todo_Exec_Completed" xml:space="preserve"><value>Todo "{0}" marked as completed.</value></data>
+  <data name="Tool_Todo_Exec_Updated" xml:space="preserve"><value>Todo {0} updated successfully.</value></data>
+  <data name="Tool_Todo_Exec_Deleted" xml:space="preserve"><value>Todo "{0}" deleted successfully.</value></data>
+  <data name="Tool_Todo_Exec_Moved" xml:space="preserve"><value>Todo "{0}" moved to "{1}".</value></data>
+  <data name="Tool_Todo_Exec_MovedAndCompleted" xml:space="preserve"><value> The todo has been marked as completed.</value></data>
+  <!-- ReminderToolHandler -->
+  <data name="Tool_Reminder_Desc_Create" xml:space="preserve"><value>Create {0} reminder: {1}</value></data>
+  <data name="Tool_Reminder_Desc_Update" xml:space="preserve"><value>Update reminder: {0}</value></data>
+  <data name="Tool_Reminder_Desc_Delete" xml:space="preserve"><value>Delete reminder: {0}</value></data>
+  <data name="Tool_Reminder_Detail_Description" xml:space="preserve"><value>Description</value></data>
+  <data name="Tool_Reminder_Detail_Recurrence" xml:space="preserve"><value>Recurrence</value></data>
+  <data name="Tool_Reminder_Detail_Time" xml:space="preserve"><value>Time</value></data>
+  <data name="Tool_Reminder_Detail_DayOfWeek" xml:space="preserve"><value>Day of week</value></data>
+  <data name="Tool_Reminder_Detail_DayOfMonth" xml:space="preserve"><value>Day of month</value></data>
+  <data name="Tool_Reminder_Detail_Month" xml:space="preserve"><value>Month</value></data>
+  <data name="Tool_Reminder_Detail_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="Tool_Reminder_Detail_CurrentStatus" xml:space="preserve"><value>Current: {0} at {1}
+Changes will be applied.</value></data>
+  <data name="Tool_Reminder_Detail_PermanentDelete" xml:space="preserve"><value>This will permanently delete this {0} reminder ({1}).</value></data>
+  <data name="Tool_Reminder_Exec_Created" xml:space="preserve"><value>Reminder created successfully (ID: {0}). Next fire at: {1}</value></data>
+  <data name="Tool_Reminder_Exec_Updated" xml:space="preserve"><value>Reminder {0} updated successfully.</value></data>
+  <data name="Tool_Reminder_Exec_Deleted" xml:space="preserve"><value>Reminder {0} deleted successfully.</value></data>
+  <!-- MemoryToolHandler -->
+  <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Create new {0}: {1}</value></data>
+  <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>Update {0}: {1}</value></data>
+  <data name="Tool_Memory_Desc_Append" xml:space="preserve"><value>Add entry to {0}: {1}</value></data>
+  <data name="Tool_Memory_Desc_Delete" xml:space="preserve"><value>Delete {0}: {1}</value></data>
+  <data name="Tool_Memory_Desc_Merge" xml:space="preserve"><value>Merge {0} memories into: {1}</value></data>
+  <data name="Tool_Memory_Exec_Created" xml:space="preserve"><value>Memory object created successfully with ID: {0}</value></data>
+  <data name="Tool_Memory_Exec_Updated" xml:space="preserve"><value>Memory object {0} updated successfully.</value></data>
+  <data name="Tool_Memory_Exec_Appended" xml:space="preserve"><value>Entry appended to memory object {0} successfully.</value></data>
+  <data name="Tool_Memory_Exec_Deleted" xml:space="preserve"><value>Memory object {0} deleted successfully.</value></data>
+  <data name="Tool_Memory_Exec_Merged" xml:space="preserve"><value>Merged {0} memories into '{1}' (ID: {2}). {3} duplicate(s) deleted.</value></data>
 </root>

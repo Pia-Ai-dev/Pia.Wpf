@@ -223,7 +223,7 @@ public class E2EEOnboardingViewModelTests
         Assert.Equal(OnboardingState.Initial, sut.State);
 
         // Allow a moment for the cancelled polling to settle
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
 
         // Should not have transitioned to error/success after going back
         Assert.Equal(OnboardingState.Initial, sut.State);

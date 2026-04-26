@@ -4,6 +4,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Navigation;
@@ -29,6 +30,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     private readonly INavigationService _navigationService;
     private readonly IDialogService _dialogService;
     private readonly IWindowManagerService _windowManagerService;
+    private readonly IWindowTrackingService _windowTrackingService;
+    private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
@@ -36,100 +39,12 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     private bool _isInitialized;
     private Guid? _lastKnownDefaultTemplateId;
 
-    private static readonly Dictionary<string, string[]> OptimizingMessages = new()
+    private static readonly Dictionary<string, string> OptimizingMessageResourceKeys = new()
     {
-        ["Business Email"] =
-        [
-            "Applying business tone...",
-            "Converting to office speech...",
-            "Adding corporate polish...",
-            "Inserting professional jargon...",
-            "Calibrating formality levels...",
-            "Removing casual vibes...",
-            "Translating to manager-speak...",
-            "Adding appropriate regards...",
-            "Ensuring inbox-worthiness...",
-            "Polishing executive summary...",
-            "Checking synergy levels...",
-            "Optimizing action items...",
-            "Aligning with best practices...",
-            "Adding circle-back potential...",
-            "Maximizing meeting avoidance...",
-            "Ensuring email trail compliance...",
-            "Buffing professional sheen...",
-            "Removing accidental personality...",
-            "Adding strategic ambiguity...",
-            "Preparing for reply-all survival..."
-        ],
-        ["Community Article"] =
-        [
-            "Loading customer vibes...",
-            "Adding meaningful characters...",
-            "Sprinkling engagement magic...",
-            "Optimizing scroll-worthiness...",
-            "Charging community batteries...",
-            "Infusing relatability...",
-            "Calibrating authenticity meter...",
-            "Adding human touch...",
-            "Boosting shareability factor...",
-            "Generating warm fuzzies...",
-            "Ensuring comment-bait quality...",
-            "Polishing storytelling hooks...",
-            "Maximizing emoji potential...",
-            "Adding conversation starters...",
-            "Checking inclusivity levels...",
-            "Tuning friendly frequency...",
-            "Brewing connection juice...",
-            "Amplifying community spirit...",
-            "Loading appreciation tokens...",
-            "Preparing for viral potential..."
-        ],
-        ["Message to Friend"] =
-        [
-            "Activating bestie mode...",
-            "Translating to friend language...",
-            "Adding inside joke placeholders...",
-            "Removing unnecessary formality...",
-            "Injecting chill vibes...",
-            "Calibrating casualness...",
-            "Loading emoji suggestions...",
-            "Checking banter levels...",
-            "Adding friendly chaos...",
-            "Optimizing chat energy...",
-            "Ensuring laugh potential...",
-            "Sprinkling friendship dust...",
-            "Removing awkward politeness...",
-            "Adding genuine feels...",
-            "Tuning support frequencies...",
-            "Charging hangout potential...",
-            "Maximizing reply speed...",
-            "Adding random tangent support...",
-            "Ensuring meme compatibility...",
-            "Preparing for instant response..."
-        ],
-        ["Default"] =
-        [
-            "Processing your text...",
-            "Working the magic...",
-            "Analyzing content...",
-            "Applying optimizations...",
-            "Crunching the words...",
-            "Enhancing your message...",
-            "Polishing the prose...",
-            "Refining the content...",
-            "Adding finishing touches...",
-            "Almost there...",
-            "Making it shine...",
-            "Perfecting the output...",
-            "Fine-tuning results...",
-            "Generating goodness...",
-            "Crafting excellence...",
-            "Brewing perfection...",
-            "Loading awesomeness...",
-            "Summoning creativity...",
-            "Channeling inspiration...",
-            "Preparing masterpiece..."
-        ]
+        ["Business Email"] = "Optimizing_Messages_BusinessEmail",
+        ["Community Article"] = "Optimizing_Messages_CommunityArticle",
+        ["Message to Friend"] = "Optimizing_Messages_MessageToFriend",
+        ["Default"] = "Optimizing_Messages_Default",
     };
 
     [ObservableProperty]
@@ -161,6 +76,15 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     [ObservableProperty]
     private bool _showTemplatePrompt;
 
+    [ObservableProperty]
+    private string? _trackedWindowInfo;
+
+    [ObservableProperty]
+    private bool _showTrackedWindowIndicator;
+
+    [ObservableProperty]
+    private bool _showCopyButton = true;
+
     private ObservableCollection<OptimizationTemplate> _templates = new();
 
     public ObservableCollection<OptimizationTemplate> Templates => _templates;
@@ -187,6 +111,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         INavigationService navigationService,
         IDialogService dialogService,
         IWindowManagerService windowManagerService,
+        IWindowTrackingService windowTrackingService,
+        ILocalizationService localizationService,
         IVoiceInputService voiceInputService,
         Wpf.Ui.ISnackbarService snackbarService)
     {
@@ -200,6 +126,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         _navigationService = navigationService;
         _dialogService = dialogService;
         _windowManagerService = windowManagerService;
+        _windowTrackingService = windowTrackingService;
+        _localizationService = localizationService;
         _voiceInputService = voiceInputService;
         _snackbarService = snackbarService;
 
@@ -245,7 +173,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                 if (!dialogCompleted)
                 {
                     _optimizationCancellationToken.Cancel();
-                    _snackbarService.Show("Cancelled", "Optimization was cancelled", Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                    _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Optimize_Cancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                 }
             }
             else
@@ -273,9 +201,11 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                 SelectedTemplateId,
                 provider?.Id,
                 SelectedLanguage,
+                nameof(WindowMode.Optimize),
                 cancellationToken);
 
             OptimizedText = session.OptimizedText;
+            await UpdateTrackedWindowInfoAsync();
             IsComparisonView = true;
             dialogCancellation.Cancel();
         }
@@ -286,18 +216,19 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         catch (Exception ex)
         {
             dialogCancellation.Cancel();
-            _snackbarService.Show("Error", $"Optimization failed: {ex.Message}", Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+            _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Optimize_Failed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
         }
     }
 
     private string[] GetOptimizingMessages()
     {
         var templateName = SelectedTemplate?.Name ?? "Default";
-        if (!OptimizingMessages.TryGetValue(templateName, out var messages))
+        if (!OptimizingMessageResourceKeys.TryGetValue(templateName, out var resourceKey))
         {
-            messages = OptimizingMessages["Default"];
+            resourceKey = OptimizingMessageResourceKeys["Default"];
         }
-        return messages;
+        var localized = _localizationService[resourceKey];
+        return localized.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private bool CanExecuteOptimize()
@@ -338,7 +269,22 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                     await _outputService.AutoTypeAsync(OptimizedText);
                     break;
                 case OutputAction.PasteToPreviousWindow:
-                    await _outputService.PasteToPreviousWindowAsync(OptimizedText);
+                    try
+                    {
+                        await _outputService.PasteToPreviousWindowAsync(OptimizedText);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Paste to previous window failed, falling back to clipboard");
+                        await _outputService.CopyToClipboardAsync(OptimizedText);
+                        var windowName = _windowTrackingService.GetTrackedWindowTitle() ?? _localizationService["Msg_Optimize_UnknownWindow"];
+                        _snackbarService.Show(
+                            _localizationService["Msg_Optimize_PasteFailed_Title"],
+                            _localizationService.Format("Msg_Optimize_PasteFailed", windowName),
+                            Wpf.Ui.Controls.ControlAppearance.Caution,
+                            null,
+                            TimeSpan.FromSeconds(5));
+                    }
                     break;
             }
 
@@ -351,6 +297,41 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         catch (Exception ex)
         {
             ErrorMessage = $"Output failed: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateTrackedWindowInfoAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+
+        switch (settings.DefaultOutputAction)
+        {
+            case OutputAction.PasteToPreviousWindow:
+            case OutputAction.AutoType:
+                if (_windowTrackingService.HasTrackedWindow)
+                {
+                    var title = _windowTrackingService.GetTrackedWindowTitle();
+                    var process = _windowTrackingService.GetTrackedWindowProcessName();
+                    TrackedWindowInfo = !string.IsNullOrEmpty(title) ? title : process ?? _localizationService["Msg_Optimize_UnknownWindow"];
+                    ShowTrackedWindowIndicator = true;
+                }
+                else
+                {
+                    TrackedWindowInfo = null;
+                    ShowTrackedWindowIndicator = false;
+                }
+                ShowCopyButton = true;
+                break;
+            case OutputAction.CopyToClipboard:
+                TrackedWindowInfo = _localizationService["Msg_Optimize_SentToClipboard"];
+                ShowTrackedWindowIndicator = true;
+                ShowCopyButton = false;
+                break;
+            default:
+                TrackedWindowInfo = null;
+                ShowTrackedWindowIndicator = false;
+                ShowCopyButton = true;
+                break;
         }
     }
 
@@ -393,11 +374,11 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         try
         {
             await _outputService.CopyToClipboardAsync(OptimizedText);
-            ErrorMessage = "Copied to clipboard";
+            ErrorMessage = _localizationService["Msg_Optimize_CopiedToClipboard"];
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Copy failed: {ex.Message}";
+            ErrorMessage = _localizationService.Format("Msg_Optimize_CopyFailed", ex.Message);
         }
     }
 
@@ -410,7 +391,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
             _syncContext.Post(_ =>
             {
                 SelectedTemplateId = settings.DefaultTemplateId.Value;
-                SafeFireAndForget(UpdateSelectedTemplateAsync());
+                UpdateSelectedTemplateAsync().SafeFireAndForget(_logger);
             }, null);
         }
     }
@@ -419,7 +400,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     {
         _syncContext.Post(_ =>
         {
-            SafeFireAndForget(ExecuteLoadTemplates());
+            ExecuteLoadTemplates().SafeFireAndForget(_logger);
         }, null);
     }
 
@@ -428,20 +409,13 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         _debounceCts?.Cancel();
         _debounceCts = new CancellationTokenSource();
         var token = _debounceCts.Token;
-        SafeFireAndForget(DebounceAsync(500, SaveDraftAsync, token));
+        DebounceAsync(500, SaveDraftAsync, token).SafeFireAndForget(_logger);
     }
 
     private static async Task DebounceAsync(int delayMs, Func<Task> action, CancellationToken ct)
     {
         await Task.Delay(delayMs, ct);
         await action();
-    }
-
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
     }
 
     private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -459,12 +433,12 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
 
         if (e.PropertyName == nameof(SelectedTemplateId))
         {
-            SafeFireAndForget(UpdateSelectedTemplateAsync());
+            UpdateSelectedTemplateAsync().SafeFireAndForget(_logger);
         }
 
         if (e.PropertyName == nameof(SelectedLanguage))
         {
-            SafeFireAndForget(SaveLanguageAsync());
+            SaveLanguageAsync().SafeFireAndForget(_logger);
         }
     }
     private async Task UpdateSelectedTemplateAsync()
@@ -520,8 +494,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         {
             _logger.LogError(ex, "Failed to load templates");
             _snackbarService.Show(
-                "Error",
-                "Failed to load templates. Please check your configuration.",
+                _localizationService["Msg_Error"],
+                _localizationService["Msg_Optimize_LoadTemplatesFailed"],
                 Wpf.Ui.Controls.ControlAppearance.Danger,
                 null,
                 TimeSpan.FromSeconds(4));
@@ -547,7 +521,9 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         {
             var settings = await _settingsService.GetSettingsAsync();
             _lastKnownDefaultTemplateId = settings.DefaultTemplateId;
-            var templateId = settings.DefaultTemplateId ?? _templates[0].Id;
+            var templateId = settings.DefaultTemplateId
+                ?? _templates.FirstOrDefault(t => t.Id == Shared.BuiltInTemplates.ClarityAndGrammarId)?.Id
+                ?? _templates[0].Id;
             SelectedTemplateId = templateId;
             await UpdateSelectedTemplateAsync();
 

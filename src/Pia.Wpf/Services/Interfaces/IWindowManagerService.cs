@@ -12,8 +12,11 @@ public interface IWindowManagerService
 
     void ShowWindow(WindowMode mode);
     void ShowWindowWithText(WindowMode mode, string text);
+    void ShowFirstRunWizard();
     void HideWindow(WindowMode mode);
     void HideAllWindows();
     void CloseAndDisposeAll();
     bool IsVisible(WindowMode mode);
+    bool IsInForeground(WindowMode mode);
+    bool CanDismissWithHotkey(WindowMode mode);
 }

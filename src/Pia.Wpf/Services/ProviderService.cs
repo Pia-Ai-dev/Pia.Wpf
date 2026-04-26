@@ -27,19 +27,22 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     private readonly DpapiHelper _dpapiHelper;
     private readonly ISettingsService _settingsService;
     private readonly IAuthService _authService;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     public ProviderService(
         ILogger<ProviderService> logger,
         IAiClientService aiClientService,
         DpapiHelper dpapiHelper,
         ISettingsService settingsService,
-        IAuthService authService)
+        IAuthService authService,
+        SyncDeleteTrackerService deleteTracker)
     {
         _logger = logger;
         _aiClientService = aiClientService;
         _dpapiHelper = dpapiHelper;
         _settingsService = settingsService;
         _authService = authService;
+        _deleteTracker = deleteTracker;
     }
 
     public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
@@ -175,6 +178,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         providers.Remove(provider);
         await SaveAsync(providers);
+        _deleteTracker.TrackDeletion("providers", id);
         ProvidersChanged?.Invoke(this, EventArgs.Empty);
 
         // Clean up any mode defaults pointing to deleted provider
@@ -207,8 +211,25 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     public async Task EnsureBuiltInProviderAsync()
     {
         var providers = await LoadAsync();
-        if (providers.Any(p => p.Id == PiaCloudProviderId))
+        var existing = providers.FirstOrDefault(p => p.Id == PiaCloudProviderId);
+        if (existing is not null)
+        {
+            // Migrate: PiaCloud capabilities are server-determined, ensure they're enabled
+            var updated = false;
+            if (!existing.SupportsToolCalling)
+            {
+                existing.SupportsToolCalling = true;
+                updated = true;
+            }
+            if (!existing.SupportsStreaming)
+            {
+                existing.SupportsStreaming = true;
+                updated = true;
+            }
+            if (updated)
+                await SaveAsync(providers);
             return;
+        }
 
         var piaCloud = new AiProvider
         {
@@ -216,7 +237,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             Name = "Pia Cloud",
             ProviderType = AiProviderType.PiaCloud,
             Endpoint = "",
-            SupportsToolCalling = false,
+            SupportsToolCalling = true,
+            SupportsStreaming = true,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -248,7 +270,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     private async Task<TestConnectionResult> TestConnectionCoreAsync(AiProvider provider, bool persist)
     {
-        // PiaCloud: just hit /api/ai/status — no chat completions endpoint
+        // PiaCloud: verify server reachability first, then run standard probes
         if (provider.ProviderType == AiProviderType.PiaCloud)
         {
             try
@@ -260,22 +282,24 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
                 throw new InvalidOperationException($"Connection test failed: {ex.Message}", ex);
             }
 
-            provider.SupportsToolCalling = false;
-            provider.SupportsStreaming = false;
+            provider.SupportsToolCalling = true;
+            provider.SupportsStreaming = true;
             if (persist) await UpdateProviderAsync(provider);
-            return new TestConnectionResult(true, false, false);
+            return new TestConnectionResult(true, true, true);
         }
-
-        try
+        else
         {
-            var testPrompt = "Say 'Connection successful' if you can read this.";
-            var response = await _aiClientService.SendRequestAsync(provider, testPrompt);
-            if (string.IsNullOrWhiteSpace(response))
-                throw new InvalidOperationException("Provider returned empty response");
-        }
+            try
+            {
+                var testPrompt = "Say 'Connection successful' if you can read this.";
+                var response = await _aiClientService.SendRequestAsync(provider, testPrompt);
+                if (string.IsNullOrWhiteSpace(response))
+                    throw new InvalidOperationException("Provider returned empty response");
+            }
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Connection test failed: {ex.Message}", ex);
+            }
         }
 
         // Probe tool calling support

@@ -53,6 +53,7 @@
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Cette tâche sera définitivement supprimée.</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Rappel mis à jour</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>La génération de la réponse a été annulée.</value></data>
+  <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>L'assistant n'a pas fourni de réponse. Veuillez réessayer.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Échec de la récupération de la réponse IA : {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Vérification de la mémoire...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Vérification des rappels...</value></data>
@@ -163,6 +164,12 @@
   <data name="Msg_Todo_UncompleteFailed" xml:space="preserve"><value>Échec de l'annulation de la tâche : {0}</value></data>
   <data name="Msg_Todo_UpdateFailed" xml:space="preserve"><value>Échec de la mise à jour de la tâche : {0}</value></data>
   <data name="Msg_Todo_Updated" xml:space="preserve"><value>Mis à jour</value></data>
+  <!-- Kanban messages -->
+  <data name="Kanban_ColumnNamePrompt" xml:space="preserve"><value>Entrez le nom de la colonne :</value></data>
+  <data name="Kanban_ColumnNotEmpty" xml:space="preserve"><value>Impossible de supprimer une colonne contenant des tâches. Déplacez ou supprimez d'abord toutes les tâches.</value></data>
+  <data name="Kanban_DeleteColumnConfirm" xml:space="preserve"><value>Voulez-vous vraiment supprimer la colonne « {0} » ?</value></data>
+  <data name="Kanban_ColumnAdded" xml:space="preserve"><value>Colonne ajoutée</value></data>
+  <data name="Kanban_ColumnAddedDetail" xml:space="preserve"><value>La colonne « {0} » a été ajoutée au tableau.</value></data>
   <!-- Tray icon -->
   <data name="Tray_CloseAssistant" xml:space="preserve"><value>Fermer l'Assistant</value></data>
   <data name="Tray_CloseOptimize" xml:space="preserve"><value>Fermer Optimiser</value></data>
@@ -185,4 +192,67 @@
   <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>« {0} » ajouté comme {1}</value></data>
   <data name="Msg_PiiKeyword_Exists_Title" xml:space="preserve"><value>Déjà existant</value></data>
   <data name="Msg_PiiKeyword_Exists" xml:space="preserve"><value>« {0} » est déjà dans la liste PII</value></data>
+
+  <!-- Optimize messages -->
+  <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>L'optimisation a été annulée</value></data>
+  <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Échec de l'optimisation : {0}</value></data>
+  <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Échec du collage</value></data>
+  <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Impossible de coller dans {0}. Le texte a été copié dans le presse-papiers.</value></data>
+  <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Fenêtre inconnue</value></data>
+  <data name="Msg_Optimize_SentToClipboard" xml:space="preserve"><value>Envoyé dans le presse-papiers</value></data>
+  <data name="Msg_Optimize_CopiedToClipboard" xml:space="preserve"><value>Copié dans le presse-papiers</value></data>
+  <data name="Msg_Optimize_CopyFailed" xml:space="preserve"><value>Échec de la copie : {0}</value></data>
+  <data name="Msg_Optimize_LoadTemplatesFailed" xml:space="preserve"><value>Impossible de charger les modèles. Veuillez vérifier votre configuration.</value></data>
+  <!-- TodoToolHandler -->
+  <data name="Tool_Todo_Desc_Create" xml:space="preserve"><value>Créer une tâche priorité {0} : {1}</value></data>
+  <data name="Tool_Todo_Desc_Complete" xml:space="preserve"><value>Terminer la tâche : {0}</value></data>
+  <data name="Tool_Todo_Desc_Update" xml:space="preserve"><value>Mettre à jour la tâche : {0}</value></data>
+  <data name="Tool_Todo_Desc_Delete" xml:space="preserve"><value>Supprimer la tâche : {0}</value></data>
+  <data name="Tool_Todo_Desc_Move" xml:space="preserve"><value>Déplacer « {0} » vers la colonne « {1} »</value></data>
+  <data name="Tool_Todo_Detail_Title" xml:space="preserve"><value>Titre</value></data>
+  <data name="Tool_Todo_Detail_Priority" xml:space="preserve"><value>Priorité</value></data>
+  <data name="Tool_Todo_Detail_Notes" xml:space="preserve"><value>Notes</value></data>
+  <data name="Tool_Todo_Detail_Due" xml:space="preserve"><value>Échéance</value></data>
+  <data name="Tool_Todo_Detail_Column" xml:space="preserve"><value>Colonne</value></data>
+  <data name="Tool_Todo_Detail_MarkCompleted" xml:space="preserve"><value>Marquer cette tâche de priorité {0} comme terminée.</value></data>
+  <data name="Tool_Todo_Detail_CurrentStatus" xml:space="preserve"><value>Actuel : priorité {0}, statut {1}
+Les modifications seront appliquées.</value></data>
+  <data name="Tool_Todo_Detail_PermanentDelete" xml:space="preserve"><value>Cette tâche de priorité {0} sera définitivement supprimée.</value></data>
+  <data name="Tool_Todo_Detail_MoveToColumn" xml:space="preserve"><value>La tâche sera déplacée de sa colonne actuelle vers « {0} ».</value></data>
+  <data name="Tool_Todo_Detail_WillComplete" xml:space="preserve"><value>La tâche sera marquée comme terminée.</value></data>
+  <data name="Tool_Todo_Exec_Created" xml:space="preserve"><value>Tâche créée avec succès (ID : {0}).</value></data>
+  <data name="Tool_Todo_Exec_DueDateHint" xml:space="preserve"><value> Cette tâche a une date d'échéance. Vous pourriez suggérer un rappel.</value></data>
+  <data name="Tool_Todo_Exec_Completed" xml:space="preserve"><value>Tâche « {0} » marquée comme terminée.</value></data>
+  <data name="Tool_Todo_Exec_Updated" xml:space="preserve"><value>Tâche {0} mise à jour avec succès.</value></data>
+  <data name="Tool_Todo_Exec_Deleted" xml:space="preserve"><value>Tâche « {0} » supprimée avec succès.</value></data>
+  <data name="Tool_Todo_Exec_Moved" xml:space="preserve"><value>Tâche « {0} » déplacée vers « {1} ».</value></data>
+  <data name="Tool_Todo_Exec_MovedAndCompleted" xml:space="preserve"><value> La tâche a été marquée comme terminée.</value></data>
+  <!-- ReminderToolHandler -->
+  <data name="Tool_Reminder_Desc_Create" xml:space="preserve"><value>Créer un rappel {0} : {1}</value></data>
+  <data name="Tool_Reminder_Desc_Update" xml:space="preserve"><value>Mettre à jour le rappel : {0}</value></data>
+  <data name="Tool_Reminder_Desc_Delete" xml:space="preserve"><value>Supprimer le rappel : {0}</value></data>
+  <data name="Tool_Reminder_Detail_Description" xml:space="preserve"><value>Description</value></data>
+  <data name="Tool_Reminder_Detail_Recurrence" xml:space="preserve"><value>Récurrence</value></data>
+  <data name="Tool_Reminder_Detail_Time" xml:space="preserve"><value>Heure</value></data>
+  <data name="Tool_Reminder_Detail_DayOfWeek" xml:space="preserve"><value>Jour de la semaine</value></data>
+  <data name="Tool_Reminder_Detail_DayOfMonth" xml:space="preserve"><value>Jour du mois</value></data>
+  <data name="Tool_Reminder_Detail_Month" xml:space="preserve"><value>Mois</value></data>
+  <data name="Tool_Reminder_Detail_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="Tool_Reminder_Detail_CurrentStatus" xml:space="preserve"><value>Actuel : {0} à {1}
+Les modifications seront appliquées.</value></data>
+  <data name="Tool_Reminder_Detail_PermanentDelete" xml:space="preserve"><value>Ce rappel {0} ({1}) sera définitivement supprimé.</value></data>
+  <data name="Tool_Reminder_Exec_Created" xml:space="preserve"><value>Rappel créé avec succès (ID : {0}). Prochaine activation : {1}</value></data>
+  <data name="Tool_Reminder_Exec_Updated" xml:space="preserve"><value>Rappel {0} mis à jour avec succès.</value></data>
+  <data name="Tool_Reminder_Exec_Deleted" xml:space="preserve"><value>Rappel {0} supprimé avec succès.</value></data>
+  <!-- MemoryToolHandler -->
+  <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Créer un nouveau {0} : {1}</value></data>
+  <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>Mettre à jour {0} : {1}</value></data>
+  <data name="Tool_Memory_Desc_Append" xml:space="preserve"><value>Ajouter une entrée à {0} : {1}</value></data>
+  <data name="Tool_Memory_Desc_Delete" xml:space="preserve"><value>Supprimer {0} : {1}</value></data>
+  <data name="Tool_Memory_Desc_Merge" xml:space="preserve"><value>Fusionner {0} mémoires en : {1}</value></data>
+  <data name="Tool_Memory_Exec_Created" xml:space="preserve"><value>Objet mémoire créé avec succès avec l'ID : {0}</value></data>
+  <data name="Tool_Memory_Exec_Updated" xml:space="preserve"><value>Objet mémoire {0} mis à jour avec succès.</value></data>
+  <data name="Tool_Memory_Exec_Appended" xml:space="preserve"><value>Entrée ajoutée avec succès à l'objet mémoire {0}.</value></data>
+  <data name="Tool_Memory_Exec_Deleted" xml:space="preserve"><value>Objet mémoire {0} supprimé avec succès.</value></data>
+  <data name="Tool_Memory_Exec_Merged" xml:space="preserve"><value>{0} mémoires fusionnées en '{1}' (ID : {2}). {3} doublon(s) supprimé(s).</value></data>
 </root>

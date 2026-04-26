@@ -9,6 +9,7 @@
     <converters:LanguageToFlagConverter x:Key="LanguageToFlagConverter"/>
     <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
     <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
+    <converters:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
   </UserControl.Resources>
   <Grid Margin="16">
     <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
@@ -20,6 +21,7 @@
               <TextBlock Text="{loc:Str Settings_UiLanguage}" FontWeight="SemiBold" Margin="0,0,0,8"/>
               <ComboBox ItemsSource="{Binding UiLanguages}"
                         SelectedItem="{Binding UiLanguage}"
+                        IsEnabled="{Binding IsUiLanguageEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Width="400">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>
@@ -38,8 +40,17 @@
 
             <StackPanel Margin="0,0,0,24">
               <TextBlock Text="{loc:Str Settings_ApplicationBehavior}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <CheckBox Content="{loc:Str Settings_LaunchAtStartup}"
+                        IsChecked="{Binding LaunchAtStartup}"
+                        IsEnabled="{Binding IsLaunchAtStartupEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                        Margin="0,4,0,0"/>
+              <TextBlock Text="{loc:Str Settings_LaunchAtStartup_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         Margin="20,4,0,0"/>
               <CheckBox Content="{loc:Str Settings_StartMinimized}"
                         IsChecked="{Binding StartMinimized}"
+                        IsEnabled="{Binding IsStartMinimizedEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Margin="0,4,0,0"/>
               <TextBlock Text="{loc:Str Settings_StartMinimized_Description}"
                          Opacity="0.7"
@@ -144,6 +155,7 @@
               <TextBlock Text="{loc:Str Settings_WhisperModel}" FontWeight="SemiBold" Margin="0,0,0,8"/>
               <ComboBox ItemsSource="{Binding WhisperModels}"
                         SelectedItem="{Binding WhisperModel}"
+                        IsEnabled="{Binding IsWhisperModelEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Width="400">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>
@@ -170,6 +182,7 @@
               <TextBlock Text="{loc:Str Settings_SpeechToTextLanguage}" FontWeight="SemiBold" Margin="0,0,0,8"/>
               <ComboBox ItemsSource="{Binding TargetSpeechLanguages}"
                         SelectedItem="{Binding TargetSpeechLanguage}"
+                        IsEnabled="{Binding IsTargetSpeechLanguageEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Width="400">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>

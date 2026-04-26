@@ -1,9 +1,11 @@
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Whisper.net;
 using Whisper.net.Ggml;
+using Whisper.net.LibraryLoader;
 
 namespace Pia.Services;
 
@@ -23,6 +25,54 @@ public class TranscriptionService : ITranscriptionService
             "Models");
 
         Directory.CreateDirectory(_modelsDirectory);
+        ConfigureNativeLibraryPath();
+    }
+
+    /// <summary>
+    /// Configures Whisper.net's RuntimeOptions.LibraryPath for single-file deployments
+    /// where native libraries may not be in the standard runtimes/ subdirectory.
+    /// </summary>
+    private static bool _nativeLibraryConfigured;
+    private static void ConfigureNativeLibraryPath()
+    {
+        if (_nativeLibraryConfigured) return;
+        _nativeLibraryConfigured = true;
+
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var rid = RuntimeInformation.RuntimeIdentifier;
+
+        // Check if the standard runtimes directory already exists (normal deployment)
+        var standardRuntimesDir = Path.Combine(baseDir, "runtimes", rid);
+        if (Directory.Exists(standardRuntimesDir)) return;
+
+        // For single-file deployments: .NET extracts native libs to directories listed
+        // in NATIVE_DLL_SEARCH_DIRECTORIES. Whisper.net's loader doesn't check these,
+        // so we search them and set RuntimeOptions.LibraryPath if we find a runtimes/ structure.
+        var nativeDirs = AppContext.GetData("NATIVE_DLL_SEARCH_DIRECTORIES") as string;
+        if (string.IsNullOrEmpty(nativeDirs)) return;
+
+        foreach (var dir in nativeDirs.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmedDir = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var candidateRuntimes = Path.Combine(trimmedDir, "runtimes", rid);
+            if (Directory.Exists(candidateRuntimes))
+            {
+                RuntimeOptions.LibraryPath = trimmedDir;
+                return;
+            }
+        }
+
+        // Fallback: when IncludeNativeLibrariesForSelfExtract=true, native DLLs are
+        // extracted flat (no runtimes/ structure). Search for whisper.dll directly.
+        foreach (var dir in nativeDirs.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmedDir = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (File.Exists(Path.Combine(trimmedDir, "whisper.dll")))
+            {
+                RuntimeOptions.LibraryPath = trimmedDir;
+                return;
+            }
+        }
     }
 
     public async Task<string> TranscribeAsync(string audioFilePath, CancellationToken cancellationToken = default)

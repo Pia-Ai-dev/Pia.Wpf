@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
@@ -11,11 +12,13 @@ namespace Pia.Services;
 public class ReminderToolHandler : IReminderToolHandler
 {
     private readonly IReminderService _reminderService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<ReminderToolHandler> _logger;
 
-    public ReminderToolHandler(IReminderService reminderService, ILogger<ReminderToolHandler> logger)
+    public ReminderToolHandler(IReminderService reminderService, ILocalizationService localizationService, ILogger<ReminderToolHandler> logger)
     {
         _reminderService = reminderService;
+        _localizationService = localizationService;
         _logger = logger;
     }
 
@@ -45,23 +48,43 @@ public class ReminderToolHandler : IReminderToolHandler
         FunctionCallContent toolCall,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("ReminderToolHandler dispatching: {ToolName}", toolCall.Name);
+#if DEBUG
+        Debug.WriteLine($"[ReminderToolHandler Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        return toolCall.Name switch
+        var (result, pending) = toolCall.Name switch
         {
-            "query_reminders" => (await HandleQueryReminders(args), null),
-            "create_reminder" => (null, PrepareCreateReminder(args)),
-            "update_reminder" => (null, await PrepareUpdateReminder(args)),
-            "delete_reminder" => (null, await PrepareDeleteReminder(args)),
-            _ => ($"Unknown tool: {toolCall.Name}", null)
+            "query_reminders" => (await HandleQueryReminders(args), (ReminderToolCall?)null),
+            "create_reminder" => ((object?)null, PrepareCreateReminder(args)),
+            "update_reminder" => ((object?)null, await PrepareUpdateReminder(args)),
+            "delete_reminder" => ((object?)null, await PrepareDeleteReminder(args)),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (ReminderToolCall?)null)
         };
+
+        // Error cases (invalid ID, not found) produce a pending action with no TargetReminderId.
+        // Return them as immediate results so no action card is shown to the user.
+        if (pending is not null && pending.TargetReminderId is null && toolCall.Name is not "create_reminder")
+        {
+            _logger.LogWarning("ReminderToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            return (await pending.Execute(), null);
+        }
+
+        _logger.LogDebug("ReminderToolHandler {ToolName} result: hasResult={HasResult}, hasPending={HasPending}",
+            toolCall.Name, result is not null, pending is not null);
+        return (result, pending);
     }
 
     public async Task<object?> ExecutePendingActionAsync(ReminderToolCall pendingAction)
     {
+        _logger.LogDebug("Executing reminder action: {ToolName}, targetId={TargetReminderId}",
+            pendingAction.ToolName, pendingAction.TargetReminderId);
         try
         {
-            return await pendingAction.Execute();
+            var result = await pendingAction.Execute();
+            _logger.LogInformation("Reminder action completed: {ToolName}", pendingAction.ToolName);
+            return result;
         }
         catch (Exception ex)
         {
@@ -115,24 +138,24 @@ public class ReminderToolHandler : IReminderToolHandler
         DateTime? specificDate = DateTime.TryParse(specificDateStr, out var sd) ? sd : null;
 
         var detailSb = new StringBuilder();
-        detailSb.AppendLine($"Description: {description}");
-        detailSb.AppendLine($"Recurrence: {recurrence}");
-        detailSb.AppendLine($"Time: {timeOfDay:HH:mm}");
-        if (dayOfWeek.HasValue) detailSb.AppendLine($"Day of week: {dayOfWeek}");
-        if (dayOfMonth.HasValue) detailSb.AppendLine($"Day of month: {dayOfMonth}");
-        if (month.HasValue) detailSb.AppendLine($"Month: {month}");
-        if (specificDate.HasValue) detailSb.AppendLine($"Date: {specificDate:d}");
+        detailSb.AppendLine($"{_localizationService["Tool_Reminder_Detail_Description"]}: {description}");
+        detailSb.AppendLine($"{_localizationService["Tool_Reminder_Detail_Recurrence"]}: {recurrence}");
+        detailSb.AppendLine($"{_localizationService["Tool_Reminder_Detail_Time"]}: {timeOfDay:HH:mm}");
+        if (dayOfWeek.HasValue) detailSb.AppendLine($"{_localizationService["Tool_Reminder_Detail_DayOfWeek"]}: {dayOfWeek}");
+        if (dayOfMonth.HasValue) detailSb.AppendLine($"{_localizationService["Tool_Reminder_Detail_DayOfMonth"]}: {dayOfMonth}");
+        if (month.HasValue) detailSb.AppendLine($"{_localizationService["Tool_Reminder_Detail_Month"]}: {month}");
+        if (specificDate.HasValue) detailSb.AppendLine($"{_localizationService["Tool_Reminder_Detail_Date"]}: {specificDate:d}");
 
         return new ReminderToolCall(
             ToolName: "create_reminder",
-            Description: $"Create {recurrence.ToString().ToLower()} reminder: {description}",
+            Description: _localizationService.Format("Tool_Reminder_Desc_Create", recurrence.ToString().ToLower(), description),
             Details: detailSb.ToString(),
             TargetReminderId: null,
             Execute: async () =>
             {
                 var created = await _reminderService.CreateAsync(
                     description, recurrence, timeOfDay, dayOfWeek, dayOfMonth, month, specificDate);
-                return $"Reminder created successfully (ID: {created.Id}). Next fire at: {created.NextFireAt:g}";
+                return _localizationService.Format("Tool_Reminder_Exec_Created", created.Id, created.NextFireAt.ToString("g"));
             });
     }
 
@@ -140,8 +163,11 @@ public class ReminderToolHandler : IReminderToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("update_reminder called with invalid ID: '{IdValue}'", idStr);
             return new ReminderToolCall("update_reminder", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid reminder ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid reminder ID format. You provided '{idStr}' which is not a valid GUID. Use query_reminders to get valid IDs."));
+        }
 
         var existing = await _reminderService.GetAsync(id);
         if (existing is null)
@@ -163,13 +189,13 @@ public class ReminderToolHandler : IReminderToolHandler
 
         return new ReminderToolCall(
             ToolName: "update_reminder",
-            Description: $"Update reminder: {existing.Description}",
-            Details: $"Current: {existing.Recurrence} at {existing.TimeOfDay:HH:mm}\nChanges will be applied.",
+            Description: _localizationService.Format("Tool_Reminder_Desc_Update", existing.Description),
+            Details: _localizationService.Format("Tool_Reminder_Detail_CurrentStatus", existing.Recurrence, existing.TimeOfDay.ToString("HH:mm")),
             TargetReminderId: id,
             Execute: async () =>
             {
                 await _reminderService.UpdateAsync(id, description, recurrence, timeOfDay, dayOfWeek, dayOfMonth, month);
-                return $"Reminder {id} updated successfully.";
+                return _localizationService.Format("Tool_Reminder_Exec_Updated", id);
             });
     }
 
@@ -177,8 +203,11 @@ public class ReminderToolHandler : IReminderToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("delete_reminder called with invalid ID: '{IdValue}'", idStr);
             return new ReminderToolCall("delete_reminder", "Invalid ID format", null, null,
-                () => Task.FromResult<object?>("Error: Invalid reminder ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid reminder ID format. You provided '{idStr}' which is not a valid GUID. Use query_reminders to get valid IDs."));
+        }
 
         var existing = await _reminderService.GetAsync(id);
         if (existing is null)
@@ -187,13 +216,13 @@ public class ReminderToolHandler : IReminderToolHandler
 
         return new ReminderToolCall(
             ToolName: "delete_reminder",
-            Description: $"Delete reminder: {existing.Description}",
-            Details: $"This will permanently delete this {existing.Recurrence.ToString().ToLower()} reminder ({existing.TimeOfDay:HH:mm}).",
+            Description: _localizationService.Format("Tool_Reminder_Desc_Delete", existing.Description),
+            Details: _localizationService.Format("Tool_Reminder_Detail_PermanentDelete", existing.Recurrence.ToString().ToLower(), existing.TimeOfDay.ToString("HH:mm")),
             TargetReminderId: id,
             Execute: async () =>
             {
                 await _reminderService.DeleteAsync(id);
-                return $"Reminder {id} deleted successfully.";
+                return _localizationService.Format("Tool_Reminder_Exec_Deleted", id);
             });
     }
 

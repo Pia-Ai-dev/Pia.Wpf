@@ -32,16 +32,18 @@ Pia sits in your system tray and activates instantly with a global hotkey. Selec
 
 ### Key Features
 
-- **Multiple AI providers** &mdash; OpenAI, Azure OpenAI, Ollama, or any OpenAI-compatible API
+- **Multiple AI providers** &mdash; Pia Cloud, OpenAI, Azure OpenAI, OpenRouter, Mistral, Ollama, or any OpenAI-compatible API
 - **Speech-to-text** &mdash; Dictate instead of typing, powered by local Whisper transcription (no data leaves your machine)
 - **Text-to-speech** &mdash; Listen to responses with offline Piper TTS &mdash; multiple downloadable voice models, no cloud required
 - **Voice mode** &mdash; Hands-free voice conversation overlay: speak your request, hear the answer
 - **Smart memory** &mdash; Pia learns your preferences and context over time, with semantic search powered by embeddings
-- **Todo &amp; task management** &mdash; Create, prioritize (Low/Medium/High), and track tasks with optional due dates and notes
+- **Todo &amp; task management** &mdash; Create, prioritize (Low/Medium/High), and track tasks with optional due dates and notes &mdash; plus a drag-and-drop Kanban board view
 - **Reminders** &mdash; Set one-time or recurring reminders (Daily, Weekly, Monthly, Yearly) with natural language &mdash; Pia notifies you via Windows toast notifications
+- **MCP plugins** &mdash; Extend Assistant mode with Model Context Protocol tools from third-party servers
 - **Templates** &mdash; Built-in templates (Business Email, Community Article, Message to Friend) plus custom ones you create
 - **Auto-type** &mdash; Optimized text can be typed directly into the previously focused window, or copied to clipboard
-- **Cloud sync** &mdash; Optionally sync settings, templates, and memory across devices
+- **Cloud sync with optional E2EE** &mdash; Sync settings, templates, and memory across devices, optionally end-to-end encrypted with a printable recovery code
+- **Enterprise policy settings** &mdash; Layered preset policy files for managed deployments
 - **Multi-language** &mdash; Interface available in English, German, and French
 - **Dark theme with Mica** &mdash; Modern Windows 11 look and feel via WPF-UI
 
@@ -69,7 +71,7 @@ All tool actions require your confirmation before executing, so you stay in cont
 ### Build & Run
 
 ```bash
-git clone --recurse-submodules https://github.com/Pia-Ai-dev/Pia.Wpf.git
+git clone https://github.com/Pia-Ai-dev/Pia.Wpf.git
 cd Pia.Wpf
 dotnet build
 dotnet run --project src/Pia.Wpf/Pia.Wpf.csproj
@@ -80,9 +82,11 @@ dotnet run --project src/Pia.Wpf/Pia.Wpf.csproj
 On first run, a setup wizard walks you through everything:
 
 1. **Welcome** &mdash; Meet Pia and see what it can do
-2. **Modes Overview** &mdash; Learn about Optimize, Assistant, and Research modes
-3. **Your Profile** &mdash; Optionally tell Pia your name and preferred tone (Personal or Business)
-4. **Ready** &mdash; Quick-start tips so you can be productive immediately
+2. **Account Setup** &mdash; Optionally sign in and set up a recovery code for E2EE sync
+3. **Provider Setup** &mdash; Configure an AI provider (shown only when needed)
+4. **Modes Overview** &mdash; Learn about Optimize, Assistant, and Research modes
+5. **Your Profile** &mdash; Optionally tell Pia your name and preferred tone (Personal or Business)
+6. **Ready** &mdash; Quick-start tips so you can be productive immediately
 
 All fields are optional &mdash; you can skip the entire wizard and configure everything later in Settings.
 
@@ -105,12 +109,15 @@ Pia works with multiple AI backends &mdash; pick what suits you:
 
 | Provider | Setup |
 |----------|-------|
-| **OpenAI** | Paste your API key in Settings |
+| **Pia Cloud** | Built-in first-party provider &mdash; no configuration required |
+| **OpenAI** | Paste your API key in Settings (custom endpoint/model optional) |
 | **Azure OpenAI** | Enter endpoint, deployment name, and API key |
-| **Ollama** | Point to your local Ollama instance (fully offline) |
-| **Custom** | Any OpenAI-compatible API endpoint |
+| **OpenRouter** | API key (defaults to `https://openrouter.ai/api/v1`) |
+| **Mistral** | API key (defaults to `https://api.mistral.ai/v1`) |
+| **Ollama** | Point to your local Ollama instance &mdash; no API key needed, fully offline |
+| **OpenAI-compatible** | Any OpenAI-compatible endpoint (LM Studio, vLLM, and similar) |
 
-API keys are encrypted locally using Windows DPAPI &mdash; they never leave your machine unencrypted.
+The provider edit dialog can auto-fetch available models from any configured endpoint. API keys are encrypted locally using Windows DPAPI &mdash; they never leave your machine unencrypted.
 
 ---
 
@@ -118,10 +125,9 @@ API keys are encrypted locally using Windows DPAPI &mdash; they never leave your
 
 ```
 Pia.Wpf.slnx
-├── lib/
-│   └── MdXaml/              # Markdown rendering (submodule)
 ├── src/
 │   ├── Pia.Wpf/             # WPF desktop client
+│   │   ├── Behaviors/       # XAML attached behaviors (autocomplete, drag/drop, kanban)
 │   │   ├── Controls/        # Custom WPF controls
 │   │   ├── Converters/      # Value converters
 │   │   ├── Helpers/         # Utility helpers
@@ -129,7 +135,7 @@ Pia.Wpf.slnx
 │   │   ├── Localization/    # i18n resources
 │   │   ├── Models/          # Data models and enums
 │   │   ├── Navigation/      # View navigation
-│   │   ├── Services/        # Application services
+│   │   ├── Services/        # Application services (incl. Plugins/ for MCP)
 │   │   ├── ViewModels/      # MVVM ViewModels
 │   │   └── Views/           # XAML views and dialogs
 │   └── Pia.Shared/          # Shared DTOs for sync
@@ -147,11 +153,13 @@ Pia.Wpf.slnx
 | Runtime | .NET 10.0 |
 | MVVM | CommunityToolkit.Mvvm |
 | AI Integration | Azure.AI.OpenAI, Microsoft.Extensions.AI |
+| MCP | ModelContextProtocol |
 | Speech-to-Text | Whisper.NET (local, offline) |
+| Text-to-Speech | PiperSharp (local, offline) |
 | Audio | NAudio |
 | Database | Microsoft.Data.Sqlite |
-| Encryption | Windows DPAPI |
-| Markdown | MdXaml (submodule) |
+| Encryption | Windows DPAPI (API keys), E2EE for sync |
+| Markdown | MdXaml (NuGet) |
 | Installer | Velopack |
 
 ---
@@ -163,7 +171,7 @@ Pia.Wpf.slnx
 | `%AppData%/Pia/` | settings.json, templates.json, providers.json |
 | `%LocalAppData%/Pia/` | history.db (SQLite), Whisper models |
 
-All data stays local. Cloud sync is opt-in and requires setting up the companion server.
+All data stays local. Cloud sync is opt-in and requires setting up the companion server; end-to-end encryption can be enabled on top, protected by a printable recovery code.
 
 ---
 

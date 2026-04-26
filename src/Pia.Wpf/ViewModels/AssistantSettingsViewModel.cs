@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -33,12 +34,12 @@ public partial class AssistantSettingsViewModel : ObservableObject
 
     partial void OnDefaultWindowModeChanged(WindowMode value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnShowTodoPanelButtonChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSettingsAsync());
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
     public async Task InitializeAsync()
@@ -60,9 +61,4 @@ public partial class AssistantSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }

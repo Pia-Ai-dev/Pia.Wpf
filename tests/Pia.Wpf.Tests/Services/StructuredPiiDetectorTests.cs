@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -17,7 +16,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"name": "Maria Schmidt", "nickname": "Mia"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().Contain(m => m.Value == "Maria Schmidt" && m.Category == "Person");
+        Assert.Contains(matches, m => m.Value == "Maria Schmidt" && m.Category == "Person");
     }
 
     [Fact]
@@ -25,7 +24,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"name": "Maria Schmidt", "nickname": "Mia"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().Contain(m => m.Value == "Mia" && m.Category == "Person");
+        Assert.Contains(matches, m => m.Value == "Mia" && m.Category == "Person");
     }
 
     [Fact]
@@ -33,7 +32,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"email": "maria@example.com"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().Contain(m => m.Value == "maria@example.com" && m.Category == "Email");
+        Assert.Contains(matches, m => m.Value == "maria@example.com" && m.Category == "Email");
     }
 
     [Fact]
@@ -41,7 +40,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"phone": "+49 170 1234567"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().Contain(m => m.Value == "+49 170 1234567" && m.Category == "Phone");
+        Assert.Contains(matches, m => m.Value == "+49 170 1234567" && m.Category == "Phone");
     }
 
     [Fact]
@@ -49,7 +48,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"address": "Hauptstr. 12, Berlin"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().Contain(m => m.Value == "Hauptstr. 12, Berlin" && m.Category == "Address");
+        Assert.Contains(matches, m => m.Value == "Hauptstr. 12, Berlin" && m.Category == "Address");
     }
 
     [Fact]
@@ -57,7 +56,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"birthdate": "1985-03-05"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().Contain(m => m.Value == "1985-03-05" && m.Category == "Date");
+        Assert.Contains(matches, m => m.Value == "1985-03-05" && m.Category == "Date");
     }
 
     [Fact]
@@ -65,7 +64,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"location": "Berlin, Germany"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().Contain(m => m.Value == "Berlin, Germany" && m.Category == "Address");
+        Assert.Contains(matches, m => m.Value == "Berlin, Germany" && m.Category == "Address");
     }
 
     // --- DetectPiiInStructured: contact_list ---
@@ -75,9 +74,9 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"contacts": [{"name": "Hans Müller", "email": "hans@test.de", "phone": "+49 30 9876543"}]}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.ContactList);
-        matches.Should().Contain(m => m.Value == "Hans Müller" && m.Category == "Person");
-        matches.Should().Contain(m => m.Value == "hans@test.de" && m.Category == "Email");
-        matches.Should().Contain(m => m.Value == "+49 30 9876543" && m.Category == "Phone");
+        Assert.Contains(matches, m => m.Value == "Hans Müller" && m.Category == "Person");
+        Assert.Contains(matches, m => m.Value == "hans@test.de" && m.Category == "Email");
+        Assert.Contains(matches, m => m.Value == "+49 30 9876543" && m.Category == "Phone");
     }
 
     [Fact]
@@ -85,8 +84,8 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"contacts": [{"name": "Anna", "address": "Berliner Str. 5", "birthdate": "1990-01-15"}]}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.ContactList);
-        matches.Should().Contain(m => m.Value == "Berliner Str. 5" && m.Category == "Address");
-        matches.Should().Contain(m => m.Value == "1990-01-15" && m.Category == "Date");
+        Assert.Contains(matches, m => m.Value == "Berliner Str. 5" && m.Category == "Address");
+        Assert.Contains(matches, m => m.Value == "1990-01-15" && m.Category == "Date");
     }
 
     // --- DetectPiiInStructured: preference ---
@@ -96,7 +95,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"preference": "dark mode", "value": "enabled"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.Preference);
-        matches.Should().BeEmpty();
+        Assert.Empty(matches);
     }
 
     // --- DetectPiiInStructured: note (cross-match only) ---
@@ -106,7 +105,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"title": "Meeting notes", "content": "Discussed project timeline"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.Note);
-        matches.Should().BeEmpty();
+        Assert.Empty(matches);
     }
 
     // --- DetectPii: regex-based email/phone detection in freeform text ---
@@ -115,22 +114,22 @@ public class StructuredPiiDetectorTests
     public void DetectPii_FindsEmailInText()
     {
         var matches = _sut.DetectPii("Contact us at info@example.com for details");
-        matches.Should().Contain(m => m.Value == "info@example.com" && m.Category == "Email");
+        Assert.Contains(matches, m => m.Value == "info@example.com" && m.Category == "Email");
     }
 
     [Fact]
     public void DetectPii_FindsPhoneInText()
     {
         var matches = _sut.DetectPii("Call +49 170 1234567 or +1-555-123-4567");
-        matches.Should().HaveCountGreaterThanOrEqualTo(1);
-        matches.Should().OnlyContain(m => m.Category == "Phone");
+        Assert.True(matches.Count() >= 1);
+        Assert.All(matches, m => Assert.Equal("Phone", m.Category));
     }
 
     [Fact]
     public void DetectPii_NoMatchesInCleanText()
     {
         var matches = _sut.DetectPii("The weather today is nice.");
-        matches.Should().BeEmpty();
+        Assert.Empty(matches);
     }
 
     // --- Edge cases ---
@@ -139,7 +138,7 @@ public class StructuredPiiDetectorTests
     public void DetectPiiInStructured_EmptyJson_ReturnsEmpty()
     {
         var matches = _sut.DetectPiiInStructured("{}", MemoryObjectTypes.PersonalProfile);
-        matches.Should().BeEmpty();
+        Assert.Empty(matches);
     }
 
     [Fact]
@@ -147,7 +146,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"name": null, "email": null}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().BeEmpty();
+        Assert.Empty(matches);
     }
 
     [Fact]
@@ -155,7 +154,7 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"name": "", "email": ""}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().BeEmpty();
+        Assert.Empty(matches);
     }
 
     [Fact]
@@ -163,7 +162,12 @@ public class StructuredPiiDetectorTests
     {
         var json = """{"name": "Maria Schmidt", "email": "maria@example.com", "phone": "+49 170 1234567", "address": "Hauptstr. 12", "birthdate": "1985-03-05"}""";
         var matches = _sut.DetectPiiInStructured(json, MemoryObjectTypes.PersonalProfile);
-        matches.Should().HaveCount(5);
-        matches.Select(m => m.Category).Should().BeEquivalentTo(["Person", "Email", "Phone", "Address", "Date"]);
+        var categories = matches.Select(m => m.Category).ToList();
+        Assert.Equal(5, categories.Count);
+        Assert.Contains("Person", categories);
+        Assert.Contains("Email", categories);
+        Assert.Contains("Phone", categories);
+        Assert.Contains("Address", categories);
+        Assert.Contains("Date", categories);
     }
 }

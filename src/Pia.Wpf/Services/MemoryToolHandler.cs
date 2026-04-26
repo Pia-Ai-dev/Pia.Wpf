@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,15 +16,18 @@ public class MemoryToolHandler : IMemoryToolHandler
 {
     private readonly IMemoryService _memoryService;
     private readonly IEmbeddingService _embeddingService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<MemoryToolHandler> _logger;
 
     public MemoryToolHandler(
         IMemoryService memoryService,
         IEmbeddingService embeddingService,
+        ILocalizationService localizationService,
         ILogger<MemoryToolHandler> logger)
     {
         _memoryService = memoryService;
         _embeddingService = embeddingService;
+        _localizationService = localizationService;
         _logger = logger;
     }
 
@@ -56,7 +61,17 @@ public class MemoryToolHandler : IMemoryToolHandler
                 "Returns matching memory objects with full data, ranked by relevance."),
 
             AIFunctionFactory.Create(DeleteObjectSchema, "delete_object",
-                "Remove a memory object by ID. Use this when the user explicitly asks to forget something.")
+                "Remove a memory object by ID. Use this when the user explicitly asks to forget something."),
+
+            AIFunctionFactory.Create(MergeMemoriesSchema, "merge_memories",
+                "Merge two or more memory objects into one. Provide the IDs to merge and the consolidated data. " +
+                "The first ID becomes the surviving object (updated with merged data), the rest are deleted. " +
+                "Use find_duplicates or list_memories first to identify candidates."),
+
+            AIFunctionFactory.Create(FindDuplicatesSchema, "find_duplicates",
+                "Find memory objects that may be duplicates or contain overlapping information. " +
+                "Uses semantic similarity to identify candidates for merging. " +
+                "Returns groups of similar memories with similarity scores.")
         ];
     }
 
@@ -64,25 +79,46 @@ public class MemoryToolHandler : IMemoryToolHandler
         FunctionCallContent toolCall,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("MemoryToolHandler dispatching: {ToolName}", toolCall.Name);
+#if DEBUG
+        Debug.WriteLine($"[MemoryToolHandler Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
+#endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        return toolCall.Name switch
+        var (result, pending) = toolCall.Name switch
         {
-            "list_memories" => (await HandleListMemories(args), null),
-            "query_memory" => (await HandleQueryMemory(args, cancellationToken), null),
-            "create_object" => (null, await PrepareCreateObject(args)),
-            "update_object" => (null, await PrepareUpdateObject(args)),
-            "append_to_list" => (null, await PrepareAppendToList(args)),
-            "delete_object" => (null, await PrepareDeleteObject(args)),
-            _ => ($"Unknown tool: {toolCall.Name}", null)
+            "list_memories" => (await HandleListMemories(args), (MemoryToolCall?)null),
+            "query_memory" => (await HandleQueryMemory(args, cancellationToken), (MemoryToolCall?)null),
+            "find_duplicates" => (await HandleFindDuplicates(args), (MemoryToolCall?)null),
+            "create_object" => ((object?)null, await PrepareCreateObject(args)),
+            "update_object" => ((object?)null, await PrepareUpdateObject(args)),
+            "append_to_list" => ((object?)null, await PrepareAppendToList(args)),
+            "delete_object" => ((object?)null, await PrepareDeleteObject(args)),
+            "merge_memories" => ((object?)null, await PrepareMergeMemories(args)),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (MemoryToolCall?)null)
         };
+
+        // Error cases (invalid ID, not found) produce a pending action with no TargetObjectId.
+        // Return them as immediate results so no action card is shown to the user.
+        if (pending is not null && pending.TargetObjectId is null && toolCall.Name is not "create_object")
+        {
+            _logger.LogWarning("MemoryToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            return (await pending.Execute(), null);
+        }
+
+        _logger.LogDebug("MemoryToolHandler {ToolName} result: hasResult={HasResult}, hasPending={HasPending}",
+            toolCall.Name, result is not null, pending is not null);
+        return (result, pending);
     }
 
     public async Task<object?> ExecutePendingActionAsync(MemoryToolCall pendingAction)
     {
+        _logger.LogDebug("Executing memory action: {ToolName}, targetId={TargetObjectId}",
+            pendingAction.ToolName, pendingAction.TargetObjectId);
         try
         {
             var result = await pendingAction.Execute();
+            _logger.LogInformation("Memory action completed: {ToolName}", pendingAction.ToolName);
 
             // Generate embedding for the affected object if applicable
             if (pendingAction.TargetObjectId.HasValue && _embeddingService.IsModelAvailable)
@@ -151,6 +187,21 @@ public class MemoryToolHandler : IMemoryToolHandler
             return "Error: query parameter is required";
 
         float[]? queryEmbedding = null;
+
+        // Auto-download embedding model on first use
+        if (!_embeddingService.IsModelAvailable)
+        {
+            try
+            {
+                _logger.LogInformation("Embedding model not found, downloading automatically...");
+                await _embeddingService.DownloadModelAsync(cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to download embedding model, continuing with text search only");
+            }
+        }
+
         if (_embeddingService.IsModelAvailable)
         {
             try
@@ -169,6 +220,22 @@ public class MemoryToolHandler : IMemoryToolHandler
         foreach (var result in results)
         {
             await _memoryService.TouchAccessTimeAsync(result.Id);
+        }
+
+        // Backfill embeddings for memories that don't have them yet
+        if (_embeddingService.IsModelAvailable)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await BackfillEmbeddingsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to backfill embeddings");
+                }
+            }, CancellationToken.None);
         }
 
         if (results.Count == 0)
@@ -194,14 +261,14 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return Task.FromResult(new MemoryToolCall(
             ToolName: "create_object",
-            Description: $"Create new {MemoryObjectTypes.GetDisplayName(type)}: {label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Create", MemoryObjectTypes.GetDisplayName(type), label),
             OldValue: null,
             NewValue: JsonHelper.FormatJson(data),
             TargetObjectId: null,
             Execute: async () =>
             {
                 var created = await _memoryService.CreateObjectAsync(type, label, data);
-                return $"Memory object created successfully with ID: {created.Id}";
+                return _localizationService.Format("Tool_Memory_Exec_Created", created.Id);
             }));
     }
 
@@ -209,8 +276,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("update_object called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("update_object", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var mergePatch = GetStringArg(args, "data");
 
@@ -221,14 +291,14 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return new MemoryToolCall(
             ToolName: "update_object",
-            Description: $"Update {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Update", MemoryObjectTypes.GetDisplayName(existing.Type), existing.Label),
             OldValue: JsonHelper.FormatJson(existing.Data),
             NewValue: FormatMergedJson(existing.Data, mergePatch),
             TargetObjectId: id,
             Execute: async () =>
             {
                 await _memoryService.UpdateObjectAsync(id, mergePatch);
-                return $"Memory object {id} updated successfully.";
+                return _localizationService.Format("Tool_Memory_Exec_Updated", id);
             });
     }
 
@@ -236,8 +306,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("append_to_list called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("append_to_list", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var entry = GetStringArg(args, "entry");
 
@@ -248,14 +321,14 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return new MemoryToolCall(
             ToolName: "append_to_list",
-            Description: $"Add entry to {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Append", MemoryObjectTypes.GetDisplayName(existing.Type), existing.Label),
             OldValue: JsonHelper.FormatJson(existing.Data),
             NewValue: $"+ {JsonHelper.FormatJson(entry)}",
             TargetObjectId: id,
             Execute: async () =>
             {
                 await _memoryService.AppendToListAsync(id, entry);
-                return $"Entry appended to memory object {id} successfully.";
+                return _localizationService.Format("Tool_Memory_Exec_Appended", id);
             });
     }
 
@@ -263,8 +336,11 @@ public class MemoryToolHandler : IMemoryToolHandler
     {
         var idStr = GetStringArg(args, "id");
         if (!Guid.TryParse(idStr, out var id))
+        {
+            _logger.LogWarning("delete_object called with invalid ID: '{IdValue}'", idStr);
             return new MemoryToolCall("delete_object", "Invalid ID format", null, null, null,
-                () => Task.FromResult<object?>("Error: Invalid object ID format"));
+                () => Task.FromResult<object?>($"Error: Invalid object ID format. You provided '{idStr}' which is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+        }
 
         var existing = await _memoryService.GetObjectAsync(id);
         if (existing is null)
@@ -273,15 +349,163 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         return new MemoryToolCall(
             ToolName: "delete_object",
-            Description: $"Delete {MemoryObjectTypes.GetDisplayName(existing.Type)}: {existing.Label}",
+            Description: _localizationService.Format("Tool_Memory_Desc_Delete", MemoryObjectTypes.GetDisplayName(existing.Type), existing.Label),
             OldValue: JsonHelper.FormatJson(existing.Data),
             NewValue: null,
             TargetObjectId: id,
             Execute: async () =>
             {
                 await _memoryService.DeleteObjectAsync(id);
-                return $"Memory object {id} deleted successfully.";
+                return _localizationService.Format("Tool_Memory_Exec_Deleted", id);
             });
+    }
+
+    private async Task<object?> HandleFindDuplicates(IDictionary<string, object?> args)
+    {
+        var thresholdStr = GetStringArg(args, "threshold");
+        var threshold = 0.7f;
+        if (!string.IsNullOrWhiteSpace(thresholdStr) && float.TryParse(thresholdStr, out var parsed))
+            threshold = Math.Clamp(parsed, 0f, 1f);
+
+        var allMemories = await _memoryService.GetAllObjectsAsync();
+        var withEmbeddings = allMemories
+            .Where(m => m.Embedding is not null)
+            .ToList();
+
+        if (withEmbeddings.Count < 2)
+            return "Not enough memories with embeddings to find duplicates. Try querying memories first to trigger embedding generation.";
+
+        // Compute pairwise cosine similarity
+        var groups = new List<List<(MemoryObject Memory, float Score)>>();
+        var assigned = new HashSet<Guid>();
+
+        for (int i = 0; i < withEmbeddings.Count; i++)
+        {
+            if (assigned.Contains(withEmbeddings[i].Id)) continue;
+
+            var embA = _embeddingService.BytesToFloats(withEmbeddings[i].Embedding!);
+            var group = new List<(MemoryObject Memory, float Score)>();
+
+            for (int j = i + 1; j < withEmbeddings.Count; j++)
+            {
+                if (assigned.Contains(withEmbeddings[j].Id)) continue;
+
+                var embB = _embeddingService.BytesToFloats(withEmbeddings[j].Embedding!);
+                var similarity = CosineSimilarity(embA, embB);
+
+                if (similarity >= threshold)
+                    group.Add((withEmbeddings[j], similarity));
+            }
+
+            if (group.Count > 0)
+            {
+                group.Insert(0, (withEmbeddings[i], 1.0f));
+                foreach (var item in group)
+                    assigned.Add(item.Memory.Id);
+                groups.Add(group);
+            }
+        }
+
+        if (groups.Count == 0)
+            return $"No duplicate candidates found above similarity threshold {threshold:F2}.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {groups.Count} group(s) of similar memories (threshold: {threshold:F2}):");
+
+        for (int g = 0; g < groups.Count; g++)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Group {g + 1}:");
+            foreach (var (memory, score) in groups[g])
+            {
+                var scoreText = score >= 1.0f ? "anchor" : $"similarity: {score:F2}";
+                sb.AppendLine($"  - [{MemoryObjectTypes.GetDisplayName(memory.Type)}] {memory.Label} (ID: {memory.Id}) [{scoreText}]");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Use merge_memories to combine any of these groups.");
+
+        return sb.ToString();
+    }
+
+    private async Task<MemoryToolCall> PrepareMergeMemories(IDictionary<string, object?> args)
+    {
+        var idsStr = GetStringArg(args, "ids");
+        var label = GetStringArg(args, "label");
+        var data = GetStringArg(args, "data");
+
+        var idStrings = idsStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (idStrings.Length < 2)
+        {
+            return new MemoryToolCall("merge_memories", "At least 2 IDs required", null, null, null,
+                () => Task.FromResult<object?>("Error: merge_memories requires at least 2 memory object IDs."));
+        }
+
+        var ids = new List<Guid>();
+        foreach (var idStr in idStrings)
+        {
+            if (!Guid.TryParse(idStr, out var id))
+            {
+                return new MemoryToolCall("merge_memories", "Invalid ID format", null, null, null,
+                    () => Task.FromResult<object?>($"Error: '{idStr}' is not a valid GUID. Use list_memories or query_memory to get valid IDs."));
+            }
+            ids.Add(id);
+        }
+
+        var objects = new List<MemoryObject>();
+        foreach (var id in ids)
+        {
+            var obj = await _memoryService.GetObjectAsync(id);
+            if (obj is null)
+            {
+                return new MemoryToolCall("merge_memories", "Object not found", null, null, null,
+                    () => Task.FromResult<object?>($"Error: Memory object {id} not found."));
+            }
+            objects.Add(obj);
+        }
+
+        var survivor = objects[0];
+        var toDelete = objects.Skip(1).ToList();
+
+        // Build old value showing all source objects
+        var oldSb = new StringBuilder();
+        foreach (var obj in objects)
+        {
+            oldSb.AppendLine($"[{MemoryObjectTypes.GetDisplayName(obj.Type)}] {obj.Label}:");
+            oldSb.AppendLine(JsonHelper.FormatJson(obj.Data));
+            oldSb.AppendLine();
+        }
+
+        return new MemoryToolCall(
+            ToolName: "merge_memories",
+            Description: _localizationService.Format("Tool_Memory_Desc_Merge", objects.Count, label),
+            OldValue: oldSb.ToString().TrimEnd(),
+            NewValue: JsonHelper.FormatJson(data),
+            TargetObjectId: survivor.Id,
+            Execute: async () =>
+            {
+                await _memoryService.UpdateObjectDataAsync(survivor.Id, label, data);
+                foreach (var obj in toDelete)
+                    await _memoryService.DeleteObjectAsync(obj.Id);
+                return _localizationService.Format("Tool_Memory_Exec_Merged", objects.Count, label, survivor.Id, toDelete.Count);
+            });
+    }
+
+    private static float CosineSimilarity(float[] a, float[] b)
+    {
+        if (a.Length != b.Length) return 0f;
+
+        float dot = 0, normA = 0, normB = 0;
+        for (int i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+
+        var denominator = MathF.Sqrt(normA) * MathF.Sqrt(normB);
+        return denominator == 0 ? 0f : dot / denominator;
     }
 
     [Description("Create a new memory object")]
@@ -311,6 +535,62 @@ public class MemoryToolHandler : IMemoryToolHandler
     [Description("Delete a memory object by ID")]
     private static string DeleteObjectSchema(
         [Description("The ID of the memory object to delete")] string id) => "";
+
+    [Description("Merge two or more memory objects into one consolidated object")]
+    private static string MergeMemoriesSchema(
+        [Description("Comma-separated IDs of memory objects to merge. First ID becomes the surviving object.")] string ids,
+        [Description("Label for the merged memory object")] string label,
+        [Description("Consolidated JSON data combining information from all source objects")] string data) => "";
+
+    [Description("Find memory objects that may be duplicates or contain overlapping information")]
+    private static string FindDuplicatesSchema(
+        [Description("Minimum similarity threshold 0.0-1.0 (default 0.7)")] float? threshold = null) => "";
+
+    private async Task BackfillEmbeddingsAsync()
+    {
+        var forceRegenerate = await CheckModelVersionChangedAsync();
+
+        var allMemories = await _memoryService.GetAllObjectsAsync();
+        foreach (var memory in allMemories)
+        {
+            if (!forceRegenerate && memory.Embedding is not null) continue;
+
+            try
+            {
+                var textToEmbed = $"{memory.Label} {memory.Data}";
+                var embedding = await _embeddingService.GenerateEmbeddingAsync(textToEmbed);
+                await _memoryService.UpdateEmbeddingAsync(memory.Id, _embeddingService.FloatsToBytes(embedding));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to backfill embedding for memory {Id}", memory.Id);
+            }
+        }
+    }
+
+    private static async Task<bool> CheckModelVersionChangedAsync()
+    {
+        const string currentModel = "paraphrase-multilingual-MiniLM-L12-v2";
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var markerPath = Path.Combine(localAppData, "Pia", "Models", "Embeddings", "model_version.txt");
+
+        try
+        {
+            if (File.Exists(markerPath))
+            {
+                var storedModel = await File.ReadAllTextAsync(markerPath);
+                if (storedModel.Trim() == currentModel)
+                    return false;
+            }
+
+            await File.WriteAllTextAsync(markerPath, currentModel);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {

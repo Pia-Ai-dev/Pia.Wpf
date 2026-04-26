@@ -59,7 +59,52 @@ namespace Pia.Resources.Strings {
                 resourceCulture = value;
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Column Added.
+        /// </summary>
+        public static string Kanban_ColumnAdded {
+            get {
+                return ResourceManager.GetString("Kanban_ColumnAdded", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Column &quot;{0}&quot; has been added to the board..
+        /// </summary>
+        public static string Kanban_ColumnAddedDetail {
+            get {
+                return ResourceManager.GetString("Kanban_ColumnAddedDetail", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Enter column name:.
+        /// </summary>
+        public static string Kanban_ColumnNamePrompt {
+            get {
+                return ResourceManager.GetString("Kanban_ColumnNamePrompt", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Cannot delete a column that contains todos. Move or delete all todos first..
+        /// </summary>
+        public static string Kanban_ColumnNotEmpty {
+            get {
+                return ResourceManager.GetString("Kanban_ColumnNotEmpty", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Are you sure you want to delete the column &quot;{0}&quot;?.
+        /// </summary>
+        public static string Kanban_DeleteColumnConfirm {
+            get {
+                return ResourceManager.GetString("Kanban_DeleteColumnConfirm", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Copied.
         /// </summary>

@@ -2,9 +2,11 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
@@ -17,6 +19,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     private readonly Navigation.INavigationService _navigationService;
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService _localizationService;
+    private readonly IVoiceInputService _voiceInputService;
+    private readonly IKanbanColumnService _columnService;
+    private readonly SynchronizationContext _syncContext;
     private bool _disposed;
     private bool _isRefreshing;
     private bool _suppressTodoChanged;
@@ -26,6 +31,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     [ObservableProperty]
     private ObservableCollection<TodoItem> _completedTodos = new();
+
+    [ObservableProperty]
+    private ObservableCollection<KanbanColumnViewModel> _columns = new();
 
     [ObservableProperty]
     private bool _isLoading;
@@ -86,6 +94,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand AddTodoCommand { get; }
+    public IAsyncRelayCommand RecordTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> CompleteTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> UncompleteTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> DeleteTodoCommand { get; }
@@ -94,6 +103,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     public IRelayCommand CancelEditCommand { get; }
     public IRelayCommand ToggleTodoPanelCommand { get; }
     public IRelayCommand NavigateToTodoViewCommand { get; }
+    public IAsyncRelayCommand AddColumnCommand { get; }
+    public IAsyncRelayCommand<KanbanColumnViewModel> DeleteColumnCommand { get; }
+    public IAsyncRelayCommand<KanbanColumnViewModel> SetDefaultViewColumnCommand { get; }
 
     public TodoViewModel(
         ILogger<TodoViewModel> logger,
@@ -102,7 +114,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         Wpf.Ui.ISnackbarService snackbarService,
         Navigation.INavigationService navigationService,
         ISettingsService settingsService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IVoiceInputService voiceInputService,
+        IKanbanColumnService columnService)
     {
         _logger = logger;
         _todoService = todoService;
@@ -111,9 +125,13 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _navigationService = navigationService;
         _settingsService = settingsService;
         _localizationService = localizationService;
+        _voiceInputService = voiceInputService;
+        _columnService = columnService;
+        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         RefreshCommand = new AsyncRelayCommand(LoadTodosAsync);
         AddTodoCommand = new AsyncRelayCommand(ExecuteAddTodoAsync, CanAddTodo);
+        RecordTodoCommand = new AsyncRelayCommand(ExecuteRecordTodoAsync);
         CompleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteCompleteTodoAsync);
         UncompleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteUncompleteTodoAsync);
         DeleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteDeleteTodoAsync);
@@ -122,12 +140,16 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         CancelEditCommand = new RelayCommand(ExecuteCancelEdit);
         ToggleTodoPanelCommand = new RelayCommand(() => IsTodoPanelOpen = !IsTodoPanelOpen);
         NavigateToTodoViewCommand = new RelayCommand(ExecuteNavigateToTodoView);
+        AddColumnCommand = new AsyncRelayCommand(ExecuteAddColumnAsync);
+        DeleteColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteDeleteColumnAsync);
+        SetDefaultViewColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteSetDefaultViewAsync);
 
         PropertyChanged += OnPropertyChanged;
         _todoService.TodoChanged += OnTodoChanged;
         _settingsService.SettingsChanged += OnSettingsChanged;
+        _columnService.ColumnsChanged += OnColumnsChanged;
 
-        SafeFireAndForget(LoadVisibilitySettingAsync());
+        LoadVisibilitySettingAsync().SafeFireAndForget(_logger);
     }
 
     private async Task LoadVisibilitySettingAsync()
@@ -147,12 +169,11 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-        {
+        _syncContext.Post(_ => {
             IsTodoButtonVisible = settings.ShowTodoPanelButton;
             if (!IsTodoButtonVisible)
                 IsTodoPanelOpen = false;
-        });
+        }, null);
     }
 
     private void OnTodoChanged(object? sender, EventArgs e)
@@ -160,14 +181,15 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         if (_isRefreshing || _suppressTodoChanged)
             return;
 
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            SafeFireAndForget(LoadTodosAsync()));
+        _syncContext.Post(_ => LoadTodosAsync().SafeFireAndForget(_logger), null);
     }
 
-    private async void SafeFireAndForget(Task task)
+    private void OnColumnsChanged(object? sender, EventArgs e)
     {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
+        if (_isRefreshing || _suppressTodoChanged)
+            return;
+
+        _syncContext.Post(_ => LoadTodosAsync().SafeFireAndForget(_logger), null);
     }
 
     public async Task LoadTodosAsync()
@@ -180,20 +202,47 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             _isRefreshing = true;
             IsLoading = true;
 
-            var pending = await _todoService.GetPendingAsync();
-            var completed = await _todoService.GetCompletedAsync();
+            var allColumns = await _columnService.GetAllAsync();
             var completedToday = await _todoService.GetCompletedTodayAsync();
 
+            Columns.Clear();
             PendingTodos.Clear();
-            foreach (var todo in pending)
-                PendingTodos.Add(todo);
-
             CompletedTodos.Clear();
-            foreach (var todo in completed)
-                CompletedTodos.Add(todo);
+
+            KanbanColumnViewModel? defaultViewColumnVm = null;
+            KanbanColumnViewModel? closedColumnVm = null;
+
+            foreach (var column in allColumns)
+            {
+                var todos = await _todoService.GetByColumnAsync(column.Id);
+                var vm = new KanbanColumnViewModel(column);
+                foreach (var todo in todos)
+                    vm.Todos.Add(todo);
+
+                Columns.Add(vm);
+
+                if (column.IsDefaultView)
+                    defaultViewColumnVm = vm;
+                if (column.IsClosedColumn)
+                    closedColumnVm = vm;
+            }
+
+            // Populate PendingTodos for the side panel (default view column)
+            if (defaultViewColumnVm is not null)
+            {
+                foreach (var todo in defaultViewColumnVm.Todos)
+                    PendingTodos.Add(todo);
+            }
+
+            // Populate CompletedTodos from the closed column
+            if (closedColumnVm is not null)
+            {
+                foreach (var todo in closedColumnVm.Todos)
+                    CompletedTodos.Add(todo);
+            }
 
             CompletedTodayCount = completedToday.Count;
-            PendingCount = pending.Count;
+            PendingCount = PendingTodos.Count;
             TotalTodayCount = CompletedTodayCount + PendingCount;
             UpdateProgress();
         }
@@ -221,6 +270,11 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
                 dueDate: NewTodoDueDate);
 
             PendingTodos.Insert(GetInsertIndex(todo), todo);
+
+            // Add to the default view column in the kanban board
+            var defaultColumnVm = Columns.FirstOrDefault(c => c.IsDefaultView);
+            if (defaultColumnVm is not null)
+                defaultColumnVm.Todos.Add(todo);
 
             NewTodoTitle = string.Empty;
             NewTodoPriority = TodoPriority.Medium;
@@ -255,6 +309,12 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             todo.Status = TodoStatus.Completed;
             todo.CompletedAt = DateTime.Now;
 
+            // Move in kanban columns
+            var sourceColumnVm = Columns.FirstOrDefault(c => c.Todos.Contains(todo));
+            var closedColumnVm = Columns.FirstOrDefault(c => c.IsClosedColumn);
+            sourceColumnVm?.Todos.Remove(todo);
+            closedColumnVm?.Todos.Insert(0, todo);
+
             PendingTodos.Remove(todo);
             CompletedTodos.Insert(0, todo);
 
@@ -286,6 +346,12 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
             todo.Status = TodoStatus.Pending;
             todo.CompletedAt = null;
+
+            // Move in kanban columns
+            var closedColumnVm = Columns.FirstOrDefault(c => c.IsClosedColumn);
+            var defaultColumnVm = Columns.FirstOrDefault(c => c.IsDefaultView);
+            closedColumnVm?.Todos.Remove(todo);
+            defaultColumnVm?.Todos.Add(todo);
 
             CompletedTodos.Remove(todo);
             PendingTodos.Insert(GetInsertIndex(todo), todo);
@@ -321,6 +387,10 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         try
         {
             await _todoService.DeleteAsync(todo.Id);
+
+            // Remove from kanban column
+            var columnVm = Columns.FirstOrDefault(c => c.Todos.Contains(todo));
+            columnVm?.Todos.Remove(todo);
 
             if (todo.Status == TodoStatus.Pending)
             {
@@ -418,20 +488,67 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     }
 
     /// <summary>
-    /// Gets the insertion index for a todo item in the pending list,
-    /// maintaining priority order (High first) then CreatedAt order.
+    /// New todos are appended to the end of the list (SortOrder-based).
     /// </summary>
     private int GetInsertIndex(TodoItem item)
     {
+        return PendingTodos.Count;
+    }
+
+    private async Task ExecuteRecordTodoAsync()
+    {
+        try
+        {
+            var transcription = await _voiceInputService.CaptureVoiceInputAsync();
+            if (!string.IsNullOrWhiteSpace(transcription))
+            {
+                NewTodoTitle = string.IsNullOrWhiteSpace(NewTodoTitle)
+                    ? transcription
+                    : $"{NewTodoTitle.TrimEnd()} {transcription}";
+                AddTodoCommand.NotifyCanExecuteChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to capture voice input for todo");
+        }
+    }
+
+    public async Task ReorderTodosAsync(int oldIndex, int newIndex)
+    {
+        if (oldIndex == newIndex || oldIndex < 0 || newIndex < 0
+            || oldIndex >= PendingTodos.Count || newIndex >= PendingTodos.Count)
+            return;
+
+        // Save original sort orders for revert
+        var originalOrders = PendingTodos.Select(t => (t.Id, t.SortOrder)).ToList();
+
+        PendingTodos.Move(oldIndex, newIndex);
+
+        // Recalculate sequential sort order
+        var updates = new List<(Guid Id, int SortOrder)>();
         for (var i = 0; i < PendingTodos.Count; i++)
         {
-            var existing = PendingTodos[i];
-            if (item.Priority > existing.Priority)
-                return i;
-            if (item.Priority == existing.Priority && item.CreatedAt < existing.CreatedAt)
-                return i;
+            PendingTodos[i].SortOrder = i;
+            updates.Add((PendingTodos[i].Id, i));
         }
-        return PendingTodos.Count;
+
+        try
+        {
+            await _todoService.UpdateSortOrderAsync(updates);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist reorder");
+            // Revert the move and restore original sort orders
+            PendingTodos.Move(newIndex, oldIndex);
+            foreach (var (id, sortOrder) in originalOrders)
+            {
+                var todo = PendingTodos.FirstOrDefault(t => t.Id == id);
+                if (todo is not null)
+                    todo.SortOrder = sortOrder;
+            }
+        }
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -443,6 +560,240 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             SaveEditCommand.NotifyCanExecuteChanged();
     }
 
+    private async Task ExecuteAddColumnAsync()
+    {
+        var name = await _dialogService.ShowInputDialogAsync(
+            _localizationService["Kanban_AddColumn"],
+            _localizationService["Kanban_ColumnNamePrompt"]);
+
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        try
+        {
+            _suppressTodoChanged = true;
+            var column = await _columnService.CreateAsync(name.Trim());
+            var vm = new KanbanColumnViewModel(column);
+
+            // Insert before the Closed column
+            var closedIndex = -1;
+            for (var i = 0; i < Columns.Count; i++)
+            {
+                if (Columns[i].IsClosedColumn)
+                {
+                    closedIndex = i;
+                    break;
+                }
+            }
+
+            if (closedIndex >= 0)
+                Columns.Insert(closedIndex, vm);
+            else
+                Columns.Add(vm);
+
+            _snackbarService.Show(
+                _localizationService["Kanban_ColumnAdded"],
+                _localizationService.Format("Kanban_ColumnAddedDetail", name.Trim()),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to add column");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"], ex.Message);
+        }
+        finally
+        {
+            _suppressTodoChanged = false;
+        }
+    }
+
+    private async Task ExecuteDeleteColumnAsync(KanbanColumnViewModel? columnVm)
+    {
+        if (columnVm is null || columnVm.IsClosedColumn)
+            return;
+
+        if (columnVm.Todos.Count > 0)
+        {
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService["Kanban_ColumnNotEmpty"]);
+            return;
+        }
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Kanban_DeleteColumn"],
+            _localizationService.Format("Kanban_DeleteColumnConfirm", columnVm.Name));
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            await _columnService.DeleteAsync(columnVm.Id);
+            Columns.Remove(columnVm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete column {Id}", columnVm.Id);
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"], ex.Message);
+        }
+    }
+
+    private async Task ExecuteSetDefaultViewAsync(KanbanColumnViewModel? columnVm)
+    {
+        if (columnVm is null || columnVm.IsClosedColumn || columnVm.IsDefaultView)
+            return;
+
+        try
+        {
+            await _columnService.SetDefaultViewAsync(columnVm.Id);
+
+            foreach (var col in Columns)
+                col.IsDefaultView = col.Id == columnVm.Id;
+
+            // Refresh PendingTodos for the side panel
+            PendingTodos.Clear();
+            foreach (var todo in columnVm.Todos)
+                PendingTodos.Add(todo);
+
+            PendingCount = PendingTodos.Count;
+            TotalTodayCount = CompletedTodayCount + PendingCount;
+            UpdateProgress();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set default view column");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"], ex.Message);
+        }
+    }
+
+    public async Task MoveTodoToColumnAsync(TodoItem todo, Guid targetColumnId, int newIndex)
+    {
+        try
+        {
+            _suppressTodoChanged = true;
+            await _todoService.MoveToColumnAsync(todo.Id, targetColumnId);
+
+            // Update in-memory kanban columns (use ID-based lookup to handle collection reloads)
+            var sourceColumnVm = Columns.FirstOrDefault(c => c.Todos.Any(t => t.Id == todo.Id));
+            var targetColumnVm = Columns.FirstOrDefault(c => c.Id == targetColumnId);
+            if (sourceColumnVm is not null)
+            {
+                var itemInSource = sourceColumnVm.Todos.FirstOrDefault(t => t.Id == todo.Id);
+                if (itemInSource is not null)
+                    sourceColumnVm.Todos.Remove(itemInSource);
+            }
+
+            if (targetColumnVm is not null)
+            {
+                // Update todo status based on target column
+                if (targetColumnVm.IsClosedColumn)
+                {
+                    todo.Status = TodoStatus.Completed;
+                    todo.CompletedAt = DateTime.Now;
+                }
+                else if (sourceColumnVm?.IsClosedColumn == true)
+                {
+                    todo.Status = TodoStatus.Pending;
+                    todo.CompletedAt = null;
+                }
+
+                todo.ColumnId = targetColumnId;
+                var insertAt = Math.Min(newIndex, targetColumnVm.Todos.Count);
+                targetColumnVm.Todos.Insert(insertAt, todo);
+            }
+
+            // Update PendingTodos/CompletedTodos for side panel
+            PendingTodos.Clear();
+            CompletedTodos.Clear();
+            var defaultVm = Columns.FirstOrDefault(c => c.IsDefaultView);
+            var closedVm = Columns.FirstOrDefault(c => c.IsClosedColumn);
+            if (defaultVm is not null)
+                foreach (var t in defaultVm.Todos)
+                    PendingTodos.Add(t);
+            if (closedVm is not null)
+                foreach (var t in closedVm.Todos)
+                    CompletedTodos.Add(t);
+
+            PendingCount = PendingTodos.Count;
+            TotalTodayCount = CompletedTodayCount + PendingCount;
+            UpdateProgress();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to move todo {Id} to column {ColumnId}", todo.Id, targetColumnId);
+            await LoadTodosAsync(); // Reload on error
+        }
+        finally
+        {
+            _suppressTodoChanged = false;
+        }
+    }
+
+    public async Task ReorderWithinColumnAsync(Guid columnId, int oldIndex, int newIndex)
+    {
+        var columnVm = Columns.FirstOrDefault(c => c.Id == columnId);
+        if (columnVm is null || oldIndex == newIndex || oldIndex < 0 || newIndex < 0
+            || oldIndex >= columnVm.Todos.Count || newIndex >= columnVm.Todos.Count)
+            return;
+
+        var originalOrders = columnVm.Todos.Select(t => (t.Id, t.SortOrder)).ToList();
+
+        columnVm.Todos.Move(oldIndex, newIndex);
+
+        var updates = new List<(Guid Id, int SortOrder)>();
+        for (var i = 0; i < columnVm.Todos.Count; i++)
+        {
+            columnVm.Todos[i].SortOrder = i;
+            updates.Add((columnVm.Todos[i].Id, i));
+        }
+
+        try
+        {
+            await _todoService.UpdateSortOrderAsync(updates);
+
+            // If this is the default view column, also update PendingTodos
+            if (columnVm.IsDefaultView)
+            {
+                PendingTodos.Clear();
+                foreach (var todo in columnVm.Todos)
+                    PendingTodos.Add(todo);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist reorder in column {ColumnId}", columnId);
+            columnVm.Todos.Move(newIndex, oldIndex);
+            foreach (var (id, sortOrder) in originalOrders)
+            {
+                var todo = columnVm.Todos.FirstOrDefault(t => t.Id == id);
+                if (todo is not null)
+                    todo.SortOrder = sortOrder;
+            }
+        }
+    }
+
+    public async Task RenameColumnAsync(KanbanColumnViewModel columnVm, string newName)
+    {
+        if (columnVm.IsClosedColumn || string.IsNullOrWhiteSpace(newName))
+            return;
+
+        try
+        {
+            await _columnService.RenameAsync(columnVm.Id, newName.Trim());
+            columnVm.Name = newName.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rename column {Id}", columnVm.Id);
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"], ex.Message);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -452,6 +803,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         PropertyChanged -= OnPropertyChanged;
         _todoService.TodoChanged -= OnTodoChanged;
         _settingsService.SettingsChanged -= OnSettingsChanged;
+        _columnService.ColumnsChanged -= OnColumnsChanged;
         GC.SuppressFinalize(this);
     }
 }

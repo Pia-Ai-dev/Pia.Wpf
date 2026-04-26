@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Net;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,7 +18,13 @@ namespace Pia;
 
 public static class Bootstrapper
 {
-    public const string ProductionServerUrl = "https://cloud.pia-ai.de";
+    public const string DefaultProductionServerUrl = "https://cloud.pia-ai.de";
+    public const string ServerUrlEnvVar = "PIA_CLOUD_SERVER_URL";
+
+    public static string ProductionServerUrl =>
+        Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl
+            ? envUrl
+            : DefaultProductionServerUrl;
 
 #if DEBUG
     public static bool IsDevMode => true;
@@ -43,16 +50,61 @@ public static class Bootstrapper
 
         _serviceProvider = services.BuildServiceProvider(options);
 
-        // In production, enforce the hardcoded server URL
+        var bootstrapLogger = _serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrapper");
+        var envServerUrl = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
+        bootstrapLogger.LogInformation(
+            "Server URL resolution: IsDevMode={IsDevMode}, {EnvVar}={EnvValue}, EffectiveProductionServerUrl={Effective}",
+            IsDevMode, ServerUrlEnvVar, envServerUrl ?? "(unset)", ProductionServerUrl);
+
+        // Resolve enforcement up-front so both branches can short-circuit cleanly.
+        // Enterprise policy.enforce.serverUrl always wins over both the hardcoded production URL
+        // and the PIA_CLOUD_SERVER_URL dev override (precedence chain in docs/preset-settings.md).
+        var policyService = _serviceProvider.GetRequiredService<IPolicyService>();
+        await policyService.GetPolicyAsync();
+        var serverUrlEnforced = policyService.IsEnforced(nameof(AppSettings.ServerUrl));
+
         if (!IsDevMode)
         {
-            var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
-            var settings = await settingsService.GetSettingsAsync();
-            if (settings.ServerUrl != ProductionServerUrl)
+            if (serverUrlEnforced)
             {
-                settings.ServerUrl = ProductionServerUrl;
-                settings.TrustSelfSignedCertificates = false;
-                await settingsService.SaveSettingsAsync(settings);
+                bootstrapLogger.LogInformation(
+                    "ServerUrl is enforced by enterprise policy; skipping production URL write");
+            }
+            else
+            {
+                // ProductionServerUrl honors the PIA_CLOUD_SERVER_URL env var override (for dev/staging).
+                var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
+                var settings = await settingsService.GetSettingsAsync();
+                if (settings.ServerUrl != ProductionServerUrl)
+                {
+                    settings.ServerUrl = ProductionServerUrl;
+                    settings.TrustSelfSignedCertificates = false;
+                    await settingsService.SaveSettingsAsync(settings);
+                }
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(envServerUrl))
+        {
+            if (serverUrlEnforced)
+            {
+                bootstrapLogger.LogInformation(
+                    "{EnvVar} is set but ServerUrl is enforced by enterprise policy; env var override ignored",
+                    ServerUrlEnvVar);
+            }
+            else
+            {
+                // In dev mode, apply the PIA_CLOUD_SERVER_URL env var override if set,
+                // overriding whatever URL was previously saved via the Account Settings UI.
+                var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
+                var settings = await settingsService.GetSettingsAsync();
+                if (settings.ServerUrl != envServerUrl)
+                {
+                    bootstrapLogger.LogInformation(
+                        "Applying {EnvVar} override to settings.ServerUrl (was {Old}, now {New})",
+                        ServerUrlEnvVar, settings.ServerUrl ?? "(null)", envServerUrl);
+                    settings.ServerUrl = envServerUrl;
+                    await settingsService.SaveSettingsAsync(settings);
+                }
             }
         }
 
@@ -76,7 +128,7 @@ public static class Bootstrapper
         services.AddLogging(builder =>
         {
             builder.AddDebug();
-            builder.SetMinimumLevel(LogLevel.Information);
+            builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
             var logDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -86,7 +138,7 @@ public static class Bootstrapper
             builder.AddFile(Path.Combine(logDirectory, "pia.log"), options =>
             {
                 options.Append = true;
-                options.MinLevel = LogLevel.Information;
+                options.MinLevel = IsDevMode ? LogLevel.Debug : LogLevel.Information;
                 options.FileSizeLimitBytes = 10 * 1024 * 1024; // 10 MB per file
                 options.MaxRollingFiles = 7;                    // Keep 7 days
                 options.FormatLogFileName = name =>
@@ -102,14 +154,21 @@ public static class Bootstrapper
         // Infrastructure
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<DpapiHelper>();
+        services.AddTransient<HttpLoggingHandler>();
+        services.AddTransient<RateLimitRetryHandler>();
 
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.AddHttpMessageHandler<RateLimitRetryHandler>();
+            builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
             {
-                var handler = new HttpClientHandler();
+                var handler = new HttpClientHandler
+                {
+                    AutomaticDecompression = DecompressionMethods.All
+                };
                 var settingsService = sp.GetService<ISettingsService>();
                 if (settingsService != null)
                 {
@@ -136,7 +195,11 @@ public static class Bootstrapper
             new TokenizingAiClientService(
                 sp.GetRequiredService<AiClientService>(),
                 sp,
-                sp.GetRequiredService<ISettingsService>()));
+                sp.GetRequiredService<ISettingsService>(),
+                sp.GetRequiredService<ILogger<TokenizingAiClientService>>()));
+
+        // Enterprise policy
+        services.AddSingleton<IPolicyService, PolicyService>();
 
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
@@ -144,8 +207,14 @@ public static class Bootstrapper
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
+        services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
+        services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
+        services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();
+        services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
+        services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<IHistoryService, HistoryService>();
@@ -174,6 +243,13 @@ public static class Bootstrapper
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
 
         // Sync services
+        services.AddSingleton<SyncDeleteTrackerService>(sp =>
+        {
+            var dataDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
+            var logger = sp.GetRequiredService<ILogger<SyncDeleteTrackerService>>();
+            return new SyncDeleteTrackerService(dataDirectory, logger);
+        });
         services.AddSingleton<SyncMapper>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();
@@ -183,6 +259,9 @@ public static class Bootstrapper
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
+
+        // Autostart
+        services.AddSingleton<IAutostartService, AutostartService>();
 
         // Services - Scoped (per-window)
         services.AddScoped<Navigation.INavigationService, Navigation.NavigationService>();

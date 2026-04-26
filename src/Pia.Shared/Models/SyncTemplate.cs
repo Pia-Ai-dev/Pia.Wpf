@@ -23,11 +23,13 @@ public class SyncTemplate
     /// Base64: AES-GCM encrypted entity payload (nonce‖ciphertext‖tag).
     /// Non-null when E2EE is active; plaintext fields will be null.
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EncryptedPayload { get; set; }
 
     /// <summary>
     /// Base64: DEK wrapped with UMK via AES-GCM (nonce‖wrapped-DEK‖tag).
     /// Non-null when E2EE is active.
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? WrappedDek { get; set; }
 }

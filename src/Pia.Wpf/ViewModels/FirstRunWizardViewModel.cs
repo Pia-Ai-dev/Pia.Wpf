@@ -148,7 +148,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     /// <summary>Provider types available in wizard (excludes PiaCloud).</summary>
     public IReadOnlyList<AiProviderType> WizardProviderTypes { get; } =
-        [AiProviderType.OpenAI, AiProviderType.AzureOpenAI, AiProviderType.Ollama, AiProviderType.OpenRouter, AiProviderType.OpenAICompatible];
+        [AiProviderType.OpenAI, AiProviderType.AzureOpenAI, AiProviderType.Ollama, AiProviderType.OpenRouter, AiProviderType.OpenAICompatible, AiProviderType.Mistral];
 
     partial void OnSelectedProviderTypeChanged(AiProviderType value)
     {
@@ -164,6 +164,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             AiProviderType.Ollama => "http://localhost:11434/v1",
             AiProviderType.OpenAI => "https://api.openai.com/v1",
             AiProviderType.OpenRouter => "https://openrouter.ai/api/v1",
+            AiProviderType.Mistral => "https://api.mistral.ai/v1",
             _ => ProviderEndpoint
         };
 
@@ -234,8 +235,16 @@ public partial class FirstRunWizardViewModel : ObservableObject
         // When E2EE onboarding completes in wizard, start sync
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
         {
-            IsE2EEOnboardingRequired = false;
-            await _syncClientService.PerformFirstSyncMigrationAsync();
+            try
+            {
+                IsE2EEOnboardingRequired = false;
+                _syncClientService.NotifyE2EEOnboardingCompleted();
+                await _syncClientService.PerformFirstSyncMigrationAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "First sync after E2EE onboarding failed in wizard");
+            }
             _syncClientService.StartBackgroundSync();
         };
 
@@ -433,6 +442,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         {
             _logger.LogInformation("E2EE enabled on account but UMK not available; showing onboarding in wizard");
             IsE2EEOnboardingRequired = true;
+            _syncClientService.NotifyE2EEOnboardingRequired();
             return;
         }
 
@@ -516,6 +526,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             IsCompleting = true;
             var settings = await _settingsService.GetSettingsAsync();
             settings.HasCompletedFirstRunWizard = true;
+            settings.DefaultTemplateId ??= Shared.BuiltInTemplates.ClarityAndGrammarId;
             await _settingsService.SaveSettingsAsync(settings);
             WizardCompleted?.Invoke();
         }
@@ -587,6 +598,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             var settings = await _settingsService.GetSettingsAsync();
             settings.HasCompletedFirstRunWizard = true;
             settings.UserOperatingMode = OperatingMode;
+            settings.DefaultTemplateId ??= Shared.BuiltInTemplates.ClarityAndGrammarId;
             await _settingsService.SaveSettingsAsync(settings);
 
             WizardCompleted?.Invoke();

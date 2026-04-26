@@ -28,11 +28,7 @@ dotnet test                                            # Run all tests
 
 ## Git Workflow
 
-Main: `master`. Features: `feature/<name>`.
-
-## Submodules
-
-- `lib/MdXaml/` — Markdown rendering library. Clone with `--recurse-submodules`.
+Main: `main`. Features: `feature/<name>`.
 
 ## Rules
 

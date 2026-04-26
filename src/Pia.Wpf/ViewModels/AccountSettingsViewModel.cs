@@ -3,10 +3,13 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Helpers;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
+using System.Threading;
 
 namespace Pia.ViewModels;
 
@@ -21,6 +24,9 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IDeviceManagementService _deviceManagement;
     private readonly IDeviceKeyService _deviceKeys;
+    private readonly IMemoryService _memoryService;
+    private readonly IPolicyService _policyService;
+    private readonly SynchronizationContext _syncContext;
     private bool _isLoading;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
@@ -35,6 +41,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         ILocalizationService localizationService,
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
+        IMemoryService memoryService,
+        IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel)
     {
         _logger = logger;
@@ -46,34 +54,76 @@ public partial class AccountSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _deviceManagement = deviceManagement;
         _deviceKeys = deviceKeys;
+        _memoryService = memoryService;
+        _policyService = policyService;
+        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         OnboardingViewModel = onboardingViewModel;
 
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
         {
-            IsE2EEOnboardingRequired = false;
-            IsE2EEEnabled = true;
-            DeviceFingerprint = _deviceKeys.GetFingerprint();
-            await _syncClientService.PerformFirstSyncMigrationAsync();
+            try
+            {
+                IsE2EEOnboardingRequired = false;
+                _syncClientService.NotifyE2EEOnboardingCompleted();
+                _isLoading = true;
+                IsE2EEEnabled = true;
+                _isLoading = false;
+                DeviceFingerprint = _deviceKeys.GetFingerprint();
+                await _syncClientService.PerformFirstSyncMigrationAsync();
+
+                var settings = await _settingsService.GetSettingsAsync();
+                LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "First sync after E2EE onboarding failed");
+            }
             _syncClientService.StartBackgroundSync();
         };
 
+        // Seed from current service state — the event may have fired before this
+        // VM was constructed (e.g. during wizard login that was then skipped).
+        IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
+
         _syncClientService.E2EEOnboardingRequired += (_, _) =>
         {
-            System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
+            _syncContext.Post(_ =>
             {
                 IsE2EEOnboardingRequired = true;
-            });
+            }, null);
+        };
+
+        _syncClientService.E2EEOnboardingCleared += (_, _) =>
+        {
+            _syncContext.Post(_ =>
+            {
+                IsE2EEOnboardingRequired = false;
+            }, null);
+        };
+
+        _authService.LoginStateChanged += (_, isLoggedIn) =>
+        {
+            if (isLoggedIn) return;
+            _syncContext.Post(_ =>
+            {
+                IsE2EEOnboardingRequired = false;
+                _isLoading = true;
+                IsE2EEEnabled = false;
+                _isLoading = false;
+                DeviceFingerprint = string.Empty;
+                UpdateSyncState();
+            }, null);
         };
 
         _syncClientService.PendingDeviceDetected += (_, args) =>
         {
-            System.Windows.Application.Current?.Dispatcher.InvokeAsync(
-                () => HandlePendingDevicesAsync(args.PendingDevices));
+            _syncContext.Post(_ =>
+                HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger), null);
         };
 
         _syncClientService.CurrentDeviceRevoked += (_, _) =>
         {
-            System.Windows.Application.Current?.Dispatcher.InvokeAsync(async () =>
+            _syncContext.Post(async _ =>
             {
                 _isLoading = true;
                 IsE2EEEnabled = false;
@@ -87,7 +137,7 @@ public partial class AccountSettingsViewModel : ObservableObject
                 _snackbarService.Show("E2EE Disabled",
                     "This device was removed from E2EE. Encryption has been disabled.",
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(8));
-            });
+            }, null);
         };
     }
 
@@ -97,7 +147,13 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     // Sync properties
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsServerUrlEditable))]
     private bool _isSyncLoggedIn;
+
+    // Enterprise policy enforcement
+    public bool IsServerUrlEnforced => _policyService.IsEnforced(nameof(AppSettings.ServerUrl));
+
+    public bool IsServerUrlEditable => !IsSyncLoggedIn && !IsServerUrlEnforced;
 
     [ObservableProperty]
     private string? _syncUserEmail;
@@ -114,7 +170,12 @@ public partial class AccountSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _trustSelfSignedCertificates;
 
-    public bool IsDevMode => Bootstrapper.IsDevMode;
+    public bool IsDevMode =>
+#if DEBUG
+        true;
+#else
+        false;
+#endif
 
     [ObservableProperty]
     private bool _isSyncLoggingIn;
@@ -139,6 +200,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private string _deviceFingerprint = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSyncNow))]
     private bool _isE2EEOnboardingRequired;
 
     // Sync status
@@ -149,7 +211,10 @@ public partial class AccountSettingsViewModel : ObservableObject
     private string? _lastSyncItemsText;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSyncNow))]
     private bool _isSyncing;
+
+    public bool CanSyncNow => !IsSyncing && !IsE2EEOnboardingRequired;
 
     // Privacy properties
     [ObservableProperty]
@@ -168,7 +233,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     partial void OnTokenizationEnabledChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SavePrivacySettingsAsync());
+        if (!_isLoading) SavePrivacySettingsAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnIsE2EEEnabledChanged(bool value)
@@ -183,7 +248,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     partial void OnTrustSelfSignedCertificatesChanged(bool value)
     {
-        if (!_isLoading) SafeFireAndForget(SaveSyncSettingsAsync());
+        if (!_isLoading) SaveSyncSettingsAsync().SafeFireAndForget(_logger);
     }
 
     public async Task InitializeAsync()
@@ -254,6 +319,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (success)
             {
                 await HandlePostLoginAsync();
+                await TrySeedPersonalProfileFromAuthAsync();
             }
             else if (errorMessage is not null)
             {
@@ -283,6 +349,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (success)
             {
                 await HandlePostLoginAsync();
+                await TrySeedPersonalProfileFromAuthAsync();
             }
             else if (errorMessage is not null)
             {
@@ -365,6 +432,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         {
             _logger.LogInformation("E2EE enabled on account but UMK not available; onboarding required");
             IsE2EEOnboardingRequired = true;
+            _syncClientService.NotifyE2EEOnboardingRequired();
             return;
         }
 
@@ -372,10 +440,38 @@ public partial class AccountSettingsViewModel : ObservableObject
         _syncClientService.StartBackgroundSync();
     }
 
+    private async Task TrySeedPersonalProfileFromAuthAsync()
+    {
+        try
+        {
+            var displayName = _authService.UserDisplayName;
+            if (string.IsNullOrWhiteSpace(displayName)) return;
+
+            var existing = await _memoryService.GetObjectsByTypeAsync(MemoryObjectTypes.PersonalProfile);
+            if (existing.Count > 0) return;
+
+            var trimmed = displayName.Trim();
+            var profileData = new
+            {
+                name = trimmed,
+                nickname = "",
+                location = "",
+                operating_mode = UserOperatingMode.Personal.ToString().ToLowerInvariant(),
+                preferred_name = trimmed
+            };
+            var jsonData = JsonSerializer.Serialize(profileData);
+            await _memoryService.CreateObjectAsync(MemoryObjectTypes.PersonalProfile, "Personal Profile", jsonData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to seed personal profile from OAuth display name");
+        }
+    }
+
     [RelayCommand]
     private async Task SyncNowAsync()
     {
-        if (IsSyncing) return;
+        if (IsSyncing || IsE2EEOnboardingRequired) return;
 
         try
         {
@@ -395,6 +491,37 @@ public partial class AccountSettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Manual sync failed");
+        }
+        finally
+        {
+            IsSyncing = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ForceFullResyncAsync()
+    {
+        if (IsSyncing || IsE2EEOnboardingRequired) return;
+
+        try
+        {
+            IsSyncing = true;
+            _logger.LogInformation("Force full re-sync requested by user");
+            await _syncClientService.ForceFullResyncAsync();
+
+            var settings = await _settingsService.GetSettingsAsync();
+            LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
+
+            _snackbarService.Show(
+                _localizationService["Sync_ResyncTitle"] ?? "Re-sync",
+                _localizationService["Sync_ResyncComplete"] ?? "Full re-sync completed",
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Force full re-sync failed");
+            _snackbarService.Show("Error", $"Re-sync failed: {ex.Message}",
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
         }
         finally
         {
@@ -496,6 +623,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (serverStatus is { IsEnabled: true })
             {
                 IsE2EEOnboardingRequired = true;
+                _syncClientService.NotifyE2EEOnboardingRequired();
                 return;
             }
 
@@ -503,11 +631,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
             DeviceFingerprint = _deviceKeys.GetFingerprint();
 
-            var copyRequested = await _dialogService.ShowMessageWithCopyDialogAsync(
-                "Recovery Code",
-                $"Save this recovery code in a safe place. It is the ONLY way to recover your encrypted data if you lose all devices.\n\n{recoveryCode}\n\nIf you lose this code and all your devices, your encrypted data cannot be recovered.");
-            if (copyRequested)
-                System.Windows.Clipboard.SetText(recoveryCode);
+            await _dialogService.ShowRecoveryCodeDialogAsync(recoveryCode);
 
             await _syncClientService.PerformFirstSyncMigrationAsync();
         }
@@ -522,6 +646,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (serverStatus is { IsEnabled: true })
             {
                 IsE2EEOnboardingRequired = true;
+                _syncClientService.NotifyE2EEOnboardingRequired();
             }
             else
             {
@@ -589,7 +714,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private void OnPiiKeywordEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (!_isLoading && e.PropertyName == nameof(PiiKeywordEntry.Category))
-            SafeFireAndForget(SavePrivacySettingsAsync());
+            SavePrivacySettingsAsync().SafeFireAndForget(_logger);
     }
 
     // Reset app data
@@ -621,7 +746,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (exePath is not null)
             {
                 System.Diagnostics.Process.Start(exePath);
-                System.Windows.Application.Current.Shutdown();
+                Environment.Exit(0);
             }
         }
         catch (Exception ex)
@@ -655,9 +780,4 @@ public partial class AccountSettingsViewModel : ObservableObject
         await _settingsService.SaveSettingsAsync(settings);
     }
 
-    private async void SafeFireAndForget(Task task)
-    {
-        try { await task; }
-        catch (Exception ex) { _logger.LogError(ex, "Background operation failed"); }
-    }
 }

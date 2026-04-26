@@ -16,6 +16,7 @@ permissions:
 jobs:
   build-and-release:
     runs-on: windows-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Checkout
@@ -56,7 +57,7 @@ jobs:
           -r win-x64
           --self-contained true
           -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:IncludeNativeLibrariesForSelfExtract=false
           -o publish
 
       - name: Install Velopack CLI
@@ -82,12 +83,26 @@ jobs:
           --msiLogo src/Pia.Wpf/Resources/Installer/logo.bmp
           --msi
 
-      - name: Upload Velopack release to GitHub
-        run: >
-          vpk upload github
-          --repoUrl https://github.com/Pia-Ai-dev/Pia.Wpf
-          --publish
-          --releaseName "${{ steps.info.outputs.title }}"
-          --tag ${{ steps.info.outputs.tag }}
-          --token ${{ secrets.GITHUB_TOKEN }}
-          -xy
+      - name: Install git-cliff
+        shell: pwsh
+        run: |
+          $url = "https://github.com/orhun/git-cliff/releases/latest/download/git-cliff-2.12.0-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile git-cliff.zip
+          Expand-Archive git-cliff.zip -DestinationPath git-cliff-bin
+          echo "$PWD\git-cliff-bin\git-cliff-2.12.0" | Out-File -Append $env:GITHUB_PATH
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          git cliff --unreleased --tag "${{ steps.info.outputs.tag }}" --strip header -o release-notes.md
+          printf "\n---\n**Full Changelog:** [CHANGELOG.md](https://github.com/Pia-Ai-dev/Pia.Wpf/blob/main/CHANGELOG.md)\n" >> release-notes.md
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.info.outputs.tag }}" \
+            --title "${{ steps.info.outputs.title }}" \
+            --notes-file release-notes.md \
+            Releases/*

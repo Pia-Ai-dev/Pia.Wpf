@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -52,15 +51,16 @@ public class TextOptimizationServiceTests
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns("Optimized via PiaCloud");
 
         var service = CreateService();
-        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        result.OptimizedText.Should().Be("Optimized via PiaCloud");
+        Assert.Equal("Optimized via PiaCloud", result.OptimizedText);
         await _aiClientService.Received(1).OptimizeViaPiaCloudAsync(
-            "hello world", BusinessEmailTemplateId, "EN", false, Arg.Any<CancellationToken>());
+            Arg.Is<string>(p => p.Contains("hello world") && p.Contains(BusinessEmailTemplate.Prompt)),
+            BusinessEmailTemplateId, "EN", false, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().SendRequestAsync(
             Arg.Any<AiProvider>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -77,35 +77,39 @@ public class TextOptimizationServiceTests
             .Returns("Optimized via OpenAI");
 
         var service = CreateService();
-        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        var result = await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        result.OptimizedText.Should().Be("Optimized via OpenAI");
+        Assert.Equal("Optimized via OpenAI", result.OptimizedText);
         await _aiClientService.Received(1).SendRequestAsync(
             OpenAiProvider, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().OptimizeViaPiaCloudAsync(
-            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task OptimizeTextAsync_PiaCloud_SendsRawTextNotPrompt()
+    public async Task OptimizeTextAsync_PiaCloud_SendsFullPromptWithInput()
     {
         _templateService.GetTemplateAsync(BusinessEmailTemplateId)
             .Returns(BusinessEmailTemplate);
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        // PiaCloud path should send raw text, not the constructed prompt
+        // PiaCloud path sends the full constructed prompt (template + language + input)
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
-            "hello world",
+            Arg.Is<string>(p =>
+                p.Contains(BusinessEmailTemplate.Prompt) &&
+                p.Contains("Target language: EN") &&
+                p.Contains("hello world")),
             BusinessEmailTemplateId,
             "EN",
             false,
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -117,18 +121,22 @@ public class TextOptimizationServiceTests
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("<voice>um hello world</voice>", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("<voice>um hello world</voice>", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        // Should strip voice tags and set isVoiceInput = true
+        // Should strip voice tags from the input in the constructed prompt and set isVoiceInput = true
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
-            "um hello world",
+            Arg.Is<string>(p =>
+                p.Contains("um hello world") &&
+                !p.Contains("<voice>") &&
+                p.Contains("transcribed from spoken word")),
             BusinessEmailTemplateId,
             "EN",
             true,
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -140,17 +148,18 @@ public class TextOptimizationServiceTests
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns("Ergebnis");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("hello", BusinessEmailTemplateId, targetLanguage: "DE");
+        await service.OptimizeTextAsync("hello", BusinessEmailTemplateId, targetLanguage: "DE", cancellationToken: TestContext.Current.CancellationToken);
 
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
-            "hello",
+            Arg.Is<string>(p => p.Contains("Target language: DE") && p.Contains("hello")),
             BusinessEmailTemplateId,
             "DE",
             false,
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -166,14 +175,14 @@ public class TextOptimizationServiceTests
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
         // OpenAI path should build the full prompt client-side
         await _aiClientService.Received().SendRequestAsync(
             OpenAiProvider,
             Arg.Is<string>(p =>
                 p.Contains("Transform this text into a professional business email") &&
-                p.Contains("Please answer in EN") &&
+                p.Contains("Target language: EN") &&
                 p.Contains("hello world")),
             Arg.Any<CancellationToken>());
     }
@@ -190,7 +199,7 @@ public class TextOptimizationServiceTests
             .Returns("result");
 
         var service = CreateService();
-        await service.OptimizeTextAsync("<voice>um hello</voice>", BusinessEmailTemplateId);
+        await service.OptimizeTextAsync("<voice>um hello</voice>", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
         await _aiClientService.Received().SendRequestAsync(
             OpenAiProvider,

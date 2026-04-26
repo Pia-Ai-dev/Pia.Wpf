@@ -52,6 +52,7 @@
   <data name="Optimize_Clear_Tooltip" xml:space="preserve"><value>Effacer</value></data>
   <data name="Optimize_Template_Tooltip" xml:space="preserve"><value>Modèle</value></data>
   <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Langue de sortie</value></data>
+  <data name="Optimize_Optimize_Tooltip" xml:space="preserve"><value>Optimiser (Ctrl+Entrée)</value></data>
   <data name="Optimize_Record_Tooltip" xml:space="preserve"><value>Enregistrer</value></data>
   <data name="Optimize_Accept_Tooltip" xml:space="preserve"><value>Accepter</value></data>
   <data name="Optimize_Reject_Tooltip" xml:space="preserve"><value>Rejeter</value></data>
@@ -85,7 +86,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Activer/désactiver la synthèse vocale</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Enregistrer</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Conversation vocale</value></data>
-  <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer</value></data>
+  <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Mode Recherche</value></data>
@@ -173,6 +174,15 @@
   <data name="TodoPanel_AddPlaceholder" xml:space="preserve"><value>Ajouter une tâche...</value></data>
   <data name="TodoPanel_Add" xml:space="preserve"><value>Ajouter</value></data>
   <data name="TodoPanel_OpenFullView" xml:space="preserve"><value>Ouvrir la vue complète</value></data>
+  <data name="TodoPanel_Record" xml:space="preserve">
+    <value>Enregistrer la saisie vocale</value>
+  </data>
+  <!-- Kanban View -->
+  <data name="Kanban_AddColumn" xml:space="preserve"><value>Ajouter une colonne</value></data>
+  <data name="Kanban_AddColumnShort" xml:space="preserve"><value>Colonne</value></data>
+  <data name="Kanban_RenameColumn" xml:space="preserve"><value>Renommer la colonne</value></data>
+  <data name="Kanban_DeleteColumn" xml:space="preserve"><value>Supprimer la colonne</value></data>
+  <data name="Kanban_SetDefault" xml:space="preserve"><value>Définir comme vue par défaut</value></data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Mémoire</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Exporter</value></data>
@@ -198,7 +208,7 @@
   <data name="Memory_ModelNotAvailable" xml:space="preserve"><value>Non disponible</value></data>
   <data name="Memory_ModelReady" xml:space="preserve"><value>Prêt</value></data>
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Télécharger le modèle</value></data>
-  <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Télécharger le modèle d'embedding all-MiniLM-L6-v2 pour la recherche sémantique</value></data>
+  <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Télécharger le modèle d'embedding multilingue pour la recherche sémantique</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Régénérer les embeddings</value></data>
   <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Régénérer les embeddings pour tous les objets mémoire</value></data>
   <!-- Reminders View -->
@@ -227,6 +237,12 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Recherche</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Compte</value></data>
+  <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Extensions</value></data>
+  <data name="Plugins_Subtitle" xml:space="preserve"><value>&#201;tendez les capacit&#233;s de votre assistant avec des plugins.</value></data>
+  <data name="Plugins_NotConnected" xml:space="preserve"><value>Connectez-vous &#224; Pia Cloud pour g&#233;rer les plugins.</value></data>
+  <data name="Plugins_GoToAccount" xml:space="preserve"><value>Aller au compte</value></data>
+  <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>D&#233;sactiver une extension int&#233;gr&#233;e</value></data>
+  <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' est une extension int&#233;gr&#233;e. La d&#233;sactiver perturbera les fonctionnalit&#233;s par d&#233;faut de l'assistant. &#202;tes-vous s&#251;r ?</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Apparence</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Raccourcis</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Parole</value></data>
@@ -261,6 +277,8 @@
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Mode de fenêtre par défaut</value></data>
   <data name="Settings_DefaultWindowMode_Description" xml:space="preserve"><value>Mode utilisé lors de l'ouverture d'une nouvelle fenêtre via le bouton principal</value></data>
   <data name="Settings_ApplicationBehavior" xml:space="preserve"><value>Comportement de l'application</value></data>
+  <data name="Settings_LaunchAtStartup" xml:space="preserve"><value>Lancer au démarrage de Windows</value></data>
+  <data name="Settings_LaunchAtStartup_Description" xml:space="preserve"><value>Démarrer Pia automatiquement lors de la connexion à Windows</value></data>
   <data name="Settings_StartMinimized" xml:space="preserve"><value>Démarrer minimisé dans la barre des tâches</value></data>
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>L'application démarrera masquée dans la zone de notification</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Afficher le bouton du panneau des tâches</value></data>
@@ -347,6 +365,8 @@
   <data name="Sync_SyncNow" xml:space="preserve"><value>Synchroniser</value></data>
   <data name="Sync_Syncing" xml:space="preserve"><value>Synchronisation...</value></data>
   <data name="Sync_LastSynced" xml:space="preserve"><value>Dernière sync : </value></data>
+  <data name="Sync_ResyncTitle" xml:space="preserve"><value>Re-synchronisation</value></data>
+  <data name="Sync_ResyncComplete" xml:space="preserve"><value>Re-synchronisation complète terminée</value></data>
   <!-- Dialogs -->
   <data name="Dialog_Optimizing_Title" xml:space="preserve"><value>Optimisation</value></data>
   <data name="Dialog_Optimizing_Processing" xml:space="preserve"><value>Traitement...</value></data>
@@ -375,7 +395,6 @@
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Nom du modèle</value></data>
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Nom de déploiement Azure</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Récupérer les modèles</value></data>
-  <data name="Dialog_ProviderEdit_MaxCharacters" xml:space="preserve"><value>Caractères max.</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Délai d'attente (secondes)</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Modifier le modèle</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Nom du modèle *</value></data>
@@ -516,4 +535,42 @@
   <data name="PiiCategory_Address" xml:space="preserve"><value>Adresse</value></data>
   <data name="PiiCategory_Date" xml:space="preserve"><value>Date</value></data>
   <data name="PiiCategory_Custom" xml:space="preserve"><value>Personnalisé</value></data>
+  <!-- E2EE: app-wide onboarding required bar -->
+  <data name="E2EE_Onboarding_Bar_Message" xml:space="preserve"><value>La configuration du chiffrement de bout en bout est requise pour synchroniser vos données.</value></data>
+  <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Configurer maintenant</value></data>
+  <!-- Settings: E2EE section -->
+  <data name="Settings_E2EE_Title" xml:space="preserve"><value>Chiffrement de bout en bout</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, toutes les données synchronisées sont chiffrées sur votre appareil avant d'être envoyées au serveur. Une nouvelle clé de chiffrement et un nouveau code de récupération sont générés à chaque activation. Basculer ce réglage déclenche une synchronisation complète.</value></data>
+  <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Activer le chiffrement de bout en bout</value></data>
+  <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Mise à jour du chiffrement et synchronisation des données...</value></data>
+  <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
+  <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Vérifier les demandes d'appareils</value></data>
+  <!-- E2EE onboarding view -->
+  <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Configuration du chiffrement de bout en bout</value></data>
+  <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Ce compte utilise le chiffrement de bout en bout. Configurez cet appareil pour accéder à vos données chiffrées.</value></data>
+  <data name="E2EE_Onboarding_Approve_Title" xml:space="preserve"><value>Approuver depuis un autre appareil</value></data>
+  <data name="E2EE_Onboarding_Approve_Description" xml:space="preserve"><value>Si vous avez un autre appareil déjà configuré avec Pia, il peut transférer la clé de chiffrement en toute sécurité vers cet appareil.</value></data>
+  <data name="E2EE_Onboarding_Approve_Button" xml:space="preserve"><value>Attendre l'approbation</value></data>
+  <data name="E2EE_Onboarding_Recovery_Title" xml:space="preserve"><value>Utiliser un code de récupération</value></data>
+  <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Saisissez le code de récupération que vous avez enregistré lors de la première activation du chiffrement. Utilisez-le si votre autre appareil n'est pas disponible.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Saisir le code de récupération</value></data>
+  <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Empreinte de votre appareil :</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Sur votre autre appareil, allez dans Paramètres &gt; Synchronisation cloud &gt; Gestion des appareils. Vérifiez que cette empreinte correspond avant d'approuver.</value></data>
+  <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Annuler</value></data>
+  <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Utiliser plutôt le code de récupération</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Saisissez votre code de récupération</value></data>
+  <data name="E2EE_Onboarding_Recovery_EnterDescription" xml:space="preserve"><value>Saisissez le code de récupération que vous avez enregistré lors de la première activation du chiffrement.</value></data>
+  <data name="E2EE_Onboarding_Recovery_Activate" xml:space="preserve"><value>Activer</value></data>
+  <data name="E2EE_Onboarding_Back" xml:space="preserve"><value>Retour</value></data>
+  <data name="E2EE_Onboarding_Success_Title" xml:space="preserve"><value>Appareil activé !</value></data>
+  <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Vos données sont en cours de synchronisation. Cela peut prendre un moment.</value></data>
+  <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
+  <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Réessayer</value></data>
+  <!-- Boîte de dialogue du code de récupération (affichée lors de l'activation du E2EE depuis les paramètres) -->
+  <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Code de récupération</value></data>
+  <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Enregistrez votre code de récupération</value></data>
+  <data name="Dialog_Recovery_Description" xml:space="preserve"><value>Ce code de récupération est le SEUL moyen d'accéder à vos données chiffrées si vous perdez tous vos appareils. Notez-le et conservez-le en lieu sûr.</value></data>
+  <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Si vous perdez ce code et tous vos appareils, vos données chiffrées ne pourront pas être récupérées. Le serveur ne peut pas déchiffrer vos données.</value></data>
+  <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>J'ai enregistré ce code de récupération en lieu sûr</value></data>
 </root>

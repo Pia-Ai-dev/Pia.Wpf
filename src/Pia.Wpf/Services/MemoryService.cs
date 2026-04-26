@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Similarity;
 
 namespace Pia.Services;
 
@@ -13,17 +14,19 @@ public class MemoryService : IMemoryService
     private readonly SqliteContext _context;
     private readonly ILogger<MemoryService> _logger;
     private readonly IEmbeddingService _embeddingService;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
     };
 
-    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService)
+    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker)
     {
         _context = context;
         _logger = logger;
         _embeddingService = embeddingService;
+        _deleteTracker = deleteTracker;
     }
 
     public async Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData)
@@ -208,6 +211,7 @@ public class MemoryService : IMemoryService
         command.Parameters.AddWithValue("@Id", id.ToString());
 
         await command.ExecuteNonQueryAsync();
+        _deleteTracker.TrackDeletion("memories", id);
 
         _logger.LogInformation("Deleted memory object {Id}", id);
     }
@@ -240,17 +244,31 @@ public class MemoryService : IMemoryService
 
     public async Task<IReadOnlyList<MemoryObject>> SearchAsync(string query)
     {
-        // Structured JSON query - search for exact values in JSON data
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = """
+
+        var conditions = new List<string>();
+
+        // Full phrase match
+        conditions.Add("(Label LIKE @FullQuery OR Data LIKE @FullQuery)");
+        command.Parameters.AddWithValue("@FullQuery", $"%{query}%");
+
+        // Per-token matches (skip short words that match too broadly)
+        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < terms.Length; i++)
+        {
+            if (terms[i].Length <= 3) continue;
+            conditions.Add($"(Label LIKE @Term{i} OR Data LIKE @Term{i})");
+            command.Parameters.AddWithValue($"@Term{i}", $"%{terms[i]}%");
+        }
+
+        command.CommandText = $"""
             SELECT Id, Type, Label, Data, Embedding, CreatedAt, UpdatedAt, LastAccessedAt
             FROM Memories
-            WHERE Label LIKE @Query OR Data LIKE @Query
+            WHERE {string.Join(" OR ", conditions)}
             ORDER BY UpdatedAt DESC
             LIMIT 20
             """;
-        command.Parameters.AddWithValue("@Query", $"%{query}%");
 
         return await ReadMemoryObjects(command);
     }
@@ -270,9 +288,20 @@ public class MemoryService : IMemoryService
             LIMIT 20
             """;
 
-        // Escape FTS5 special characters and create a query with OR between terms
+        // Escape FTS5 special characters, use exact + prefix matching
         var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var ftsQuery = string.Join(" OR ", terms.Select(t => $"\"{EscapeFtsQuery(t)}\""));
+        var ftsTerms = new List<string>();
+        foreach (var term in terms)
+        {
+            var escaped = EscapeFtsQuery(term);
+            ftsTerms.Add($"\"{escaped}\"");
+            if (escaped.Length >= 3)
+                ftsTerms.Add($"{escaped}*");
+            // Compound word decomposition: generate sub-token prefixes
+            foreach (var sub in GenerateSubTokenPrefixes(escaped))
+                ftsTerms.Add($"{sub}*");
+        }
+        var ftsQuery = string.Join(" OR ", ftsTerms);
         command.Parameters.AddWithValue("@Query", ftsQuery);
 
         try
@@ -331,10 +360,24 @@ public class MemoryService : IMemoryService
             }
         }
 
-        // Tier 3: Vector similarity search
+        // Tier 2.5: Fuzzy label matching (scores all memories, dedup via Math.Max)
+        var fuzzyResults = await FuzzyLabelSearchAsync(query);
+        foreach (var (memory, score) in fuzzyResults)
+        {
+            if (resultDict.TryGetValue(memory.Id, out var existing))
+            {
+                resultDict[memory.Id] = (memory, Math.Max(existing.Score, score));
+            }
+            else
+            {
+                resultDict[memory.Id] = (memory, score);
+            }
+        }
+
+        // Tier 3: Vector similarity search (lower threshold for multilingual support)
         if (queryEmbedding is not null)
         {
-            var vectorResults = await VectorSearchAsync(queryEmbedding, topK);
+            var vectorResults = await VectorSearchAsync(queryEmbedding, topK, threshold: 0.2f);
             foreach (var m in vectorResults)
             {
                 var vectorScore = 0.8f; // Base vector score
@@ -551,5 +594,83 @@ public class MemoryService : IMemoryService
     private static string EscapeFtsQuery(string term)
     {
         return term.Replace("\"", "\"\"");
+    }
+
+    private static IEnumerable<string> GenerateSubTokenPrefixes(string term, int minLen = 4)
+    {
+        if (term.Length < 8) yield break;
+        for (int i = minLen; i <= term.Length - 3; i++)
+        {
+            yield return term[..i];
+        }
+    }
+
+    private async Task<IReadOnlyList<(MemoryObject Memory, float Score)>> FuzzyLabelSearchAsync(
+        string query)
+    {
+        var queryTokens = query.ToLowerInvariant()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => t.Length > 3) // Skip short stopwords
+            .ToArray();
+
+        if (queryTokens.Length == 0) return [];
+
+        var allMemories = await GetAllObjectsAsync();
+        var results = new List<(MemoryObject Memory, float Score)>();
+
+        foreach (var memory in allMemories)
+        {
+            // Tokenize label + first portion of data for cross-language matching
+            var labelTokens = memory.Label.ToLowerInvariant()
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var dataPreview = memory.Data.Length > 200 ? memory.Data[..200] : memory.Data;
+            var dataTokens = dataPreview.ToLowerInvariant()
+                .Split([' ', '"', ':', '{', '}', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries)
+                .Where(t => t.Length > 3)
+                .Distinct()
+                .ToArray();
+            var allTokens = labelTokens.Concat(dataTokens).ToArray();
+
+            float bestScore = 0f;
+            foreach (var qt in queryTokens)
+            {
+                foreach (var lt in allTokens)
+                {
+                    // Jaro-Winkler similarity
+                    var jwScore = (float)JaroWinkler.Similarity(qt, lt);
+                    if (jwScore > bestScore) bestScore = jwScore;
+
+                    // Substring containment (handles compound words)
+                    if (lt.Contains(qt) || qt.Contains(lt))
+                    {
+                        var subScore = 0.80f;
+                        if (subScore > bestScore) bestScore = subScore;
+                    }
+                }
+
+                // Compound word prefix matching: check if sub-prefixes of query token
+                // match the start of any label token (e.g., "schlaf" from "schlafanalyse"
+                // matches start of "schlaftracking")
+                foreach (var prefix in GenerateSubTokenPrefixes(qt))
+                {
+                    foreach (var lt in allTokens)
+                    {
+                        if (lt.StartsWith(prefix))
+                        {
+                            var prefixScore = 0.80f;
+                            if (prefixScore > bestScore) bestScore = prefixScore;
+                        }
+                    }
+                }
+            }
+
+            if (bestScore >= 0.75f)
+                results.Add((memory, 0.5f + (bestScore - 0.75f) * 0.6f));
+        }
+
+        return results
+            .OrderByDescending(x => x.Score)
+            .Take(10)
+            .ToList();
     }
 }

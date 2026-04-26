@@ -1,6 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.DependencyInjection;
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using System.Reflection;
@@ -19,6 +19,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly Services.Interfaces.IUpdateService _updateService;
     private readonly Services.Interfaces.IProviderService _providerService;
     private readonly Services.Interfaces.IAuthService _authService;
+    private readonly Services.Interfaces.ISyncClientService _syncClientService;
+    private Timer? _updateTimer;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
@@ -26,6 +28,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private AppTheme _theme = AppTheme.System;
+
+    [ObservableProperty]
+    private string _optimizeHotkeyHint = string.Empty;
+
+    [ObservableProperty]
+    private string _assistantHotkeyHint = string.Empty;
+
+    [ObservableProperty]
+    private string _researchHotkeyHint = string.Empty;
 
     [ObservableProperty]
     private ObservableObject? _currentView;
@@ -43,6 +54,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _isUpdateBarDismissed;
 
     [ObservableProperty]
+    private bool _isE2EEOnboardingRequired;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSetupOverlay))]
     private bool _isSetupRequired;
 
@@ -58,11 +72,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool ShowUpdateBar => IsUpdateReady && !IsUpdateBarDismissed;
 
+    public bool ShowE2EEOnboardingBar => IsE2EEOnboardingRequired;
+
     public string WindowTitle => $"Pia - {Mode} (v{AppVersion})";
 
-    public static string AppVersion { get; } =
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-        ?? "unknown";
+    public string AppVersion { get; }
 
     public IRelayCommand<string> NavigationCommand { get; }
     public IRelayCommand ToggleThemeCommand { get; }
@@ -77,7 +91,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         Pia.Services.Interfaces.IWindowManagerService windowManagerService,
         Pia.Services.Interfaces.IUpdateService updateService,
         Pia.Services.Interfaces.IProviderService providerService,
-        Pia.Services.Interfaces.IAuthService authService)
+        Pia.Services.Interfaces.IAuthService authService,
+        Pia.Services.Interfaces.ISyncClientService syncClientService)
     {
         _logger = logger;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
@@ -88,6 +103,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _updateService = updateService;
         _providerService = providerService;
         _authService = authService;
+        _syncClientService = syncClientService;
+        IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
+
+        AppVersion = updateService.CurrentVersion
+            ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+            ?? "unknown";
 
         NavigationCommand = new RelayCommand<string>(ExecuteNavigationCommand);
         ToggleThemeCommand = new AsyncRelayCommand(ExecuteToggleThemeAsync);
@@ -98,23 +119,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _settingsService.SettingsChanged += OnSettingsChanged;
         _providerService.ProvidersChanged += OnProvidersChanged;
         _authService.LoginStateChanged += OnLoginStateChanged;
+        _syncClientService.E2EEOnboardingRequired += OnE2EEOnboardingRequired;
+        _syncClientService.E2EEOnboardingCleared += OnE2EEOnboardingCleared;
 
         // Poll for update readiness (background download is fire-and-forget)
-        var updateTimer = new System.Windows.Threading.DispatcherTimer
+        _updateTimer = new Timer(_ =>
         {
-            Interval = TimeSpan.FromSeconds(30)
-        };
-        updateTimer.Tick += (_, _) =>
-        {
-            if (_updateService.IsUpdateReady && !IsUpdateReady)
+            _syncContext.Post(_ =>
             {
-                IsUpdateReady = true;
-                UpdateVersion = _updateService.AvailableVersion;
-            }
-            if (IsUpdateReady)
-                updateTimer.Stop();
-        };
-        updateTimer.Start();
+                if (_updateService.IsUpdateReady && !IsUpdateReady)
+                {
+                    IsUpdateReady = true;
+                    UpdateVersion = _updateService.AvailableVersion;
+                }
+                if (IsUpdateReady)
+                    _updateTimer?.Dispose();
+            }, null);
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
     public async Task InitializeAsync()
@@ -123,6 +144,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         Theme = settings.Theme;
         _themeService.ApplyTheme(Theme);
+
+        UpdateHotkeyHints(settings);
 
         await RefreshSetupRequiredAsync();
 
@@ -176,9 +199,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 _themeService.ApplyTheme(Theme);
             }
 
+            UpdateHotkeyHints(settings);
+
             // Provider defaults may have changed — re-check setup state
             _ = RefreshSetupRequiredAsync();
         }, null);
+    }
+
+    private void UpdateHotkeyHints(AppSettings settings)
+    {
+        OptimizeHotkeyHint = settings.OptimizeHotkey.DisplayText;
+        AssistantHotkeyHint = settings.AssistantHotkey?.DisplayText ?? string.Empty;
+        ResearchHotkeyHint = settings.ResearchHotkey?.DisplayText ?? string.Empty;
     }
 
     private void OnViewModelChanged(ObservableObject? viewModel)
@@ -210,11 +242,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         try
         {
-            using var scope = Bootstrapper.ServiceProvider.CreateScope();
-            var wizard = scope.ServiceProvider.GetRequiredService<Views.FirstRunWizardWindow>();
-            wizard.ShowDialog();
-
-            // Refresh setup state after wizard closes
+            _windowManagerService.ShowFirstRunWizard();
             _ = RefreshSetupRequiredAsync();
         }
         catch (Exception ex)
@@ -326,6 +354,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnIsUpdateReadyChanged(bool value) => OnPropertyChanged(nameof(ShowUpdateBar));
     partial void OnIsUpdateBarDismissedChanged(bool value) => OnPropertyChanged(nameof(ShowUpdateBar));
+    partial void OnIsE2EEOnboardingRequiredChanged(bool value) => OnPropertyChanged(nameof(ShowE2EEOnboardingBar));
+
+    private void OnE2EEOnboardingRequired(object? sender, EventArgs e)
+    {
+        _syncContext.Post(_ => IsE2EEOnboardingRequired = true, null);
+    }
+
+    private void OnE2EEOnboardingCleared(object? sender, EventArgs e)
+    {
+        _syncContext.Post(_ => IsE2EEOnboardingRequired = false, null);
+    }
 
     [RelayCommand]
     private void RestartToUpdate()
@@ -339,6 +378,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsUpdateBarDismissed = true;
     }
 
+    [RelayCommand]
+    private void OpenE2EEOnboarding()
+    {
+        _navigationService.NavigateTo<SettingsViewModel, int>(5);
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -346,10 +391,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _disposed = true;
 
+        _updateTimer?.Dispose();
         _navigationService.ViewModelChanged -= OnViewModelChanged;
         _settingsService.SettingsChanged -= OnSettingsChanged;
         _providerService.ProvidersChanged -= OnProvidersChanged;
         _authService.LoginStateChanged -= OnLoginStateChanged;
+        _syncClientService.E2EEOnboardingRequired -= OnE2EEOnboardingRequired;
+        _syncClientService.E2EEOnboardingCleared -= OnE2EEOnboardingCleared;
 
         GC.SuppressFinalize(this);
     }

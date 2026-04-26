@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.DependencyInjection;
 using Pia.ViewModels;
 
@@ -29,6 +30,12 @@ public partial class OptimizeView : UserControl
                 ViewModel.RequestFocus();
             }
         }
+
+        var parentWindow = Window.GetWindow(this);
+        if (parentWindow is not null)
+        {
+            parentWindow.Activated += OnParentWindowActivated;
+        }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -37,6 +44,20 @@ public partial class OptimizeView : UserControl
         {
             ViewModel.PropertyChanged -= OnPropertyChanged;
             ViewModel.FocusInputRequested -= OnFocusInputRequested;
+        }
+
+        var parentWindow = Window.GetWindow(this);
+        if (parentWindow is not null)
+        {
+            parentWindow.Activated -= OnParentWindowActivated;
+        }
+    }
+
+    private void OnParentWindowActivated(object? sender, EventArgs e)
+    {
+        if (ViewModel is not null && string.IsNullOrEmpty(ViewModel.InputText) && !ViewModel.IsComparisonView)
+        {
+            ViewModel.RequestFocus();
         }
     }
 
@@ -71,6 +92,18 @@ public partial class OptimizeView : UserControl
         if (Window.GetWindow(this) is Window window)
         {
             window.DragMove();
+        }
+    }
+
+    private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (ViewModel?.OptimizeCommand.CanExecute(null) == true)
+            {
+                ViewModel.OptimizeCommand.Execute(null);
+                e.Handled = true;
+            }
         }
     }
 

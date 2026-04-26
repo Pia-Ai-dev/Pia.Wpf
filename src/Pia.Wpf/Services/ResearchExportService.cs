@@ -41,60 +41,60 @@ public class ResearchExportService : IResearchExportService
         var markdown = BuildMarkdown(session);
         var htmlBody = Markdig.Markdown.ToHtml(markdown, _pipeline);
 
-        return $"""
+        return $$"""
             <!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Research: {System.Net.WebUtility.HtmlEncode(session.Query)}</title>
+                <title>Research: {{System.Net.WebUtility.HtmlEncode(session.Query)}}</title>
                 <style>
-                    body {{
+                    body {
                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                         line-height: 1.6;
                         max-width: 900px;
                         margin: 0 auto;
                         padding: 2rem;
                         color: #333;
-                    }}
-                    h1 {{ color: #1a1a2e; border-bottom: 2px solid #e0e0e0; padding-bottom: 0.3em; }}
-                    h2 {{ color: #16213e; margin-top: 1.5em; }}
-                    h3 {{ color: #0f3460; }}
-                    code {{
+                    }
+                    h1 { color: #1a1a2e; border-bottom: 2px solid #e0e0e0; padding-bottom: 0.3em; }
+                    h2 { color: #16213e; margin-top: 1.5em; }
+                    h3 { color: #0f3460; }
+                    code {
                         background: #f4f4f4;
                         padding: 0.2em 0.4em;
                         border-radius: 3px;
                         font-size: 0.9em;
-                    }}
-                    pre {{
+                    }
+                    pre {
                         background: #f4f4f4;
                         padding: 1em;
                         border-radius: 6px;
                         overflow-x: auto;
-                    }}
-                    pre code {{ background: transparent; padding: 0; }}
-                    blockquote {{
+                    }
+                    pre code { background: transparent; padding: 0; }
+                    blockquote {
                         border-left: 4px solid #4a90d9;
                         margin: 1em 0;
                         padding: 0.5em 1em;
                         color: #555;
                         background: #f8f9fa;
-                    }}
-                    table {{
+                    }
+                    table {
                         border-collapse: collapse;
                         width: 100%;
                         margin: 1em 0;
-                    }}
-                    th, td {{
+                    }
+                    th, td {
                         border: 1px solid #ddd;
                         padding: 8px 12px;
                         text-align: left;
-                    }}
-                    th {{ background: #f4f4f4; font-weight: 600; }}
+                    }
+                    th { background: #f4f4f4; font-weight: 600; }
                 </style>
             </head>
             <body>
-            {htmlBody}
+            {{htmlBody}}
             </body>
             </html>
             """;

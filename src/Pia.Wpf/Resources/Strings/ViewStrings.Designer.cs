@@ -241,7 +241,7 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Send.
+        ///   Looks up a localized string similar to Send (Enter).
         /// </summary>
         public static string Assistant_Send_Tooltip {
             get {
@@ -525,15 +525,6 @@ namespace Pia.Resources.Strings {
         public static string Dialog_ProviderEdit_FetchModels {
             get {
                 return ResourceManager.GetString("Dialog_ProviderEdit_FetchModels", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Max Characters.
-        /// </summary>
-        public static string Dialog_ProviderEdit_MaxCharacters {
-            get {
-                return ResourceManager.GetString("Dialog_ProviderEdit_MaxCharacters", resourceCulture);
             }
         }
         
@@ -1094,7 +1085,52 @@ namespace Pia.Resources.Strings {
                 return ResourceManager.GetString("History_ViewDetail", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Add Column.
+        /// </summary>
+        public static string Kanban_AddColumn {
+            get {
+                return ResourceManager.GetString("Kanban_AddColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Column.
+        /// </summary>
+        public static string Kanban_AddColumnShort {
+            get {
+                return ResourceManager.GetString("Kanban_AddColumnShort", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Delete Column.
+        /// </summary>
+        public static string Kanban_DeleteColumn {
+            get {
+                return ResourceManager.GetString("Kanban_DeleteColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Rename Column.
+        /// </summary>
+        public static string Kanban_RenameColumn {
+            get {
+                return ResourceManager.GetString("Kanban_RenameColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Set as Default View.
+        /// </summary>
+        public static string Kanban_SetDefault {
+            get {
+                return ResourceManager.GetString("Kanban_SetDefault", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Cancel.
         /// </summary>
@@ -1482,6 +1518,15 @@ namespace Pia.Resources.Strings {
             }
         }
         
+        /// <summary>
+        ///   Looks up a localized string similar to Optimize (Ctrl+Enter).
+        /// </summary>
+        public static string Optimize_Optimize_Tooltip {
+            get {
+                return ResourceManager.GetString("Optimize_Optimize_Tooltip", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Optimized.
         /// </summary>

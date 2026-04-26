@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
   <!-- Light Theme Brushes -->
   <SolidColorBrush x:Key="PrimaryBackgroundBrush" Color="#FFFFFFFF" />
@@ -36,5 +37,9 @@
   <SolidColorBrush x:Key="CardStrokeColorBrushDefault" Color="#FFE0E0E0" />
   <SolidColorBrush x:Key="TextFillColorTertiaryBrush" Color="#FF6B6B6B" />
   <SolidColorBrush x:Key="CardStrokeColorBrush" Color="#FFE0E0E0" />
+
+  <!-- Panel Shadow -->
+  <Color x:Key="PanelShadowColor">#000000</Color>
+  <sys:Double x:Key="PanelShadowOpacity">0.15</sys:Double>
 
 </ResourceDictionary>

@@ -1,6 +1,8 @@
 ﻿using System.ClientModel;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -36,7 +38,7 @@ public class AiClientService : IAiClientService
         CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -64,16 +66,17 @@ public class AiClientService : IAiClientService
     public async IAsyncEnumerable<string> StreamChatCompletionAsync(
         IList<Microsoft.Extensions.AI.ChatMessage> messages,
         AiProvider provider,
+        string? mode = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(60);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        var chatClient = await CreateChatClientAsync(provider, apiKey);
+        var chatClient = await CreateChatClientAsync(provider, apiKey, mode);
 
         IAsyncEnumerable<ChatResponseUpdate> stream;
         try
@@ -98,10 +101,11 @@ public class AiClientService : IAiClientService
         IList<Microsoft.Extensions.AI.ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
+        string? mode = null,
         CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(60);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -109,7 +113,7 @@ public class AiClientService : IAiClientService
 
         try
         {
-            IChatClient chatClient = await CreateChatClientAsync(provider, apiKey);
+            IChatClient chatClient = await CreateChatClientAsync(provider, apiKey, mode);
 
             var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
             var options = new ChatOptions();
@@ -140,22 +144,33 @@ public class AiClientService : IAiClientService
         AiProvider provider,
         IList<AITool>? tools = null,
         Func<FunctionCallContent, Task<object?>>? toolHandler = null,
+        string? mode = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
+            provider.Name, tools?.Count ?? 0);
+
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(120);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        IChatClient chatClient = await CreateChatClientAsync(provider, apiKey);
+        IChatClient chatClient = await CreateChatClientAsync(provider, apiKey, mode);
 
         var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
         var options = new ChatOptions();
         if (useTools)
         {
             options.Tools = [.. tools!];
+            _logger.LogDebug("Tool schemas being sent: [{ToolNames}]",
+                string.Join(", ", tools!.Select(t => t.Name)));
+        }
+        else
+        {
+            _logger.LogWarning("Tools NOT included in request: SupportsToolCalling={SupportsToolCalling}, toolCount={ToolCount}",
+                provider.SupportsToolCalling, tools?.Count ?? 0);
         }
 
         const int maxToolRounds = 10;
@@ -163,6 +178,8 @@ public class AiClientService : IAiClientService
 
         for (var round = 0; round < maxToolRounds; round++)
         {
+            _logger.LogDebug("Tool round {Round}/{MaxRounds} starting, path={Path}",
+                round + 1, maxToolRounds, provider.SupportsStreaming ? "streaming" : "non-streaming");
             ChatResponse response;
 
             if (provider.SupportsStreaming)
@@ -213,6 +230,8 @@ public class AiClientService : IAiClientService
                 }
 
                 response = updates.ToChatResponse();
+                _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}",
+                    round + 1, response.Messages.Count, response.Text?.Length ?? 0);
             }
             else
             {
@@ -230,6 +249,8 @@ public class AiClientService : IAiClientService
                 }
 
                 var text = response.Text;
+                _logger.LogDebug("Round {Round} non-streaming done: {MsgCount} messages, textLength={TextLen}",
+                    round + 1, response.Messages.Count, text?.Length ?? 0);
                 if (!string.IsNullOrEmpty(text))
                 {
                     yield return text;
@@ -237,6 +258,13 @@ public class AiClientService : IAiClientService
             }
 
             // Check if there are tool calls in the response
+            var contentTypes = response.Messages
+                .SelectMany(m => m.Contents)
+                .Select(c => c.GetType().Name)
+                .Distinct();
+            _logger.LogDebug("Round {Round} response content types: [{ContentTypes}]",
+                round + 1, string.Join(", ", contentTypes));
+
             var toolCalls = response.Messages
                 .SelectMany(m => m.Contents)
                 .OfType<FunctionCallContent>()
@@ -244,6 +272,16 @@ public class AiClientService : IAiClientService
 
             if (toolCalls.Count > 0 && toolHandler is not null)
             {
+                _logger.LogInformation("Round {Round}: {ToolCallCount} tool call(s) detected: {ToolNames}",
+                    round + 1, toolCalls.Count, string.Join(", ", toolCalls.Select(t => t.Name)));
+
+                foreach (var tc in toolCalls)
+                {
+                    var args = tc.Arguments is not null ? JsonSerializer.Serialize(tc.Arguments) : "<null>";
+                    _logger.LogDebug("Tool call {ToolName} (callId={CallId}) args: {Args}",
+                        tc.Name, tc.CallId, args.Length > 500 ? args[..500] + "..." : args);
+                }
+
                 // Add assistant messages with tool calls to working messages
                 foreach (var msg in response.Messages)
                 {
@@ -253,25 +291,35 @@ public class AiClientService : IAiClientService
                 // Process tool calls
                 foreach (var toolCall in toolCalls)
                 {
+                    _logger.LogDebug("Invoking tool handler for {ToolName} (callId={CallId})", toolCall.Name, toolCall.CallId);
                     var result = await toolHandler(toolCall);
+                    var resultPreview = result?.ToString() ?? "<null>";
+                    _logger.LogDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
+                        toolCall.Name, resultPreview.Length,
+                        resultPreview.Length > 500 ? resultPreview[..500] + "..." : resultPreview);
                     var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
                         ChatRole.Tool,
                         [new FunctionResultContent(toolCall.CallId, result)]);
                     workingMessages.Add(resultMessage);
                 }
 
+                _logger.LogDebug("Round {Round} complete, continuing with {MessageCount} working messages",
+                    round + 1, workingMessages.Count);
                 // Continue the loop to get the AI's response after tool execution
                 continue;
             }
 
+            _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
             yield break;
         }
+
+        _logger.LogWarning("Tool loop exhausted max rounds ({MaxRounds}) without final response", maxToolRounds);
     }
 
     public async Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -307,7 +355,7 @@ public class AiClientService : IAiClientService
     public async Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -344,6 +392,7 @@ public class AiClientService : IAiClientService
         Guid templateId,
         string language,
         bool isVoiceInput,
+        string? mode = null,
         CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -384,6 +433,9 @@ public class AiClientService : IAiClientService
                 // If decryption fails, proceed without auth
             }
         }
+
+        if (!string.IsNullOrEmpty(mode))
+            httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
 
         try
         {
@@ -448,13 +500,13 @@ public class AiClientService : IAiClientService
         return false;
     }
 
-    private async Task<IChatClient> CreateChatClientAsync(AiProvider provider, string apiKey)
+    private async Task<IChatClient> CreateChatClientAsync(AiProvider provider, string apiKey, string? mode = null)
     {
         var httpClient = _httpClientFactory.CreateClient();
 
         if (provider.ProviderType == AiProviderType.PiaCloud)
         {
-            var client = await CreatePiaCloudChatClientAsync(httpClient);
+            var client = await CreatePiaCloudChatClientAsync(httpClient, mode);
             _logger.LogDebug("Created PiaCloud chat client");
             return client;
         }
@@ -467,7 +519,7 @@ public class AiClientService : IAiClientService
 
         return provider.ProviderType switch
         {
-            AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Ollama =>
+            AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Ollama or AiProviderType.Mistral =>
                 new ChatClient(
                     model: provider.ModelName ?? "gpt-3.5-turbo",
                     credential: new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "unused" : apiKey),
@@ -496,7 +548,7 @@ public class AiClientService : IAiClientService
     private static bool IsOpenRouterEndpoint(string endpoint) =>
         endpoint.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<IChatClient> CreatePiaCloudChatClientAsync(HttpClient httpClient)
+    private async Task<IChatClient> CreatePiaCloudChatClientAsync(HttpClient httpClient, string? mode = null)
     {
         var settings = await _settingsService.GetSettingsAsync();
         var serverUrl = settings.ServerUrl?.TrimEnd('/');
@@ -504,36 +556,27 @@ public class AiClientService : IAiClientService
         if (string.IsNullOrEmpty(serverUrl))
             throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
 
-        // Use JWT token as credential if logged in, otherwise use placeholder for unauthenticated access
-        var credential = "anonymous";
+        string? accessToken = null;
         if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
         {
             try
             {
-                credential = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
+                accessToken = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
             }
             catch
             {
-                // If decryption fails, fall back to unauthenticated
+                // If decryption fails, proceed without auth
             }
         }
 
-        var endpoint = new Uri($"{serverUrl}/api/ai");
-        _logger.LogInformation("PiaCloud: creating ChatClient with endpoint={Endpoint}, model=pia-cloud", endpoint);
+        _logger.LogInformation("PiaCloud: creating PiaCloudChatClient with endpoint={ServerUrl}/api/ai/chat", serverUrl);
 
-        return new ChatClient(
-            model: "pia-cloud",
-            credential: new ApiKeyCredential(credential),
-            options: new OpenAI.OpenAIClientOptions
-            {
-                Endpoint = endpoint,
-                Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient)
-            }
-        ).AsIChatClient();
+        return new PiaCloudChatClient(httpClient, serverUrl, accessToken, _logger, mode);
     }
 
     public async Task<string> GeneratePromptViaPiaCloudAsync(
         string styleDescription,
+        string? mode = null,
         CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -567,6 +610,9 @@ public class AiClientService : IAiClientService
                 // If decryption fails, proceed without auth
             }
         }
+
+        if (!string.IsNullOrEmpty(mode))
+            httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
 
         try
         {

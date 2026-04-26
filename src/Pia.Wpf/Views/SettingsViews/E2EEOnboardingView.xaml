@@ -2,13 +2,15 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-             xmlns:vm="clr-namespace:Pia.ViewModels">
+             xmlns:vm="clr-namespace:Pia.ViewModels"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:models="clr-namespace:Pia.Models">
   <StackPanel MaxWidth="600" HorizontalAlignment="Left">
-    <TextBlock Text="End-to-End Encryption Setup"
+    <TextBlock Text="{loc:Str E2EE_Onboarding_Title}"
                FontSize="20"
                FontWeight="SemiBold"
                Margin="0,0,0,8"/>
-    <TextBlock Text="This account uses end-to-end encryption. Set up this device to access your encrypted data."
+    <TextBlock Text="{loc:Str E2EE_Onboarding_Subtitle}"
                Opacity="0.7"
                FontSize="12"
                Margin="0,0,0,24"
@@ -20,7 +22,7 @@
         <Style TargetType="StackPanel">
           <Setter Property="Visibility" Value="Collapsed"/>
           <Style.Triggers>
-            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static vm:OnboardingState.Initial}">
+            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static models:OnboardingState.Initial}">
               <Setter Property="Visibility" Value="Visible"/>
             </DataTrigger>
           </Style.Triggers>
@@ -29,15 +31,15 @@
 
       <ui:Card Padding="16" Margin="0,0,0,12">
         <StackPanel>
-          <TextBlock Text="Approve from another device"
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Approve_Title}"
                      FontWeight="SemiBold"
                      Margin="0,0,0,4"/>
-          <TextBlock Text="If you have another device with Pia already set up, it can securely transfer the encryption key to this device."
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Approve_Description}"
                      Opacity="0.7"
                      FontSize="12"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
-          <ui:Button Content="Wait for approval"
+          <ui:Button Content="{loc:Str E2EE_Onboarding_Approve_Button}"
                      Appearance="Primary"
                      Command="{Binding OnboardingViewModel.StartDeviceApprovalCommand}"/>
         </StackPanel>
@@ -45,15 +47,15 @@
 
       <ui:Card Padding="16" Margin="0,0,0,12">
         <StackPanel>
-          <TextBlock Text="Use recovery code"
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_Title}"
                      FontWeight="SemiBold"
                      Margin="0,0,0,4"/>
-          <TextBlock Text="Enter the recovery code you saved when you first enabled encryption. Use this if your other device is unavailable."
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_Description}"
                      Opacity="0.7"
                      FontSize="12"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
-          <ui:Button Content="Enter recovery code"
+          <ui:Button Content="{loc:Str E2EE_Onboarding_Recovery_Button}"
                      Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"/>
         </StackPanel>
       </ui:Card>
@@ -65,7 +67,7 @@
         <Style TargetType="StackPanel">
           <Setter Property="Visibility" Value="Collapsed"/>
           <Style.Triggers>
-            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static vm:OnboardingState.WaitingForApproval}">
+            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static models:OnboardingState.WaitingForApproval}">
               <Setter Property="Visibility" Value="Visible"/>
             </DataTrigger>
           </Style.Triggers>
@@ -82,7 +84,7 @@
                        VerticalAlignment="Center"/>
           </StackPanel>
 
-          <TextBlock Text="Your device fingerprint:"
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Waiting_FingerprintLabel}"
                      Opacity="0.7"
                      FontSize="12"
                      Margin="0,0,0,4"/>
@@ -91,17 +93,17 @@
                      FontSize="16"
                      FontWeight="SemiBold"
                      Margin="0,0,0,12"/>
-          <TextBlock Text="On your other device, go to Settings > Cloud Sync > Device Management. Verify this fingerprint matches before approving."
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Waiting_VerifyInstruction}"
                      Opacity="0.7"
                      FontSize="12"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
 
           <StackPanel Orientation="Horizontal">
-            <ui:Button Content="Cancel"
+            <ui:Button Content="{loc:Str E2EE_Onboarding_Cancel}"
                        Command="{Binding OnboardingViewModel.GoBackCommand}"
                        Margin="0,0,8,0"/>
-            <ui:Button Content="Use recovery code instead"
+            <ui:Button Content="{loc:Str E2EE_Onboarding_UseRecoveryInstead}"
                        Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"/>
           </StackPanel>
         </StackPanel>
@@ -114,7 +116,7 @@
         <Style TargetType="StackPanel">
           <Setter Property="Visibility" Value="Collapsed"/>
           <Style.Triggers>
-            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static vm:OnboardingState.EnteringRecoveryCode}">
+            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static models:OnboardingState.EnteringRecoveryCode}">
               <Setter Property="Visibility" Value="Visible"/>
             </DataTrigger>
           </Style.Triggers>
@@ -123,10 +125,10 @@
 
       <ui:Card Padding="16" Margin="0,0,0,12">
         <StackPanel>
-          <TextBlock Text="Enter your recovery code"
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_EnterTitle}"
                      FontWeight="SemiBold"
                      Margin="0,0,0,4"/>
-          <TextBlock Text="Enter the recovery code you saved when encryption was first enabled."
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_EnterDescription}"
                      Opacity="0.7"
                      FontSize="12"
                      TextWrapping="Wrap"
@@ -147,11 +149,11 @@
                      Visibility="{Binding OnboardingViewModel.ErrorMessage, Converter={StaticResource NullToVisibilityConverter}}"/>
 
           <StackPanel Orientation="Horizontal">
-            <ui:Button Content="Activate"
+            <ui:Button Content="{loc:Str E2EE_Onboarding_Recovery_Activate}"
                        Appearance="Primary"
                        Command="{Binding OnboardingViewModel.ActivateWithRecoveryCodeCommand}"
                        Margin="0,0,8,0"/>
-            <ui:Button Content="Back"
+            <ui:Button Content="{loc:Str E2EE_Onboarding_Back}"
                        Command="{Binding OnboardingViewModel.GoBackCommand}"/>
           </StackPanel>
         </StackPanel>
@@ -164,7 +166,7 @@
         <Style TargetType="StackPanel">
           <Setter Property="Visibility" Value="Collapsed"/>
           <Style.Triggers>
-            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static vm:OnboardingState.Activating}">
+            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static models:OnboardingState.Activating}">
               <Setter Property="Visibility" Value="Visible"/>
             </DataTrigger>
           </Style.Triggers>
@@ -186,7 +188,7 @@
         <Style TargetType="StackPanel">
           <Setter Property="Visibility" Value="Collapsed"/>
           <Style.Triggers>
-            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static vm:OnboardingState.Success}">
+            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static models:OnboardingState.Success}">
               <Setter Property="Visibility" Value="Visible"/>
             </DataTrigger>
           </Style.Triggers>
@@ -195,16 +197,16 @@
 
       <ui:Card Padding="16" Margin="0,0,0,12">
         <StackPanel>
-          <TextBlock Text="Device activated!"
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Success_Title}"
                      FontWeight="SemiBold"
                      FontSize="16"
                      Margin="0,0,0,4"/>
-          <TextBlock Text="Your data is being synced. This may take a moment."
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Success_Description}"
                      Opacity="0.7"
                      FontSize="12"
                      Margin="0,0,0,8"/>
           <TextBlock Opacity="0.7" FontSize="12">
-            <Run Text="Device fingerprint: "/>
+            <Run Text="{loc:Str E2EE_Onboarding_FingerprintPrefix}"/>
             <Run Text="{Binding OnboardingViewModel.DeviceFingerprint, Mode=OneWay}" FontFamily="Consolas"/>
           </TextBlock>
         </StackPanel>
@@ -217,7 +219,7 @@
         <Style TargetType="StackPanel">
           <Setter Property="Visibility" Value="Collapsed"/>
           <Style.Triggers>
-            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static vm:OnboardingState.Error}">
+            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static models:OnboardingState.Error}">
               <Setter Property="Visibility" Value="Visible"/>
             </DataTrigger>
           </Style.Triggers>
@@ -230,7 +232,7 @@
                      Foreground="#f87171"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
-          <ui:Button Content="Try again"
+          <ui:Button Content="{loc:Str E2EE_Onboarding_TryAgain}"
                      Command="{Binding OnboardingViewModel.GoBackCommand}"/>
         </StackPanel>
       </ui:Card>

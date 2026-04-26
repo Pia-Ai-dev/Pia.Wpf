@@ -1,7 +1,11 @@
+using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
@@ -21,12 +25,15 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IHistoryService _historyService;
     private readonly IMemoryService _memoryService;
     private readonly ITodoService? _todoService;
+    private readonly IKanbanColumnService? _columnService;
     private readonly IE2EEService? _e2ee;
     private readonly IDeviceManagementService? _deviceMgmt;
     private readonly IDeviceKeyService? _deviceKeys;
+    private readonly IPluginService? _pluginService;
     private readonly SyncMapper _mapper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     private Timer? _syncTimer;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
@@ -34,9 +41,25 @@ public class SyncClientService : ISyncClientService, IDisposable
     private bool _hasVerifiedServerE2EEStatus;
 
     public bool IsSyncActive => _syncTimer is not null;
+    public bool IsE2EEOnboardingRequired { get; private set; }
     public event EventHandler? E2EEOnboardingRequired;
+    public event EventHandler? E2EEOnboardingCleared;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
     public event EventHandler? CurrentDeviceRevoked;
+
+    public void NotifyE2EEOnboardingRequired()
+    {
+        if (IsE2EEOnboardingRequired) return;
+        IsE2EEOnboardingRequired = true;
+        E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void NotifyE2EEOnboardingCompleted()
+    {
+        if (!IsE2EEOnboardingRequired) return;
+        IsE2EEOnboardingRequired = false;
+        E2EEOnboardingCleared?.Invoke(this, EventArgs.Empty);
+    }
 
     public SyncClientService(
         IAuthService authService,
@@ -48,10 +71,13 @@ public class SyncClientService : ISyncClientService, IDisposable
         SyncMapper mapper,
         IHttpClientFactory httpClientFactory,
         ILogger<SyncClientService> logger,
+        SyncDeleteTrackerService deleteTracker,
         ITodoService? todoService = null,
+        IKanbanColumnService? columnService = null,
         IE2EEService? e2ee = null,
         IDeviceManagementService? deviceMgmt = null,
-        IDeviceKeyService? deviceKeys = null)
+        IDeviceKeyService? deviceKeys = null,
+        IPluginService? pluginService = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -60,12 +86,24 @@ public class SyncClientService : ISyncClientService, IDisposable
         _historyService = historyService;
         _memoryService = memoryService;
         _todoService = todoService;
+        _columnService = columnService;
         _e2ee = e2ee;
         _deviceMgmt = deviceMgmt;
         _deviceKeys = deviceKeys;
+        _pluginService = pluginService;
         _mapper = mapper;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _deleteTracker = deleteTracker;
+
+        _authService.LoginStateChanged += OnAuthLoginStateChanged;
+    }
+
+    private void OnAuthLoginStateChanged(object? sender, bool isLoggedIn)
+    {
+        if (isLoggedIn) return;
+        _hasVerifiedServerE2EEStatus = false;
+        NotifyE2EEOnboardingCompleted();
     }
 
     public void StartBackgroundSync()
@@ -97,9 +135,11 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (!await _syncLock.WaitAsync(0)) return null;
 
         SyncResult? result = null;
+        var syncSw = Stopwatch.StartNew();
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            _logger.LogInformation("SyncNowAsync started — LastSyncTimestamp: {LastSync}", settings.LastSyncTimestamp);
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return null;
 
@@ -108,7 +148,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
             {
                 _logger.LogWarning("E2EE enabled but UMK not available; onboarding required");
-                E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
+                NotifyE2EEOnboardingRequired();
                 return null;
             }
 
@@ -122,7 +162,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 if (serverStatus is { IsEnabled: true })
                 {
                     _logger.LogWarning("E2EE enabled on server but not locally; onboarding required");
-                    E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
+                    NotifyE2EEOnboardingRequired();
                     return null;
                 }
             }
@@ -138,11 +178,21 @@ public class SyncClientService : ISyncClientService, IDisposable
             var pushed = await PushChangesAsync(client, serverUrl, settings);
 
             // Pull remote changes
-            var (pulled, decryptErrors) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
 
-            // Update last sync timestamp
-            settings.LastSyncTimestamp = DateTime.UtcNow;
-            await _settingsService.SaveSettingsAsync(settings);
+            // Only advance the sync cursor if the pull HTTP request succeeded.
+            // Use the server's timestamp as the cursor to avoid clock-skew issues between devices.
+            // If pull failed (network error, server 500, etc.), keep the old timestamp
+            // so the next sync retries from the same point instead of permanently missing data.
+            if (pullOk && serverTimestamp.HasValue)
+            {
+                settings.LastSyncTimestamp = serverTimestamp.Value;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
+            else if (!pullOk)
+            {
+                _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
+            }
 
             // Check for pending devices (only if this device is active with E2EE)
             if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
@@ -151,7 +201,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
 
             result = new SyncResult(pushed, pulled, decryptErrors);
-            _logger.LogInformation("Sync cycle completed successfully");
+            syncSw.Stop();
+            _logger.LogInformation("SyncNowAsync completed in {ElapsedMs}ms — Pushed: {Pushed}, Pulled: {Pulled}, DecryptionErrors: {DecryptErrors}",
+                syncSw.ElapsedMilliseconds, result.PushedCount, result.PulledCount, result.DecryptionErrors);
         }
         catch (Exception ex)
         {
@@ -173,6 +225,10 @@ public class SyncClientService : ISyncClientService, IDisposable
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            _logger.LogInformation("PerformFirstSyncMigrationAsync: SyncEnabled={Enabled}, ServerUrl={Url}, LastSyncTimestamp={LastSync}, IsE2EEEnabled={E2EE}",
+                settings.SyncEnabled, settings.ServerUrl ?? "(null)",
+                settings.LastSyncTimestamp?.ToString("O") ?? "(null)", settings.IsE2EEEnabled);
+
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return;
 
@@ -188,6 +244,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             var providers = await _providerService.GetProvidersAsync();
             var sessions = await _historyService.GetSessionsAsync(0, 10_000);
             var memories = await _memoryService.GetAllObjectsAsync();
+            var kanbanColumns = _columnService is not null
+                ? await _columnService.GetAllAsync()
+                : Array.Empty<KanbanColumn>();
             var todos = _todoService is not null
                 ? await _todoService.GetAllAsync()
                 : [];
@@ -228,6 +287,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                         .Select(m => _mapper.ToSyncMemory(m, userId))
                         .ToList()
                 },
+                KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
+                {
+                    Upserted = kanbanColumns
+                        .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
+                        .ToList()
+                },
                 Todos = new SyncEntityChanges<SyncTodo>
                 {
                     Upserted = todos
@@ -239,18 +304,47 @@ public class SyncClientService : ISyncClientService, IDisposable
             var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
             await EnsureSuccessAsync(response, "First-sync push");
 
-            settings.LastSyncTimestamp = DateTime.UtcNow;
-            await _settingsService.SaveSettingsAsync(settings);
-
-            _logger.LogInformation("First-sync migration completed (templates: {Templates}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, todos: {Todos})",
+            _logger.LogInformation("First-sync push completed (templates: {Templates}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos})",
                 request.Templates.Upserted.Count, request.Providers.Upserted.Count,
                 request.Sessions.Added.Count, request.Memories.Upserted.Count,
-                request.Todos.Upserted.Count);
+                request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count);
+
+            // Pull all data from server (including other devices' data)
+            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
+            _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
+
+            if (pullOk && serverTimestamp.HasValue)
+            {
+                settings.LastSyncTimestamp = serverTimestamp.Value;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
+            else
+            {
+                _logger.LogWarning("First-sync pull failed — LastSyncTimestamp NOT updated; next sync will retry full pull");
+            }
         }
         finally
         {
             _syncLock.Release();
         }
+    }
+
+    public async Task ForceFullResyncAsync()
+    {
+        _logger.LogInformation("ForceFullResyncAsync: resetting LastSyncTimestamp to trigger full pull");
+        await _syncLock.WaitAsync();
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            settings.LastSyncTimestamp = null;
+            await _settingsService.SaveSettingsAsync(settings);
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
+
+        await SyncNowAsync();
     }
 
     public async Task StopBackgroundSyncAndWaitAsync()
@@ -263,23 +357,35 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     private async Task<int> PushChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
-        // For the initial implementation, push all data.
-        // A future optimization would track changed entities since last push
-        // and only send those (using a local change queue).
+        var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
+
         var templates = await _templateService.GetTemplatesAsync();
         var providers = await _providerService.GetProvidersAsync();
 
         // Only push sessions created since last sync
-        var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
         var sessions = await _historyService.SearchSessionsAsync(fromDate: lastSync);
 
         var memories = await _memoryService.GetAllObjectsAsync();
+        var kanbanColumns = _columnService is not null
+            ? await _columnService.GetAllAsync()
+            : Array.Empty<KanbanColumn>();
         var todos = _todoService is not null
             ? await _todoService.GetAllAsync()
             : [];
 
+        var dirtyTemplates = templates.Where(t => !t.IsBuiltIn).Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync).Count();
+        var dirtyProviders = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
+        var dirtySessions = sessions.Count;
+        var dirtyMemories = memories.Where(m => m.UpdatedAt.ToUniversalTime() >= lastSync).Count();
+        var dirtyKanbanCols = kanbanColumns.Where(c => c.UpdatedAt.ToUniversalTime() >= lastSync).Count();
+        var dirtyTodos = todos.Where(t => t.UpdatedAt.ToUniversalTime() >= lastSync).Count();
+        _logger.LogInformation("Push dirty tracking: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanCols}K, {Todos}Todo changed since {LastSync}",
+            dirtyTemplates, dirtyProviders, dirtySessions, dirtyMemories, dirtyKanbanCols, dirtyTodos, lastSync);
+
         var isE2EE = _e2ee?.IsReady() == true;
         var userId = isE2EE ? settings.SyncUserId : null;
+
+        var pendingDeletes = _deleteTracker.GetPendingDeletes();
 
         var request = new SyncPushRequest
         {
@@ -292,15 +398,19 @@ public class SyncClientService : ISyncClientService, IDisposable
             {
                 Upserted = templates
                     .Where(t => !t.IsBuiltIn)
+                    .Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync)
                     .Select(t => _mapper.ToSyncTemplate(t, userId))
-                    .ToList()
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("templates", [])
             },
             Providers = new SyncEntityChanges<SyncProvider>
             {
                 Upserted = providers
                     .Where(p => p.ProviderType != AiProviderType.PiaCloud)
+                    .Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(p => _mapper.ToSyncProvider(p, userId))
-                    .ToList()
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("providers", [])
             },
             Sessions = new SyncSessionChanges
             {
@@ -311,24 +421,74 @@ public class SyncClientService : ISyncClientService, IDisposable
             Memories = new SyncEntityChanges<SyncMemory>
             {
                 Upserted = memories
+                    .Where(m => m.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(m => _mapper.ToSyncMemory(m, userId))
-                    .ToList()
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("memories", [])
+            },
+            KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
+            {
+                Upserted = kanbanColumns
+                    .Where(c => c.UpdatedAt.ToUniversalTime() >= lastSync)
+                    .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("kanbanColumns", [])
             },
             Todos = new SyncEntityChanges<SyncTodo>
             {
                 Upserted = todos
+                    .Where(t => t.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(t => _mapper.ToSyncTodo(t, userId))
-                    .ToList()
-            }
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("todos", [])
+            },
+            PluginPreferences = _pluginService?.GetPendingPreferenceChanges() ?? []
         };
+
+        _logger.LogInformation("Push pending deletes: {Templates}T, {Providers}P, {Memories}M, {Todos}Todo, {KanbanCols}K",
+            request.Templates.Deleted.Count, request.Providers.Deleted.Count,
+            request.Memories.Deleted.Count, request.Todos.Deleted.Count,
+            request.KanbanColumns.Deleted.Count);
 
         var pushedCount = request.Templates.Upserted.Count
             + request.Providers.Upserted.Count
             + request.Sessions.Added.Count
             + request.Memories.Upserted.Count
+            + request.KanbanColumns.Upserted.Count
             + request.Todos.Upserted.Count;
 
-        var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
+        _logger.LogInformation(
+            "Push request — Templates: {Templates}, Providers: {Providers}, Sessions: {Sessions}, Memories: {Memories}, KanbanColumns: {KanbanColumns}, Todos: {Todos}, LastSync: {LastSync}, DeviceId: {DeviceId}, IsE2EE: {IsE2EE}",
+            request.Templates.Upserted.Count, request.Providers.Upserted.Count,
+            request.Sessions.Added.Count, request.Memories.Upserted.Count,
+            request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count,
+            request.LastSyncTimestamp, request.DeviceId, request.IsE2EEEncrypted);
+
+        // Short-circuit: skip HTTP POST when there are no changes to push
+        if (pushedCount == 0 && pendingDeletes.Values.All(v => v.Count == 0))
+        {
+            _logger.LogInformation("Push short-circuited: no changes to push");
+            return 0;
+        }
+
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(request);
+        using var compressedStream = new MemoryStream();
+        using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            await gzipStream.WriteAsync(jsonBytes);
+        }
+        compressedStream.Position = 0;
+        var compressionRatio = jsonBytes.Length > 0 ? (int)((1.0 - (double)compressedStream.Length / jsonBytes.Length) * 100) : 0;
+        _logger.LogInformation("Push compressed: {OriginalSize}B → {CompressedSize}B ({Ratio}% reduction)",
+            jsonBytes.Length, compressedStream.Length, compressionRatio);
+
+        using var content = new StreamContent(compressedStream);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Headers.ContentEncoding.Add("gzip");
+        var pushSw = Stopwatch.StartNew();
+        var response = await client.PostAsync($"{serverUrl}/api/sync/push", content);
+        pushSw.Stop();
+        _logger.LogInformation("Push HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pushSw.ElapsedMilliseconds);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
@@ -336,27 +496,80 @@ public class SyncClientService : ISyncClientService, IDisposable
             return 0;
         }
 
+        var pushResponse = await response.Content.ReadFromJsonAsync<SyncPushResponse>();
+        if (pushResponse is not null && pushResponse.Conflicts.Count > 0)
+        {
+            _logger.LogWarning("Push returned {ConflictCount} conflict(s)", pushResponse.Conflicts.Count);
+            foreach (var c in pushResponse.Conflicts)
+                _logger.LogWarning("Push conflict: {Entity} {Id}", c.Entity, c.Id);
+        }
+
+        _deleteTracker.ClearAfterSuccessfulPush();
+
         return pushedCount;
     }
 
-    private async Task<(int Pulled, int DecryptionErrors)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
+        // Ensure UTC Kind so ToString("O") includes the Z suffix — prevents Npgsql
+        // timestamptz comparison failures when the server uses PostgreSQL.
+        if (lastSync.Kind != DateTimeKind.Utc)
+            lastSync = DateTime.SpecifyKind(lastSync, DateTimeKind.Utc);
         var since = lastSync.ToString("O");
 
-        var response = await client.GetAsync($"{serverUrl}/api/sync/pull?since={since}");
+        var pullUrl = $"{serverUrl}/api/sync/pull?since={since}";
+        _logger.LogInformation("Pull requesting: {Url}", pullUrl);
+
+        var pullRequest = new HttpRequestMessage(HttpMethod.Get, pullUrl);
+        if (!string.IsNullOrEmpty(settings.LastPullETag))
+            pullRequest.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(settings.LastPullETag));
+
+        var pullSw = Stopwatch.StartNew();
+        var response = await client.SendAsync(pullRequest);
+        pullSw.Stop();
+        _logger.LogInformation("Pull HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pullSw.ElapsedMilliseconds);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
+        {
+            _logger.LogDebug("Pull returned 304 Not Modified — no changes since last sync");
+            return (0, 0, true, null);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Pull failed with status {Status}", response.StatusCode);
-            return (0, 0);
+            return (0, 0, false, null);
+        }
+
+        if (response.Headers.ETag is not null)
+        {
+            settings.LastPullETag = response.Headers.ETag.ToString();
+            await _settingsService.SaveSettingsAsync(settings);
+            _logger.LogDebug("Pull ETag stored: {ETag}", settings.LastPullETag);
         }
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
-        if (pullResponse is null) return (0, 0);
+        if (pullResponse is null) return (0, 0, false, null);
+
+        _logger.LogInformation(
+            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d",
+            pullResponse.ServerTimestamp,
+            pullResponse.Templates.Upserted.Count, pullResponse.Templates.Deleted.Count,
+            pullResponse.Providers.Upserted.Count, pullResponse.Providers.Deleted.Count,
+            pullResponse.Sessions.Added.Count, pullResponse.Sessions.Deleted.Count,
+            pullResponse.Memories.Upserted.Count, pullResponse.Memories.Deleted.Count,
+            pullResponse.KanbanColumns.Upserted.Count, pullResponse.KanbanColumns.Deleted.Count,
+            pullResponse.Todos.Upserted.Count, pullResponse.Todos.Deleted.Count,
+            pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
 
         var userId = settings.SyncUserId;
 
         var decryptionErrors = 0;
+        var mergeInserted = 0;
+        var mergeUpdated = 0;
+        var mergeSkipped = 0;
+        var mergeDeleted = 0;
 
         // Apply settings
         if (pullResponse.Settings is not null)
@@ -386,16 +599,25 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                 if (existing is not null)
                 {
+                    if (existing.IsBuiltIn)
+                    {
+                        mergeSkipped++;
+                        _logger.LogDebug("Skipped template {Id}: built-in templates cannot be updated via sync", template.Id);
+                        continue;
+                    }
+
                     var remoteTime = (local.ModifiedAt ?? local.CreatedAt).ToUniversalTime();
                     var localTime = (existing.ModifiedAt ?? existing.CreatedAt).ToUniversalTime();
 
                     if (remoteTime >= localTime)
                     {
                         await _templateService.UpdateTemplateAsync(local);
+                        mergeUpdated++;
                         _logger.LogInformation("Updated template {Id}: {Name}", template.Id, local.Name);
                     }
                     else
                     {
+                        mergeSkipped++;
                         _logger.LogDebug("Skipped template {Id}: local is newer (local={Local}, remote={Remote})",
                             template.Id, localTime, remoteTime);
                     }
@@ -403,6 +625,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 else
                 {
                     await _templateService.AddTemplateAsync(local);
+                    mergeInserted++;
                     _logger.LogInformation("Imported template {Id}: {Name}", template.Id, local.Name);
                 }
             }
@@ -415,8 +638,12 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Templates.Deleted)
         {
+            _logger.LogDebug("Pull deleted: {EntityType} {Id}", "templates", deletedId);
             await _templateService.DeleteTemplateAsync(deletedId);
+            mergeDeleted++;
         }
+        if (pullResponse.Templates.Deleted.Count > 0)
+            _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "templates", pullResponse.Templates.Deleted.Count);
 
         // Apply providers
         foreach (var provider in pullResponse.Providers.Upserted)
@@ -432,10 +659,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                     {
                         var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
                         await _providerService.UpdateProviderAsync(local, apiKey);
+                        mergeUpdated++;
                         _logger.LogInformation("Updated provider {Id}: {Name}", provider.Id, local.Name);
                     }
                     else
                     {
+                        mergeSkipped++;
                         _logger.LogDebug("Skipped provider {Id}: local is newer (local={Local}, remote={Remote})",
                             provider.Id, existing.UpdatedAt, local.UpdatedAt);
                     }
@@ -444,6 +673,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
                     await _providerService.AddProviderAsync(local, apiKey);
+                    mergeInserted++;
                     _logger.LogInformation("Imported provider {Id}: {Name}", provider.Id, local.Name);
                 }
             }
@@ -456,8 +686,12 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Providers.Deleted)
         {
+            _logger.LogDebug("Pull deleted: {EntityType} {Id}", "providers", deletedId);
             await _providerService.DeleteProviderAsync(deletedId);
+            mergeDeleted++;
         }
+        if (pullResponse.Providers.Deleted.Count > 0)
+            _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "providers", pullResponse.Providers.Deleted.Count);
 
         // Apply sessions (append-only)
         foreach (var session in pullResponse.Sessions.Added)
@@ -469,7 +703,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                 if (existing is null)
                 {
                     await _historyService.AddSessionAsync(local);
+                    mergeInserted++;
                     _logger.LogInformation("Imported session {Id}", session.Id);
+                }
+                else
+                {
+                    mergeSkipped++;
                 }
             }
             catch (CryptographicException ex)
@@ -481,8 +720,12 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Sessions.Deleted)
         {
+            _logger.LogDebug("Pull deleted: {EntityType} {Id}", "sessions", deletedId);
             await _historyService.DeleteSessionAsync(deletedId);
+            mergeDeleted++;
         }
+        if (pullResponse.Sessions.Deleted.Count > 0)
+            _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "sessions", pullResponse.Sessions.Deleted.Count);
 
         // Apply memories
         foreach (var memory in pullResponse.Memories.Upserted)
@@ -497,10 +740,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                     if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
                     {
                         await _memoryService.UpdateObjectDataAsync(local.Id, local.Label, local.Data);
+                        mergeUpdated++;
                         _logger.LogInformation("Updated memory {Id}: {Label}", memory.Id, local.Label);
                     }
                     else
                     {
+                        mergeSkipped++;
                         _logger.LogDebug("Skipped memory {Id}: local is newer (local={Local}, remote={Remote})",
                             memory.Id, existing.UpdatedAt, local.UpdatedAt);
                     }
@@ -508,6 +753,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 else
                 {
                     await _memoryService.ImportObjectAsync(local);
+                    mergeInserted++;
                     _logger.LogInformation("Imported memory {Id}: {Label}", memory.Id, local.Label);
                 }
             }
@@ -520,7 +766,52 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Memories.Deleted)
         {
+            _logger.LogDebug("Pull deleted: {EntityType} {Id}", "memories", deletedId);
             await _memoryService.DeleteObjectAsync(deletedId);
+            mergeDeleted++;
+        }
+        if (pullResponse.Memories.Deleted.Count > 0)
+            _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "memories", pullResponse.Memories.Deleted.Count);
+
+        // Apply kanban columns (BEFORE todos, since todos reference columns)
+        if (_columnService is not null)
+        {
+            foreach (var syncColumn in pullResponse.KanbanColumns.Upserted)
+            {
+                try
+                {
+                    var local = _mapper.FromSyncKanbanColumn(syncColumn, userId);
+                    var existing = await _columnService.GetAsync(syncColumn.Id);
+
+                    if (existing is not null)
+                    {
+                        if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
+                        {
+                            await _columnService.ImportAsync(local);
+                            mergeUpdated++;
+                            _logger.LogInformation("Updated kanban column {Id}: {Name}", syncColumn.Id, local.Name);
+                        }
+                        else
+                        {
+                            mergeSkipped++;
+                            _logger.LogDebug("Skipped kanban column {Id}: local is newer (local={Local}, remote={Remote})",
+                                syncColumn.Id, existing.UpdatedAt, local.UpdatedAt);
+                        }
+                    }
+                    else
+                    {
+                        await _columnService.ImportAsync(local);
+                        mergeInserted++;
+                    }
+                }
+                catch (CryptographicException ex)
+                {
+                    _logger.LogWarning(ex, "Failed to decrypt synced kanban column {Id}; skipping", syncColumn.Id);
+                }
+            }
+
+            // Note: we don't process KanbanColumns.Deleted since column deletion
+            // is only allowed for empty columns and is enforced client-side
         }
 
         // Apply todos
@@ -531,6 +822,22 @@ public class SyncClientService : ISyncClientService, IDisposable
                 try
                 {
                     var local = _mapper.FromSyncTodo(todo, userId);
+
+                    // Backward compat: assign column based on status if no ColumnId
+                    if (!local.ColumnId.HasValue && _columnService is not null)
+                    {
+                        if (local.Status == TodoStatus.Completed)
+                        {
+                            var closedCol = await _columnService.GetClosedColumnAsync();
+                            local.ColumnId = closedCol.Id;
+                        }
+                        else
+                        {
+                            var defaultCol = await _columnService.GetDefaultViewColumnAsync();
+                            local.ColumnId = defaultCol.Id;
+                        }
+                    }
+
                     var existing = await _todoService.GetAsync(todo.Id);
 
                     if (existing is not null)
@@ -538,10 +845,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                         if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
                         {
                             await _todoService.ImportAsync(local);
+                            mergeUpdated++;
                             _logger.LogInformation("Updated todo {Id}: {Title}", todo.Id, local.Title);
                         }
                         else
                         {
+                            mergeSkipped++;
                             _logger.LogDebug("Skipped todo {Id}: local is newer (local={Local}, remote={Remote})",
                                 todo.Id, existing.UpdatedAt, local.UpdatedAt);
                         }
@@ -549,6 +858,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     else
                     {
                         await _todoService.ImportAsync(local);
+                        mergeInserted++;
                     }
                 }
                 catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
@@ -561,8 +871,12 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             foreach (var deletedId in pullResponse.Todos.Deleted)
             {
+                _logger.LogDebug("Pull deleted: {EntityType} {Id}", "todos", deletedId);
                 await _todoService.DeleteAsync(deletedId);
+                mergeDeleted++;
             }
+            if (pullResponse.Todos.Deleted.Count > 0)
+                _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "todos", pullResponse.Todos.Deleted.Count);
         }
 
         if (decryptionErrors > 0)
@@ -570,20 +884,28 @@ public class SyncClientService : ISyncClientService, IDisposable
             _logger.LogWarning("Pull completed with {Count} decryption error(s) — data may have been encrypted with a different key", decryptionErrors);
         }
 
+        // Apply plugins
+        if (_pluginService is not null &&
+            (pullResponse.Plugins.Upserted.Count > 0 || pullResponse.Plugins.Deleted.Count > 0))
+        {
+            await _pluginService.ApplyServerPluginsAsync(
+                pullResponse.Plugins.Upserted, pullResponse.Plugins.Deleted);
+            _logger.LogInformation("Applied {Upserted} plugin upserts, {Deleted} plugin deletions",
+                pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
+        }
+
         var pulledCount = pullResponse.Templates.Upserted.Count
             + pullResponse.Providers.Upserted.Count
             + pullResponse.Sessions.Added.Count
             + pullResponse.Memories.Upserted.Count
-            + pullResponse.Todos.Upserted.Count;
+            + pullResponse.KanbanColumns.Upserted.Count
+            + pullResponse.Todos.Upserted.Count
+            + pullResponse.Plugins.Upserted.Count;
 
-        _logger.LogInformation("Pull applied: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {Todos}Todo",
-            pullResponse.Templates.Upserted.Count,
-            pullResponse.Providers.Upserted.Count,
-            pullResponse.Sessions.Added.Count,
-            pullResponse.Memories.Upserted.Count,
-            pullResponse.Todos.Upserted.Count);
+        _logger.LogInformation("Pull merge: {Inserted} inserted, {Updated} updated, {Skipped} skipped, {Deleted} deleted, {DecryptErrors} decrypt errors",
+            mergeInserted, mergeUpdated, mergeSkipped, mergeDeleted, decryptionErrors);
 
-        return (pulledCount, decryptionErrors);
+        return (pulledCount, decryptionErrors, true, pullResponse.ServerTimestamp);
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)
@@ -650,6 +972,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public void Dispose()
     {
+        _authService.LoginStateChanged -= OnAuthLoginStateChanged;
         _syncTimer?.Dispose();
         _syncLock.Dispose();
     }

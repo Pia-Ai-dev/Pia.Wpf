@@ -29,9 +29,6 @@ public class LocalizationService : ILocalizationService
 
     public void SetLanguage(TargetLanguage language)
     {
-        if (_currentLanguage == language)
-            return;
-
         _currentLanguage = language;
 
         var cultureName = language switch
@@ -47,9 +44,9 @@ public class LocalizationService : ILocalizationService
         CultureInfo.DefaultThreadCurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentCulture = culture;
 
-        LocalizationSource.Instance.Refresh();
+        LocalizationSource.Instance.SetCulture(culture);
         LanguageChanged?.Invoke(this, language);
 
-        _logger.LogInformation("UI language changed to {Language} ({Culture})", language, cultureName);
+        _logger.LogInformation("UI language set to {Language} ({Culture})", language, cultureName);
     }
 }

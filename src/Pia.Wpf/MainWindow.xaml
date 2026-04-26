@@ -41,6 +41,7 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="36" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
@@ -81,33 +82,45 @@
         </Grid>
       </Border>
 
+      <!-- E2EE onboarding required bar -->
+      <Border Grid.Row="2"
+              Background="{DynamicResource SystemFillColorCautionBrush}"
+              Padding="12,6"
+              Visibility="{Binding ShowE2EEOnboardingBar, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <ui:SymbolIcon Grid.Column="0"
+                         Symbol="ShieldKeyhole24"
+                         VerticalAlignment="Center"
+                         Margin="0,0,8,0"/>
+
+          <TextBlock Grid.Column="1"
+                     VerticalAlignment="Center"
+                     FontSize="13"
+                     TextWrapping="Wrap"
+                     Text="{loc:Str E2EE_Onboarding_Bar_Message}"/>
+
+          <ui:Button Grid.Column="2"
+                     Content="{loc:Str E2EE_Onboarding_Bar_Action}"
+                     Command="{Binding OpenE2EEOnboardingCommand}"
+                     Appearance="Primary"
+                     Margin="8,0,0,0"
+                     Padding="12,4"/>
+        </Grid>
+      </Border>
+
       <ContentPresenter x:Name="NavigationContentPresenter"
-                        Grid.Row="2"
-                        Content="{Binding CurrentView, NotifyOnTargetUpdated=True}">
-        <ContentPresenter.Style>
-          <Style TargetType="ContentPresenter">
-            <Style.Triggers>
-              <EventTrigger RoutedEvent="Binding.TargetUpdated">
-                <BeginStoryboard>
-                  <Storyboard>
-                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                   From="0"
-                                   To="1"
-                                   Duration="0:0:0.2">
-                      <DoubleAnimation.EasingFunction>
-                        <CubicEase EasingMode="EaseOut" />
-                      </DoubleAnimation.EasingFunction>
-                    </DoubleAnimation>
-                  </Storyboard>
-                </BeginStoryboard>
-              </EventTrigger>
-            </Style.Triggers>
-          </Style>
-        </ContentPresenter.Style>
-      </ContentPresenter>
+                        Grid.Row="3"
+                        Content="{Binding CurrentView, NotifyOnTargetUpdated=True}"
+                        Style="{StaticResource NavigationFadeContentPresenterStyle}" />
 
       <!-- Setup Required Overlay -->
-      <Border Grid.Row="1" Grid.RowSpan="2"
+      <Border Grid.Row="1" Grid.RowSpan="3"
               Panel.ZIndex="10"
               Visibility="{Binding ShowSetupOverlay, Converter={StaticResource BooleanToVisibilityConverter}}"
               IsHitTestVisible="True">
@@ -176,7 +189,11 @@
     <controls:DialogOverlayHost x:Name="RootDialogOverlayHost"
                                 Panel.ZIndex="20" />
     <ui:ContentDialogHost x:Name="RootContentDialogPresenter" />
-    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter" />
+    <ui:SnackbarPresenter x:Name="RootSnackbarPresenter"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Top"
+                          Margin="0,36,0,0"
+                          Panel.ZIndex="15" />
     <ui:TitleBar x:Name="TitleBar"
                  Title="{Binding WindowTitle}"
                  CloseWindowByDoubleClickOnIcon="True">

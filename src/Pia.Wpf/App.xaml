@@ -21,6 +21,7 @@
         <ResourceDictionary Source="Resources/Styles/Navigation.xaml" />
         <ResourceDictionary Source="Resources/Styles/MarkdownStyles.xaml" />
         <ResourceDictionary Source="Resources/Styles/OverlayDialog.xaml" />
+        <ResourceDictionary Source="Resources/Styles/Snackbar.xaml" />
         <ResourceDictionary Source="Resources/Styles/BrandIcons.xaml" />
       </ResourceDictionary.MergedDictionaries>
 
@@ -38,6 +39,7 @@
       <converters:StringEqualsBoolConverter x:Key="StringEqualsBoolConverter" />
       <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+      <converters:MultiplyConverter x:Key="MultiplyConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

@@ -103,4 +103,25 @@
     </Setter>
   </Style>
 
+  <!-- Fade-in animation for a ContentPresenter whose Content binding signals
+       NotifyOnTargetUpdated=True. Used for view transitions in the main shell. -->
+  <Style x:Key="NavigationFadeContentPresenterStyle" TargetType="ContentPresenter">
+    <Style.Triggers>
+      <EventTrigger RoutedEvent="Binding.TargetUpdated">
+        <BeginStoryboard>
+          <Storyboard>
+            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                             From="0"
+                             To="1"
+                             Duration="0:0:0.2">
+              <DoubleAnimation.EasingFunction>
+                <CubicEase EasingMode="EaseOut" />
+              </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+          </Storyboard>
+        </BeginStoryboard>
+      </EventTrigger>
+    </Style.Triggers>
+  </Style>
+
 </ResourceDictionary>

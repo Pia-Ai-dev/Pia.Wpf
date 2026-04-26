@@ -8,6 +8,7 @@ namespace Pia.Services;
 public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>>, ITemplateService
 {
     private readonly ILogger<TemplateService> _logger;
+    private readonly SyncDeleteTrackerService _deleteTracker;
 
     public event EventHandler? TemplatesChanged;
 
@@ -17,9 +18,10 @@ public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>
 
     protected override List<OptimizationTemplate> CreateDefault() => [];
 
-    public TemplateService(ILogger<TemplateService> logger)
+    public TemplateService(ILogger<TemplateService> logger, SyncDeleteTrackerService deleteTracker)
     {
         _logger = logger;
+        _deleteTracker = deleteTracker;
     }
 
     public async Task<IReadOnlyList<OptimizationTemplate>> GetTemplatesAsync()
@@ -80,6 +82,7 @@ public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>
 
         _mergedTemplates!.Remove(template);
         await SaveCustomTemplatesAsync();
+        _deleteTracker.TrackDeletion("templates", id);
         TemplatesChanged?.Invoke(this, EventArgs.Empty);
     }
 

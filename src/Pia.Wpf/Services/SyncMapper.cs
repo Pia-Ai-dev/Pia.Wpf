@@ -23,7 +23,7 @@ public class SyncMapper
     private bool IsE2EEActive => _e2ee?.IsReady() == true;
 
     private static DateTime ToUtc(DateTime dt) =>
-        dt.Kind == DateTimeKind.Utc ? dt : DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        dt.Kind == DateTimeKind.Utc ? dt : dt.ToUniversalTime();
 
     private static DateTime? ToUtc(DateTime? dt) =>
         dt.HasValue ? ToUtc(dt.Value) : null;
@@ -123,7 +123,8 @@ public class SyncMapper
                 provider.ModelName,
                 ApiKey = apiKey,
                 provider.AzureDeploymentName,
-                provider.SupportsToolCalling
+                provider.SupportsToolCalling,
+                provider.TimeoutSeconds
             };
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
                 plainPayload, userId, "provider", provider.Id.ToString());
@@ -138,6 +139,7 @@ public class SyncMapper
                 ? _dpapiHelper.Decrypt(provider.EncryptedApiKey) : null;
             sync.AzureDeploymentName = provider.AzureDeploymentName;
             sync.SupportsToolCalling = provider.SupportsToolCalling;
+            sync.TimeoutSeconds = provider.TimeoutSeconds;
         }
 
         return sync;
@@ -164,6 +166,7 @@ public class SyncMapper
                     ? _dpapiHelper.Encrypt(decrypted.ApiKey) : null,
                 AzureDeploymentName = decrypted.AzureDeploymentName,
                 SupportsToolCalling = decrypted.SupportsToolCalling,
+                TimeoutSeconds = decrypted.TimeoutSeconds is > 0 ? decrypted.TimeoutSeconds : 30,
                 CreatedAt = sync.CreatedAt,
                 UpdatedAt = sync.UpdatedAt
             };
@@ -180,6 +183,7 @@ public class SyncMapper
                 ? _dpapiHelper.Encrypt(sync.ApiKey) : null,
             AzureDeploymentName = sync.AzureDeploymentName,
             SupportsToolCalling = sync.SupportsToolCalling,
+            TimeoutSeconds = sync.TimeoutSeconds is > 0 ? sync.TimeoutSeconds : 30,
             CreatedAt = sync.CreatedAt,
             UpdatedAt = sync.UpdatedAt
         };
@@ -341,7 +345,9 @@ public class SyncMapper
         {
             Id = todo.Id,
             CreatedAt = ToUtc(todo.CreatedAt),
-            UpdatedAt = ToUtc(todo.UpdatedAt)
+            UpdatedAt = ToUtc(todo.UpdatedAt),
+            SortOrder = todo.SortOrder,
+            ColumnId = todo.ColumnId
         };
 
         if (IsE2EEActive && userId is not null)
@@ -354,7 +360,8 @@ public class SyncMapper
                 Status = (int)todo.Status,
                 todo.DueDate,
                 todo.LinkedReminderId,
-                todo.CompletedAt
+                todo.CompletedAt,
+                todo.ColumnId
             };
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
                 plainPayload, userId, "todo", todo.Id.ToString());
@@ -394,7 +401,9 @@ public class SyncMapper
                 LinkedReminderId = decrypted.LinkedReminderId,
                 CreatedAt = sync.CreatedAt,
                 CompletedAt = decrypted.CompletedAt,
-                UpdatedAt = sync.UpdatedAt
+                UpdatedAt = sync.UpdatedAt,
+                SortOrder = sync.SortOrder,
+                ColumnId = decrypted.ColumnId ?? sync.ColumnId
             };
         }
 
@@ -409,6 +418,73 @@ public class SyncMapper
             LinkedReminderId = sync.LinkedReminderId,
             CreatedAt = sync.CreatedAt,
             CompletedAt = sync.CompletedAt,
+            UpdatedAt = sync.UpdatedAt,
+            SortOrder = sync.SortOrder,
+            ColumnId = sync.ColumnId
+        };
+    }
+
+    // --- Kanban Columns ---
+
+    public SyncKanbanColumn ToSyncKanbanColumn(KanbanColumn column, string? userId = null)
+    {
+        var sync = new SyncKanbanColumn
+        {
+            Id = column.Id,
+            SortOrder = column.SortOrder,
+            IsDefaultView = column.IsDefaultView,
+            IsClosedColumn = column.IsClosedColumn,
+            CreatedAt = ToUtc(column.CreatedAt),
+            UpdatedAt = ToUtc(column.UpdatedAt)
+        };
+
+        if (IsE2EEActive && userId is not null)
+        {
+            var plainPayload = new
+            {
+                column.Name
+            };
+            (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
+                plainPayload, userId, "kanban_column", column.Id.ToString());
+        }
+        else
+        {
+            sync.Name = column.Name;
+        }
+
+        return sync;
+    }
+
+    public KanbanColumn FromSyncKanbanColumn(SyncKanbanColumn sync, string? userId = null)
+    {
+        if (IsE2EEActive
+            && sync.EncryptedPayload is not null
+            && sync.WrappedDek is not null
+            && userId is not null)
+        {
+            var decrypted = _e2ee!.DecryptRecord<SyncKanbanColumn>(
+                sync.EncryptedPayload, sync.WrappedDek, userId, "kanban_column", sync.Id.ToString());
+
+            return new KanbanColumn
+            {
+                Id = sync.Id,
+                Name = decrypted.Name ?? "",
+                SortOrder = sync.SortOrder,
+                IsDefaultView = sync.IsDefaultView,
+                IsClosedColumn = sync.IsClosedColumn,
+                CreatedAt = sync.CreatedAt,
+                UpdatedAt = sync.UpdatedAt
+            };
+        }
+
+        return new KanbanColumn
+        {
+            Id = sync.Id,
+            Name = sync.Name ?? "",
+            SortOrder = sync.SortOrder,
+            IsDefaultView = sync.IsDefaultView,
+            IsClosedColumn = sync.IsClosedColumn,
+            CreatedAt = sync.CreatedAt,
             UpdatedAt = sync.UpdatedAt
         };
     }

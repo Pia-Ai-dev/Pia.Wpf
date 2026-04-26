@@ -30,9 +30,6 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private string? _azureDeploymentName;
 
-    [ObservableProperty]
-    private int _maxCharacters = 2000;
-
     [Range(1, 300, ErrorMessage = "Timeout must be between 1 and 300 seconds")]
     [ObservableProperty]
     private int _timeoutSeconds = 30;
@@ -54,15 +51,25 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private string? _fetchModelsError;
 
-    partial void OnProviderTypeChanged(AiProviderType value)
+    private static readonly Dictionary<AiProviderType, string> DefaultEndpoints = new()
     {
-        if (value == AiProviderType.Ollama && string.IsNullOrEmpty(Endpoint))
+        [AiProviderType.Ollama] = "http://localhost:11434/v1",
+        [AiProviderType.OpenRouter] = "https://openrouter.ai/api/v1",
+        [AiProviderType.OpenAI] = "https://api.openai.com/v1",
+        [AiProviderType.Mistral] = "https://api.mistral.ai/v1",
+    };
+
+    partial void OnProviderTypeChanged(AiProviderType oldValue, AiProviderType newValue)
+    {
+        if (!DefaultEndpoints.TryGetValue(newValue, out var newDefault))
+            return;
+
+        var isOldDefault = string.IsNullOrEmpty(Endpoint)
+            || (DefaultEndpoints.TryGetValue(oldValue, out var oldDefault) && Endpoint == oldDefault);
+
+        if (isOldDefault)
         {
-            Endpoint = "http://localhost:11434/v1";
-        }
-        else if (value == AiProviderType.OpenRouter && string.IsNullOrEmpty(Endpoint))
-        {
-            Endpoint = "https://openrouter.ai/api/v1";
+            Endpoint = newDefault;
         }
     }
 
@@ -77,8 +84,7 @@ public partial class ProviderEditModel : ObservableValidator
             ApiKey = null,
             ModelName = provider.ModelName,
             AzureDeploymentName = provider.AzureDeploymentName,
-            MaxCharacters = 2000,
-            TimeoutSeconds = 30,
+            TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 300 ? provider.TimeoutSeconds : 30,
             SupportsToolCalling = provider.SupportsToolCalling,
             SupportsStreaming = provider.SupportsStreaming
         };
@@ -95,7 +101,8 @@ public partial class ProviderEditModel : ObservableValidator
             ModelName = ModelName,
             AzureDeploymentName = AzureDeploymentName,
             SupportsToolCalling = SupportsToolCalling,
-            SupportsStreaming = SupportsStreaming
+            SupportsStreaming = SupportsStreaming,
+            TimeoutSeconds = TimeoutSeconds
         };
     }
 }

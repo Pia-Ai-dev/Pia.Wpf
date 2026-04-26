@@ -1,3 +1,4 @@
+using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
@@ -17,6 +18,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     public ResearchSettingsViewModel ResearchVm { get; }
     public GeneralSettingsViewModel GeneralVm { get; }
     public AccountSettingsViewModel AccountVm { get; }
+    public PluginsSettingsViewModel PluginsVm { get; }
 
     [ObservableProperty]
     private int _selectedTabIndex;
@@ -39,21 +41,28 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         ILocalizationService localizationService,
         IDeviceManagementService deviceManagement,
         IDeviceKeyService deviceKeys,
-        E2EEOnboardingViewModel onboardingViewModel)
+        IMemoryService memoryService,
+        E2EEOnboardingViewModel onboardingViewModel,
+        IAutostartService autostartService,
+        IPluginService pluginService,
+        IPluginIconLoader pluginIconLoader,
+        IPolicyService policyService)
     {
         _logger = logger;
 
-        ProvidersVm = new ProvidersSettingsViewModel(this, logger, providerService, settingsService, dialogService, snackbarService, authService, localizationService);
+        ProvidersVm = new ProvidersSettingsViewModel(this, logger, providerService, settingsService, dialogService, snackbarService, authService, localizationService, policyService);
 
-        OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService);
+        OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService, authService);
 
         AssistantVm = new AssistantSettingsViewModel(ProvidersVm, logger, settingsService);
 
         ResearchVm = new ResearchSettingsViewModel(ProvidersVm);
 
-        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService);
+        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, onboardingViewModel);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
+
+        PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }
 
     public void OnNavigatedTo(object? parameter)
@@ -71,6 +80,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             await AssistantVm.InitializeAsync();
             await GeneralVm.InitializeAsync();
             await AccountVm.InitializeAsync();
+            await PluginsVm.InitializeAsync();
         }
         catch (Exception ex)
         {

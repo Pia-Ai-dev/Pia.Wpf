@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -28,7 +27,7 @@ public class TokenMapServiceTests
     {
         var sut = CreateService();
         var token = sut.Tokenize("Maria Schmidt", "Person");
-        token.Should().Be("[Person_1]");
+        Assert.Equal("[Person_1]", token);
     }
 
     [Fact]
@@ -37,7 +36,7 @@ public class TokenMapServiceTests
         var sut = CreateService();
         var token1 = sut.Tokenize("Maria Schmidt", "Person");
         var token2 = sut.Tokenize("Maria Schmidt", "Person");
-        token1.Should().Be(token2);
+        Assert.Equal(token2, token1);
     }
 
     [Fact]
@@ -46,8 +45,8 @@ public class TokenMapServiceTests
         var sut = CreateService();
         var token1 = sut.Tokenize("Maria Schmidt", "Person");
         var token2 = sut.Tokenize("Hans Müller", "Person");
-        token1.Should().Be("[Person_1]");
-        token2.Should().Be("[Person_2]");
+        Assert.Equal("[Person_1]", token1);
+        Assert.Equal("[Person_2]", token2);
     }
 
     [Fact]
@@ -56,8 +55,8 @@ public class TokenMapServiceTests
         var sut = CreateService();
         var personToken = sut.Tokenize("Maria Schmidt", "Person");
         var emailToken = sut.Tokenize("maria@example.com", "Email");
-        personToken.Should().Be("[Person_1]");
-        emailToken.Should().Be("[Email_1]");
+        Assert.Equal("[Person_1]", personToken);
+        Assert.Equal("[Email_1]", emailToken);
     }
 
     // --- GetToken ---
@@ -67,14 +66,14 @@ public class TokenMapServiceTests
     {
         var sut = CreateService();
         sut.Tokenize("Maria Schmidt", "Person");
-        sut.GetToken("Maria Schmidt", "Person").Should().Be("[Person_1]");
+        Assert.Equal("[Person_1]", sut.GetToken("Maria Schmidt", "Person"));
     }
 
     [Fact]
     public void GetToken_UnknownValue_ReturnsNull()
     {
         var sut = CreateService();
-        sut.GetToken("Unknown Person", "Person").Should().BeNull();
+        Assert.Null(sut.GetToken("Unknown Person", "Person"));
     }
 
     // --- Detokenize ---
@@ -85,7 +84,7 @@ public class TokenMapServiceTests
         var sut = CreateService();
         sut.Tokenize("Maria Schmidt", "Person");
         var result = sut.Detokenize("Hello [Person_1], how are you?");
-        result.Should().Be("Hello Maria Schmidt, how are you?");
+        Assert.Equal("Hello Maria Schmidt, how are you?", result);
     }
 
     [Fact]
@@ -95,7 +94,7 @@ public class TokenMapServiceTests
         sut.Tokenize("Maria Schmidt", "Person");
         sut.Tokenize("maria@example.com", "Email");
         var result = sut.Detokenize("[Person_1]'s email is [Email_1]");
-        result.Should().Be("Maria Schmidt's email is maria@example.com");
+        Assert.Equal("Maria Schmidt's email is maria@example.com", result);
     }
 
     [Fact]
@@ -103,7 +102,7 @@ public class TokenMapServiceTests
     {
         var sut = CreateService();
         var result = sut.Detokenize("Hello [Person_99], how are you?");
-        result.Should().Be("Hello [Person_99], how are you?");
+        Assert.Equal("Hello [Person_99], how are you?", result);
     }
 
     [Fact]
@@ -111,7 +110,7 @@ public class TokenMapServiceTests
     {
         var sut = CreateService();
         var result = sut.Detokenize("Hello, how are you?");
-        result.Should().Be("Hello, how are you?");
+        Assert.Equal("Hello, how are you?", result);
     }
 
     // --- TokenizeStructuredResult ---
@@ -125,7 +124,7 @@ public class TokenMapServiceTests
 
         var input = "Name: Maria Schmidt, Email: maria@example.com";
         var result = sut.TokenizeStructuredResult(input);
-        result.Should().Be("Name: [Person_1], Email: [Email_1]");
+        Assert.Equal("Name: [Person_1], Email: [Email_1]", result);
     }
 
     [Fact]
@@ -142,8 +141,8 @@ public class TokenMapServiceTests
 
         var input = "Contact: new-person@example.com";
         var result = sut.TokenizeStructuredResult(input);
-        result.Should().Contain("[Email_1]");
-        result.Should().NotContain("new-person@example.com");
+        Assert.Contains("[Email_1]", result);
+        Assert.DoesNotContain("new-person@example.com", result);
     }
 
     [Fact]
@@ -160,15 +159,15 @@ public class TokenMapServiceTests
 
         var input = "Call +49 170 1234567 for info";
         var result = sut.TokenizeStructuredResult(input);
-        result.Should().Contain("[Phone_1]");
-        result.Should().NotContain("+49 170 1234567");
+        Assert.Contains("[Phone_1]", result);
+        Assert.DoesNotContain("+49 170 1234567", result);
     }
 
     [Fact]
     public void TokenizeStructuredResult_EmptyString_ReturnsEmpty()
     {
         var sut = CreateService();
-        sut.TokenizeStructuredResult("").Should().Be("");
+        Assert.Equal("", sut.TokenizeStructuredResult(""));
     }
 
     // --- Clear ---
@@ -178,13 +177,13 @@ public class TokenMapServiceTests
     {
         var sut = CreateService();
         sut.Tokenize("Maria Schmidt", "Person");
-        sut.Detokenize("[Person_1]").Should().Be("Maria Schmidt");
+        Assert.Equal("Maria Schmidt", sut.Detokenize("[Person_1]"));
 
         sut.Clear();
 
         // After clear, old tokens are gone, counter resets
-        sut.GetToken("Maria Schmidt", "Person").Should().BeNull();
-        sut.Tokenize("Hans Müller", "Person").Should().Be("[Person_1]");
+        Assert.Null(sut.GetToken("Maria Schmidt", "Person"));
+        Assert.Equal("[Person_1]", sut.Tokenize("Hans Müller", "Person"));
     }
 
     // --- InitializeAsync ---
@@ -199,7 +198,7 @@ public class TokenMapServiceTests
         var sut = CreateService();
         await sut.InitializeAsync();
 
-        sut.GetToken("Schmidt family", "Custom").Should().Be("[Custom_1]");
+        Assert.Equal("[Custom_1]", sut.GetToken("Schmidt family", "Custom"));
     }
 
     [Fact]
@@ -228,8 +227,8 @@ public class TokenMapServiceTests
         var sut = CreateService();
         await sut.InitializeAsync();
 
-        sut.GetToken("Maria Schmidt", "Person").Should().Be("[Person_1]");
-        sut.GetToken("maria@example.com", "Email").Should().Be("[Email_1]");
+        Assert.Equal("[Person_1]", sut.GetToken("Maria Schmidt", "Person"));
+        Assert.Equal("[Email_1]", sut.GetToken("maria@example.com", "Email"));
     }
 
     [Fact]
@@ -258,8 +257,8 @@ public class TokenMapServiceTests
         var sut = CreateService();
         await sut.InitializeAsync();
 
-        sut.GetToken("Hans Müller", "Person").Should().Be("[Person_1]");
-        sut.GetToken("+49 30 9876543", "Phone").Should().Be("[Phone_1]");
+        Assert.Equal("[Person_1]", sut.GetToken("Hans Müller", "Person"));
+        Assert.Equal("[Phone_1]", sut.GetToken("+49 30 9876543", "Phone"));
     }
 
     [Fact]
@@ -290,7 +289,7 @@ public class TokenMapServiceTests
         // The label "Maria Schmidt's profile" contains "Maria Schmidt" which is now registered
         // TokenizeStructuredResult should replace it
         var tokenized = sut.TokenizeStructuredResult("Maria Schmidt's profile");
-        tokenized.Should().Contain("[Person_1]");
+        Assert.Contains("[Person_1]", tokenized);
     }
 
     // --- Fuzzy matching ---
@@ -306,7 +305,7 @@ public class TokenMapServiceTests
         await sut.InitializeAsync();
 
         var result = sut.TokenizeStructuredResult("Hello Macro, welcome!");
-        result.Should().Be("Hello [Custom_1], welcome!");
+        Assert.Equal("Hello [Custom_1], welcome!", result);
     }
 
     [Fact]
@@ -321,7 +320,7 @@ public class TokenMapServiceTests
 
         // "as" is 2 chars — should not fuzzy match to "an"
         var result = sut.TokenizeStructuredResult("as expected");
-        result.Should().Be("as expected");
+        Assert.Equal("as expected", result);
     }
 
     [Fact]
@@ -335,7 +334,7 @@ public class TokenMapServiceTests
         await sut.InitializeAsync();
 
         var result = sut.TokenizeStructuredResult("Hello Marco!");
-        result.Should().Be("Hello [Custom_1]!");
+        Assert.Equal("Hello [Custom_1]!", result);
     }
 
     [Fact]
@@ -350,7 +349,7 @@ public class TokenMapServiceTests
 
         // "XXXXX" is distance 5 from "Marco" — should not match
         var result = sut.TokenizeStructuredResult("Hello XXXXX!");
-        result.Should().Be("Hello XXXXX!");
+        Assert.Equal("Hello XXXXX!", result);
     }
 
     [Fact]
@@ -365,7 +364,7 @@ public class TokenMapServiceTests
 
         // "Schmtid" is a transposition of "Schmidt" — Jaro-Winkler handles this well
         var result = sut.TokenizeStructuredResult("Hello Schmtid!");
-        result.Should().Be("Hello [Custom_1]!");
+        Assert.Equal("Hello [Custom_1]!", result);
     }
 
     [Fact]
@@ -382,7 +381,7 @@ public class TokenMapServiceTests
         // "Marso" has equal Jaro-Winkler similarity to both "Marco" and "Margo"
         // Tiebreak: alphabetically first → "Marco" ([Custom_2])
         var result = sut.TokenizeStructuredResult("Hello Marso!");
-        result.Should().Be("Hello [Custom_2]!");
+        Assert.Equal("Hello [Custom_2]!", result);
     }
 
     [Fact]
@@ -399,7 +398,7 @@ public class TokenMapServiceTests
         // "Flint" has higher Jaro-Winkler similarity to "Flit" than "Flins"
         // Best similarity wins → "Flit" ([Custom_1])
         var result = sut.TokenizeStructuredResult("Hello Flint!");
-        result.Should().Be("Hello [Custom_1]!");
+        Assert.Equal("Hello [Custom_1]!", result);
     }
 
     [Fact]
@@ -414,7 +413,7 @@ public class TokenMapServiceTests
 
         // "tada" should NOT match "maya" — low Jaro-Winkler similarity
         var result = sut.TokenizeStructuredResult("tada!");
-        result.Should().Be("tada!");
+        Assert.Equal("tada!", result);
     }
 
     [Fact]
@@ -429,7 +428,7 @@ public class TokenMapServiceTests
 
         // "jonh" is a transposition of "john" — Jaro-Winkler handles this well
         var result = sut.TokenizeStructuredResult("Hello jonh!");
-        result.Should().Be("Hello [Custom_1]!");
+        Assert.Equal("Hello [Custom_1]!", result);
     }
 
     // --- Tokenize longer values first ---
@@ -442,6 +441,6 @@ public class TokenMapServiceTests
         sut.Tokenize("Maria", "Person");
 
         var result = sut.TokenizeStructuredResult("Contact Maria Schmidt today");
-        result.Should().Be("Contact [Person_1] today");
+        Assert.Equal("Contact [Person_1] today", result);
     }
 }

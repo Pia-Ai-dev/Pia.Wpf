@@ -11,10 +11,10 @@ namespace Pia.Services;
 
 public partial class EmbeddingService : IEmbeddingService, IDisposable
 {
-    private const string ModelFileName = "all-MiniLM-L6-v2.onnx";
+    private const string ModelFileName = "paraphrase-multilingual-MiniLM-L12-v2.onnx";
     private const string TokenizerFileName = "tokenizer.json";
-    private const string ModelUrl = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx";
-    private const string TokenizerUrl = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json";
+    private const string ModelUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx";
+    private const string TokenizerUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json";
     private const int MaxSequenceLength = 256;
     private const int EmbeddingDimension = 384;
 
