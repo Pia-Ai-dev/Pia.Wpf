@@ -82,6 +82,7 @@ All properties from `AppSettings` can be used in both `defaults` and `enforce`. 
 | `useSameProviderForAllModes` | bool | Use same AI provider for all modes |
 | `ttsEnabled` | bool | Enable text-to-speech |
 | `whisperModel` | "Tiny" / "Base" / "Small" / "Medium" / "Large" | Speech-to-text model size |
+| `sttBackend` | "Whisper" / "Parakeet" | Speech-to-text engine. Whisper covers many languages; Parakeet TDT v3 is faster on supported languages. |
 
 ## Deployment Methods
 

@@ -21,6 +21,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private IAudioCaptureSource? _loopbackSource;
     private LiveTranscriptionEngineService? _micEngine;
     private LiveTranscriptionEngineService? _loopbackEngine;
+    private ITranscriptionEngine? _transcriptionEngine;
 
     public LiveMeetingState State
     {
@@ -55,13 +56,13 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-            var languageCode = LanguageCode(settings.TargetSpeechLanguage);
 
             var sileroPath = await LiveTranscriptionModels
                 .EnsureSileroVadAsync(_httpClientFactory, _logger, cancellationToken)
                 .ConfigureAwait(false);
-            var whisperPath = await LiveTranscriptionModels
-                .EnsureWhisperGgmlAsync(settings.WhisperModel, _httpClientFactory, _logger, cancellationToken)
+
+            _transcriptionEngine = await TranscriptionEngineFactory
+                .CreateAsync(settings, _httpClientFactory, downloadProgress: null, _logger, cancellationToken)
                 .ConfigureAwait(false);
 
             _micSource = new MicAudioCaptureService(_loggerFactory.CreateLogger<MicAudioCaptureService>());
@@ -74,8 +75,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 TranscriptSpeaker.You,
                 _micSource,
                 sileroPath,
-                whisperPath,
-                languageCode,
+                _transcriptionEngine,
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
 
@@ -83,8 +83,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 TranscriptSpeaker.Them,
                 _loopbackSource,
                 sileroPath,
-                whisperPath,
-                languageCode,
+                _transcriptionEngine,
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
 
@@ -92,7 +91,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             await _loopbackEngine.StartAsync(cancellationToken).ConfigureAwait(false);
 
             TransitionState(LiveMeetingState.Running);
-            _logger.LogInformation("Live meeting transcription started");
+            _logger.LogInformation("Live meeting transcription started ({Backend})", settings.SttBackend);
         }
         catch (Exception ex)
         {
@@ -156,6 +155,12 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             catch (Exception ex) { _logger.LogWarning(ex, "Loopback source dispose threw"); }
             _loopbackSource = null;
         }
+        if (_transcriptionEngine is not null)
+        {
+            try { await _transcriptionEngine.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Transcription engine dispose threw"); }
+            _transcriptionEngine = null;
+        }
     }
 
     private void TransitionState(LiveMeetingState newState)
@@ -177,15 +182,6 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             SingleReader = true,
             SingleWriter = false,
         });
-
-    private static string LanguageCode(TargetSpeechLanguage language) => language switch
-    {
-        TargetSpeechLanguage.Auto => "auto",
-        TargetSpeechLanguage.EN => "en",
-        TargetSpeechLanguage.DE => "de",
-        TargetSpeechLanguage.FR => "fr",
-        _ => "auto",
-    };
 
     public async ValueTask DisposeAsync()
     {

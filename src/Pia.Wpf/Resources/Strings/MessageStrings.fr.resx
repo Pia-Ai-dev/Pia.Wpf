@@ -135,7 +135,7 @@
   <data name="Msg_Settings_HotkeyAlreadyAssigned" xml:space="preserve"><value>Ce raccourci est déjà attribué au mode {0}.</value></data>
   <data name="Msg_Settings_HotkeyNotSet" xml:space="preserve"><value>Non défini</value></data>
   <data name="Msg_Settings_ModelDownloadCancelled" xml:space="preserve"><value>Le téléchargement du modèle a été annulé.</value></data>
-  <data name="Msg_Settings_ModelDownloadCompleted" xml:space="preserve"><value>Modèle Whisper téléchargé avec succès.</value></data>
+  <data name="Msg_Settings_ModelDownloadCompleted" xml:space="preserve"><value>{0} téléchargé avec succès.</value></data>
   <data name="Msg_Settings_ModelDownloadFailed" xml:space="preserve"><value>Échec du téléchargement du modèle : {0}</value></data>
   <data name="Msg_Settings_NowUsingVoice" xml:space="preserve"><value>Utilisation de la voix {0}.</value></data>
   <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Modèle ajouté avec succès.</value></data>

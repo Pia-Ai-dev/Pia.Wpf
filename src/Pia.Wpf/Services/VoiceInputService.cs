@@ -1,6 +1,8 @@
 using System.IO;
 using Microsoft.Extensions.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
 
 namespace Pia.Services;
 
@@ -160,37 +162,47 @@ public class VoiceInputService : IVoiceInputService
     private async Task<bool> EnsureModelDownloadedAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
-        var modelsDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Pia",
-            "Models");
-        var modelName = TranscriptionService.GetModelName(settings.WhisperModel);
-        var modelPath = Path.Combine(modelsDirectory, modelName);
 
-        if (File.Exists(modelPath))
-            return true;
+        var alreadyDownloaded = settings.SttBackend switch
+        {
+            SttBackend.Parakeet => LiveTranscriptionModels.IsParakeetOnnxAvailable(),
+            _ => LiveTranscriptionModels.IsWhisperOnnxAvailable(settings.WhisperModel),
+        };
+        if (alreadyDownloaded) return true;
 
-        var downloadCts = new CancellationTokenSource();
+        var modelDisplayName = settings.SttBackend == SttBackend.Parakeet
+            ? "Parakeet TDT v3"
+            : TranscriptionService.GetModelName(settings.WhisperModel);
+
+        var userCancelCts = new CancellationTokenSource();
+        var dialogCloseCts = CancellationTokenSource.CreateLinkedTokenSource(userCancelCts.Token);
         var progress = new Progress<ModelDownloadProgress>();
 
         try
         {
-            var downloadTask = _transcriptionService.DownloadModelAsync(
-                settings.WhisperModel, progress, downloadCts.Token);
+            var downloadTask = settings.SttBackend == SttBackend.Parakeet
+                ? _transcriptionService.DownloadParakeetModelAsync(progress, userCancelCts.Token)
+                : _transcriptionService.DownloadModelAsync(settings.WhisperModel, progress, userCancelCts.Token);
+
             var dialogTask = _dialogService.ShowModelDownloadDialogAsync(
-                modelName, progress, downloadCts.Token);
+                modelDisplayName, progress, dialogCloseCts.Token);
 
-            var completedTask = await Task.WhenAny(downloadTask, dialogTask);
-
-            if (downloadCts.Token.IsCancellationRequested)
+            try
+            {
+                await downloadTask.ConfigureAwait(true);
+                return true;
+            }
+            catch (OperationCanceledException) when (userCancelCts.IsCancellationRequested)
             {
                 _snackbarService.Show("Cancelled", "Model download was cancelled",
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                 return false;
             }
-
-            await downloadTask;
-            return true;
+            finally
+            {
+                dialogCloseCts.Cancel();
+                try { await dialogTask.ConfigureAwait(true); } catch { /* dialog already hidden */ }
+            }
         }
         catch (Exception ex)
         {
@@ -201,7 +213,8 @@ public class VoiceInputService : IVoiceInputService
         }
         finally
         {
-            downloadCts.Dispose();
+            dialogCloseCts.Dispose();
+            userCancelCts.Dispose();
         }
     }
 

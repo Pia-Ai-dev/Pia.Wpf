@@ -1,24 +1,25 @@
-using System.IO;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
-using Whisper.net;
 
 namespace Pia.Services.LiveTranscription;
 
 /// <summary>
-/// Owns a single Whisper.net processor for the lifetime of a session and pipes audio from
-/// an <see cref="IAudioCaptureSource"/> through a <see cref="SileroVadDetector"/>. Every
-/// speech segment from the VAD is transcribed and the resulting <see cref="TranscriptUtterance"/>
-/// is written to the supplied sink channel, tagged with the configured speaker.
+/// Pipes audio from an <see cref="IAudioCaptureSource"/> through a <see cref="SileroVadDetector"/>
+/// and forwards every speech segment to a shared <see cref="ITranscriptionEngine"/>. The
+/// resulting <see cref="TranscriptUtterance"/> is written to the supplied sink channel,
+/// tagged with the configured speaker.
+///
+/// The engine is owned by the caller (typically <see cref="LiveMeetingService"/>) and is
+/// shared across mic + loopback engine services for one meeting. This service does not
+/// dispose it.
 /// </summary>
 public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 {
     private readonly TranscriptSpeaker _speaker;
     private readonly IAudioCaptureSource _source;
     private readonly SileroVadDetector _vad;
-    private readonly WhisperFactory _whisperFactory;
-    private readonly WhisperProcessor _processor;
+    private readonly ITranscriptionEngine _engine;
     private readonly ChannelWriter<TranscriptUtterance> _sink;
     private readonly ILogger _logger;
 
@@ -32,29 +33,20 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         TranscriptSpeaker speaker,
         IAudioCaptureSource source,
         string sileroVadModelPath,
-        string whisperGgmlPath,
-        string languageCode,
+        ITranscriptionEngine engine,
         ChannelWriter<TranscriptUtterance> sink,
         ILogger logger)
     {
         _speaker = speaker;
         _source = source;
+        _engine = engine;
         _sink = sink;
         _logger = logger;
 
-        long whisperSize = -1;
-        try { whisperSize = new FileInfo(whisperGgmlPath).Length; } catch { /* ignore */ }
-        _logger.LogInformation(
-            "Engine init: speaker={Speaker} lang={Lang} whisperPath='{Path}' whisperSize={Size}",
-            speaker, languageCode, whisperGgmlPath, whisperSize);
+        _logger.LogInformation("Engine init: speaker={Speaker}", speaker);
 
         _vad = new SileroVadDetector(sileroVadModelPath, logger);
         _vad.OnSegment += EnqueueSegmentForTranscription;
-
-        _whisperFactory = WhisperFactory.FromPath(whisperGgmlPath);
-        _processor = _whisperFactory.CreateBuilder()
-            .WithLanguage(languageCode)
-            .Build();
 
         _segmentQueue = Channel.CreateBounded<float[]>(new BoundedChannelOptions(8)
         {
@@ -127,36 +119,28 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private async Task TranscribeSegmentAsync(float[] samples, CancellationToken cancellationToken)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        _logger.LogDebug("Whisper start: {Speaker} {Samples} samples", _speaker, samples.Length);
+        _logger.LogDebug("Engine start: {Speaker} {Samples} samples", _speaker, samples.Length);
         try
         {
-            var pieces = new List<string>();
-            await foreach (var seg in _processor.ProcessAsync(samples, cancellationToken).ConfigureAwait(false))
-            {
-                if (!string.IsNullOrWhiteSpace(seg.Text)) pieces.Add(seg.Text.Trim());
-            }
-            var text = string.Join(" ", pieces).Trim();
+            var text = await _engine.TranscribeAsync(samples, cancellationToken).ConfigureAwait(false);
             sw.Stop();
-            if (text.Length == 0)
+            if (string.IsNullOrWhiteSpace(text))
             {
-                _logger.LogDebug(
-                    "Whisper produced empty result for {Speaker} ({Ms}ms, {Pieces} pieces)",
-                    _speaker, sw.ElapsedMilliseconds, pieces.Count);
+                _logger.LogDebug("Engine produced empty result for {Speaker} ({Ms}ms)", _speaker, sw.ElapsedMilliseconds);
                 return;
             }
 
             _logger.LogDebug(
-                "Whisper done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
+                "Engine done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
                 _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
 
             var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
-            _logger.LogDebug("Utterance written: {Speaker} '{Preview}'", _speaker, Truncate(text, 60));
         }
         catch (OperationCanceledException) { /* shutdown */ }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Whisper segment transcription failed for {Speaker}", _speaker);
+            _logger.LogError(ex, "Engine segment transcription failed for {Speaker}", _speaker);
         }
     }
 
@@ -176,10 +160,9 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
         _vad.OnSegment -= EnqueueSegmentForTranscription;
         _vad.Dispose();
-        _processor.Dispose();
-        _whisperFactory.Dispose();
         _readerCts?.Dispose();
         _segmentCts?.Dispose();
+        // _engine is owned by the caller — do not dispose here.
     }
 
     private static string Truncate(string text, int max)
