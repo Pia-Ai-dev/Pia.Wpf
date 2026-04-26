@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
 using System.Collections.ObjectModel;
 
 namespace Pia.ViewModels;
@@ -20,6 +21,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IAutostartService _autostartService;
     private readonly IPolicyService _policyService;
+    private readonly IFileDialogService _fileDialogService;
     private bool _isLoading;
 
     public GeneralSettingsViewModel(
@@ -32,7 +34,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         IAutostartService autostartService,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IFileDialogService fileDialogService)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -44,8 +47,10 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _autostartService = autostartService;
         _policyService = policyService;
+        _fileDialogService = fileDialogService;
 
         _uiLanguage = _localizationService.CurrentLanguage;
+        _meetingTranscriptFolder = MeetingTranscriptPaths.DefaultMeetingFolder;
     }
 
     // Enterprise policy enforcement
@@ -90,6 +95,12 @@ public partial class GeneralSettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private TargetSpeechLanguage _targetSpeechLanguage;
+
+    // Meeting transcripts
+    [ObservableProperty]
+    private string _meetingTranscriptFolder = string.Empty;
+
+    public string MeetingTranscriptFolderDefault => MeetingTranscriptPaths.DefaultMeetingFolder;
 
     public bool IsWhisperSelected => SttBackend == SttBackend.Whisper;
     public bool IsParakeetSelected => SttBackend == SttBackend.Parakeet;
@@ -152,6 +163,30 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnMeetingTranscriptFolderChanged(string value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    [RelayCommand]
+    private void BrowseMeetingFolder()
+    {
+        var initial = string.IsNullOrWhiteSpace(MeetingTranscriptFolder)
+            ? MeetingTranscriptPaths.DefaultMeetingFolder
+            : MeetingTranscriptFolder;
+        var picked = _fileDialogService.PromptSelectFolder(
+            _localizationService["Settings_MeetingTranscriptFolder_Browse"],
+            initial);
+        if (!string.IsNullOrWhiteSpace(picked))
+            MeetingTranscriptFolder = picked!;
+    }
+
+    [RelayCommand]
+    private void ResetMeetingFolder()
+    {
+        MeetingTranscriptFolder = MeetingTranscriptPaths.DefaultMeetingFolder;
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -163,6 +198,9 @@ public partial class GeneralSettingsViewModel : ObservableObject
         SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
+        MeetingTranscriptFolder = string.IsNullOrWhiteSpace(settings.MeetingTranscriptFolder)
+            ? MeetingTranscriptPaths.DefaultMeetingFolder
+            : settings.MeetingTranscriptFolder!;
 
         _optimizeHotkey = settings.OptimizeHotkey;
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
@@ -406,6 +444,13 @@ public partial class GeneralSettingsViewModel : ObservableObject
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
         settings.ResearchHotkey = _researchHotkey;
+        // Empty / whitespace / "matches default" all collapse to null so the JSON stays clean
+        // and the resolver picks the default automatically.
+        settings.MeetingTranscriptFolder =
+            string.IsNullOrWhiteSpace(MeetingTranscriptFolder) ||
+            string.Equals(MeetingTranscriptFolder, MeetingTranscriptPaths.DefaultMeetingFolder, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : MeetingTranscriptFolder;
         await _settingsService.SaveSettingsAsync(settings);
     }
 

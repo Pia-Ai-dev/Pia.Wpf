@@ -6,6 +6,7 @@
   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
   xmlns:loc="clr-namespace:Pia.Localization"
   xmlns:models="clr-namespace:Pia.Models"
+  xmlns:controls="clr-namespace:Pia.Views.Controls"
   mc:Ignorable="d"
   d:DesignHeight="500" d:DesignWidth="600">
 
@@ -74,9 +75,9 @@
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   Padding="20,16,20,8">
-      <ItemsControl ItemsSource="{Binding Utterances}">
+      <ItemsControl ItemsSource="{Binding Bubbles}">
         <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="{x:Type models:TranscriptUtterance}">
+          <DataTemplate DataType="{x:Type models:TranscriptBubble}">
             <Grid Margin="0,0,0,10">
               <!-- "You" (right-aligned, accent) -->
               <StackPanel HorizontalAlignment="Right"
@@ -91,25 +92,36 @@
                     </Style.Triggers>
                   </Style>
                 </StackPanel.Style>
-                <TextBlock FontSize="11"
-                           HorizontalAlignment="Right"
-                           Margin="0,0,4,2"
-                           Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                  <TextBlock.Text>
-                    <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
-                      <Binding Path="Speaker" />
-                      <Binding Path="DataContext.CounterpartName"
-                               RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                    </MultiBinding>
-                  </TextBlock.Text>
-                </TextBlock>
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Margin="0,0,4,2">
+                  <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
+                             FontSize="11"
+                             Margin="0,0,8,0"
+                             Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                  <TextBlock FontSize="11"
+                             Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                    <TextBlock.Text>
+                      <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                        <Binding Path="Speaker" />
+                        <Binding Path="DataContext.CounterpartName"
+                                 RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </StackPanel>
                 <Border Padding="12,8"
                         CornerRadius="12,12,0,12"
                         Background="{DynamicResource AccentFillColorDefaultBrush}">
-                  <TextBlock Text="{Binding Text}"
-                             TextWrapping="Wrap"
-                             FontSize="14"
-                             Foreground="White" />
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Text}"
+                               TextWrapping="Wrap"
+                               FontSize="14"
+                               Foreground="White" />
+                    <controls:ListeningIndicator Margin="8,0,0,0"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                  </StackPanel>
                 </Border>
               </StackPanel>
 
@@ -126,24 +138,35 @@
                     </Style.Triggers>
                   </Style>
                 </StackPanel.Style>
-                <TextBlock FontSize="11"
-                           HorizontalAlignment="Left"
-                           Margin="4,0,0,2"
-                           Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                  <TextBlock.Text>
-                    <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
-                      <Binding Path="Speaker" />
-                      <Binding Path="DataContext.CounterpartName"
-                               RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                    </MultiBinding>
-                  </TextBlock.Text>
-                </TextBlock>
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Left"
+                            Margin="4,0,0,2">
+                  <TextBlock FontSize="11"
+                             Margin="0,0,8,0"
+                             Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                    <TextBlock.Text>
+                      <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                        <Binding Path="Speaker" />
+                        <Binding Path="DataContext.CounterpartName"
+                                 RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                  <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
+                             FontSize="11"
+                             Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                </StackPanel>
                 <Border Padding="12,8"
                         CornerRadius="12,12,12,0"
                         Background="{DynamicResource ControlFillColorSecondaryBrush}">
-                  <TextBlock Text="{Binding Text}"
-                             TextWrapping="Wrap"
-                             FontSize="14" />
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Text}"
+                               TextWrapping="Wrap"
+                               FontSize="14" />
+                    <controls:ListeningIndicator Margin="8,0,0,0"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                  </StackPanel>
                 </Border>
               </StackPanel>
             </Grid>
@@ -152,7 +175,7 @@
       </ItemsControl>
     </ScrollViewer>
 
-    <!-- Footer: stop button -->
+    <!-- Footer: stop / save buttons -->
     <Border Grid.Row="2"
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
@@ -164,6 +187,12 @@
                    Appearance="Danger"
                    Content="{loc:Str LiveTrans_Stop}"
                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
+        <ui:Button Command="{Binding SaveTranscriptCommand}"
+                   Margin="8,0,0,0"
+                   Padding="20,10"
+                   Appearance="Primary"
+                   Content="{loc:Str LiveTrans_Save}"
+                   Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
       </StackPanel>
     </Border>
   </Grid>

@@ -47,6 +47,8 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
         _vad = new SileroVadDetector(sileroVadModelPath, logger);
         _vad.OnSegment += EnqueueSegmentForTranscription;
+        _vad.OnSpeechStarted += OnVadSpeechStarted;
+        _vad.OnSpeechEnded += OnVadSpeechEnded;
 
         _segmentQueue = Channel.CreateBounded<float[]>(new BoundedChannelOptions(8)
         {
@@ -116,6 +118,23 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
             _logger.LogWarning("Dropped a segment from {Speaker} pipeline — transcription is falling behind", _speaker);
     }
 
+    /// <summary>
+    /// Raised on the audio reader-loop thread when VAD detects start/end of speech.
+    /// Subscribers MUST marshal to the UI thread themselves.
+    /// </summary>
+    public event EventHandler<bool>? IsSpeakingChanged;
+
+    private void OnVadSpeechStarted() => RaiseSpeakingChanged(true);
+    private void OnVadSpeechEnded() => RaiseSpeakingChanged(false);
+
+    private void RaiseSpeakingChanged(bool isSpeaking)
+    {
+        try { IsSpeakingChanged?.Invoke(this, isSpeaking); }
+        catch (Exception ex) { _logger.LogError(ex, "IsSpeakingChanged subscriber threw for {Speaker}", _speaker); }
+    }
+
+    public TranscriptSpeaker Speaker => _speaker;
+
     private async Task TranscribeSegmentAsync(float[] samples, CancellationToken cancellationToken)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -159,6 +178,8 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         catch { /* swallow on shutdown */ }
 
         _vad.OnSegment -= EnqueueSegmentForTranscription;
+        _vad.OnSpeechStarted -= OnVadSpeechStarted;
+        _vad.OnSpeechEnded -= OnVadSpeechEnded;
         _vad.Dispose();
         _readerCts?.Dispose();
         _segmentCts?.Dispose();

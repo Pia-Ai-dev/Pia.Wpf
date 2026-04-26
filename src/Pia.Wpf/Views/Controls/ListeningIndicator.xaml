@@ -1,0 +1,22 @@
+<UserControl x:Class="Pia.Views.Controls.ListeningIndicator"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  mc:Ignorable="d"
+  d:DesignHeight="14" d:DesignWidth="14">
+  <UserControl.Resources>
+    <Storyboard x:Key="PulseStoryboard" RepeatBehavior="Forever" AutoReverse="True">
+      <DoubleAnimation Storyboard.TargetName="Dot"
+                       Storyboard.TargetProperty="Opacity"
+                       From="0.3" To="1.0" Duration="0:0:0.9" />
+    </Storyboard>
+  </UserControl.Resources>
+  <Grid>
+    <Ellipse x:Name="Dot"
+             Width="8" Height="8"
+             VerticalAlignment="Center"
+             HorizontalAlignment="Center"
+             Fill="{DynamicResource AccentFillColorDefaultBrush}" />
+  </Grid>
+</UserControl>
