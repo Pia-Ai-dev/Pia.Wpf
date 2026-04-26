@@ -68,4 +68,11 @@
   <data name="LiveTrans_Status_Listening" xml:space="preserve"><value>À l'écoute…</value></data>
   <data name="LiveTrans_Status_Stopping" xml:space="preserve"><value>Arrêt en cours…</value></data>
   <data name="LiveTrans_Status_Error" xml:space="preserve"><value>Erreur</value></data>
+  <data name="LiveTrans_Save" xml:space="preserve"><value>Enregistrer…</value></data>
+  <data name="LiveTrans_SaveDialog_Title" xml:space="preserve"><value>Enregistrer la transcription</value></data>
+  <data name="LiveTrans_SaveDialog_Filter" xml:space="preserve"><value>Fichier Markdown (*.md)|*.md|Tous les fichiers (*.*)|*.*</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Label" xml:space="preserve"><value>Dossier des transcriptions de réunion</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Browse" xml:space="preserve"><value>Parcourir…</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Reset" xml:space="preserve"><value>Réinitialiser</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Hint" xml:space="preserve"><value>Emplacement des transcriptions de réunion enregistrées. Par défaut : %LOCALAPPDATA%\Pia\assistant\meetings.</value></data>
 </root>

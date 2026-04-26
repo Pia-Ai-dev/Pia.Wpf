@@ -29,6 +29,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     }
 
     public event EventHandler<LiveMeetingState>? StateChanged;
+    public event EventHandler<SpeakingChangedEventArgs>? SpeakingChanged;
 
     public ChannelReader<TranscriptUtterance> Utterances => _utterances.Reader;
 
@@ -87,6 +88,9 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
 
+            _micEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
+            _loopbackEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
+
             await _micEngine.StartAsync(cancellationToken).ConfigureAwait(false);
             await _loopbackEngine.StartAsync(cancellationToken).ConfigureAwait(false);
 
@@ -133,12 +137,14 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     {
         if (_micEngine is not null)
         {
+            _micEngine.IsSpeakingChanged -= OnEngineSpeakingChanged;
             try { await _micEngine.DisposeAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Mic engine dispose threw"); }
             _micEngine = null;
         }
         if (_loopbackEngine is not null)
         {
+            _loopbackEngine.IsSpeakingChanged -= OnEngineSpeakingChanged;
             try { await _loopbackEngine.DisposeAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Loopback engine dispose threw"); }
             _loopbackEngine = null;
@@ -161,6 +167,15 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             catch (Exception ex) { _logger.LogWarning(ex, "Transcription engine dispose threw"); }
             _transcriptionEngine = null;
         }
+    }
+
+    private void OnEngineSpeakingChanged(object? sender, bool isSpeaking)
+    {
+        if (sender is not LiveTranscriptionEngineService engine) return;
+        var handler = SpeakingChanged;
+        if (handler is null) return;
+        try { handler.Invoke(this, new SpeakingChangedEventArgs(engine.Speaker, isSpeaking)); }
+        catch (Exception ex) { _logger.LogError(ex, "SpeakingChanged subscriber threw"); }
     }
 
     private void TransitionState(LiveMeetingState newState)

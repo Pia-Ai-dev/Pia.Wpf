@@ -81,6 +81,7 @@ public class AppSettings
 
     // Live transcription settings
     public string? LastCounterpartName { get; set; }
+    public string? MeetingTranscriptFolder { get; set; }
 
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
