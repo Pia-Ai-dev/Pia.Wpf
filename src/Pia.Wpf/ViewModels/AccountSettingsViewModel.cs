@@ -93,6 +93,28 @@ public partial class AccountSettingsViewModel : ObservableObject
             }, null);
         };
 
+        _syncClientService.E2EEOnboardingCleared += (_, _) =>
+        {
+            _syncContext.Post(_ =>
+            {
+                IsE2EEOnboardingRequired = false;
+            }, null);
+        };
+
+        _authService.LoginStateChanged += (_, isLoggedIn) =>
+        {
+            if (isLoggedIn) return;
+            _syncContext.Post(_ =>
+            {
+                IsE2EEOnboardingRequired = false;
+                _isLoading = true;
+                IsE2EEEnabled = false;
+                _isLoading = false;
+                DeviceFingerprint = string.Empty;
+                UpdateSyncState();
+            }, null);
+        };
+
         _syncClientService.PendingDeviceDetected += (_, args) =>
         {
             _syncContext.Post(_ =>

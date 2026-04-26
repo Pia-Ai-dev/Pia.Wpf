@@ -95,6 +95,15 @@ public class SyncClientService : ISyncClientService, IDisposable
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _deleteTracker = deleteTracker;
+
+        _authService.LoginStateChanged += OnAuthLoginStateChanged;
+    }
+
+    private void OnAuthLoginStateChanged(object? sender, bool isLoggedIn)
+    {
+        if (isLoggedIn) return;
+        _hasVerifiedServerE2EEStatus = false;
+        NotifyE2EEOnboardingCompleted();
     }
 
     public void StartBackgroundSync()
@@ -963,6 +972,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public void Dispose()
     {
+        _authService.LoginStateChanged -= OnAuthLoginStateChanged;
         _syncTimer?.Dispose();
         _syncLock.Dispose();
     }
