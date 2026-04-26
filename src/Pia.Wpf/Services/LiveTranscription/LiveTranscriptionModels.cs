@@ -13,46 +13,16 @@ namespace Pia.Services.LiveTranscription;
 /// <c>%LOCALAPPDATA%\Pia\Models</c> and are downloaded on first use.
 ///
 /// Whisper and Parakeet bundles are sherpa-onnx tar.bz2 archives extracted into
-/// per-model directories. Silero VAD is a single .onnx file (kept for compatibility,
-/// even though the live pipeline currently uses an energy-based VAD).
+/// per-model directories.
 /// </summary>
 public static class LiveTranscriptionModels
 {
-    private const string SileroVadFileName = "silero_vad.onnx";
-    private const string SileroVadDownloadUrl =
-        "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
-
     private const string SherpaReleasesBase =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
 
     public static string ModelsDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Pia", "Models");
-
-    public static async Task<string> EnsureSileroVadAsync(
-        IHttpClientFactory httpClientFactory,
-        ILogger logger,
-        CancellationToken cancellationToken = default)
-    {
-        Directory.CreateDirectory(ModelsDirectory);
-        var path = Path.Combine(ModelsDirectory, SileroVadFileName);
-        if (File.Exists(path) && new FileInfo(path).Length > 0) return path;
-
-        logger.LogInformation("Downloading Silero VAD model to {Path}", path);
-        var http = httpClientFactory.CreateClient();
-        using var resp = await http.GetAsync(SileroVadDownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
-
-        var tmp = path + ".tmp";
-        await using (var dst = File.Create(tmp))
-        await using (var src = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        {
-            await src.CopyToAsync(dst, cancellationToken).ConfigureAwait(false);
-        }
-        File.Move(tmp, path, overwrite: true);
-        return path;
-    }
 
     /// <summary>
     /// Downloads (if missing) and extracts the sherpa-onnx Whisper bundle for the requested

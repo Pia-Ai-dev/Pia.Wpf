@@ -32,7 +32,6 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     public LiveTranscriptionEngineService(
         TranscriptSpeaker speaker,
         IAudioCaptureSource source,
-        string sileroVadModelPath,
         ITranscriptionEngine engine,
         ChannelWriter<TranscriptUtterance> sink,
         ILogger logger)
@@ -45,7 +44,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
         _logger.LogInformation("Engine init: speaker={Speaker}", speaker);
 
-        _vad = new SileroVadDetector(sileroVadModelPath, logger);
+        _vad = new SileroVadDetector(logger);
         _vad.OnSegment += EnqueueSegmentForTranscription;
 
         _segmentQueue = Channel.CreateBounded<float[]>(new BoundedChannelOptions(8)

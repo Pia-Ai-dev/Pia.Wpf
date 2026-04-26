@@ -14,7 +14,8 @@ namespace Pia.Services.LiveTranscription;
 /// strong evidence that audio bytes were not reaching the kernel (or the model file was
 /// incompatible with Microsoft.ML.OnnxRuntime 1.24.4). Per systematic-debugging discipline,
 /// 3+ failed fixes ⇒ architecture is suspect; the Silero path was abandoned in favour of
-/// an energy detector.
+/// an energy detector. No model file is loaded; the energy detector runs purely on the
+/// incoming PCM samples.
 ///
 /// Energy-VAD is sufficient for the clean-mic desktop-meeting use case: ~50 dB SNR between
 /// speech (~-29 dBFS) and pauses (&lt;-80 dBFS). For noisy-room robustness, a future change
@@ -63,12 +64,9 @@ public sealed class SileroVadDetector : IDisposable
 
     public event Action<float[]>? OnSegment;
 
-    public SileroVadDetector(string modelPath, ILogger logger)
+    public SileroVadDetector(ILogger logger)
     {
         _logger = logger;
-        // modelPath is unused under the energy-VAD fallback. Kept in the signature so the
-        // engine wiring stays untouched.
-        _ = modelPath;
         _logger.LogInformation(
             "Energy-VAD active. Speech ≥ {Start:F0} dBFS, silence ≤ {End:F0} dBFS, hysteresis {N} windows ({Ms} ms).",
             SpeechCertainRmsDb, SilenceCertainRmsDb,

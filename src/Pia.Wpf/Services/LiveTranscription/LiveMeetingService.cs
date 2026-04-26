@@ -57,10 +57,6 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
 
-            var sileroPath = await LiveTranscriptionModels
-                .EnsureSileroVadAsync(_httpClientFactory, _logger, cancellationToken)
-                .ConfigureAwait(false);
-
             _transcriptionEngine = await TranscriptionEngineFactory
                 .CreateAsync(settings, _httpClientFactory, downloadProgress: null, _logger, cancellationToken)
                 .ConfigureAwait(false);
@@ -74,7 +70,6 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             _micEngine = new LiveTranscriptionEngineService(
                 TranscriptSpeaker.You,
                 _micSource,
-                sileroPath,
                 _transcriptionEngine,
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
@@ -82,7 +77,6 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             _loopbackEngine = new LiveTranscriptionEngineService(
                 TranscriptSpeaker.Them,
                 _loopbackSource,
-                sileroPath,
                 _transcriptionEngine,
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
