@@ -1,19 +1,28 @@
-using System.Linq;
 using Microsoft.Extensions.Logging;
-using Microsoft.ML.OnnxRuntime;
-using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace Pia.Services.LiveTranscription;
 
 /// <summary>
-/// Voice-activity gate built on the Silero VAD ONNX model (v5+, 16 kHz, 512-sample windows).
+/// Voice-activity gate for live meeting transcription. The class name is preserved for
+/// engine compatibility, but the implementation is energy-based (RMS hysteresis), not
+/// Silero ONNX.
 ///
-/// Stateful: carries a 2x1x128 recurrent state across inferences and a small ring of
-/// "preroll" windows so the start of an utterance is not lost when speech is detected.
-/// Emits speech segments as <see cref="float"/> arrays via <see cref="OnSegment"/>.
+/// Background: the Silero v5 ONNX path was implemented and debugged extensively. With both
+/// <c>NamedOnnxValue</c>+<c>DenseTensor</c> and <c>FixedBufferOnnxValue.CreateFromMemory</c>
+/// input bindings, the model returned <c>prob ≈ 0.0005</c> for every window regardless of
+/// audio content, with hidden-state L2 diverging linearly at a rate independent of input —
+/// strong evidence that audio bytes were not reaching the kernel (or the model file was
+/// incompatible with Microsoft.ML.OnnxRuntime 1.24.4). Per systematic-debugging discipline,
+/// 3+ failed fixes ⇒ architecture is suspect; the Silero path was abandoned in favour of
+/// an energy detector.
 ///
-/// The gate enforces a hard segment cap (default 30 s) — long monologues are flushed and
-/// transcription resumes from the next sample, keeping latency predictable for long sessions.
+/// Energy-VAD is sufficient for the clean-mic desktop-meeting use case: ~50 dB SNR between
+/// speech (~-29 dBFS) and pauses (&lt;-80 dBFS). For noisy-room robustness, a future change
+/// can drop in a WebRTC VAD wrapper behind the same <see cref="Process"/>/<see cref="OnSegment"/>
+/// surface without touching the engine.
+///
+/// Stateful w.r.t. the speech segment (open/close hysteresis, preroll). Emits speech
+/// segments as <see cref="float"/> arrays via <see cref="OnSegment"/>.
 /// </summary>
 public sealed class SileroVadDetector : IDisposable
 {
@@ -26,14 +35,17 @@ public sealed class SileroVadDetector : IDisposable
     private const int MaxSegmentSamples = 30 * 16000; // 30 s flush cap
     private const int LogEveryNWindows = 100;     // ~3.2 s of audio
 
+    // Energy thresholds. RMS above SpeechCertainRmsDb is unambiguously speech (prob=1);
+    // below SilenceCertainRmsDb is unambiguously silence (prob=0); the band between
+    // produces a linear pseudo-probability so the existing prob-threshold hysteresis
+    // (SpeechStartThreshold / SpeechEndThreshold + SilenceWindowsToEnd) still applies.
+    private const float SpeechCertainRmsDb = -35f;
+    private const float SilenceCertainRmsDb = -50f;
+
     private readonly ILogger _logger;
-    private readonly InferenceSession _session;
-    private readonly DenseTensor<long> _srTensor;
-    private float[] _state = new float[2 * 1 * 128];
 
     // Capacity must accommodate the largest expected single Process() call. Loopback emits
     // ~50 ms hops at 16 kHz = 800 samples; mic emits the same. Plus one in-flight window.
-    // 4 KiB of float storage is negligible.
     private readonly FloatRingBuffer _pendingChunk = new(capacity: WindowSize * 8);
 
     // Preroll ring (oldest → newest) of recently-seen non-speech windows.
@@ -54,26 +66,19 @@ public sealed class SileroVadDetector : IDisposable
     public SileroVadDetector(string modelPath, ILogger logger)
     {
         _logger = logger;
-        var options = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
-        _session = new InferenceSession(modelPath, options);
-        // Silero v5 declares 'sr' as a rank-0 scalar (shape []). Passing a rank-1 [1]-shaped
-        // tensor does not throw, but the kernel reads it as 0 and the model collapses to ~0
-        // probability for every window.
-        _srTensor = new DenseTensor<long>(new[] { 16000L }, Array.Empty<int>());
-
-        foreach (var kv in _session.InputMetadata)
-            _logger.LogInformation(
-                "Silero input '{Name}': type={Type} shape=[{Shape}]",
-                kv.Key, kv.Value.ElementType, string.Join(",", kv.Value.Dimensions));
-        foreach (var kv in _session.OutputMetadata)
-            _logger.LogInformation(
-                "Silero output '{Name}': type={Type} shape=[{Shape}]",
-                kv.Key, kv.Value.ElementType, string.Join(",", kv.Value.Dimensions));
+        // modelPath is unused under the energy-VAD fallback. Kept in the signature so the
+        // engine wiring stays untouched.
+        _ = modelPath;
+        _logger.LogInformation(
+            "Energy-VAD active. Speech ≥ {Start:F0} dBFS, silence ≤ {End:F0} dBFS, hysteresis {N} windows ({Ms} ms).",
+            SpeechCertainRmsDb, SilenceCertainRmsDb,
+            SilenceWindowsToEnd, SilenceWindowsToEnd * WindowSize * 1000 / 16000);
     }
 
     /// <summary>
     /// Feed a chunk of 16 kHz mono Float32 samples. Internally accumulates into 512-sample
-    /// windows and runs Silero on each. Triggers <see cref="OnSegment"/> when a speech run ends.
+    /// windows and runs the energy detector on each. Triggers <see cref="OnSegment"/> when
+    /// a speech run ends.
     /// </summary>
     public void Process(ReadOnlySpan<float> samples)
     {
@@ -89,11 +94,8 @@ public sealed class SileroVadDetector : IDisposable
 
     private void ProcessWindow(float[] window)
     {
-        var prob = RunSilero(window);
-        _windowsProcessed++;
-        if (prob > _maxProbInBatch) _maxProbInBatch = prob;
-
-        // Window RMS — confirms audio is intact between capture and inference.
+        // Compute RMS and peak from the window. These drive both the VAD decision and the
+        // diagnostic logs.
         double sumSq = 0;
         float peak = 0;
         for (int i = 0; i < window.Length; i++)
@@ -104,25 +106,27 @@ public sealed class SileroVadDetector : IDisposable
             if (a > peak) peak = a;
         }
         var rms = (float)Math.Sqrt(sumSq / window.Length);
+        var prob = ProbFromRms(rms);
+
+        _windowsProcessed++;
+        if (prob > _maxProbInBatch) _maxProbInBatch = prob;
         if (rms > _maxWindowRmsInBatch) _maxWindowRmsInBatch = rms;
         if (peak > _maxWindowPeakInBatch) _maxWindowPeakInBatch = peak;
 
         if (_windowsProcessed == 1)
         {
             _logger.LogInformation(
-                "VAD first window: rms={Rms:E3} peak={Peak:E3} samples[0..3]=[{S0:F4}, {S1:F4}, {S2:F4}, {S3:F4}]",
-                rms, peak, window[0], window[1], window[2], window[3]);
+                "VAD first window: rms={Rms:E3} peak={Peak:E3} prob={P:F2} samples[0..3]=[{S0:F4}, {S1:F4}, {S2:F4}, {S3:F4}]",
+                rms, peak, prob, window[0], window[1], window[2], window[3]);
         }
 
         if (_windowsProcessed % LogEveryNWindows == 0)
         {
-            var rmsDb = _maxWindowRmsInBatch <= 1e-10f ? -200f : 20f * (float)Math.Log10(_maxWindowRmsInBatch);
-            var peakDb = _maxWindowPeakInBatch <= 1e-10f ? -200f : 20f * (float)Math.Log10(_maxWindowPeakInBatch);
-            float stateNorm = 0;
-            for (int i = 0; i < _state.Length; i++) stateNorm += _state[i] * _state[i];
+            var rmsDb = RmsToDb(_maxWindowRmsInBatch);
+            var peakDb = RmsToDb(_maxWindowPeakInBatch);
             _logger.LogDebug(
-                "VAD windows={N} maxProb={P:F3} rmsDb={Rms:F1} peakDb={Peak:F1} stateL2={SL:F2} segOpen={Open} segSamples={S}",
-                _windowsProcessed, _maxProbInBatch, rmsDb, peakDb, Math.Sqrt(stateNorm),
+                "VAD windows={N} maxProb={P:F3} rmsDb={Rms:F1} peakDb={Peak:F1} segOpen={Open} segSamples={S}",
+                _windowsProcessed, _maxProbInBatch, rmsDb, peakDb,
                 _segment is not null, _segment?.Count ?? 0);
             _maxProbInBatch = 0f;
             _maxWindowRmsInBatch = 0f;
@@ -137,15 +141,14 @@ public sealed class SileroVadDetector : IDisposable
         {
             if (isSpeech)
             {
-                // Open a new segment, prepending preroll so the leading consonant isn't lost.
                 _segment = new List<float>(MaxSegmentSamples / 2);
                 foreach (var pre in _preroll)
                     _segment.AddRange(pre);
                 _segment.AddRange(window);
                 _silentRunWindows = 0;
                 _logger.LogDebug(
-                    "VAD segment OPEN at prob={P:F2}, preroll={N} windows",
-                    prob, _preroll.Count);
+                    "VAD segment OPEN at prob={P:F2} rmsDb={Rms:F1}, preroll={N} windows",
+                    prob, RmsToDb(rms), _preroll.Count);
             }
             else
             {
@@ -181,10 +184,21 @@ public sealed class SileroVadDetector : IDisposable
 
         if (_segment.Count >= MaxSegmentSamples)
         {
-            _logger.LogInformation("Silero: 30s segment cap hit, flushing");
+            _logger.LogInformation("VAD: 30 s segment cap hit, flushing");
             FlushSegment();
         }
     }
+
+    private static float ProbFromRms(float rms)
+    {
+        var rmsDb = RmsToDb(rms);
+        if (rmsDb >= SpeechCertainRmsDb) return 1.0f;
+        if (rmsDb <= SilenceCertainRmsDb) return 0.0f;
+        return (rmsDb - SilenceCertainRmsDb) / (SpeechCertainRmsDb - SilenceCertainRmsDb);
+    }
+
+    private static float RmsToDb(float rms)
+        => rms <= 1e-10f ? -200f : 20f * (float)Math.Log10(rms);
 
     private void EnqueuePreroll(float[] window)
     {
@@ -199,8 +213,6 @@ public sealed class SileroVadDetector : IDisposable
         var samples = _segment;
         _segment = null;
         _silentRunWindows = 0;
-        // Reset preroll between segments — preroll captures the leading edge of the next
-        // utterance only, not trailing tails.
         _preroll.Clear();
 
         if (samples.Count >= MinSegmentSamples)
@@ -232,59 +244,8 @@ public sealed class SileroVadDetector : IDisposable
         _pendingChunk.Clear();
     }
 
-
-    private bool _firstInferenceLogged;
-
-    private float RunSilero(float[] window)
+    public void Dispose()
     {
-        var input = new DenseTensor<float>(window, new[] { 1, WindowSize });
-        var stateTensor = new DenseTensor<float>(_state, new[] { 2, 1, 128 });
-
-        using var results = _session.Run(new[]
-        {
-            NamedOnnxValue.CreateFromTensor("input", input),
-            NamedOnnxValue.CreateFromTensor("state", stateTensor),
-            NamedOnnxValue.CreateFromTensor("sr", _srTensor),
-        });
-
-        float prob = 0f;
-        int stateElementsCopied = 0;
-        bool sawOutput = false;
-        foreach (var r in results)
-        {
-            if (!_firstInferenceLogged)
-                _logger.LogInformation(
-                    "Silero first inference output '{Name}' type={Type}",
-                    r.Name, r.Value?.GetType().Name ?? "null");
-
-            if (r.Name == "output")
-            {
-                var dt = (DenseTensor<float>)r.AsTensor<float>();
-                if (dt.Buffer.Length > 0) prob = dt.Buffer.Span[0];
-                sawOutput = true;
-            }
-            else if (r.Name == "stateN")
-            {
-                var dt = (DenseTensor<float>)r.AsTensor<float>();
-                var span = dt.Buffer.Span;
-                stateElementsCopied = Math.Min(span.Length, _state.Length);
-                span.Slice(0, stateElementsCopied).CopyTo(_state.AsSpan());
-            }
-        }
-
-        if (!_firstInferenceLogged)
-        {
-            _firstInferenceLogged = true;
-            if (!sawOutput) _logger.LogWarning("Silero: 'output' tensor not found in results — prob will always be 0");
-            float stateNorm = 0;
-            for (int i = 0; i < _state.Length; i++) stateNorm += _state[i] * _state[i];
-            _logger.LogInformation(
-                "Silero first inference: prob={P:F3} stateCopied={N}/{Total} stateL2={L:F3} state[0..3]=[{S0:F4},{S1:F4},{S2:F4},{S3:F4}]",
-                prob, stateElementsCopied, _state.Length, Math.Sqrt(stateNorm),
-                _state[0], _state[1], _state[2], _state[3]);
-        }
-        return prob;
+        // No native resources under the energy-VAD fallback.
     }
-
-    public void Dispose() => _session.Dispose();
 }
