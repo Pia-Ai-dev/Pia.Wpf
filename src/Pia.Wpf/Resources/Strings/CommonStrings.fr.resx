@@ -60,6 +60,8 @@
   <data name="LiveTrans_Title" xml:space="preserve"><value>Transcription en direct</value></data>
   <data name="LiveTrans_OtherSpeaker_Label" xml:space="preserve"><value>Autre interlocuteur :</value></data>
   <data name="LiveTrans_OtherSpeaker_Placeholder" xml:space="preserve"><value>autre</value></data>
+  <data name="LiveTrans_RenameSpeaker_Title" xml:space="preserve"><value>Renommer l'interlocuteur</value></data>
+  <data name="LiveTrans_RenameSpeaker_Prompt" xml:space="preserve"><value>Saisissez un nouveau libellé pour « {0} » :</value></data>
   <data name="LiveTrans_ToggleButton_Tooltip" xml:space="preserve"><value>Transcrire la réunion en direct</value></data>
   <data name="LiveTrans_Stop" xml:space="preserve"><value>Arrêter</value></data>
   <data name="LiveTrans_Close" xml:space="preserve"><value>Fermer</value></data>

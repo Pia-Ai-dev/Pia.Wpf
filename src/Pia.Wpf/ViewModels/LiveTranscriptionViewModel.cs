@@ -15,6 +15,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     private readonly ILiveMeetingService _service;
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService _localizationService;
+    private readonly IDialogService _dialogService;
     private readonly ILogger<LiveTranscriptionViewModel> _logger;
 
     private CancellationTokenSource? _readerCts;
@@ -40,11 +41,13 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         ILiveMeetingService service,
         ISettingsService settingsService,
         ILocalizationService localizationService,
+        IDialogService dialogService,
         ILogger<LiveTranscriptionViewModel> logger)
     {
         _service = service;
         _settingsService = settingsService;
         _localizationService = localizationService;
+        _dialogService = dialogService;
         _logger = logger;
         _counterpartName = _localizationService["LiveTrans_OtherSpeaker_Placeholder"];
 
@@ -187,6 +190,31 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
             _logger.LogError(ex, "Dispatcher invoke failed");
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanRenameSpeakerLabel))]
+    private async Task RenameSpeakerLabelAsync(string? oldLabel)
+    {
+        if (string.IsNullOrWhiteSpace(oldLabel)) return;
+
+        var title = _localizationService["LiveTrans_RenameSpeaker_Title"];
+        var prompt = string.Format(_localizationService["LiveTrans_RenameSpeaker_Prompt"], oldLabel);
+        var newLabel = await _dialogService.ShowInputDialogAsync(title, prompt).ConfigureAwait(true);
+        if (string.IsNullOrWhiteSpace(newLabel) || newLabel == oldLabel) return;
+
+        _service.RenameSpeaker(oldLabel, newLabel);
+
+        DispatchToUi(() =>
+        {
+            for (int i = 0; i < Utterances.Count; i++)
+            {
+                if (Utterances[i].SpeakerLabel == oldLabel)
+                    Utterances[i] = Utterances[i] with { SpeakerLabel = newLabel };
+            }
+        });
+    }
+
+    private static bool CanRenameSpeakerLabel(string? oldLabel)
+        => !string.IsNullOrWhiteSpace(oldLabel);
 
     public void Dispose()
     {

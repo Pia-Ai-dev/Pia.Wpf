@@ -257,6 +257,15 @@
   <data name="Settings_DownloadParakeetModel" xml:space="preserve"><value>Télécharger le modèle Parakeet</value></data>
   <data name="Settings_Parakeet_DisplayName" xml:space="preserve"><value>Parakeet TDT v3 (multilingue)</value></data>
   <data name="Settings_Parakeet_Description" xml:space="preserve"><value>Modèle transducteur NVIDIA NeMo Parakeet. Prend en charge plusieurs langues européennes avec détection automatique. Environ 340 Mo sur le disque.</value></data>
+  <data name="Settings_LiveMeeting_Section" xml:space="preserve"><value>Transcription de réunion en direct</value></data>
+  <data name="Settings_SileroVad_DisplayName" xml:space="preserve"><value>Détecteur d'activité vocale Silero</value></data>
+  <data name="Settings_SileroVad_Description" xml:space="preserve"><value>Détecte parole vs silence dans le flux audio en direct. Téléchargé automatiquement au premier démarrage de réunion ; ~1,8 Mo.</value></data>
+  <data name="Settings_DownloadSileroVadModel" xml:space="preserve"><value>Télécharger Silero VAD</value></data>
+  <data name="Settings_SpeakerEmbedding_DisplayName" xml:space="preserve"><value>Modèle d'empreinte vocale</value></data>
+  <data name="Settings_SpeakerEmbedding_Description" xml:space="preserve"><value>Sépare le canal de loopback en libellés par interlocuteur (Interlocuteur 1, Interlocuteur 2, …). Téléchargé automatiquement au premier démarrage de réunion ; ~28 Mo.</value></data>
+  <data name="Settings_DownloadSpeakerEmbeddingModel" xml:space="preserve"><value>Télécharger le modèle d'interlocuteur</value></data>
+  <data name="Settings_EnableLoopbackDiarization" xml:space="preserve"><value>Identifier les interlocuteurs distants</value></data>
+  <data name="Settings_EnableLoopbackDiarization_Description" xml:space="preserve"><value>Si activé, le canal de loopback est divisé en libellés par interlocuteur. Cliquez sur un libellé dans la transcription en direct pour le renommer.</value></data>
   <data name="Settings_SpeechToTextLanguage" xml:space="preserve"><value>Langue de transcription</value></data>
   <data name="Settings_SpeechToTextLanguage_Description" xml:space="preserve"><value>Préréglage linguistique pour la transcription vocale</value></data>
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Mode de fenêtre par défaut</value></data>

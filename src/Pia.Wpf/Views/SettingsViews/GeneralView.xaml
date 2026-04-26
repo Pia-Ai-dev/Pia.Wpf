@@ -240,6 +240,58 @@
                     BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                     Margin="0,8,0,24" />
 
+            <!-- Live meeting transcription: VAD + speaker diarization -->
+            <TextBlock Text="{loc:Str Settings_LiveMeeting_Section}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,12"/>
+
+            <CheckBox IsChecked="{Binding EnableLoopbackDiarization}"
+                      Content="{loc:Str Settings_EnableLoopbackDiarization}"
+                      Margin="0,0,0,4"/>
+            <TextBlock Text="{loc:Str Settings_EnableLoopbackDiarization_Description}"
+                       Opacity="0.7"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,16"/>
+
+            <StackPanel Margin="0,0,0,16">
+              <TextBlock Text="{loc:Str Settings_SileroVad_DisplayName}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+              <TextBlock Text="{loc:Str Settings_SileroVad_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"/>
+              <ui:Button Command="{Binding DownloadSileroVadModelCommand}"
+                         HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" Margin="0,0,8,0"/>
+                  <TextBlock Text="{loc:Str Settings_DownloadSileroVadModel}"/>
+                </StackPanel>
+              </ui:Button>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,0,24">
+              <TextBlock Text="{loc:Str Settings_SpeakerEmbedding_DisplayName}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+              <TextBlock Text="{loc:Str Settings_SpeakerEmbedding_Description}"
+                         Opacity="0.7"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"/>
+              <ui:Button Command="{Binding DownloadSpeakerEmbeddingModelCommand}"
+                         HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" Margin="0,0,8,0"/>
+                  <TextBlock Text="{loc:Str Settings_DownloadSpeakerEmbeddingModel}"/>
+                </StackPanel>
+              </ui:Button>
+            </StackPanel>
+
+            <!-- Separator -->
+            <Border BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    Margin="0,8,0,24" />
+
             <!-- TTS Voice Selection -->
             <TextBlock Text="{loc:Str Tts_Title}"
                        FontSize="16"

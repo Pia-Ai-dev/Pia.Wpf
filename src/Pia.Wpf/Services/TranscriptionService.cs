@@ -85,6 +85,20 @@ public class TranscriptionService : ITranscriptionService
             .ConfigureAwait(false);
     }
 
+    public async Task DownloadSileroVadModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
+    {
+        await LiveTranscriptionModels
+            .EnsureSileroVadAsync(_httpClientFactory, progress, _logger, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task DownloadSpeakerEmbeddingModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
+    {
+        await LiveTranscriptionModels
+            .EnsureSpeakerEmbeddingAsync(_httpClientFactory, progress, _logger, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Decodes any audio container that Media Foundation can open (wav, mp3, m4a, …) to a
     /// 16 kHz mono float32 buffer matching the live pipeline's expectations.

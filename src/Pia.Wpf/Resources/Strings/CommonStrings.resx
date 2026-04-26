@@ -60,6 +60,8 @@
   <data name="LiveTrans_Title" xml:space="preserve"><value>Live transcription</value></data>
   <data name="LiveTrans_OtherSpeaker_Label" xml:space="preserve"><value>Other speaker:</value></data>
   <data name="LiveTrans_OtherSpeaker_Placeholder" xml:space="preserve"><value>them</value></data>
+  <data name="LiveTrans_RenameSpeaker_Title" xml:space="preserve"><value>Rename speaker</value></data>
+  <data name="LiveTrans_RenameSpeaker_Prompt" xml:space="preserve"><value>Enter a new label for "{0}":</value></data>
   <data name="LiveTrans_ToggleButton_Tooltip" xml:space="preserve"><value>Live transcribe meeting</value></data>
   <data name="LiveTrans_Stop" xml:space="preserve"><value>Stop</value></data>
   <data name="LiveTrans_Close" xml:space="preserve"><value>Close</value></data>

@@ -100,6 +100,7 @@
                       <Binding Path="Speaker" />
                       <Binding Path="DataContext.CounterpartName"
                                RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                      <Binding Path="SpeakerLabel" />
                     </MultiBinding>
                   </TextBlock.Text>
                 </TextBlock>
@@ -130,13 +131,22 @@
                            HorizontalAlignment="Left"
                            Margin="4,0,0,2"
                            Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                  <TextBlock.Text>
-                    <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
-                      <Binding Path="Speaker" />
-                      <Binding Path="DataContext.CounterpartName"
-                               RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                    </MultiBinding>
-                  </TextBlock.Text>
+                  <Hyperlink Command="{Binding DataContext.RenameSpeakerLabelCommand,
+                                       RelativeSource={RelativeSource AncestorType=UserControl}}"
+                             CommandParameter="{Binding SpeakerLabel}"
+                             TextDecorations="{x:Null}"
+                             Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                    <Run>
+                      <Run.Text>
+                        <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                          <Binding Path="Speaker" />
+                          <Binding Path="DataContext.CounterpartName"
+                                   RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                          <Binding Path="SpeakerLabel" />
+                        </MultiBinding>
+                      </Run.Text>
+                    </Run>
+                  </Hyperlink>
                 </TextBlock>
                 <Border Padding="12,8"
                         CornerRadius="12,12,12,0"

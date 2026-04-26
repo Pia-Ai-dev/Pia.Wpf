@@ -30,4 +30,11 @@ public interface ILiveMeetingService
 
     Task StartAsync(CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rename a speaker label so future utterances from the same voice carry
+    /// <paramref name="newLabel"/>. Returns true on success, false if no matching speaker
+    /// exists or diarization isn't running.
+    /// </summary>
+    bool RenameSpeaker(string oldLabel, string newLabel);
 }

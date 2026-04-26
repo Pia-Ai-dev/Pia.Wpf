@@ -5,21 +5,22 @@ using Pia.Models;
 namespace Pia.Services.LiveTranscription;
 
 /// <summary>
-/// Pipes audio from an <see cref="IAudioCaptureSource"/> through a <see cref="SileroVadDetector"/>
-/// and forwards every speech segment to a shared <see cref="ITranscriptionEngine"/>. The
-/// resulting <see cref="TranscriptUtterance"/> is written to the supplied sink channel,
-/// tagged with the configured speaker.
+/// Pipes audio from an <see cref="IAudioCaptureSource"/> through a <see cref="SherpaOnnxVadDetector"/>
+/// and forwards every speech segment to a shared <see cref="ITranscriptionEngine"/>. When an
+/// <see cref="ISpeakerIdentificationService"/> is supplied (loopback channel only), each
+/// segment also gets a speaker label attached to the emitted <see cref="TranscriptUtterance"/>.
 ///
-/// The engine is owned by the caller (typically <see cref="LiveMeetingService"/>) and is
-/// shared across mic + loopback engine services for one meeting. This service does not
-/// dispose it.
+/// The engine and (optional) speaker-id service are owned by the caller (typically
+/// <see cref="LiveMeetingService"/>) and shared across mic + loopback engine services for one
+/// meeting. This service does not dispose them.
 /// </summary>
 public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 {
     private readonly TranscriptSpeaker _speaker;
     private readonly IAudioCaptureSource _source;
-    private readonly SileroVadDetector _vad;
+    private readonly SherpaOnnxVadDetector _vad;
     private readonly ITranscriptionEngine _engine;
+    private readonly ISpeakerIdentificationService? _speakerId;
     private readonly ChannelWriter<TranscriptUtterance> _sink;
     private readonly ILogger _logger;
 
@@ -33,18 +34,22 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         TranscriptSpeaker speaker,
         IAudioCaptureSource source,
         ITranscriptionEngine engine,
+        string vadModelPath,
         ChannelWriter<TranscriptUtterance> sink,
-        ILogger logger)
+        ILogger logger,
+        ISpeakerIdentificationService? speakerId = null)
     {
         _speaker = speaker;
         _source = source;
         _engine = engine;
+        _speakerId = speakerId;
         _sink = sink;
         _logger = logger;
 
-        _logger.LogInformation("Engine init: speaker={Speaker}", speaker);
+        _logger.LogInformation("Engine init: speaker={Speaker} diarization={Diarization}",
+            speaker, speakerId is not null);
 
-        _vad = new SileroVadDetector(logger);
+        _vad = new SherpaOnnxVadDetector(vadModelPath, logger);
         _vad.OnSegment += EnqueueSegmentForTranscription;
 
         _segmentQueue = Channel.CreateBounded<float[]>(new BoundedChannelOptions(8)
@@ -133,7 +138,14 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 "Engine done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
                 _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
 
-            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now);
+            string? speakerLabel = null;
+            if (_speakerId is not null)
+            {
+                try { speakerLabel = _speakerId.IdentifyOrRegister(samples, 16000); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
+            }
+
+            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* shutdown */ }

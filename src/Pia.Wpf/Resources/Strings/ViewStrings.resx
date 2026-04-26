@@ -257,6 +257,15 @@
   <data name="Settings_DownloadParakeetModel" xml:space="preserve"><value>Download Parakeet model</value></data>
   <data name="Settings_Parakeet_DisplayName" xml:space="preserve"><value>Parakeet TDT v3 (multilingual)</value></data>
   <data name="Settings_Parakeet_Description" xml:space="preserve"><value>NVIDIA NeMo Parakeet transducer model. Supports multiple European languages with automatic detection. Roughly 340 MB on disk.</value></data>
+  <data name="Settings_LiveMeeting_Section" xml:space="preserve"><value>Live meeting transcription</value></data>
+  <data name="Settings_SileroVad_DisplayName" xml:space="preserve"><value>Silero voice-activity detector</value></data>
+  <data name="Settings_SileroVad_Description" xml:space="preserve"><value>Detects speech vs. silence in the live audio stream. Auto-downloaded on first meeting start; ~1.8 MB.</value></data>
+  <data name="Settings_DownloadSileroVadModel" xml:space="preserve"><value>Download Silero VAD</value></data>
+  <data name="Settings_SpeakerEmbedding_DisplayName" xml:space="preserve"><value>Speaker embedding model</value></data>
+  <data name="Settings_SpeakerEmbedding_Description" xml:space="preserve"><value>Splits the loopback channel into per-speaker labels (Speaker 1, Speaker 2, …). Auto-downloaded on first meeting start; ~28 MB.</value></data>
+  <data name="Settings_DownloadSpeakerEmbeddingModel" xml:space="preserve"><value>Download speaker model</value></data>
+  <data name="Settings_EnableLoopbackDiarization" xml:space="preserve"><value>Identify individual speakers in remote audio</value></data>
+  <data name="Settings_EnableLoopbackDiarization_Description" xml:space="preserve"><value>When on, the loopback channel is split into per-speaker labels. Click any speaker label in the live transcription overlay to rename it.</value></data>
   <data name="Settings_SpeechToTextLanguage" xml:space="preserve"><value>Speech-to-Text Language</value></data>
   <data name="Settings_SpeechToTextLanguage_Description" xml:space="preserve"><value>Language preset for speech-to-text transcription</value></data>
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Default Window Mode</value></data>

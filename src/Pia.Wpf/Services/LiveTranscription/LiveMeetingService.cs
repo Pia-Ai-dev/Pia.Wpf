@@ -22,6 +22,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private LiveTranscriptionEngineService? _micEngine;
     private LiveTranscriptionEngineService? _loopbackEngine;
     private ITranscriptionEngine? _transcriptionEngine;
+    private ISpeakerIdentificationService? _speakerId;
 
     public LiveMeetingState State
     {
@@ -31,6 +32,9 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     public event EventHandler<LiveMeetingState>? StateChanged;
 
     public ChannelReader<TranscriptUtterance> Utterances => _utterances.Reader;
+
+    public bool RenameSpeaker(string oldLabel, string newLabel)
+        => _speakerId?.Rename(oldLabel, newLabel) ?? false;
 
     public LiveMeetingService(
         ISettingsService settingsService,
@@ -61,6 +65,21 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 .CreateAsync(settings, _httpClientFactory, downloadProgress: null, _logger, cancellationToken)
                 .ConfigureAwait(false);
 
+            var vadModelPath = await LiveTranscriptionModels
+                .EnsureSileroVadAsync(_httpClientFactory, progress: null, _logger, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (settings.EnableLoopbackDiarization)
+            {
+                var speakerModelPath = await LiveTranscriptionModels
+                    .EnsureSpeakerEmbeddingAsync(_httpClientFactory, progress: null, _logger, cancellationToken)
+                    .ConfigureAwait(false);
+                _speakerId = new SpeakerIdentificationService(
+                    speakerModelPath,
+                    settings.SpeakerEmbeddingThreshold,
+                    _loggerFactory.CreateLogger<SpeakerIdentificationService>());
+            }
+
             _micSource = new MicAudioCaptureService(_loggerFactory.CreateLogger<MicAudioCaptureService>());
             _loopbackSource = new LoopbackAudioCaptureService(_loggerFactory.CreateLogger<LoopbackAudioCaptureService>());
 
@@ -71,6 +90,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 TranscriptSpeaker.You,
                 _micSource,
                 _transcriptionEngine,
+                vadModelPath,
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
 
@@ -78,8 +98,10 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 TranscriptSpeaker.Them,
                 _loopbackSource,
                 _transcriptionEngine,
+                vadModelPath,
                 _utterances.Writer,
-                _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
+                _loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
+                _speakerId);
 
             await _micEngine.StartAsync(cancellationToken).ConfigureAwait(false);
             await _loopbackEngine.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -154,6 +176,12 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             try { await _transcriptionEngine.DisposeAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Transcription engine dispose threw"); }
             _transcriptionEngine = null;
+        }
+        if (_speakerId is not null)
+        {
+            try { _speakerId.Dispose(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification service dispose threw"); }
+            _speakerId = null;
         }
     }
 

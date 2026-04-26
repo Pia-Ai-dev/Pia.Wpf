@@ -91,6 +91,9 @@ public partial class GeneralSettingsViewModel : ObservableObject
     [ObservableProperty]
     private TargetSpeechLanguage _targetSpeechLanguage;
 
+    [ObservableProperty]
+    private bool _enableLoopbackDiarization;
+
     public bool IsWhisperSelected => SttBackend == SttBackend.Whisper;
     public bool IsParakeetSelected => SttBackend == SttBackend.Parakeet;
 
@@ -152,6 +155,11 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnEnableLoopbackDiarizationChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -163,6 +171,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
+        EnableLoopbackDiarization = settings.EnableLoopbackDiarization;
 
         _optimizeHotkey = settings.OptimizeHotkey;
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
@@ -285,6 +294,22 @@ public partial class GeneralSettingsViewModel : ObservableObject
             (progress, ct) => _transcriptionService.DownloadParakeetModelAsync(progress, ct));
     }
 
+    [RelayCommand]
+    private async Task DownloadSileroVadModelAsync()
+    {
+        await DownloadModelInternalAsync(
+            _localizationService["Settings_SileroVad_DisplayName"],
+            (progress, ct) => _transcriptionService.DownloadSileroVadModelAsync(progress, ct));
+    }
+
+    [RelayCommand]
+    private async Task DownloadSpeakerEmbeddingModelAsync()
+    {
+        await DownloadModelInternalAsync(
+            _localizationService["Settings_SpeakerEmbedding_DisplayName"],
+            (progress, ct) => _transcriptionService.DownloadSpeakerEmbeddingModelAsync(progress, ct));
+    }
+
     private async Task DownloadModelInternalAsync(
         string modelDisplayName,
         Func<IProgress<ModelDownloadProgress>, CancellationToken, Task> downloadFn)
@@ -403,6 +428,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         settings.SttBackend = SttBackend;
         settings.WhisperModel = WhisperModel;
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
+        settings.EnableLoopbackDiarization = EnableLoopbackDiarization;
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
         settings.ResearchHotkey = _researchHotkey;

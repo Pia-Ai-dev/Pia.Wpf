@@ -20,9 +20,52 @@ public static class LiveTranscriptionModels
     private const string SherpaReleasesBase =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
 
+    private const string SherpaSpeakerReleasesBase =
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models";
+
+    private const string SileroVadFileName = "silero_vad.onnx";
+    private const string SpeakerEmbeddingFileName = "wespeaker_en_voxceleb_CAM++.onnx";
+
     public static string ModelsDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Pia", "Models");
+
+    public static string SileroVadModelPath { get; } = Path.Combine(
+        ModelsDirectory, "silero-vad", SileroVadFileName);
+
+    public static string SpeakerEmbeddingModelPath { get; } = Path.Combine(
+        ModelsDirectory, "speaker-embedding", SpeakerEmbeddingFileName);
+
+    public static bool IsSileroVadAvailable() => File.Exists(SileroVadModelPath);
+
+    public static bool IsSpeakerEmbeddingAvailable() => File.Exists(SpeakerEmbeddingModelPath);
+
+    /// <summary>
+    /// Downloads (if missing) the standalone Silero VAD ONNX file. Returns the file path.
+    /// </summary>
+    public static Task<string> EnsureSileroVadAsync(
+        IHttpClientFactory httpClientFactory,
+        IProgress<ModelDownloadProgress>? progress,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"{SherpaReleasesBase}/{SileroVadFileName}";
+        return EnsureSingleFileAsync(url, SileroVadModelPath, httpClientFactory, progress, logger, cancellationToken);
+    }
+
+    /// <summary>
+    /// Downloads (if missing) the standalone WeSpeaker VoxCeleb CAM++ embedding ONNX file.
+    /// Used for live speaker identification on the loopback channel. Returns the file path.
+    /// </summary>
+    public static Task<string> EnsureSpeakerEmbeddingAsync(
+        IHttpClientFactory httpClientFactory,
+        IProgress<ModelDownloadProgress>? progress,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"{SherpaSpeakerReleasesBase}/{SpeakerEmbeddingFileName}";
+        return EnsureSingleFileAsync(url, SpeakerEmbeddingModelPath, httpClientFactory, progress, logger, cancellationToken);
+    }
 
     /// <summary>
     /// Downloads (if missing) and extracts the sherpa-onnx Whisper bundle for the requested
@@ -115,6 +158,36 @@ public static class LiveTranscriptionModels
         {
             try { if (File.Exists(tmpArchive)) File.Delete(tmpArchive); } catch { /* ignore */ }
             try { if (Directory.Exists(tmpExtract)) Directory.Delete(tmpExtract, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    private static async Task<string> EnsureSingleFileAsync(
+        string url,
+        string targetPath,
+        IHttpClientFactory httpClientFactory,
+        IProgress<ModelDownloadProgress>? progress,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (File.Exists(targetPath)) return targetPath;
+
+        var dir = Path.GetDirectoryName(targetPath)!;
+        Directory.CreateDirectory(dir);
+
+        var tmpPath = targetPath + ".tmp";
+        try
+        {
+            logger.LogInformation("Downloading sherpa-onnx model {Url}", url);
+            await DownloadWithProgressAsync(url, tmpPath, httpClientFactory, progress, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (File.Exists(targetPath)) File.Delete(targetPath);
+            File.Move(tmpPath, targetPath);
+            return targetPath;
+        }
+        finally
+        {
+            try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { /* ignore */ }
         }
     }
 

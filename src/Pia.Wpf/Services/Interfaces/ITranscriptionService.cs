@@ -9,6 +9,10 @@ public interface ITranscriptionService
     Task DownloadModelAsync(WhisperModelSize modelSize, IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default);
 
     Task DownloadParakeetModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default);
+
+    Task DownloadSileroVadModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default);
+
+    Task DownloadSpeakerEmbeddingModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default);
 }
 
 public record ModelDownloadProgress(int PercentComplete, long TotalBytes, ModelDownloadPhase Phase = ModelDownloadPhase.Downloading);

@@ -257,6 +257,15 @@
   <data name="Settings_DownloadParakeetModel" xml:space="preserve"><value>Parakeet-Modell herunterladen</value></data>
   <data name="Settings_Parakeet_DisplayName" xml:space="preserve"><value>Parakeet TDT v3 (mehrsprachig)</value></data>
   <data name="Settings_Parakeet_Description" xml:space="preserve"><value>NVIDIA NeMo Parakeet Transducer-Modell. Unterstützt mehrere europäische Sprachen mit automatischer Erkennung. Etwa 340 MB auf der Festplatte.</value></data>
+  <data name="Settings_LiveMeeting_Section" xml:space="preserve"><value>Live-Meeting-Transkription</value></data>
+  <data name="Settings_SileroVad_DisplayName" xml:space="preserve"><value>Silero-Sprachaktivitätserkennung</value></data>
+  <data name="Settings_SileroVad_Description" xml:space="preserve"><value>Erkennt Sprache und Stille im Live-Audio. Wird beim ersten Meetingstart automatisch heruntergeladen; ~1,8 MB.</value></data>
+  <data name="Settings_DownloadSileroVadModel" xml:space="preserve"><value>Silero-VAD herunterladen</value></data>
+  <data name="Settings_SpeakerEmbedding_DisplayName" xml:space="preserve"><value>Sprecher-Embeddingmodell</value></data>
+  <data name="Settings_SpeakerEmbedding_Description" xml:space="preserve"><value>Teilt den Loopback-Kanal in einzelne Sprecher-Bezeichnungen auf (Sprecher 1, Sprecher 2, …). Wird beim ersten Meetingstart automatisch heruntergeladen; ~28 MB.</value></data>
+  <data name="Settings_DownloadSpeakerEmbeddingModel" xml:space="preserve"><value>Sprechermodell herunterladen</value></data>
+  <data name="Settings_EnableLoopbackDiarization" xml:space="preserve"><value>Einzelne Sprecher in entferntem Audio erkennen</value></data>
+  <data name="Settings_EnableLoopbackDiarization_Description" xml:space="preserve"><value>Wenn aktiv, wird der Loopback-Kanal in einzelne Sprecher-Bezeichnungen aufgeteilt. Klicken Sie eine Bezeichnung im Live-Transkript an, um sie umzubenennen.</value></data>
   <data name="Settings_SpeechToTextLanguage" xml:space="preserve"><value>Sprache-zu-Text Sprache</value></data>
   <data name="Settings_SpeechToTextLanguage_Description" xml:space="preserve"><value>Sprachvoreinstellung für Sprache-zu-Text-Transkription</value></data>
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Standard-Fenstermodus</value></data>
