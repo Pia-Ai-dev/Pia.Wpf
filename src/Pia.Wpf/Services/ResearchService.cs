@@ -63,7 +63,8 @@ public class ResearchService : IResearchService
 
                 ## Task
 
-                When given a research question, break it down into 3-5 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text.
+                When given a research question, break it down into 2-4 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text.
+                Every sub-question needs to address a very specific aspect of the prompt and should avoid duplicating content with other sub-questions. If not confident: less is more!
                 """;
 
             conversationHistory.Add(new ChatMessage(ChatRole.System, decomposePrompt));
