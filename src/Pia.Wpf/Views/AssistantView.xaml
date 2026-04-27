@@ -153,7 +153,7 @@
                 </StackPanel.Style>
                 <Border Padding="12,8"
                         CornerRadius="12,12,12,0"
-                        Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                        Background="{DynamicResource SpeakerBubbleBackgroundBrush}">
                   <Border.Style>
                     <Style TargetType="Border">
                       <Setter Property="Visibility" Value="Visible" />
@@ -354,8 +354,8 @@
             <ui:SymbolIcon Symbol="Dismiss24" FontSize="16" />
           </ui:Button>
 
-          <!-- TTS toggle button -->
-          <ui:Button Command="{Binding ToggleTtsCommand}"
+          <!-- TTS toggle button - disabled for now-->
+          <!--<ui:Button Command="{Binding ToggleTtsCommand}"
                      Width="40"
                      Height="40"
                      Margin="0,0,4,0"
@@ -371,7 +371,7 @@
               </Style>
             </ui:Button.Style>
             <ui:SymbolIcon Symbol="Speaker224" FontSize="16" />
-          </ui:Button>
+          </ui:Button>-->
 
           <!-- Record button -->
           <ui:Button Command="{Binding ToggleRecordingCommand}"

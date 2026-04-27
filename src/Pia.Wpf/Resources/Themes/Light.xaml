@@ -17,6 +17,16 @@
   <SolidColorBrush x:Key="BorderBrush" Color="#FFE0E0E0" />
   <SolidColorBrush x:Key="CardBorderBrush" Color="#FFE0E0E0" />
 
+  <!-- Speaker / assistant message bubble background (single-color, used by AssistantView) -->
+  <SolidColorBrush x:Key="SpeakerBubbleBackgroundBrush" Color="#FFE4E9F0" />
+
+  <!-- Live transcription per-speaker bubble palette (cycled mod 5) -->
+  <SolidColorBrush x:Key="SpeakerBubbleBackground1Brush" Color="#FFE4E9F0" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground2Brush" Color="#FFE4EFE1" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground3Brush" Color="#FFF5E8D8" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground4Brush" Color="#FFEEE2F0" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground5Brush" Color="#FFFAE3E3" />
+
   <!-- Todo Priority Brushes -->
   <SolidColorBrush x:Key="TodoPriorityHighBrush" Color="#FFE74C3C" />
   <SolidColorBrush x:Key="TodoPriorityMediumBrush" Color="#FFF39C12" />

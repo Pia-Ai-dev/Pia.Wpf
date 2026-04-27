@@ -132,6 +132,36 @@ public class StructuredPiiDetectorTests
         Assert.Empty(matches);
     }
 
+    // --- DetectPii: phone false-positive regression cases ---
+    // These look digit-heavy but are not phone numbers. Previously the regex
+    // (\+?[\d\s\-().]{7,20}\d) matched them, which corrupted file paths like
+    // %APPDATA%\Pia\assistant\meetings\transcript-20260427-143025.md.
+
+    [Theory]
+    [InlineData("transcript-20260427-143025.md")]
+    [InlineData("transcript_20260427_143025.md")]
+    [InlineData("Please summarize the meeting transcript saved at `%APPDATA%\\Pia\\assistant\\meetings\\transcript_2026_04_27_14h30m25s.md`.")]
+    [InlineData("ISO date 2026-04-27 stays untouched")]
+    [InlineData("ISO datetime 2026-04-27T14:30:25 is not a phone")]
+    [InlineData("Order #1234567 was shipped")]
+    public void DetectPii_DoesNotMatchTimestampOrIdAsPhone(string text)
+    {
+        var matches = _sut.DetectPii(text);
+        Assert.DoesNotContain(matches, m => m.Category == "Phone");
+    }
+
+    [Theory]
+    [InlineData("+49 175 5555555")]
+    [InlineData("+1 (555) 555-5555")]
+    [InlineData("(030) 1234-5678")]
+    [InlineData("+4915755555555")]
+    [InlineData("030-123-4567")]
+    public void DetectPii_StillMatchesRealPhoneFormats(string text)
+    {
+        var matches = _sut.DetectPii(text);
+        Assert.Contains(matches, m => m.Category == "Phone");
+    }
+
     // --- Edge cases ---
 
     [Fact]

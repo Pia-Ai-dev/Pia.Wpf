@@ -405,7 +405,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
             folder = MeetingTranscriptPaths.DefaultMeetingFolder;
         }
 
-        var defaultName = $"transcript-{_sessionStart.LocalDateTime:yyyyMMdd-HHmmss}.md";
+        var defaultName = $"transcript_{_sessionStart.LocalDateTime:yyyy'_'MM'_'dd'_'HH'h'mm'm'ss's'}.md";
         var path = _fileDialogService.PromptSaveFile(
             title: _localizationService["LiveTrans_SaveDialog_Title"],
             filter: _localizationService["LiveTrans_SaveDialog_Filter"],
@@ -446,7 +446,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var filename = $"transcript-{_sessionStart.LocalDateTime:yyyyMMdd-HHmmss}.md";
+        var filename = $"transcript_{_sessionStart.LocalDateTime:yyyy'_'MM'_'dd'_'HH'h'mm'm'ss's'}.md";
         var path = Path.Combine(folder, filename);
 
         try

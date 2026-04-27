@@ -254,7 +254,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void OnSummarizeRequested(object? sender, MeetingSummarizationRequest e)
     {
-        _ = HandleSummarizeRequestedAsync(e);
+        // The event is raised from SaveAndSummarizeAsync, which by this point is running on
+        // a thread-pool thread (it ConfigureAwait(false)'d its file I/O). Marshal the whole
+        // handler onto the dispatcher so ObservableCollection mutations, property writes,
+        // and Wpf.Ui snackbar calls all happen on the UI thread.
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null) return;
+
+        if (dispatcher.CheckAccess())
+            _ = HandleSummarizeRequestedAsync(e);
+        else
+            dispatcher.InvokeAsync(() => HandleSummarizeRequestedAsync(e));
     }
 
     private async Task HandleSummarizeRequestedAsync(MeetingSummarizationRequest e)

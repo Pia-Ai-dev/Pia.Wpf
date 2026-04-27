@@ -30,7 +30,9 @@ public partial class StructuredPiiDetector : IPiiDetector
     [GeneratedRegex(@"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled)]
     private static partial Regex EmailRegex();
 
-    [GeneratedRegex(@"\+?[\d\s\-().]{7,20}\d", RegexOptions.Compiled)]
+    [GeneratedRegex(
+        @"(?<![A-Za-z0-9_])(?:\+?\d{1,5}(?:[\s\-().]+\d{1,5}){0,4}[\s\-().]+\d{4,7}|\+\d{7,15})(?![A-Za-z0-9_])",
+        RegexOptions.Compiled)]
     private static partial Regex PhoneRegex();
 
     public IReadOnlyList<PiiMatch> DetectPii(string text)

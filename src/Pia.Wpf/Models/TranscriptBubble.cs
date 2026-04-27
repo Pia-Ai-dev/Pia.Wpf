@@ -31,6 +31,13 @@ public sealed partial class TranscriptBubble : ObservableObject
     [ObservableProperty]
     private string? _speakerLabel;
 
+    /// <summary>
+    /// Index into the per-speaker bubble color palette (0..N-1, assigned by the view model
+    /// in order of first appearance and cycled). Stays stable across renames.
+    /// </summary>
+    [ObservableProperty]
+    private int _colorIndex;
+
     public TranscriptBubble(TranscriptSpeaker speaker, DateTimeOffset startTimestamp, string text = "", string? speakerLabel = null)
     {
         Speaker = speaker;
