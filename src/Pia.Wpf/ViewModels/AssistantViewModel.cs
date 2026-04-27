@@ -17,39 +17,57 @@ namespace Pia.ViewModels;
 
 public partial class AssistantViewModel : ObservableObject, INavigationAware, IDisposable
 {
+    private static string GetLanguageName(TargetLanguage language) => language switch
+    {
+        TargetLanguage.DE => "German",
+        TargetLanguage.FR => "French",
+        _ => "English"
+    };
+
+    private string BuildLanguageInstruction()
+    {
+        var languageName = GetLanguageName(_localizationService.CurrentLanguage);
+        return $"Always respond to the user in {languageName} unless the user explicitly writes in another language or asks you to switch.";
+    }
+
     private string BuildSystemPrompt(bool tokenizationEnabled)
     {
         var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
+        var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
+            ? string.Empty
+            : $"## Plugins\n\n{pluginPrompts}\n\n";
+        var tokenSection = tokenizationEnabled
+            ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
+            : string.Empty;
+
         return $"""
+            ## Identity
+
             You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
             The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
 
-            {pluginPrompts}
+            ## Language
 
-            TOOL SELECTION — follow this decision tree strictly:
+            {BuildLanguageInstruction()}
+
+            {pluginSection}## Tool Selection
+
+            Follow this decision tree strictly:
+
             1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
-               YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
-               NO → Continue to step 2.
+               - YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
+               - NO → Continue to step 2.
             2. Does the request involve a TASK, ACTION ITEM, or something to DO?
-               YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
-               NO → Continue to step 3.
+               - YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
+               - NO → Continue to step 3.
             3. Does the request involve STORING, RECALLING, or UPDATING personal information?
-               YES → Use Memory tools (remember: query first, then create/update).
-               NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
-               NO → Respond conversationally without tools.
+               - YES → Use Memory tools (remember: query first, then create/update). NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+               - NO → Respond conversationally without tools.
 
-            Key principles:
-            - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge
-              the decline and ask the user what they would like to do differently or if they want to adjust
-              the details.
-            {(tokenizationEnabled ? """
+            ## Principles
 
-            When memory or contact data is returned, personal details (names, emails, phones, addresses,
-            dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens
-            naturally in your responses — they will be resolved back to real values before the user sees
-            your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were
-            the person's actual name.
-            """ : "")}
+            - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.
+            {tokenSection}
             """;
     }
 
@@ -59,7 +77,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var sb = new StringBuilder();
         sb.AppendLine();
-        sb.AppendLine("USER TOOL HINTS (the user explicitly requested these tools — prioritize them):");
+        sb.AppendLine("## User Tool Hints");
+        sb.AppendLine();
+        sb.AppendLine("The user explicitly requested these tools — prioritize them:");
+        sb.AppendLine();
         foreach (var cmd in commands)
         {
             var domainName = cmd.Domain switch
@@ -78,9 +99,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return sb.ToString();
     }
 
-    private static string BuildSystemPromptNoTools() => $"""
+    private string BuildSystemPromptNoTools() => $"""
+        ## Identity
+
         You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
         The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+
+        ## Language
+
+        {BuildLanguageInstruction()}
         """;
 
     private readonly ILogger<AssistantViewModel> _logger;

@@ -9,25 +9,36 @@ namespace Pia.Services;
 public class ResearchService : IResearchService
 {
     private readonly IAiClientService _aiClientService;
-    private readonly IPluginService _pluginService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<ResearchService> _logger;
 
     public ResearchService(
         IAiClientService aiClientService,
-        IPluginService pluginService,
+        ILocalizationService localizationService,
         ILogger<ResearchService> logger)
     {
         _aiClientService = aiClientService;
-        _pluginService = pluginService;
+        _localizationService = localizationService;
         _logger = logger;
+    }
+
+    private static string GetLanguageName(TargetLanguage language) => language switch
+    {
+        TargetLanguage.DE => "German",
+        TargetLanguage.FR => "French",
+        _ => "English"
+    };
+
+    private string BuildLanguageInstruction()
+    {
+        var languageName = GetLanguageName(_localizationService.CurrentLanguage);
+        return $"Always respond to the user in {languageName} unless the user explicitly writes in another language or asks you to switch.";
     }
 
     public async Task ExecuteResearchAsync(ResearchSession session, AiProvider provider, CancellationToken ct)
     {
         var conversationHistory = new List<ChatMessage>();
         var stepNumber = 1;
-        var tools = _pluginService.GetAllTools();
-        var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
 
         session.Status = ResearchStatus.InProgress;
 
@@ -40,7 +51,20 @@ public class ResearchService : IResearchService
             decomposeStep.StartedAt = DateTime.Now;
             decomposeStep.IsStreaming = true;
 
-            var decomposePrompt = "You are a research assistant. When given a research question, break it down into 3-5 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text.";
+            var decomposePrompt = $"""
+                ## Identity
+
+                You are Pia, a research assistant.
+                The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+
+                ## Language
+
+                {BuildLanguageInstruction()}
+
+                ## Task
+
+                When given a research question, break it down into 3-5 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text.
+                """;
 
             conversationHistory.Add(new ChatMessage(ChatRole.System, decomposePrompt));
             conversationHistory.Add(new ChatMessage(ChatRole.User, session.Query));
@@ -58,15 +82,17 @@ public class ResearchService : IResearchService
 
             var subQuestions = ParseSubQuestions(decomposeStep.Content);
 
-            // Phase 2: Research each sub-question (with tools if available)
-            // Replace the system prompt for research phase to include tool instructions
-            if (tools.Count > 0)
-            {
-                var researchSystemPrompt = "You are a research assistant with access to tools. Use available tools to gather accurate, up-to-date information for answering research questions. Provide detailed, well-sourced answers.";
-                if (!string.IsNullOrEmpty(pluginPrompts))
-                    researchSystemPrompt += "\n\n" + pluginPrompts;
-                conversationHistory[0] = new ChatMessage(ChatRole.System, researchSystemPrompt);
-            }
+            // Phase 2: Research each sub-question
+            conversationHistory[0] = new ChatMessage(ChatRole.System, $"""
+                ## Identity
+
+                You are Pia, a research assistant. Provide detailed, well-structured answers to research questions using the knowledge available to you.
+                The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+
+                ## Language
+
+                {BuildLanguageInstruction()}
+                """);
 
             foreach (var subQuestion in subQuestions)
             {
@@ -81,23 +107,9 @@ public class ResearchService : IResearchService
                 conversationHistory.Add(new ChatMessage(ChatRole.User,
                     $"Now research and provide a detailed answer to this sub-question: {subQuestion}"));
 
-                if (tools.Count > 0)
+                await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
                 {
-                    await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
-                        conversationHistory, provider, tools,
-                        toolCall => HandleResearchToolCallAsync(toolCall, ct),
-                        nameof(WindowMode.Research),
-                        ct))
-                    {
-                        researchStep.Content += token;
-                    }
-                }
-                else
-                {
-                    await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
-                    {
-                        researchStep.Content += token;
-                    }
+                    researchStep.Content += token;
                 }
 
                 researchStep.IsStreaming = false;
@@ -145,25 +157,6 @@ public class ResearchService : IResearchService
             session.Status = ResearchStatus.Failed;
             throw;
         }
-    }
-
-    private async Task<object?> HandleResearchToolCallAsync(FunctionCallContent toolCall, CancellationToken ct)
-    {
-        _logger.LogInformation("Research tool call: {Tool}", toolCall.Name);
-
-        var result = await _pluginService.RouteToolCallAsync(toolCall, ct);
-        if (result is null)
-            return "Unknown tool.";
-
-        var (directResult, pendingAction) = result.Value;
-        if (directResult is not null)
-            return directResult;
-
-        // In research mode, auto-execute without user confirmation
-        if (pendingAction is not null)
-            return await pendingAction.Execute();
-
-        return "Tool call handled.";
     }
 
     private static List<string> ParseSubQuestions(string content)

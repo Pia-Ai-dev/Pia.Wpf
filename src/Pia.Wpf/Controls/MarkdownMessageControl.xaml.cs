@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 using Pia.Models;
@@ -52,6 +54,37 @@ public partial class MarkdownMessageControl : UserControl
         _debounceTimer.Tick += OnDebounceTimerTick;
 
         AddHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler(OnRequestNavigate));
+
+        PreviewMouseWheel += OnPreviewMouseWheel;
+    }
+
+    private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        // The inner MarkdownScrollViewer is itself a ScrollViewer and consumes
+        // MouseWheel even when its own scrolling is disabled. Forward the wheel
+        // to the nearest ancestor ScrollViewer so the surrounding list scrolls.
+        if (e.Handled) return;
+
+        var parent = FindAncestor<ScrollViewer>(this);
+        if (parent is null) return;
+
+        e.Handled = true;
+        parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+        {
+            RoutedEvent = MouseWheelEvent,
+            Source = this,
+        });
+    }
+
+    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
+    {
+        var current = VisualTreeHelper.GetParent(start);
+        while (current is not null)
+        {
+            if (current is T match) return match;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
     }
 
     private static void OnMarkdownTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
