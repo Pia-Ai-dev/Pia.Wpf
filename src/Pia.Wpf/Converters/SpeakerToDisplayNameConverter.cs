@@ -15,15 +15,23 @@ public sealed class SpeakerToDisplayNameConverter : IMultiValueConverter
     public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
     {
         if (values.Length < 2) return string.Empty;
-        if (values[0] is TranscriptSpeaker.You) return "you";
-
-        if (values.Length >= 3 && values[2] is string label && !string.IsNullOrWhiteSpace(label))
-            return label;
-
+        var speaker = values[0] is TranscriptSpeaker s ? s : TranscriptSpeaker.You;
         var counterpart = values[1] as string;
-        return string.IsNullOrWhiteSpace(counterpart) ? "them" : counterpart;
+        var label = values.Length >= 3 ? values[2] as string : null;
+        return Resolve(speaker, counterpart, label);
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
+
+    /// <summary>
+    /// Maps a speaker to the same display label the UI shows. Reused by the Markdown
+    /// transcript export so both surfaces stay in sync.
+    /// </summary>
+    public static string Resolve(TranscriptSpeaker speaker, string? counterpartName, string? speakerLabel = null)
+    {
+        if (speaker == TranscriptSpeaker.You) return "you";
+        if (!string.IsNullOrWhiteSpace(speakerLabel)) return speakerLabel!;
+        return string.IsNullOrWhiteSpace(counterpartName) ? "them" : counterpartName!;
+    }
 }

@@ -64,6 +64,13 @@ public sealed class SileroVadDetector : IDisposable
 
     public event Action<float[]>? OnSegment;
 
+    /// <summary>Fires once when a speech segment opens (transitions from silence to speech).</summary>
+    public event Action? OnSpeechStarted;
+
+    /// <summary>Fires once when a speech segment closes (silence run hits the threshold,
+    /// the max-segment cap is reached, or <see cref="Drain"/> flushes a trailing segment).</summary>
+    public event Action? OnSpeechEnded;
+
     public SileroVadDetector(ILogger logger)
     {
         _logger = logger;
@@ -147,6 +154,8 @@ public sealed class SileroVadDetector : IDisposable
                 _logger.LogDebug(
                     "VAD segment OPEN at prob={P:F2} rmsDb={Rms:F1}, preroll={N} windows",
                     prob, RmsToDb(rms), _preroll.Count);
+                try { OnSpeechStarted?.Invoke(); }
+                catch (Exception ex) { _logger.LogError(ex, "VAD OnSpeechStarted subscriber threw"); }
             }
             else
             {
@@ -213,6 +222,9 @@ public sealed class SileroVadDetector : IDisposable
         _silentRunWindows = 0;
         _preroll.Clear();
 
+        try { OnSpeechEnded?.Invoke(); }
+        catch (Exception ex) { _logger.LogError(ex, "VAD OnSpeechEnded subscriber threw"); }
+
         if (samples.Count >= MinSegmentSamples)
         {
             var arr = samples.ToArray();
@@ -233,10 +245,16 @@ public sealed class SileroVadDetector : IDisposable
         }
         else
         {
+            var hadOpenSegment = _segment is not null;
             _logger.LogDebug(
                 "VAD drain: nothing to flush (segmentSamples={S})",
                 _segment?.Count ?? 0);
             _segment = null;
+            if (hadOpenSegment)
+            {
+                try { OnSpeechEnded?.Invoke(); }
+                catch (Exception ex) { _logger.LogError(ex, "VAD OnSpeechEnded subscriber threw"); }
+            }
         }
         _preroll.Clear();
         _pendingChunk.Clear();

@@ -16,21 +16,21 @@ public partial class LiveTranscriptionOverlay : UserControl
     private void OnDataContextChanged(object sender, System.Windows.DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is LiveTranscriptionViewModel oldVm)
-            ((INotifyCollectionChanged)oldVm.Utterances).CollectionChanged -= OnUtterancesChanged;
+            ((INotifyCollectionChanged)oldVm.Bubbles).CollectionChanged -= OnBubblesChanged;
 
         if (e.NewValue is LiveTranscriptionViewModel newVm)
-            ((INotifyCollectionChanged)newVm.Utterances).CollectionChanged += OnUtterancesChanged;
+            ((INotifyCollectionChanged)newVm.Bubbles).CollectionChanged += OnBubblesChanged;
     }
 
     private void OnUnloaded(object sender, System.Windows.RoutedEventArgs e)
     {
         if (DataContext is LiveTranscriptionViewModel vm)
-            ((INotifyCollectionChanged)vm.Utterances).CollectionChanged -= OnUtterancesChanged;
+            ((INotifyCollectionChanged)vm.Bubbles).CollectionChanged -= OnBubblesChanged;
         DataContextChanged -= OnDataContextChanged;
         Unloaded -= OnUnloaded;
     }
 
-    private void OnUtterancesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    private void OnBubblesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.Action != NotifyCollectionChangedAction.Add) return;
         Dispatcher.BeginInvoke(new Action(() => BubbleScroll.ScrollToEnd()));

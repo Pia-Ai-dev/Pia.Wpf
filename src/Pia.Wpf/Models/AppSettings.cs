@@ -83,6 +83,7 @@ public class AppSettings
     public string? LastCounterpartName { get; set; }
     public bool EnableLoopbackDiarization { get; set; } = true;
     public float SpeakerEmbeddingThreshold { get; set; } = 0.70f;
+    public string? MeetingTranscriptFolder { get; set; }
 
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;

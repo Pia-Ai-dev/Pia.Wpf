@@ -1,25 +1,34 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.IO;
+using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Converters;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
 
 namespace Pia.ViewModels;
 
 public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
 {
-    private const int MaxUtterances = 2000;
-    private const int TrimBatch = 200;
+    private const int MaxBubbles = 200;
+    private const int TrimBatch = 20;
+    private const int BubbleWindowSeconds = 25;
 
     private readonly ILiveMeetingService _service;
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService _localizationService;
     private readonly IDialogService _dialogService;
+    private readonly IFileDialogService _fileDialogService;
     private readonly ILogger<LiveTranscriptionViewModel> _logger;
 
     private CancellationTokenSource? _readerCts;
     private Task? _readerTask;
+
+    private DateTimeOffset _sessionStart;
 
     [ObservableProperty]
     private string _counterpartName = string.Empty;
@@ -30,10 +39,11 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _statusText = string.Empty;
 
-    public ObservableCollection<TranscriptUtterance> Utterances { get; } = [];
+    public ObservableCollection<TranscriptBubble> Bubbles { get; } = [];
 
     public IRelayCommand StopCommand { get; }
     public IRelayCommand CloseCommand { get; }
+    public IRelayCommand SaveTranscriptCommand { get; }
 
     public event EventHandler? CloseRequested;
 
@@ -42,19 +52,26 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         ISettingsService settingsService,
         ILocalizationService localizationService,
         IDialogService dialogService,
+        IFileDialogService fileDialogService,
         ILogger<LiveTranscriptionViewModel> logger)
     {
         _service = service;
         _settingsService = settingsService;
         _localizationService = localizationService;
         _dialogService = dialogService;
+        _fileDialogService = fileDialogService;
         _logger = logger;
         _counterpartName = _localizationService["LiveTrans_OtherSpeaker_Placeholder"];
 
         StopCommand = new AsyncRelayCommand(StopAsync);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
+        SaveTranscriptCommand = new AsyncRelayCommand(SaveTranscriptAsync, CanSaveTranscript);
 
         _service.StateChanged += OnServiceStateChanged;
+        _service.SpeakingChanged += OnServiceSpeakingChanged;
+
+        Bubbles.CollectionChanged += OnBubblesCollectionChanged;
+
         StatusText = _localizationService["LiveTrans_Status_Idle"];
     }
 
@@ -64,14 +81,14 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
 
         _logger.LogInformation("LiveTranscription ViewModel: StartAsync invoked");
 
-        // Restore last counterpart name if any.
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(settings.LastCounterpartName))
             DispatchToUi(() => CounterpartName = settings.LastCounterpartName!);
 
         DispatchToUi(() =>
         {
-            Utterances.Clear();
+            Bubbles.Clear();
+            _sessionStart = DateTimeOffset.Now;
             StatusText = _localizationService["LiveTrans_Status_Starting"];
         });
 
@@ -103,7 +120,13 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         _readerCts = null;
         _readerTask = null;
 
-        // Persist counterpart name for next session.
+        // Clear any lingering listening dots — VAD has been torn down.
+        DispatchToUi(() =>
+        {
+            foreach (var b in Bubbles)
+                if (b.IsListening) b.IsListening = false;
+        });
+
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
@@ -140,24 +163,55 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void AddUtterance(TranscriptUtterance utterance)
+    internal void AddUtterance(TranscriptUtterance utterance)
     {
         DispatchToUi(() =>
         {
             try
             {
-                Utterances.Add(utterance);
-                if (Utterances.Count > MaxUtterances)
-                {
-                    for (int i = 0; i < TrimBatch && Utterances.Count > MaxUtterances - TrimBatch; i++)
-                        Utterances.RemoveAt(0);
-                }
+                var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, utterance.SpeakerLabel, createIfMissing: true);
+                bubble!.Append(utterance.Text, utterance.Timestamp);
+                TrimIfNeeded();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to add utterance to UI collection");
             }
         });
+    }
+
+    /// <summary>
+    /// Reuses the most recently appended bubble when it's the same speaker (and same diarization
+    /// label, when present) and still inside the rolling window. Otherwise creates a fresh bubble
+    /// (when <paramref name="createIfMissing"/> is true) and appends it to <see cref="Bubbles"/>.
+    /// Using the *last* bubble — instead of per-speaker tracking — keeps the conversation in
+    /// chronological order: an interleaved "Them" turn always splits the prior "You" stream into
+    /// two visual bubbles. A change in <paramref name="speakerLabel"/> also forces a split so
+    /// diarized speakers ("Speaker 1" vs "Speaker 2") never share a bubble.
+    /// </summary>
+    internal TranscriptBubble? GetOrCreateBubble(TranscriptSpeaker speaker, DateTimeOffset timestamp, string? speakerLabel, bool createIfMissing)
+    {
+        var last = Bubbles.Count > 0 ? Bubbles[^1] : null;
+        if (last is not null
+            && last.Speaker == speaker
+            && string.Equals(last.SpeakerLabel, speakerLabel, StringComparison.Ordinal)
+            && (timestamp - last.StartTimestamp).TotalSeconds < BubbleWindowSeconds)
+        {
+            return last;
+        }
+
+        if (!createIfMissing) return null;
+
+        var bubble = new TranscriptBubble(speaker, timestamp, speakerLabel: speakerLabel);
+        Bubbles.Add(bubble);
+        return bubble;
+    }
+
+    private void TrimIfNeeded()
+    {
+        if (Bubbles.Count <= MaxBubbles) return;
+        for (int i = 0; i < TrimBatch && Bubbles.Count > MaxBubbles - TrimBatch; i++)
+            Bubbles.RemoveAt(0);
     }
 
     private void OnServiceStateChanged(object? sender, LiveMeetingState newState)
@@ -175,6 +229,97 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
                 _ => string.Empty,
             };
         });
+    }
+
+    internal void OnServiceSpeakingChanged(object? sender, SpeakingChangedEventArgs e)
+    {
+        DispatchToUi(() =>
+        {
+            if (e.IsSpeaking)
+            {
+                var bubble = GetOrCreateBubble(e.Speaker, DateTimeOffset.Now, speakerLabel: null, createIfMissing: true);
+                if (bubble is not null) bubble.IsListening = true;
+            }
+            else
+            {
+                // Speech ended — clear the listening flag on the most recent bubble belonging
+                // to this speaker. Walking backwards is fine; only one bubble per speaker is
+                // ever marked listening at a time.
+                for (int i = Bubbles.Count - 1; i >= 0; i--)
+                {
+                    if (Bubbles[i].Speaker == e.Speaker && Bubbles[i].IsListening)
+                    {
+                        Bubbles[i].IsListening = false;
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    partial void OnIsRunningChanged(bool value) => SaveTranscriptCommand.NotifyCanExecuteChanged();
+
+    private void OnBubblesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => SaveTranscriptCommand.NotifyCanExecuteChanged();
+
+    private bool CanSaveTranscript() => !IsRunning && Bubbles.Count > 0;
+
+    private async Task SaveTranscriptAsync()
+    {
+        if (!CanSaveTranscript()) return;
+
+        string folder;
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+            folder = MeetingTranscriptPaths.ResolveFolder(settings);
+            try { Directory.CreateDirectory(folder); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to ensure transcript folder {Folder}", folder); }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve meeting transcript folder");
+            folder = MeetingTranscriptPaths.DefaultMeetingFolder;
+        }
+
+        var defaultName = $"transcript-{_sessionStart.LocalDateTime:yyyyMMdd-HHmmss}.md";
+        var path = _fileDialogService.PromptSaveFile(
+            title: _localizationService["LiveTrans_SaveDialog_Title"],
+            filter: _localizationService["LiveTrans_SaveDialog_Filter"],
+            defaultFileName: defaultName,
+            initialDirectory: folder);
+        if (string.IsNullOrEmpty(path)) return;
+
+        try
+        {
+            var markdown = BuildMarkdown();
+            await File.WriteAllTextAsync(path, markdown, Encoding.UTF8).ConfigureAwait(false);
+            _logger.LogInformation("Saved live transcript to {Path}", path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save transcript to {Path}", path);
+        }
+    }
+
+    internal string BuildMarkdown()
+    {
+        var sb = new StringBuilder();
+        sb.Append("# ").Append(_localizationService["LiveTrans_Title"])
+          .Append(" — ").Append(_sessionStart.LocalDateTime.ToString("yyyy-MM-dd HH:mm")).AppendLine();
+        sb.AppendLine();
+        foreach (var bubble in Bubbles)
+        {
+            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, CounterpartName, bubble.SpeakerLabel);
+            sb.Append("**").Append(label).Append("** _")
+              .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss"));
+            if (bubble.EndTimestamp != bubble.StartTimestamp)
+                sb.Append('–').Append(bubble.EndTimestamp.LocalDateTime.ToString("HH:mm:ss"));
+            sb.Append('_').AppendLine().AppendLine();
+            sb.AppendLine(bubble.Text);
+            sb.AppendLine();
+        }
+        return sb.ToString();
     }
 
     private void DispatchToUi(Action action)
@@ -205,10 +350,10 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
 
         DispatchToUi(() =>
         {
-            for (int i = 0; i < Utterances.Count; i++)
+            foreach (var bubble in Bubbles)
             {
-                if (Utterances[i].SpeakerLabel == oldLabel)
-                    Utterances[i] = Utterances[i] with { SpeakerLabel = newLabel };
+                if (bubble.SpeakerLabel == oldLabel)
+                    bubble.SpeakerLabel = newLabel;
             }
         });
     }
@@ -219,6 +364,8 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _service.StateChanged -= OnServiceStateChanged;
+        _service.SpeakingChanged -= OnServiceSpeakingChanged;
+        Bubbles.CollectionChanged -= OnBubblesCollectionChanged;
         try { _readerCts?.Cancel(); }
         catch { /* ignore */ }
         _readerCts?.Dispose();

@@ -27,7 +27,18 @@ public sealed class SherpaOnnxVadDetector : IDisposable
     private readonly float[] _pending = new float[WindowSize * 2];
     private int _pendingCount;
 
+    // Tracks the last observed speech state so OnSpeechStarted/OnSpeechEnded fire only
+    // on transitions, not on every window where speech is active.
+    private bool _wasSpeaking;
+
     public event Action<float[]>? OnSegment;
+
+    /// <summary>Fires once when a speech segment opens (silence → speech transition).</summary>
+    public event Action? OnSpeechStarted;
+
+    /// <summary>Fires once when a speech segment closes (speech → silence transition,
+    /// or <see cref="Drain"/> flushes a trailing segment).</summary>
+    public event Action? OnSpeechEnded;
 
     public SherpaOnnxVadDetector(string modelPath, ILogger logger)
     {
@@ -77,10 +88,29 @@ public sealed class SherpaOnnxVadDetector : IDisposable
                 Array.Copy(_pending, 0, window, 0, WindowSize);
                 _vad.AcceptWaveform(window);
                 _pendingCount = 0;
+                UpdateSpeakingState();
             }
         }
 
         DrainSegments();
+    }
+
+    private void UpdateSpeakingState()
+    {
+        var isSpeaking = _vad.IsSpeechDetected();
+        if (isSpeaking == _wasSpeaking) return;
+
+        _wasSpeaking = isSpeaking;
+        if (isSpeaking)
+        {
+            try { OnSpeechStarted?.Invoke(); }
+            catch (Exception ex) { _logger.LogError(ex, "VAD OnSpeechStarted subscriber threw"); }
+        }
+        else
+        {
+            try { OnSpeechEnded?.Invoke(); }
+            catch (Exception ex) { _logger.LogError(ex, "VAD OnSpeechEnded subscriber threw"); }
+        }
     }
 
     /// <summary>
@@ -92,6 +122,15 @@ public sealed class SherpaOnnxVadDetector : IDisposable
         _vad.Flush();
         DrainSegments();
         _pendingCount = 0;
+
+        // After Flush, sherpa returns IsSpeechDetected()==false; mirror that as a closing
+        // transition so the listening dot clears even if the source stops mid-utterance.
+        if (_wasSpeaking)
+        {
+            _wasSpeaking = false;
+            try { OnSpeechEnded?.Invoke(); }
+            catch (Exception ex) { _logger.LogError(ex, "VAD OnSpeechEnded subscriber threw"); }
+        }
     }
 
     private void DrainSegments()

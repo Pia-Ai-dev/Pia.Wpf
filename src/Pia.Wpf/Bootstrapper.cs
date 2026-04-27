@@ -225,6 +225,7 @@ public static class Bootstrapper
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
         services.AddSingleton<ITranscriptionService, TranscriptionService>();
         services.AddSingleton<ILiveMeetingService, Services.LiveTranscription.LiveMeetingService>();
+        services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<INotificationService, NotificationService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
