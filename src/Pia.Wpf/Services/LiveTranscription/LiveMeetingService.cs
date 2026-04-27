@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services.LiveTranscription;
@@ -13,7 +14,20 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<LiveMeetingService> _logger;
 
+    private readonly Channel<TranscriptUtterance> _rawUtterances;
     private readonly Channel<TranscriptUtterance> _utterances;
+    private Task? _forwardLoop;
+    private CancellationTokenSource? _forwardCts;
+    private PeriodicTimer? _timeoutSweepTimer;
+    private Task? _timeoutSweepLoop;
+    private readonly HashSet<string> _knownSpeakers = new(StringComparer.Ordinal);
+
+    private readonly IConsentStateManager _consentMgr;
+    private readonly IConsentClassifier _consentClassifier;
+    private readonly IConsentGate _consentGate;
+    private readonly IConsentAuditLog _auditLog;
+    private readonly ITtsService _tts;
+
     private LiveMeetingState _state = LiveMeetingState.Idle;
     private readonly object _stateLock = new();
 
@@ -36,18 +50,35 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     public ChannelReader<TranscriptUtterance> Utterances => _utterances.Reader;
 
     public bool RenameSpeaker(string oldLabel, string newLabel)
-        => _speakerId?.Rename(oldLabel, newLabel) ?? false;
+    {
+        var renamed = _speakerId?.Rename(oldLabel, newLabel) ?? false;
+        if (renamed) _consentMgr.Rename(oldLabel, newLabel);
+        return renamed;
+    }
 
     public LiveMeetingService(
         ISettingsService settingsService,
         IHttpClientFactory httpClientFactory,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IConsentStateManager consentMgr,
+        IConsentClassifier consentClassifier,
+        IConsentGate consentGate,
+        IConsentAuditLog auditLog,
+        ITtsService tts)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<LiveMeetingService>();
+        _rawUtterances = CreateUtterancesChannel();
         _utterances = CreateUtterancesChannel();
+        _consentMgr = consentMgr;
+        _consentClassifier = consentClassifier;
+        _consentGate = consentGate;
+        _auditLog = auditLog;
+        _tts = tts;
+
+        _consentMgr.StateChanged += OnConsentStateChanged;
     }
 
     public async Task PrepareAsync(CancellationToken cancellationToken = default)
@@ -131,7 +162,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 _micSource,
                 _transcriptionEngine!,
                 _vadModelPath!,
-                _utterances.Writer,
+                _rawUtterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
 
             _loopbackEngine = new LiveTranscriptionEngineService(
@@ -139,12 +170,19 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 _loopbackSource,
                 _transcriptionEngine!,
                 _vadModelPath!,
-                _utterances.Writer,
+                _rawUtterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
-                _speakerId);
+                _speakerId,
+                _consentGate);
 
             _micEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
             _loopbackEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
+
+            _forwardCts = new CancellationTokenSource();
+            _forwardLoop = Task.Run(() => RunForwardLoopAsync(_forwardCts.Token));
+
+            _timeoutSweepTimer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            _timeoutSweepLoop = Task.Run(() => RunTimeoutSweepAsync(_timeoutSweepTimer));
 
             await _micEngine.StartAsync(cancellationToken).ConfigureAwait(false);
             await _loopbackEngine.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -194,8 +232,151 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         }
     }
 
+    private async Task RunForwardLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var utt in _rawUtterances.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                try { await ProcessUtteranceAsync(utt, cancellationToken).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogError(ex, "Forward-loop processing threw"); }
+            }
+        }
+        catch (OperationCanceledException) { /* expected */ }
+        catch (Exception ex) { _logger.LogError(ex, "Forward loop failed"); }
+    }
+
+    private async Task ProcessUtteranceAsync(TranscriptUtterance utt, CancellationToken cancellationToken)
+    {
+        // Loopback engine emits utterances with a SpeakerLabel; mic-side has none and is
+        // always trusted (the local user is by definition consenting to their own recording).
+        if (utt.SpeakerLabel is null)
+        {
+            await _utterances.Writer.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var label = utt.SpeakerLabel;
+        var firstSeen = false;
+        lock (_knownSpeakers) firstSeen = _knownSpeakers.Add(label);
+        if (firstSeen)
+        {
+            await OnNewSpeakerJoinedAsync(label, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (utt.Channel == TranscriptChannel.ConsentClassification)
+        {
+            HandleConsentReply(label, utt.Text);
+            return; // never forward consent dialog content to the user transcript
+        }
+
+        // Defense-in-depth: gate already filters non-Granted speakers; if anything slips
+        // through, drop it here and audit the leak.
+        var state = _consentMgr.CurrentState(label);
+        if (state != ConsentState.Granted)
+        {
+            _logger.LogWarning("Post-STT defense filter dropped utterance for {Label} (state={State})", label, state);
+            _auditLog.Append(new AuditEvent(
+                Guid.NewGuid(), DateTimeOffset.UtcNow, "DROPPED_TRANSCRIPT_NO_CONSENT", label,
+                new Dictionary<string, object?>
+                {
+                    ["state"] = state.ToString(),
+                    ["reason"] = "post_stt_filter",
+                }));
+            return;
+        }
+
+        await _utterances.Writer.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task OnNewSpeakerJoinedAsync(string label, CancellationToken cancellationToken)
+    {
+        _consentMgr.GetOrCreate(label);
+        _auditLog.Append(new AuditEvent(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, "SPEAKER_JOINED", label, null));
+
+        var prompt = ConsentPromptTemplates.InitialConsentLocalOnlyDe;
+        try { await _tts.SpeakAsync(prompt.Text, cancellationToken).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "TTS playback failed for consent prompt"); }
+
+        _consentMgr.MarkPrompted(label);
+        _auditLog.Append(new AuditEvent(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, "CONSENT_PROMPTED", label,
+            new Dictionary<string, object?>
+            {
+                ["prompt_id"] = prompt.Id,
+                ["prompt_hash"] = prompt.VersionHash,
+                ["language"] = prompt.Language,
+            }));
+    }
+
+    private void HandleConsentReply(string label, string transcriptText)
+    {
+        var classification = _consentClassifier.Classify(transcriptText);
+        var prompt = ConsentPromptTemplates.InitialConsentLocalOnlyDe;
+        _consentMgr.RecordClassification(
+            label, classification, transcriptText, prompt.VersionHash, prompt.Text, sttModelId: "live-engine");
+    }
+
+    private void OnConsentStateChanged(object? sender, ConsentStateChangedEventArgs e)
+    {
+        var eventType = e.NewState switch
+        {
+            ConsentState.Granted => "CONSENT_GRANTED",
+            ConsentState.Denied => "CONSENT_DENIED",
+            ConsentState.Ambiguous => "CONSENT_AMBIGUOUS",
+            ConsentState.Timeout => "CONSENT_TIMEOUT",
+            ConsentState.Revoked => "CONSENT_REVOKED",
+            ConsentState.Prompted => "CONSENT_PROMPTED_TRANSITION",
+            _ => null,
+        };
+        if (eventType is null) return;
+
+        _auditLog.Append(new AuditEvent(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, eventType, e.SpeakerLabel,
+            new Dictionary<string, object?> { ["from"] = e.OldState.ToString() }));
+
+        // Spec §3 CLARIFICATION_AMBIGUOUS: re-prompt when a reply lands in the ambiguous band.
+        if (e.NewState == ConsentState.Ambiguous)
+        {
+            _ = Task.Run(async () =>
+            {
+                var clar = ConsentPromptTemplates.ClarificationAmbiguousDe;
+                try { await _tts.SpeakAsync(clar.Text).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "TTS clarification playback failed"); }
+                _consentMgr.MarkPrompted(e.SpeakerLabel);
+            });
+        }
+    }
+
+    private async Task RunTimeoutSweepAsync(PeriodicTimer timer)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync().ConfigureAwait(false))
+            {
+                _consentMgr.SweepTimeouts();
+            }
+        }
+        catch (OperationCanceledException) { /* shutdown */ }
+        catch (Exception ex) { _logger.LogError(ex, "Timeout sweep loop failed"); }
+    }
+
     private async Task DisposeAllAsync()
     {
+        if (_timeoutSweepTimer is not null)
+        {
+            try { _timeoutSweepTimer.Dispose(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Timeout sweep timer dispose threw"); }
+            _timeoutSweepTimer = null;
+        }
+        if (_timeoutSweepLoop is not null)
+        {
+            try { await _timeoutSweepLoop.ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Timeout sweep loop wait threw"); }
+            _timeoutSweepLoop = null;
+        }
+
         if (_micEngine is not null)
         {
             _micEngine.IsSpeakingChanged -= OnEngineSpeakingChanged;
@@ -234,6 +415,23 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification service dispose threw"); }
             _speakerId = null;
         }
+
+        // Engines are gone, so the raw channel will receive no more writes — complete it
+        // so the forward loop drains and exits. Public utterance writer is left open so
+        // existing readers can continue consuming until DisposeAsync.
+        _rawUtterances.Writer.TryComplete();
+        if (_forwardLoop is not null)
+        {
+            try { await _forwardLoop.ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Forward loop wait threw"); }
+            _forwardLoop = null;
+        }
+        if (_forwardCts is not null)
+        {
+            _forwardCts.Dispose();
+            _forwardCts = null;
+        }
+        lock (_knownSpeakers) _knownSpeakers.Clear();
     }
 
     private void OnEngineSpeakingChanged(object? sender, bool isSpeaking)
@@ -268,6 +466,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
+        _consentMgr.StateChanged -= OnConsentStateChanged;
         _utterances.Writer.TryComplete();
     }
 }
