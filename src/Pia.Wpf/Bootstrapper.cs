@@ -257,10 +257,16 @@ public static class Bootstrapper
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Pia", "ConsentAudit");
             Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, $"session_{Guid.NewGuid():N}.jsonl");
-            return new JsonlConsentAuditLog(
-                path,
-                sp.GetRequiredService<ILogger<JsonlConsentAuditLog>>());
+            var sessionId = Guid.NewGuid().ToString("N");
+            var logPath = Path.Combine(dir, $"session_{sessionId}.jsonl");
+            var manifestPath = Path.Combine(dir, $"session_{sessionId}.manifest.json");
+            var signer = AuditChainSigner.LoadOrCreate(
+                manifestPath,
+                sp.GetRequiredService<DpapiHelper>());
+            return new HashChainedAuditLog(
+                logPath,
+                signer,
+                sp.GetRequiredService<ILogger<HashChainedAuditLog>>());
         });
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<INotificationService, NotificationService>();

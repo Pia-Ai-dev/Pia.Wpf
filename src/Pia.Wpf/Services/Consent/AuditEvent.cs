@@ -10,4 +10,8 @@ public sealed record AuditEvent(
     DateTimeOffset Timestamp,
     string EventType,
     string? SpeakerLabel,
-    IReadOnlyDictionary<string, object?>? Details);
+    IReadOnlyDictionary<string, object?>? Details,
+    // Phase-2 hash-chain fields. Both nullable so Phase-1 logs (no chain) round-trip cleanly:
+    // a reader encountering a missing PreviousEventHash treats that line as the chain root.
+    string? PreviousEventHash = null,
+    string? Signature = null);
