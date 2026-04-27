@@ -60,6 +60,21 @@ public sealed class SpeakerRingBuffer
         lock (_lock) ClearNoLock();
     }
 
+    /// <summary>
+    /// Drops up to <paramref name="sampleCount"/> oldest samples without copying them out.
+    /// Used by the registry's global-cap enforcer.
+    /// </summary>
+    public void EvictOldest(int sampleCount)
+    {
+        if (sampleCount <= 0) return;
+        lock (_lock)
+        {
+            var drop = Math.Min(sampleCount, _count);
+            _start = (_start + drop) % _buffer.Length;
+            _count -= drop;
+        }
+    }
+
     private float[] SnapshotNoLock()
     {
         var result = new float[_count];
