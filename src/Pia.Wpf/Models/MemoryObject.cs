@@ -31,13 +31,15 @@ public static class MemoryObjectTypes
     public const string ContactList = "contact_list";
     public const string Preference = "preference";
     public const string Note = "note";
+    public const string MeetingSummary = "meeting_summary";
 
     public static readonly IReadOnlyList<string> All =
     [
         PersonalProfile,
         ContactList,
         Preference,
-        Note
+        Note,
+        MeetingSummary
     ];
 
     public static string GetDisplayName(string type) => type switch
@@ -46,6 +48,7 @@ public static class MemoryObjectTypes
         ContactList => "Contacts",
         Preference => "Preferences",
         Note => "Notes & Knowledge",
+        MeetingSummary => "Meeting Summaries",
         _ => type
     };
 }

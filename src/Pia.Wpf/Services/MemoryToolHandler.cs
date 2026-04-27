@@ -508,9 +508,9 @@ public class MemoryToolHandler : IMemoryToolHandler
         return denominator == 0 ? 0f : dot / denominator;
     }
 
-    [Description("Create a new memory object")]
+    [Description("Create a new memory object. Use meeting_summary for summaries of saved meeting transcripts (with topic/date/speakers/originalFilename/content/summaryKind in data).")]
     private static string CreateObjectSchema(
-        [Description("Type of memory object: personal_profile, contact_list, preference, note")] string type,
+        [Description("Type of memory object: personal_profile, contact_list, preference, note, meeting_summary")] string type,
         [Description("Human-readable label for this memory")] string label,
         [Description("JSON data for the memory object")] string data) => "";
 
@@ -526,7 +526,7 @@ public class MemoryToolHandler : IMemoryToolHandler
 
     [Description("List all memory objects with their type, label, and ID")]
     private static string ListMemoriesSchema(
-        [Description("Optional type filter: personal_profile, contact_list, preference, note")] string? type = null) => "";
+        [Description("Optional type filter: personal_profile, contact_list, preference, note, meeting_summary")] string? type = null) => "";
 
     [Description("Search the user's memory store using a natural language query")]
     private static string QueryMemorySchema(
