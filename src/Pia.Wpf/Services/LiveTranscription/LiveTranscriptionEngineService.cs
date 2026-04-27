@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.Consent;
 
 namespace Pia.Services.LiveTranscription;
 
@@ -25,6 +26,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private readonly SherpaOnnxVadDetector _vad;
     private readonly ITranscriptionEngine _engine;
     private readonly ISpeakerIdentificationService? _speakerId;
+    private readonly IConsentGate? _consentGate;
     private readonly ChannelWriter<TranscriptUtterance> _sink;
     private readonly ILogger _logger;
 
@@ -41,12 +43,14 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         string vadModelPath,
         ChannelWriter<TranscriptUtterance> sink,
         ILogger logger,
-        ISpeakerIdentificationService? speakerId = null)
+        ISpeakerIdentificationService? speakerId = null,
+        IConsentGate? consentGate = null)
     {
         _speaker = speaker;
         _source = source;
         _engine = engine;
         _speakerId = speakerId;
+        _consentGate = consentGate;
         _sink = sink;
         _logger = logger;
 
@@ -177,7 +181,27 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 }
             }
 
-            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel);
+            var channel = TranscriptChannel.Regular;
+            if (_consentGate is not null && speakerLabel is not null)
+            {
+                var decision = _consentGate.Evaluate(speakerLabel);
+                switch (decision)
+                {
+                    case GateDecision.Drop:
+                        _logger.LogInformation(
+                            "Consent gate dropped segment for {Label} (speaker={Speaker})",
+                            speakerLabel, _speaker);
+                        return;
+                    case GateDecision.PassToConsentClassifier:
+                        channel = TranscriptChannel.ConsentClassification;
+                        break;
+                    case GateDecision.PassToTranscript:
+                    default:
+                        break;
+                }
+            }
+
+            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel, channel);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* shutdown */ }
