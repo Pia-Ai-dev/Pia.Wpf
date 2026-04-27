@@ -31,6 +31,7 @@ public class NamingConventionTests
             .That().ResideInNamespace(ServicesNamespace)
             .And().DoNotResideInNamespace(ServiceInterfacesNamespace)
             .And().DoNotResideInNamespace(E2EENamespace)
+            .And().DoNotResideInNamespace(ConsentNamespace)
             .And().AreClasses()
             .And().AreNotAbstract()
             .GetTypes();
