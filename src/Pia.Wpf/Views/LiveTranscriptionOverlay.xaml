@@ -38,6 +38,27 @@
                      FontSize="12"
                      Margin="0,2,0,0"
                      Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          <Border Margin="0,4,0,0"
+                  Padding="8,2"
+                  CornerRadius="8"
+                  HorizontalAlignment="Left"
+                  Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                  BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                  BorderThickness="1">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding ConsentBadge}" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <TextBlock Text="{Binding ConsentBadge}"
+                       FontSize="11"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+          </Border>
         </StackPanel>
 
         <ui:Button Grid.Column="1"
