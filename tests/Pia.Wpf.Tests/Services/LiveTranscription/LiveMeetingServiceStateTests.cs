@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Xunit;
@@ -63,7 +65,12 @@ public class LiveMeetingServiceStateTests
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings());
         var http = Substitute.For<System.Net.Http.IHttpClientFactory>();
-        var loggers = Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
-        return new LiveMeetingService(settings, http, loggers);
+        var loggers = NullLoggerFactory.Instance;
+        var mgr = new ConsentStateManager(NullLogger<ConsentStateManager>.Instance, TimeProvider.System);
+        var classifier = new RuleBasedConsentClassifier();
+        var gate = new ConsentGate(mgr, NullLogger<ConsentGate>.Instance);
+        var audit = Substitute.For<IConsentAuditLog>();
+        var tts = Substitute.For<ITtsService>();
+        return new LiveMeetingService(settings, http, loggers, mgr, classifier, gate, audit, tts);
     }
 }

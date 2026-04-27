@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 
@@ -32,6 +33,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly IDialogService _dialogService;
     private readonly IFileDialogService _fileDialogService;
+    private readonly IConsentStateManager _consentMgr;
     private readonly ILogger<LiveTranscriptionViewModel> _logger;
 
     private CancellationTokenSource? _readerCts;
@@ -67,6 +69,13 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isPreparing;
 
+    /// <summary>
+    /// Localized German label describing the current consent state of the most recent speaker.
+    /// Empty when no speaker has been prompted yet. Shown as a small pill in the overlay.
+    /// </summary>
+    [ObservableProperty]
+    private string _consentBadge = string.Empty;
+
     public ObservableCollection<TranscriptBubble> Bubbles { get; } = [];
 
     public IAsyncRelayCommand StartCommand { get; }
@@ -84,6 +93,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         ILocalizationService localizationService,
         IDialogService dialogService,
         IFileDialogService fileDialogService,
+        IConsentStateManager consentMgr,
         ILogger<LiveTranscriptionViewModel> logger)
     {
         _service = service;
@@ -91,7 +101,10 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         _localizationService = localizationService;
         _dialogService = dialogService;
         _fileDialogService = fileDialogService;
+        _consentMgr = consentMgr;
         _logger = logger;
+
+        _consentMgr.StateChanged += OnConsentStateChanged;
 
         StartCommand = new AsyncRelayCommand(StartAsync, CanStart);
         StopCommand = new AsyncRelayCommand(StopAsync);
@@ -510,10 +523,29 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     private static bool CanRenameSpeakerLabel(string? oldLabel)
         => !string.IsNullOrWhiteSpace(oldLabel);
 
+    private void OnConsentStateChanged(object? sender, ConsentStateChangedEventArgs e)
+    {
+        var label = MapConsentBadge(e.NewState);
+        DispatchToUi(() => ConsentBadge = label);
+    }
+
+    private static string MapConsentBadge(ConsentState state) => state switch
+    {
+        ConsentState.Unknown => "Warte auf Ansage",
+        ConsentState.Prompted => "Frage läuft…",
+        ConsentState.Granted => "Aufnahme freigegeben",
+        ConsentState.Denied => "Aufnahme abgelehnt",
+        ConsentState.Timeout => "Keine Antwort – Aufnahme gestoppt",
+        ConsentState.Ambiguous => "Antwort unklar",
+        ConsentState.Revoked => "Widerrufen",
+        _ => string.Empty,
+    };
+
     public void Dispose()
     {
         _service.StateChanged -= OnServiceStateChanged;
         _service.SpeakingChanged -= OnServiceSpeakingChanged;
+        _consentMgr.StateChanged -= OnConsentStateChanged;
         Bubbles.CollectionChanged -= OnBubblesCollectionChanged;
         try { _readerCts?.Cancel(); }
         catch { /* ignore */ }

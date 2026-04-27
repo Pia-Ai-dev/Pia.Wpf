@@ -180,8 +180,12 @@ public class LiveTranscriptionViewModelBubbleTests
         var files = new RecordingFileDialogService();
         var dialogs = Substitute.For<IDialogService>();
 
+        var consentMgr = new Pia.Services.Consent.ConsentStateManager(
+            NullLogger<Pia.Services.Consent.ConsentStateManager>.Instance,
+            TimeProvider.System);
+
         var vm = new LiveTranscriptionViewModel(
-            service, settingsService, loc, dialogs, files,
+            service, settingsService, loc, dialogs, files, consentMgr,
             NullLogger<LiveTranscriptionViewModel>.Instance);
 
         return (vm, service, files);
