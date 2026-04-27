@@ -566,6 +566,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     "memory" => _localizationService["Msg_Assistant_MemoryUpdated"],
                     "todo" => _localizationService["Msg_Assistant_TodoUpdated"],
                     "reminder" => _localizationService["Msg_Assistant_ReminderUpdated"],
+                    "meeting" => _localizationService["Msg_Assistant_MeetingSummarized"],
                     _ => _localizationService["Msg_Assistant_StatusProcessing"]
                 };
                 _snackbarService.Show(snackbarTitle,
@@ -598,6 +599,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             "memory" => ActionCardCategory.Memory,
             "todo" => ActionCardCategory.Todo,
             "reminder" => ActionCardCategory.Reminder,
+            "meeting" => ActionCardCategory.Meeting,
             _ => ActionCardCategory.Memory
         };
 
@@ -639,6 +641,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ActionCardCategory.Memory => "ActionCard_Category_Memory",
             ActionCardCategory.Todo => "ActionCard_Category_Todo",
             ActionCardCategory.Reminder => "ActionCard_Category_Reminder",
+            ActionCardCategory.Meeting => "ActionCard_Category_Meeting",
             _ => "ActionCard_Category_Memory"
         };
 
@@ -648,6 +651,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             "update_object" or "append_to_list" or "update_todo" or "update_reminder" => "ActionCard_Action_Update",
             "delete_object" or "delete_todo" or "delete_reminder" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
+            "summarize_meeting_transcript" => "ActionCard_Action_Summarize",
+            "query_meeting_summaries" => "ActionCard_Action_Query",
             _ => "ActionCard_Action_Create"
         };
 

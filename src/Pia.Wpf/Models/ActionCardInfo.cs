@@ -15,7 +15,8 @@ public enum ActionCardCategory
 {
     Memory,
     Todo,
-    Reminder
+    Reminder,
+    Meeting
 }
 
 public record ActionCardDetail(string Label, string Value);
