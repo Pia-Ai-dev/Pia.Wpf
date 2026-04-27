@@ -72,6 +72,8 @@
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Erinnerung wird aktualisiert...</value></data>
   <data name="Msg_Assistant_StatusUpdatingTodo" xml:space="preserve"><value>Aufgabe wird aktualisiert...</value></data>
   <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Aufgabe aktualisiert</value></data>
+  <data name="Msg_Assistant_TranscriptSaved" xml:space="preserve"><value>Transkript gespeichert</value></data>
+  <data name="Msg_Assistant_MeetingSummarized" xml:space="preserve"><value>Zusammenfassung erstellt</value></data>
   <data name="Msg_Assistant_Value" xml:space="preserve"><value>Wert:</value></data>
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Möchtest du diese Sitzung wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.</value></data>

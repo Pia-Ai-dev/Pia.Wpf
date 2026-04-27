@@ -74,6 +74,8 @@
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Updating reminder...</value></data>
   <data name="Msg_Assistant_StatusUpdatingTodo" xml:space="preserve"><value>Updating todo...</value></data>
   <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Todo Updated</value></data>
+  <data name="Msg_Assistant_TranscriptSaved" xml:space="preserve"><value>Transcript saved</value></data>
+  <data name="Msg_Assistant_MeetingSummarized" xml:space="preserve"><value>Summary generated</value></data>
   <data name="Msg_Assistant_Value" xml:space="preserve"><value>Value:</value></data>
 
   <!-- History messages -->

@@ -223,6 +223,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         LiveTranscription.CloseRequested += OnLiveTranscriptionCloseRequested;
+        LiveTranscription.SummarizeRequested += OnSummarizeRequested;
         PropertyChanged += OnPropertyChanged;
     }
 
@@ -249,6 +250,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         // Fire-and-forget: stop the session and hide the overlay.
         _ = ExecuteToggleLiveTranscription();
+    }
+
+    private void OnSummarizeRequested(object? sender, MeetingSummarizationRequest e)
+    {
+        _ = HandleSummarizeRequestedAsync(e);
+    }
+
+    private async Task HandleSummarizeRequestedAsync(MeetingSummarizationRequest e)
+    {
+        await LiveTranscription.StopAsync();
+        IsLiveTranscriptionVisible = false;
+        LiveTranscription.ResetForNewSession();
+
+        _snackbarService.Show(
+            _localizationService["Msg_Assistant_TranscriptSaved"],
+            _localizationService.Format("LiveTrans_SaveAndSummarize_Snackbar", e.DisplayPath),
+            Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
+
+        InputText = _localizationService.Format("Assistant_Meeting_SummarizeRequest", e.DisplayPath);
+        if (SendMessageCommand.CanExecute(null))
+            await SendMessageCommand.ExecuteAsync(null);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -1016,6 +1038,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         LiveTranscription.CloseRequested -= OnLiveTranscriptionCloseRequested;
+        LiveTranscription.SummarizeRequested -= OnSummarizeRequested;
         PropertyChanged -= OnPropertyChanged;
         _streamingCts?.Cancel();
         _streamingCts?.Dispose();
