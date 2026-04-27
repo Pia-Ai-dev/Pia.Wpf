@@ -16,6 +16,7 @@ public class PluginService : IPluginService
     private readonly IMemoryToolHandler _memoryToolHandler;
     private readonly ITodoToolHandler _todoToolHandler;
     private readonly IReminderToolHandler _reminderToolHandler;
+    private readonly IMeetingToolHandler _meetingToolHandler;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
     private readonly CabManagerService? _cabManager;
@@ -38,6 +39,7 @@ public class PluginService : IPluginService
         IMemoryToolHandler memoryToolHandler,
         ITodoToolHandler todoToolHandler,
         IReminderToolHandler reminderToolHandler,
+        IMeetingToolHandler meetingToolHandler,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
         CabManagerService? cabManager = null)
@@ -45,6 +47,7 @@ public class PluginService : IPluginService
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
         _reminderToolHandler = reminderToolHandler;
+        _meetingToolHandler = meetingToolHandler;
         _logger = logger;
         _sqliteContext = sqliteContext;
         _cabManager = cabManager;
@@ -64,6 +67,7 @@ public class PluginService : IPluginService
                 "memory" => BuiltInPluginHandler.FromMemoryHandler(_memoryToolHandler, config),
                 "todo" => BuiltInPluginHandler.FromTodoHandler(_todoToolHandler, config),
                 "reminder" => BuiltInPluginHandler.FromReminderHandler(_reminderToolHandler, config),
+                "meeting" => BuiltInPluginHandler.FromMeetingHandler(_meetingToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

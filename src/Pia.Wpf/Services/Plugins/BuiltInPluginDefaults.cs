@@ -11,8 +11,9 @@ public static class BuiltInPluginDefaults
     public static readonly Guid MemoryPluginId = new("10000000-0000-0000-0000-000000000001");
     public static readonly Guid TodoPluginId = new("10000000-0000-0000-0000-000000000002");
     public static readonly Guid ReminderPluginId = new("10000000-0000-0000-0000-000000000003");
+    public static readonly Guid MeetingPluginId = new("10000000-0000-0000-0000-000000000004");
 
-    public static readonly HashSet<Guid> PreloadedPluginIds = [MemoryPluginId, TodoPluginId, ReminderPluginId];
+    public static readonly HashSet<Guid> PreloadedPluginIds = [MemoryPluginId, TodoPluginId, ReminderPluginId, MeetingPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -51,6 +52,18 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"reminder","defaultEnabled":true,"systemPromptAddition":"When the user asks about their reminders, use query_reminders. To modify or cancel, first query to find the ID."}""",
             UpdatedAt = new DateTime(2026, 4, 6, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [MeetingPluginId] = new SyncPlugin
+        {
+            Id = MeetingPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "meeting",
+            Description = "Meeting transcript summarization and meeting-summary memory.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"meeting","defaultEnabled":true,"systemPromptAddition":"You can summarize saved meeting transcripts. After producing a summary, ask the user once whether they'd like to save it as a memory. If yes, call create_object with type=meeting_summary, label=<topic distilled from the summary>, and data as a JSON object with topic, date (from the front-matter), speakers (from the front-matter), originalFilename (from the front-matter), summaryKind (the chosen kind), and content (the summary you produced). Do not save without explicit user confirmation."}""",
+            UpdatedAt = new DateTime(2026, 4, 27, 0, 0, 0, DateTimeKind.Utc)
         }
     };
 }

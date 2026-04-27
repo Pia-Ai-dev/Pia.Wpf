@@ -133,6 +133,31 @@ public class BuiltInPluginHandler : IPluginToolHandler
             GetSystemPromptFromConfig(config.ConfigJson));
     }
 
+    /// <summary>
+    /// Factory: creates adapter wrapping IMeetingToolHandler. Unlike the others, the wrapped
+    /// handler's Execute takes a chosen-key argument so the multi-choice card can pass the
+    /// user's selection downstream.
+    /// </summary>
+    public static BuiltInPluginHandler FromMeetingHandler(
+        IMeetingToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) =>
+            {
+                var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
+                if (pending is null) return (result, null);
+                return (null, new PluginToolCall(
+                    pending.ToolName, config.Name, pending.Description, pending.Details,
+                    key => pending.Execute(key),
+                    pending.Choices));
+            },
+            async pluginCall => await pluginCall.Execute(null),
+            GetSystemPromptFromConfig(config.ConfigJson));
+    }
+
     private static string? GetSystemPromptFromConfig(string configJson)
     {
         try
