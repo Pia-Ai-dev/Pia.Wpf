@@ -8,8 +8,6 @@ using Pia.Models;
 
 namespace Pia.Services.LiveTranscription;
 
-public sealed record MeetingFrontMatter(string? Date, IReadOnlyList<string> Speakers, string? OriginalFilename);
-
 /// <summary>
 /// Renders a list of <see cref="TranscriptBubble"/>s into Markdown with a YAML front-matter
 /// block (schema, start/end, speakers, originalFilename) and parses that front-matter back

@@ -5,7 +5,6 @@ using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using Pia.Converters;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
@@ -17,6 +16,16 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     private const int MaxBubbles = 200;
     private const int TrimBatch = 20;
     private const int BubbleWindowSeconds = 25;
+
+    /// <summary>
+    /// Number of distinct bubble background colors defined in the theme dictionaries
+    /// (<c>SpeakerBubbleBackground1Brush</c>..<c>SpeakerBubbleBackground{PaletteSize}Brush</c>).
+    /// Speakers seen beyond this count wrap around to the start of the palette.
+    /// </summary>
+    private const int SpeakerColorPaletteSize = 5;
+
+    private readonly Dictionary<string, int> _speakerColorIndex = new(StringComparer.Ordinal);
+    private int _nextSpeakerColorIndex;
 
     private readonly ILiveMeetingService _service;
     private readonly ISettingsService _settingsService;
@@ -274,15 +283,34 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
             if (string.IsNullOrWhiteSpace(last.Text))
             {
                 last.SpeakerLabel = speakerLabel;
+                last.ColorIndex = GetOrAssignSpeakerColorIndex(speakerLabel);
                 return last;
             }
         }
 
         if (!createIfMissing) return null;
 
-        var bubble = new TranscriptBubble(speaker, timestamp, speakerLabel: speakerLabel);
+        var bubble = new TranscriptBubble(speaker, timestamp, speakerLabel: speakerLabel)
+        {
+            ColorIndex = GetOrAssignSpeakerColorIndex(speakerLabel),
+        };
         Bubbles.Add(bubble);
         return bubble;
+    }
+
+    /// <summary>
+    /// Maps a diarization label to a stable index into the bubble color palette. First-seen
+    /// label gets slot 0, second gets 1, and so on, wrapping mod <see cref="SpeakerColorPaletteSize"/>.
+    /// Unlabeled "them" bubbles all share slot 0 until they get diarized.
+    /// </summary>
+    private int GetOrAssignSpeakerColorIndex(string? speakerLabel)
+    {
+        if (string.IsNullOrWhiteSpace(speakerLabel)) return 0;
+        if (_speakerColorIndex.TryGetValue(speakerLabel, out var existing)) return existing;
+        var idx = _nextSpeakerColorIndex % SpeakerColorPaletteSize;
+        _speakerColorIndex[speakerLabel] = idx;
+        _nextSpeakerColorIndex++;
+        return idx;
     }
 
     private void TrimIfNeeded()
@@ -380,7 +408,11 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
 
         try
         {
-            var markdown = BuildMarkdown();
+            var markdown = MeetingTranscriptWriter.Render(
+                Bubbles,
+                sessionStart: _sessionStart,
+                originalFilename: defaultName,
+                title: _localizationService["LiveTrans_Title"]);
             await File.WriteAllTextAsync(path, markdown, Encoding.UTF8).ConfigureAwait(false);
             _logger.LogInformation("Saved live transcript to {Path}", path);
         }
@@ -388,26 +420,6 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         {
             _logger.LogError(ex, "Failed to save transcript to {Path}", path);
         }
-    }
-
-    internal string BuildMarkdown()
-    {
-        var sb = new StringBuilder();
-        sb.Append("# ").Append(_localizationService["LiveTrans_Title"])
-          .Append(" — ").Append(_sessionStart.LocalDateTime.ToString("yyyy-MM-dd HH:mm")).AppendLine();
-        sb.AppendLine();
-        foreach (var bubble in Bubbles)
-        {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.SpeakerLabel);
-            sb.Append("**").Append(label).Append("** _")
-              .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss"));
-            if (bubble.EndTimestamp != bubble.StartTimestamp)
-                sb.Append('–').Append(bubble.EndTimestamp.LocalDateTime.ToString("HH:mm:ss"));
-            sb.Append('_').AppendLine().AppendLine();
-            sb.AppendLine(bubble.Text);
-            sb.AppendLine();
-        }
-        return sb.ToString();
     }
 
     private void DispatchToUi(Action action)
@@ -435,6 +447,11 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         if (string.IsNullOrWhiteSpace(newLabel) || newLabel == oldLabel) return;
 
         _service.RenameSpeaker(oldLabel, newLabel);
+
+        // Carry the color slot over to the new label so the speaker keeps the same bubble color
+        // and any future utterances under the renamed label still hit the same palette entry.
+        if (_speakerColorIndex.Remove(oldLabel, out var carriedIndex))
+            _speakerColorIndex[newLabel] = carriedIndex;
 
         DispatchToUi(() =>
         {

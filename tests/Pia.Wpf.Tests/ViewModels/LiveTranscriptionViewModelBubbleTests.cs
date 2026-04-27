@@ -133,7 +133,8 @@ public class LiveTranscriptionViewModelBubbleTests
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "hi alice", t0));
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hi there", t0.AddSeconds(40), SpeakerLabel: "Speaker 1"));
 
-        var md = vm.BuildMarkdown();
+        var md = MeetingTranscriptWriter.Render(
+            vm.Bubbles, sessionStart: t0, originalFilename: "x.md", title: "Live transcription");
 
         Assert.Contains("# Live transcription", md);
         Assert.Contains("**you**", md);
