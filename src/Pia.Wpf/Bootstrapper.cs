@@ -9,6 +9,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
+using Pia.Services.Consent;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
@@ -226,6 +227,25 @@ public static class Bootstrapper
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
         services.AddSingleton<ITranscriptionService, TranscriptionService>();
         services.AddSingleton<ILiveMeetingService, Services.LiveTranscription.LiveMeetingService>();
+
+        // Consent management (Phase 1 MVP — strict mode, single-speaker, RAM-only)
+        services.AddSingleton<IConsentStateManager>(sp =>
+            new ConsentStateManager(
+                sp.GetRequiredService<ILogger<ConsentStateManager>>(),
+                TimeProvider.System));
+        services.AddSingleton<IConsentClassifier, RuleBasedConsentClassifier>();
+        services.AddSingleton<IConsentGate, ConsentGate>();
+        services.AddSingleton<IConsentAuditLog>(sp =>
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Pia", "ConsentAudit");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, $"session_{Guid.NewGuid():N}.jsonl");
+            return new JsonlConsentAuditLog(
+                path,
+                sp.GetRequiredService<ILogger<JsonlConsentAuditLog>>());
+        });
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<INotificationService, NotificationService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
