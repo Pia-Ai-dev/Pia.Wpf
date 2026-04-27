@@ -130,18 +130,35 @@ public class LiveTranscriptionViewModelBubbleTests
         var (vm, _, _) = CreateSut();
         var t0 = new DateTimeOffset(2026, 4, 26, 14, 0, 0, TimeSpan.Zero).ToLocalTime();
 
-        vm.CounterpartName = "Alice";
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "hi alice", t0));
-        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hi there", t0.AddSeconds(40)));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hi there", t0.AddSeconds(40), SpeakerLabel: "Speaker 1"));
 
         var md = vm.BuildMarkdown();
 
         Assert.Contains("# Live transcription", md);
         Assert.Contains("**you**", md);
-        Assert.Contains("**Alice**", md);
+        Assert.Contains("**Speaker 1**", md);
         Assert.Contains("hi alice", md);
         Assert.Contains("hi there", md);
         Assert.Contains(t0.LocalDateTime.ToString("HH:mm:ss"), md);
+    }
+
+    [Fact]
+    public void ListeningBubble_AdoptsLabel_WhenDiarizedUtteranceArrives()
+    {
+        // Reproduces the empty-bubble bug from the saved markdown: the listening dot opens
+        // a bubble for "Them" with no SpeakerLabel; when the utterance arrives carrying
+        // SpeakerLabel="Speaker 1" the existing empty bubble must be reused (label adopted)
+        // rather than leaving an empty stub and creating a second bubble.
+        var (vm, service, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        service.RaiseSpeaking(TranscriptSpeaker.Them, true);
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0.AddSeconds(2), SpeakerLabel: "Speaker 1"));
+
+        Assert.Single(vm.Bubbles);
+        Assert.Equal("Speaker 1", vm.Bubbles[0].SpeakerLabel);
+        Assert.Equal("hello", vm.Bubbles[0].Text);
     }
 
     private static (LiveTranscriptionViewModel vm, FakeLiveMeetingService service, RecordingFileDialogService files)
@@ -185,6 +202,13 @@ public class LiveTranscriptionViewModelBubbleTests
         public event EventHandler<SpeakingChangedEventArgs>? SpeakingChanged;
 
         public ChannelReader<TranscriptUtterance> Utterances => _channel.Reader;
+
+        public Task PrepareAsync(CancellationToken cancellationToken = default)
+        {
+            State = LiveMeetingState.Prepared;
+            StateChanged?.Invoke(this, State);
+            return Task.CompletedTask;
+        }
 
         public Task StartAsync(CancellationToken cancellationToken = default)
         {

@@ -5,13 +5,13 @@ namespace Pia.Services.LiveTranscription;
 
 /// <summary>
 /// Resolves the on-disk folder where meeting transcripts (Markdown exports) are written.
-/// Mirrors the convention used by <see cref="LiveTranscriptionModels.ModelsDirectory"/>:
-/// everything lives under <c>%LOCALAPPDATA%\Pia</c>.
+/// User-authored content lives under roaming <c>%APPDATA%\Pia</c>; cached models continue to
+/// live under <c>%LOCALAPPDATA%</c> via <see cref="LiveTranscriptionModels.ModelsDirectory"/>.
 /// </summary>
 public static class MeetingTranscriptPaths
 {
     public static string DefaultMeetingFolder { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "Pia", "assistant", "meetings");
 
     public static string ResolveFolder(AppSettings settings)

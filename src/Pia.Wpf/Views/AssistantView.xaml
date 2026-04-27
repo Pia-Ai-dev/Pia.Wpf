@@ -383,15 +383,15 @@
             <ui:SymbolIcon Symbol="Record24" FontSize="16" />
           </ui:Button>
 
-          <!-- Voice Mode button -->
-          <ui:Button Command="{Binding EnterVoiceModeCommand}"
+          <!-- Voice Mode button - disabled for now-->
+          <!--<ui:Button Command="{Binding EnterVoiceModeCommand}"
                      Width="40"
                      Height="40"
                      Margin="0,0,4,0"
                      Appearance="Secondary"
                      ToolTip="{loc:Str Assistant_VoiceConversation_Tooltip}">
             <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
-          </ui:Button>
+          </ui:Button>-->
 
           <!-- Live Transcription toggle -->
           <ui:Button Command="{Binding ToggleLiveTranscriptionCommand}"

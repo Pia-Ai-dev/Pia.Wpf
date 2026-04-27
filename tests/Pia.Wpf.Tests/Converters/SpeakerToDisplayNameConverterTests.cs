@@ -8,11 +8,11 @@ namespace Pia.Tests.Converters;
 public class SpeakerToDisplayNameConverterTests
 {
     [Fact]
-    public void You_ReturnsLiteralYou_RegardlessOfCounterpart()
+    public void You_ReturnsLiteralYou_RegardlessOfLabel()
     {
         var sut = new SpeakerToDisplayNameConverter();
         var result = sut.Convert(
-            new object[] { TranscriptSpeaker.You, "Alex" },
+            new object[] { TranscriptSpeaker.You, "Speaker 1" },
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
@@ -20,19 +20,19 @@ public class SpeakerToDisplayNameConverterTests
     }
 
     [Fact]
-    public void Them_ReturnsCounterpart()
+    public void Them_ReturnsSpeakerLabel_WhenSet()
     {
         var sut = new SpeakerToDisplayNameConverter();
         var result = sut.Convert(
-            new object[] { TranscriptSpeaker.Them, "Alex" },
+            new object[] { TranscriptSpeaker.Them, "Speaker 2" },
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
-        Assert.Equal("Alex", result);
+        Assert.Equal("Speaker 2", result);
     }
 
     [Fact]
-    public void Them_NullOrWhitespaceCounterpart_ReturnsThemFallback()
+    public void Them_NullOrWhitespaceLabel_ReturnsGenericFallback()
     {
         var sut = new SpeakerToDisplayNameConverter();
         var resultNull = sut.Convert(
@@ -45,7 +45,7 @@ public class SpeakerToDisplayNameConverterTests
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
-        Assert.Equal("them", resultNull);
-        Assert.Equal("them", resultEmpty);
+        Assert.Equal("Speaker", resultNull);
+        Assert.Equal("Speaker", resultEmpty);
     }
 }

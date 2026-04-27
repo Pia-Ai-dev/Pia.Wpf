@@ -23,6 +23,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private LiveTranscriptionEngineService? _loopbackEngine;
     private ITranscriptionEngine? _transcriptionEngine;
     private ISpeakerIdentificationService? _speakerId;
+    private string? _vadModelPath;
 
     public LiveMeetingState State
     {
@@ -49,24 +50,30 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _utterances = CreateUtterancesChannel();
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken = default)
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
     {
         lock (_stateLock)
         {
-            if (_state is LiveMeetingState.Running or LiveMeetingState.Starting)
-                throw new InvalidOperationException($"Cannot start while {_state}");
+            // Idempotent: if we're already prepared (or further along), return immediately.
+            // Only transition Idle -> Preparing here; concurrent callers wait their turn.
+            if (_state is not LiveMeetingState.Idle and not LiveMeetingState.Error) return;
         }
-        TransitionState(LiveMeetingState.Starting);
+        TransitionState(LiveMeetingState.Preparing);
 
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
 
+            // Heavy model loads — these are the slow operations the disclaimer dialog hides
+            // from the user. Source / engine / VAD detector construction happens in
+            // StartAsync to keep the audio-pipeline runtime topology identical to the
+            // pre-warmup behavior (i.e., engines and their VAD detectors are fresh per
+            // session, not pre-instantiated and left idle through the disclaimer).
             _transcriptionEngine = await TranscriptionEngineFactory
                 .CreateAsync(settings, _httpClientFactory, downloadProgress: null, _logger, cancellationToken)
                 .ConfigureAwait(false);
 
-            var vadModelPath = await LiveTranscriptionModels
+            _vadModelPath = await LiveTranscriptionModels
                 .EnsureSileroVadAsync(_httpClientFactory, progress: null, _logger, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -81,6 +88,38 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                     _loggerFactory.CreateLogger<SpeakerIdentificationService>());
             }
 
+            TransitionState(LiveMeetingState.Prepared);
+            _logger.LogInformation("Live meeting transcription prepared ({Backend})", settings.SttBackend);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to prepare live meeting service");
+            await DisposeAllAsync().ConfigureAwait(false);
+            TransitionState(LiveMeetingState.Error);
+            throw;
+        }
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_stateLock)
+        {
+            if (_state is LiveMeetingState.Running or LiveMeetingState.Starting)
+                throw new InvalidOperationException($"Cannot start while {_state}");
+        }
+
+        // Allow callers that skipped the explicit warmup step to fall through.
+        if (State is LiveMeetingState.Idle or LiveMeetingState.Error)
+            await PrepareAsync(cancellationToken).ConfigureAwait(false);
+
+        TransitionState(LiveMeetingState.Starting);
+
+        try
+        {
+            // Construct sources + engines fresh for this session (matches original audio
+            // pipeline lifecycle), then open the audio devices and start the reader loops.
+            // This is the privacy boundary: nothing was capturing audio before the
+            // source.StartAsync calls below.
             _micSource = new MicAudioCaptureService(_loggerFactory.CreateLogger<MicAudioCaptureService>());
             _loopbackSource = new LoopbackAudioCaptureService(_loggerFactory.CreateLogger<LoopbackAudioCaptureService>());
 
@@ -90,16 +129,16 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             _micEngine = new LiveTranscriptionEngineService(
                 TranscriptSpeaker.You,
                 _micSource,
-                _transcriptionEngine,
-                vadModelPath,
+                _transcriptionEngine!,
+                _vadModelPath!,
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
 
             _loopbackEngine = new LiveTranscriptionEngineService(
                 TranscriptSpeaker.Them,
                 _loopbackSource,
-                _transcriptionEngine,
-                vadModelPath,
+                _transcriptionEngine!,
+                _vadModelPath!,
                 _utterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
                 _speakerId);
@@ -111,7 +150,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             await _loopbackEngine.StartAsync(cancellationToken).ConfigureAwait(false);
 
             TransitionState(LiveMeetingState.Running);
-            _logger.LogInformation("Live meeting transcription started ({Backend})", settings.SttBackend);
+            _logger.LogInformation("Live meeting transcription started");
         }
         catch (Exception ex)
         {
@@ -124,17 +163,23 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        bool wasRunning;
         lock (_stateLock)
         {
             if (_state is LiveMeetingState.Idle or LiveMeetingState.Stopping) return;
+            wasRunning = _state is LiveMeetingState.Running or LiveMeetingState.Starting;
         }
         TransitionState(LiveMeetingState.Stopping);
 
         try
         {
-            // Stop captures first so the reader loops drain naturally.
-            if (_micSource is not null) await _micSource.StopAsync(cancellationToken).ConfigureAwait(false);
-            if (_loopbackSource is not null) await _loopbackSource.StopAsync(cancellationToken).ConfigureAwait(false);
+            // Stop captures first so the reader loops drain naturally — but only if we
+            // ever started capturing. From Prepared we can dispose without StopAsync calls.
+            if (wasRunning)
+            {
+                if (_micSource is not null) await _micSource.StopAsync(cancellationToken).ConfigureAwait(false);
+                if (_loopbackSource is not null) await _loopbackSource.StopAsync(cancellationToken).ConfigureAwait(false);
+            }
 
             await DisposeAllAsync().ConfigureAwait(false);
 

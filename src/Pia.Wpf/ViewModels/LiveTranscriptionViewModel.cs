@@ -27,11 +27,10 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
 
     private CancellationTokenSource? _readerCts;
     private Task? _readerTask;
+    private Task? _prepareTask;
 
     private DateTimeOffset _sessionStart;
-
-    [ObservableProperty]
-    private string _counterpartName = string.Empty;
+    private bool _sessionStarted;
 
     [ObservableProperty]
     private bool _isRunning;
@@ -39,8 +38,29 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _statusText = string.Empty;
 
+    /// <summary>
+    /// Privacy disclaimer overlay visibility — true when the user has not yet accepted that
+    /// they have informed meeting participants. Reset to true every time the overlay reopens.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isDisclaimerVisible = true;
+
+    /// <summary>
+    /// Bound to the disclaimer toggle. The Start command is only enabled once this is true.
+    /// </summary>
+    [ObservableProperty]
+    private bool _disclaimerAccepted;
+
+    /// <summary>
+    /// True while <see cref="ILiveMeetingService.PrepareAsync"/> runs in the background. The
+    /// Start button shows a spinner / disabled state while this is in flight.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isPreparing;
+
     public ObservableCollection<TranscriptBubble> Bubbles { get; } = [];
 
+    public IAsyncRelayCommand StartCommand { get; }
     public IRelayCommand StopCommand { get; }
     public IRelayCommand CloseCommand { get; }
     public IRelayCommand SaveTranscriptCommand { get; }
@@ -61,8 +81,8 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         _dialogService = dialogService;
         _fileDialogService = fileDialogService;
         _logger = logger;
-        _counterpartName = _localizationService["LiveTrans_OtherSpeaker_Placeholder"];
 
+        StartCommand = new AsyncRelayCommand(StartAsync, CanStart);
         StopCommand = new AsyncRelayCommand(StopAsync);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
         SaveTranscriptCommand = new AsyncRelayCommand(SaveTranscriptAsync, CanSaveTranscript);
@@ -75,25 +95,69 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         StatusText = _localizationService["LiveTrans_Status_Idle"];
     }
 
+    /// <summary>
+    /// Kicks off model/device preparation in the background while the disclaimer is shown,
+    /// so that the StartCommand only has to flip switches once the user accepts.
+    /// </summary>
+    public void BeginWarmup()
+    {
+        if (_prepareTask is { IsCompleted: false }) return;
+        // Setting IsPreparing fires OnIsPreparingChanged → StartCommand.NotifyCanExecuteChanged,
+        // which must run on the UI thread. BeginWarmup is invoked from both UI- and worker-thread
+        // contexts (e.g., the StopAsync continuation), so always marshal.
+        DispatchToUi(() => IsPreparing = true);
+        _prepareTask = Task.Run(async () =>
+        {
+            try
+            {
+                await _service.PrepareAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Live meeting prepare failed");
+            }
+            finally
+            {
+                DispatchToUi(() => IsPreparing = false);
+            }
+        });
+    }
+
+    private bool CanStart()
+        => DisclaimerAccepted && !IsRunning && _service.State is not LiveMeetingState.Starting and not LiveMeetingState.Stopping;
+
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         if (_service.State is LiveMeetingState.Running or LiveMeetingState.Starting) return;
 
-        _logger.LogInformation("LiveTranscription ViewModel: StartAsync invoked");
+        _logger.LogInformation("LiveTranscription ViewModel: StartAsync invoked (resume={Resume})", _sessionStarted);
 
-        var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(settings.LastCounterpartName))
-            DispatchToUi(() => CounterpartName = settings.LastCounterpartName!);
-
-        DispatchToUi(() =>
+        // Make sure the warmup task we kicked off when the overlay opened is finished.
+        if (_prepareTask is not null)
         {
-            Bubbles.Clear();
-            _sessionStart = DateTimeOffset.Now;
-            StatusText = _localizationService["LiveTrans_Status_Starting"];
-        });
+            try { await _prepareTask.ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Prepare task ended with an error; StartAsync will retry"); }
+        }
+
+        if (!_sessionStarted)
+        {
+            DispatchToUi(() =>
+            {
+                Bubbles.Clear();
+                _sessionStart = DateTimeOffset.Now;
+                StatusText = _localizationService["LiveTrans_Status_Starting"];
+            });
+        }
+        else
+        {
+            DispatchToUi(() => StatusText = _localizationService["LiveTrans_Status_Starting"]);
+        }
 
         await _service.StartAsync(cancellationToken).ConfigureAwait(false);
+        _sessionStarted = true;
         _logger.LogInformation("LiveTranscription ViewModel: service started, launching consumer");
+
+        DispatchToUi(() => IsDisclaimerVisible = false);
 
         _readerCts = new CancellationTokenSource();
         _readerTask = Task.Run(() => ConsumeUtterancesAsync(_readerCts.Token));
@@ -127,16 +191,21 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
                 if (b.IsListening) b.IsListening = false;
         });
 
-        try
-        {
-            var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-            settings.LastCounterpartName = string.IsNullOrWhiteSpace(CounterpartName) ? null : CounterpartName;
-            await _settingsService.SaveSettingsAsync(settings).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to persist last counterpart name");
-        }
+        // Kick off another warmup so a future Resume click is fast (Stop disposes everything).
+        _prepareTask = null;
+        BeginWarmup();
+    }
+
+    /// <summary>
+    /// Reset session state when the overlay closes so the next open starts fresh
+    /// (disclaimer reappears, bubbles cleared, new _sessionStart on first Start).
+    /// </summary>
+    public void ResetForNewSession()
+    {
+        _sessionStarted = false;
+        DisclaimerAccepted = false;
+        IsDisclaimerVisible = true;
+        DispatchToUi(() => Bubbles.Clear());
     }
 
     private async Task ConsumeUtterancesAsync(CancellationToken cancellationToken)
@@ -181,23 +250,32 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Reuses the most recently appended bubble when it's the same speaker (and same diarization
-    /// label, when present) and still inside the rolling window. Otherwise creates a fresh bubble
-    /// (when <paramref name="createIfMissing"/> is true) and appends it to <see cref="Bubbles"/>.
-    /// Using the *last* bubble — instead of per-speaker tracking — keeps the conversation in
-    /// chronological order: an interleaved "Them" turn always splits the prior "You" stream into
-    /// two visual bubbles. A change in <paramref name="speakerLabel"/> also forces a split so
-    /// diarized speakers ("Speaker 1" vs "Speaker 2") never share a bubble.
+    /// Reuses the most recently appended bubble when it's the same speaker and within the
+    /// rolling window. If the existing bubble has a different <paramref name="speakerLabel"/>
+    /// but no text yet (it was a "listening dot" placeholder created on VAD open), the new
+    /// label is adopted in place — this keeps the listening dot from leaving an empty
+    /// "Speaker N" stub before the diarized utterance arrives. Otherwise creates a fresh
+    /// bubble (when <paramref name="createIfMissing"/> is true) and appends it to
+    /// <see cref="Bubbles"/>. Using the *last* bubble — instead of per-speaker tracking —
+    /// keeps the conversation in chronological order.
     /// </summary>
     internal TranscriptBubble? GetOrCreateBubble(TranscriptSpeaker speaker, DateTimeOffset timestamp, string? speakerLabel, bool createIfMissing)
     {
         var last = Bubbles.Count > 0 ? Bubbles[^1] : null;
         if (last is not null
             && last.Speaker == speaker
-            && string.Equals(last.SpeakerLabel, speakerLabel, StringComparison.Ordinal)
             && (timestamp - last.StartTimestamp).TotalSeconds < BubbleWindowSeconds)
         {
-            return last;
+            if (string.Equals(last.SpeakerLabel, speakerLabel, StringComparison.Ordinal))
+                return last;
+            // Same speaker, within window, but label differs. If the existing bubble has no
+            // text yet (it was a listening-dot placeholder), adopt the new label rather than
+            // creating a second bubble — the user gets one continuous bubble per turn.
+            if (string.IsNullOrWhiteSpace(last.Text))
+            {
+                last.SpeakerLabel = speakerLabel;
+                return last;
+            }
         }
 
         if (!createIfMissing) return null;
@@ -222,12 +300,15 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
             StatusText = newState switch
             {
                 LiveMeetingState.Idle => _localizationService["LiveTrans_Status_Idle"],
+                LiveMeetingState.Preparing => _localizationService["LiveTrans_Status_Preparing"],
+                LiveMeetingState.Prepared => _localizationService["LiveTrans_Status_Idle"],
                 LiveMeetingState.Starting => _localizationService["LiveTrans_Status_Starting"],
                 LiveMeetingState.Running => _localizationService["LiveTrans_Status_Listening"],
                 LiveMeetingState.Stopping => _localizationService["LiveTrans_Status_Stopping"],
                 LiveMeetingState.Error => _localizationService["LiveTrans_Status_Error"],
                 _ => string.Empty,
             };
+            StartCommand.NotifyCanExecuteChanged();
         });
     }
 
@@ -257,7 +338,14 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         });
     }
 
-    partial void OnIsRunningChanged(bool value) => SaveTranscriptCommand.NotifyCanExecuteChanged();
+    partial void OnIsRunningChanged(bool value)
+    {
+        SaveTranscriptCommand.NotifyCanExecuteChanged();
+        StartCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnDisclaimerAcceptedChanged(bool value) => StartCommand.NotifyCanExecuteChanged();
+    partial void OnIsPreparingChanged(bool value) => StartCommand.NotifyCanExecuteChanged();
 
     private void OnBubblesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         => SaveTranscriptCommand.NotifyCanExecuteChanged();
@@ -310,7 +398,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         sb.AppendLine();
         foreach (var bubble in Bubbles)
         {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, CounterpartName, bubble.SpeakerLabel);
+            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.SpeakerLabel);
             sb.Append("**").Append(label).Append("** _")
               .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss"));
             if (bubble.EndTimestamp != bubble.StartTimestamp)

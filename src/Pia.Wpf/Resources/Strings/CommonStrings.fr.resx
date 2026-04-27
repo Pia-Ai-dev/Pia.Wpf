@@ -64,9 +64,12 @@
   <data name="LiveTrans_RenameSpeaker_Prompt" xml:space="preserve"><value>Saisissez un nouveau libellé pour « {0} » :</value></data>
   <data name="LiveTrans_RenameSpeaker_MenuItem" xml:space="preserve"><value>Renommer l'interlocuteur…</value></data>
   <data name="LiveTrans_ToggleButton_Tooltip" xml:space="preserve"><value>Transcrire la réunion en direct</value></data>
+  <data name="LiveTrans_Start" xml:space="preserve"><value>Démarrer</value></data>
+  <data name="LiveTrans_Resume" xml:space="preserve"><value>Reprendre</value></data>
   <data name="LiveTrans_Stop" xml:space="preserve"><value>Arrêter</value></data>
   <data name="LiveTrans_Close" xml:space="preserve"><value>Fermer</value></data>
   <data name="LiveTrans_Status_Idle" xml:space="preserve"><value>Inactif</value></data>
+  <data name="LiveTrans_Status_Preparing" xml:space="preserve"><value>Préparation…</value></data>
   <data name="LiveTrans_Status_Starting" xml:space="preserve"><value>Démarrage…</value></data>
   <data name="LiveTrans_Status_Listening" xml:space="preserve"><value>À l'écoute…</value></data>
   <data name="LiveTrans_Status_Stopping" xml:space="preserve"><value>Arrêt en cours…</value></data>
@@ -74,8 +77,11 @@
   <data name="LiveTrans_Save" xml:space="preserve"><value>Enregistrer…</value></data>
   <data name="LiveTrans_SaveDialog_Title" xml:space="preserve"><value>Enregistrer la transcription</value></data>
   <data name="LiveTrans_SaveDialog_Filter" xml:space="preserve"><value>Fichier Markdown (*.md)|*.md|Tous les fichiers (*.*)|*.*</value></data>
+  <data name="LiveTrans_Disclaimer_Title" xml:space="preserve"><value>Avant de commencer</value></data>
+  <data name="LiveTrans_Disclaimer_Body" xml:space="preserve"><value>Cette opération transcrira à la fois votre microphone et l'audio diffusé sur cet ordinateur. Veuillez informer tous les participants à la réunion que la conversation est enregistrée et transcrite.</value></data>
+  <data name="LiveTrans_Disclaimer_Accept" xml:space="preserve"><value>J'ai informé tous les participants à la réunion.</value></data>
   <data name="Settings_MeetingTranscriptFolder_Label" xml:space="preserve"><value>Dossier des transcriptions de réunion</value></data>
   <data name="Settings_MeetingTranscriptFolder_Browse" xml:space="preserve"><value>Parcourir…</value></data>
   <data name="Settings_MeetingTranscriptFolder_Reset" xml:space="preserve"><value>Réinitialiser</value></data>
-  <data name="Settings_MeetingTranscriptFolder_Hint" xml:space="preserve"><value>Emplacement des transcriptions de réunion enregistrées. Par défaut : %LOCALAPPDATA%\Pia\assistant\meetings.</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Hint" xml:space="preserve"><value>Emplacement des transcriptions de réunion enregistrées. Par défaut : %APPDATA%\Pia\assistant\meetings.</value></data>
 </root>

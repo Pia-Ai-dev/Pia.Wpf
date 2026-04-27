@@ -51,7 +51,7 @@ public sealed class SherpaOnnxVadDetector : IDisposable
         // dialogue (so a single segment doesn't contain two speakers) while still bridging
         // intra-utterance breath/disfluency pauses.
         config.SileroVad.MinSilenceDuration = 0.3f;
-        config.SileroVad.MinSpeechDuration = 0.5f;
+        config.SileroVad.MinSpeechDuration = 0.25f;
         config.SileroVad.WindowSize = WindowSize;
         config.SileroVad.MaxSpeechDuration = 20.0f; // matches the legacy 20 s flush cap
         config.SampleRate = SampleRate;
@@ -61,8 +61,25 @@ public sealed class SherpaOnnxVadDetector : IDisposable
 
         _vad = new VoiceActivityDetector(config, SegmentBufferSeconds);
 
+        // Pre-warm: ONNX Runtime's first AcceptWaveform call optimizes the model graph,
+        // which can take several seconds. If that latency lands during the user's first
+        // utterance, the reader thread blocks and the bounded source channel drops the
+        // start of speech. Paying it here, with a silent window, shifts the cold start to
+        // session warmup so the first real frame is processed at steady-state speed.
+        try
+        {
+            var warmup = new float[WindowSize];
+            _vad.AcceptWaveform(warmup);
+            _vad.Reset();
+            _logger.LogDebug("VAD warmup window processed");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "VAD warmup window failed — first user utterance may lag");
+        }
+
         _logger.LogInformation(
-            "Sherpa-onnx VAD active. model='{Model}' threshold=0.5 minSpeech=0.5s minSilence=0.3s maxSpeech=20s",
+            "Sherpa-onnx VAD active. model='{Model}' threshold=0.5 minSpeech=0.25s minSilence=0.3s maxSpeech=20s",
             modelPath);
     }
 

@@ -17,7 +17,7 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Header: title + counterpart name editor -->
+    <!-- Header: title + close button -->
     <Border Grid.Row="0"
             BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
@@ -25,7 +25,6 @@
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
@@ -41,23 +40,7 @@
                      Foreground="{DynamicResource TextPlaceholderColorBrush}" />
         </StackPanel>
 
-        <StackPanel Grid.Column="1"
-                    Orientation="Horizontal"
-                    VerticalAlignment="Center"
-                    Margin="0,0,12,0">
-          <TextBlock Text="{loc:Str LiveTrans_OtherSpeaker_Label}"
-                     VerticalAlignment="Center"
-                     Margin="0,0,8,0"
-                     FontSize="12"
-                     Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-          <ui:TextBox Text="{Binding CounterpartName, UpdateSourceTrigger=PropertyChanged}"
-                      PlaceholderText="{loc:Str LiveTrans_OtherSpeaker_Placeholder}"
-                      PlaceholderEnabled="True"
-                      Width="180"
-                      FontSize="13" />
-        </StackPanel>
-
-        <ui:Button Grid.Column="2"
+        <ui:Button Grid.Column="1"
                    Command="{Binding CloseCommand}"
                    Width="36"
                    Height="36"
@@ -69,12 +52,60 @@
       </Grid>
     </Border>
 
+    <!-- Disclaimer panel (visible until the user accepts and starts) -->
+    <Border Grid.Row="1"
+            Padding="32,24"
+            Visibility="{Binding IsDisclaimerVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <StackPanel MaxWidth="480"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center">
+        <ui:SymbolIcon Symbol="Info24"
+                       FontSize="32"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,12" />
+        <TextBlock Text="{loc:Str LiveTrans_Disclaimer_Title}"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   TextAlignment="Center"
+                   Margin="0,0,0,8" />
+        <TextBlock Text="{loc:Str LiveTrans_Disclaimer_Body}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                   Margin="0,0,0,20" />
+        <ui:ToggleSwitch Content="{loc:Str LiveTrans_Disclaimer_Accept}"
+                         IsChecked="{Binding DisclaimerAccepted}"
+                         HorizontalAlignment="Center"
+                         Margin="0,0,0,16" />
+        <TextBlock Text="{loc:Str LiveTrans_Status_Preparing}"
+                   FontSize="11"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                   Margin="0,0,0,12"
+                   Visibility="{Binding IsPreparing, Converter={StaticResource BooleanToVisibilityConverter}}" />
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Center">
+          <ui:Button Command="{Binding CloseCommand}"
+                     Padding="20,10"
+                     Margin="0,0,8,0"
+                     Appearance="Secondary"
+                     Content="{loc:Str LiveTrans_Close}" />
+          <ui:Button Command="{Binding StartCommand}"
+                     Padding="20,10"
+                     Appearance="Primary"
+                     Content="{loc:Str LiveTrans_Start}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
     <!-- Bubble list -->
     <ScrollViewer x:Name="BubbleScroll"
                   Grid.Row="1"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
-                  Padding="20,16,20,8">
+                  Padding="20,16,20,8"
+                  Visibility="{Binding IsDisclaimerVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
       <ItemsControl ItemsSource="{Binding Bubbles}">
         <ItemsControl.ItemTemplate>
           <DataTemplate DataType="{x:Type models:TranscriptBubble}">
@@ -104,8 +135,6 @@
                     <TextBlock.Text>
                       <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                         <Binding Path="Speaker" />
-                        <Binding Path="DataContext.CounterpartName"
-                                 RelativeSource="{RelativeSource AncestorType=UserControl}" />
                         <Binding Path="SpeakerLabel" />
                       </MultiBinding>
                     </TextBlock.Text>
@@ -114,15 +143,21 @@
                 <Border Padding="12,8"
                         CornerRadius="12,12,0,12"
                         Background="{DynamicResource AccentFillColorDefaultBrush}">
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{Binding Text}"
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding Text}"
                                TextWrapping="Wrap"
                                FontSize="14"
                                Foreground="White" />
-                    <controls:ListeningIndicator Margin="8,0,0,0"
+                    <controls:ListeningIndicator Grid.Column="1"
+                                                 Margin="8,0,0,0"
                                                  VerticalAlignment="Center"
                                                  Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                  </StackPanel>
+                  </Grid>
                 </Border>
               </StackPanel>
 
@@ -148,8 +183,6 @@
                     <TextBlock.Text>
                       <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                         <Binding Path="Speaker" />
-                        <Binding Path="DataContext.CounterpartName"
-                                 RelativeSource="{RelativeSource AncestorType=UserControl}" />
                         <Binding Path="SpeakerLabel" />
                       </MultiBinding>
                     </TextBlock.Text>
@@ -173,14 +206,20 @@
                   <Border.Tag>
                     <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}" />
                   </Border.Tag>
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{Binding Text}"
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding Text}"
                                TextWrapping="Wrap"
                                FontSize="14" />
-                    <controls:ListeningIndicator Margin="8,0,0,0"
+                    <controls:ListeningIndicator Grid.Column="1"
+                                                 Margin="8,0,0,0"
                                                  VerticalAlignment="Center"
                                                  Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                  </StackPanel>
+                  </Grid>
                 </Border>
               </StackPanel>
             </Grid>
@@ -189,11 +228,12 @@
       </ItemsControl>
     </ScrollViewer>
 
-    <!-- Footer: stop / save buttons -->
+    <!-- Footer: stop / save+resume buttons (hidden during the disclaimer) -->
     <Border Grid.Row="2"
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-            Padding="20,12">
+            Padding="20,12"
+            Visibility="{Binding IsDisclaimerVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
       <StackPanel HorizontalAlignment="Center"
                   Orientation="Horizontal">
         <ui:Button Command="{Binding StopCommand}"
@@ -202,10 +242,15 @@
                    Content="{loc:Str LiveTrans_Stop}"
                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SaveTranscriptCommand}"
-                   Margin="8,0,0,0"
+                   Margin="0,0,8,0"
+                   Padding="20,10"
+                   Appearance="Secondary"
+                   Content="{loc:Str LiveTrans_Save}"
+                   Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+        <ui:Button Command="{Binding StartCommand}"
                    Padding="20,10"
                    Appearance="Primary"
-                   Content="{loc:Str LiveTrans_Save}"
+                   Content="{loc:Str LiveTrans_Resume}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
       </StackPanel>
     </Border>

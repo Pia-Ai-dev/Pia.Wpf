@@ -6,6 +6,8 @@ namespace Pia.Services.Interfaces;
 public enum LiveMeetingState
 {
     Idle,
+    Preparing,
+    Prepared,
     Starting,
     Running,
     Stopping,
@@ -50,6 +52,14 @@ public interface ILiveMeetingService
     /// start/stop cycles. The channel is completed only on <see cref="IAsyncDisposable.DisposeAsync"/>.
     /// </summary>
     ChannelReader<TranscriptUtterance> Utterances { get; }
+
+    /// <summary>
+    /// Loads STT/VAD/diarization models and constructs audio sources and engine services
+    /// without opening any audio device. Idempotent: safe to call multiple times. Allows the
+    /// UI to overlap heavy initialization with a privacy disclaimer so that <see cref="StartAsync"/>
+    /// only has to flip the switches when the user explicitly accepts.
+    /// </summary>
+    Task PrepareAsync(CancellationToken cancellationToken = default);
 
     Task StartAsync(CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);

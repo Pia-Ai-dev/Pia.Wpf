@@ -233,25 +233,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             // Closing the overlay also stops the underlying session.
             await LiveTranscription.StopAsync();
             IsLiveTranscriptionVisible = false;
+            LiveTranscription.ResetForNewSession();
             return;
         }
 
+        // Open the overlay; it shows the disclaimer first and warms up models in the
+        // background so the eventual Start click is fast. Audio capture only begins when
+        // the user accepts the disclaimer and clicks Start.
+        LiveTranscription.ResetForNewSession();
         IsLiveTranscriptionVisible = true;
-        try
-        {
-            await LiveTranscription.StartAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to start live transcription");
-            _snackbarService.Show(
-                _localizationService["Common_Error"],
-                ex.Message,
-                Wpf.Ui.Controls.ControlAppearance.Danger,
-                null,
-                TimeSpan.FromSeconds(5));
-            IsLiveTranscriptionVisible = false;
-        }
+        LiveTranscription.BeginWarmup();
     }
 
     private void OnLiveTranscriptionCloseRequested(object? sender, EventArgs e)
