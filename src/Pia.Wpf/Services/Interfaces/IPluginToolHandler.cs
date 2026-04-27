@@ -8,7 +8,8 @@ public record PluginToolCall(
     string PluginName,
     string Description,
     string? Details,
-    Func<Task<object?>> Execute);
+    Func<string?, Task<object?>> Execute,
+    IReadOnlyList<Pia.Models.ActionCardChoice>? Choices = null);
 
 public interface IPluginToolHandler
 {

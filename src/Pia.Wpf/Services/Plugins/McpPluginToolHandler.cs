@@ -125,7 +125,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     public Task<object?> ExecutePendingActionAsync(PluginToolCall pendingAction)
     {
         // MCP tools execute immediately — no pending actions
-        return pendingAction.Execute();
+        return pendingAction.Execute(null);
     }
 
     public async Task ShutdownAsync()

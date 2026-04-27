@@ -82,9 +82,10 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.NewValue, pending.Execute));
+                    pending.ToolName, config.Name, pending.Description, pending.NewValue,
+                    _ => pending.Execute()));
             },
-            async pluginCall => await pluginCall.Execute(),
+            async pluginCall => await pluginCall.Execute(null),
             GetSystemPromptFromConfig(config.ConfigJson));
     }
 
@@ -103,9 +104,10 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Name, pending.Description, pending.Details,
+                    _ => pending.Execute()));
             },
-            async pluginCall => await pluginCall.Execute(),
+            async pluginCall => await pluginCall.Execute(null),
             GetSystemPromptFromConfig(config.ConfigJson));
     }
 
@@ -124,9 +126,10 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Name, pending.Description, pending.Details,
+                    _ => pending.Execute()));
             },
-            async pluginCall => await pluginCall.Execute(),
+            async pluginCall => await pluginCall.Execute(null),
             GetSystemPromptFromConfig(config.ConfigJson));
     }
 

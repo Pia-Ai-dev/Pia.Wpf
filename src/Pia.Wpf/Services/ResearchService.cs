@@ -161,7 +161,7 @@ public class ResearchService : IResearchService
 
         // In research mode, auto-execute without user confirmation
         if (pendingAction is not null)
-            return await pendingAction.Execute();
+            return await pendingAction.Execute(null);
 
         return "Tool call handled.";
     }

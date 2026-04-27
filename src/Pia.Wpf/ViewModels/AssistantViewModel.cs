@@ -520,21 +520,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var card = BuildPluginActionCard(pendingAction);
             await App.Current.Dispatcher.InvokeAsync(() => message.ActionCards.Add(card));
 
-            bool confirmed;
+            string? chosenKey;
             try
             {
-                confirmed = await card.WaitForUserDecisionAsync();
+                chosenKey = await card.WaitForChoiceAsync();
             }
             catch (TaskCanceledException)
             {
                 _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
-                confirmed = false;
+                chosenKey = null;
             }
+
+            var confirmed = chosenKey is not null && chosenKey != "decline";
 
             if (confirmed)
             {
-                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
-                var actionResult = await pendingAction.Execute();
+                _logger.LogInformation("User accepted {ToolName} action (choice={Choice})", pendingAction.ToolName, chosenKey);
+                var actionResult = await pendingAction.Execute(chosenKey);
                 _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
 
                 var snackbarTitle = pendingAction.PluginName switch
@@ -602,6 +604,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             IsDestructive = isDelete,
             WarningText = warningText,
             Details = details,
+            Choices = pendingAction.Choices,
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, category)),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, category)),
         };
@@ -980,7 +983,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Auto-approve write operations in voice mode (no dialog)
         if (pendingAction is not null)
         {
-            var actionResult = await pendingAction.Execute();
+            var actionResult = await pendingAction.Execute(null);
 
             // Re-scan for new PII after memory write
             if (_tokenizationEnabled && pendingAction.PluginName == "memory")
