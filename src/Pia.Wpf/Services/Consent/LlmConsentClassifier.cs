@@ -19,20 +19,27 @@ public sealed class LlmConsentClassifier
         + "Return ONLY a JSON object: {\"decision\":\"grant|deny|ambiguous\",\"confidence\":0.0-1.0,\"reason\":\"short\"}. "
         + "No prose, no markdown, no extra keys. If unclear, return ambiguous.";
 
-    private readonly IChatClient _chatClient;
-    private readonly bool _isEuEndpoint;
+    private readonly Func<CancellationToken, Task<IChatClient?>> _chatClientFactory;
+    private readonly Func<bool> _isEuEndpointGate;
     private readonly ILogger<LlmConsentClassifier> _logger;
 
-    public LlmConsentClassifier(IChatClient chatClient, bool isEuEndpoint, ILogger<LlmConsentClassifier> logger)
+    public LlmConsentClassifier(
+        Func<CancellationToken, Task<IChatClient?>> chatClientFactory,
+        Func<bool> isEuEndpointGate,
+        ILogger<LlmConsentClassifier> logger)
     {
-        _chatClient = chatClient;
-        _isEuEndpoint = isEuEndpoint;
+        _chatClientFactory = chatClientFactory;
+        _isEuEndpointGate = isEuEndpointGate;
         _logger = logger;
     }
 
+    /// <summary>Convenience constructor for tests with a pre-built client.</summary>
+    public LlmConsentClassifier(IChatClient chatClient, bool isEuEndpoint, ILogger<LlmConsentClassifier> logger)
+        : this(_ => Task.FromResult<IChatClient?>(chatClient), () => isEuEndpoint, logger) { }
+
     public async Task<ConsentClassification> ClassifyAsync(string transcriptText, string promptText, CancellationToken cancellationToken = default)
     {
-        if (!_isEuEndpoint)
+        if (!_isEuEndpointGate())
         {
             _logger.LogWarning("LlmConsentClassifier refused: non-EU endpoint in Strict Mode");
             return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
@@ -40,6 +47,13 @@ public sealed class LlmConsentClassifier
 
         try
         {
+            var client = await _chatClientFactory(cancellationToken).ConfigureAwait(false);
+            if (client is null)
+            {
+                _logger.LogWarning("LlmConsentClassifier: no chat client available; clamping to ambiguous");
+                return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
+            }
+
             var userMessage =
                 $"Consent prompt that was played: \"{promptText}\"\n"
                 + $"User's reply: \"{transcriptText}\"\n"
@@ -50,7 +64,7 @@ public sealed class LlmConsentClassifier
                 new(ChatRole.System, SystemPrompt),
                 new(ChatRole.User, userMessage),
             };
-            var response = await _chatClient
+            var response = await client
                 .GetResponseAsync(messages, options: null, cancellationToken)
                 .ConfigureAwait(false);
 

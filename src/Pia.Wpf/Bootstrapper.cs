@@ -233,7 +233,18 @@ public static class Bootstrapper
             new ConsentStateManager(
                 sp.GetRequiredService<ILogger<ConsentStateManager>>(),
                 TimeProvider.System));
-        services.AddSingleton<IConsentClassifier, RuleBasedConsentClassifier>();
+        services.AddSingleton<RuleBasedConsentClassifier>();
+        // LLM fallback is disabled by default in Phase 2 (no chat-client plumbing yet); the
+        // factory returns null, which clamps the LLM stage to ambiguous/0.0. EU-endpoint gate
+        // is hard-true here pending Phase 3's consent-scope wiring.
+        services.AddSingleton(sp => new LlmConsentClassifier(
+            chatClientFactory: _ => Task.FromResult<Microsoft.Extensions.AI.IChatClient?>(null),
+            isEuEndpointGate: () => true,
+            logger: sp.GetRequiredService<ILogger<LlmConsentClassifier>>()));
+        services.AddSingleton<IConsentClassifier>(sp => new CascadingConsentClassifier(
+            sp.GetRequiredService<RuleBasedConsentClassifier>(),
+            sp.GetRequiredService<LlmConsentClassifier>(),
+            sp.GetRequiredService<ILogger<CascadingConsentClassifier>>()));
         services.AddSingleton<IConsentGate, ConsentGate>();
         // Per-speaker pre-consent ring buffers. 16 kHz mono, ~30 s per speaker, ~10 minutes total.
         services.AddSingleton(_ => new PerSpeakerRingBufferRegistry(
