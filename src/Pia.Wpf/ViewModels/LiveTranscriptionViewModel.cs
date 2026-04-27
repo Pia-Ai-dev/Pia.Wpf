@@ -73,8 +73,10 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     public IRelayCommand StopCommand { get; }
     public IRelayCommand CloseCommand { get; }
     public IRelayCommand SaveTranscriptCommand { get; }
+    public IAsyncRelayCommand SaveAndSummarizeCommand { get; }
 
     public event EventHandler? CloseRequested;
+    public event EventHandler<MeetingSummarizationRequest>? SummarizeRequested;
 
     public LiveTranscriptionViewModel(
         ILiveMeetingService service,
@@ -95,6 +97,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         StopCommand = new AsyncRelayCommand(StopAsync);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
         SaveTranscriptCommand = new AsyncRelayCommand(SaveTranscriptAsync, CanSaveTranscript);
+        SaveAndSummarizeCommand = new AsyncRelayCommand(SaveAndSummarizeAsync, CanSaveTranscript);
 
         _service.StateChanged += OnServiceStateChanged;
         _service.SpeakingChanged += OnServiceSpeakingChanged;
@@ -369,6 +372,7 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     partial void OnIsRunningChanged(bool value)
     {
         SaveTranscriptCommand.NotifyCanExecuteChanged();
+        SaveAndSummarizeCommand.NotifyCanExecuteChanged();
         StartCommand.NotifyCanExecuteChanged();
     }
 
@@ -376,7 +380,10 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
     partial void OnIsPreparingChanged(bool value) => StartCommand.NotifyCanExecuteChanged();
 
     private void OnBubblesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        => SaveTranscriptCommand.NotifyCanExecuteChanged();
+    {
+        SaveTranscriptCommand.NotifyCanExecuteChanged();
+        SaveAndSummarizeCommand.NotifyCanExecuteChanged();
+    }
 
     private bool CanSaveTranscript() => !IsRunning && Bubbles.Count > 0;
 
@@ -420,6 +427,43 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         {
             _logger.LogError(ex, "Failed to save transcript to {Path}", path);
         }
+    }
+
+    private async Task SaveAndSummarizeAsync()
+    {
+        if (!CanSaveTranscript()) return;
+
+        string folder;
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+            folder = MeetingTranscriptPaths.ResolveFolder(settings);
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve meeting transcript folder");
+            return;
+        }
+
+        var filename = $"transcript-{_sessionStart.LocalDateTime:yyyyMMdd-HHmmss}.md";
+        var path = Path.Combine(folder, filename);
+
+        try
+        {
+            var markdown = MeetingTranscriptWriter.Render(
+                Bubbles, _sessionStart, originalFilename: filename, title: _localizationService["LiveTrans_Title"]);
+            await File.WriteAllTextAsync(path, markdown, Encoding.UTF8).ConfigureAwait(false);
+            _logger.LogInformation("Saved live transcript (silent) to {Path}", path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to write transcript to {Path}", path);
+            return;
+        }
+
+        var displayPath = Pia.Services.PathShortener.Shorten(path);
+        SummarizeRequested?.Invoke(this, new MeetingSummarizationRequest(path, displayPath));
     }
 
     private void DispatchToUi(Action action)
