@@ -32,7 +32,22 @@ public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>
         var customTemplates = await LoadAsync();
         _mergedTemplates = CreateBuiltInTemplates();
         var builtInIds = _mergedTemplates.Select(t => t.Id).ToHashSet();
-        _mergedTemplates.AddRange(customTemplates.Where(t => !builtInIds.Contains(t.Id)));
+
+        var repaired = false;
+        foreach (var template in customTemplates.Where(t => !builtInIds.Contains(t.Id)))
+        {
+            if (template.Id == Guid.Empty)
+            {
+                template.Id = Guid.NewGuid();
+                repaired = true;
+            }
+            _mergedTemplates.Add(template);
+        }
+
+        if (repaired)
+        {
+            await SaveCustomTemplatesAsync();
+        }
 
         return _mergedTemplates.AsReadOnly();
     }
@@ -46,6 +61,10 @@ public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>
     public async Task<OptimizationTemplate> AddTemplateAsync(OptimizationTemplate template)
     {
         await GetTemplatesAsync();
+        if (template.Id == Guid.Empty)
+        {
+            template.Id = Guid.NewGuid();
+        }
         template.IsBuiltIn = false;
         _mergedTemplates!.Add(template);
         await SaveCustomTemplatesAsync();
