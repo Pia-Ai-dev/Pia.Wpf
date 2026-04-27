@@ -580,6 +580,14 @@
   <data name="MeetingTool_Prompt_Clean" xml:space="preserve"><value>You are an expert assistant cleaning up a meeting transcript. Remove filler words, false starts, and verbal stutters; merge repeated phrasing; preserve speakers and the chronological order. Output only the cleaned transcript with speaker labels (e.g., **Alice**) and no commentary.</value></data>
   <data name="MeetingTool_Prompt_Bulleted" xml:space="preserve"><value>You are an expert assistant summarizing a meeting transcript into bullets grouped by topic. For each topic, list key decisions, open questions, and action items (with owner and due date if mentioned). Use Markdown headers per topic and concise bullets. Do not invent facts not present in the transcript.</value></data>
   <data name="MeetingTool_Prompt_Text" xml:space="preserve"><value>You are an expert assistant writing a coherent prose summary of a meeting transcript. Capture the key points, decisions, and action items in 2–4 short paragraphs. Stay faithful to the transcript; do not invent facts.</value></data>
+  <data name="MeetingTool_SaveCard_Title" xml:space="preserve"><value>Save meeting summary?</value></data>
+  <data name="MeetingTool_SaveCard_Summary" xml:space="preserve"><value>Save this summary as a meeting_summary memory so you can search it later.</value></data>
+  <data name="MeetingTool_SaveCard_Save" xml:space="preserve"><value>Save</value></data>
+  <data name="MeetingTool_SaveCard_Skip" xml:space="preserve"><value>Skip</value></data>
+  <data name="MeetingTool_SaveCard_Accepted" xml:space="preserve"><value>Saved as memory</value></data>
+  <data name="MeetingTool_SaveCard_Declined" xml:space="preserve"><value>Not saved</value></data>
+  <data name="Msg_Assistant_MeetingSummarySaved" xml:space="preserve"><value>Meeting summary saved</value></data>
+  <data name="Msg_Assistant_MeetingSummarySaveFailed" xml:space="preserve"><value>Failed to save meeting summary</value></data>
   <data name="MeetingTool_SystemPrompt" xml:space="preserve"><value>You can summarize saved meeting transcripts. After producing a summary, ask the user once whether they'd like to save it as a memory. If yes, call create_object with type=meeting_summary, label=&lt;topic distilled from the summary&gt;, and data as a JSON object with topic, date (from the front-matter), speakers (from the front-matter), originalFilename (from the front-matter), summaryKind (the chosen kind), and content (the summary you produced). Do not save without explicit user confirmation.</value></data>
   <data name="Assistant_Meeting_SummarizeRequest" xml:space="preserve"><value>Please summarize the meeting transcript saved at `{0}`.</value></data>
   <data name="LiveTrans_SaveAndSummarize" xml:space="preserve"><value>Save and summarize</value></data>

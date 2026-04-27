@@ -30,9 +30,10 @@ public sealed class MultiSpeakerStrategyBIntegrationTests
 
         var settings = Substitute.For<ISettingsService>();
         var http = Substitute.For<IHttpClientFactory>();
+        var filter = new PostSttDefenseFilter(mgr, audit, NullLogger<PostSttDefenseFilter>.Instance);
         return new LiveMeetingService(
             settings, http, NullLoggerFactory.Instance,
-            mgr, classifier, gate, audit, tts, buffers);
+            mgr, classifier, gate, audit, tts, buffers, filter);
     }
 
     [Fact]

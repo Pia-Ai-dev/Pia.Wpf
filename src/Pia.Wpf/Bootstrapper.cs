@@ -239,6 +239,7 @@ public static class Bootstrapper
         services.AddSingleton(_ => new PerSpeakerRingBufferRegistry(
             perSpeakerCapacity: 16000 * 30,
             totalCapacity: 16000 * 600));
+        services.AddSingleton<IPostSttDefenseFilter, PostSttDefenseFilter>();
         services.AddSingleton<IConsentAuditLog>(sp =>
         {
             var dir = Path.Combine(

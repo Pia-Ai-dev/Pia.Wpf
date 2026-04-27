@@ -28,6 +28,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private readonly IConsentAuditLog _auditLog;
     private readonly ITtsService _tts;
     private readonly PerSpeakerRingBufferRegistry _preConsentBuffers;
+    private readonly IPostSttDefenseFilter _postSttFilter;
     private readonly HashSet<string> _pendingConsentFlows = new(StringComparer.Ordinal);
 
     private LiveMeetingState _state = LiveMeetingState.Idle;
@@ -67,7 +68,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         IConsentGate consentGate,
         IConsentAuditLog auditLog,
         ITtsService tts,
-        PerSpeakerRingBufferRegistry preConsentBuffers)
+        PerSpeakerRingBufferRegistry preConsentBuffers,
+        IPostSttDefenseFilter postSttFilter)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -81,6 +83,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _auditLog = auditLog;
         _tts = tts;
         _preConsentBuffers = preConsentBuffers;
+        _postSttFilter = postSttFilter;
 
         _consentMgr.StateChanged += OnConsentStateChanged;
     }
@@ -227,7 +230,12 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             await DisposeAllAsync().ConfigureAwait(false);
 
             TransitionState(LiveMeetingState.Idle);
-            _logger.LogInformation("Live meeting transcription stopped");
+            // Spec §6.6: any non-zero count indicates a pre-STT gate bug — surface it.
+            var postSttDrops = _postSttFilter.DropCount;
+            if (postSttDrops > 0)
+                _logger.LogWarning("Live meeting stopped — post-STT defense drops: {Count} (gate-bug indicator)", postSttDrops);
+            else
+                _logger.LogInformation("Live meeting transcription stopped");
         }
         catch (Exception ex)
         {
@@ -278,21 +286,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             return; // never forward consent dialog content to the user transcript
         }
 
-        // Defense-in-depth: gate already filters non-Granted speakers; if anything slips
-        // through, drop it here and audit the leak.
-        var state = _consentMgr.CurrentState(label);
-        if (state != ConsentState.Granted)
-        {
-            _logger.LogWarning("Post-STT defense filter dropped utterance for {Label} (state={State})", label, state);
-            _auditLog.Append(new AuditEvent(
-                Guid.NewGuid(), DateTimeOffset.UtcNow, "DROPPED_TRANSCRIPT_NO_CONSENT", label,
-                new Dictionary<string, object?>
-                {
-                    ["state"] = state.ToString(),
-                    ["reason"] = "post_stt_filter",
-                }));
-            return;
-        }
+        if (_postSttFilter.Evaluate(utt) == PostSttFilterDecision.DropAndAudit) return;
 
         await _utterances.Writer.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
     }

@@ -11,6 +11,15 @@ using Pia.Services.LiveTranscription;
 
 namespace Pia.Services;
 
+public sealed record MeetingSummaryDeliverable(
+    string Summary,
+    string TranscriptPath,
+    string OriginalFilename,
+    string Date,
+    string[] Speakers,
+    string ChosenKey,
+    Func<Task<bool>> SaveAsMemoryAsync);
+
 public class MeetingToolHandler : IMeetingToolHandler
 {
     private readonly IAiClientService _ai;
@@ -37,8 +46,10 @@ public class MeetingToolHandler : IMeetingToolHandler
     [
         AIFunctionFactory.Create(SummarizeMeetingTranscriptSchema, "summarize_meeting_transcript",
             "Summarize a saved meeting transcript file. Reads the file, prompts the user to choose a " +
-            "summarization style (clean / bulleted / text), and returns the summary. After the user " +
-            "sees the summary, ask whether they want to save it as a meeting_summary memory."),
+            "summarization style (clean / bulleted / text), and delivers the summary directly to the " +
+            "user as a dedicated message together with an inline action card asking whether to save " +
+            "it as a meeting_summary memory. The assistant must NOT repeat, paraphrase, comment on, " +
+            "or acknowledge the summary in chat — output nothing further after this tool call."),
 
         AIFunctionFactory.Create(QueryMeetingSummariesSchema, "query_meeting_summaries",
             "Search saved meeting summaries (meeting_summary memory type) by date range and/or speaker. " +
@@ -84,6 +95,7 @@ public class MeetingToolHandler : IMeetingToolHandler
                 {
                     var markdown = await File.ReadAllTextAsync(path);
                     var body = MeetingTranscriptWriter.StripFrontMatter(markdown);
+                    MeetingTranscriptWriter.TryParseFrontMatter(markdown, out var frontMatter);
                     var prompt = chosenKey switch
                     {
                         "clean"    => _localizationService["MeetingTool_Prompt_Clean"],
@@ -114,7 +126,14 @@ public class MeetingToolHandler : IMeetingToolHandler
                     if (string.IsNullOrWhiteSpace(summary))
                         return "Error: summarization returned empty result.";
 
-                    return summary;
+                    return new MeetingSummaryDeliverable(
+                        Summary: summary,
+                        TranscriptPath: path,
+                        OriginalFilename: frontMatter?.OriginalFilename ?? Path.GetFileName(path),
+                        Date: frontMatter?.Date ?? DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        Speakers: frontMatter?.Speakers?.ToArray() ?? Array.Empty<string>(),
+                        ChosenKey: chosenKey,
+                        SaveAsMemoryAsync: () => SaveSummaryAsMemoryAsync(summary, frontMatter, chosenKey, path));
                 }
                 catch (Exception ex)
                 {
@@ -124,6 +143,49 @@ public class MeetingToolHandler : IMeetingToolHandler
             });
 
         return (null, pending);
+    }
+
+    private async Task<bool> SaveSummaryAsMemoryAsync(
+        string summary, MeetingFrontMatter? frontMatter, string chosenKey, string transcriptPath)
+    {
+        try
+        {
+            var topic = DeriveTopic(summary, frontMatter);
+            var date = frontMatter?.Date ?? DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var speakers = frontMatter?.Speakers ?? (IReadOnlyList<string>)Array.Empty<string>();
+            var originalFilename = frontMatter?.OriginalFilename ?? Path.GetFileName(transcriptPath);
+
+            var data = new
+            {
+                topic,
+                date,
+                speakers,
+                originalFilename,
+                summaryKind = chosenKey,
+                content = summary,
+            };
+            var json = JsonSerializer.Serialize(data);
+
+            await _memoryService.CreateObjectAsync(MemoryObjectTypes.MeetingSummary, topic, json);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save meeting summary memory for {Path}", transcriptPath);
+            return false;
+        }
+    }
+
+    private static string DeriveTopic(string summary, MeetingFrontMatter? frontMatter)
+    {
+        foreach (var rawLine in summary.Split('\n'))
+        {
+            var line = rawLine.Trim().TrimStart('#').Trim();
+            if (line.Length == 0) continue;
+            return line.Length > 80 ? line[..80] : line;
+        }
+        var date = frontMatter?.Date ?? DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return $"Meeting summary {date}";
     }
 
     private async Task<object?> HandleQuery(IDictionary<string, object?> args)

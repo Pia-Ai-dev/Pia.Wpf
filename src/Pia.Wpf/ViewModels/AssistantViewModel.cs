@@ -413,7 +413,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         finally
         {
-            if (string.IsNullOrEmpty(assistantMessage.Content))
+            if (string.IsNullOrEmpty(assistantMessage.Content) && !assistantMessage.SuppressBubble)
             {
                 _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
                 assistantMessage.Content = _localizationService["Msg_Assistant_EmptyResponse"];
@@ -437,7 +437,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
 
             if (IsTtsEnabled && !string.IsNullOrEmpty(assistantMessage.Content)
-                && !assistantMessage.Content.StartsWith("Error:"))
+                && !assistantMessage.Content.StartsWith("Error:")
+                && !assistantMessage.SuppressBubble)
             {
                 _ = SpeakMessageAsync(assistantMessage);
             }
@@ -571,6 +572,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 var actionResult = await pendingAction.Execute(chosenKey);
                 _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
 
+                if (actionResult is Pia.Services.MeetingSummaryDeliverable deliverable)
+                {
+                    return await DeliverMeetingSummaryAsync(deliverable, message);
+                }
+
                 var snackbarTitle = pendingAction.PluginName switch
                 {
                     "memory" => _localizationService["Msg_Assistant_MemoryUpdated"],
@@ -600,6 +606,59 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
 
         return "Tool call handled.";
+    }
+
+    private async Task<object?> DeliverMeetingSummaryAsync(
+        Pia.Services.MeetingSummaryDeliverable deliverable, AssistantMessage hostMessage)
+    {
+        // Hide the original "tool host" bubble. The streamed reply (if any) stays empty
+        // because the tool description orders the LLM to output nothing further.
+        hostMessage.SuppressBubble = true;
+
+        var summaryMessage = new AssistantMessage(ChatRole.Assistant, deliverable.Summary);
+        var saveCard = new ActionCardInfo
+        {
+            Title = _localizationService["MeetingTool_SaveCard_Title"],
+            Summary = _localizationService["MeetingTool_SaveCard_Summary"],
+            Category = ActionCardCategory.Memory,
+            ToolName = "save_meeting_summary",
+            Choices =
+            [
+                new ActionCardChoice("save", _localizationService["MeetingTool_SaveCard_Save"]),
+                new ActionCardChoice("skip", _localizationService["MeetingTool_SaveCard_Skip"]),
+            ],
+            AcceptedStatusText = _localizationService["MeetingTool_SaveCard_Accepted"],
+            DeclinedStatusText = _localizationService["MeetingTool_SaveCard_Declined"],
+        };
+        summaryMessage.ActionCards.Add(saveCard);
+
+        await App.Current.Dispatcher.InvokeAsync(() => Messages.Add(summaryMessage));
+
+        string? saveChoice;
+        try
+        {
+            saveChoice = await saveCard.WaitForChoiceAsync();
+        }
+        catch (TaskCanceledException)
+        {
+            saveChoice = null;
+        }
+
+        if (saveChoice == "save")
+        {
+            var ok = await deliverable.SaveAsMemoryAsync();
+            _snackbarService.Show(
+                ok ? _localizationService["Msg_Assistant_MeetingSummarySaved"]
+                   : _localizationService["Msg_Error"],
+                ok ? deliverable.OriginalFilename
+                   : _localizationService["Msg_Assistant_MeetingSummarySaveFailed"],
+                ok ? Wpf.Ui.Controls.ControlAppearance.Success
+                   : Wpf.Ui.Controls.ControlAppearance.Danger,
+                null, TimeSpan.FromSeconds(3));
+            return $"Meeting summary delivered to user and saved as memory. Output nothing further.";
+        }
+
+        return "Meeting summary delivered to user; user chose not to save. Output nothing further.";
     }
 
     private ActionCardInfo BuildPluginActionCard(PluginToolCall pendingAction)

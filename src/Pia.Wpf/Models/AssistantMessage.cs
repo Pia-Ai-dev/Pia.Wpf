@@ -26,17 +26,25 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private bool _isSpeaking;
 
+    [ObservableProperty]
+    private bool _suppressBubble;
+
     public ObservableCollection<ActionCardInfo> ActionCards { get; } = [];
 
     public bool HasActionCards => ActionCards.Count > 0;
 
-    public bool HasContent => !string.IsNullOrEmpty(Content);
+    public bool HasContent => !string.IsNullOrEmpty(Content) && !SuppressBubble;
 
     public bool HasThinkingContent => !string.IsNullOrEmpty(ThinkingContent);
 
     public bool IsUser => Role == ChatRole.User;
 
     partial void OnContentChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasContent));
+    }
+
+    partial void OnSuppressBubbleChanged(bool value)
     {
         OnPropertyChanged(nameof(HasContent));
     }

@@ -48,8 +48,8 @@ public class MeetingToolHandlerTests : IDisposable
         var (_, pending) = await handler.HandleToolCallAsync(Call("summarize_meeting_transcript", new { filePath = path }));
 
         var execResult = await pending!.Execute("clean");
-        Assert.IsType<string>(execResult);
-        Assert.Contains("CANNED-SUMMARY", (string)execResult!);
+        var deliverable = Assert.IsType<Pia.Services.MeetingSummaryDeliverable>(execResult);
+        Assert.Contains("CANNED-SUMMARY", deliverable.Summary);
     }
 
     [Fact]

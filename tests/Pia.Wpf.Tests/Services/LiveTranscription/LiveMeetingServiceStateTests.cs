@@ -72,6 +72,7 @@ public class LiveMeetingServiceStateTests
         var audit = Substitute.For<IConsentAuditLog>();
         var tts = Substitute.For<ITtsService>();
         var buffers = new PerSpeakerRingBufferRegistry(perSpeakerCapacity: 16000, totalCapacity: 64000);
-        return new LiveMeetingService(settings, http, loggers, mgr, classifier, gate, audit, tts, buffers);
+        var filter = new PostSttDefenseFilter(mgr, audit, NullLogger<PostSttDefenseFilter>.Instance);
+        return new LiveMeetingService(settings, http, loggers, mgr, classifier, gate, audit, tts, buffers, filter);
     }
 }

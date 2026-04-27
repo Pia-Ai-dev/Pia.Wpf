@@ -580,6 +580,14 @@
   <data name="MeetingTool_Prompt_Clean" xml:space="preserve"><value>Du bist ein Assistent, der ein Meeting-Transkript bereinigt. Entferne Füllwörter, Wiederholungen und falsche Anfänge; behalte Sprecher und chronologische Reihenfolge bei. Gib nur das bereinigte Transkript mit Sprecherbezeichnungen (z. B. **Alice**) ohne Kommentare aus.</value></data>
   <data name="MeetingTool_Prompt_Bulleted" xml:space="preserve"><value>Du bist ein Assistent, der ein Meeting-Transkript in Stichpunkten nach Thema zusammenfasst. Liste je Thema Entscheidungen, offene Fragen und Aufgaben (mit Verantwortlichem und Fälligkeit, falls genannt). Verwende Markdown-Überschriften pro Thema und prägnante Stichpunkte. Erfinde keine Fakten, die nicht im Transkript stehen.</value></data>
   <data name="MeetingTool_Prompt_Text" xml:space="preserve"><value>Du bist ein Assistent, der eine zusammenhängende Prosa-Zusammenfassung eines Meeting-Transkripts schreibt. Erfasse die wichtigsten Punkte, Entscheidungen und Aufgaben in 2–4 kurzen Absätzen. Bleibe nah am Transkript; erfinde keine Fakten.</value></data>
+  <data name="MeetingTool_SaveCard_Title" xml:space="preserve"><value>Zusammenfassung speichern?</value></data>
+  <data name="MeetingTool_SaveCard_Summary" xml:space="preserve"><value>Diese Zusammenfassung als meeting_summary-Memory speichern, damit du sie später wiederfinden kannst.</value></data>
+  <data name="MeetingTool_SaveCard_Save" xml:space="preserve"><value>Speichern</value></data>
+  <data name="MeetingTool_SaveCard_Skip" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="MeetingTool_SaveCard_Accepted" xml:space="preserve"><value>Als Memory gespeichert</value></data>
+  <data name="MeetingTool_SaveCard_Declined" xml:space="preserve"><value>Nicht gespeichert</value></data>
+  <data name="Msg_Assistant_MeetingSummarySaved" xml:space="preserve"><value>Meeting-Zusammenfassung gespeichert</value></data>
+  <data name="Msg_Assistant_MeetingSummarySaveFailed" xml:space="preserve"><value>Speichern der Meeting-Zusammenfassung fehlgeschlagen</value></data>
   <data name="MeetingTool_SystemPrompt" xml:space="preserve"><value>Du kannst gespeicherte Meeting-Transkripte zusammenfassen. Nach Erstellung der Zusammenfassung frage einmal, ob sie als Memory gespeichert werden soll. Falls ja, rufe create_object auf mit type=meeting_summary, label=&lt;aus der Zusammenfassung abgeleitetes Thema&gt; und data als JSON-Objekt mit topic, date (aus dem Front-Matter), speakers (aus dem Front-Matter), originalFilename (aus dem Front-Matter), summaryKind (der gewählte Stil) und content (die Zusammenfassung). Speichere niemals ohne ausdrückliche Bestätigung.</value></data>
   <data name="Assistant_Meeting_SummarizeRequest" xml:space="preserve"><value>Bitte fasse das Meeting-Transkript unter `{0}` zusammen.</value></data>
   <data name="LiveTrans_SaveAndSummarize" xml:space="preserve"><value>Speichern &amp; zusammenfassen</value></data>
