@@ -90,10 +90,12 @@
                      Padding="20,10"
                      Margin="0,0,8,0"
                      Appearance="Secondary"
+                     Icon="{ui:SymbolIcon Dismiss24}"
                      Content="{loc:Str LiveTrans_Close}" />
           <ui:Button Command="{Binding StartCommand}"
                      Padding="20,10"
                      Appearance="Primary"
+                     Icon="{ui:SymbolIcon Play24}"
                      Content="{loc:Str LiveTrans_Start}" />
         </StackPanel>
       </StackPanel>
@@ -177,23 +179,58 @@
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Left"
                             Margin="4,0,0,2">
-                  <TextBlock FontSize="11"
-                             Margin="0,0,8,0"
-                             Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                    <TextBlock.Text>
-                      <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
-                        <Binding Path="Speaker" />
-                        <Binding Path="SpeakerLabel" />
-                      </MultiBinding>
-                    </TextBlock.Text>
-                  </TextBlock>
+                  <ui:Button Padding="4,2"
+                             Margin="-4,-2,4,-2"
+                             Appearance="Transparent"
+                             BorderThickness="0"
+                             Cursor="Hand"
+                             ToolTip="{loc:Str LiveTrans_RenameSpeaker_MenuItem}"
+                             Command="{Binding DataContext.RenameSpeakerLabelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                             CommandParameter="{Binding SpeakerLabel}">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBlock FontSize="11"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                        <TextBlock.Text>
+                          <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                            <Binding Path="Speaker" />
+                            <Binding Path="SpeakerLabel" />
+                          </MultiBinding>
+                        </TextBlock.Text>
+                      </TextBlock>
+                      <ui:SymbolIcon Symbol="Edit24"
+                                     FontSize="11"
+                                     Margin="4,0,0,0"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                    </StackPanel>
+                  </ui:Button>
                   <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
                              FontSize="11"
+                             VerticalAlignment="Center"
                              Foreground="{DynamicResource TextPlaceholderColorBrush}" />
                 </StackPanel>
                 <Border Padding="12,8"
-                        CornerRadius="12,12,12,0"
-                        Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                        CornerRadius="12,12,12,0">
+                  <Border.Style>
+                    <Style TargetType="Border">
+                      <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground1Brush}" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="1">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground2Brush}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="2">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground3Brush}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="3">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground4Brush}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="4">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground5Brush}" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Border.Style>
                   <Border.ContextMenu>
                     <ContextMenu>
                       <MenuItem Header="{loc:Str LiveTrans_RenameSpeaker_MenuItem}"
@@ -236,20 +273,36 @@
             Visibility="{Binding IsDisclaimerVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
       <StackPanel HorizontalAlignment="Center"
                   Orientation="Horizontal">
+        <ui:Button Command="{Binding CloseCommand}"
+                   Margin="0,0,8,0"
+                   Padding="20,10"
+                   Appearance="Secondary"
+                   Icon="{ui:SymbolIcon Dismiss24}"
+                   Content="{loc:Str LiveTrans_Close}" />
         <ui:Button Command="{Binding StopCommand}"
                    Padding="20,10"
                    Appearance="Danger"
+                   Icon="{ui:SymbolIcon Stop24}"
                    Content="{loc:Str LiveTrans_Stop}"
                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SaveTranscriptCommand}"
                    Margin="0,0,8,0"
                    Padding="20,10"
                    Appearance="Secondary"
+                   Icon="{ui:SymbolIcon Save24}"
                    Content="{loc:Str LiveTrans_Save}"
+                   Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+        <ui:Button Command="{Binding SaveAndSummarizeCommand}"
+                   Margin="0,0,8,0"
+                   Padding="20,10"
+                   Appearance="Primary"
+                   Icon="{ui:SymbolIcon Sparkle24}"
+                   Content="{loc:Str LiveTrans_SaveAndSummarize}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding StartCommand}"
                    Padding="20,10"
                    Appearance="Primary"
+                   Icon="{ui:SymbolIcon Play24}"
                    Content="{loc:Str LiveTrans_Resume}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
       </StackPanel>
