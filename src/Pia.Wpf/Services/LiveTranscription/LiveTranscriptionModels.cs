@@ -24,7 +24,7 @@ public static class LiveTranscriptionModels
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models";
 
     private const string SileroVadFileName = "silero_vad.onnx";
-    private const string SpeakerEmbeddingFileName = "wespeaker_en_voxceleb_CAM++.onnx";
+    private const string SpeakerEmbeddingFileName = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
 
     public static string ModelsDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

@@ -12,12 +12,22 @@ namespace Pia.Services.LiveTranscription;
 /// while the UI sees a display label ("Speaker 1", or whatever the user renames it
 /// to). This split makes <see cref="Rename"/> a single dictionary update.
 ///
-/// Each successful match folds the new embedding into the matched speaker's
-/// centroid (running mean), so a noisy first segment doesn't permanently anchor
-/// "Speaker 1".
+/// Matching uses a three-zone decision around the configured cosine threshold to keep
+/// borderline cases from flipping decisions or polluting centroids:
+///   sim ≥ threshold              → match, fold embedding into centroid (weighted)
+///   threshold > sim ≥ thr − margin → match, do NOT update centroid (uncertain)
+///   sim &lt; threshold − margin   → register new speaker
+///
+/// Centroid updates are confidence-weighted (high-similarity matches dominate) and the
+/// centroid is L2-renormalized after each update so the running mean stays a unit vector.
 /// </summary>
 public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
 {
+    // Width of the "uncertain" band below the match threshold. A segment landing in this
+    // band gets the best-matching label but is NOT folded into the centroid — keeps a
+    // borderline embedding from dragging the centroid toward the decision boundary.
+    private const float BorderlineMargin = 0.07f;
+
     private readonly SpeakerEmbeddingExtractor _extractor;
     private readonly ILogger _logger;
     private readonly float _matchThreshold;
@@ -63,19 +73,36 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 if (sim > bestSim) { bestSim = sim; bestId = id; }
             }
 
+            // Zone A: confident match — fold embedding into the centroid with a weight that
+            // grows with confidence, so a barely-above-threshold match doesn't drag the
+            // centroid toward the decision boundary as much as a high-confidence one does.
             if (bestId is not null && bestSim >= _matchThreshold)
             {
                 var matched = _speakers[bestId];
-                matched.Update(embedding);
+                var weight = (bestSim - _matchThreshold) / MathF.Max(1f - _matchThreshold, 1e-6f);
+                matched.Update(embedding, weight);
                 var label = _displayLabels[bestId];
 
                 _logger.LogInformation(
-                    "Diarization match: {Label} sim={Sim:F3} dur={Dur:F2}s sims=[{Sims}]",
-                    label, bestSim, durationSec, FormatSims(sims));
+                    "Diarization match: {Label} sim={Sim:F3} w={Weight:F2} dur={Dur:F2}s sims=[{Sims}]",
+                    label, bestSim, weight, durationSec, FormatSims(sims));
 
                 return label;
             }
 
+            // Zone B: borderline — return the best-matching label but DO NOT update the
+            // centroid. Keeps an uncertain segment from poisoning the speaker profile while
+            // still surfacing a sensible label to the UI.
+            if (bestId is not null && bestSim >= _matchThreshold - BorderlineMargin)
+            {
+                var label = _displayLabels[bestId];
+                _logger.LogInformation(
+                    "Diarization borderline (no centroid update): {Label} sim={Sim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
+                    label, bestSim, _matchThreshold, BorderlineMargin, durationSec, FormatSims(sims));
+                return label;
+            }
+
+            // Zone C: register a brand-new speaker.
             _counter++;
             var internalId = $"spk_{_counter}";
             var newLabel = $"Speaker {_counter}";
@@ -83,10 +110,11 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
             _displayLabels[internalId] = newLabel;
 
             _logger.LogInformation(
-                "Diarization new speaker: {Label} bestSim={BestSim:F3} threshold={Threshold:F2} dur={Dur:F2}s sims=[{Sims}]",
+                "Diarization new speaker: {Label} bestSim={BestSim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
                 newLabel,
                 bestSim == float.NegativeInfinity ? 0f : bestSim,
                 _matchThreshold,
+                BorderlineMargin,
                 durationSec,
                 FormatSims(sims));
 
@@ -166,22 +194,38 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     private sealed class SpeakerCentroid
     {
         public float[] Centroid;
-        public int Count;
+        public float CumulativeWeight;
 
         public SpeakerCentroid(float[] firstEmbedding)
         {
             Centroid = (float[])firstEmbedding.Clone();
-            Count = 1;
+            NormalizeInPlace(Centroid);
+            CumulativeWeight = 1f;
         }
 
-        public void Update(float[] embedding)
+        public void Update(float[] embedding, float weight)
         {
-            // Running mean: centroid = (count * centroid + embedding) / (count + 1)
+            if (weight <= 0f) return;
+
+            // Weighted running mean: c_new = (c * cw + e * w) / (cw + w)
+            var newCw = CumulativeWeight + weight;
             for (int i = 0; i < Centroid.Length; i++)
             {
-                Centroid[i] = (Centroid[i] * Count + embedding[i]) / (Count + 1);
+                Centroid[i] = (Centroid[i] * CumulativeWeight + embedding[i] * weight) / newCw;
             }
-            Count++;
+            // Re-project onto the unit sphere so cosine geometry stays well-conditioned
+            // and any future weighting variant (EMA, decay) doesn't silently drift.
+            NormalizeInPlace(Centroid);
+            CumulativeWeight = newCw;
+        }
+
+        private static void NormalizeInPlace(float[] v)
+        {
+            double sumSq = 0;
+            for (int i = 0; i < v.Length; i++) sumSq += v[i] * v[i];
+            var norm = (float)Math.Sqrt(sumSq);
+            if (norm <= 1e-12f) return;
+            for (int i = 0; i < v.Length; i++) v[i] /= norm;
         }
     }
 }

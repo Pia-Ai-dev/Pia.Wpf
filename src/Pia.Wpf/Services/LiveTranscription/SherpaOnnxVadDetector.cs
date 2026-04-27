@@ -36,7 +36,10 @@ public sealed class SherpaOnnxVadDetector : IDisposable
         var config = new VadModelConfig();
         config.SileroVad.Model = modelPath;
         config.SileroVad.Threshold = 0.5f;
-        config.SileroVad.MinSilenceDuration = 0.5f;
+        // 0.3 s gap is short enough to split most turn changes in fast back-and-forth
+        // dialogue (so a single segment doesn't contain two speakers) while still bridging
+        // intra-utterance breath/disfluency pauses.
+        config.SileroVad.MinSilenceDuration = 0.3f;
         config.SileroVad.MinSpeechDuration = 0.5f;
         config.SileroVad.WindowSize = WindowSize;
         config.SileroVad.MaxSpeechDuration = 20.0f; // matches the legacy 20 s flush cap
@@ -48,7 +51,7 @@ public sealed class SherpaOnnxVadDetector : IDisposable
         _vad = new VoiceActivityDetector(config, SegmentBufferSeconds);
 
         _logger.LogInformation(
-            "Sherpa-onnx VAD active. model='{Model}' threshold=0.5 minSpeech=0.5s minSilence=0.5s maxSpeech=20s",
+            "Sherpa-onnx VAD active. model='{Model}' threshold=0.5 minSpeech=0.5s minSilence=0.3s maxSpeech=20s",
             modelPath);
     }
 
