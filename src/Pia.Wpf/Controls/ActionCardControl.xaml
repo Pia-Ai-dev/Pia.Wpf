@@ -205,32 +205,74 @@
           </StackPanel>
         </StackPanel>
 
-        <!-- Accept/Decline buttons -->
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,8,0,0">
-          <ui:Button Content="{loc:Str ActionCard_Decline}"
-                     Appearance="Secondary"
-                     FontSize="12"
-                     Padding="12,4"
-                     Margin="0,0,6,0"
-                     Command="{Binding DeclineCommand}" />
-          <ui:Button Content="{loc:Str ActionCard_Accept}"
-                     FontSize="12"
-                     Padding="12,4"
-                     Command="{Binding AcceptCommand}">
-            <ui:Button.Style>
-              <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                <Setter Property="Appearance" Value="Primary" />
+        <!-- Choice buttons (multi-choice OR binary Accept/Decline) -->
+        <Grid Margin="0,8,0,0">
+          <ItemsControl ItemsSource="{Binding Choices}"
+                        HorizontalAlignment="Right">
+            <ItemsControl.Style>
+              <Style TargetType="ItemsControl">
+                <Setter Property="Visibility" Value="Collapsed" />
                 <Style.Triggers>
-                  <DataTrigger Binding="{Binding IsDestructive}" Value="True">
-                    <Setter Property="Appearance" Value="Caution" />
+                  <DataTrigger Binding="{Binding IsMultiChoice}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
                   </DataTrigger>
                 </Style.Triggers>
               </Style>
-            </ui:Button.Style>
-          </ui:Button>
-        </StackPanel>
+            </ItemsControl.Style>
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="{x:Type models:ActionCardChoice}">
+                <ui:Button Content="{Binding Label}"
+                           Appearance="Primary"
+                           FontSize="12"
+                           Padding="12,4"
+                           Margin="6,0,0,0"
+                           Command="{Binding DataContext.ChooseCommand,
+                                             RelativeSource={RelativeSource AncestorType=UserControl}}"
+                           CommandParameter="{Binding Key}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <StackPanel Orientation="Horizontal"
+                      HorizontalAlignment="Right">
+            <StackPanel.Style>
+              <Style TargetType="StackPanel">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsMultiChoice}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </StackPanel.Style>
+            <ui:Button Content="{loc:Str ActionCard_Decline}"
+                       Appearance="Secondary"
+                       FontSize="12"
+                       Padding="12,4"
+                       Margin="0,0,6,0"
+                       Command="{Binding DeclineCommand}" />
+            <ui:Button Content="{loc:Str ActionCard_Accept}"
+                       FontSize="12"
+                       Padding="12,4"
+                       Command="{Binding AcceptCommand}">
+              <ui:Button.Style>
+                <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                  <Setter Property="Appearance" Value="Primary" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsDestructive}" Value="True">
+                      <Setter Property="Appearance" Value="Caution" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:Button.Style>
+            </ui:Button>
+          </StackPanel>
+        </Grid>
       </StackPanel>
 
       <!-- Resolved state -->
