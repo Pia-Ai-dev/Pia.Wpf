@@ -148,7 +148,7 @@ public class MeetingToolHandlerTests : IDisposable
 
         var providers = Substitute.For<IProviderService>();
         providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>())
-                 .Returns(Task.FromResult<AiProvider?>(new AiProvider { Id = Guid.NewGuid(), Name = "fake" }));
+                 .Returns(Task.FromResult<AiProvider?>(new AiProvider { Id = Guid.NewGuid(), Name = "fake", Endpoint = "http://localhost" }));
 
         var loc = Substitute.For<ILocalizationService>();
         loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);

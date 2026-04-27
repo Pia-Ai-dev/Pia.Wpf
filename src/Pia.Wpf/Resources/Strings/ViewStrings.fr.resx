@@ -572,4 +572,19 @@
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
   <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Si vous perdez ce code et tous vos appareils, vos données chiffrées ne pourront pas être récupérées. Le serveur ne peut pas déchiffrer vos données.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>J'ai enregistré ce code de récupération en lieu sûr</value></data>
+  <!-- Meeting summarization tool -->
+  <data name="MeetingTool_Choice_Clean" xml:space="preserve"><value>Texte nettoyé</value></data>
+  <data name="MeetingTool_Choice_Bulleted" xml:space="preserve"><value>Points par sujet</value></data>
+  <data name="MeetingTool_Choice_Text" xml:space="preserve"><value>Résumé textuel</value></data>
+  <data name="MeetingTool_Desc_PickKind" xml:space="preserve"><value>Comment résumer cette réunion ?</value></data>
+  <data name="MeetingTool_Prompt_Clean" xml:space="preserve"><value>Tu es un assistant qui nettoie une transcription de réunion. Supprime les hésitations, répétitions et faux départs ; conserve les intervenants et l'ordre chronologique. Renvoie uniquement la transcription nettoyée avec les libellés des intervenants (par ex. **Alice**) sans commentaire.</value></data>
+  <data name="MeetingTool_Prompt_Bulleted" xml:space="preserve"><value>Tu es un assistant qui résume une transcription de réunion en puces regroupées par sujet. Pour chaque sujet, liste les décisions, questions ouvertes et actions (avec responsable et échéance si mentionnés). Utilise des en-têtes Markdown par sujet et des puces concises. N'invente pas de faits absents de la transcription.</value></data>
+  <data name="MeetingTool_Prompt_Text" xml:space="preserve"><value>Tu es un assistant qui rédige un résumé en prose cohérent d'une transcription de réunion. Capture les points clés, décisions et actions en 2 à 4 courts paragraphes. Reste fidèle à la transcription ; n'invente pas de faits.</value></data>
+  <data name="MeetingTool_SystemPrompt" xml:space="preserve"><value>Tu peux résumer des transcriptions de réunion enregistrées. Après avoir produit un résumé, demande une seule fois à l'utilisateur s'il souhaite l'enregistrer comme mémoire. Si oui, appelle create_object avec type=meeting_summary, label=&lt;sujet déduit du résumé&gt; et data en JSON contenant topic, date (depuis le front-matter), speakers (depuis le front-matter), originalFilename (depuis le front-matter), summaryKind (style choisi) et content (le résumé). N'enregistre jamais sans confirmation explicite.</value></data>
+  <data name="Assistant_Meeting_SummarizeRequest" xml:space="preserve"><value>Merci de résumer la transcription de la réunion enregistrée dans `{0}`.</value></data>
+  <data name="LiveTrans_SaveAndSummarize" xml:space="preserve"><value>Enregistrer et résumer</value></data>
+  <data name="LiveTrans_SaveAndSummarize_Snackbar" xml:space="preserve"><value>Transcription enregistrée : {0}</value></data>
+  <data name="ActionCard_Category_Meeting" xml:space="preserve"><value>Réunion</value></data>
+  <data name="ActionCard_Action_Summarize" xml:space="preserve"><value>Résumer</value></data>
+  <data name="ActionCard_Action_Query" xml:space="preserve"><value>Rechercher</value></data>
 </root>

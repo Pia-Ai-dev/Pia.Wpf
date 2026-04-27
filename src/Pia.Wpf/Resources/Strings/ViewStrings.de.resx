@@ -572,4 +572,19 @@
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Wichtig</value></data>
   <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Wenn du diesen Code und alle Geräte verlierst, können deine verschlüsselten Daten nicht wiederhergestellt werden. Der Server kann deine Daten nicht entschlüsseln.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>Ich habe diesen Wiederherstellungscode an einem sicheren Ort gespeichert</value></data>
+  <!-- Meeting summarization tool -->
+  <data name="MeetingTool_Choice_Clean" xml:space="preserve"><value>Bereinigter Text</value></data>
+  <data name="MeetingTool_Choice_Bulleted" xml:space="preserve"><value>Stichpunkte nach Thema</value></data>
+  <data name="MeetingTool_Choice_Text" xml:space="preserve"><value>Textzusammenfassung</value></data>
+  <data name="MeetingTool_Desc_PickKind" xml:space="preserve"><value>Wie soll ich das Meeting zusammenfassen?</value></data>
+  <data name="MeetingTool_Prompt_Clean" xml:space="preserve"><value>Du bist ein Assistent, der ein Meeting-Transkript bereinigt. Entferne Füllwörter, Wiederholungen und falsche Anfänge; behalte Sprecher und chronologische Reihenfolge bei. Gib nur das bereinigte Transkript mit Sprecherbezeichnungen (z. B. **Alice**) ohne Kommentare aus.</value></data>
+  <data name="MeetingTool_Prompt_Bulleted" xml:space="preserve"><value>Du bist ein Assistent, der ein Meeting-Transkript in Stichpunkten nach Thema zusammenfasst. Liste je Thema Entscheidungen, offene Fragen und Aufgaben (mit Verantwortlichem und Fälligkeit, falls genannt). Verwende Markdown-Überschriften pro Thema und prägnante Stichpunkte. Erfinde keine Fakten, die nicht im Transkript stehen.</value></data>
+  <data name="MeetingTool_Prompt_Text" xml:space="preserve"><value>Du bist ein Assistent, der eine zusammenhängende Prosa-Zusammenfassung eines Meeting-Transkripts schreibt. Erfasse die wichtigsten Punkte, Entscheidungen und Aufgaben in 2–4 kurzen Absätzen. Bleibe nah am Transkript; erfinde keine Fakten.</value></data>
+  <data name="MeetingTool_SystemPrompt" xml:space="preserve"><value>Du kannst gespeicherte Meeting-Transkripte zusammenfassen. Nach Erstellung der Zusammenfassung frage einmal, ob sie als Memory gespeichert werden soll. Falls ja, rufe create_object auf mit type=meeting_summary, label=&lt;aus der Zusammenfassung abgeleitetes Thema&gt; und data als JSON-Objekt mit topic, date (aus dem Front-Matter), speakers (aus dem Front-Matter), originalFilename (aus dem Front-Matter), summaryKind (der gewählte Stil) und content (die Zusammenfassung). Speichere niemals ohne ausdrückliche Bestätigung.</value></data>
+  <data name="Assistant_Meeting_SummarizeRequest" xml:space="preserve"><value>Bitte fasse das Meeting-Transkript unter `{0}` zusammen.</value></data>
+  <data name="LiveTrans_SaveAndSummarize" xml:space="preserve"><value>Speichern &amp; zusammenfassen</value></data>
+  <data name="LiveTrans_SaveAndSummarize_Snackbar" xml:space="preserve"><value>Transkript gespeichert: {0}</value></data>
+  <data name="ActionCard_Category_Meeting" xml:space="preserve"><value>Meeting</value></data>
+  <data name="ActionCard_Action_Summarize" xml:space="preserve"><value>Zusammenfassen</value></data>
+  <data name="ActionCard_Action_Query" xml:space="preserve"><value>Suchen</value></data>
 </root>

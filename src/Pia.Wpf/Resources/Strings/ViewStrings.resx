@@ -572,4 +572,19 @@
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
   <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>If you lose this code and all your devices, your encrypted data cannot be recovered. The server cannot decrypt your data.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>I have saved this recovery code in a safe place</value></data>
+  <!-- Meeting summarization tool -->
+  <data name="MeetingTool_Choice_Clean" xml:space="preserve"><value>Clean text</value></data>
+  <data name="MeetingTool_Choice_Bulleted" xml:space="preserve"><value>Bulleted by topic</value></data>
+  <data name="MeetingTool_Choice_Text" xml:space="preserve"><value>Text summary</value></data>
+  <data name="MeetingTool_Desc_PickKind" xml:space="preserve"><value>How should I summarize this meeting?</value></data>
+  <data name="MeetingTool_Prompt_Clean" xml:space="preserve"><value>You are an expert assistant cleaning up a meeting transcript. Remove filler words, false starts, and verbal stutters; merge repeated phrasing; preserve speakers and the chronological order. Output only the cleaned transcript with speaker labels (e.g., **Alice**) and no commentary.</value></data>
+  <data name="MeetingTool_Prompt_Bulleted" xml:space="preserve"><value>You are an expert assistant summarizing a meeting transcript into bullets grouped by topic. For each topic, list key decisions, open questions, and action items (with owner and due date if mentioned). Use Markdown headers per topic and concise bullets. Do not invent facts not present in the transcript.</value></data>
+  <data name="MeetingTool_Prompt_Text" xml:space="preserve"><value>You are an expert assistant writing a coherent prose summary of a meeting transcript. Capture the key points, decisions, and action items in 2–4 short paragraphs. Stay faithful to the transcript; do not invent facts.</value></data>
+  <data name="MeetingTool_SystemPrompt" xml:space="preserve"><value>You can summarize saved meeting transcripts. After producing a summary, ask the user once whether they'd like to save it as a memory. If yes, call create_object with type=meeting_summary, label=&lt;topic distilled from the summary&gt;, and data as a JSON object with topic, date (from the front-matter), speakers (from the front-matter), originalFilename (from the front-matter), summaryKind (the chosen kind), and content (the summary you produced). Do not save without explicit user confirmation.</value></data>
+  <data name="Assistant_Meeting_SummarizeRequest" xml:space="preserve"><value>Please summarize the meeting transcript saved at `{0}`.</value></data>
+  <data name="LiveTrans_SaveAndSummarize" xml:space="preserve"><value>Save and summarize</value></data>
+  <data name="LiveTrans_SaveAndSummarize_Snackbar" xml:space="preserve"><value>Saved transcript to {0}</value></data>
+  <data name="ActionCard_Category_Meeting" xml:space="preserve"><value>Meeting</value></data>
+  <data name="ActionCard_Action_Summarize" xml:space="preserve"><value>Summarize</value></data>
+  <data name="ActionCard_Action_Query" xml:space="preserve"><value>Search</value></data>
 </root>
