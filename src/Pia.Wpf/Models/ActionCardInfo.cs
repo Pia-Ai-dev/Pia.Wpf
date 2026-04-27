@@ -29,6 +29,9 @@ public partial class ActionCardInfo : ObservableObject
     public bool IsDestructive { get; init; }
     public string? WarningText { get; init; }
 
+    public IReadOnlyList<ActionCardChoice>? Choices { get; init; }
+    public bool IsMultiChoice => Choices is { Count: > 0 };
+
     public ObservableCollection<ActionCardDetail> Details { get; init; } = [];
     public ObservableCollection<ActionCardDetail> OldValueDetails { get; init; } = [];
 
@@ -41,6 +44,9 @@ public partial class ActionCardInfo : ObservableObject
     [ObservableProperty]
     private bool _isExpanded;
 
+    [ObservableProperty]
+    private string? _chosenKey;
+
     public bool IsPending => State == ActionCardState.Pending;
     public bool IsResolved => State != ActionCardState.Pending;
 
@@ -51,7 +57,7 @@ public partial class ActionCardInfo : ObservableObject
         ? AcceptedStatusText
         : DeclinedStatusText;
 
-    private readonly TaskCompletionSource<bool> _tcs = new();
+    private readonly TaskCompletionSource<string?> _choiceTcs = new();
 
     partial void OnStateChanged(ActionCardState value)
     {
@@ -60,7 +66,13 @@ public partial class ActionCardInfo : ObservableObject
         OnPropertyChanged(nameof(ResolvedStatusText));
     }
 
-    public Task<bool> WaitForUserDecisionAsync() => _tcs.Task;
+    public async Task<bool> WaitForUserDecisionAsync()
+    {
+        var key = await _choiceTcs.Task;
+        return key == "accept";
+    }
+
+    public Task<string?> WaitForChoiceAsync() => _choiceTcs.Task;
 
     [RelayCommand]
     private void Accept()
@@ -68,7 +80,8 @@ public partial class ActionCardInfo : ObservableObject
         if (State != ActionCardState.Pending) return;
         State = ActionCardState.Accepted;
         IsExpanded = false;
-        _tcs.TrySetResult(true);
+        ChosenKey = "accept";
+        _choiceTcs.TrySetResult("accept");
     }
 
     [RelayCommand]
@@ -77,7 +90,8 @@ public partial class ActionCardInfo : ObservableObject
         if (State != ActionCardState.Pending) return;
         State = ActionCardState.Declined;
         IsExpanded = false;
-        _tcs.TrySetResult(false);
+        ChosenKey = "decline";
+        _choiceTcs.TrySetResult("decline");
     }
 
     [RelayCommand]
@@ -86,7 +100,17 @@ public partial class ActionCardInfo : ObservableObject
         if (State != ActionCardState.Pending) return;
         State = ActionCardState.Declined;
         IsExpanded = false;
-        _tcs.TrySetCanceled();
+        _choiceTcs.TrySetCanceled();
+    }
+
+    [RelayCommand]
+    private void Choose(string? key)
+    {
+        if (State != ActionCardState.Pending || string.IsNullOrEmpty(key)) return;
+        State = ActionCardState.Accepted;
+        IsExpanded = false;
+        ChosenKey = key;
+        _choiceTcs.TrySetResult(key);
     }
 
     [RelayCommand]
