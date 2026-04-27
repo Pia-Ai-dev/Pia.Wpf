@@ -2,5 +2,5 @@ namespace Pia.Services.Consent;
 
 public interface IConsentClassifier
 {
-    ConsentClassification Classify(string transcriptText);
+    Task<ConsentClassification> ClassifyAsync(string transcriptText, string promptText, CancellationToken cancellationToken = default);
 }

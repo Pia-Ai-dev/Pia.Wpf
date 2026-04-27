@@ -5,7 +5,7 @@ namespace Pia.Wpf.Tests.Consent;
 
 public sealed class RuleBasedConsentClassifierTests
 {
-    private readonly IConsentClassifier _sut = new RuleBasedConsentClassifier();
+    private readonly RuleBasedConsentClassifier _sut = new RuleBasedConsentClassifier();
 
     [Theory]
     [InlineData("ja")]

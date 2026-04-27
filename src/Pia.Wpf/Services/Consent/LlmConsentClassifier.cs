@@ -1,0 +1,99 @@
+using System.Text.Json;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+
+namespace Pia.Services.Consent;
+
+/// <summary>
+/// LLM-based classifier used as a fallback for the rule-based classifier when its confidence
+/// is low. The prompt is single-shot, returns strict JSON, and never receives meeting content
+/// other than the candidate consent reply itself.
+///
+/// Privacy gate: refuses to issue requests when <see cref="_isEuEndpoint"/> is false. In Strict
+/// Mode (the only mode in Phase 2), non-EU endpoints are forbidden.
+/// </summary>
+public sealed class LlmConsentClassifier
+{
+    private const string SystemPrompt =
+        "You classify a user's spoken reply to a recording-consent prompt. "
+        + "Return ONLY a JSON object: {\"decision\":\"grant|deny|ambiguous\",\"confidence\":0.0-1.0,\"reason\":\"short\"}. "
+        + "No prose, no markdown, no extra keys. If unclear, return ambiguous.";
+
+    private readonly IChatClient _chatClient;
+    private readonly bool _isEuEndpoint;
+    private readonly ILogger<LlmConsentClassifier> _logger;
+
+    public LlmConsentClassifier(IChatClient chatClient, bool isEuEndpoint, ILogger<LlmConsentClassifier> logger)
+    {
+        _chatClient = chatClient;
+        _isEuEndpoint = isEuEndpoint;
+        _logger = logger;
+    }
+
+    public async Task<ConsentClassification> ClassifyAsync(string transcriptText, string promptText, CancellationToken cancellationToken = default)
+    {
+        if (!_isEuEndpoint)
+        {
+            _logger.LogWarning("LlmConsentClassifier refused: non-EU endpoint in Strict Mode");
+            return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
+        }
+
+        try
+        {
+            var userMessage =
+                $"Consent prompt that was played: \"{promptText}\"\n"
+                + $"User's reply: \"{transcriptText}\"\n"
+                + "Classify the reply.";
+
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, SystemPrompt),
+                new(ChatRole.User, userMessage),
+            };
+            var response = await _chatClient
+                .GetResponseAsync(messages, options: null, cancellationToken)
+                .ConfigureAwait(false);
+
+            var raw = response.Messages.FirstOrDefault()?.Text ?? string.Empty;
+            return Parse(raw);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "LLM consent classification failed; clamping to ambiguous");
+            return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
+        }
+    }
+
+    private static ConsentClassification Parse(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
+
+        // Tolerate prose/markdown around the JSON object.
+        var open = raw.IndexOf('{');
+        var close = raw.LastIndexOf('}');
+        if (open < 0 || close <= open) return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
+        var json = raw.Substring(open, close - open + 1);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var decisionStr = root.TryGetProperty("decision", out var d) ? d.GetString() ?? "ambiguous" : "ambiguous";
+            var confidence = root.TryGetProperty("confidence", out var c) && c.ValueKind == JsonValueKind.Number
+                ? Math.Clamp((float)c.GetDouble(), 0f, 1f)
+                : 0.0f;
+            var decision = decisionStr.ToLowerInvariant() switch
+            {
+                "grant" => ConsentDecision.Grant,
+                "deny" => ConsentDecision.Deny,
+                _ => ConsentDecision.Ambiguous,
+            };
+            return new ConsentClassification(decision, confidence);
+        }
+        catch (JsonException)
+        {
+            return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
+        }
+    }
+}

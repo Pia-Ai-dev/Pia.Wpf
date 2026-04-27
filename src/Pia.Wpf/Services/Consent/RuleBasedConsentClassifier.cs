@@ -35,6 +35,9 @@ public sealed class RuleBasedConsentClassifier : IConsentClassifier
         @"\bmaybe\b", @"\bi don't know\b", @"\bwhy\b", @"\bwhat do you mean\b",
     };
 
+    public Task<ConsentClassification> ClassifyAsync(string transcriptText, string promptText, CancellationToken cancellationToken = default)
+        => Task.FromResult(Classify(transcriptText));
+
     public ConsentClassification Classify(string transcriptText)
     {
         if (string.IsNullOrWhiteSpace(transcriptText))

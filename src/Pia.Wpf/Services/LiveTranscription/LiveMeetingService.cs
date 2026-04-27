@@ -282,7 +282,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
 
         if (utt.Channel == TranscriptChannel.ConsentClassification)
         {
-            HandleConsentReply(label, utt.Text);
+            await HandleConsentReplyAsync(label, utt.Text, cancellationToken).ConfigureAwait(false);
             return; // never forward consent dialog content to the user transcript
         }
 
@@ -330,10 +330,12 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         });
     }
 
-    private void HandleConsentReply(string label, string transcriptText)
+    private async Task HandleConsentReplyAsync(string label, string transcriptText, CancellationToken cancellationToken)
     {
-        var classification = _consentClassifier.Classify(transcriptText);
         var prompt = ConsentPromptTemplates.InitialConsentLocalOnlyDe;
+        var classification = await _consentClassifier
+            .ClassifyAsync(transcriptText, prompt.Text, cancellationToken)
+            .ConfigureAwait(false);
         _consentMgr.RecordClassification(
             label, classification, transcriptText, prompt.VersionHash, prompt.Text, sttModelId: "live-engine");
     }
