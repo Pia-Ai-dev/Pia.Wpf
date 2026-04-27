@@ -16,6 +16,10 @@ namespace Pia.Services.LiveTranscription;
 /// </summary>
 public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 {
+    // Speaker embeddings need ~1.5 s of phonetic content to be stable; shorter segments
+    // (throat clears, single-word "äh"s) produce noisy vectors that poison the centroid pool.
+    private const int MinDiarizationSamples = 16000 * 3 / 2; // 1.5 s at 16 kHz
+
     private readonly TranscriptSpeaker _speaker;
     private readonly IAudioCaptureSource _source;
     private readonly SherpaOnnxVadDetector _vad;
@@ -141,8 +145,17 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
             string? speakerLabel = null;
             if (_speakerId is not null)
             {
-                try { speakerLabel = _speakerId.IdentifyOrRegister(samples, 16000); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
+                if (samples.Length >= MinDiarizationSamples)
+                {
+                    try { speakerLabel = _speakerId.IdentifyOrRegister(samples, 16000); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "Skipping diarization for {Speaker}: segment too short ({Ms} ms)",
+                        _speaker, samples.Length * 1000 / 16000);
+                }
             }
 
             var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel);

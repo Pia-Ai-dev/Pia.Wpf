@@ -4,13 +4,17 @@ using SherpaOnnx;
 namespace Pia.Services.LiveTranscription;
 
 /// <summary>
-/// Live speaker identification for a single meeting. Wraps sherpa-onnx's
-/// <see cref="SpeakerEmbeddingExtractor"/> + <see cref="SpeakerEmbeddingManager"/>.
+/// Live speaker identification for a single meeting. Uses sherpa-onnx's
+/// <see cref="SpeakerEmbeddingExtractor"/> to compute per-segment embeddings and
+/// matches them against an in-process pool of running per-speaker centroids.
 ///
-/// The manager is keyed by an internal id (<c>spk_1</c>, <c>spk_2</c>, …) while the UI
-/// sees a display label ("Speaker 1", or whatever the user renames it to). This split
-/// makes <see cref="Rename"/> a single dictionary update rather than a remove/re-add
-/// dance against the native manager.
+/// Per-speaker state is kept under an internal id (<c>spk_1</c>, <c>spk_2</c>, …)
+/// while the UI sees a display label ("Speaker 1", or whatever the user renames it
+/// to). This split makes <see cref="Rename"/> a single dictionary update.
+///
+/// Each successful match folds the new embedding into the matched speaker's
+/// centroid (running mean), so a noisy first segment doesn't permanently anchor
+/// "Speaker 1".
 /// </summary>
 public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
 {
@@ -19,7 +23,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     private readonly float _matchThreshold;
 
     private readonly object _lock = new();
-    private SpeakerEmbeddingManager _manager;
+    private readonly Dictionary<string, SpeakerCentroid> _speakers = new();
     private readonly Dictionary<string, string> _displayLabels = new(); // internalId → label
     private int _counter;
 
@@ -35,7 +39,6 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
         config.Debug = 0;
 
         _extractor = new SpeakerEmbeddingExtractor(config);
-        _manager = new SpeakerEmbeddingManager(_extractor.Dim);
 
         _logger.LogInformation(
             "Speaker identification active. model='{Model}' dim={Dim} threshold={Threshold:F2}",
@@ -44,24 +47,50 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
 
     public string IdentifyOrRegister(float[] segmentSamples, int sampleRate)
     {
+        var durationSec = sampleRate > 0 ? segmentSamples.Length / (float)sampleRate : 0f;
         var embedding = ComputeEmbedding(segmentSamples, sampleRate);
 
         lock (_lock)
         {
-            var matchedId = _manager.Search(embedding, _matchThreshold);
-            if (!string.IsNullOrEmpty(matchedId) && _displayLabels.TryGetValue(matchedId, out var existingLabel))
+            string? bestId = null;
+            float bestSim = float.NegativeInfinity;
+            var sims = new List<(string label, float sim)>(_speakers.Count);
+
+            foreach (var (id, centroid) in _speakers)
             {
-                return existingLabel;
+                var sim = CosineSimilarity(embedding, centroid.Centroid);
+                sims.Add((_displayLabels[id], sim));
+                if (sim > bestSim) { bestSim = sim; bestId = id; }
+            }
+
+            if (bestId is not null && bestSim >= _matchThreshold)
+            {
+                var matched = _speakers[bestId];
+                matched.Update(embedding);
+                var label = _displayLabels[bestId];
+
+                _logger.LogInformation(
+                    "Diarization match: {Label} sim={Sim:F3} dur={Dur:F2}s sims=[{Sims}]",
+                    label, bestSim, durationSec, FormatSims(sims));
+
+                return label;
             }
 
             _counter++;
             var internalId = $"spk_{_counter}";
-            var label = $"Speaker {_counter}";
-            _manager.Add(internalId, embedding);
-            _displayLabels[internalId] = label;
+            var newLabel = $"Speaker {_counter}";
+            _speakers[internalId] = new SpeakerCentroid(embedding);
+            _displayLabels[internalId] = newLabel;
 
-            _logger.LogInformation("New speaker registered: {Label} (id={Id})", label, internalId);
-            return label;
+            _logger.LogInformation(
+                "Diarization new speaker: {Label} bestSim={BestSim:F3} threshold={Threshold:F2} dur={Dur:F2}s sims=[{Sims}]",
+                newLabel,
+                bestSim == float.NegativeInfinity ? 0f : bestSim,
+                _matchThreshold,
+                durationSec,
+                FormatSims(sims));
+
+            return newLabel;
         }
     }
 
@@ -88,8 +117,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     {
         lock (_lock)
         {
-            _manager.Dispose();
-            _manager = new SpeakerEmbeddingManager(_extractor.Dim);
+            _speakers.Clear();
             _displayLabels.Clear();
             _counter = 0;
             _logger.LogInformation("Speaker identification state reset");
@@ -108,8 +136,52 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     {
         lock (_lock)
         {
-            _manager.Dispose();
             _extractor.Dispose();
+        }
+    }
+
+    private static float CosineSimilarity(float[] a, float[] b)
+    {
+        if (a.Length != b.Length) return 0f;
+
+        float dot = 0, normA = 0, normB = 0;
+        for (int i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+
+        var denominator = MathF.Sqrt(normA) * MathF.Sqrt(normB);
+        return denominator == 0 ? 0f : dot / denominator;
+    }
+
+    private static string FormatSims(List<(string label, float sim)> sims)
+    {
+        if (sims.Count == 0) return "(none)";
+        sims.Sort((x, y) => y.sim.CompareTo(x.sim));
+        return string.Join(", ", sims.Select(s => $"{s.label}={s.sim:F3}"));
+    }
+
+    private sealed class SpeakerCentroid
+    {
+        public float[] Centroid;
+        public int Count;
+
+        public SpeakerCentroid(float[] firstEmbedding)
+        {
+            Centroid = (float[])firstEmbedding.Clone();
+            Count = 1;
+        }
+
+        public void Update(float[] embedding)
+        {
+            // Running mean: centroid = (count * centroid + embedding) / (count + 1)
+            for (int i = 0; i < Centroid.Length; i++)
+            {
+                Centroid[i] = (Centroid[i] * Count + embedding[i]) / (Count + 1);
+            }
+            Count++;
         }
     }
 }

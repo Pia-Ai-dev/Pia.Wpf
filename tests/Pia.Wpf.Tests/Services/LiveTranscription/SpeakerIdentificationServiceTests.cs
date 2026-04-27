@@ -13,7 +13,7 @@ public class SpeakerIdentificationServiceTests
     private static bool ModelMissing => !LiveTranscriptionModels.IsSpeakerEmbeddingAvailable();
 
     private static SpeakerIdentificationService CreateSut()
-        => new(LiveTranscriptionModels.SpeakerEmbeddingModelPath, matchThreshold: 0.6f, NullLogger.Instance);
+        => new(LiveTranscriptionModels.SpeakerEmbeddingModelPath, matchThreshold: 0.70f, NullLogger.Instance);
 
     [Fact]
     public void SameAudioTwice_ReturnsSameLabel()

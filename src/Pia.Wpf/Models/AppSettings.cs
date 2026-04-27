@@ -82,7 +82,7 @@ public class AppSettings
     // Live transcription settings
     public string? LastCounterpartName { get; set; }
     public bool EnableLoopbackDiarization { get; set; } = true;
-    public float SpeakerEmbeddingThreshold { get; set; } = 0.6f;
+    public float SpeakerEmbeddingThreshold { get; set; } = 0.70f;
 
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
