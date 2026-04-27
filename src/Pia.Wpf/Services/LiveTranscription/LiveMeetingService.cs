@@ -27,6 +27,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private readonly IConsentGate _consentGate;
     private readonly IConsentAuditLog _auditLog;
     private readonly ITtsService _tts;
+    private readonly PerSpeakerRingBufferRegistry _preConsentBuffers;
+    private readonly HashSet<string> _pendingConsentFlows = new(StringComparer.Ordinal);
 
     private LiveMeetingState _state = LiveMeetingState.Idle;
     private readonly object _stateLock = new();
@@ -64,7 +66,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         IConsentClassifier consentClassifier,
         IConsentGate consentGate,
         IConsentAuditLog auditLog,
-        ITtsService tts)
+        ITtsService tts,
+        PerSpeakerRingBufferRegistry preConsentBuffers)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -77,6 +80,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _consentGate = consentGate;
         _auditLog = auditLog;
         _tts = tts;
+        _preConsentBuffers = preConsentBuffers;
 
         _consentMgr.StateChanged += OnConsentStateChanged;
     }
@@ -173,7 +177,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 _rawUtterances.Writer,
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
                 _speakerId,
-                _consentGate);
+                _consentGate,
+                _preConsentBuffers);
 
             _micEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
             _loopbackEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
@@ -246,7 +251,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         catch (Exception ex) { _logger.LogError(ex, "Forward loop failed"); }
     }
 
-    private async Task ProcessUtteranceAsync(TranscriptUtterance utt, CancellationToken cancellationToken)
+    internal async Task ProcessUtteranceAsync(TranscriptUtterance utt, CancellationToken cancellationToken)
     {
         // Loopback engine emits utterances with a SpeakerLabel; mic-side has none and is
         // always trusted (the local user is by definition consenting to their own recording).
@@ -261,7 +266,10 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         lock (_knownSpeakers) firstSeen = _knownSpeakers.Add(label);
         if (firstSeen)
         {
-            await OnNewSpeakerJoinedAsync(label, cancellationToken).ConfigureAwait(false);
+            // Strategy B: existing GRANTED speakers must keep producing utterances while a
+            // new speaker awaits consent. Fire the prompt flow asynchronously and drop this
+            // utterance — the gate will continue to filter follow-up utterances by state.
+            StartConsentFlowAsync(label);
         }
 
         if (utt.Channel == TranscriptChannel.ConsentClassification)
@@ -289,25 +297,43 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         await _utterances.Writer.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task OnNewSpeakerJoinedAsync(string label, CancellationToken cancellationToken)
+    private void StartConsentFlowAsync(string label)
     {
+        lock (_pendingConsentFlows)
+        {
+            if (!_pendingConsentFlows.Add(label)) return;
+        }
+
         _consentMgr.GetOrCreate(label);
         _auditLog.Append(new AuditEvent(
             Guid.NewGuid(), DateTimeOffset.UtcNow, "SPEAKER_JOINED", label, null));
-
-        var prompt = ConsentPromptTemplates.InitialConsentLocalOnlyDe;
-        try { await _tts.SpeakAsync(prompt.Text, cancellationToken).ConfigureAwait(false); }
-        catch (Exception ex) { _logger.LogWarning(ex, "TTS playback failed for consent prompt"); }
-
-        _consentMgr.MarkPrompted(label);
         _auditLog.Append(new AuditEvent(
-            Guid.NewGuid(), DateTimeOffset.UtcNow, "CONSENT_PROMPTED", label,
-            new Dictionary<string, object?>
+            Guid.NewGuid(), DateTimeOffset.UtcNow, "STRATEGY_B_PENDING_CONSENT", label, null));
+
+        _ = Task.Run(async () =>
+        {
+            try
             {
-                ["prompt_id"] = prompt.Id,
-                ["prompt_hash"] = prompt.VersionHash,
-                ["language"] = prompt.Language,
-            }));
+                var prompt = ConsentPromptTemplates.InitialConsentLocalOnlyDe;
+                try { await _tts.SpeakAsync(prompt.Text).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "TTS playback failed for consent prompt"); }
+
+                _consentMgr.MarkPrompted(label);
+                _auditLog.Append(new AuditEvent(
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, "CONSENT_PROMPTED", label,
+                    new Dictionary<string, object?>
+                    {
+                        ["prompt_id"] = prompt.Id,
+                        ["prompt_hash"] = prompt.VersionHash,
+                        ["language"] = prompt.Language,
+                    }));
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Consent flow for {Label} failed", label); }
+            finally
+            {
+                lock (_pendingConsentFlows) _pendingConsentFlows.Remove(label);
+            }
+        });
     }
 
     private void HandleConsentReply(string label, string transcriptText)
@@ -335,6 +361,20 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _auditLog.Append(new AuditEvent(
             Guid.NewGuid(), DateTimeOffset.UtcNow, eventType, e.SpeakerLabel,
             new Dictionary<string, object?> { ["from"] = e.OldState.ToString() }));
+
+        // Spec §3.9 Strategy B point 5: pre-consent audio MUST be discarded on grant —
+        // never replayed retroactively. Make the discard intent visible.
+        if (e.NewState == ConsentState.Granted)
+        {
+            var discarded = _preConsentBuffers.Drain(e.SpeakerLabel);
+            _auditLog.Append(new AuditEvent(
+                Guid.NewGuid(), DateTimeOffset.UtcNow, "PRE_CONSENT_BUFFER_DISCARDED", e.SpeakerLabel,
+                new Dictionary<string, object?>
+                {
+                    ["sample_count"] = discarded.Length,
+                    ["duration_ms"] = discarded.Length * 1000 / 16000,
+                }));
+        }
 
         // Spec §3 CLARIFICATION_AMBIGUOUS: re-prompt when a reply lands in the ambiguous band.
         if (e.NewState == ConsentState.Ambiguous)

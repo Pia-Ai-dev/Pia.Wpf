@@ -235,6 +235,10 @@ public static class Bootstrapper
                 TimeProvider.System));
         services.AddSingleton<IConsentClassifier, RuleBasedConsentClassifier>();
         services.AddSingleton<IConsentGate, ConsentGate>();
+        // Per-speaker pre-consent ring buffers. 16 kHz mono, ~30 s per speaker, ~10 minutes total.
+        services.AddSingleton(_ => new PerSpeakerRingBufferRegistry(
+            perSpeakerCapacity: 16000 * 30,
+            totalCapacity: 16000 * 600));
         services.AddSingleton<IConsentAuditLog>(sp =>
         {
             var dir = Path.Combine(

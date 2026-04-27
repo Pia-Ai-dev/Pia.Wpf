@@ -27,6 +27,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private readonly ITranscriptionEngine _engine;
     private readonly ISpeakerIdentificationService? _speakerId;
     private readonly IConsentGate? _consentGate;
+    private readonly PerSpeakerRingBufferRegistry? _preConsentBuffers;
     private readonly ChannelWriter<TranscriptUtterance> _sink;
     private readonly ILogger _logger;
 
@@ -44,13 +45,15 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         ChannelWriter<TranscriptUtterance> sink,
         ILogger logger,
         ISpeakerIdentificationService? speakerId = null,
-        IConsentGate? consentGate = null)
+        IConsentGate? consentGate = null,
+        PerSpeakerRingBufferRegistry? preConsentBuffers = null)
     {
         _speaker = speaker;
         _source = source;
         _engine = engine;
         _speakerId = speakerId;
         _consentGate = consentGate;
+        _preConsentBuffers = preConsentBuffers;
         _sink = sink;
         _logger = logger;
 
@@ -188,11 +191,16 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 switch (decision)
                 {
                     case GateDecision.Drop:
+                        // Pre-consent audio is held RAM-only per Strategy B. The state-machine
+                        // owner is responsible for explicitly discarding the buffer on grant
+                        // (spec §3.9 Strategy B point 5: never replay retroactively).
+                        _preConsentBuffers?.Append(speakerLabel, samples);
                         _logger.LogInformation(
                             "Consent gate dropped segment for {Label} (speaker={Speaker})",
                             speakerLabel, _speaker);
                         return;
                     case GateDecision.PassToConsentClassifier:
+                        _preConsentBuffers?.Append(speakerLabel, samples);
                         channel = TranscriptChannel.ConsentClassification;
                         break;
                     case GateDecision.PassToTranscript:

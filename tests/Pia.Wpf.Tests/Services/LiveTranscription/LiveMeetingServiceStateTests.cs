@@ -71,6 +71,7 @@ public class LiveMeetingServiceStateTests
         var gate = new ConsentGate(mgr, NullLogger<ConsentGate>.Instance);
         var audit = Substitute.For<IConsentAuditLog>();
         var tts = Substitute.For<ITtsService>();
-        return new LiveMeetingService(settings, http, loggers, mgr, classifier, gate, audit, tts);
+        var buffers = new PerSpeakerRingBufferRegistry(perSpeakerCapacity: 16000, totalCapacity: 64000);
+        return new LiveMeetingService(settings, http, loggers, mgr, classifier, gate, audit, tts, buffers);
     }
 }
