@@ -29,7 +29,12 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private readonly ITtsService _tts;
     private readonly PerSpeakerRingBufferRegistry _preConsentBuffers;
     private readonly IPostSttDefenseFilter _postSttFilter;
+    private readonly IConsentOrchestratorFactory? _orchestratorFactory;
     private readonly HashSet<string> _pendingConsentFlows = new(StringComparer.Ordinal);
+    // Built per session in StartAsync from the security profile that was active at start.
+    // Mid-session profile changes are deliberately ignored (would invalidate already-collected
+    // consent) — the warning is logged in ConsentOrchestratorFactory.
+    private IConsentOrchestrator? _orchestrator;
 
     private LiveMeetingState _state = LiveMeetingState.Idle;
     private readonly object _stateLock = new();
@@ -69,7 +74,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         IConsentAuditLog auditLog,
         ITtsService tts,
         PerSpeakerRingBufferRegistry preConsentBuffers,
-        IPostSttDefenseFilter postSttFilter)
+        IPostSttDefenseFilter postSttFilter,
+        IConsentOrchestratorFactory? orchestratorFactory = null)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -84,6 +90,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _tts = tts;
         _preConsentBuffers = preConsentBuffers;
         _postSttFilter = postSttFilter;
+        _orchestratorFactory = orchestratorFactory;
 
         _consentMgr.StateChanged += OnConsentStateChanged;
     }
@@ -186,6 +193,13 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             _micEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
             _loopbackEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
 
+            // Build the orchestrator from the security profile in effect at session start.
+            // The orchestrator is held for the whole session — profile changes mid-session
+            // are logged but not applied.
+            _orchestrator = _orchestratorFactory?.CreateForCurrentProfile();
+            _orchestrator?.RegisterEngine(_micEngine);
+            _orchestrator?.RegisterEngine(_loopbackEngine);
+
             _forwardCts = new CancellationTokenSource();
             _forwardLoop = Task.Run(() => RunForwardLoopAsync(_forwardCts.Token));
 
@@ -274,9 +288,14 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         lock (_knownSpeakers) firstSeen = _knownSpeakers.Add(label);
         if (firstSeen)
         {
-            // Strategy B: existing GRANTED speakers must keep producing utterances while a
-            // new speaker awaits consent. Fire the prompt flow asynchronously and drop this
-            // utterance — the gate will continue to filter follow-up utterances by state.
+            // Strategy A pauses every running engine (in the orchestrator) before the
+            // prompt flow runs; Strategy B is a no-op so the existing Granted speakers
+            // keep producing utterances while the new speaker waits for consent.
+            if (_orchestrator is not null)
+            {
+                try { await _orchestrator.OnNewSpeakerJoinedAsync(label, cancellationToken).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Orchestrator OnNewSpeakerJoinedAsync threw for {Label}", label); }
+            }
             StartConsentFlowAsync(label);
         }
 
@@ -416,6 +435,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         if (_micEngine is not null)
         {
             _micEngine.IsSpeakingChanged -= OnEngineSpeakingChanged;
+            try { _orchestrator?.UnregisterEngine(_micEngine); } catch { /* swallow on shutdown */ }
             try { await _micEngine.DisposeAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Mic engine dispose threw"); }
             _micEngine = null;
@@ -423,10 +443,16 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         if (_loopbackEngine is not null)
         {
             _loopbackEngine.IsSpeakingChanged -= OnEngineSpeakingChanged;
+            try { _orchestrator?.UnregisterEngine(_loopbackEngine); } catch { /* swallow on shutdown */ }
             try { await _loopbackEngine.DisposeAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Loopback engine dispose threw"); }
             _loopbackEngine = null;
         }
+        if (_orchestrator is IDisposable disposableOrch)
+        {
+            try { disposableOrch.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Orchestrator dispose threw"); }
+        }
+        _orchestrator = null;
         if (_micSource is not null)
         {
             try { await _micSource.DisposeAsync().ConfigureAwait(false); }
