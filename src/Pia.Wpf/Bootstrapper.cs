@@ -249,6 +249,8 @@ public static class Bootstrapper
         services.AddSingleton<ISecurityModeProvider, SecurityModeProvider>();
         services.AddSingleton<IConsentOrchestratorFactory, ConsentOrchestratorFactory>();
         services.AddSingleton<ICrossTalkResolver, ConservativeCrossTalkResolver>();
+        services.AddSingleton<VoiceEmbeddingBlocklist>();
+        services.AddSingleton<IBlocklistFilter, BlocklistFilter>();
         // Per-speaker pre-consent ring buffers. 16 kHz mono, ~30 s per speaker, ~10 minutes total.
         services.AddSingleton(_ => new PerSpeakerRingBufferRegistry(
             perSpeakerCapacity: 16000 * 30,

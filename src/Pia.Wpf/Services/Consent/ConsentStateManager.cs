@@ -107,6 +107,16 @@ public sealed class ConsentStateManager : IConsentStateManager
         Raise(speakerLabel, oldState, newState);
     }
 
+    public void SetEmbedding(string speakerLabel, float[] embedding)
+    {
+        if (embedding is null || embedding.Length == 0) return;
+        lock (_lock)
+        {
+            var entry = GetOrCreateNoLock(speakerLabel);
+            entry.Embedding = (float[])embedding.Clone();
+        }
+    }
+
     public void Revoke(string speakerLabel)
     {
         ConsentState oldState;

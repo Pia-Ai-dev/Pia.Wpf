@@ -16,6 +16,13 @@ public interface ISpeakerIdentificationService : IDisposable
     string IdentifyOrRegister(float[] segmentSamples, int sampleRate);
 
     /// <summary>
+    /// Compute the segment's embedding and identify-or-register, returning both. Used by
+    /// the blocklist filter so the engine pipeline can run a similarity check before the
+    /// segment reaches the consent gate / ring buffer.
+    /// </summary>
+    (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate);
+
+    /// <summary>
     /// Rename a display label so all subsequent <see cref="IdentifyOrRegister"/> calls for
     /// the same voice return <paramref name="newLabel"/>. Returns true if a label matching
     /// <paramref name="oldLabel"/> existed and was renamed.

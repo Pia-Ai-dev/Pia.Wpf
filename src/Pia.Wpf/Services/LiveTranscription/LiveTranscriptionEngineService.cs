@@ -27,6 +27,8 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private readonly ITranscriptionEngine _engine;
     private readonly ISpeakerIdentificationService? _speakerId;
     private readonly IConsentGate? _consentGate;
+    private readonly IConsentStateManager? _consentMgr;
+    private readonly IBlocklistFilter? _blocklistFilter;
     private readonly PerSpeakerRingBufferRegistry? _preConsentBuffers;
     private readonly ChannelWriter<TranscriptUtterance> _sink;
     private readonly ILogger _logger;
@@ -49,13 +51,17 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         ILogger logger,
         ISpeakerIdentificationService? speakerId = null,
         IConsentGate? consentGate = null,
-        PerSpeakerRingBufferRegistry? preConsentBuffers = null)
+        PerSpeakerRingBufferRegistry? preConsentBuffers = null,
+        IConsentStateManager? consentMgr = null,
+        IBlocklistFilter? blocklistFilter = null)
     {
         _speaker = speaker;
         _source = source;
         _engine = engine;
         _speakerId = speakerId;
         _consentGate = consentGate;
+        _consentMgr = consentMgr;
+        _blocklistFilter = blocklistFilter;
         _preConsentBuffers = preConsentBuffers;
         _sink = sink;
         _logger = logger;
@@ -191,6 +197,35 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _logger.LogDebug("Engine start: {Speaker} {Samples} samples", _speaker, samples.Length);
         try
         {
+            // Diarization first (when the segment is long enough): the embedding lets us
+            // run the blocklist filter *before* Whisper sees the audio. Spec §3.9: a
+            // denied speaker's voice must never reach STT output or the ring buffer.
+            string? speakerLabel = null;
+            float[]? embedding = null;
+            if (_speakerId is not null && samples.Length >= MinDiarizationSamples)
+            {
+                try
+                {
+                    var (label, emb) = _speakerId.IdentifyOrRegisterWithEmbedding(samples, 16000);
+                    speakerLabel = label;
+                    embedding = emb;
+                }
+                catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
+            }
+
+            if (embedding is not null && _blocklistFilter is not null && _blocklistFilter.ShouldDrop(embedding))
+            {
+                _logger.LogInformation(
+                    "Blocklist dropped segment for {Label} (speaker={Speaker}, samples={Samples})",
+                    speakerLabel, _speaker, samples.Length);
+                return;
+            }
+
+            if (speakerLabel is not null && embedding is not null && _consentMgr is not null)
+            {
+                _consentMgr.SetEmbedding(speakerLabel, embedding);
+            }
+
             var text = await _engine.TranscribeAsync(samples, cancellationToken).ConfigureAwait(false);
             sw.Stop();
             if (string.IsNullOrWhiteSpace(text))
@@ -202,22 +237,6 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
             _logger.LogDebug(
                 "Engine done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
                 _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
-
-            string? speakerLabel = null;
-            if (_speakerId is not null)
-            {
-                if (samples.Length >= MinDiarizationSamples)
-                {
-                    try { speakerLabel = _speakerId.IdentifyOrRegister(samples, 16000); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
-                }
-                else
-                {
-                    _logger.LogDebug(
-                        "Skipping diarization for {Speaker}: segment too short ({Ms} ms)",
-                        _speaker, samples.Length * 1000 / 16000);
-                }
-            }
 
             var channel = TranscriptChannel.Regular;
             if (_consentGate is not null && speakerLabel is not null)

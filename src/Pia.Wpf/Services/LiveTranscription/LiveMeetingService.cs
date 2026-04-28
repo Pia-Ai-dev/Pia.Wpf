@@ -30,6 +30,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private readonly PerSpeakerRingBufferRegistry _preConsentBuffers;
     private readonly IPostSttDefenseFilter _postSttFilter;
     private readonly IConsentOrchestratorFactory? _orchestratorFactory;
+    private readonly IBlocklistFilter? _blocklistFilter;
     private readonly HashSet<string> _pendingConsentFlows = new(StringComparer.Ordinal);
     // Built per session in StartAsync from the security profile that was active at start.
     // Mid-session profile changes are deliberately ignored (would invalidate already-collected
@@ -75,7 +76,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         ITtsService tts,
         PerSpeakerRingBufferRegistry preConsentBuffers,
         IPostSttDefenseFilter postSttFilter,
-        IConsentOrchestratorFactory? orchestratorFactory = null)
+        IConsentOrchestratorFactory? orchestratorFactory = null,
+        IBlocklistFilter? blocklistFilter = null)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -91,6 +93,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _preConsentBuffers = preConsentBuffers;
         _postSttFilter = postSttFilter;
         _orchestratorFactory = orchestratorFactory;
+        _blocklistFilter = blocklistFilter;
 
         _consentMgr.StateChanged += OnConsentStateChanged;
     }
@@ -188,7 +191,9 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                 _loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
                 _speakerId,
                 _consentGate,
-                _preConsentBuffers);
+                _preConsentBuffers,
+                _consentMgr,
+                _blocklistFilter);
 
             _micEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
             _loopbackEngine.IsSpeakingChanged += OnEngineSpeakingChanged;
@@ -453,6 +458,12 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
             try { disposableOrch.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Orchestrator dispose threw"); }
         }
         _orchestrator = null;
+        // Spec §3.9: blocklist is session-scoped (Art. 9 DSGVO; cross-session persistence is
+        // Phase 5). Reset on every shutdown so a denied speaker is re-evaluated next meeting.
+        if (_blocklistFilter is BlocklistFilter resettable)
+        {
+            try { resettable.Reset(); } catch (Exception ex) { _logger.LogWarning(ex, "Blocklist reset threw"); }
+        }
         if (_micSource is not null)
         {
             try { await _micSource.DisposeAsync().ConfigureAwait(false); }

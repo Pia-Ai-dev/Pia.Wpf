@@ -56,6 +56,9 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     }
 
     public string IdentifyOrRegister(float[] segmentSamples, int sampleRate)
+        => IdentifyOrRegisterWithEmbedding(segmentSamples, sampleRate).Label;
+
+    public (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate)
     {
         var durationSec = sampleRate > 0 ? segmentSamples.Length / (float)sampleRate : 0f;
         var embedding = ComputeEmbedding(segmentSamples, sampleRate);
@@ -87,7 +90,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                     "Diarization match: {Label} sim={Sim:F3} w={Weight:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, weight, durationSec, FormatSims(sims));
 
-                return label;
+                return (label, embedding);
             }
 
             // Zone B: borderline — return the best-matching label but DO NOT update the
@@ -99,7 +102,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 _logger.LogInformation(
                     "Diarization borderline (no centroid update): {Label} sim={Sim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, _matchThreshold, BorderlineMargin, durationSec, FormatSims(sims));
-                return label;
+                return (label, embedding);
             }
 
             // Zone C: register a brand-new speaker.
@@ -118,7 +121,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 durationSec,
                 FormatSims(sims));
 
-            return newLabel;
+            return (newLabel, embedding);
         }
     }
 

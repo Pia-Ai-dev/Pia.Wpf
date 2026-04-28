@@ -19,6 +19,7 @@ public interface IConsentStateManager
         string promptText,
         string sttModelId);
     void Revoke(string speakerLabel);
+    void SetEmbedding(string speakerLabel, float[] embedding);
     void Rename(string oldLabel, string newLabel);
     void SweepTimeouts();
 
