@@ -112,6 +112,9 @@ public class AppSettings
     // Privacy settings
     public PrivacySettings Privacy { get; set; } = new();
 
+    // Consent / security mode (Phase 3)
+    public SecurityMode SecurityMode { get; set; } = SecurityMode.Standard;
+
     public Guid? GetProviderForMode(WindowMode mode)
     {
         if (UseSameProviderForAllModes)

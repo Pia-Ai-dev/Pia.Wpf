@@ -1,17 +1,6 @@
+using Pia.Models;
+
 namespace Pia.Services.Consent;
-
-public enum SecurityMode
-{
-    Strict,
-    Standard,
-    Permissive,
-}
-
-public enum NewSpeakerStrategy
-{
-    PauseAndReConsent,
-    SelectiveRecording,
-}
 
 /// <summary>
 /// Per spec §7. Profiles are immutable presets that toggle behavior across the consent

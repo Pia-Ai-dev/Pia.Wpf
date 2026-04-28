@@ -1,3 +1,4 @@
+using Pia.Models;
 using Pia.Services.Consent;
 using Xunit;
 
