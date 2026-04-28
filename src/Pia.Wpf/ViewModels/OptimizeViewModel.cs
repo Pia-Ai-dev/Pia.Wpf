@@ -387,12 +387,21 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         if (settings.DefaultTemplateId.HasValue &&
             settings.DefaultTemplateId != _lastKnownDefaultTemplateId)
         {
+            var previousKnownDefault = _lastKnownDefaultTemplateId;
             _lastKnownDefaultTemplateId = settings.DefaultTemplateId;
-            _syncContext.Post(_ =>
+
+            var shouldFollowDefault =
+                SelectedTemplateId == Guid.Empty ||
+                (previousKnownDefault.HasValue && SelectedTemplateId == previousKnownDefault.Value);
+
+            if (shouldFollowDefault)
             {
-                SelectedTemplateId = settings.DefaultTemplateId.Value;
-                UpdateSelectedTemplateAsync().SafeFireAndForget(_logger);
-            }, null);
+                _syncContext.Post(_ =>
+                {
+                    SelectedTemplateId = settings.DefaultTemplateId.Value;
+                    UpdateSelectedTemplateAsync().SafeFireAndForget(_logger);
+                }, null);
+            }
         }
     }
 
@@ -484,10 +493,28 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         try
         {
             var templates = await _templateService.GetTemplatesAsync();
+            var previousSelection = SelectedTemplateId;
+
             _templates.Clear();
             foreach (var template in templates)
             {
                 _templates.Add(template);
+            }
+
+            if (previousSelection != Guid.Empty &&
+                _templates.Any(t => t.Id == previousSelection))
+            {
+                if (SelectedTemplateId != previousSelection)
+                {
+                    SelectedTemplateId = previousSelection;
+                }
+            }
+            else if (_templates.Count > 0)
+            {
+                var settings = await _settingsService.GetSettingsAsync();
+                SelectedTemplateId = settings.DefaultTemplateId
+                    ?? _templates.FirstOrDefault(t => t.Id == Shared.BuiltInTemplates.ClarityAndGrammarId)?.Id
+                    ?? _templates[0].Id;
             }
         }
         catch (Exception ex)

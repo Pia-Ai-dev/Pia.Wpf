@@ -174,12 +174,18 @@
                 BorderThickness="1"
                 CornerRadius="8"
                 Padding="15">
-          <StackPanel>
-            <TextBlock Text="{loc:Str Optimize_Original}"
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0"
+                       Text="{loc:Str Optimize_Original}"
                        FontSize="12"
                        FontWeight="SemiBold"
                        Margin="0,0,0,10" />
-            <ui:TextBox Text="{Binding InputText}"
+            <ui:TextBox Grid.Row="1"
+                        Text="{Binding InputText}"
                         TextWrapping="Wrap"
                         AcceptsReturn="True"
                         VerticalScrollBarVisibility="Auto"
@@ -189,7 +195,7 @@
                         MinHeight="200"
                         ClearButtonEnabled="False"
                         IsReadOnly="True" />
-          </StackPanel>
+          </Grid>
         </Border>
 
         <Border Grid.Column="2"
@@ -197,12 +203,18 @@
                 BorderThickness="1"
                 CornerRadius="8"
                 Padding="15">
-          <StackPanel>
-            <TextBlock Text="{loc:Str Optimize_Optimized}"
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0"
+                       Text="{loc:Str Optimize_Optimized}"
                        FontSize="12"
                        FontWeight="SemiBold"
                        Margin="0,0,0,10" />
-            <ui:TextBox Text="{Binding OptimizedText}"
+            <ui:TextBox Grid.Row="1"
+                        Text="{Binding OptimizedText}"
                         TextWrapping="Wrap"
                         AcceptsReturn="True"
                         VerticalScrollBarVisibility="Auto"
@@ -211,7 +223,7 @@
                         Padding="15"
                         MinHeight="200"
                         ClearButtonEnabled="False" />
-          </StackPanel>
+          </Grid>
         </Border>
 
         <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,15,0,0">

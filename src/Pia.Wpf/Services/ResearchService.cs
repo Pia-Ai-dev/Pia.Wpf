@@ -10,16 +10,32 @@ public class ResearchService : IResearchService
 {
     private readonly IAiClientService _aiClientService;
     private readonly IPluginService _pluginService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<ResearchService> _logger;
 
     public ResearchService(
         IAiClientService aiClientService,
         IPluginService pluginService,
+        ILocalizationService localizationService,
         ILogger<ResearchService> logger)
     {
         _aiClientService = aiClientService;
         _pluginService = pluginService;
+        _localizationService = localizationService;
         _logger = logger;
+    }
+
+    private static string GetLanguageName(TargetLanguage language) => language switch
+    {
+        TargetLanguage.DE => "German",
+        TargetLanguage.FR => "French",
+        _ => "English"
+    };
+
+    private string BuildLanguageInstruction()
+    {
+        var languageName = GetLanguageName(_localizationService.CurrentLanguage);
+        return $"Always respond to the user in {languageName} unless the user explicitly writes in another language or asks you to switch.";
     }
 
     public async Task ExecuteResearchAsync(ResearchSession session, AiProvider provider, CancellationToken ct)
@@ -40,7 +56,21 @@ public class ResearchService : IResearchService
             decomposeStep.StartedAt = DateTime.Now;
             decomposeStep.IsStreaming = true;
 
-            var decomposePrompt = "You are a research assistant. When given a research question, break it down into 3-5 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text.";
+            var decomposePrompt = $"""
+                ## Identity
+
+                You are Pia, a research assistant.
+                The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+
+                ## Language
+
+                {BuildLanguageInstruction()}
+
+                ## Task
+
+                When given a research question, break it down into 2-4 specific sub-questions that need to be answered to fully address the main question. Output ONLY a numbered list (1. 2. 3. etc.) with one sub-question per line. Do not include any other text.
+                Every sub-question needs to address a very specific aspect of the prompt and should avoid duplicating content with other sub-questions. If not confident: less is more!
+                """;
 
             conversationHistory.Add(new ChatMessage(ChatRole.System, decomposePrompt));
             conversationHistory.Add(new ChatMessage(ChatRole.User, session.Query));
@@ -59,14 +89,21 @@ public class ResearchService : IResearchService
             var subQuestions = ParseSubQuestions(decomposeStep.Content);
 
             // Phase 2: Research each sub-question (with tools if available)
-            // Replace the system prompt for research phase to include tool instructions
-            if (tools.Count > 0)
+            var researchSystemPrompt = $"""
+                ## Identity
+
+                You are Pia, a research assistant. Provide detailed, well-structured answers to research questions using the knowledge available to you.
+                The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+
+                ## Language
+
+                {BuildLanguageInstruction()}
+                """;
+            if (tools.Count > 0 && !string.IsNullOrEmpty(pluginPrompts))
             {
-                var researchSystemPrompt = "You are a research assistant with access to tools. Use available tools to gather accurate, up-to-date information for answering research questions. Provide detailed, well-sourced answers.";
-                if (!string.IsNullOrEmpty(pluginPrompts))
-                    researchSystemPrompt += "\n\n" + pluginPrompts;
-                conversationHistory[0] = new ChatMessage(ChatRole.System, researchSystemPrompt);
+                researchSystemPrompt += "\n\n" + pluginPrompts;
             }
+            conversationHistory[0] = new ChatMessage(ChatRole.System, researchSystemPrompt);
 
             foreach (var subQuestion in subQuestions)
             {

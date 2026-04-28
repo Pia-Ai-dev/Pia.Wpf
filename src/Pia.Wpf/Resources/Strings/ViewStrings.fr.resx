@@ -104,6 +104,7 @@
   <data name="Research_ExportAll" xml:space="preserve"><value>Tout exporter</value></data>
   <data name="Research_NewResearch" xml:space="preserve"><value>Nouvelle recherche</value></data>
   <data name="Research_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>
+  <data name="Research_ResumeAutoScroll_Tooltip" xml:space="preserve"><value>Reprendre le défilement automatique</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Historique des recherches</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Rechercher dans les sessions...</value></data>

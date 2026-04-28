@@ -1,104 +1,62 @@
-using System.Collections.Specialized;
-using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using Pia.Models;
 using Pia.ViewModels;
 
 namespace Pia.Views;
 
 public partial class ResearchView : UserControl
 {
+    public static readonly DependencyProperty IsAutoScrollEnabledProperty =
+        DependencyProperty.Register(
+            nameof(IsAutoScrollEnabled),
+            typeof(bool),
+            typeof(ResearchView),
+            new PropertyMetadata(true));
+
+    public bool IsAutoScrollEnabled
+    {
+        get => (bool)GetValue(IsAutoScrollEnabledProperty);
+        set => SetValue(IsAutoScrollEnabledProperty, value);
+    }
+
     private ResearchViewModel? ViewModel => DataContext as ResearchViewModel;
 
     public ResearchView()
     {
         InitializeComponent();
-
-        Loaded += OnLoaded;
-        Unloaded += OnUnloaded;
+        Loaded += (_, _) => QueryTextBox.Focus();
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    private void StepsScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (ViewModel is not null)
+        // Detect a user-driven scroll: a vertical movement that isn't from content growth.
+        // If the user moved away from the bottom while auto-scroll was on, turn it off.
+        if (!IsAutoScrollEnabled) return;
+        if (e.VerticalChange == 0) return;
+        if (e.ExtentHeightChange != 0) return;
+
+        var atBottom = e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 1;
+        if (!atBottom)
         {
-            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
-
-            if (ViewModel.CurrentSession is not null)
-            {
-                SubscribeToSession(ViewModel.CurrentSession);
-            }
-        }
-
-        QueryTextBox.Focus();
-    }
-
-    private void OnUnloaded(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel is not null)
-        {
-            ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-
-            if (ViewModel.CurrentSession is not null)
-            {
-                UnsubscribeFromSession(ViewModel.CurrentSession);
-            }
+            IsAutoScrollEnabled = false;
         }
     }
 
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void StepsItemsControl_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
     {
-        if (e.PropertyName == nameof(ResearchViewModel.CurrentSession))
+        // Streaming markdown renders bubble RequestBringIntoView up to the ScrollViewer, which
+        // would scroll regardless of IsAutoScrollEnabled. Swallow the event here (a descendant
+        // of the ScrollViewer) so the ScrollViewer's class handler never sees it when paused.
+        if (!IsAutoScrollEnabled)
         {
-            if (ViewModel?.CurrentSession is not null)
-            {
-                SubscribeToSession(ViewModel.CurrentSession);
-            }
+            e.Handled = true;
         }
     }
 
-    private void SubscribeToSession(ResearchSession session)
+    private void ResumeAutoScrollButton_Click(object sender, RoutedEventArgs e)
     {
-        session.Steps.CollectionChanged += OnStepsCollectionChanged;
-        foreach (var step in session.Steps)
-        {
-            step.PropertyChanged += OnStepPropertyChanged;
-        }
-    }
-
-    private void UnsubscribeFromSession(ResearchSession session)
-    {
-        session.Steps.CollectionChanged -= OnStepsCollectionChanged;
-        foreach (var step in session.Steps)
-        {
-            step.PropertyChanged -= OnStepPropertyChanged;
-        }
-    }
-
-    private void OnStepsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems is not null)
-        {
-            foreach (ResearchStep step in e.NewItems)
-            {
-                step.PropertyChanged += OnStepPropertyChanged;
-            }
-            Dispatcher.BeginInvoke(ScrollToBottom, System.Windows.Threading.DispatcherPriority.Input);
-        }
-    }
-
-    private void OnStepPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(ResearchStep.Content))
-        {
-            Dispatcher.BeginInvoke(ScrollToBottom, System.Windows.Threading.DispatcherPriority.Input);
-        }
-    }
-
-    private void ScrollToBottom()
-    {
+        IsAutoScrollEnabled = true;
         StepsScrollViewer.ScrollToEnd();
     }
 
