@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Pia.Services.Consent.Biometric;
 
 namespace Pia.Services.Consent.Revocation;
 
@@ -19,6 +20,8 @@ public sealed class RevocationService : IRevocationService
     private readonly IConsentAuditLog _auditLog;
     private readonly TimeProvider _clock;
     private readonly ILogger<RevocationService> _logger;
+    private readonly IBiometricConsentStore? _biometricStore;
+    private readonly IBiometricMatcher? _biometricMatcher;
 
     public RevocationService(
         IConsentStateManager consentMgr,
@@ -28,7 +31,9 @@ public sealed class RevocationService : IRevocationService
         IEnumerable<IProviderDeletionClient> providerClients,
         IConsentAuditLog auditLog,
         TimeProvider clock,
-        ILogger<RevocationService> logger)
+        ILogger<RevocationService> logger,
+        IBiometricConsentStore? biometricStore = null,
+        IBiometricMatcher? biometricMatcher = null)
     {
         _consentMgr = consentMgr;
         _blocklistFilter = blocklistFilter;
@@ -38,6 +43,8 @@ public sealed class RevocationService : IRevocationService
         _auditLog = auditLog;
         _clock = clock;
         _logger = logger;
+        _biometricStore = biometricStore;
+        _biometricMatcher = biometricMatcher;
     }
 
     public async Task<RevocationEvidence> RevokeAsync(string speakerLabel, CancellationToken ct)
@@ -52,6 +59,10 @@ public sealed class RevocationService : IRevocationService
 
         // 2. Add embedding to blocklist.
         _blocklistFilter.BlockSpeaker(speakerLabel);
+
+        // Phase 5: revocation extends across sessions. Remove any persisted biometric
+        // entry whose embedding matches the revoked speaker's session embedding.
+        await RemoveBiometricEntriesAsync(speakerLabel, ct).ConfigureAwait(false);
 
         // 3. Redact persisted transcripts.
         bool transcriptRedacted;
@@ -129,5 +140,41 @@ public sealed class RevocationService : IRevocationService
             }));
 
         return evidence;
+    }
+
+    private async Task RemoveBiometricEntriesAsync(string speakerLabel, CancellationToken ct)
+    {
+        if (_biometricStore is null || _biometricMatcher is null) return;
+        if (!_consentMgr.TryGet(speakerLabel, out var entry) || entry.Embedding is not { } emb)
+        {
+            _logger.LogDebug("No session embedding for {Label}; skipping biometric removal", speakerLabel);
+            return;
+        }
+        // Use a permissive threshold so we err on the side of deletion — DSGVO Art. 17
+        // makes a stronger case than the false-positive risk of removing a different
+        // speaker's profile (the user always has explicit revoke for that as well).
+        const float removalThreshold = 0.80f;
+        var match = await _biometricMatcher
+            .MatchAsync(emb, removalThreshold, ct)
+            .ConfigureAwait(false);
+        if (match is null) return;
+
+        // Remove the matched entry, plus any other entries close enough to also
+        // belong to the same speaker. Loop until no more matches above threshold.
+        var removed = new HashSet<Guid>();
+        while (match is not null && removed.Add(match.Entry.Id))
+        {
+            await _biometricStore.RemoveAsync(match.Entry.Id, ct).ConfigureAwait(false);
+            _auditLog.Append(new AuditEvent(
+                Guid.NewGuid(), _clock.GetUtcNow(), "BIOMETRIC_ENTRY_REVOKED", speakerLabel,
+                new Dictionary<string, object?>
+                {
+                    ["entryId"] = match.Entry.Id,
+                    ["similarity"] = match.Similarity,
+                }));
+            match = await _biometricMatcher
+                .MatchAsync(emb, removalThreshold, ct)
+                .ConfigureAwait(false);
+        }
     }
 }
