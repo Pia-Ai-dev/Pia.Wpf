@@ -13,6 +13,30 @@ public static class ConsentPromptTemplates
         + "und für meine Notizen verarbeitet. Es werden keine Daten an externe Dienste gesendet. "
         + "Sind Sie damit einverstanden? Ein kurzes Ja oder Nein genügt.");
 
+    public static readonly ConsentPrompt InitialConsentEuCloudDe = Build(
+        "INITIAL_CONSENT_EU_CLOUD", "de",
+        "Hallo, ich nutze ein Tool, das unser Gespräch aufzeichnet und für meine Notizen "
+        + "verarbeitet. Für die Zusammenfassung wird ein KI-Dienst innerhalb der EU genutzt. "
+        + "Personenbezogene Daten werden vor der Übertragung pseudonymisiert. "
+        + "Sind Sie damit einverstanden? Ein kurzes Ja oder Nein genügt.");
+
+    public static readonly ConsentPrompt InitialConsentNonEuCloudDe = Build(
+        "INITIAL_CONSENT_NON_EU_CLOUD", "de",
+        "Hallo, ich nutze ein Tool, das unser Gespräch aufzeichnet und für meine Notizen "
+        + "verarbeitet. Für die Zusammenfassung wird ein KI-Dienst außerhalb der EU genutzt "
+        + "(Drittland; Übermittlung auf Basis Standardvertragsklauseln). "
+        + "Personenbezogene Daten werden vor der Übertragung pseudonymisiert. "
+        + "Sind Sie damit ausdrücklich einverstanden? Ein kurzes Ja oder Nein genügt.");
+
+    /// <summary>Selects the appropriate initial-consent prompt for the active profile.</summary>
+    public static ConsentPrompt InitialConsentForProfile(SecurityProfile profile) => profile.Mode switch
+    {
+        Pia.Models.SecurityMode.Strict => InitialConsentLocalOnlyDe,
+        Pia.Models.SecurityMode.Standard => InitialConsentEuCloudDe,
+        Pia.Models.SecurityMode.Permissive => InitialConsentNonEuCloudDe,
+        _ => InitialConsentLocalOnlyDe,
+    };
+
     public static readonly ConsentPrompt ClarificationAmbiguousDe = Build(
         "CLARIFICATION_AMBIGUOUS", "de",
         "Entschuldigung, ich habe Ihre Antwort nicht eindeutig verstanden. "
