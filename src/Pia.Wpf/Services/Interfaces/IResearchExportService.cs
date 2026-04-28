@@ -8,5 +8,4 @@ public interface IResearchExportService
     string BuildHtml(ResearchSession session);
     Task ExportAsMarkdownAsync(ResearchSession session, string filePath);
     Task ExportAsHtmlAsync(ResearchSession session, string filePath);
-    Task ExportAsPdfAsync(ResearchSession session, string filePath);
 }

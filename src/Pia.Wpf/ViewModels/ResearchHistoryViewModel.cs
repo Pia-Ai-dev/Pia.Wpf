@@ -216,7 +216,7 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
             {
                 Title = _localizationService["ResearchHistory_Export"],
                 FileName = $"Research_{SelectedEntry.CreatedAt:yyyyMMdd_HHmmss}",
-                Filter = "Markdown (*.md)|*.md|HTML (*.html)|*.html|PDF (*.xps)|*.xps",
+                Filter = "Markdown (*.md)|*.md|HTML (*.html)|*.html",
                 FilterIndex = 1,
                 DefaultExt = ".md"
             };
@@ -231,9 +231,6 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
                     break;
                 case 2:
                     await _exportService.ExportAsHtmlAsync(session, dialog.FileName);
-                    break;
-                case 3:
-                    await _exportService.ExportAsPdfAsync(session, dialog.FileName);
                     break;
             }
         }

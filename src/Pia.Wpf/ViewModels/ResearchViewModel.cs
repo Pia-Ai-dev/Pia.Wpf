@@ -172,7 +172,7 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
             {
                 Title = _localizationService["Research_ExportAll"],
                 FileName = $"Research_{CurrentSession.CreatedAt:yyyyMMdd_HHmmss}",
-                Filter = "Markdown (*.md)|*.md|HTML (*.html)|*.html|PDF (*.xps)|*.xps",
+                Filter = "Markdown (*.md)|*.md|HTML (*.html)|*.html",
                 FilterIndex = 1,
                 DefaultExt = ".md"
             };
@@ -190,9 +190,6 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
                     break;
                 case 2: // HTML
                     await _exportService.ExportAsHtmlAsync(CurrentSession, filePath);
-                    break;
-                case 3: // PDF/XPS
-                    await _exportService.ExportAsPdfAsync(CurrentSession, filePath);
                     break;
             }
 

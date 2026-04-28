@@ -1,10 +1,5 @@
 using System.IO;
-using System.Printing;
 using System.Text;
-using System.Windows;
-using System.Windows.Documents;
-using System.Windows.Xps;
-using System.Windows.Xps.Packaging;
 using Markdig;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -110,77 +105,5 @@ public class ResearchExportService : IResearchExportService
     {
         var html = BuildHtml(session);
         await File.WriteAllTextAsync(filePath, html, Encoding.UTF8);
-    }
-
-    public async Task ExportAsPdfAsync(ResearchSession session, string filePath)
-    {
-        var html = BuildHtml(session);
-
-        // Use WPF FlowDocument for PDF-like output via XPS
-        await Application.Current.Dispatcher.InvokeAsync(() =>
-        {
-            var flowDocument = new FlowDocument
-            {
-                PageWidth = 816, // 8.5" at 96 DPI
-                PageHeight = 1056, // 11" at 96 DPI
-                PagePadding = new Thickness(72), // 0.75" margins
-                ColumnWidth = double.MaxValue,
-                FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                FontSize = 13
-            };
-
-            BuildFlowDocument(flowDocument, session);
-
-            // Write to XPS first, then rename (XPS is close to PDF for local use)
-            var xpsPath = filePath;
-            using var xpsDocument = new XpsDocument(xpsPath, FileAccess.Write);
-            var writer = XpsDocument.CreateXpsDocumentWriter(xpsDocument);
-            writer.Write(((IDocumentPaginatorSource)flowDocument).DocumentPaginator);
-        });
-    }
-
-    private static void BuildFlowDocument(FlowDocument doc, ResearchSession session)
-    {
-        // Title
-        var title = new Paragraph(new Run($"Research: {session.Query}"))
-        {
-            FontSize = 24,
-            FontWeight = FontWeights.Bold,
-            Margin = new Thickness(0, 0, 0, 4)
-        };
-        doc.Blocks.Add(title);
-
-        // Date
-        var date = new Paragraph(new Run(session.CreatedAt.ToString("f")))
-        {
-            FontSize = 11,
-            Foreground = System.Windows.Media.Brushes.Gray,
-            Margin = new Thickness(0, 0, 0, 16)
-        };
-        doc.Blocks.Add(date);
-
-        // Steps
-        foreach (var step in session.Steps)
-        {
-            var heading = new Paragraph(new Run($"Step {step.StepNumber}: {step.Title}"))
-            {
-                FontSize = 18,
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0, 12, 0, 4)
-            };
-            doc.Blocks.Add(heading);
-
-            if (!string.IsNullOrWhiteSpace(step.Content))
-            {
-                foreach (var line in step.Content.Split('\n'))
-                {
-                    var para = new Paragraph(new Run(line))
-                    {
-                        Margin = new Thickness(0, 0, 0, 4)
-                    };
-                    doc.Blocks.Add(para);
-                }
-            }
-        }
     }
 }
