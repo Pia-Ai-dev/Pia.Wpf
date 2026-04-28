@@ -105,6 +105,14 @@
   <data name="Research_NewResearch" xml:space="preserve"><value>New Research</value></data>
   <data name="Research_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <data name="Research_ResumeAutoScroll_Tooltip" xml:space="preserve"><value>Resume auto-scroll</value></data>
+  <data name="Research_AnswerLength_Label" xml:space="preserve"><value>Answer length</value></data>
+  <data name="Research_AnswerLength_Tooltip" xml:space="preserve"><value>Controls how detailed the answers will be</value></data>
+  <data name="Research_AnswerLength_Concise" xml:space="preserve"><value>Concise</value></data>
+  <data name="Research_AnswerLength_Balanced" xml:space="preserve"><value>Balanced</value></data>
+  <data name="Research_AnswerLength_Detailed" xml:space="preserve"><value>Detailed</value></data>
+  <data name="Research_Step_Decompose" xml:space="preserve"><value>Analyzing and decomposing research question</value></data>
+  <data name="Research_Step_Researching" xml:space="preserve"><value>Researching: {0}</value></data>
+  <data name="Research_Step_Synthesize" xml:space="preserve"><value>Synthesizing final research results</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Research History</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Search research sessions...</value></data>

@@ -30,6 +30,9 @@ public class EnumToLocalizedStringConverter : IValueConverter
             TargetLanguage.EN => "Enum_LangEN",
             TargetLanguage.DE => "Enum_LangDE",
             TargetLanguage.FR => "Enum_LangFR",
+            ResearchAnswerLength.Concise => "Research_AnswerLength_Concise",
+            ResearchAnswerLength.Balanced => "Research_AnswerLength_Balanced",
+            ResearchAnswerLength.Detailed => "Research_AnswerLength_Detailed",
             _ => null
         };
 

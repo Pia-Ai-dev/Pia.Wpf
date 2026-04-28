@@ -105,6 +105,14 @@
   <data name="Research_NewResearch" xml:space="preserve"><value>Neue Recherche</value></data>
   <data name="Research_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
   <data name="Research_ResumeAutoScroll_Tooltip" xml:space="preserve"><value>Auto-Scrollen fortsetzen</value></data>
+  <data name="Research_AnswerLength_Label" xml:space="preserve"><value>Antwortlänge</value></data>
+  <data name="Research_AnswerLength_Tooltip" xml:space="preserve"><value>Steuert, wie ausführlich die Antworten ausfallen</value></data>
+  <data name="Research_AnswerLength_Concise" xml:space="preserve"><value>Kurz</value></data>
+  <data name="Research_AnswerLength_Balanced" xml:space="preserve"><value>Ausgewogen</value></data>
+  <data name="Research_AnswerLength_Detailed" xml:space="preserve"><value>Ausführlich</value></data>
+  <data name="Research_Step_Decompose" xml:space="preserve"><value>Forschungsfrage wird analysiert und zerlegt</value></data>
+  <data name="Research_Step_Researching" xml:space="preserve"><value>Recherchiere: {0}</value></data>
+  <data name="Research_Step_Synthesize" xml:space="preserve"><value>Endergebnisse werden zusammengeführt</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Rechercheverlauf</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Recherchen durchsuchen...</value></data>

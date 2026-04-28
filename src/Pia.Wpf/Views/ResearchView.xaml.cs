@@ -12,7 +12,7 @@ public partial class ResearchView : UserControl
             nameof(IsAutoScrollEnabled),
             typeof(bool),
             typeof(ResearchView),
-            new PropertyMetadata(true));
+            new PropertyMetadata(false));
 
     public bool IsAutoScrollEnabled
     {

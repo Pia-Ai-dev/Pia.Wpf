@@ -105,6 +105,14 @@
   <data name="Research_NewResearch" xml:space="preserve"><value>Nouvelle recherche</value></data>
   <data name="Research_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>
   <data name="Research_ResumeAutoScroll_Tooltip" xml:space="preserve"><value>Reprendre le défilement automatique</value></data>
+  <data name="Research_AnswerLength_Label" xml:space="preserve"><value>Longueur de la réponse</value></data>
+  <data name="Research_AnswerLength_Tooltip" xml:space="preserve"><value>Contrôle le niveau de détail des réponses</value></data>
+  <data name="Research_AnswerLength_Concise" xml:space="preserve"><value>Concise</value></data>
+  <data name="Research_AnswerLength_Balanced" xml:space="preserve"><value>Équilibrée</value></data>
+  <data name="Research_AnswerLength_Detailed" xml:space="preserve"><value>Détaillée</value></data>
+  <data name="Research_Step_Decompose" xml:space="preserve"><value>Analyse et décomposition de la question de recherche</value></data>
+  <data name="Research_Step_Researching" xml:space="preserve"><value>Recherche : {0}</value></data>
+  <data name="Research_Step_Synthesize" xml:space="preserve"><value>Synthèse des résultats finaux</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Historique des recherches</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Rechercher dans les sessions...</value></data>

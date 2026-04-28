@@ -21,6 +21,9 @@ public partial class ResearchStep : ObservableObject
     [ObservableProperty]
     private bool _isStreaming;
 
+    [ObservableProperty]
+    private bool _isExpanded;
+
     public ResearchStep(int stepNumber, string title)
     {
         StepNumber = stepNumber;

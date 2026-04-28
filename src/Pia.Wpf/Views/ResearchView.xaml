@@ -8,11 +8,15 @@
              xmlns:local="clr-namespace:Pia.Views"
              xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:models="clr-namespace:Pia.Models"
+             xmlns:converters="clr-namespace:Pia.Converters"
              xmlns:nav="clr-namespace:Pia.Navigation"
              xmlns:loc="clr-namespace:Pia.Localization"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
              nav:ViewModelLocator.AutoWireViewModel="True">
+  <UserControl.Resources>
+    <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter" />
+  </UserControl.Resources>
   <Grid>
     <!-- Main content + panel overlay -->
     <Grid>
@@ -98,6 +102,19 @@
                     PreviewKeyDown="QueryTextBox_PreviewKeyDown" />
         <StackPanel Orientation="Horizontal"
                     HorizontalAlignment="Center">
+          <ComboBox ItemsSource="{Binding AnswerLengths}"
+                    SelectedItem="{Binding SelectedAnswerLength}"
+                    Height="40"
+                    MinWidth="140"
+                    Margin="0,0,8,0"
+                    VerticalContentAlignment="Center"
+                    ToolTip="{loc:Str Research_AnswerLength_Tooltip}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
           <ui:Button Command="{Binding ToggleRecordingCommand}"
                      Appearance="Secondary"
                      Width="40"
@@ -220,114 +237,188 @@
                       Background="{DynamicResource ControlFillColorSecondaryBrush}"
                       BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                       BorderThickness="1">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                  </Grid.RowDefinitions>
+                <StackPanel>
+                  <!-- Header row (clickable to expand/collapse) -->
+                  <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                HorizontalContentAlignment="Stretch"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="0"
+                                Cursor="Hand"
+                                Focusable="False">
+                    <ToggleButton.Template>
+                      <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent">
+                          <ContentPresenter />
+                        </Border>
+                      </ControlTemplate>
+                    </ToggleButton.Template>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
 
-                  <!-- Step Number Badge -->
-                  <Border Grid.Column="0"
-                          Grid.Row="0"
-                          Width="28"
-                          Height="28"
-                          CornerRadius="14"
-                          Background="{DynamicResource AccentFillColorDefaultBrush}"
-                          Margin="0,0,12,0"
-                          VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StepNumber}"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Foreground="White" />
-                  </Border>
+                      <!-- Step Number Badge -->
+                      <Border Grid.Column="0"
+                              Width="28"
+                              Height="28"
+                              CornerRadius="14"
+                              Background="{DynamicResource AccentFillColorDefaultBrush}"
+                              Margin="0,0,12,0"
+                              VerticalAlignment="Center">
+                        <TextBlock Text="{Binding StepNumber}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="White" />
+                      </Border>
 
-                  <!-- Title -->
-                  <TextBlock Grid.Column="1"
-                             Grid.Row="0"
-                             Text="{Binding Title}"
-                             FontSize="14"
-                             FontWeight="SemiBold"
-                             VerticalAlignment="Center"
-                             TextWrapping="Wrap" />
+                      <!-- Title -->
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Title}"
+                                 FontSize="14"
+                                 FontWeight="SemiBold"
+                                 VerticalAlignment="Center"
+                                 TextWrapping="Wrap" />
 
-                  <!-- Status Indicator -->
-                  <ContentControl Grid.Column="2"
-                                  Grid.Row="0"
-                                  VerticalAlignment="Center"
-                                  Margin="8,0,0,0">
-                    <ContentControl.Style>
-                      <Style TargetType="ContentControl">
-                        <Setter Property="Content">
-                          <Setter.Value>
-                            <ui:SymbolIcon Symbol="Clock24" FontSize="16"
-                                           Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-                          </Setter.Value>
-                        </Setter>
-                        <Style.Triggers>
-                          <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.InProgress}">
-                            <Setter Property="Content">
-                              <Setter.Value>
-                                <ui:ProgressRing IsIndeterminate="True" Width="20" Height="20" />
-                              </Setter.Value>
-                            </Setter>
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Completed}">
-                            <Setter Property="Content">
-                              <Setter.Value>
-                                <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="16"
-                                               Foreground="#4CAF50" />
-                              </Setter.Value>
-                            </Setter>
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Failed}">
-                            <Setter Property="Content">
-                              <Setter.Value>
-                                <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="16"
-                                               Foreground="#F44336" />
-                              </Setter.Value>
-                            </Setter>
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Cancelled}">
-                            <Setter Property="Content">
-                              <Setter.Value>
-                                <ui:SymbolIcon Symbol="Dismiss24" FontSize="16"
-                                               Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-                              </Setter.Value>
-                            </Setter>
-                          </DataTrigger>
-                        </Style.Triggers>
-                      </Style>
-                    </ContentControl.Style>
-                  </ContentControl>
+                      <!-- Expand/Collapse Chevron -->
+                      <Grid Grid.Column="2"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            Width="16"
+                            Height="16">
+                        <ui:SymbolIcon Symbol="ChevronRight24" FontSize="14"
+                                       Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                          <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                              <Setter Property="Visibility" Value="Visible" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                  <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                        <ui:SymbolIcon Symbol="ChevronDown24" FontSize="14"
+                                       Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                          <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                      </Grid>
 
-                  <!-- Content (collapsed when Pending) - rendered as Markdown -->
+                      <!-- Status Indicator (per-card instances; no sharing) -->
+                      <Grid Grid.Column="3"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Width="20"
+                            Height="20">
+                        <ui:SymbolIcon Symbol="Clock24" FontSize="16"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                          <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Pending}">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                        <ui:ProgressRing IsIndeterminate="True"
+                                         Width="20" Height="20">
+                          <ui:ProgressRing.Style>
+                            <Style TargetType="ui:ProgressRing">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.InProgress}">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:ProgressRing.Style>
+                        </ui:ProgressRing>
+                        <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="16"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="#4CAF50">
+                          <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Completed}">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                        <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="16"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="#F44336">
+                          <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Failed}">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                        <ui:SymbolIcon Symbol="Dismiss24" FontSize="16"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                          <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Cancelled}">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                      </Grid>
+                    </Grid>
+                  </ToggleButton>
+
+                  <!-- Content (visible only when expanded) - rendered as Markdown -->
                   <controls:MarkdownMessageControl
-                      Grid.Column="0"
-                      Grid.ColumnSpan="3"
-                      Grid.Row="1"
                       MarkdownText="{Binding Content}"
                       IsStreaming="{Binding IsStreaming}"
                       Margin="40,8,0,0">
-
                     <controls:MarkdownMessageControl.Style>
                       <Style TargetType="controls:MarkdownMessageControl">
-                        <Setter Property="Visibility" Value="Visible" />
+                        <Setter Property="Visibility" Value="Collapsed" />
                         <Style.Triggers>
-                          <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Pending}">
-                            <Setter Property="Visibility" Value="Collapsed" />
+                          <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
                           </DataTrigger>
                         </Style.Triggers>
                       </Style>
                     </controls:MarkdownMessageControl.Style>
                   </controls:MarkdownMessageControl>
-                </Grid>
+                </StackPanel>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -35,17 +36,22 @@ public class ResearchService : IResearchService
         return $"Always respond to the user in {languageName} unless the user explicitly writes in another language or asks you to switch.";
     }
 
-    public async Task ExecuteResearchAsync(ResearchSession session, AiProvider provider, CancellationToken ct)
+    private static string BuildLengthInstruction(ResearchAnswerLength length) => length switch
     {
-        var conversationHistory = new List<ChatMessage>();
-        var stepNumber = 1;
+        ResearchAnswerLength.Concise => "Keep the answer brief and to the point: 1-2 short paragraphs or a tight bullet list. Skip preamble and obvious context. Prefer signal over completeness.",
+        ResearchAnswerLength.Detailed => "Provide a thorough, well-structured answer. Include relevant nuance, examples, and edge cases where they aid understanding.",
+        _ => "Provide a clear, well-structured answer with the necessary detail. Include essential context and key points without padding or excessive elaboration."
+    };
 
+    public async Task ExecuteResearchAsync(ResearchSession session, AiProvider provider, ResearchAnswerLength answerLength, CancellationToken ct)
+    {
+        var stepNumber = 1;
         session.Status = ResearchStatus.InProgress;
 
         try
         {
             // Phase 1: Decompose
-            var decomposeStep = new ResearchStep(stepNumber++, "Analyzing and decomposing research question");
+            var decomposeStep = new ResearchStep(stepNumber++, _localizationService["Research_Step_Decompose"]);
             session.Steps.Add(decomposeStep);
             decomposeStep.Status = ResearchStatus.InProgress;
             decomposeStep.StartedAt = DateTime.Now;
@@ -67,10 +73,13 @@ public class ResearchService : IResearchService
                 Every sub-question needs to address a very specific aspect of the prompt and should avoid duplicating content with other sub-questions. If not confident: less is more!
                 """;
 
-            conversationHistory.Add(new ChatMessage(ChatRole.System, decomposePrompt));
-            conversationHistory.Add(new ChatMessage(ChatRole.User, session.Query));
+            var decomposeHistory = new List<ChatMessage>
+            {
+                new(ChatRole.System, decomposePrompt),
+                new(ChatRole.User, session.Query)
+            };
 
-            await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
+            await foreach (var token in _aiClientService.StreamChatCompletionAsync(decomposeHistory, provider, nameof(WindowMode.Research), ct))
             {
                 decomposeStep.Content += token;
             }
@@ -79,60 +88,100 @@ public class ResearchService : IResearchService
             decomposeStep.Status = ResearchStatus.Completed;
             decomposeStep.CompletedAt = DateTime.Now;
 
-            conversationHistory.Add(new ChatMessage(ChatRole.Assistant, decomposeStep.Content));
-
             var subQuestions = ParseSubQuestions(decomposeStep.Content);
 
-            // Phase 2: Research each sub-question
-            conversationHistory[0] = new ChatMessage(ChatRole.System, $"""
+            // Phase 2: Research each sub-question in parallel with staggered start
+            var researchSystemPrompt = $"""
                 ## Identity
 
-                You are Pia, a research assistant. Provide detailed, well-structured answers to research questions using the knowledge available to you.
+                You are Pia, a research assistant. Provide well-structured answers to research questions using the knowledge available to you.
                 The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
 
                 ## Language
 
                 {BuildLanguageInstruction()}
-                """);
 
-            foreach (var subQuestion in subQuestions)
+                ## Answer Length
+
+                {BuildLengthInstruction(answerLength)}
+                """;
+
+            // Pre-create all step rows on the calling (UI) thread so ordering is stable
+            var researchSteps = new List<ResearchStep>(subQuestions.Count);
+            foreach (var sq in subQuestions)
             {
-                ct.ThrowIfCancellationRequested();
-
-                var researchStep = new ResearchStep(stepNumber++, $"Researching: {subQuestion}");
-                session.Steps.Add(researchStep);
-                researchStep.Status = ResearchStatus.InProgress;
-                researchStep.StartedAt = DateTime.Now;
-                researchStep.IsStreaming = true;
-
-                conversationHistory.Add(new ChatMessage(ChatRole.User,
-                    $"Now research and provide a detailed answer to this sub-question. Use Markdown formatting (headings, lists, bold, code blocks) for clarity: {subQuestion}"));
-
-                await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
+                var step = new ResearchStep(stepNumber++, _localizationService.Format("Research_Step_Researching", sq))
                 {
-                    researchStep.Content += token;
-                }
+                    Status = ResearchStatus.Pending
+                };
+                session.Steps.Add(step);
+                researchSteps.Add(step);
+            }
 
-                researchStep.IsStreaming = false;
-                researchStep.Status = ResearchStatus.Completed;
-                researchStep.CompletedAt = DateTime.Now;
+            // First question starts immediately; each subsequent one is delayed
+            // by an additional random 1-3s on top of the previous question's delay.
+            var tasks = new List<Task>(subQuestions.Count);
+            var cumulativeDelayMs = 0;
+            for (var i = 0; i < subQuestions.Count; i++)
+            {
+                if (i > 0)
+                    cumulativeDelayMs += Random.Shared.Next(1000, 3001);
 
-                conversationHistory.Add(new ChatMessage(ChatRole.Assistant, researchStep.Content));
+                var index = i;
+                var startDelayMs = cumulativeDelayMs;
+                tasks.Add(RunSubQuestionAsync(
+                    researchSteps[index],
+                    subQuestions[index],
+                    index,
+                    subQuestions,
+                    researchSystemPrompt,
+                    provider,
+                    startDelayMs,
+                    ct));
+            }
+
+            try
+            {
+                await Task.WhenAll(tasks);
+            }
+            catch
+            {
+                // Per-task failures are recorded inside RunSubQuestionAsync.
+                // OperationCanceledException bubbles to outer catch.
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException(ct);
             }
 
             // Phase 3: Synthesize
             ct.ThrowIfCancellationRequested();
 
-            var synthesizeStep = new ResearchStep(stepNumber, "Synthesizing final research results");
+            var synthesizeStep = new ResearchStep(stepNumber, _localizationService["Research_Step_Synthesize"]);
             session.Steps.Add(synthesizeStep);
             synthesizeStep.Status = ResearchStatus.InProgress;
             synthesizeStep.StartedAt = DateTime.Now;
             synthesizeStep.IsStreaming = true;
 
-            conversationHistory.Add(new ChatMessage(ChatRole.User,
-                "Now synthesize all the research findings above into a comprehensive, well-structured answer to the original question. Format your response in Markdown with clear headings (##), bullet points, bold key terms, and code blocks where appropriate. Organize the information logically. Include key findings, conclusions, and any important caveats."));
+            var synthesizeHistory = new List<ChatMessage>
+            {
+                new(ChatRole.System, researchSystemPrompt),
+                new(ChatRole.User, session.Query),
+                new(ChatRole.Assistant, decomposeStep.Content)
+            };
 
-            await foreach (var token in _aiClientService.StreamChatCompletionAsync(conversationHistory, provider, nameof(WindowMode.Research), ct))
+            for (var i = 0; i < subQuestions.Count; i++)
+            {
+                var step = researchSteps[i];
+                if (step.Status != ResearchStatus.Completed || string.IsNullOrWhiteSpace(step.Content))
+                    continue;
+
+                synthesizeHistory.Add(new ChatMessage(ChatRole.User, $"Sub-question {i + 1}: {subQuestions[i]}"));
+                synthesizeHistory.Add(new ChatMessage(ChatRole.Assistant, step.Content));
+            }
+
+            synthesizeHistory.Add(new ChatMessage(ChatRole.User,
+                "Now synthesize all the research findings above into a well-structured answer to the original question. Format your response in Markdown with clear headings (##), bullet points, bold key terms, and code blocks where appropriate. Organize the information logically. Include key findings, conclusions, and any important caveats. Respect the answer length guidance from the system prompt."));
+
+            await foreach (var token in _aiClientService.StreamChatCompletionAsync(synthesizeHistory, provider, nameof(WindowMode.Research), ct))
             {
                 synthesizeStep.Content += token;
                 session.SynthesizedResult += token;
@@ -157,6 +206,73 @@ public class ResearchService : IResearchService
             MarkCurrentStepsFailed(session);
             session.Status = ResearchStatus.Failed;
             throw;
+        }
+    }
+
+    private async Task RunSubQuestionAsync(
+        ResearchStep step,
+        string subQuestion,
+        int index,
+        IReadOnlyList<string> allSubQuestions,
+        string systemPrompt,
+        AiProvider provider,
+        int startDelayMs,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (startDelayMs > 0)
+                await Task.Delay(startDelayMs, ct).ConfigureAwait(false);
+
+            ct.ThrowIfCancellationRequested();
+
+            step.Status = ResearchStatus.InProgress;
+            step.StartedAt = DateTime.Now;
+            step.IsStreaming = true;
+
+            var awareness = new StringBuilder();
+            awareness.AppendLine($"You are answering sub-question {index + 1} of {allSubQuestions.Count} for the user's research request.");
+            if (allSubQuestions.Count > 1)
+            {
+                awareness.AppendLine("The other sub-questions are being answered separately in parallel:");
+                for (var i = 0; i < allSubQuestions.Count; i++)
+                {
+                    if (i == index) continue;
+                    awareness.AppendLine($"- {allSubQuestions[i]}");
+                }
+                awareness.AppendLine("Focus tightly on YOUR sub-question. Do not duplicate ground covered by the others; trust that they will be answered.");
+            }
+
+            var history = new List<ChatMessage>
+            {
+                new(ChatRole.System, systemPrompt + "\n\n## Awareness\n\n" + awareness),
+                new(ChatRole.User,
+                    $"Research and provide an answer to this sub-question. Use Markdown formatting (headings, lists, bold, code blocks) for clarity:\n\n{subQuestion}")
+            };
+
+            await foreach (var token in _aiClientService.StreamChatCompletionAsync(history, provider, nameof(WindowMode.Research), ct).ConfigureAwait(false))
+            {
+                step.Content += token;
+            }
+
+            step.IsStreaming = false;
+            step.Status = ResearchStatus.Completed;
+            step.CompletedAt = DateTime.Now;
+        }
+        catch (OperationCanceledException)
+        {
+            step.IsStreaming = false;
+            step.Status = ResearchStatus.Cancelled;
+            step.CompletedAt = DateTime.Now;
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sub-question research failed: {SubQuestion}", subQuestion);
+            step.IsStreaming = false;
+            step.Status = ResearchStatus.Failed;
+            step.CompletedAt = DateTime.Now;
+            // Do not rethrow: failure of one sub-question must not abort siblings.
         }
     }
 
@@ -186,7 +302,7 @@ public class ResearchService : IResearchService
     {
         foreach (var step in session.Steps)
         {
-            if (step.Status == ResearchStatus.InProgress)
+            if (step.Status == ResearchStatus.InProgress || step.Status == ResearchStatus.Pending)
             {
                 step.IsStreaming = false;
                 step.Status = ResearchStatus.Cancelled;
@@ -199,7 +315,7 @@ public class ResearchService : IResearchService
     {
         foreach (var step in session.Steps)
         {
-            if (step.Status == ResearchStatus.InProgress)
+            if (step.Status == ResearchStatus.InProgress || step.Status == ResearchStatus.Pending)
             {
                 step.IsStreaming = false;
                 step.Status = ResearchStatus.Failed;

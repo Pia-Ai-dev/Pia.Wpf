@@ -36,6 +36,12 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
     [ObservableProperty]
     private string? _errorMessage;
 
+    [ObservableProperty]
+    private ResearchAnswerLength _selectedAnswerLength = ResearchAnswerLength.Balanced;
+
+    public IReadOnlyList<ResearchAnswerLength> AnswerLengths { get; } =
+        [ResearchAnswerLength.Concise, ResearchAnswerLength.Balanced, ResearchAnswerLength.Detailed];
+
     public IAsyncRelayCommand StartResearchCommand { get; }
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelResearchCommand { get; }
@@ -105,7 +111,7 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
 
         try
         {
-            await _researchService.ExecuteResearchAsync(session, provider, _researchCts.Token);
+            await _researchService.ExecuteResearchAsync(session, provider, SelectedAnswerLength, _researchCts.Token);
 
             // Save completed session to history
             await SaveSessionToHistoryAsync(session, provider);
