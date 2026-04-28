@@ -36,6 +36,9 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private Task? _segmentLoop;
     private CancellationTokenSource? _readerCts;
     private CancellationTokenSource? _segmentCts;
+    // Strategy A pause: when true, VAD segments are dropped before reaching the STT
+    // queue. The audio source itself keeps running so resume is instantaneous.
+    private volatile bool _paused;
 
     public LiveTranscriptionEngineService(
         TranscriptSpeaker speaker,
@@ -127,11 +130,43 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
     private void EnqueueSegmentForTranscription(float[] samples)
     {
+        if (_paused)
+        {
+            _logger.LogDebug("Segment dropped (paused) for {Speaker}: {Samples} samples", _speaker, samples.Length);
+            return;
+        }
         if (_segmentQueue.Writer.TryWrite(samples))
             _logger.LogDebug("Segment queued for {Speaker}: {Samples} samples", _speaker, samples.Length);
         else
             _logger.LogWarning("Dropped a segment from {Speaker} pipeline — transcription is falling behind", _speaker);
     }
+
+    /// <summary>
+    /// Strategy A pause: stops forwarding new VAD segments to the STT queue. The audio
+    /// source keeps running so the ring buffer (and any pre-consent capture) continues
+    /// to receive frames. Idempotent.
+    /// </summary>
+    public Task PauseAsync()
+    {
+        if (!_paused)
+        {
+            _paused = true;
+            _logger.LogInformation("Engine paused: speaker={Speaker}", _speaker);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task ResumeAsync()
+    {
+        if (_paused)
+        {
+            _paused = false;
+            _logger.LogInformation("Engine resumed: speaker={Speaker}", _speaker);
+        }
+        return Task.CompletedTask;
+    }
+
+    public bool IsPaused => _paused;
 
     /// <summary>
     /// Raised on the audio reader-loop thread when VAD detects start/end of speech.
