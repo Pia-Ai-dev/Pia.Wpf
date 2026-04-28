@@ -26,6 +26,13 @@ public interface IBiometricConsentStore
     /// <summary>Decrypt a single entry's embedding. Throws if the file was tampered with.</summary>
     Task<float[]> DecryptEmbeddingAsync(BiometricConsentEntry entry, CancellationToken ct = default);
 
+    /// <summary>
+    /// Bulk-decrypt all entries' embeddings. Returns null in slot <c>i</c> if entry
+    /// <c>i</c>'s ciphertext is corrupted (callers can audit and skip). Loads the
+    /// store once — preferred by the matcher over per-entry decrypt loops.
+    /// </summary>
+    Task<IReadOnlyList<(BiometricConsentEntry Entry, float[]? Embedding)>> GetAllWithEmbeddingsAsync(CancellationToken ct = default);
+
     /// <summary>Update display name (user-editable in settings UI).</summary>
     Task<bool> RenameAsync(Guid id, string newDisplayName, CancellationToken ct = default);
 }

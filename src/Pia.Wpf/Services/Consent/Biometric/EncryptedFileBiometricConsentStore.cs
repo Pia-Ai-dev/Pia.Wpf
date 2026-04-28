@@ -126,6 +126,25 @@ public sealed class EncryptedFileBiometricConsentStore : IBiometricConsentStore
         finally { _gate.Release(); }
     }
 
+    public async Task<IReadOnlyList<(BiometricConsentEntry Entry, float[]? Embedding)>> GetAllWithEmbeddingsAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var (entries, key) = LoadInternal();
+            var result = new List<(BiometricConsentEntry, float[]?)>(entries.Count);
+            foreach (var e in entries)
+            {
+                float[]? emb = null;
+                try { emb = DecryptEmbedding(e.EmbeddingCipherText, key); }
+                catch (CryptographicException) { /* surfaced as null for audit by caller */ }
+                result.Add((e, emb));
+            }
+            return result;
+        }
+        finally { _gate.Release(); }
+    }
+
     // ---------- Persistence helpers ----------
 
     private sealed class StoreFile
