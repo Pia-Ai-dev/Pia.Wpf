@@ -2,6 +2,7 @@ using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Navigation;
@@ -47,7 +48,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IPluginService pluginService,
         IPluginIconLoader pluginIconLoader,
         IPolicyService policyService,
-        IFileDialogService fileDialogService)
+        IFileDialogService fileDialogService,
+        ISecurityModeProvider securityModeProvider,
+        ILogger<SecurityModeViewModel> securityModeLogger)
     {
         _logger = logger;
 
@@ -61,7 +64,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, fileDialogService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, securityModeProvider, securityModeLogger);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }

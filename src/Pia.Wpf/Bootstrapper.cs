@@ -246,6 +246,7 @@ public static class Bootstrapper
             sp.GetRequiredService<LlmConsentClassifier>(),
             sp.GetRequiredService<ILogger<CascadingConsentClassifier>>()));
         services.AddSingleton<IConsentGate, ConsentGate>();
+        services.AddSingleton<ISecurityModeProvider, SecurityModeProvider>();
         // Per-speaker pre-consent ring buffers. 16 kHz mono, ~30 s per speaker, ~10 minutes total.
         services.AddSingleton(_ => new PerSpeakerRingBufferRegistry(
             perSpeakerCapacity: 16000 * 30,

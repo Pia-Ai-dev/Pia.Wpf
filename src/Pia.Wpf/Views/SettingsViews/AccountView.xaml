@@ -4,6 +4,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:localSettings="clr-namespace:Pia.Views.SettingsViews"
+             xmlns:settingsSections="clr-namespace:Pia.Views.Settings"
              xmlns:locConverters="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <locConverters:CategoryDisplayConverter x:Key="CategoryDisplayConverter"/>
@@ -249,6 +250,14 @@
       <TabItem Header="{loc:Str Settings_InnerTab_Privacy}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer>
           <StackPanel MaxWidth="600" HorizontalAlignment="Left" Margin="0,16,0,0">
+            <!-- Security Mode (Phase 3 consent profile selector) -->
+            <settingsSections:SecurityModeSection DataContext="{Binding SecurityModeVm}" Margin="0,0,0,24"/>
+
+            <!-- Separator -->
+            <Border BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    Margin="0,0,0,24" />
+
             <!-- Tokenization Toggle -->
             <StackPanel Margin="0,0,0,24">
               <TextBlock Text="{loc:Str Settings_Privacy_Tokenization}" FontWeight="SemiBold" Margin="0,0,0,8"/>

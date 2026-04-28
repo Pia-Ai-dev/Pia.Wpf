@@ -1,0 +1,49 @@
+<UserControl x:Class="Pia.Views.Settings.SecurityModeSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+  <StackPanel>
+    <TextBlock Text="Security Mode"
+               FontWeight="SemiBold"
+               FontSize="16"
+               Margin="0,0,0,8"/>
+    <TextBlock Text="Selects the consent &amp; data-handling profile for live meetings (spec §7)."
+               Opacity="0.7"
+               FontSize="12"
+               TextWrapping="Wrap"
+               Margin="0,0,0,12"/>
+
+    <ui:Card Padding="12" Margin="0,0,0,8">
+      <StackPanel>
+        <RadioButton GroupName="SecurityMode"
+                     IsChecked="{Binding IsStrictSelected, Mode=TwoWay}"
+                     Content="Strict — local only · Strategy A · 7-day retention"
+                     FontWeight="SemiBold"/>
+        <TextBlock Text="No cloud, pause-and-re-consent for new speakers, consent audio snippet retained as evidence."
+                   Opacity="0.7" FontSize="12" TextWrapping="Wrap" Margin="22,2,0,0"/>
+      </StackPanel>
+    </ui:Card>
+
+    <ui:Card Padding="12" Margin="0,0,0,8">
+      <StackPanel>
+        <RadioButton GroupName="SecurityMode"
+                     IsChecked="{Binding IsStandardSelected, Mode=TwoWay}"
+                     Content="Standard — EU cloud · Strategy B · 30-day retention"
+                     FontWeight="SemiBold"/>
+        <TextBlock Text="Selective recording (Strategy B), EU-region cloud only."
+                   Opacity="0.7" FontSize="12" TextWrapping="Wrap" Margin="22,2,0,0"/>
+      </StackPanel>
+    </ui:Card>
+
+    <ui:Card Padding="12" Margin="0,0,0,8">
+      <StackPanel>
+        <RadioButton GroupName="SecurityMode"
+                     IsChecked="{Binding IsPermissiveSelected, Mode=TwoWay}"
+                     Content="Permissive — all cloud · Strategy B · 90-day retention"
+                     FontWeight="SemiBold"/>
+        <TextBlock Text="Erhöhte rechtliche Verantwortung beim Aktivieren — bestätigt per Dialog."
+                   Opacity="0.7" FontSize="12" TextWrapping="Wrap" Margin="22,2,0,0"/>
+      </StackPanel>
+    </ui:Card>
+  </StackPanel>
+</UserControl>

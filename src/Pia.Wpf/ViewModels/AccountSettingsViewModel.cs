@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.E2EE;
 using Pia.Helpers;
 using Pia.Services.Interfaces;
@@ -30,6 +31,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private bool _isLoading;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
+    public SecurityModeViewModel SecurityModeVm { get; }
 
     public AccountSettingsViewModel(
         ILogger<SettingsViewModel> logger,
@@ -43,7 +45,9 @@ public partial class AccountSettingsViewModel : ObservableObject
         IDeviceKeyService deviceKeys,
         IMemoryService memoryService,
         IPolicyService policyService,
-        E2EEOnboardingViewModel onboardingViewModel)
+        E2EEOnboardingViewModel onboardingViewModel,
+        ISecurityModeProvider securityModeProvider,
+        ILogger<SecurityModeViewModel> securityModeLogger)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -58,6 +62,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         _policyService = policyService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         OnboardingViewModel = onboardingViewModel;
+        SecurityModeVm = new SecurityModeViewModel(securityModeProvider, dialogService, securityModeLogger);
 
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
         {
