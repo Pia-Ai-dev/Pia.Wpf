@@ -10,6 +10,7 @@ using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Consent;
+using Pia.Services.Consent.Biometric;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
@@ -273,6 +274,34 @@ public static class Bootstrapper
                 signer,
                 sp.GetRequiredService<ILogger<HashChainedAuditLog>>());
         });
+        // Phase 5 — biometric (cross-session) consent persistence.
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<IBiometricConsentStore>(sp =>
+            new EncryptedFileBiometricConsentStore(
+                EncryptedFileBiometricConsentStore.DefaultPath(),
+                sp.GetRequiredService<ILogger<EncryptedFileBiometricConsentStore>>()));
+        services.AddSingleton<IBiometricMatcher>(sp => new CosineSimilarityBiometricMatcher(
+            sp.GetRequiredService<IBiometricConsentStore>(),
+            sp.GetRequiredService<IConsentAuditLog>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<CosineSimilarityBiometricMatcher>>()));
+        services.AddSingleton(sp => new BiometricRetentionWorker(
+            sp.GetRequiredService<IBiometricConsentStore>(),
+            sp.GetRequiredService<IConsentAuditLog>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<BiometricRetentionWorker>>()));
+        services.AddSingleton<IBiometricConsentService>(sp => new BiometricConsentService(
+            sp.GetRequiredService<IBiometricConsentStore>(),
+            sp.GetRequiredService<IBiometricMatcher>(),
+            sp.GetRequiredService<IConsentClassifier>(),
+            sp.GetRequiredService<IConsentStateManager>(),
+            sp.GetRequiredService<ISecurityModeProvider>(),
+            sp.GetRequiredService<IConsentAuditLog>(),
+            sp.GetRequiredService<ITtsService>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<BiometricConsentService>>()));
+        services.AddScoped<BiometricStoreViewModel>();
+
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<INotificationService, NotificationService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
