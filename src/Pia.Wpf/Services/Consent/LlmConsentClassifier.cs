@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Services.Consent.Cloud;
+using Pia.Services.Consent.Privacy;
 
 namespace Pia.Services.Consent;
 
@@ -21,6 +23,8 @@ public sealed class LlmConsentClassifier
 
     private readonly Func<CancellationToken, Task<IChatClient?>> _chatClientFactory;
     private readonly Func<bool> _isEuEndpointGate;
+    private readonly IPreCloudPipeline? _preCloudPipeline;
+    private readonly Func<(ConsentScope scope, CloudProviderDescriptor provider)>? _scopeProvider;
     private readonly ILogger<LlmConsentClassifier> _logger;
 
     public LlmConsentClassifier(
@@ -37,9 +41,24 @@ public sealed class LlmConsentClassifier
     public LlmConsentClassifier(IChatClient chatClient, bool isEuEndpoint, ILogger<LlmConsentClassifier> logger)
         : this(_ => Task.FromResult<IChatClient?>(chatClient), () => isEuEndpoint, logger) { }
 
+    /// <summary>Phase 4: route the call through <see cref="IPreCloudPipeline"/> for
+    /// scope gating + PII pseudonymisation. Supersedes the legacy EU-endpoint gate.</summary>
+    public LlmConsentClassifier(
+        Func<CancellationToken, Task<IChatClient?>> chatClientFactory,
+        IPreCloudPipeline preCloudPipeline,
+        Func<(ConsentScope scope, CloudProviderDescriptor provider)> scopeProvider,
+        ILogger<LlmConsentClassifier> logger)
+    {
+        _chatClientFactory = chatClientFactory;
+        _preCloudPipeline = preCloudPipeline;
+        _scopeProvider = scopeProvider;
+        _isEuEndpointGate = () => true;
+        _logger = logger;
+    }
+
     public async Task<ConsentClassification> ClassifyAsync(string transcriptText, string promptText, CancellationToken cancellationToken = default)
     {
-        if (!_isEuEndpointGate())
+        if (_preCloudPipeline is null && !_isEuEndpointGate())
         {
             _logger.LogWarning("LlmConsentClassifier refused: non-EU endpoint in Strict Mode");
             return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
@@ -59,6 +78,24 @@ public sealed class LlmConsentClassifier
                 + $"User's reply: \"{transcriptText}\"\n"
                 + "Classify the reply.";
 
+            CloudCallContext? ctx = null;
+            if (_preCloudPipeline is not null && _scopeProvider is not null)
+            {
+                var (scope, provider) = _scopeProvider();
+                try
+                {
+                    ctx = await _preCloudPipeline
+                        .PrepareAsync(userMessage, scope, provider, cancellationToken)
+                        .ConfigureAwait(false);
+                    userMessage = ctx.PseudonymisedPayload;
+                }
+                catch (CloudCallNotPermittedException)
+                {
+                    _logger.LogWarning("LlmConsentClassifier: pre-cloud pipeline blocked the call");
+                    return new ConsentClassification(ConsentDecision.Ambiguous, 0.0f);
+                }
+            }
+
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, SystemPrompt),
@@ -69,6 +106,10 @@ public sealed class LlmConsentClassifier
                 .ConfigureAwait(false);
 
             var raw = response.Messages.FirstOrDefault()?.Text ?? string.Empty;
+            if (ctx is not null)
+            {
+                raw = await _preCloudPipeline!.PostProcessAsync(raw, ctx, cancellationToken).ConfigureAwait(false);
+            }
             return Parse(raw);
         }
         catch (Exception ex)
