@@ -13,7 +13,9 @@ public sealed record SecurityProfile(
     bool AllowNonEuCloud,
     int TranscriptRetentionDays,
     int ConsentEvidenceRetentionDays,
-    bool PersistConsentAudioSnippet)
+    bool PersistConsentAudioSnippet,
+    bool AllowBiometricPersistenceByDefault = false,
+    int BiometricRetentionMonths = 12)
 {
     public static readonly SecurityProfile Strict = new(
         SecurityMode.Strict,
@@ -22,7 +24,8 @@ public sealed record SecurityProfile(
         AllowNonEuCloud: false,
         TranscriptRetentionDays: 7,
         ConsentEvidenceRetentionDays: 7,
-        PersistConsentAudioSnippet: true);
+        PersistConsentAudioSnippet: true,
+        AllowBiometricPersistenceByDefault: false);
 
     public static readonly SecurityProfile Standard = new(
         SecurityMode.Standard,
@@ -31,7 +34,8 @@ public sealed record SecurityProfile(
         AllowNonEuCloud: false,
         TranscriptRetentionDays: 30,
         ConsentEvidenceRetentionDays: 30,
-        PersistConsentAudioSnippet: false);
+        PersistConsentAudioSnippet: false,
+        AllowBiometricPersistenceByDefault: true);
 
     public static readonly SecurityProfile Permissive = new(
         SecurityMode.Permissive,
@@ -40,7 +44,8 @@ public sealed record SecurityProfile(
         AllowNonEuCloud: true,
         TranscriptRetentionDays: 90,
         ConsentEvidenceRetentionDays: 90,
-        PersistConsentAudioSnippet: false);
+        PersistConsentAudioSnippet: false,
+        AllowBiometricPersistenceByDefault: true);
 
     public static SecurityProfile ForMode(SecurityMode mode) => mode switch
     {

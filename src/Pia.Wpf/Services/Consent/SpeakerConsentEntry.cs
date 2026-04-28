@@ -21,6 +21,14 @@ public sealed class SpeakerConsentEntry
     /// </summary>
     public ConsentScope? Scope { get; set; }
 
+    /// <summary>
+    /// Set when this speaker's consent was reused from the cross-session biometric store
+    /// (Phase 5 spec §2.4 ConsentScope.biometric_persistence). When non-null, the regular
+    /// consent prompt was skipped because the diarizer's embedding matched a still-valid
+    /// stored profile; the value is the matching <see cref="Biometric.BiometricConsentEntry"/> id.
+    /// </summary>
+    public Guid? BiometricMatchSource { get; set; }
+
     public SpeakerConsentEntry(string speakerLabel, DateTimeOffset firstDetected)
     {
         SpeakerLabel = speakerLabel;

@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Consent;
+using Pia.Services.Consent.Biometric;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services.LiveTranscription;
@@ -31,6 +32,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
     private readonly IPostSttDefenseFilter _postSttFilter;
     private readonly IConsentOrchestratorFactory? _orchestratorFactory;
     private readonly IBlocklistFilter? _blocklistFilter;
+    private readonly IBiometricConsentService? _biometricService;
     private readonly HashSet<string> _pendingConsentFlows = new(StringComparer.Ordinal);
     // Built per session in StartAsync from the security profile that was active at start.
     // Mid-session profile changes are deliberately ignored (would invalidate already-collected
@@ -77,7 +79,8 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         PerSpeakerRingBufferRegistry preConsentBuffers,
         IPostSttDefenseFilter postSttFilter,
         IConsentOrchestratorFactory? orchestratorFactory = null,
-        IBlocklistFilter? blocklistFilter = null)
+        IBlocklistFilter? blocklistFilter = null,
+        IBiometricConsentService? biometricService = null)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -94,6 +97,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _postSttFilter = postSttFilter;
         _orchestratorFactory = orchestratorFactory;
         _blocklistFilter = blocklistFilter;
+        _biometricService = biometricService;
 
         _consentMgr.StateChanged += OnConsentStateChanged;
     }
@@ -332,6 +336,25 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         {
             try
             {
+                // Phase 5: try the biometric short-circuit first. We only get a usable
+                // embedding once the diarizer has accumulated enough audio; the consent
+                // manager stores the latest observed embedding per speaker. If absent,
+                // fall through to the regular prompt — match-on-late-arrival can be
+                // attempted again from OnConsentEmbeddingObserved when embeddings appear.
+                if (_biometricService is not null
+                    && _consentMgr.TryGet(label, out var entry)
+                    && entry.Embedding is { } emb && emb.Length > 0)
+                {
+                    var outcome = await _biometricService
+                        .TryMatchExistingAsync(label, emb).ConfigureAwait(false);
+                    if (outcome == BiometricMatchOutcome.MatchedAndReused)
+                    {
+                        // Consent state was set to Granted inside the service; nothing more to do.
+                        return;
+                    }
+                    // MatchedButExpired and NoMatch fall through to normal prompt.
+                }
+
                 var prompt = ConsentPromptTemplates.InitialConsentLocalOnlyDe;
                 try { await _tts.SpeakAsync(prompt.Text).ConfigureAwait(false); }
                 catch (Exception ex) { _logger.LogWarning(ex, "TTS playback failed for consent prompt"); }
@@ -394,6 +417,29 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                     ["sample_count"] = discarded.Length,
                     ["duration_ms"] = discarded.Length * 1000 / 16000,
                 }));
+
+            // Phase 5: after a fresh GRANT, offer the cross-session biometric opt-in.
+            // Skip when the grant came from a reused biometric match (BiometricMatchSource set).
+            if (_biometricService is not null
+                && _consentMgr.TryGet(e.SpeakerLabel, out var entry)
+                && entry.BiometricMatchSource is null
+                && entry.Embedding is { } emb && emb.Length > 0)
+            {
+                var label = e.SpeakerLabel;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _biometricService
+                            .OfferOptInAsync(label, emb, consentEvidencePath: string.Empty)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Biometric opt-in flow threw for {Label}", label);
+                    }
+                });
+            }
         }
 
         // Spec §3 CLARIFICATION_AMBIGUOUS: re-prompt when a reply lands in the ambiguous band.

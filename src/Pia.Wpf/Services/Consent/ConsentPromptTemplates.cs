@@ -46,6 +46,25 @@ public static class ConsentPromptTemplates
         "REVOCATION_CONFIRM", "de",
         "Verstanden, die Aufzeichnung wurde gestoppt und alle Notizen gelöscht.");
 
+    /// <summary>
+    /// Biometric opt-in (Phase 5). The default 12-month retention is named explicitly
+    /// in the prompt itself, satisfying the spec's transparency requirement that the
+    /// retention period must be surfaced in the consent moment.
+    /// </summary>
+    public static readonly ConsentPrompt BiometricOptInDe = Build(
+        "BIOMETRIC_OPT_IN", "de",
+        "Möchten Sie, dass ich Ihre Stimme für künftige Gespräche speichere, "
+        + "damit ich Sie beim nächsten Mal nicht erneut um Einwilligung bitten muss? "
+        + "Die Speicherung erfolgt für zwölf Monate. Diese Speicherung ist freiwillig "
+        + "und kann jederzeit widerrufen werden. Sagen Sie bitte Ja oder Nein.");
+
+    public static readonly ConsentPrompt BiometricOptInEn = Build(
+        "BIOMETRIC_OPT_IN", "en",
+        "Would you like me to remember your voice for future conversations, "
+        + "so I won't have to ask for consent again next time? "
+        + "Storage lasts twelve months. This is optional and can be revoked at any time. "
+        + "Please say yes or no.");
+
     private static ConsentPrompt Build(string id, string lang, string text)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{id}|{lang}|{text}"));
