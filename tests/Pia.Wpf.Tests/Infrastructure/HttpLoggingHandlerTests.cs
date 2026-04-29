@@ -43,7 +43,14 @@ public class HttpLoggingHandlerTests
         await invoker.SendAsync(CreateRequest(HttpMethod.Post, "https://cloud.pia-ai.de/api/ai"), CancellationToken.None);
 
         Assert.Contains("POST", _logger.Entries[0].Message);
+#if DEBUG
         Assert.Contains("https://cloud.pia-ai.de/api/ai", _logger.Entries[0].Message);
+#else
+        // In release, host is hashed and path/query stripped.
+        Assert.DoesNotContain("cloud.pia-ai.de", _logger.Entries[0].Message);
+        Assert.DoesNotContain("/api/ai", _logger.Entries[0].Message);
+        Assert.Contains("https://host-", _logger.Entries[0].Message);
+#endif
     }
 
     [Fact]
@@ -91,7 +98,7 @@ public class HttpLoggingHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_LongUrl_TruncatesInLogMessage()
+    public async Task SendAsync_LongUrl_DoesNotLeakFullPath()
     {
         var longPath = new string('x', 600);
         var handler = CreateHandler(new StubHandler(HttpStatusCode.OK));
@@ -99,8 +106,14 @@ public class HttpLoggingHandlerTests
 
         await invoker.SendAsync(CreateRequest(url: $"https://example.com/{longPath}"), CancellationToken.None);
 
-        Assert.Contains("...", _logger.Entries[0].Message);
+        // Debug: path is truncated with ellipsis. Release: path is dropped entirely.
         Assert.DoesNotContain(longPath, _logger.Entries[0].Message);
+#if DEBUG
+        Assert.Contains("...", _logger.Entries[0].Message);
+#else
+        Assert.DoesNotContain("xxx", _logger.Entries[0].Message);
+        Assert.Contains("https://host-", _logger.Entries[0].Message);
+#endif
     }
 
     [Fact]

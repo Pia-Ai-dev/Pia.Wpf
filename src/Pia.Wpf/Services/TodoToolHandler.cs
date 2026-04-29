@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -78,7 +79,8 @@ public class TodoToolHandler : ITodoToolHandler
         // Return them as immediate results so no action card is shown to the user.
         if (pending is not null && pending.TargetTodoId is null && toolCall.Name is not "create_todo")
         {
-            _logger.LogWarning("TodoToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            _logger.LogWarning("TodoToolHandler {ToolName} returning error", toolCall.Name);
+            _logger.SensitiveDebug("TodoToolHandler {ToolName} error description: {Description}", toolCall.Name, pending.Description);
             return (await pending.Execute(), null);
         }
 

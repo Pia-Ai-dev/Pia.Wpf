@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
@@ -508,9 +509,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         if (result is string resultStr)
         {
-            var preview = resultStr.Length > 500 ? resultStr[..500] + "..." : resultStr;
-            _logger.LogDebug("Tool {ToolName} result ({Length} chars): {Preview}",
-                toolCall.Name, resultStr.Length, preview);
+            _logger.SensitiveDebug("Tool {ToolName} result ({Length} chars): {Preview}",
+                toolCall.Name,
+                resultStr.Length,
+                resultStr.Length > 500 ? resultStr[..500] + "..." : resultStr);
         }
 
         if (result is not null)

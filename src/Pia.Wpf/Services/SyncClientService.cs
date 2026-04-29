@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -226,7 +227,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             var settings = await _settingsService.GetSettingsAsync();
             _logger.LogInformation("PerformFirstSyncMigrationAsync: SyncEnabled={Enabled}, ServerUrl={Url}, LastSyncTimestamp={LastSync}, IsE2EEEnabled={E2EE}",
-                settings.SyncEnabled, settings.ServerUrl ?? "(null)",
+                settings.SyncEnabled, SafeUrl.Format(settings.ServerUrl),
                 settings.LastSyncTimestamp?.ToString("O") ?? "(null)", settings.IsE2EEEnabled);
 
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
@@ -492,7 +493,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
-            _logger.LogWarning("Push failed with status {Status}: {Body}", response.StatusCode, body);
+            _logger.LogWarning("Push failed with status {Status}", response.StatusCode);
+            _logger.SensitiveDebug("Push failure body: {Body}", body);
             return 0;
         }
 
@@ -519,7 +521,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         var since = lastSync.ToString("O");
 
         var pullUrl = $"{serverUrl}/api/sync/pull?since={since}";
-        _logger.LogInformation("Pull requesting: {Url}", pullUrl);
+        _logger.LogInformation("Pull requesting: {Url}", SafeUrl.Format(pullUrl));
 
         var pullRequest = new HttpRequestMessage(HttpMethod.Get, pullUrl);
         if (!string.IsNullOrEmpty(settings.LastPullETag))
@@ -613,7 +615,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                     {
                         await _templateService.UpdateTemplateAsync(local);
                         mergeUpdated++;
-                        _logger.LogInformation("Updated template {Id}: {Name}", template.Id, local.Name);
+                        _logger.LogInformation("Updated template {Id}", template.Id);
+                        _logger.SensitiveDebug("Updated template {Id} name: {Name}", template.Id, local.Name);
                     }
                     else
                     {
@@ -626,7 +629,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     await _templateService.AddTemplateAsync(local);
                     mergeInserted++;
-                    _logger.LogInformation("Imported template {Id}: {Name}", template.Id, local.Name);
+                    _logger.LogInformation("Imported template {Id}", template.Id);
+                    _logger.SensitiveDebug("Imported template {Id} name: {Name}", template.Id, local.Name);
                 }
             }
             catch (CryptographicException ex)
@@ -660,7 +664,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                         var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
                         await _providerService.UpdateProviderAsync(local, apiKey);
                         mergeUpdated++;
-                        _logger.LogInformation("Updated provider {Id}: {Name}", provider.Id, local.Name);
+                        _logger.LogInformation("Updated provider {Id}", provider.Id);
+                        _logger.SensitiveDebug("Updated provider {Id} name: {Name}", provider.Id, local.Name);
                     }
                     else
                     {
@@ -674,7 +679,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                     var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
                     await _providerService.AddProviderAsync(local, apiKey);
                     mergeInserted++;
-                    _logger.LogInformation("Imported provider {Id}: {Name}", provider.Id, local.Name);
+                    _logger.LogInformation("Imported provider {Id}", provider.Id);
+                    _logger.SensitiveDebug("Imported provider {Id} name: {Name}", provider.Id, local.Name);
                 }
             }
             catch (CryptographicException ex)
@@ -789,7 +795,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                         {
                             await _columnService.ImportAsync(local);
                             mergeUpdated++;
-                            _logger.LogInformation("Updated kanban column {Id}: {Name}", syncColumn.Id, local.Name);
+                            _logger.LogInformation("Updated kanban column {Id}", syncColumn.Id);
+                            _logger.SensitiveDebug("Updated kanban column {Id} name: {Name}", syncColumn.Id, local.Name);
                         }
                         else
                         {
@@ -846,7 +853,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                         {
                             await _todoService.ImportAsync(local);
                             mergeUpdated++;
-                            _logger.LogInformation("Updated todo {Id}: {Title}", todo.Id, local.Title);
+                            _logger.LogInformation("Updated todo {Id}", todo.Id);
+                            _logger.SensitiveDebug("Updated todo {Id} title: {Title}", todo.Id, local.Title);
                         }
                         else
                         {
@@ -913,7 +921,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (response.IsSuccessStatusCode) return;
 
         var body = await response.Content.ReadAsStringAsync();
-        _logger.LogError("{Operation} failed ({Status}): {Body}", operation, (int)response.StatusCode, body);
+        _logger.LogError("{Operation} failed ({Status})", operation, (int)response.StatusCode);
+        _logger.SensitiveDebug("{Operation} failure body: {Body}", operation, body);
         throw new HttpRequestException(
             $"{operation} failed ({(int)response.StatusCode}): {body}");
     }

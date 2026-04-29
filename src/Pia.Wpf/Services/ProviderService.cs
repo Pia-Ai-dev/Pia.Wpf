@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -373,7 +374,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             requestUrl = $"{endpoint.TrimEnd('/')}/models";
         }
 
-        _logger.LogInformation("Fetching models from {Url} for provider type {ProviderType}", requestUrl, providerType);
+        _logger.LogInformation("Fetching models from {Url} for provider type {ProviderType}",
+            SafeUrl.Format(requestUrl), providerType);
 
         var response = await httpClient.GetAsync(requestUrl);
         response.EnsureSuccessStatusCode();
@@ -409,7 +411,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         }
 
         models.Sort(StringComparer.OrdinalIgnoreCase);
-        _logger.LogInformation("Fetched {Count} models from {Url}", models.Count, requestUrl);
+        _logger.LogInformation("Fetched {Count} models from {Url}", models.Count, SafeUrl.Format(requestUrl));
         return models;
     }
 }

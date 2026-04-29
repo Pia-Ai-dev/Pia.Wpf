@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -67,7 +68,8 @@ public class ReminderToolHandler : IReminderToolHandler
         // Return them as immediate results so no action card is shown to the user.
         if (pending is not null && pending.TargetReminderId is null && toolCall.Name is not "create_reminder")
         {
-            _logger.LogWarning("ReminderToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            _logger.LogWarning("ReminderToolHandler {ToolName} returning error", toolCall.Name);
+            _logger.SensitiveDebug("ReminderToolHandler {ToolName} error description: {Description}", toolCall.Name, pending.Description);
             return (await pending.Execute(), null);
         }
 

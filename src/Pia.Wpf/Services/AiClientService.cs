@@ -8,6 +8,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -46,7 +47,8 @@ public class AiClientService : IAiClientService
 
         try
         {
-            _logger.LogInformation("SendRequestAsync: provider={Name} type={Type}", provider.Name, provider.ProviderType);
+            _logger.LogInformation("SendRequestAsync: type={Type}", provider.ProviderType);
+            _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
             IChatClient chatClient = await CreateChatClientAsync(provider, apiKey);
 
             var response = await chatClient.GetResponseAsync(
@@ -343,9 +345,12 @@ public class AiClientService : IAiClientService
 
                 foreach (var tc in toolCalls)
                 {
-                    var args = tc.Arguments is not null ? JsonSerializer.Serialize(tc.Arguments) : "<null>";
-                    _logger.LogDebug("Tool call {ToolName} (callId={CallId}) args: {Args}",
-                        tc.Name, tc.CallId, args.Length > 500 ? args[..500] + "..." : args);
+                    _logger.SensitiveDebug("Tool call {ToolName} (callId={CallId}) args: {Args}",
+                        tc.Name,
+                        tc.CallId,
+                        tc.Arguments is not null
+                            ? Truncate(JsonSerializer.Serialize(tc.Arguments), 500)
+                            : "<null>");
                 }
 
                 // Add assistant messages with tool calls to working messages
@@ -360,9 +365,8 @@ public class AiClientService : IAiClientService
                     _logger.LogDebug("Invoking tool handler for {ToolName} (callId={CallId})", toolCall.Name, toolCall.CallId);
                     var result = await toolHandler(toolCall);
                     var resultPreview = result?.ToString() ?? "<null>";
-                    _logger.LogDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
-                        toolCall.Name, resultPreview.Length,
-                        resultPreview.Length > 500 ? resultPreview[..500] + "..." : resultPreview);
+                    _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
+                        toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
                     var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
                         ChatRole.Tool,
                         [new FunctionResultContent(toolCall.CallId, result)]);
@@ -535,8 +539,8 @@ public class AiClientService : IAiClientService
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("PiaCloud optimize returned {StatusCode}: {Body}",
-                    (int)response.StatusCode, responseJson);
+                _logger.LogWarning("PiaCloud optimize returned {StatusCode}", (int)response.StatusCode);
+                _logger.SensitiveDebug("PiaCloud optimize body: {Body}", responseJson);
                 throw new HttpRequestException(
                     $"PiaCloud optimization failed ({(int)response.StatusCode}): {responseJson}");
             }
@@ -635,7 +639,8 @@ public class AiClientService : IAiClientService
             }
         }
 
-        _logger.LogInformation("PiaCloud: creating PiaCloudChatClient with endpoint={ServerUrl}/api/ai/chat", serverUrl);
+        _logger.LogInformation("PiaCloud: creating PiaCloudChatClient with endpoint={ServerUrl}/api/ai/chat",
+            SafeUrl.Format(serverUrl));
 
         return new PiaCloudChatClient(httpClient, serverUrl, accessToken, _logger, mode);
     }
@@ -712,8 +717,8 @@ public class AiClientService : IAiClientService
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("PiaCloud generate-prompt returned {StatusCode}: {Body}",
-                    (int)response.StatusCode, responseJson);
+                _logger.LogWarning("PiaCloud generate-prompt returned {StatusCode}", (int)response.StatusCode);
+                _logger.SensitiveDebug("PiaCloud generate-prompt body: {Body}", responseJson);
                 throw new HttpRequestException(
                     $"PiaCloud prompt generation failed ({(int)response.StatusCode}): {responseJson}");
             }
@@ -737,7 +742,7 @@ public class AiClientService : IAiClientService
             throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
 
         var statusUrl = $"{serverUrl}/api/ai/status";
-        _logger.LogInformation("PiaCloud connection test: GET {Url}", statusUrl);
+        _logger.LogInformation("PiaCloud connection test: GET {Url}", SafeUrl.Format(statusUrl));
 
         var timeout = TimeSpan.FromSeconds(15);
         using var timeoutCts = new CancellationTokenSource(timeout);
@@ -757,4 +762,7 @@ public class AiClientService : IAiClientService
             throw new LlmTimeoutException("Pia Cloud", timeout.TotalSeconds);
         }
     }
+
+    private static string Truncate(string value, int max)
+        => value.Length > max ? value[..max] + "..." : value;
 }

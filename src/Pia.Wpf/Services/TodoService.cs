@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -63,7 +64,8 @@ public class TodoService : ITodoService
         AddTodoParameters(command, todo);
         await command.ExecuteNonQueryAsync();
 
-        _logger.LogInformation("Created todo {Id}: {Title} (Priority: {Priority})", todo.Id, title, priority);
+        _logger.LogInformation("Created todo {Id} (Priority: {Priority})", todo.Id, priority);
+        _logger.SensitiveDebug("Created todo {Id} title: {Title}", todo.Id, title);
         OnTodoChanged();
         return todo;
     }
@@ -166,7 +168,8 @@ public class TodoService : ITodoService
         AddTodoParameters(command, item);
         await command.ExecuteNonQueryAsync();
 
-        _logger.LogInformation("Updated todo {Id}: {Title}", item.Id, item.Title);
+        _logger.LogInformation("Updated todo {Id}", item.Id);
+        _logger.SensitiveDebug("Updated todo {Id} title: {Title}", item.Id, item.Title);
         OnTodoChanged();
     }
 
@@ -182,7 +185,8 @@ public class TodoService : ITodoService
         AddTodoParameters(command, item);
         await command.ExecuteNonQueryAsync();
 
-        _logger.LogInformation("Imported todo {Id}: {Title}", item.Id, item.Title);
+        _logger.LogInformation("Imported todo {Id}", item.Id);
+        _logger.SensitiveDebug("Imported todo {Id} title: {Title}", item.Id, item.Title);
         OnTodoChanged();
     }
 

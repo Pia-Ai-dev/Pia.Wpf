@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -153,8 +154,9 @@ public unsafe partial class WindowTrackingService : IWindowTrackingService
         if (!IsWindow(_previousWindowHandle))
         {
             _logger.LogWarning(
-                "RestorePreviousWindow: tracked window {Handle} ('{Title}', process: {Process}) is no longer valid",
-                _previousWindowHandle, _trackedWindowTitle, _trackedProcessName);
+                "RestorePreviousWindow: tracked window {Handle} (process: {Process}) is no longer valid",
+                _previousWindowHandle, _trackedProcessName);
+            _logger.SensitiveDebug("RestorePreviousWindow: invalid tracked window title: '{Title}'", _trackedWindowTitle);
             _previousWindowHandle = IntPtr.Zero;
             _trackedWindowTitle = null;
             _trackedProcessName = null;
@@ -163,8 +165,9 @@ public unsafe partial class WindowTrackingService : IWindowTrackingService
 
         var result = SetForegroundWindow(_previousWindowHandle);
         _logger.LogInformation(
-            "RestorePreviousWindow: SetForegroundWindow({Handle}) for '{Title}' (process: {Process}) returned {Result}",
-            _previousWindowHandle, _trackedWindowTitle, _trackedProcessName, result);
+            "RestorePreviousWindow: SetForegroundWindow({Handle}) (process: {Process}) returned {Result}",
+            _previousWindowHandle, _trackedProcessName, result);
+        _logger.SensitiveDebug("RestorePreviousWindow: title was '{Title}'", _trackedWindowTitle);
         return result;
     }
 
@@ -176,8 +179,9 @@ public unsafe partial class WindowTrackingService : IWindowTrackingService
         var className = GetWindowClassName(handle);
 
         _logger.LogInformation(
-            "Tracked window via {Source}: handle={Handle}, title='{Title}', process='{Process}', class='{ClassName}'",
-            source, handle, _trackedWindowTitle, _trackedProcessName, className);
+            "Tracked window via {Source}: handle={Handle}, process='{Process}', class='{ClassName}'",
+            source, handle, _trackedProcessName, className);
+        _logger.SensitiveDebug("Tracked window title: '{Title}'", _trackedWindowTitle);
     }
 
     private string? GetWindowTitle(IntPtr hWnd)

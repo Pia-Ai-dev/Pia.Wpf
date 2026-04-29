@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -57,7 +58,8 @@ public class ReminderBackgroundService : BackgroundService
 
         foreach (var reminder in dueReminders)
         {
-            _logger.LogInformation("Firing reminder {Id}: {Description}", reminder.Id, reminder.Description);
+            _logger.LogInformation("Firing reminder {Id}", reminder.Id);
+            _logger.SensitiveDebug("Firing reminder {Id} description: {Description}", reminder.Id, reminder.Description);
 
             try
             {

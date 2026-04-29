@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
@@ -363,8 +364,9 @@ public class PluginService : IPluginService
             return;
         }
 
-        _logger.LogInformation("Plugin {PluginName}: transport={Transport}, command='{Command}', args=[{Args}]",
-            plugin.Name, transport, command ?? "<null>", string.Join(", ", args));
+        _logger.LogInformation("Plugin {PluginName}: transport={Transport}", plugin.Name, transport);
+        _logger.SensitiveDebug("Plugin {PluginName} command='{Command}', args=[{Args}]",
+            plugin.Name, command ?? "<null>", string.Join(", ", args));
 
         // Check prerequisites
         try
@@ -454,7 +456,7 @@ public class PluginService : IPluginService
                     if (!reachable)
                     {
                         _logger.LogWarning("Plugin {PluginName}: SSE endpoint '{Url}' is not reachable, skipping activation",
-                            plugin.Name, url);
+                            plugin.Name, SafeUrl.Format(url));
                         return;
                     }
                 }

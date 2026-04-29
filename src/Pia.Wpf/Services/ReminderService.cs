@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -44,7 +45,8 @@ public class ReminderService : IReminderService
         AddReminderParameters(command, reminder);
         await command.ExecuteNonQueryAsync();
 
-        _logger.LogInformation("Created reminder {Id}: {Description} ({Recurrence})", reminder.Id, description, recurrence);
+        _logger.LogInformation("Created reminder {Id} ({Recurrence})", reminder.Id, recurrence);
+        _logger.SensitiveDebug("Created reminder {Id} description: {Description}", reminder.Id, description);
         return reminder;
     }
 

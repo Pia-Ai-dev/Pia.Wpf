@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -102,7 +103,8 @@ public class MemoryToolHandler : IMemoryToolHandler
         // Return them as immediate results so no action card is shown to the user.
         if (pending is not null && pending.TargetObjectId is null && toolCall.Name is not "create_object")
         {
-            _logger.LogWarning("MemoryToolHandler {ToolName} returning error: {Description}", toolCall.Name, pending.Description);
+            _logger.LogWarning("MemoryToolHandler {ToolName} returning error", toolCall.Name);
+            _logger.SensitiveDebug("MemoryToolHandler {ToolName} error description: {Description}", toolCall.Name, pending.Description);
             return (await pending.Execute(), null);
         }
 

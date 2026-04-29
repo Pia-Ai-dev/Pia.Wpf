@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -129,7 +130,8 @@ public class KanbanColumnService : IKanbanColumnService
         AddColumnParameters(command, column);
         await command.ExecuteNonQueryAsync();
 
-        _logger.LogInformation("Created kanban column {Id}: {Name}", column.Id, name);
+        _logger.LogInformation("Created kanban column {Id}", column.Id);
+        _logger.SensitiveDebug("Created kanban column {Id} name: {Name}", column.Id, name);
         OnColumnsChanged();
         return column;
     }
@@ -153,7 +155,8 @@ public class KanbanColumnService : IKanbanColumnService
         command.Parameters.AddWithValue("@UpdatedAt", now.ToString("O"));
 
         await command.ExecuteNonQueryAsync();
-        _logger.LogInformation("Renamed kanban column {Id} to {Name}", id, newName);
+        _logger.LogInformation("Renamed kanban column {Id}", id);
+        _logger.SensitiveDebug("Renamed kanban column {Id} new name: {Name}", id, newName);
         OnColumnsChanged();
     }
 
@@ -256,7 +259,8 @@ public class KanbanColumnService : IKanbanColumnService
         AddColumnParameters(command, column);
         await command.ExecuteNonQueryAsync();
 
-        _logger.LogInformation("Imported kanban column {Id}: {Name}", column.Id, column.Name);
+        _logger.LogInformation("Imported kanban column {Id}", column.Id);
+        _logger.SensitiveDebug("Imported kanban column {Id} name: {Name}", column.Id, column.Name);
         OnColumnsChanged();
     }
 

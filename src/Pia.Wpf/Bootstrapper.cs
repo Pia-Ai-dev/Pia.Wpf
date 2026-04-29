@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NReco.Logging.File;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
@@ -52,9 +53,13 @@ public static class Bootstrapper
 
         var bootstrapLogger = _serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrapper");
         var envServerUrl = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
+#if DEBUG
         bootstrapLogger.LogInformation(
             "Server URL resolution: IsDevMode={IsDevMode}, {EnvVar}={EnvValue}, EffectiveProductionServerUrl={Effective}",
             IsDevMode, ServerUrlEnvVar, envServerUrl ?? "(unset)", ProductionServerUrl);
+#else
+        bootstrapLogger.LogInformation("Server URL resolution: IsDevMode={IsDevMode}", IsDevMode);
+#endif
 
         // Resolve enforcement up-front so both branches can short-circuit cleanly.
         // Enterprise policy.enforce.serverUrl always wins over both the hardcoded production URL
@@ -101,7 +106,7 @@ public static class Bootstrapper
                 {
                     bootstrapLogger.LogInformation(
                         "Applying {EnvVar} override to settings.ServerUrl (was {Old}, now {New})",
-                        ServerUrlEnvVar, settings.ServerUrl ?? "(null)", envServerUrl);
+                        ServerUrlEnvVar, SafeUrl.Format(settings.ServerUrl), SafeUrl.Format(envServerUrl));
                     settings.ServerUrl = envServerUrl;
                     await settingsService.SaveSettingsAsync(settings);
                 }

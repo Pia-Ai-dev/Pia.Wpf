@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -94,13 +95,15 @@ public partial class OutputService : IOutputService
         {
             var title = _windowTracking.GetTrackedWindowTitle();
             var process = _windowTracking.GetTrackedWindowProcessName();
-            _logger.LogInformation("{Operation}: restoring tracked window '{Title}' (process: {Process})",
-                operation, title, process);
+            _logger.LogInformation("{Operation}: restoring tracked window (process: {Process})",
+                operation, process);
+            _logger.SensitiveDebug("{Operation}: tracked window title was '{Title}'", operation, title);
 
             if (!_windowTracking.RestorePreviousWindow())
             {
-                _logger.LogWarning("{Operation}: RestorePreviousWindow failed for '{Title}' (process: {Process})",
-                    operation, title, process);
+                _logger.LogWarning("{Operation}: RestorePreviousWindow failed (process: {Process})",
+                    operation, process);
+                _logger.SensitiveDebug("{Operation}: failed window title was '{Title}'", operation, title);
                 throw new InvalidOperationException(
                     $"Failed to restore previous window '{title}' ({process})");
             }

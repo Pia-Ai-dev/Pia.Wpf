@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 
 namespace Pia.Services;
 
@@ -48,7 +49,7 @@ public sealed class PiaCloudChatClient : IChatClient
         CancellationToken cancellationToken = default)
     {
         var requestBody = BuildRequestBody(chatMessages, options, stream: false);
-        _logger.LogDebug("PiaCloudChatClient: POST {Url} (non-streaming)", _chatUrl);
+        _logger.LogDebug("PiaCloudChatClient: POST {Url} (non-streaming)", SafeUrl.Format(_chatUrl));
 
         using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
         using var response = await _httpClient.PostAsync(_chatUrl, content, cancellationToken);
@@ -65,7 +66,7 @@ public sealed class PiaCloudChatClient : IChatClient
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var requestBody = BuildRequestBody(chatMessages, options, stream: true);
-        _logger.LogDebug("PiaCloudChatClient: POST {Url} (streaming)", _chatUrl);
+        _logger.LogDebug("PiaCloudChatClient: POST {Url} (streaming)", SafeUrl.Format(_chatUrl));
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _chatUrl)
         {

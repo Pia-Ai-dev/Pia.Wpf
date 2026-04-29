@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
+using Pia.Logging;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
@@ -40,7 +41,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        _logger.LogInformation("MCP plugin {Name}: starting '{Command} {Args}'",
+        _logger.LogInformation("MCP plugin {Name}: starting", PluginName);
+        _logger.SensitiveDebug("MCP plugin {Name} command: '{Command} {Args}'",
             PluginName, _command, string.Join(" ", _args));
         try
         {
@@ -63,7 +65,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize MCP plugin {Name} ({Command} {Args})",
+            _logger.LogError(ex, "Failed to initialize MCP plugin {Name}", PluginName);
+            _logger.SensitiveDebug("Failed plugin {Name} command was: '{Command} {Args}'",
                 PluginName, _command, string.Join(" ", _args));
             _tools = [];
         }
@@ -95,11 +98,12 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
 
         try
         {
-            var argsJson = toolCall.Arguments is not null
-                ? JsonSerializer.Serialize(toolCall.Arguments) : "<null>";
-            _logger.LogDebug("MCP tool {ToolName} invocation on plugin {Name}, args: {Args}",
-                toolCall.Name, PluginName,
-                argsJson.Length > 500 ? argsJson[..500] + "..." : argsJson);
+            _logger.SensitiveDebug("MCP tool {ToolName} invocation on plugin {Name}, args: {Args}",
+                toolCall.Name,
+                PluginName,
+                toolCall.Arguments is not null
+                    ? TruncateText(JsonSerializer.Serialize(toolCall.Arguments), 500)
+                    : "<null>");
 
             // McpClientTool.InvokeAsync handles the MCP protocol call internally
             var funcArgs = toolCall.Arguments is not null
@@ -108,9 +112,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             var result = await tool.InvokeAsync(funcArgs, ct);
             var resultText = result?.ToString() ?? "Tool completed with no output.";
 
-            _logger.LogDebug("MCP tool {ToolName} result ({Length} chars): {Preview}",
-                toolCall.Name, resultText.Length,
-                resultText.Length > 500 ? resultText[..500] + "..." : resultText);
+            _logger.SensitiveDebug("MCP tool {ToolName} result ({Length} chars): {Preview}",
+                toolCall.Name, resultText.Length, TruncateText(resultText, 500));
 
             return (resultText, null);
         }
@@ -166,4 +169,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _disposed = true;
         ShutdownAsync().GetAwaiter().GetResult();
     }
+
+    private static string TruncateText(string value, int max)
+        => value.Length > max ? value[..max] + "..." : value;
 }

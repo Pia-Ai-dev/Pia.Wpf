@@ -1,13 +1,13 @@
 using System.Diagnostics;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 
 namespace Pia.Infrastructure;
 
 public class HttpLoggingHandler : DelegatingHandler
 {
     private readonly ILogger<HttpLoggingHandler> _logger;
-    private const int MaxUrlLength = 500;
 
     public HttpLoggingHandler(ILogger<HttpLoggingHandler> logger)
     {
@@ -18,7 +18,7 @@ public class HttpLoggingHandler : DelegatingHandler
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var method = request.Method;
-        var url = TruncateUrl(request.RequestUri?.ToString() ?? "<no-url>");
+        var url = SafeUrl.Format(request.RequestUri);
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -56,12 +56,5 @@ public class HttpLoggingHandler : DelegatingHandler
         }
 
         return response;
-    }
-
-    private static string TruncateUrl(string url)
-    {
-        return url.Length > MaxUrlLength
-            ? string.Concat(url.AsSpan(0, MaxUrlLength), "...")
-            : url;
     }
 }

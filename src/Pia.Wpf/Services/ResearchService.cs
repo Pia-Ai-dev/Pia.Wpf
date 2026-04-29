@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -84,22 +85,23 @@ public class ResearchService : IResearchService
 
             var decomposeStartTicks = Environment.TickCount64;
             var decomposeTokens = 0;
-            _logger.LogInformation("Research step {StepNumber} '{Title}' streaming start", decomposeStep.StepNumber, decomposeStep.Title);
+            _logger.LogInformation("Research step {StepNumber} streaming start", decomposeStep.StepNumber);
+            _logger.SensitiveDebug("Research step {StepNumber} title: {Title}", decomposeStep.StepNumber, decomposeStep.Title);
             await foreach (var token in _aiClientService.StreamChatCompletionAsync(decomposeHistory, provider, nameof(WindowMode.Research), ct))
             {
                 decomposeStep.Content += token;
                 decomposeTokens++;
             }
             _logger.LogInformation(
-                "Research step {StepNumber} '{Title}' streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
-                decomposeStep.StepNumber, decomposeStep.Title, decomposeTokens, decomposeStep.Content.Length, Environment.TickCount64 - decomposeStartTicks);
+                "Research step {StepNumber} streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
+                decomposeStep.StepNumber, decomposeTokens, decomposeStep.Content.Length, Environment.TickCount64 - decomposeStartTicks);
 
             decomposeStep.IsStreaming = false;
             if (decomposeTokens == 0 || decomposeStep.Content.Length < 8)
             {
                 _logger.LogWarning(
-                    "Research step {StepNumber} '{Title}' ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
-                    decomposeStep.StepNumber, decomposeStep.Title, decomposeTokens, decomposeStep.Content.Length);
+                    "Research step {StepNumber} ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
+                    decomposeStep.StepNumber, decomposeTokens, decomposeStep.Content.Length);
                 decomposeStep.ErrorMessage = _localizationService["Research_Error_EmptyResponse"];
                 decomposeStep.Status = ResearchStatus.Failed;
                 decomposeStep.CompletedAt = DateTime.Now;
@@ -206,7 +208,8 @@ public class ResearchService : IResearchService
 
             var synthStartTicks = Environment.TickCount64;
             var synthTokens = 0;
-            _logger.LogInformation("Research step {StepNumber} '{Title}' streaming start", synthesizeStep.StepNumber, synthesizeStep.Title);
+            _logger.LogInformation("Research step {StepNumber} streaming start", synthesizeStep.StepNumber);
+            _logger.SensitiveDebug("Research step {StepNumber} title: {Title}", synthesizeStep.StepNumber, synthesizeStep.Title);
             try
             {
                 await foreach (var token in _aiClientService.StreamChatCompletionAsync(synthesizeHistory, provider, nameof(WindowMode.Research), ct))
@@ -239,15 +242,15 @@ public class ResearchService : IResearchService
                 throw;
             }
             _logger.LogInformation(
-                "Research step {StepNumber} '{Title}' streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
-                synthesizeStep.StepNumber, synthesizeStep.Title, synthTokens, synthesizeStep.Content.Length, Environment.TickCount64 - synthStartTicks);
+                "Research step {StepNumber} streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
+                synthesizeStep.StepNumber, synthTokens, synthesizeStep.Content.Length, Environment.TickCount64 - synthStartTicks);
 
             synthesizeStep.IsStreaming = false;
             if (synthTokens == 0 || synthesizeStep.Content.Length < 8)
             {
                 _logger.LogWarning(
-                    "Research step {StepNumber} '{Title}' ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
-                    synthesizeStep.StepNumber, synthesizeStep.Title, synthTokens, synthesizeStep.Content.Length);
+                    "Research step {StepNumber} ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
+                    synthesizeStep.StepNumber, synthTokens, synthesizeStep.Content.Length);
                 synthesizeStep.ErrorMessage = _localizationService["Research_Error_EmptyResponse"];
                 synthesizeStep.Status = ResearchStatus.Failed;
                 synthesizeStep.CompletedAt = DateTime.Now;
@@ -325,22 +328,23 @@ public class ResearchService : IResearchService
 
             var startTicks = Environment.TickCount64;
             var tokenCount = 0;
-            _logger.LogInformation("Research step {StepNumber} '{Title}' streaming start", step.StepNumber, step.Title);
+            _logger.LogInformation("Research step {StepNumber} streaming start", step.StepNumber);
+            _logger.SensitiveDebug("Research step {StepNumber} title: {Title}", step.StepNumber, step.Title);
             await foreach (var token in _aiClientService.StreamChatCompletionAsync(history, provider, nameof(WindowMode.Research), ct).ConfigureAwait(false))
             {
                 step.Content += token;
                 tokenCount++;
             }
             _logger.LogInformation(
-                "Research step {StepNumber} '{Title}' streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
-                step.StepNumber, step.Title, tokenCount, step.Content.Length, Environment.TickCount64 - startTicks);
+                "Research step {StepNumber} streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
+                step.StepNumber, tokenCount, step.Content.Length, Environment.TickCount64 - startTicks);
 
             step.IsStreaming = false;
             if (tokenCount == 0 || step.Content.Length < 8)
             {
                 _logger.LogWarning(
-                    "Research step {StepNumber} '{Title}' ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
-                    step.StepNumber, step.Title, tokenCount, step.Content.Length);
+                    "Research step {StepNumber} ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
+                    step.StepNumber, tokenCount, step.Content.Length);
                 step.ErrorMessage = _localizationService["Research_Error_EmptyResponse"];
                 step.Status = ResearchStatus.Failed;
                 step.CompletedAt = DateTime.Now;

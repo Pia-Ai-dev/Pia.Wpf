@@ -30,6 +30,43 @@ dotnet test                                            # Run all tests
 
 Main: `main`. Features: `feature/<name>`.
 
+## Privacy-First Logging
+
+Users may attach `%LOCALAPPDATA%\Pia\Logs\pia-*.log` when contacting support, so anything that ends up there must be safe in release. Log level is **not** a sufficient gate (it is runtime-configurable) — use the helpers below.
+
+Helpers live in `Pia.Logging` (`src/Pia.Wpf/Logging/`):
+
+- `_logger.SensitiveDebug(template, args...)` (also `SensitiveTrace`/`SensitiveInformation`/`SensitiveWarning`) — `[Conditional("DEBUG")]`, so the call **and its argument evaluation** are erased from the release IL. Use for user-content payloads.
+- `SafeUrl.Format(uri)` / `SafeUrl.Format(string)` — DEBUG: full URL (truncated 500). RELEASE: `{scheme}://host-NNN` (stable SHA256-mod-1000 host code).
+
+What counts as sensitive (must be `SensitiveDebug` or `SafeUrl`-wrapped):
+
+- **Payloads**: tool-call args, tool results, response/request bodies, prompts, memory contents, plugin command-line args.
+- **User-named items**: todo title, reminder description, memory text, template name, kanban column name, provider name, research step title, window title.
+- **URLs**: any full URL/endpoint, including server URLs and HTTP request URLs.
+- **Env-var values**: never log the *value*, only the name (or wrap the dump in `#if DEBUG`).
+
+Patterns:
+
+```csharp
+// Don't:
+_logger.LogInformation("Created todo {Id}: {Title}", todo.Id, title);
+
+// Do:
+_logger.LogInformation("Created todo {Id}", todo.Id);
+_logger.SensitiveDebug("Created todo {Id} title: {Title}", todo.Id, title);
+
+// Don't:
+_logger.LogInformation("Fetching from {Url}", requestUrl);
+
+// Do:
+_logger.LogInformation("Fetching from {Url}", SafeUrl.Format(requestUrl));
+```
+
+`SensitiveDebug` is preferred over `#if DEBUG` blocks for one-off sensitive log lines. Reserve `#if DEBUG` for larger startup blocks (e.g. env-var dumps).
+
+`Pia.Logging` does **not** belong to `Pia.Infrastructure` — ViewModels can import it without violating the layer rule.
+
 ## Rules
 
 - Do not read entire large files in a first run. Use grep or read file signatures first.
