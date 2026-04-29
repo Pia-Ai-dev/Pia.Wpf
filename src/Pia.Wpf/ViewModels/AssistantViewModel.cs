@@ -359,7 +359,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     assistantMessage.ThinkingContent = thinking;
             }
         }
-        catch (Pia.Services.LlmTimeoutException ex)
+        catch (Pia.Services.Exceptions.LlmTimeoutException ex)
         {
             _logger.LogError(ex, "AI response timed out (provider={ProviderName}, seconds={Seconds})", ex.ProviderName, ex.TimeoutSeconds);
             var localizedMessage = _localizationService.Format("Msg_Assistant_ResponseTimedOut", ex.ProviderName, ex.TimeoutSeconds);

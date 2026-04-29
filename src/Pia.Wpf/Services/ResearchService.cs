@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;

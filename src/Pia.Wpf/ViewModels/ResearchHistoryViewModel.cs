@@ -18,6 +18,7 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
     private readonly IOutputService _outputService;
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
+    private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private int _currentOffset;
     private bool _disposed;
@@ -75,6 +76,7 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
         _outputService = outputService;
         _dialogService = dialogService;
         _localizationService = localizationService;
+        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         ViewDetailCommand = new AsyncRelayCommand(ExecuteViewDetailAsync, CanExecuteAction);
         CopyResultCommand = new AsyncRelayCommand(ExecuteCopyResult, CanExecuteAction);
@@ -315,7 +317,7 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
         _debounceCts?.Cancel();
         _debounceCts = new CancellationTokenSource();
         var token = _debounceCts.Token;
-        SafeFireAndForget(DebounceAsync(500, () => LoadEntriesAsync(0, 50), token));
+        _ = RunSafelyAsync(DebounceAsync(500, () => LoadEntriesAsync(0, 50), token));
     }
 
     private static async Task DebounceAsync(int delayMs, Func<Task> action, CancellationToken ct)
@@ -324,7 +326,7 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
         await action();
     }
 
-    private async void SafeFireAndForget(Task task)
+    private async Task RunSafelyAsync(Task task)
     {
         try { await task; }
         catch (OperationCanceledException) { }
@@ -333,8 +335,7 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
 
     private void OnSessionsChanged(object? sender, EventArgs e)
     {
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            SafeFireAndForget(LoadEntriesAsync(0, 50)));
+        _syncContext.Post(_ => _ = RunSafelyAsync(LoadEntriesAsync(0, 50)), null);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

@@ -30,6 +30,7 @@ public class NamingConventionTests
         var serviceTypes = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ServicesNamespace)
             .And().DoNotResideInNamespace(ServiceInterfacesNamespace)
+            .And().DoNotResideInNamespace(ServiceExceptionsNamespace)
             .And().DoNotResideInNamespace(E2EENamespace)
             .And().AreClasses()
             .And().AreNotAbstract()

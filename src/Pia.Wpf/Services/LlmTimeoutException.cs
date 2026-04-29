@@ -1,4 +1,4 @@
-namespace Pia.Services;
+namespace Pia.Services.Exceptions;
 
 public sealed class LlmTimeoutException : System.TimeoutException
 {
