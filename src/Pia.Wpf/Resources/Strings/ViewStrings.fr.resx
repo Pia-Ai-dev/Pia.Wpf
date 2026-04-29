@@ -113,6 +113,9 @@
   <data name="Research_Step_Decompose" xml:space="preserve"><value>Analyse et décomposition de la question de recherche</value></data>
   <data name="Research_Step_Researching" xml:space="preserve"><value>Recherche : {0}</value></data>
   <data name="Research_Step_Synthesize" xml:space="preserve"><value>Synthèse des résultats finaux</value></data>
+  <data name="Research_Scope_Summary" xml:space="preserve"><value>Résumé uniquement</value></data>
+  <data name="Research_Scope_Full" xml:space="preserve"><value>Recherche complète</value></data>
+  <data name="Research_Error_EmptyResponse" xml:space="preserve"><value>Le modèle a renvoyé une réponse vide.</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Historique des recherches</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Rechercher dans les sessions...</value></data>

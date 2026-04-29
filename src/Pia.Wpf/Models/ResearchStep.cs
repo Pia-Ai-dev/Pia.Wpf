@@ -24,6 +24,9 @@ public partial class ResearchStep : ObservableObject
     [ObservableProperty]
     private bool _isExpanded;
 
+    [ObservableProperty]
+    private string? _errorMessage;
+
     public ResearchStep(int stepNumber, string title)
     {
         StepNumber = stepNumber;

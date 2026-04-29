@@ -45,8 +45,8 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
     public IAsyncRelayCommand StartResearchCommand { get; }
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelResearchCommand { get; }
-    public IAsyncRelayCommand CopyResultCommand { get; }
-    public IAsyncRelayCommand ExportResultCommand { get; }
+    public IAsyncRelayCommand<string> CopyResultCommand { get; }
+    public IAsyncRelayCommand<string> ExportResultCommand { get; }
     public IRelayCommand NewResearchCommand { get; }
 
     public ResearchViewModel(
@@ -73,8 +73,8 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         StartResearchCommand = new AsyncRelayCommand(ExecuteStartResearch, CanExecuteStartResearch);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
         CancelResearchCommand = new RelayCommand(ExecuteCancelResearch);
-        CopyResultCommand = new AsyncRelayCommand(ExecuteCopyResult);
-        ExportResultCommand = new AsyncRelayCommand(ExecuteExportResult);
+        CopyResultCommand = new AsyncRelayCommand<string>(ExecuteCopyResult);
+        ExportResultCommand = new AsyncRelayCommand<string>(ExecuteExportResult);
         NewResearchCommand = new RelayCommand(ExecuteNewResearch);
 
         PropertyChanged += OnPropertyChanged;
@@ -151,14 +151,22 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         _researchCts?.Cancel();
     }
 
-    private async Task ExecuteCopyResult()
+    private async Task ExecuteCopyResult(string? scope)
     {
-        if (CurrentSession is null || string.IsNullOrEmpty(CurrentSession.SynthesizedResult))
+        if (CurrentSession is null)
+            return;
+
+        var isFull = string.Equals(scope, "full", StringComparison.OrdinalIgnoreCase);
+        var content = isFull
+            ? _exportService.BuildMarkdown(CurrentSession)
+            : CurrentSession.SynthesizedResult;
+
+        if (string.IsNullOrEmpty(content))
             return;
 
         try
         {
-            await _outputService.CopyToClipboardAsync(CurrentSession.SynthesizedResult);
+            await _outputService.CopyToClipboardAsync(content);
             _snackbarService.Show(_localizationService["Msg_Research_Copied"], _localizationService["Msg_Research_ResultCopied"], Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
         }
         catch (Exception ex)
@@ -167,17 +175,19 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         }
     }
 
-    private async Task ExecuteExportResult()
+    private async Task ExecuteExportResult(string? scope)
     {
         if (CurrentSession is null)
             return;
+
+        var isFull = string.Equals(scope, "full", StringComparison.OrdinalIgnoreCase);
 
         try
         {
             var dialog = new SaveFileDialog
             {
                 Title = _localizationService["Research_ExportAll"],
-                FileName = $"Research_{CurrentSession.CreatedAt:yyyyMMdd_HHmmss}",
+                FileName = $"Research_{CurrentSession.CreatedAt:yyyyMMdd_HHmmss}{(isFull ? "" : "_summary")}",
                 Filter = "Markdown (*.md)|*.md|HTML (*.html)|*.html",
                 FilterIndex = 1,
                 DefaultExt = ".md"
@@ -189,13 +199,15 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
             var filePath = dialog.FileName;
             var filterIndex = dialog.FilterIndex;
 
+            var sessionToExport = isFull ? CurrentSession : BuildSummaryOnlySession(CurrentSession);
+
             switch (filterIndex)
             {
                 case 1: // Markdown
-                    await _exportService.ExportAsMarkdownAsync(CurrentSession, filePath);
+                    await _exportService.ExportAsMarkdownAsync(sessionToExport, filePath);
                     break;
                 case 2: // HTML
-                    await _exportService.ExportAsHtmlAsync(CurrentSession, filePath);
+                    await _exportService.ExportAsHtmlAsync(sessionToExport, filePath);
                     break;
             }
 
@@ -208,6 +220,28 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         {
             _logger.LogError(ex, "Failed to export result");
         }
+    }
+
+    private static ResearchSession BuildSummaryOnlySession(ResearchSession source)
+    {
+        var summary = new ResearchSession(source.Query)
+        {
+            SynthesizedResult = source.SynthesizedResult,
+            Status = source.Status,
+            CompletedAt = source.CompletedAt
+        };
+        var lastStep = source.Steps.LastOrDefault();
+        if (lastStep is not null && !string.IsNullOrWhiteSpace(lastStep.Content))
+        {
+            summary.Steps.Add(new ResearchStep(1, lastStep.Title)
+            {
+                Content = lastStep.Content,
+                Status = lastStep.Status,
+                StartedAt = lastStep.StartedAt,
+                CompletedAt = lastStep.CompletedAt
+            });
+        }
+        return summary;
     }
 
     private void ExecuteNewResearch()

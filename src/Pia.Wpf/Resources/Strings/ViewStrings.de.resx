@@ -113,6 +113,9 @@
   <data name="Research_Step_Decompose" xml:space="preserve"><value>Forschungsfrage wird analysiert und zerlegt</value></data>
   <data name="Research_Step_Researching" xml:space="preserve"><value>Recherchiere: {0}</value></data>
   <data name="Research_Step_Synthesize" xml:space="preserve"><value>Endergebnisse werden zusammengeführt</value></data>
+  <data name="Research_Scope_Summary" xml:space="preserve"><value>Nur Zusammenfassung</value></data>
+  <data name="Research_Scope_Full" xml:space="preserve"><value>Gesamte Recherche</value></data>
+  <data name="Research_Error_EmptyResponse" xml:space="preserve"><value>Das Modell hat eine leere Antwort zurückgegeben.</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Rechercheverlauf</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Recherchen durchsuchen...</value></data>

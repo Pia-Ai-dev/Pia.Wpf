@@ -51,7 +51,10 @@ public class ResearchService : IResearchService
         try
         {
             // Phase 1: Decompose
-            var decomposeStep = new ResearchStep(stepNumber++, _localizationService["Research_Step_Decompose"]);
+            var decomposeStep = new ResearchStep(stepNumber++, _localizationService["Research_Step_Decompose"])
+            {
+                IsExpanded = true
+            };
             session.Steps.Add(decomposeStep);
             decomposeStep.Status = ResearchStatus.InProgress;
             decomposeStep.StartedAt = DateTime.Now;
@@ -79,12 +82,29 @@ public class ResearchService : IResearchService
                 new(ChatRole.User, session.Query)
             };
 
+            var decomposeStartTicks = Environment.TickCount64;
+            var decomposeTokens = 0;
+            _logger.LogInformation("Research step {StepNumber} '{Title}' streaming start", decomposeStep.StepNumber, decomposeStep.Title);
             await foreach (var token in _aiClientService.StreamChatCompletionAsync(decomposeHistory, provider, nameof(WindowMode.Research), ct))
             {
                 decomposeStep.Content += token;
+                decomposeTokens++;
             }
+            _logger.LogInformation(
+                "Research step {StepNumber} '{Title}' streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
+                decomposeStep.StepNumber, decomposeStep.Title, decomposeTokens, decomposeStep.Content.Length, Environment.TickCount64 - decomposeStartTicks);
 
             decomposeStep.IsStreaming = false;
+            if (decomposeTokens == 0 || decomposeStep.Content.Length < 8)
+            {
+                _logger.LogWarning(
+                    "Research step {StepNumber} '{Title}' ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
+                    decomposeStep.StepNumber, decomposeStep.Title, decomposeTokens, decomposeStep.Content.Length);
+                decomposeStep.ErrorMessage = _localizationService["Research_Error_EmptyResponse"];
+                decomposeStep.Status = ResearchStatus.Failed;
+                decomposeStep.CompletedAt = DateTime.Now;
+                throw new InvalidOperationException("Decompose step returned an empty response.");
+            }
             decomposeStep.Status = ResearchStatus.Completed;
             decomposeStep.CompletedAt = DateTime.Now;
 
@@ -155,7 +175,10 @@ public class ResearchService : IResearchService
             // Phase 3: Synthesize
             ct.ThrowIfCancellationRequested();
 
-            var synthesizeStep = new ResearchStep(stepNumber, _localizationService["Research_Step_Synthesize"]);
+            var synthesizeStep = new ResearchStep(stepNumber, _localizationService["Research_Step_Synthesize"])
+            {
+                IsExpanded = true
+            };
             session.Steps.Add(synthesizeStep);
             synthesizeStep.Status = ResearchStatus.InProgress;
             synthesizeStep.StartedAt = DateTime.Now;
@@ -179,15 +202,48 @@ public class ResearchService : IResearchService
             }
 
             synthesizeHistory.Add(new ChatMessage(ChatRole.User,
-                "Now synthesize all the research findings above into a well-structured answer to the original question. Format your response in Markdown with clear headings (##), bullet points, bold key terms, and code blocks where appropriate. Organize the information logically. Include key findings, conclusions, and any important caveats. Respect the answer length guidance from the system prompt."));
+                "Now synthesize all the research findings above into a well-structured answer to the original question. Use Markdown formatting (headings such as ##, bullet points, bold key terms, and code blocks) for clarity. Organize the information logically. Include key findings, conclusions, and any important caveats. Respect the answer length guidance from the system prompt. Do not wrap your reply in a fenced code block."));
 
-            await foreach (var token in _aiClientService.StreamChatCompletionAsync(synthesizeHistory, provider, nameof(WindowMode.Research), ct))
+            var synthStartTicks = Environment.TickCount64;
+            var synthTokens = 0;
+            _logger.LogInformation("Research step {StepNumber} '{Title}' streaming start", synthesizeStep.StepNumber, synthesizeStep.Title);
+            try
             {
-                synthesizeStep.Content += token;
-                session.SynthesizedResult += token;
+                await foreach (var token in _aiClientService.StreamChatCompletionAsync(synthesizeHistory, provider, nameof(WindowMode.Research), ct))
+                {
+                    synthesizeStep.Content += token;
+                    session.SynthesizedResult += token;
+                    synthTokens++;
+                }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Synthesis streaming failed after {Tokens} tokens, {Chars} chars", synthTokens, synthesizeStep.Content.Length);
+                synthesizeStep.IsStreaming = false;
+                synthesizeStep.ErrorMessage = ex.Message;
+                synthesizeStep.Status = ResearchStatus.Failed;
+                synthesizeStep.CompletedAt = DateTime.Now;
+                throw;
+            }
+            _logger.LogInformation(
+                "Research step {StepNumber} '{Title}' streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
+                synthesizeStep.StepNumber, synthesizeStep.Title, synthTokens, synthesizeStep.Content.Length, Environment.TickCount64 - synthStartTicks);
 
             synthesizeStep.IsStreaming = false;
+            if (synthTokens == 0 || synthesizeStep.Content.Length < 8)
+            {
+                _logger.LogWarning(
+                    "Research step {StepNumber} '{Title}' ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
+                    synthesizeStep.StepNumber, synthesizeStep.Title, synthTokens, synthesizeStep.Content.Length);
+                synthesizeStep.ErrorMessage = _localizationService["Research_Error_EmptyResponse"];
+                synthesizeStep.Status = ResearchStatus.Failed;
+                synthesizeStep.CompletedAt = DateTime.Now;
+                throw new InvalidOperationException("Synthesis step returned an empty response.");
+            }
             synthesizeStep.Status = ResearchStatus.Completed;
             synthesizeStep.CompletedAt = DateTime.Now;
 
@@ -250,12 +306,29 @@ public class ResearchService : IResearchService
                     $"Research and provide an answer to this sub-question. Use Markdown formatting (headings, lists, bold, code blocks) for clarity:\n\n{subQuestion}")
             };
 
+            var startTicks = Environment.TickCount64;
+            var tokenCount = 0;
+            _logger.LogInformation("Research step {StepNumber} '{Title}' streaming start", step.StepNumber, step.Title);
             await foreach (var token in _aiClientService.StreamChatCompletionAsync(history, provider, nameof(WindowMode.Research), ct).ConfigureAwait(false))
             {
                 step.Content += token;
+                tokenCount++;
             }
+            _logger.LogInformation(
+                "Research step {StepNumber} '{Title}' streaming end: {Tokens} tokens, {Chars} chars in {ElapsedMs}ms",
+                step.StepNumber, step.Title, tokenCount, step.Content.Length, Environment.TickCount64 - startTicks);
 
             step.IsStreaming = false;
+            if (tokenCount == 0 || step.Content.Length < 8)
+            {
+                _logger.LogWarning(
+                    "Research step {StepNumber} '{Title}' ended with suspiciously little content ({Tokens} tokens, {Chars} chars)",
+                    step.StepNumber, step.Title, tokenCount, step.Content.Length);
+                step.ErrorMessage = _localizationService["Research_Error_EmptyResponse"];
+                step.Status = ResearchStatus.Failed;
+                step.CompletedAt = DateTime.Now;
+                return;
+            }
             step.Status = ResearchStatus.Completed;
             step.CompletedAt = DateTime.Now;
         }
@@ -270,6 +343,7 @@ public class ResearchService : IResearchService
         {
             _logger.LogError(ex, "Sub-question research failed: {SubQuestion}", subQuestion);
             step.IsStreaming = false;
+            step.ErrorMessage = ex.Message;
             step.Status = ResearchStatus.Failed;
             step.CompletedAt = DateTime.Now;
             // Do not rethrow: failure of one sub-question must not abort siblings.

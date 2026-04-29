@@ -323,8 +323,8 @@
                       <Grid Grid.Column="3"
                             Margin="12,0,0,0"
                             VerticalAlignment="Center"
-                            Width="20"
-                            Height="20">
+                            Width="24"
+                            Height="24">
                         <ui:SymbolIcon Symbol="Clock24" FontSize="16"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
@@ -341,18 +341,8 @@
                           </ui:SymbolIcon.Style>
                         </ui:SymbolIcon>
                         <ui:ProgressRing IsIndeterminate="True"
-                                         Width="20" Height="20">
-                          <ui:ProgressRing.Style>
-                            <Style TargetType="ui:ProgressRing">
-                              <Setter Property="Visibility" Value="Collapsed" />
-                              <Style.Triggers>
-                                <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.InProgress}">
-                                  <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                              </Style.Triggers>
-                            </Style>
-                          </ui:ProgressRing.Style>
-                        </ui:ProgressRing>
+                                         Width="24" Height="24"
+                                         Visibility="{Binding IsStreaming, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="16"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
@@ -371,13 +361,21 @@
                         <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="16"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
-                                       Foreground="#F44336">
+                                       Foreground="#F44336"
+                                       ToolTip="{Binding ErrorMessage}">
                           <ui:SymbolIcon.Style>
                             <Style TargetType="ui:SymbolIcon">
                               <Setter Property="Visibility" Value="Collapsed" />
+                              <Setter Property="ToolTipService.IsEnabled" Value="True" />
                               <Style.Triggers>
                                 <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ResearchStatus.Failed}">
                                   <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ErrorMessage}" Value="{x:Null}">
+                                  <Setter Property="ToolTipService.IsEnabled" Value="False" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ErrorMessage}" Value="">
+                                  <Setter Property="ToolTipService.IsEnabled" Value="False" />
                                 </DataTrigger>
                               </Style.Triggers>
                             </Style>
@@ -442,26 +440,48 @@
         </Border.Style>
         <StackPanel Orientation="Horizontal"
                     HorizontalAlignment="Center">
-          <ui:Button Command="{Binding CopyResultCommand}"
-                     Appearance="Primary"
-                     Height="40"
-                     Margin="0,0,8,0"
-                     Padding="16,0">
-            <StackPanel Orientation="Horizontal">
-              <ui:SymbolIcon Symbol="Copy24" FontSize="16" Margin="0,0,6,0" />
-              <TextBlock Text="{loc:Str Research_CopyResult}" VerticalAlignment="Center" />
-            </StackPanel>
-          </ui:Button>
-          <ui:Button Command="{Binding ExportResultCommand}"
-                     Appearance="Secondary"
-                     Height="40"
-                     Margin="0,0,8,0"
-                     Padding="16,0">
-            <StackPanel Orientation="Horizontal">
-              <ui:SymbolIcon Symbol="ArrowExportUp24" FontSize="16" Margin="0,0,6,0" />
-              <TextBlock Text="{loc:Str Research_ExportAll}" VerticalAlignment="Center" />
-            </StackPanel>
-          </ui:Button>
+          <ui:DropDownButton Appearance="Primary"
+                             Height="40"
+                             Margin="0,0,8,0"
+                             Padding="16,0">
+            <ui:DropDownButton.Content>
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="Copy24" FontSize="16" Margin="0,0,6,0" />
+                <TextBlock Text="{loc:Str Research_CopyResult}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ui:DropDownButton.Content>
+            <ui:DropDownButton.Flyout>
+              <ContextMenu>
+                <MenuItem Header="{loc:Str Research_Scope_Summary}"
+                          Command="{Binding CopyResultCommand}"
+                          CommandParameter="summary" />
+                <MenuItem Header="{loc:Str Research_Scope_Full}"
+                          Command="{Binding CopyResultCommand}"
+                          CommandParameter="full" />
+              </ContextMenu>
+            </ui:DropDownButton.Flyout>
+          </ui:DropDownButton>
+          <ui:DropDownButton Appearance="Secondary"
+                             Height="40"
+                             Margin="0,0,8,0"
+                             Padding="16,0">
+            <ui:DropDownButton.Content>
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="ArrowExportUp24" FontSize="16" Margin="0,0,6,0" />
+                <TextBlock Text="{loc:Str Research_ExportAll}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ui:DropDownButton.Content>
+            <ui:DropDownButton.Flyout>
+              <ContextMenu>
+                <MenuItem Header="{loc:Str Research_Scope_Summary}"
+                          Command="{Binding ExportResultCommand}"
+                          CommandParameter="summary" />
+                <MenuItem Header="{loc:Str Research_Scope_Full}"
+                          Command="{Binding ExportResultCommand}"
+                          CommandParameter="full" />
+              </ContextMenu>
+            </ui:DropDownButton.Flyout>
+          </ui:DropDownButton>
           <ui:Button Command="{Binding NewResearchCommand}"
                      Appearance="Secondary"
                      Height="40"
