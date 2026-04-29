@@ -116,6 +116,7 @@
   <data name="Research_Scope_Summary" xml:space="preserve"><value>Résumé uniquement</value></data>
   <data name="Research_Scope_Full" xml:space="preserve"><value>Recherche complète</value></data>
   <data name="Research_Error_EmptyResponse" xml:space="preserve"><value>Le modèle a renvoyé une réponse vide.</value></data>
+  <data name="Research_Error_Timeout" xml:space="preserve"><value>Le fournisseur « {0} » n'a pas répondu en {1} secondes.</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Historique des recherches</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Rechercher dans les sessions...</value></data>

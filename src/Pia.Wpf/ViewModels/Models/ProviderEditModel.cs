@@ -32,7 +32,7 @@ public partial class ProviderEditModel : ObservableValidator
 
     [Range(1, 300, ErrorMessage = "Timeout must be between 1 and 300 seconds")]
     [ObservableProperty]
-    private int _timeoutSeconds = 30;
+    private int _timeoutSeconds = 300;
 
     [ObservableProperty]
     private bool _supportsToolCalling = true;
@@ -84,7 +84,7 @@ public partial class ProviderEditModel : ObservableValidator
             ApiKey = null,
             ModelName = provider.ModelName,
             AzureDeploymentName = provider.AzureDeploymentName,
-            TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 300 ? provider.TimeoutSeconds : 30,
+            TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 300 ? provider.TimeoutSeconds : 300,
             SupportsToolCalling = provider.SupportsToolCalling,
             SupportsStreaming = provider.SupportsStreaming
         };

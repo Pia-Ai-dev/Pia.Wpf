@@ -166,7 +166,7 @@ public class SyncMapper
                     ? _dpapiHelper.Encrypt(decrypted.ApiKey) : null,
                 AzureDeploymentName = decrypted.AzureDeploymentName,
                 SupportsToolCalling = decrypted.SupportsToolCalling,
-                TimeoutSeconds = decrypted.TimeoutSeconds is > 0 ? decrypted.TimeoutSeconds : 30,
+                TimeoutSeconds = decrypted.TimeoutSeconds is > 0 ? decrypted.TimeoutSeconds : 300,
                 CreatedAt = sync.CreatedAt,
                 UpdatedAt = sync.UpdatedAt
             };
@@ -183,7 +183,7 @@ public class SyncMapper
                 ? _dpapiHelper.Encrypt(sync.ApiKey) : null,
             AzureDeploymentName = sync.AzureDeploymentName,
             SupportsToolCalling = sync.SupportsToolCalling,
-            TimeoutSeconds = sync.TimeoutSeconds is > 0 ? sync.TimeoutSeconds : 30,
+            TimeoutSeconds = sync.TimeoutSeconds is > 0 ? sync.TimeoutSeconds : 300,
             CreatedAt = sync.CreatedAt,
             UpdatedAt = sync.UpdatedAt
         };

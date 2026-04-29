@@ -216,6 +216,15 @@ public class ResearchService : IResearchService
                     synthTokens++;
                 }
             }
+            catch (LlmTimeoutException ex)
+            {
+                _logger.LogError(ex, "Synthesis timed out after {Tokens} tokens, {Chars} chars (provider={ProviderName}, seconds={Seconds})", synthTokens, synthesizeStep.Content.Length, ex.ProviderName, ex.TimeoutSeconds);
+                synthesizeStep.IsStreaming = false;
+                synthesizeStep.ErrorMessage = _localizationService.Format("Research_Error_Timeout", ex.ProviderName, ex.TimeoutSeconds);
+                synthesizeStep.Status = ResearchStatus.Failed;
+                synthesizeStep.CompletedAt = DateTime.Now;
+                throw;
+            }
             catch (OperationCanceledException)
             {
                 throw;
@@ -250,6 +259,14 @@ public class ResearchService : IResearchService
             session.Status = ResearchStatus.Completed;
             session.CompletedAt = DateTime.Now;
         }
+        catch (LlmTimeoutException ex)
+        {
+            _logger.LogError(ex, "Research timed out for session {SessionId} (provider={ProviderName}, seconds={Seconds})", session.Id, ex.ProviderName, ex.TimeoutSeconds);
+            var msg = _localizationService.Format("Research_Error_Timeout", ex.ProviderName, ex.TimeoutSeconds);
+            MarkCurrentStepsFailed(session, msg);
+            session.Status = ResearchStatus.Failed;
+            throw;
+        }
         catch (OperationCanceledException)
         {
             MarkCurrentStepsCancelled(session);
@@ -259,7 +276,7 @@ public class ResearchService : IResearchService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Research failed for session {SessionId}", session.Id);
-            MarkCurrentStepsFailed(session);
+            MarkCurrentStepsFailed(session, ex.Message);
             session.Status = ResearchStatus.Failed;
             throw;
         }
@@ -332,6 +349,15 @@ public class ResearchService : IResearchService
             step.Status = ResearchStatus.Completed;
             step.CompletedAt = DateTime.Now;
         }
+        catch (LlmTimeoutException ex)
+        {
+            _logger.LogError(ex, "Sub-question timed out: {SubQuestion} (provider={ProviderName}, seconds={Seconds})", subQuestion, ex.ProviderName, ex.TimeoutSeconds);
+            step.IsStreaming = false;
+            step.ErrorMessage = _localizationService.Format("Research_Error_Timeout", ex.ProviderName, ex.TimeoutSeconds);
+            step.Status = ResearchStatus.Failed;
+            step.CompletedAt = DateTime.Now;
+            // Do not rethrow: timeout on one sub-question must not abort siblings.
+        }
         catch (OperationCanceledException)
         {
             step.IsStreaming = false;
@@ -385,7 +411,7 @@ public class ResearchService : IResearchService
         }
     }
 
-    private static void MarkCurrentStepsFailed(ResearchSession session)
+    private static void MarkCurrentStepsFailed(ResearchSession session, string? errorMessage = null)
     {
         foreach (var step in session.Steps)
         {
@@ -394,6 +420,10 @@ public class ResearchService : IResearchService
                 step.IsStreaming = false;
                 step.Status = ResearchStatus.Failed;
                 step.CompletedAt = DateTime.Now;
+                if (!string.IsNullOrEmpty(errorMessage) && string.IsNullOrEmpty(step.ErrorMessage))
+                {
+                    step.ErrorMessage = errorMessage;
+                }
             }
         }
     }

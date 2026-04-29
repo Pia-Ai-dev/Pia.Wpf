@@ -38,7 +38,7 @@ public class AiClientService : IAiClientService
         CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -59,7 +59,8 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            throw new TimeoutException($"Request timed out after {timeout.TotalSeconds} seconds");
+            _logger.LogWarning("SendRequestAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
     }
 
@@ -70,7 +71,7 @@ public class AiClientService : IAiClientService
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -78,22 +79,45 @@ public class AiClientService : IAiClientService
 
         var chatClient = await CreateChatClientAsync(provider, apiKey, mode);
 
-        IAsyncEnumerable<ChatResponseUpdate> stream;
+        IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
         try
         {
-            stream = chatClient.GetStreamingResponseAsync(messages, cancellationToken: linkedCts.Token);
-        }
-        catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
-        {
-            throw new TimeoutException($"Request timed out after {timeout.TotalSeconds} seconds");
-        }
-
-        await foreach (var update in stream.WithCancellation(linkedCts.Token))
-        {
-            if (!string.IsNullOrEmpty(update.Text))
+            try
             {
-                yield return update.Text;
+                var stream = chatClient.GetStreamingResponseAsync(messages, cancellationToken: linkedCts.Token);
+                enumerator = stream.GetAsyncEnumerator(linkedCts.Token);
             }
+            catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+            }
+
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out mid-stream after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                }
+
+                if (!hasNext) break;
+
+                var update = enumerator.Current;
+                if (!string.IsNullOrEmpty(update.Text))
+                {
+                    yield return update.Text;
+                }
+            }
+        }
+        finally
+        {
+            if (enumerator != null) await enumerator.DisposeAsync();
         }
     }
 
@@ -105,7 +129,7 @@ public class AiClientService : IAiClientService
         CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -135,7 +159,8 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            throw new TimeoutException($"Request timed out after {timeout.TotalSeconds} seconds");
+            _logger.LogWarning("GetChatResponseAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
     }
 
@@ -151,7 +176,7 @@ public class AiClientService : IAiClientService
             provider.Name, tools?.Count ?? 0);
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -197,6 +222,12 @@ public class AiClientService : IAiClientService
                     enumerator = stream.GetAsyncEnumerator(linkedCts.Token);
                     hasFirst = await enumerator.MoveNextAsync();
                 }
+                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out at stream start (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                    if (enumerator != null) await enumerator.DisposeAsync();
+                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                }
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
@@ -204,9 +235,18 @@ public class AiClientService : IAiClientService
                     useTools = false;
                     if (enumerator != null) await enumerator.DisposeAsync();
 
-                    var retryStream = chatClient.GetStreamingResponseAsync(workingMessages, options, linkedCts.Token);
-                    enumerator = retryStream.GetAsyncEnumerator(linkedCts.Token);
-                    hasFirst = await enumerator.MoveNextAsync();
+                    try
+                    {
+                        var retryStream = chatClient.GetStreamingResponseAsync(workingMessages, options, linkedCts.Token);
+                        enumerator = retryStream.GetAsyncEnumerator(linkedCts.Token);
+                        hasFirst = await enumerator.MoveNextAsync();
+                    }
+                    catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                        if (enumerator != null) await enumerator.DisposeAsync();
+                        throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                    }
                 }
 
                 // Yield tokens outside try-catch (yield is allowed in try-finally)
@@ -214,14 +254,27 @@ public class AiClientService : IAiClientService
                 {
                     if (hasFirst)
                     {
-                        do
+                        while (true)
                         {
                             updates.Add(enumerator!.Current);
                             if (!string.IsNullOrEmpty(enumerator.Current.Text))
                             {
                                 yield return enumerator.Current.Text;
                             }
-                        } while (await enumerator.MoveNextAsync());
+
+                            bool hasNext;
+                            try
+                            {
+                                hasNext = await enumerator.MoveNextAsync();
+                            }
+                            catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                            {
+                                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out mid-stream (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                                throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                            }
+
+                            if (!hasNext) break;
+                        }
                     }
                 }
                 finally
@@ -240,12 +293,25 @@ public class AiClientService : IAiClientService
                 {
                     response = await chatClient.GetResponseAsync(workingMessages, options, linkedCts.Token);
                 }
+                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                }
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
                     options.Tools = null;
                     useTools = false;
-                    response = await chatClient.GetResponseAsync(workingMessages, options, linkedCts.Token);
+                    try
+                    {
+                        response = await chatClient.GetResponseAsync(workingMessages, options, linkedCts.Token);
+                    }
+                    catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                        throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                    }
                 }
 
                 var text = response.Text;
@@ -319,7 +385,7 @@ public class AiClientService : IAiClientService
     public async Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -355,7 +421,7 @@ public class AiClientService : IAiClientService
     public async Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 30);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -401,7 +467,7 @@ public class AiClientService : IAiClientService
         if (string.IsNullOrEmpty(serverUrl))
             throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
 
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(300);
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
@@ -481,7 +547,7 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            throw new TimeoutException($"PiaCloud request timed out after {timeout.TotalSeconds} seconds");
+            throw new LlmTimeoutException("Pia Cloud", timeout.TotalSeconds);
         }
     }
 
@@ -585,7 +651,7 @@ public class AiClientService : IAiClientService
         if (string.IsNullOrEmpty(serverUrl))
             throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
 
-        var timeout = TimeSpan.FromSeconds(30);
+        var timeout = TimeSpan.FromSeconds(300);
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
@@ -658,7 +724,7 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            throw new TimeoutException($"PiaCloud request timed out after {timeout.TotalSeconds} seconds");
+            throw new LlmTimeoutException("Pia Cloud", timeout.TotalSeconds);
         }
     }
 
@@ -688,7 +754,7 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            throw new TimeoutException($"Connection test timed out after {timeout.TotalSeconds} seconds");
+            throw new LlmTimeoutException("Pia Cloud", timeout.TotalSeconds);
         }
     }
 }

@@ -358,6 +358,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     assistantMessage.ThinkingContent = thinking;
             }
         }
+        catch (Pia.Services.LlmTimeoutException ex)
+        {
+            _logger.LogError(ex, "AI response timed out (provider={ProviderName}, seconds={Seconds})", ex.ProviderName, ex.TimeoutSeconds);
+            var localizedMessage = _localizationService.Format("Msg_Assistant_ResponseTimedOut", ex.ProviderName, ex.TimeoutSeconds);
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+            {
+                assistantMessage.Content = localizedMessage;
+            }
+            _snackbarService.Show(_localizationService["Msg_Error"], localizedMessage, Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(6));
+        }
         catch (OperationCanceledException)
         {
             _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Assistant_ResponseCancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));

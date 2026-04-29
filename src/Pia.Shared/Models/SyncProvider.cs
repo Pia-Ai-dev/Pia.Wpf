@@ -16,7 +16,7 @@ public class SyncProvider
     public string? ApiKey { get; set; }
     public string? AzureDeploymentName { get; set; }
     public bool SupportsToolCalling { get; set; } = true;
-    public int TimeoutSeconds { get; set; } = 30;
+    public int TimeoutSeconds { get; set; } = 300;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

@@ -116,6 +116,7 @@
   <data name="Research_Scope_Summary" xml:space="preserve"><value>Summary only</value></data>
   <data name="Research_Scope_Full" xml:space="preserve"><value>Full research</value></data>
   <data name="Research_Error_EmptyResponse" xml:space="preserve"><value>The model returned an empty response.</value></data>
+  <data name="Research_Error_Timeout" xml:space="preserve"><value>Provider '{0}' did not respond within {1} seconds.</value></data>
   <!-- Research History View -->
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Research History</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Search research sessions...</value></data>

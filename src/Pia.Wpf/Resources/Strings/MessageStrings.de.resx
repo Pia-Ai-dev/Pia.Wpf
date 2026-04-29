@@ -53,6 +53,7 @@
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Diese Aufgabe wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Erinnerung aktualisiert</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>Antwortgenerierung wurde abgebrochen.</value></data>
+  <data name="Msg_Assistant_ResponseTimedOut" xml:space="preserve"><value>Anbieter „{0}" hat nicht innerhalb von {1} Sekunden geantwortet.</value></data>
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>Der Assistent hat keine Antwort geliefert. Bitte versuche es erneut.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Fehler beim Abrufen der KI-Antwort: {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Gedächtnis wird überprüft...</value></data>
