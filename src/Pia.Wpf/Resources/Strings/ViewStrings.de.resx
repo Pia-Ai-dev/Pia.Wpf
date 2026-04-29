@@ -97,7 +97,7 @@
   <data name="Research_InputPlaceholder" xml:space="preserve"><value>Was möchtest du recherchieren?</value></data>
   <data name="Research_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
   <data name="Research_StartResearch" xml:space="preserve"><value>Recherche starten</value></data>
-  <data name="Research_QuestionLabel" xml:space="preserve"><value>Forschungsfrage</value></data>
+  <data name="Research_QuestionLabel" xml:space="preserve"><value>Anfrage</value></data>
   <data name="Research_CancelResearch_Tooltip" xml:space="preserve"><value>Recherche abbrechen</value></data>
   <data name="Research_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
   <data name="Research_CopyResult" xml:space="preserve"><value>Ergebnis kopieren</value></data>
@@ -110,7 +110,7 @@
   <data name="Research_AnswerLength_Concise" xml:space="preserve"><value>Kurz</value></data>
   <data name="Research_AnswerLength_Balanced" xml:space="preserve"><value>Ausgewogen</value></data>
   <data name="Research_AnswerLength_Detailed" xml:space="preserve"><value>Ausführlich</value></data>
-  <data name="Research_Step_Decompose" xml:space="preserve"><value>Forschungsfrage wird analysiert und zerlegt</value></data>
+  <data name="Research_Step_Decompose" xml:space="preserve"><value>Fragestellung wird analysiert und zerlegt</value></data>
   <data name="Research_Step_Researching" xml:space="preserve"><value>Recherchiere: {0}</value></data>
   <data name="Research_Step_Synthesize" xml:space="preserve"><value>Endergebnisse werden zusammengeführt</value></data>
   <data name="Research_Scope_Summary" xml:space="preserve"><value>Nur Zusammenfassung</value></data>
@@ -121,7 +121,7 @@
   <data name="ResearchHistory_Title" xml:space="preserve"><value>Rechercheverlauf</value></data>
   <data name="ResearchHistory_SearchPlaceholder" xml:space="preserve"><value>Recherchen durchsuchen...</value></data>
   <data name="ResearchHistory_DateColumn" xml:space="preserve"><value>Datum</value></data>
-  <data name="ResearchHistory_QueryColumn" xml:space="preserve"><value>Forschungsfrage</value></data>
+  <data name="ResearchHistory_QueryColumn" xml:space="preserve"><value>Anfrage</value></data>
   <data name="ResearchHistory_ProviderColumn" xml:space="preserve"><value>Anbieter</value></data>
   <data name="ResearchHistory_StepsColumn" xml:space="preserve"><value>Schritte</value></data>
   <data name="ResearchHistory_StatusColumn" xml:space="preserve"><value>Status</value></data>
