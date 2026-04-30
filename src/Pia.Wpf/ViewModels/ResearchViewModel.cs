@@ -291,6 +291,27 @@ public partial class ResearchViewModel : ObservableObject, INavigationAware, IDi
         {
             QueryText = text;
         }
+        else if (parameter is CapturedSelectionPayload selection)
+        {
+            ApplyCapturedSelection(selection.Text);
+        }
+    }
+
+    private void ApplyCapturedSelection(string text)
+    {
+        if (string.IsNullOrEmpty(QueryText))
+        {
+            QueryText = text;
+        }
+        else
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+                Wpf.Ui.Controls.ControlAppearance.Caution,
+                null,
+                TimeSpan.FromSeconds(3));
+        }
     }
 
     public void OnNavigatedFrom() { }

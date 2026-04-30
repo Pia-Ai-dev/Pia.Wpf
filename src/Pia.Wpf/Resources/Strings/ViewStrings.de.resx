@@ -299,6 +299,8 @@
   <data name="Settings_LaunchAtStartup_Description" xml:space="preserve"><value>Pia automatisch starten, wenn Sie sich bei Windows anmelden</value></data>
   <data name="Settings_StartMinimized" xml:space="preserve"><value>Minimiert im Infobereich starten</value></data>
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Anwendung startet beim Start versteckt im Infobereich</value></data>
+  <data name="Settings_AutoCaptureSelectedText" xml:space="preserve"><value>Markierten Text per Hotkey automatisch übernehmen</value></data>
+  <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>Beim Drücken eines Pia-Hotkeys wird der im aktiven Programm markierte Text automatisch kopiert und in die Eingabe übernommen. Die Zwischenablage wird anschließend wiederhergestellt.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Globale Tastenkürzel</value></data>

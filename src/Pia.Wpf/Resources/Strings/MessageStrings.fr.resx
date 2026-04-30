@@ -40,6 +40,7 @@
   <data name="Msg_Success" xml:space="preserve"><value>Succès</value></data>
   <data name="Msg_Warning" xml:space="preserve"><value>Avertissement</value></data>
   <data name="Msg_Cancelled" xml:space="preserve"><value>Annulé</value></data>
+  <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Le texte sélectionné n'a pas été collé car le champ contient déjà du texte.</value></data>
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copié</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>

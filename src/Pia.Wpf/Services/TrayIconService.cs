@@ -16,6 +16,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     private readonly ISettingsService _settingsService;
     private readonly INativeHotkeyServiceFactory _hotkeyServiceFactory;
     private readonly ILocalizationService _localizationService;
+    private readonly ISelectedTextService _selectedTextService;
     private readonly Dictionary<WindowMode, INativeHotkeyService> _hotkeyServices = new();
     private DateTime _lastHotkeyOpenTime = DateTime.MinValue;
     private static readonly TimeSpan HotkeyDebounceInterval = TimeSpan.FromMilliseconds(500);
@@ -29,13 +30,15 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         IWindowManagerService windowManagerService,
         ISettingsService settingsService,
         INativeHotkeyServiceFactory hotkeyServiceFactory,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        ISelectedTextService selectedTextService)
     {
         _windowTrackingService = windowTrackingService;
         _windowManagerService = windowManagerService;
         _settingsService = settingsService;
         _hotkeyServiceFactory = hotkeyServiceFactory;
         _localizationService = localizationService;
+        _selectedTextService = selectedTextService;
 
         _localizationService.LanguageChanged += OnLanguageChanged;
     }
@@ -182,7 +185,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
             else
             {
                 _windowTrackingService.TrackWindowAtCursor();
-                _windowManagerService.ShowWindow(mode);
+                _ = ShowWindowWithOptionalSelectionAsync(mode);
             }
             return;
         }
@@ -193,7 +196,41 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         _lastHotkeyOpenTime = now;
 
         _windowTrackingService.TrackWindowAtCursor();
-        _windowManagerService.ShowWindow(mode);
+        _ = ShowWindowWithOptionalSelectionAsync(mode);
+    }
+
+    private async Task ShowWindowWithOptionalSelectionAsync(WindowMode mode)
+    {
+        var captured = await TryCaptureSelectedTextAsync();
+        if (!string.IsNullOrEmpty(captured))
+            _windowManagerService.ShowWindowWithSelection(mode, captured);
+        else
+            _windowManagerService.ShowWindow(mode);
+    }
+
+    private async Task<string?> TryCaptureSelectedTextAsync()
+    {
+        AppSettings settings;
+        try
+        {
+            settings = await _settingsService.GetSettingsAsync();
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (!settings.AutoCaptureSelectedText)
+            return null;
+
+        try
+        {
+            return await _selectedTextService.CaptureAsync();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void UpdateTooltip()

@@ -40,6 +40,7 @@
   <data name="Msg_Success" xml:space="preserve"><value>Erfolg</value></data>
   <data name="Msg_Warning" xml:space="preserve"><value>Warnung</value></data>
   <data name="Msg_Cancelled" xml:space="preserve"><value>Abgebrochen</value></data>
+  <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Markierter Text wurde nicht eingefügt, da das Eingabefeld bereits Text enthält.</value></data>
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Kopiert</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>

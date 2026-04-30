@@ -227,6 +227,7 @@ public static class Bootstrapper
         services.AddTransient<IResearchExportService, ResearchExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
+        services.AddSingleton<ISelectedTextService, SelectedTextService>();
         services.AddSingleton<ITrayIconService, TrayIconService>();
         services.AddSingleton<IWindowManagerService, WindowManagerService>();
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();

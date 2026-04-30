@@ -146,6 +146,30 @@ public partial class WindowManagerService : IWindowManagerService
         }
     }
 
+    public void ShowWindowWithSelection(WindowMode mode, string capturedText)
+    {
+        ShowWindow(mode);
+
+        if (!_windows.TryGetValue(mode, out var managed))
+            return;
+
+        var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
+        var payload = new CapturedSelectionPayload(capturedText);
+
+        switch (mode)
+        {
+            case WindowMode.Optimize:
+                navigationService.NavigateTo<OptimizeViewModel, CapturedSelectionPayload>(payload);
+                break;
+            case WindowMode.Assistant:
+                navigationService.NavigateTo<AssistantViewModel, CapturedSelectionPayload>(payload);
+                break;
+            case WindowMode.Research:
+                navigationService.NavigateTo<ResearchViewModel, CapturedSelectionPayload>(payload);
+                break;
+        }
+    }
+
     public void HideWindow(WindowMode mode)
     {
         if (!_windows.TryGetValue(mode, out var managed))

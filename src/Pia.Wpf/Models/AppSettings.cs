@@ -68,6 +68,7 @@ public class AppSettings
     public KeyboardShortcut OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
     public KeyboardShortcut? AssistantHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltP();
     public KeyboardShortcut? ResearchHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltR();
+    public bool AutoCaptureSelectedText { get; set; } = true;
     public TargetLanguage? TargetLanguage { get; set; }
     public TargetSpeechLanguage TargetSpeechLanguage { get; set; } = TargetSpeechLanguage.Auto;
     public WindowMode DefaultWindowMode { get; set; } = WindowMode.Optimize;

@@ -542,6 +542,28 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         {
             ShouldFocusInput = true;
         }
+        else if (parameter is CapturedSelectionPayload selection)
+        {
+            ApplyCapturedSelection(selection.Text);
+        }
+    }
+
+    private void ApplyCapturedSelection(string text)
+    {
+        if (string.IsNullOrEmpty(InputText))
+        {
+            InputText = text;
+            ShouldFocusInput = true;
+        }
+        else
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+                Wpf.Ui.Controls.ControlAppearance.Caution,
+                null,
+                TimeSpan.FromSeconds(3));
+        }
     }
 
     public async Task OnNavigatedToAsync(object? parameter)
@@ -561,7 +583,10 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
             SelectedTemplateId = templateId;
             await UpdateSelectedTemplateAsync();
 
-            InputText = settings.DraftText ?? string.Empty;
+            if (string.IsNullOrEmpty(InputText))
+            {
+                InputText = settings.DraftText ?? string.Empty;
+            }
             if (!string.IsNullOrWhiteSpace(InputText))
             {
                 OptimizeCommand.NotifyCanExecuteChanged();

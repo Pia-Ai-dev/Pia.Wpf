@@ -749,6 +749,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             InputText = text;
         }
+        else if (parameter is CapturedSelectionPayload selection)
+        {
+            ApplyCapturedSelection(selection.Text);
+        }
 
         try
         {
@@ -794,6 +798,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     public void OnNavigatedFrom() { }
+
+    private void ApplyCapturedSelection(string text)
+    {
+        if (string.IsNullOrEmpty(InputText))
+        {
+            InputText = text;
+        }
+        else
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+                Wpf.Ui.Controls.ControlAppearance.Caution,
+                null,
+                TimeSpan.FromSeconds(3));
+        }
+    }
 
     private void ExecuteToggleTts()
     {

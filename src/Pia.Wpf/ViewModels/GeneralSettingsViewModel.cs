@@ -67,6 +67,9 @@ public partial class GeneralSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _launchAtStartup;
 
+    [ObservableProperty]
+    private bool _autoCaptureSelectedText;
+
     // Hotkeys
     [ObservableProperty]
     private string _optimizeHotkeyDisplayText = "Ctrl+Alt+O";
@@ -135,6 +138,11 @@ public partial class GeneralSettingsViewModel : ObservableObject
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnAutoCaptureSelectedTextChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     partial void OnSttBackendChanged(SttBackend value)
     {
         OnPropertyChanged(nameof(IsWhisperSelected));
@@ -160,6 +168,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         UiLanguage = _localizationService.CurrentLanguage;
         StartMinimized = settings.StartMinimized;
         LaunchAtStartup = settings.LaunchAtStartup;
+        AutoCaptureSelectedText = settings.AutoCaptureSelectedText;
         SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
@@ -399,6 +408,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         settings.UiLanguage = UiLanguage;
         settings.StartMinimized = StartMinimized;
         settings.LaunchAtStartup = LaunchAtStartup;
+        settings.AutoCaptureSelectedText = AutoCaptureSelectedText;
         settings.SttBackend = SttBackend;
         settings.WhisperModel = WhisperModel;
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
