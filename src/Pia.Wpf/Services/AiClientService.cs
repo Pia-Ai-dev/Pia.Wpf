@@ -57,8 +57,14 @@ public class AiClientService : IAiClientService
                 cancellationToken: linkedCts.Token
             );
 
-            _logger.LogDebug("SendRequestAsync: received response, length={Length}", response.Text?.Length ?? 0);
-            return response.Text ?? string.Empty;
+            var text = response.Text ?? string.Empty;
+            _logger.LogDebug("SendRequestAsync: received response, length={Length}, finishReason={FinishReason}",
+                text.Length, response.FinishReason);
+
+            if (response.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length)
+                throw new LlmTruncatedException(provider.Name, text.Length);
+
+            return text;
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
@@ -514,6 +520,7 @@ public class AiClientService : IAiClientService
                 $"{serverUrl}/api/ai/optimize", content, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
+            _logger.LogDebug("PiaCloud optimize: response body length={Length}", responseJson.Length);
 
             if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {
@@ -547,8 +554,10 @@ public class AiClientService : IAiClientService
             }
 
             using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
-            return doc.RootElement.GetProperty("optimizedText").GetString()
+            var optimizedText = doc.RootElement.GetProperty("optimizedText").GetString()
                 ?? throw new InvalidOperationException("Server returned empty optimized text");
+            _logger.LogDebug("PiaCloud optimize: extracted text length={Length}", optimizedText.Length);
+            return optimizedText;
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {

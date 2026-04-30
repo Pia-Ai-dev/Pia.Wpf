@@ -1,6 +1,7 @@
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Xunit;
 
@@ -208,5 +209,26 @@ public class TextOptimizationServiceTests
                 p.Contains("um hello") &&
                 !p.Contains("<voice>")),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OptimizeTextAsync_OpenAI_PropagatesTruncationAndDoesNotPersistSession()
+    {
+        _templateService.GetTemplateAsync(BusinessEmailTemplateId)
+            .Returns(BusinessEmailTemplate);
+        _providerService.GetDefaultProviderAsync()
+            .Returns(OpenAiProvider);
+        _aiClientService.SendRequestAsync(
+                Arg.Any<AiProvider>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<string>(_ => throw new LlmTruncatedException(OpenAiProvider.Name, 42));
+
+        var service = CreateService();
+
+        var ex = await Assert.ThrowsAsync<LlmTruncatedException>(
+            () => service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(OpenAiProvider.Name, ex.ProviderName);
+        Assert.Equal(42, ex.PartialLength);
+        await _historyService.DidNotReceive().AddSessionAsync(Arg.Any<OptimizationSession>());
     }
 }

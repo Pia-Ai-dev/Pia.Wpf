@@ -51,7 +51,7 @@ public class AppSettings
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public Guid? DefaultProviderId { get; set; }
     public WhisperModelSize WhisperModel { get; set; } = WhisperModelSize.Base;
-    public SttBackend SttBackend { get; set; } = SttBackend.Whisper;
+    public SttBackend SttBackend { get; set; } = SttBackend.Parakeet;
     public int AutoTypeDelayMs { get; set; } = 10;
     public string? DraftText { get; set; }
     public string? LastActiveView { get; set; }

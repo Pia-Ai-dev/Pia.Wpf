@@ -207,6 +207,7 @@
   <!-- Optimize messages -->
   <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>Optimization was cancelled</value></data>
   <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Optimization failed: {0}</value></data>
+  <data name="Msg_Optimize_Truncated" xml:space="preserve"><value>The model cut the response short (token limit hit). Try again or shorten your input.</value></data>
   <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Paste failed</value></data>
   <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Could not paste to {0}. Text copied to clipboard instead.</value></data>
   <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Unknown window</value></data>

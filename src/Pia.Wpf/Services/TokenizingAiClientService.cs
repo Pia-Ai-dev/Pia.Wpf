@@ -75,7 +75,10 @@ public class TokenizingAiClientService : IAiClientService
 
         var tokenizedPrompt = TryGetTokenMapService()!.TokenizeStructuredResult(prompt);
         var result = await _inner.SendRequestAsync(provider, tokenizedPrompt, cancellationToken);
-        return TryGetTokenMapService()!.Detokenize(result);
+        var detokenized = TryGetTokenMapService()!.Detokenize(result);
+        _logger.LogDebug("Tokenizing.SendRequest: pre-detok length={Pre}, post-detok length={Post}",
+            result.Length, detokenized.Length);
+        return detokenized;
     }
 
     public async IAsyncEnumerable<string> StreamChatCompletionAsync(
@@ -183,7 +186,10 @@ public class TokenizingAiClientService : IAiClientService
 
         var tokenizedText = TryGetTokenMapService()!.TokenizeStructuredResult(text);
         var result = await _inner.OptimizeViaPiaCloudAsync(tokenizedText, templateId, language, isVoiceInput, mode, cancellationToken);
-        return TryGetTokenMapService()!.Detokenize(result);
+        var detokenized = TryGetTokenMapService()!.Detokenize(result);
+        _logger.LogDebug("Tokenizing.OptimizeViaPiaCloud: pre-detok length={Pre}, post-detok length={Post}",
+            result.Length, detokenized.Length);
+        return detokenized;
     }
 
     public Task<string> GeneratePromptViaPiaCloudAsync(string styleDescription, string? mode = null, CancellationToken cancellationToken = default)

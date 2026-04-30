@@ -197,6 +197,7 @@
   <!-- Optimize messages -->
   <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>L'optimisation a été annulée</value></data>
   <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Échec de l'optimisation : {0}</value></data>
+  <data name="Msg_Optimize_Truncated" xml:space="preserve"><value>Le modèle a tronqué la réponse (limite de tokens atteinte). Veuillez réessayer ou raccourcir votre saisie.</value></data>
   <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Échec du collage</value></data>
   <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Impossible de coller dans {0}. Le texte a été copié dans le presse-papiers.</value></data>
   <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Fenêtre inconnue</value></data>

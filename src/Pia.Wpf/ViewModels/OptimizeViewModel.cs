@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Navigation;
 
@@ -204,6 +205,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                 nameof(WindowMode.Optimize),
                 cancellationToken);
 
+            _logger.LogDebug("Optimize: assigning OptimizedText length={Length}", session.OptimizedText.Length);
             OptimizedText = session.OptimizedText;
             await UpdateTrackedWindowInfoAsync();
             IsComparisonView = true;
@@ -212,6 +214,11 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         catch (OperationCanceledException)
         {
             // Already handled by dialog cancellation
+        }
+        catch (LlmTruncatedException)
+        {
+            dialogCancellation.Cancel();
+            _snackbarService.Show(_localizationService["Msg_Warning"], _localizationService["Msg_Optimize_Truncated"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(5));
         }
         catch (Exception ex)
         {
