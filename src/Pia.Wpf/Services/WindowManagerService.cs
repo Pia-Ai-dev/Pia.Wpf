@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
@@ -15,6 +17,7 @@ public partial class WindowManagerService : IWindowManagerService
     private static partial IntPtr GetForegroundWindow();
 
     private readonly IServiceProvider _rootProvider;
+    private readonly ILogger<WindowManagerService> _logger;
     private readonly Dictionary<WindowMode, ManagedWindow> _windows = new();
     private bool _isShuttingDown;
     private double _lastWindowLeft = double.NaN;
@@ -27,15 +30,22 @@ public partial class WindowManagerService : IWindowManagerService
     public event EventHandler<ManagedWindow>? WindowClosed;
     public event EventHandler? WindowVisibilityChanged;
 
-    public WindowManagerService(IServiceProvider rootProvider)
+    public WindowManagerService(IServiceProvider rootProvider, ILogger<WindowManagerService> logger)
     {
         _rootProvider = rootProvider;
+        _logger = logger;
     }
 
     public void ShowWindow(WindowMode mode)
     {
+        _logger.LogTrace("ShowWindow {Mode} requested", mode);
+
         if (_windows.TryGetValue(mode, out var existing))
         {
+            _logger.LogTrace(
+                "ShowWindow {Mode} reusing existing, state={State}, visibility={Visibility}",
+                mode, existing.Window.WindowState, existing.Window.Visibility);
+
             existing.Window.Show();
             existing.Window.Visibility = Visibility.Visible;
             existing.Window.WindowState = WindowState.Normal;
@@ -44,6 +54,8 @@ public partial class WindowManagerService : IWindowManagerService
             existing.Window.Focus();
             existing.Window.Topmost = false;
             WindowVisibilityChanged?.Invoke(this, EventArgs.Empty);
+
+            _logger.LogTrace("ShowWindow {Mode} done (reused)", mode);
             return;
         }
 
@@ -70,9 +82,13 @@ public partial class WindowManagerService : IWindowManagerService
             if (_isShuttingDown)
                 return;
 
+            _logger.LogTrace("Window {Mode} StateChanged to {State}", mode, window.WindowState);
+
             if (window.WindowState == WindowState.Minimized)
             {
-                HideWindow(mode);
+                window.Dispatcher.BeginInvoke(
+                    () => HideWindow(mode),
+                    DispatcherPriority.ContextIdle);
             }
         };
 
@@ -106,6 +122,8 @@ public partial class WindowManagerService : IWindowManagerService
 
         WindowOpened?.Invoke(this, managed);
         WindowVisibilityChanged?.Invoke(this, EventArgs.Empty);
+
+        _logger.LogTrace("ShowWindow {Mode} done (created)", mode);
     }
 
     public void ShowWindowWithText(WindowMode mode, string text)
@@ -133,9 +151,28 @@ public partial class WindowManagerService : IWindowManagerService
         if (!_windows.TryGetValue(mode, out var managed))
             return;
 
-        managed.Window.WindowState = WindowState.Normal;
-        managed.Window.Visibility = Visibility.Hidden;
+        var window = managed.Window;
+
+        _logger.LogTrace(
+            "HideWindow {Mode} start, state={State}, visibility={Visibility}",
+            mode, window.WindowState, window.Visibility);
+
+        window.Visibility = Visibility.Hidden;
+
+        if (window.WindowState != WindowState.Normal)
+        {
+            window.Dispatcher.BeginInvoke(
+                () =>
+                {
+                    if (window.Visibility == Visibility.Hidden)
+                        window.WindowState = WindowState.Normal;
+                },
+                DispatcherPriority.ContextIdle);
+        }
+
         WindowVisibilityChanged?.Invoke(this, EventArgs.Empty);
+
+        _logger.LogTrace("HideWindow {Mode} done", mode);
     }
 
     public void HideAllWindows()
