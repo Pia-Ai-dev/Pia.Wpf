@@ -140,7 +140,7 @@
   <data name="Msg_Settings_HotkeyAlreadyAssigned" xml:space="preserve"><value>Dieses Tastenkürzel ist bereits dem Modus {0} zugewiesen.</value></data>
   <data name="Msg_Settings_HotkeyNotSet" xml:space="preserve"><value>Nicht festgelegt</value></data>
   <data name="Msg_Settings_ModelDownloadCancelled" xml:space="preserve"><value>Modell-Download wurde abgebrochen.</value></data>
-  <data name="Msg_Settings_ModelDownloadCompleted" xml:space="preserve"><value>Whisper-Modell erfolgreich heruntergeladen.</value></data>
+  <data name="Msg_Settings_ModelDownloadCompleted" xml:space="preserve"><value>{0} erfolgreich heruntergeladen.</value></data>
   <data name="Msg_Settings_ModelDownloadFailed" xml:space="preserve"><value>Modell-Download fehlgeschlagen: {0}</value></data>
   <data name="Msg_Settings_NowUsingVoice" xml:space="preserve"><value>Verwende jetzt die Stimme {0}.</value></data>
   <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Vorlage erfolgreich hinzugefügt.</value></data>

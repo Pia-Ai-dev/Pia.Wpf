@@ -282,9 +282,14 @@
   <data name="Settings_OutputAction" xml:space="preserve"><value>Action de sortie</value></data>
   <data name="Settings_AutoTypeDelay" xml:space="preserve"><value>Délai de saisie auto (ms)</value></data>
   <data name="Settings_AutoTypeDelay_Description" xml:space="preserve"><value>Délai entre les frappes lors de la saisie automatique (5-100ms)</value></data>
+  <data name="Settings_SttBackend" xml:space="preserve"><value>Moteur de reconnaissance vocale</value></data>
+  <data name="Settings_SttBackend_Description" xml:space="preserve"><value>Choisissez entre Whisper (large couverture linguistique) et Parakeet TDT v3 (plus rapide sur les langues prises en charge). Les modèles sont téléchargés lors de la première utilisation.</value></data>
   <data name="Settings_WhisperModel" xml:space="preserve"><value>Modèle Whisper</value></data>
   <data name="Settings_WhisperModel_Description" xml:space="preserve"><value>Taille du modèle pour la transcription vocale</value></data>
   <data name="Settings_DownloadModel" xml:space="preserve"><value>Télécharger le modèle</value></data>
+  <data name="Settings_DownloadParakeetModel" xml:space="preserve"><value>Télécharger le modèle Parakeet</value></data>
+  <data name="Settings_Parakeet_DisplayName" xml:space="preserve"><value>Parakeet TDT v3 (multilingue)</value></data>
+  <data name="Settings_Parakeet_Description" xml:space="preserve"><value>Modèle transducteur NVIDIA NeMo Parakeet. Prend en charge plusieurs langues européennes avec détection automatique. Environ 340 Mo sur le disque.</value></data>
   <data name="Settings_SpeechToTextLanguage" xml:space="preserve"><value>Langue de transcription</value></data>
   <data name="Settings_SpeechToTextLanguage_Description" xml:space="preserve"><value>Préréglage linguistique pour la transcription vocale</value></data>
   <data name="Settings_DefaultWindowMode" xml:space="preserve"><value>Mode de fenêtre par défaut</value></data>
@@ -417,8 +422,11 @@
   <data name="Dialog_TemplateEdit_Generating" xml:space="preserve"><value>Génération...</value></data>
   <data name="Dialog_TemplateEdit_GeneratedPrompt" xml:space="preserve"><value>Prompt généré</value></data>
   <data name="Dialog_TemplateEdit_PromptEditHint" xml:space="preserve"><value>Vous pouvez modifier le prompt généré manuellement</value></data>
-  <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Téléchargement du modèle</value></data>
+  <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Préparation du modèle</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Téléchargement du modèle Whisper...</value></data>
+  <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>Téléchargement de {0}...</value></data>
+  <data name="Dialog_ModelDownload_Extracting" xml:space="preserve"><value>Extraction de {0}...</value></data>
+  <data name="Dialog_ModelDownload_PleaseWait" xml:space="preserve"><value>Veuillez patienter</value></data>
   <!-- Voice Mode -->
   <data name="VoiceMode_Done" xml:space="preserve"><value>Terminé</value></data>
   <data name="VoiceMode_Stop" xml:space="preserve"><value>Arrêter</value></data>
@@ -528,6 +536,8 @@
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copier dans le presse-papiers</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Saisie automatique</value></data>
   <data name="Enum_PasteToPreviousWindow" xml:space="preserve"><value>Coller dans la fenêtre précédente</value></data>
+  <data name="Enum_SttWhisper" xml:space="preserve"><value>Whisper</value></data>
+  <data name="Enum_SttParakeet" xml:space="preserve"><value>Parakeet TDT v3</value></data>
   <data name="Enum_WhisperTiny" xml:space="preserve"><value>Tiny</value></data>
   <data name="Enum_WhisperBase" xml:space="preserve"><value>Base</value></data>
   <data name="Enum_WhisperSmall" xml:space="preserve"><value>Small</value></data>

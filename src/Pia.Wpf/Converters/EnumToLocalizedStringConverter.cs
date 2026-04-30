@@ -17,6 +17,8 @@ public class EnumToLocalizedStringConverter : IValueConverter
             OutputAction.CopyToClipboard => "Enum_CopyToClipboard",
             OutputAction.AutoType => "Enum_AutoType",
             OutputAction.PasteToPreviousWindow => "Enum_PasteToPreviousWindow",
+            SttBackend.Whisper => "Enum_SttWhisper",
+            SttBackend.Parakeet => "Enum_SttParakeet",
             WhisperModelSize.Tiny => "Enum_WhisperTiny",
             WhisperModelSize.Base => "Enum_WhisperBase",
             WhisperModelSize.Small => "Enum_WhisperSmall",

@@ -5,6 +5,16 @@ All notable changes to Pia are documented here.
 
 ### Features
 
+- Swap speech-to-text engine from Whisper.net to sherpa-onnx, and add Parakeet TDT v3
+  as a second STT backend selectable in Settings → General → Speech. Parakeet is
+  multilingual with automatic language detection (~340 MB on disk); Whisper retains
+  its model-size selector and language preset.
+
+  Note for upgraders: previously downloaded `ggml-*.bin` files under
+  `%LOCALAPPDATA%\Pia\Models\` are no longer used and can be safely deleted to reclaim
+  disk space. The new sherpa-onnx bundles land in sibling directories
+  (`sherpa-whisper-*`, `sherpa-parakeet-tdt-v3`) and are downloaded on first use.
+
 - Add design spec for todo panel UX enhancements
 
 Covers: visual redesign (Clean Elevated style), expand/collapse animation,

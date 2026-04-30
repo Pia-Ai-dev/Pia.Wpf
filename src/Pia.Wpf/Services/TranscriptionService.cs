@@ -1,11 +1,11 @@
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
+using NAudio.Wave;
 using Pia.Models;
 using Pia.Services.Interfaces;
-using Whisper.net;
-using Whisper.net.Ggml;
-using Whisper.net.LibraryLoader;
+using Pia.Services.LiveTranscription;
 
 namespace Pia.Services;
 
@@ -13,158 +13,103 @@ public class TranscriptionService : ITranscriptionService
 {
     private readonly ISettingsService _settingsService;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _modelsDirectory;
+    private readonly ILogger<TranscriptionService> _logger;
 
-    public TranscriptionService(ISettingsService settingsService, IHttpClientFactory httpClientFactory)
+    public TranscriptionService(
+        ISettingsService settingsService,
+        IHttpClientFactory httpClientFactory,
+        ILogger<TranscriptionService> logger)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
-        _modelsDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Pia",
-            "Models");
-
-        Directory.CreateDirectory(_modelsDirectory);
-        ConfigureNativeLibraryPath();
-    }
-
-    /// <summary>
-    /// Configures Whisper.net's RuntimeOptions.LibraryPath for single-file deployments
-    /// where native libraries may not be in the standard runtimes/ subdirectory.
-    /// </summary>
-    private static bool _nativeLibraryConfigured;
-    private static void ConfigureNativeLibraryPath()
-    {
-        if (_nativeLibraryConfigured) return;
-        _nativeLibraryConfigured = true;
-
-        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        var rid = RuntimeInformation.RuntimeIdentifier;
-
-        // Check if the standard runtimes directory already exists (normal deployment)
-        var standardRuntimesDir = Path.Combine(baseDir, "runtimes", rid);
-        if (Directory.Exists(standardRuntimesDir)) return;
-
-        // For single-file deployments: .NET extracts native libs to directories listed
-        // in NATIVE_DLL_SEARCH_DIRECTORIES. Whisper.net's loader doesn't check these,
-        // so we search them and set RuntimeOptions.LibraryPath if we find a runtimes/ structure.
-        var nativeDirs = AppContext.GetData("NATIVE_DLL_SEARCH_DIRECTORIES") as string;
-        if (string.IsNullOrEmpty(nativeDirs)) return;
-
-        foreach (var dir in nativeDirs.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var trimmedDir = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var candidateRuntimes = Path.Combine(trimmedDir, "runtimes", rid);
-            if (Directory.Exists(candidateRuntimes))
-            {
-                RuntimeOptions.LibraryPath = trimmedDir;
-                return;
-            }
-        }
-
-        // Fallback: when IncludeNativeLibrariesForSelfExtract=true, native DLLs are
-        // extracted flat (no runtimes/ structure). Search for whisper.dll directly.
-        foreach (var dir in nativeDirs.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var trimmedDir = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (File.Exists(Path.Combine(trimmedDir, "whisper.dll")))
-            {
-                RuntimeOptions.LibraryPath = trimmedDir;
-                return;
-            }
-        }
+        _logger = logger;
+        Directory.CreateDirectory(LiveTranscriptionModels.ModelsDirectory);
     }
 
     public async Task<string> TranscribeAsync(string audioFilePath, CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetSettingsAsync();
-        var modelName = GetModelName(settings.WhisperModel);
-        var modelPath = Path.Combine(_modelsDirectory, modelName);
 
-        if (!File.Exists(modelPath))
+        var samples = await Task.Run(() => DecodeTo16kMonoFloat(audioFilePath), cancellationToken).ConfigureAwait(false);
+
+        await using var engine = await TranscriptionEngineFactory
+            .CreateAsync(settings, _httpClientFactory, downloadProgress: null, _logger, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Chunk long audio so the engine isn't asked to process minutes of speech in one shot.
+        const int sampleRate = 16000;
+        const int chunkSeconds = 25;
+        const int chunkSize = chunkSeconds * sampleRate;
+
+        if (samples.Length <= chunkSize)
         {
-            await DownloadModelAsync(modelName, modelPath, cancellationToken, progress: null);
+            return await engine.TranscribeAsync(samples, cancellationToken).ConfigureAwait(false);
         }
 
-        using var whisperFactory = WhisperFactory.FromPath(modelPath);
-        using var processor = whisperFactory.CreateBuilder()
-            .WithLanguage(GetLanguageCode(settings.TargetSpeechLanguage))
-            .Build();
-
-        using var fileStream = File.OpenRead(audioFilePath);
-        var result = processor.ProcessAsync(fileStream, cancellationToken);
-
-        var segments = new List<string>();
-        await foreach (var segment in result)
+        var pieces = new List<string>();
+        for (var offset = 0; offset < samples.Length; offset += chunkSize)
         {
-            segments.Add(segment.Text);
+            var len = Math.Min(chunkSize, samples.Length - offset);
+            var chunk = new float[len];
+            Array.Copy(samples, offset, chunk, 0, len);
+            var text = await engine.TranscribeAsync(chunk, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(text)) pieces.Add(text.Trim());
         }
-
-        var transcribedText = string.Join(" ", segments);
-        return transcribedText;
+        return string.Join(" ", pieces);
     }
 
     public static string GetModelName(WhisperModelSize modelSize)
     {
         return modelSize switch
         {
-            WhisperModelSize.Tiny => "ggml-tiny.bin",
-            WhisperModelSize.Base => "ggml-base.bin",
-            WhisperModelSize.Small => "ggml-small.bin",
-            WhisperModelSize.Medium => "ggml-medium.bin",
-            WhisperModelSize.Large => "ggml-large-v3-turbo.bin",
-            _ => "ggml-base.bin"
+            WhisperModelSize.Tiny => "Whisper Tiny",
+            WhisperModelSize.Base => "Whisper Base",
+            WhisperModelSize.Small => "Whisper Small",
+            WhisperModelSize.Medium => "Whisper Medium",
+            WhisperModelSize.Large => "Whisper Large v3 Turbo",
+            _ => "Whisper Base"
         };
     }
 
-    private static string GetLanguageCode(TargetSpeechLanguage language)
+    public async Task DownloadModelAsync(WhisperModelSize modelSize, IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
     {
-        return language switch
-        {
-            TargetSpeechLanguage.Auto => "auto",
-            TargetSpeechLanguage.EN => "en",
-            TargetSpeechLanguage.DE => "de",
-            TargetSpeechLanguage.FR => "fr",
-            _ => "auto"
-        };
+        await LiveTranscriptionModels
+            .EnsureWhisperOnnxAsync(modelSize, _httpClientFactory, progress, _logger, cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    private async Task DownloadModelAsync(string modelName, string modelPath, CancellationToken cancellationToken, IProgress<Services.Interfaces.ModelDownloadProgress>? progress = null)
+    public async Task DownloadParakeetModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
     {
-        var downloadUrl = $"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{modelName}";
+        await LiveTranscriptionModels
+            .EnsureParakeetOnnxAsync(_httpClientFactory, progress, _logger, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
-        var httpClient = _httpClientFactory.CreateClient();
-        using var response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+    /// <summary>
+    /// Decodes any audio container that Media Foundation can open (wav, mp3, m4a, …) to a
+    /// 16 kHz mono float32 buffer matching the engine's expectations.
+    /// </summary>
+    private static float[] DecodeTo16kMonoFloat(string audioFilePath)
+    {
+        using var reader = new MediaFoundationReader(audioFilePath);
+        using var resampler = new MediaFoundationResampler(reader, new WaveFormat(16000, 16, 1)) { ResamplerQuality = 60 };
 
-        var totalBytes = response.Content.Headers.ContentLength ?? 0;
-        var buffer = new byte[8192];
-        var bytesRead = 0L;
-
-        await using var fileStream = File.Create(modelPath);
-        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-
-        int read;
-        while ((read = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+        using var pcmStream = new MemoryStream();
+        var buffer = new byte[16000 * 2 * 4]; // ~4 s at 16 kHz mono 16-bit
+        int bytesRead;
+        while ((bytesRead = resampler.Read(buffer, 0, buffer.Length)) > 0)
         {
-            await fileStream.WriteAsync(buffer, 0, read, cancellationToken);
-            bytesRead += read;
-
-            if (totalBytes > 0)
-            {
-                var progressPercent = (int)(bytesRead * 100 / totalBytes);
-                ModelDownloadProgress?.Invoke(this, (progressPercent, (int)totalBytes));
-                progress?.Report(new Services.Interfaces.ModelDownloadProgress(progressPercent, totalBytes));
-            }
+            pcmStream.Write(buffer, 0, bytesRead);
         }
-    }
 
-    public async Task DownloadModelAsync(WhisperModelSize modelSize, IProgress<Services.Interfaces.ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
-    {
-        var modelName = GetModelName(modelSize);
-        var modelPath = Path.Combine(_modelsDirectory, modelName);
-        await DownloadModelAsync(modelName, modelPath, cancellationToken, progress);
+        var pcm = pcmStream.GetBuffer();
+        var byteCount = (int)pcmStream.Length;
+        var samples = MemoryMarshal.Cast<byte, short>(pcm.AsSpan(0, byteCount));
+        var floats = new float[samples.Length];
+        for (var i = 0; i < samples.Length; i++)
+        {
+            floats[i] = samples[i] / 32768f;
+        }
+        return floats;
     }
-
-    public event EventHandler<(int Progress, int Total)>? ModelDownloadProgress;
 }
