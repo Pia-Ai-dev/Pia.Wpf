@@ -188,6 +188,12 @@
   <data name="Notification_Reminder" xml:space="preserve"><value>Erinnerung</value></data>
   <data name="Notification_ReminderInApp" xml:space="preserve"><value>Erinnerung: {0}</value></data>
   <data name="Notification_Snooze" xml:space="preserve"><value>Schlummern</value></data>
+  <data name="Notification_OpenBriefing" xml:space="preserve"><value>Öffnen</value></data>
+  <data name="Notification_ScheduledResearch" xml:space="preserve"><value>Geplantes Briefing</value></data>
+  <data name="Notification_ScheduledResearch_Body" xml:space="preserve"><value>„{0}" ist bereit</value></data>
+  <data name="Notification_ScheduledResearchInApp" xml:space="preserve"><value>Geplantes Briefing „{0}" ist bereit</value></data>
+  <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Geplantes Briefing fehlgeschlagen</value></data>
+  <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>„{0}" konnte nicht ausgeführt werden — siehe Verlauf für Details</value></data>
 
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII-Schlüsselwort hinzugefügt</value></data>
