@@ -11,8 +11,12 @@ public static class BuiltInPluginDefaults
     public static readonly Guid MemoryPluginId = new("10000000-0000-0000-0000-000000000001");
     public static readonly Guid TodoPluginId = new("10000000-0000-0000-0000-000000000002");
     public static readonly Guid ReminderPluginId = new("10000000-0000-0000-0000-000000000003");
+    public static readonly Guid ScheduledResearchPluginId = new("10000000-0000-0000-0000-000000000004");
+    public static readonly Guid ResearchHistoryPluginId = new("10000000-0000-0000-0000-000000000005");
 
-    public static readonly HashSet<Guid> PreloadedPluginIds = [MemoryPluginId, TodoPluginId, ReminderPluginId];
+    public static readonly HashSet<Guid> PreloadedPluginIds = [
+        MemoryPluginId, TodoPluginId, ReminderPluginId,
+        ScheduledResearchPluginId, ResearchHistoryPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -51,6 +55,30 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"reminder","defaultEnabled":true,"systemPromptAddition":"When the user asks about their reminders, use query_reminders. To modify or cancel, first query to find the ID."}""",
             UpdatedAt = new DateTime(2026, 4, 6, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [ScheduledResearchPluginId] = new SyncPlugin
+        {
+            Id = ScheduledResearchPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "scheduled-research",
+            Description = "Schedule recurring research jobs and view results.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones."}""",
+            UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [ResearchHistoryPluginId] = new SyncPlugin
+        {
+            Id = ResearchHistoryPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "research-history",
+            Description = "Search past research findings.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"research-history","defaultEnabled":true,"systemPromptAddition":"You can search the user's prior research findings. Use search_research_history to find past research and get_research_entry to retrieve a full entry by ID."}""",
+            UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
         }
     };
 }

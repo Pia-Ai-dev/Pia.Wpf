@@ -130,6 +130,48 @@ public class BuiltInPluginHandler : IPluginToolHandler
             GetSystemPromptFromConfig(config.ConfigJson));
     }
 
+    /// <summary>
+    /// Factory: creates adapter wrapping IScheduledJobToolHandler.
+    /// </summary>
+    public static BuiltInPluginHandler FromScheduledJobHandler(
+        IScheduledJobToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) =>
+            {
+                var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
+                if (pending is null) return (result, null);
+                return (null, new PluginToolCall(
+                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+            },
+            async pluginCall => await pluginCall.Execute(),
+            GetSystemPromptFromConfig(config.ConfigJson));
+    }
+
+    /// <summary>
+    /// Factory: creates adapter wrapping IResearchHistoryToolHandler.
+    /// </summary>
+    public static BuiltInPluginHandler FromResearchHistoryHandler(
+        IResearchHistoryToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) =>
+            {
+                var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
+                if (pending is null) return (result, null);
+                return (null, new PluginToolCall(
+                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+            },
+            async pluginCall => await pluginCall.Execute(),
+            GetSystemPromptFromConfig(config.ConfigJson));
+    }
+
     private static string? GetSystemPromptFromConfig(string configJson)
     {
         try
