@@ -273,6 +273,9 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Recherche planifiée créée avec succès (ID : {0}). Prochaine exécution : {1}</value></data>
   <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Recherche planifiée {0} mise à jour avec succès.</value></data>
   <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Recherche planifiée {0} supprimée avec succès.</value></data>
+  <!-- ResearchHistoryToolHandler -->
+  <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Rechercher dans l'historique de recherche</value></data>
+  <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Obtenir une entrée de recherche par ID</value></data>
   <!-- MemoryToolHandler -->
   <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Créer un nouveau {0} : {1}</value></data>
   <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>Mettre à jour {0} : {1}</value></data>

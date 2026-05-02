@@ -283,6 +283,9 @@ Changes will be applied.</value></data>
   <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Scheduled research created successfully (ID: {0}). Next fire at: {1}</value></data>
   <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Scheduled research {0} updated successfully.</value></data>
   <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Scheduled research {0} deleted successfully.</value></data>
+  <!-- ResearchHistoryToolHandler -->
+  <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Search past research findings</value></data>
+  <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Get a research entry by ID</value></data>
   <!-- MemoryToolHandler -->
   <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Create new {0}: {1}</value></data>
   <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>Update {0}: {1}</value></data>
