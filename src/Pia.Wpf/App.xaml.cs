@@ -115,6 +115,9 @@ public partial class App : Application
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);
 
+        var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
+        await scheduledJobService.StartAsync(CancellationToken.None);
+
         // Initialize persisted MCP plugins from local database
         var pluginService = Bootstrapper.ServiceProvider.GetRequiredService<IPluginService>();
         _ = pluginService.InitializePersistedPluginsAsync();
@@ -233,6 +236,9 @@ public partial class App : Application
 
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StopAsync(CancellationToken.None);
+
+        var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
+        await scheduledJobService.StopAsync(CancellationToken.None);
 
         var windowManager = Bootstrapper.ServiceProvider.GetRequiredService<IWindowManagerService>();
         windowManager.CloseAndDisposeAll();

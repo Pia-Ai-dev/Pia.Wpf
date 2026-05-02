@@ -1,0 +1,185 @@
+using System.Text.Json;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Pia.Models;
+using Pia.Services.Interfaces;
+
+namespace Pia.Services;
+
+/// <summary>
+/// Polls <see cref="IScheduledJobService.GetDueJobsAsync"/> every 30 seconds and
+/// executes each due research job. This task implements only the silent-execute
+/// path; the grace-period / missed-run prompt arrives in Task 12 and will wedge
+/// itself between <see cref="RunJobAsync"/> and <see cref="ExecuteResearchAsync"/>.
+/// </summary>
+public class ScheduledJobBackgroundService : BackgroundService
+{
+    private static readonly TimeSpan _checkInterval = TimeSpan.FromSeconds(30);
+
+    private readonly IScheduledJobService _jobs;
+    private readonly IResearchService _research;
+    private readonly IResearchHistoryService _history;
+    private readonly IScheduledResearchProviderResolver _providers;
+    private readonly IScheduledJobNotificationSurface _notifications;
+    private readonly ILogger<ScheduledJobBackgroundService> _logger;
+
+    /// <summary>
+    /// Serializes job execution so two due jobs in the same tick (or a missed-run
+    /// dialog overlapping a fresh due job) can never run concurrently.
+    /// </summary>
+    private readonly SemaphoreSlim _runLock = new(1, 1);
+
+    public ScheduledJobBackgroundService(
+        IScheduledJobService jobs,
+        IResearchService research,
+        IResearchHistoryService history,
+        IScheduledResearchProviderResolver providers,
+        IScheduledJobNotificationSurface notifications,
+        ILogger<ScheduledJobBackgroundService> logger)
+    {
+        _jobs = jobs;
+        _research = research;
+        _history = history;
+        _providers = providers;
+        _notifications = notifications;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("ScheduledJobBackgroundService started");
+        using var timer = new PeriodicTimer(_checkInterval);
+
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            try
+            {
+                await ExecuteOnceAsync(stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in scheduled-job tick");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Executes a single polling pass. Public for direct test invocation.
+    /// </summary>
+    public async Task ExecuteOnceAsync(CancellationToken ct)
+    {
+        var due = await _jobs.GetDueJobsAsync();
+        foreach (var job in due)
+        {
+            ct.ThrowIfCancellationRequested();
+            await RunJobAsync(job, ct);
+        }
+    }
+
+    private async Task RunJobAsync(ScheduledJob job, CancellationToken ct)
+    {
+        // Task 12 will wrap this with grace-period + missed-run dialog handling.
+        await ExecuteResearchAsync(job, ct);
+    }
+
+    private async Task ExecuteResearchAsync(ScheduledJob job, CancellationToken ct)
+    {
+        await _runLock.WaitAsync(ct);
+        try
+        {
+            var provider = await _providers.ResolveAsync(job.ProviderId);
+            if (provider is null)
+            {
+                const string reason = "NoProvider";
+                var failedId = await PersistFailedEntryAsync(job, reason, provider: null);
+                await _jobs.MarkRunFailedAsync(job.Id, reason);
+                _notifications.NotifyFailure(job, failedId, reason);
+                _logger.LogWarning("Scheduled job {Id} failed: no provider available", job.Id);
+                return;
+            }
+
+            var session = new ResearchSession(job.Query);
+
+            try
+            {
+                await _research.ExecuteResearchAsync(session, provider, job.AnswerLength, ct);
+
+                var entry = new ResearchHistoryEntry
+                {
+                    Id = session.Id,
+                    Query = session.Query,
+                    SynthesizedResult = session.SynthesizedResult,
+                    StepsJson = SerializeSteps(session),
+                    ProviderId = provider.Id,
+                    ProviderName = provider.Name,
+                    Status = session.Status.ToString(),
+                    StepCount = session.Steps.Count,
+                    CreatedAt = session.CreatedAt,
+                    CompletedAt = session.CompletedAt ?? DateTime.Now,
+                    ScheduledJobId = job.Id
+                };
+                await _history.AddEntryAsync(entry);
+                await _jobs.MarkRunCompleteAsync(job.Id, entry.Id);
+                _notifications.NotifySuccess(job, entry);
+
+                _logger.LogInformation("Scheduled job {Id} run completed; entry {EntryId}", job.Id, entry.Id);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var failedId = await PersistFailedEntryAsync(job, ex.Message, provider);
+                await _jobs.MarkRunFailedAsync(job.Id, ex.Message);
+                _notifications.NotifyFailure(job, failedId, ex.Message);
+                _logger.LogWarning(ex, "Scheduled job {Id} run failed", job.Id);
+            }
+        }
+        finally
+        {
+            _runLock.Release();
+        }
+    }
+
+    private async Task<Guid> PersistFailedEntryAsync(ScheduledJob job, string reason, AiProvider? provider)
+    {
+        var entry = new ResearchHistoryEntry
+        {
+            Query = job.Query,
+            SynthesizedResult = $"Run failed: {reason}",
+            StepsJson = "[]",
+            ProviderId = provider?.Id ?? Guid.Empty,
+            ProviderName = provider?.Name,
+            Status = "Failed",
+            StepCount = 0,
+            CreatedAt = DateTime.Now,
+            CompletedAt = DateTime.Now,
+            ScheduledJobId = job.Id
+        };
+        await _history.AddEntryAsync(entry);
+        return entry.Id;
+    }
+
+    private static string SerializeSteps(ResearchSession session)
+    {
+        if (session.Steps.Count == 0)
+        {
+            return "[]";
+        }
+
+        var dtos = session.Steps.Select(s => new ResearchStepDto
+        {
+            StepNumber = s.StepNumber,
+            Title = s.Title,
+            Content = s.Content,
+            Status = s.Status.ToString()
+        }).ToList();
+
+        return JsonSerializer.Serialize(dtos);
+    }
+}

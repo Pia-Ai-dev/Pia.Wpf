@@ -214,6 +214,9 @@ public static class Bootstrapper
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<IScheduledJobService, ScheduledJobService>();
+        services.AddSingleton<IScheduledResearchProviderResolver, ScheduledResearchProviderResolver>();
+        // TODO: replaced by ScheduledJobNotificationSurface in Task 13.
+        services.AddSingleton<IScheduledJobNotificationSurface, NoOpScheduledJobNotificationSurface>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
@@ -265,6 +268,7 @@ public static class Bootstrapper
 
         // Background services
         services.AddSingleton<ReminderBackgroundService>();
+        services.AddSingleton<ScheduledJobBackgroundService>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
