@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
@@ -17,7 +18,7 @@ public class ScheduledJobBackgroundService : BackgroundService
     private static readonly TimeSpan _checkInterval = TimeSpan.FromSeconds(30);
 
     private readonly IScheduledJobService _jobs;
-    private readonly IResearchService _research;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IResearchHistoryService _history;
     private readonly IScheduledResearchProviderResolver _providers;
     private readonly IScheduledJobNotificationSurface _notifications;
@@ -31,14 +32,14 @@ public class ScheduledJobBackgroundService : BackgroundService
 
     public ScheduledJobBackgroundService(
         IScheduledJobService jobs,
-        IResearchService research,
+        IServiceScopeFactory scopeFactory,
         IResearchHistoryService history,
         IScheduledResearchProviderResolver providers,
         IScheduledJobNotificationSurface notifications,
         ILogger<ScheduledJobBackgroundService> logger)
     {
         _jobs = jobs;
-        _research = research;
+        _scopeFactory = scopeFactory;
         _history = history;
         _providers = providers;
         _notifications = notifications;
@@ -104,9 +105,15 @@ public class ScheduledJobBackgroundService : BackgroundService
 
             var session = new ResearchSession(job.Query);
 
+            // Resolve the scoped IResearchService (and any of its scoped transitive deps
+            // such as ITokenMapService) from a fresh per-run scope so they are not
+            // captured for the singleton's lifetime.
+            using var scope = _scopeFactory.CreateScope();
+            var research = scope.ServiceProvider.GetRequiredService<IResearchService>();
+
             try
             {
-                await _research.ExecuteResearchAsync(session, provider, job.AnswerLength, ct);
+                await research.ExecuteResearchAsync(session, provider, job.AnswerLength, ct);
 
                 var entry = new ResearchHistoryEntry
                 {

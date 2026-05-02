@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Models;
 using Pia.Services;
@@ -26,6 +27,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var research = new FakeResearchService { SynthesizedResult = "RESULT" };
         var history = new FakeResearchHistoryService();
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IResearchService>(research));
         var providers = new FakeProviderResolver(new AiProvider
         {
             Id = Guid.NewGuid(),
@@ -36,7 +38,7 @@ public class ScheduledJobBackgroundServiceTests
         var notifications = new FakeNotificationSurface();
 
         var bg = new ScheduledJobBackgroundService(
-            jobs, research, history, providers, notifications,
+            jobs, scopeFactory, history, providers, notifications,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -61,6 +63,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var research = new FakeResearchService { ThrowOnExecute = true };
         var history = new FakeResearchHistoryService();
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IResearchService>(research));
         var providers = new FakeProviderResolver(new AiProvider
         {
             Id = Guid.NewGuid(),
@@ -71,7 +74,7 @@ public class ScheduledJobBackgroundServiceTests
         var notifications = new FakeNotificationSurface();
 
         var bg = new ScheduledJobBackgroundService(
-            jobs, research, history, providers, notifications,
+            jobs, scopeFactory, history, providers, notifications,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -95,11 +98,12 @@ public class ScheduledJobBackgroundServiceTests
 
         var research = new FakeResearchService();
         var history = new FakeResearchHistoryService();
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IResearchService>(research));
         var providers = new FakeProviderResolver(null);
         var notifications = new FakeNotificationSurface();
 
         var bg = new ScheduledJobBackgroundService(
-            jobs, research, history, providers, notifications,
+            jobs, scopeFactory, history, providers, notifications,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -227,5 +231,33 @@ public class ScheduledJobBackgroundServiceTests
         public void NotifyFailure(ScheduledJob job, Guid resultEntryId, string reason) => FailureCount++;
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)
             => Task.FromResult(AskAnswer);
+    }
+
+    private sealed class FakeScopeFactory : IServiceScopeFactory
+    {
+        private readonly IServiceProvider _sp;
+        public FakeScopeFactory(IServiceProvider sp) => _sp = sp;
+        public IServiceScope CreateScope() => new FakeScope(_sp);
+
+        private sealed class FakeScope : IServiceScope
+        {
+            public FakeScope(IServiceProvider sp) => ServiceProvider = sp;
+            public IServiceProvider ServiceProvider { get; }
+            public void Dispose() { }
+        }
+    }
+
+    private sealed class FakeServiceProvider : IServiceProvider
+    {
+        private readonly Dictionary<Type, object> _services = new();
+
+        public FakeServiceProvider Add<T>(T instance) where T : notnull
+        {
+            _services[typeof(T)] = instance;
+            return this;
+        }
+
+        public object? GetService(Type serviceType) =>
+            _services.TryGetValue(serviceType, out var svc) ? svc : null;
     }
 }
