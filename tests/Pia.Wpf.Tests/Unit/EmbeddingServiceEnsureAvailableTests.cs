@@ -40,10 +40,33 @@ public class EmbeddingServiceEnsureAvailableTests
         Assert.False(ok);
     }
 
+    [Fact]
+    public async Task GenerateEmbeddingAsync_CancelledToken_ThrowsOperationCanceled()
+    {
+        var factory = new FailingHttpClientFactory();
+        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, factory);
+
+        if (svc.IsModelAvailable)
+        {
+            // Test only meaningful when model is missing — cancellation can only happen during download.
+            return;
+        }
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            svc.GenerateEmbeddingAsync("test", cts.Token));
+    }
+
     private class SimpleHttpClientFactory : IHttpClientFactory
     {
         public int RequestCount;
-        public HttpClient CreateClient(string name) => new();
+        public HttpClient CreateClient(string name)
+        {
+            RequestCount++;
+            return new HttpClient();
+        }
     }
 
     private class FailingHttpClientFactory : IHttpClientFactory
