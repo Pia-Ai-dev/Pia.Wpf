@@ -73,8 +73,20 @@ public partial class EmbeddingService : IEmbeddingService, IDisposable
         }
     }
 
+    public async Task<bool> EnsureAvailableAsync(
+        IProgress<float>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsModelAvailable) return true;
+
+        _logger.LogInformation("Embedding model missing — auto-downloading");
+        return await DownloadModelAsync(progress, cancellationToken);
+    }
+
     public async Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
     {
+        if (!await EnsureAvailableAsync(progress: null, cancellationToken: cancellationToken))
+            throw new InvalidOperationException("Embedding model is not available and could not be downloaded.");
         EnsureModelLoaded();
 
         return await Task.Run(() =>
