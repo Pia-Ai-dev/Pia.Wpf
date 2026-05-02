@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Search;
 using Pia.Services.Similarity;
 
 namespace Pia.Services;
@@ -319,19 +320,16 @@ public class MemoryService : IMemoryService
     public async Task<IReadOnlyList<MemoryObject>> VectorSearchAsync(
         float[] queryEmbedding, int topK = 5, float threshold = 0.3f)
     {
-        // In-memory cosine similarity search
         var allObjects = await GetAllObjectsWithEmbeddingsAsync();
 
-        var results = allObjects
-            .Where(m => m.Embedding is not null)
-            .Select(m => (Memory: m, Score: CosineSimilarity(queryEmbedding, _embeddingService.BytesToFloats(m.Embedding!))))
-            .Where(x => x.Score >= threshold)
-            .OrderByDescending(x => x.Score)
-            .Take(topK)
-            .Select(x => x.Memory)
-            .ToList();
+        var ranked = VectorSearchHelper.RankByCosine(
+            allObjects,
+            m => m.Embedding is null ? null : _embeddingService.BytesToFloats(m.Embedding),
+            queryEmbedding,
+            topK,
+            threshold).ToList();
 
-        return results.AsReadOnly();
+        return ranked.AsReadOnly();
     }
 
     public async Task<IReadOnlyList<MemoryObject>> HybridSearchAsync(
@@ -573,22 +571,6 @@ public class MemoryService : IMemoryService
                 target[property.Key] = property.Value.DeepClone();
             }
         }
-    }
-
-    private static float CosineSimilarity(float[] a, float[] b)
-    {
-        if (a.Length != b.Length) return 0f;
-
-        float dot = 0, normA = 0, normB = 0;
-        for (var i = 0; i < a.Length; i++)
-        {
-            dot += a[i] * b[i];
-            normA += a[i] * a[i];
-            normB += b[i] * b[i];
-        }
-
-        var denominator = MathF.Sqrt(normA) * MathF.Sqrt(normB);
-        return denominator == 0 ? 0f : dot / denominator;
     }
 
     private static string EscapeFtsQuery(string term)
