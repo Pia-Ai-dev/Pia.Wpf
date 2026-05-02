@@ -598,4 +598,9 @@
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
   <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Si vous perdez ce code et tous vos appareils, vos données chiffrées ne pourront pas être récupérées. Le serveur ne peut pas déchiffrer vos données.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>J'ai enregistré ce code de récupération en lieu sûr</value></data>
+  <!-- Missed Scheduled Job Dialog -->
+  <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Exécution planifiée manquée</value></data>
+  <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>La tâche planifiée « {0} » devait s'exécuter à {1}, mais l'application n'était pas active. Voulez-vous l'exécuter maintenant ou ignorer cette exécution ?</value></data>
+  <data name="MissedRun_RunNow" xml:space="preserve"><value>Exécuter maintenant</value></data>
+  <data name="MissedRun_Skip" xml:space="preserve"><value>Ignorer cette exécution</value></data>
 </root>
