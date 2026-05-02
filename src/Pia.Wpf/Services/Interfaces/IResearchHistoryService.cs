@@ -18,4 +18,7 @@ public interface IResearchHistoryService
         string? searchText = null,
         DateTime? fromDate = null,
         DateTime? toDate = null);
+    Task UpdateEmbeddingAsync(Guid id, byte[] embedding);
+    Task<IReadOnlyList<ResearchHistoryEntry>> VectorSearchAsync(float[] queryEmbedding, int topK = 10, float threshold = 0.2f);
+    Task<IReadOnlyList<ResearchHistoryEntry>> HybridSearchAsync(string query, float[]? queryEmbedding = null, int topK = 10);
 }

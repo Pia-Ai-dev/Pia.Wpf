@@ -2,18 +2,21 @@ using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Search;
 
 namespace Pia.Services;
 
 public class ResearchHistoryService : IResearchHistoryService
 {
     private readonly SqliteContext _context;
+    private readonly IEmbeddingService _embeddingService;
 
     public event EventHandler? SessionsChanged;
 
-    public ResearchHistoryService(SqliteContext context)
+    public ResearchHistoryService(SqliteContext context, IEmbeddingService embeddingService)
     {
         _context = context;
+        _embeddingService = embeddingService;
     }
 
     private void OnSessionsChanged() => SessionsChanged?.Invoke(this, EventArgs.Empty);
@@ -125,6 +128,79 @@ public class ResearchHistoryService : IResearchHistoryService
         command.CommandText = $"SELECT COUNT(*) FROM ResearchSessions {whereClause}";
         var result = await command.ExecuteScalarAsync();
         return Convert.ToInt32(result);
+    }
+
+    public async Task UpdateEmbeddingAsync(Guid id, byte[] embedding)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE ResearchSessions SET Embedding = @Embedding WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", id.ToString());
+        command.Parameters.AddWithValue("@Embedding", embedding);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<IReadOnlyList<ResearchHistoryEntry>> VectorSearchAsync(
+        float[] queryEmbedding, int topK = 10, float threshold = 0.2f)
+    {
+        var all = await GetAllWithEmbeddingsAsync();
+
+        var ranked = VectorSearchHelper.RankByCosine(
+            all,
+            e => e.Embedding is null ? null : _embeddingService.BytesToFloats(e.Embedding),
+            queryEmbedding,
+            topK,
+            threshold).ToList();
+
+        return ranked.AsReadOnly();
+    }
+
+    public async Task<IReadOnlyList<ResearchHistoryEntry>> HybridSearchAsync(
+        string query, float[]? queryEmbedding = null, int topK = 10)
+    {
+        var resultDict = new Dictionary<Guid, (ResearchHistoryEntry Entry, float Score)>();
+
+        // Tier 1: text LIKE search on query and result (uses existing SearchEntriesAsync)
+        var textHits = await SearchEntriesAsync(searchText: query, fromDate: null, toDate: null, offset: 0, limit: topK * 2);
+        foreach (var e in textHits)
+            resultDict[e.Id] = (e, 0.6f);
+
+        // Tier 2: vector
+        if (queryEmbedding is not null)
+        {
+            var vectorHits = await VectorSearchAsync(queryEmbedding, topK, threshold: 0.2f);
+            foreach (var e in vectorHits)
+            {
+                if (resultDict.TryGetValue(e.Id, out var existing))
+                    resultDict[e.Id] = (e, Math.Max(existing.Score, 0.8f));
+                else
+                    resultDict[e.Id] = (e, 0.8f);
+            }
+        }
+
+        return resultDict.Values
+            .OrderByDescending(x => x.Score)
+            .Take(topK)
+            .Select(x => x.Entry)
+            .ToList()
+            .AsReadOnly();
+    }
+
+    private async Task<IReadOnlyList<ResearchHistoryEntry>> GetAllWithEmbeddingsAsync()
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
+                   Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding
+            FROM ResearchSessions
+            WHERE Embedding IS NOT NULL
+            """;
+        var entries = new List<ResearchHistoryEntry>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            entries.Add(MapEntry(reader));
+        return entries.AsReadOnly();
     }
 
     private static string BuildWhereClause(
