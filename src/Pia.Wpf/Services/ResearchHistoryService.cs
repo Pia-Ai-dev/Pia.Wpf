@@ -23,6 +23,23 @@ public class ResearchHistoryService : IResearchHistoryService
 
     public async Task AddEntryAsync(ResearchHistoryEntry entry)
     {
+        if (entry.Embedding is null && !string.IsNullOrWhiteSpace(entry.SynthesizedResult))
+        {
+            try
+            {
+                if (await _embeddingService.EnsureAvailableAsync())
+                {
+                    var text = entry.Query + "\n\n" + entry.SynthesizedResult;
+                    var floats = await _embeddingService.GenerateEmbeddingAsync(text);
+                    entry.Embedding = _embeddingService.FloatsToBytes(floats);
+                }
+            }
+            catch
+            {
+                // Best-effort: entry still saves without embedding.
+            }
+        }
+
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
