@@ -145,6 +145,29 @@ public class SqliteContext : IDisposable
                 UserEnabled INTEGER,
                 UpdatedAt TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS ScheduledJobs (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Query TEXT NOT NULL,
+                Kind TEXT NOT NULL DEFAULT 'Research',
+                AnswerLength TEXT NOT NULL DEFAULT 'Balanced',
+                ProviderId TEXT NULL,
+                Recurrence TEXT NOT NULL,
+                TimeOfDay TEXT NOT NULL,
+                DayOfWeek INTEGER NULL,
+                DayOfMonth INTEGER NULL,
+                Month INTEGER NULL,
+                SpecificDate TEXT NULL,
+                NextFireAt TEXT NOT NULL,
+                Status TEXT NOT NULL DEFAULT 'Active',
+                CreatedAt TEXT NOT NULL,
+                LastFiredAt TEXT NULL,
+                LastResultEntryId TEXT NULL,
+                ConsecutiveFailures INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
             """;
         command.ExecuteNonQuery();
 
@@ -263,6 +286,38 @@ public class SqliteContext : IDisposable
             using var createIndex = _connection.CreateCommand();
             createIndex.CommandText = "CREATE INDEX IF NOT EXISTS IX_Todos_ColumnId ON Todos(ColumnId)";
             createIndex.ExecuteNonQuery();
+        }
+
+        // Add ScheduledJobId and Embedding columns to ResearchSessions if they don't exist
+        using var rsPragma = _connection!.CreateCommand();
+        rsPragma.CommandText = "PRAGMA table_info(ResearchSessions)";
+        using var rsReader = rsPragma.ExecuteReader();
+        var hasScheduledJobId = false;
+        var hasEmbedding = false;
+        while (rsReader.Read())
+        {
+            var columnName = rsReader.GetString(1);
+            if (columnName == "ScheduledJobId") hasScheduledJobId = true;
+            else if (columnName == "Embedding") hasEmbedding = true;
+        }
+        rsReader.Close();
+
+        if (!hasScheduledJobId)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ResearchSessions ADD COLUMN ScheduledJobId TEXT NULL";
+            addCol.ExecuteNonQuery();
+
+            using var addIdx = _connection.CreateCommand();
+            addIdx.CommandText = "CREATE INDEX IF NOT EXISTS IX_ResearchSessions_ScheduledJobId ON ResearchSessions(ScheduledJobId)";
+            addIdx.ExecuteNonQuery();
+        }
+
+        if (!hasEmbedding)
+        {
+            using var addEmb = _connection.CreateCommand();
+            addEmb.CommandText = "ALTER TABLE ResearchSessions ADD COLUMN Embedding BLOB NULL";
+            addEmb.ExecuteNonQuery();
         }
     }
 
