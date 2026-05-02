@@ -85,7 +85,7 @@ public class ScheduledJobServiceTests : IDisposable
     {
         var conn = _ctx.GetConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM ScheduledJobs";
+        cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_%' OR Name IN ('Tesla briefing', 'Due', 'Disabled', 'FlakeJob', 'Recovers')";
         cmd.ExecuteNonQuery();
         _ctx.Dispose();
     }

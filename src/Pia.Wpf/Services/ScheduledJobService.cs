@@ -188,28 +188,32 @@ public class ScheduledJobService : IScheduledJobService
     public async Task MarkRunFailedAsync(Guid id, string reason)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        var newFailureCount = existing.ConsecutiveFailures + 1;
-        var newStatus = newFailureCount >= MaxConsecutiveFailures ? ScheduledJobStatus.Failed : existing.Status;
-
         var nextFire = _calculator.ComputeNextFireAt(
             existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
             existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
+        // Atomic increment + threshold check, so concurrent callers cannot lose increments
+        // or overwrite each other's Status flips.
         command.CommandText = """
             UPDATE ScheduledJobs
-            SET LastFiredAt=@Now, ConsecutiveFailures=@Failures, Status=@Status, NextFireAt=@NextFireAt
-            WHERE Id=@Id
+            SET LastFiredAt = @Now,
+                ConsecutiveFailures = ConsecutiveFailures + 1,
+                Status = CASE
+                    WHEN ConsecutiveFailures + 1 >= @MaxFailures THEN 'Failed'
+                    ELSE Status
+                END,
+                NextFireAt = @NextFireAt
+            WHERE Id = @Id
             """;
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O"));
-        command.Parameters.AddWithValue("@Failures", newFailureCount);
-        command.Parameters.AddWithValue("@Status", newStatus.ToString());
+        command.Parameters.AddWithValue("@MaxFailures", MaxConsecutiveFailures);
         command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
         await command.ExecuteNonQueryAsync();
-        _logger.LogWarning("Scheduled job {Id} run failed (count={Count}, status={Status})",
-            id, newFailureCount, newStatus);
+
+        _logger.LogWarning("Scheduled job {Id} run failed", id);
         _logger.SensitiveDebug("Scheduled job {Id} run failed reason: {Reason}", id, reason);
     }
 
