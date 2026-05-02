@@ -253,6 +253,26 @@
   <data name="Tool_Reminder_Exec_Created" xml:space="preserve"><value>Erinnerung erfolgreich erstellt (ID: {0}). Nächste Auslösung: {1}</value></data>
   <data name="Tool_Reminder_Exec_Updated" xml:space="preserve"><value>Erinnerung {0} erfolgreich aktualisiert.</value></data>
   <data name="Tool_Reminder_Exec_Deleted" xml:space="preserve"><value>Erinnerung {0} erfolgreich gelöscht.</value></data>
+  <!-- ScheduledJobToolHandler -->
+  <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>{1} Recherche planen: {0}</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Geplante Recherche aktualisieren: {0}</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Geplante Recherche löschen: {0}</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Anfrage</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Recurrence" xml:space="preserve"><value>Wiederholung</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Time" xml:space="preserve"><value>Uhrzeit</value></data>
+  <data name="Tool_ScheduledResearch_Detail_DayOfWeek" xml:space="preserve"><value>Wochentag</value></data>
+  <data name="Tool_ScheduledResearch_Detail_DayOfMonth" xml:space="preserve"><value>Tag des Monats</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Month" xml:space="preserve"><value>Monat</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Date" xml:space="preserve"><value>Datum</value></data>
+  <data name="Tool_ScheduledResearch_Detail_AnswerLength" xml:space="preserve"><value>Antwortlänge</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Provider" xml:space="preserve"><value>Anbieter</value></data>
+  <data name="Tool_ScheduledResearch_Detail_CurrentStatus" xml:space="preserve"><value>Aktuell: {0} um {1}
+Änderungen werden angewendet.</value></data>
+  <data name="Tool_ScheduledResearch_Detail_PermanentDelete" xml:space="preserve"><value>Dies löscht diese {0} geplante Recherche dauerhaft ({1}).</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Geplante Recherche erfolgreich erstellt (ID: {0}). Nächste Ausführung: {1}</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Geplante Recherche {0} erfolgreich aktualisiert.</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Geplante Recherche {0} erfolgreich gelöscht.</value></data>
   <!-- MemoryToolHandler -->
   <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Neues {0} erstellen: {1}</value></data>
   <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>{0} aktualisieren: {1}</value></data>

@@ -217,6 +217,7 @@ public static class Bootstrapper
         services.AddSingleton<IScheduledResearchProviderResolver, ScheduledResearchProviderResolver>();
         services.AddSingleton<IScheduledJobNotificationSurface, ScheduledJobNotificationSurface>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
+        services.AddSingleton<IScheduledJobToolHandler, ScheduledJobToolHandler>();
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
