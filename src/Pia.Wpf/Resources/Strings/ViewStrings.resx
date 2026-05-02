@@ -599,8 +599,8 @@
   <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>If you lose this code and all your devices, your encrypted data cannot be recovered. The server cannot decrypt your data.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>I have saved this recovery code in a safe place</value></data>
   <!-- Missed Scheduled Job Dialog -->
-  <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Missed scheduled run</value></data>
-  <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>The scheduled job "{0}" was set to run at {1}, but the app was not running. Would you like to run it now or skip this run?</value></data>
+  <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Missed scheduled briefing</value></data>
+  <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' was scheduled for {1} but the app wasn't open. Run it now in the background?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Run now</value></data>
   <data name="MissedRun_Skip" xml:space="preserve"><value>Skip this run</value></data>
 </root>

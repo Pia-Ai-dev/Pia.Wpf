@@ -264,9 +264,9 @@ Changes will be applied.</value></data>
   <data name="Tool_Reminder_Exec_Updated" xml:space="preserve"><value>Reminder {0} updated successfully.</value></data>
   <data name="Tool_Reminder_Exec_Deleted" xml:space="preserve"><value>Reminder {0} deleted successfully.</value></data>
   <!-- ScheduledJobToolHandler -->
-  <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>Create {1} scheduled research: {0}</value></data>
-  <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Update scheduled research: {0}</value></data>
-  <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Delete scheduled research: {0}</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>Schedule research: {0} ({1})</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Update scheduled research '{0}'</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Delete scheduled research '{0}'</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Query</value></data>
   <data name="Tool_ScheduledResearch_Detail_Recurrence" xml:space="preserve"><value>Recurrence</value></data>
@@ -280,9 +280,9 @@ Changes will be applied.</value></data>
   <data name="Tool_ScheduledResearch_Detail_CurrentStatus" xml:space="preserve"><value>Current: {0} at {1}
 Changes will be applied.</value></data>
   <data name="Tool_ScheduledResearch_Detail_PermanentDelete" xml:space="preserve"><value>This will permanently delete this {0} scheduled research ({1}).</value></data>
-  <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Scheduled research created successfully (ID: {0}). Next fire at: {1}</value></data>
-  <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Scheduled research {0} updated successfully.</value></data>
-  <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Scheduled research {0} deleted successfully.</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Created scheduled research {0}, next run {1}</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Updated scheduled research {0}</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Deleted scheduled research {0}</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Search past research findings</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Get a research entry by ID</value></data>

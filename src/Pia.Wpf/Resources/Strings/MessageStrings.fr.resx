@@ -254,9 +254,9 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_Reminder_Exec_Updated" xml:space="preserve"><value>Rappel {0} mis à jour avec succès.</value></data>
   <data name="Tool_Reminder_Exec_Deleted" xml:space="preserve"><value>Rappel {0} supprimé avec succès.</value></data>
   <!-- ScheduledJobToolHandler -->
-  <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>Planifier une recherche {1} : {0}</value></data>
-  <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Mettre à jour la recherche planifiée : {0}</value></data>
-  <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Supprimer la recherche planifiée : {0}</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>Planifier une recherche : {0} ({1})</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Mettre à jour la recherche planifiée '{0}'</value></data>
+  <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Supprimer la recherche planifiée '{0}'</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Nom</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Requête</value></data>
   <data name="Tool_ScheduledResearch_Detail_Recurrence" xml:space="preserve"><value>Récurrence</value></data>
@@ -265,16 +265,16 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_ScheduledResearch_Detail_DayOfMonth" xml:space="preserve"><value>Jour du mois</value></data>
   <data name="Tool_ScheduledResearch_Detail_Month" xml:space="preserve"><value>Mois</value></data>
   <data name="Tool_ScheduledResearch_Detail_Date" xml:space="preserve"><value>Date</value></data>
-  <data name="Tool_ScheduledResearch_Detail_AnswerLength" xml:space="preserve"><value>Longueur de réponse</value></data>
+  <data name="Tool_ScheduledResearch_Detail_AnswerLength" xml:space="preserve"><value>Longueur de la réponse</value></data>
   <data name="Tool_ScheduledResearch_Detail_Provider" xml:space="preserve"><value>Fournisseur</value></data>
   <data name="Tool_ScheduledResearch_Detail_CurrentStatus" xml:space="preserve"><value>Actuel : {0} à {1}
 Les modifications seront appliquées.</value></data>
   <data name="Tool_ScheduledResearch_Detail_PermanentDelete" xml:space="preserve"><value>Cela supprimera définitivement cette recherche planifiée {0} ({1}).</value></data>
-  <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Recherche planifiée créée avec succès (ID : {0}). Prochaine exécution : {1}</value></data>
-  <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Recherche planifiée {0} mise à jour avec succès.</value></data>
-  <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Recherche planifiée {0} supprimée avec succès.</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Recherche planifiée {0} créée, prochaine exécution {1}</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Recherche planifiée {0} mise à jour</value></data>
+  <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Recherche planifiée {0} supprimée</value></data>
   <!-- ResearchHistoryToolHandler -->
-  <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Rechercher dans l'historique de recherche</value></data>
+  <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Rechercher dans les recherches passées</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Obtenir une entrée de recherche par ID</value></data>
   <!-- MemoryToolHandler -->
   <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Créer un nouveau {0} : {1}</value></data>

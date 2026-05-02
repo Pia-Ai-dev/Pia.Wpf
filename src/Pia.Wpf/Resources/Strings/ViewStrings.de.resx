@@ -599,8 +599,8 @@
   <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Wenn du diesen Code und alle Geräte verlierst, können deine verschlüsselten Daten nicht wiederhergestellt werden. Der Server kann deine Daten nicht entschlüsseln.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>Ich habe diesen Wiederherstellungscode an einem sicheren Ort gespeichert</value></data>
   <!-- Missed Scheduled Job Dialog -->
-  <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Verpasste geplante Ausführung</value></data>
-  <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>Der geplante Auftrag "{0}" sollte um {1} ausgeführt werden, aber die App war nicht aktiv. Möchtest du ihn jetzt ausführen oder diese Ausführung überspringen?</value></data>
+  <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Verpasste geplante Recherche</value></data>
+  <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' war für {1} geplant, aber die App war nicht geöffnet. Jetzt im Hintergrund ausführen?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Jetzt ausführen</value></data>
-  <data name="MissedRun_Skip" xml:space="preserve"><value>Diese Ausführung überspringen</value></data>
+  <data name="MissedRun_Skip" xml:space="preserve"><value>Diesen Lauf überspringen</value></data>
 </root>
