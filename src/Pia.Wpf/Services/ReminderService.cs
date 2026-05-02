@@ -4,17 +4,20 @@ using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Scheduling;
 
 namespace Pia.Services;
 
 public class ReminderService : IReminderService
 {
     private readonly SqliteContext _context;
+    private readonly IRecurrenceCalculator _calculator;
     private readonly ILogger<ReminderService> _logger;
 
-    public ReminderService(SqliteContext context, ILogger<ReminderService> logger)
+    public ReminderService(SqliteContext context, IRecurrenceCalculator calculator, ILogger<ReminderService> logger)
     {
         _context = context;
+        _calculator = calculator;
         _logger = logger;
     }
 
@@ -33,7 +36,9 @@ public class ReminderService : IReminderService
             CreatedAt = DateTime.Now
         };
 
-        reminder.NextFireAt = ComputeNextFireAt(reminder);
+        reminder.NextFireAt = _calculator.ComputeNextFireAt(
+            reminder.Recurrence, reminder.TimeOfDay, reminder.SpecificDate,
+            reminder.DayOfWeek, reminder.DayOfMonth, reminder.Month, DateTime.Now);
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -120,7 +125,9 @@ public class ReminderService : IReminderService
         if (dayOfMonth is not null) existing.DayOfMonth = dayOfMonth;
         if (month is not null) existing.Month = month;
 
-        existing.NextFireAt = ComputeNextFireAt(existing);
+        existing.NextFireAt = _calculator.ComputeNextFireAt(
+            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
+            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -188,7 +195,9 @@ public class ReminderService : IReminderService
         }
         else
         {
-            var nextFire = ComputeNextFireAt(existing);
+            var nextFire = _calculator.ComputeNextFireAt(
+                existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
+                existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
             command.CommandText = """
                 UPDATE Reminders SET NextFireAt = @NextFireAt, Status = 'Active', LastFiredAt = @Now
                 WHERE Id = @Id
@@ -219,7 +228,9 @@ public class ReminderService : IReminderService
         var existing = await GetAsync(id)
             ?? throw new InvalidOperationException($"Reminder {id} not found");
 
-        var nextFire = ComputeNextFireAt(existing);
+        var nextFire = _calculator.ComputeNextFireAt(
+            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
+            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -246,71 +257,6 @@ public class ReminderService : IReminderService
         var deleted = await command.ExecuteNonQueryAsync();
         if (deleted > 0)
             _logger.LogInformation("Cleaned up {Count} completed reminders", deleted);
-    }
-
-    private static DateTime ComputeNextFireAt(Reminder reminder)
-    {
-        var now = DateTime.Now;
-        var todayAtTime = now.Date + reminder.TimeOfDay.ToTimeSpan();
-
-        return reminder.Recurrence switch
-        {
-            RecurrenceType.Once => reminder.SpecificDate.HasValue
-                ? reminder.SpecificDate.Value.Date + reminder.TimeOfDay.ToTimeSpan()
-                : todayAtTime > now ? todayAtTime : todayAtTime.AddDays(1),
-
-            RecurrenceType.Daily => todayAtTime > now ? todayAtTime : todayAtTime.AddDays(1),
-
-            RecurrenceType.Weekly => ComputeNextWeekly(now, reminder.TimeOfDay, reminder.DayOfWeek ?? now.DayOfWeek),
-
-            RecurrenceType.Monthly => ComputeNextMonthly(now, reminder.TimeOfDay, reminder.DayOfMonth ?? now.Day),
-
-            RecurrenceType.Yearly => ComputeNextYearly(now, reminder.TimeOfDay, reminder.Month ?? now.Month, reminder.DayOfMonth ?? now.Day),
-
-            _ => todayAtTime > now ? todayAtTime : todayAtTime.AddDays(1)
-        };
-    }
-
-    private static DateTime ComputeNextWeekly(DateTime now, TimeOnly timeOfDay, DayOfWeek targetDay)
-    {
-        var daysUntil = ((int)targetDay - (int)now.DayOfWeek + 7) % 7;
-        var candidate = now.Date.AddDays(daysUntil) + timeOfDay.ToTimeSpan();
-
-        // If it's today but time has passed, go to next week
-        if (candidate <= now)
-            candidate = candidate.AddDays(7);
-
-        return candidate;
-    }
-
-    private static DateTime ComputeNextMonthly(DateTime now, TimeOnly timeOfDay, int targetDay)
-    {
-        targetDay = Math.Min(targetDay, DateTime.DaysInMonth(now.Year, now.Month));
-        var candidate = new DateTime(now.Year, now.Month, targetDay) + timeOfDay.ToTimeSpan();
-
-        if (candidate <= now)
-        {
-            var next = now.AddMonths(1);
-            targetDay = Math.Min(targetDay, DateTime.DaysInMonth(next.Year, next.Month));
-            candidate = new DateTime(next.Year, next.Month, targetDay) + timeOfDay.ToTimeSpan();
-        }
-
-        return candidate;
-    }
-
-    private static DateTime ComputeNextYearly(DateTime now, TimeOnly timeOfDay, int targetMonth, int targetDay)
-    {
-        targetDay = Math.Min(targetDay, DateTime.DaysInMonth(now.Year, targetMonth));
-        var candidate = new DateTime(now.Year, targetMonth, targetDay) + timeOfDay.ToTimeSpan();
-
-        if (candidate <= now)
-        {
-            var nextYear = now.Year + 1;
-            targetDay = Math.Min(targetDay, DateTime.DaysInMonth(nextYear, targetMonth));
-            candidate = new DateTime(nextYear, targetMonth, targetDay) + timeOfDay.ToTimeSpan();
-        }
-
-        return candidate;
     }
 
     private static void AddReminderParameters(SqliteCommand command, Reminder reminder)

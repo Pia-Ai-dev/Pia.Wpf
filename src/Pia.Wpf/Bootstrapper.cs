@@ -12,6 +12,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.Scheduling;
 using Pia.ViewModels;
 using Wpf.Ui;
 
@@ -210,6 +211,7 @@ public static class Bootstrapper
         services.AddSingleton<IMemoryService, MemoryService>();
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
+        services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
