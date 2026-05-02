@@ -24,9 +24,9 @@ public class ResearchHistoryService : IResearchHistoryService
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO ResearchSessions (Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
-                                          Status, StepCount, CreatedAt, CompletedAt)
+                                          Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding)
             VALUES (@Id, @Query, @SynthesizedResult, @StepsJson, @ProviderId, @ProviderName,
-                    @Status, @StepCount, @CreatedAt, @CompletedAt)
+                    @Status, @StepCount, @CreatedAt, @CompletedAt, @ScheduledJobId, @Embedding)
             """;
 
         command.Parameters.AddWithValue("@Id", entry.Id.ToString());
@@ -39,6 +39,8 @@ public class ResearchHistoryService : IResearchHistoryService
         command.Parameters.AddWithValue("@StepCount", entry.StepCount);
         command.Parameters.AddWithValue("@CreatedAt", entry.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("@CompletedAt", entry.CompletedAt.ToString("O"));
+        command.Parameters.AddWithValue("@ScheduledJobId", entry.ScheduledJobId.HasValue ? (object)entry.ScheduledJobId.Value.ToString() : DBNull.Value);
+        command.Parameters.AddWithValue("@Embedding", entry.Embedding is null ? DBNull.Value : (object)entry.Embedding);
 
         await command.ExecuteNonQueryAsync();
         OnSessionsChanged();
@@ -58,7 +60,7 @@ public class ResearchHistoryService : IResearchHistoryService
 
         command.CommandText = $"""
             SELECT Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
-                   Status, StepCount, CreatedAt, CompletedAt
+                   Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding
             FROM ResearchSessions
             {whereClause}
             ORDER BY CreatedAt DESC
@@ -85,7 +87,7 @@ public class ResearchHistoryService : IResearchHistoryService
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
-                   Status, StepCount, CreatedAt, CompletedAt
+                   Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding
             FROM ResearchSessions
             WHERE Id = @Id
             """;
@@ -168,7 +170,9 @@ public class ResearchHistoryService : IResearchHistoryService
             Status = reader.GetString(6),
             StepCount = reader.GetInt32(7),
             CreatedAt = DateTime.Parse(reader.GetString(8)),
-            CompletedAt = DateTime.Parse(reader.GetString(9))
+            CompletedAt = DateTime.Parse(reader.GetString(9)),
+            ScheduledJobId = reader.IsDBNull(10) ? null : Guid.Parse(reader.GetString(10)),
+            Embedding = reader.IsDBNull(11) ? null : (byte[])reader[11]
         };
     }
 }

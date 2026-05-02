@@ -12,6 +12,8 @@ public class ResearchHistoryEntry
     public int StepCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime CompletedAt { get; set; } = DateTime.Now;
+    public Guid? ScheduledJobId { get; set; }
+    public byte[]? Embedding { get; set; }
 
     /// <summary>
     /// Truncated query for display in list views.
