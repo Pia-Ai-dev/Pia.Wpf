@@ -116,6 +116,86 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(1, notifications.FailureCount);
     }
 
+    [Fact]
+    public async Task ExecuteOnceAsync_LateBy20Min_AsksUserAndSkipsIfDeclined()
+    {
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "T", Query = "q", Recurrence = RecurrenceType.Daily,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var notifications = new FakeNotificationSurface { AskAnswer = false };
+        var research = new FakeResearchService();
+        var history = new FakeResearchHistoryService();
+        var providers = new FakeProviderResolver(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://example", TimeoutSeconds = 60 });
+
+        var sp = new FakeServiceProvider().Add<IResearchService>(research);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), history, providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.Empty(history.Added);
+        Assert.Equal(1, notifications.AskCount);
+        Assert.Single(jobs.Failed); // MarkRunFailedAsync called with "MissedRunSkippedByUser"
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_LateBy20Min_RunsIfAccepted()
+    {
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "T", Query = "q", Recurrence = RecurrenceType.Daily,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var notifications = new FakeNotificationSurface { AskAnswer = true };
+        var research = new FakeResearchService { SynthesizedResult = "OK" };
+        var history = new FakeResearchHistoryService();
+        var providers = new FakeProviderResolver(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://example", TimeoutSeconds = 60 });
+
+        var sp = new FakeServiceProvider().Add<IResearchService>(research);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), history, providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.Single(history.Added);
+        Assert.Single(jobs.Completed);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_LateBy20Min_DedupesPromptOnSecondTickIfUnanswered()
+    {
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "T", Query = "q", Recurrence = RecurrenceType.Daily,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var notifications = new FakeNotificationSurface
+        {
+            // Simulate "user closed without answering" — return null.
+            AskAnswer = null
+        };
+        var research = new FakeResearchService();
+        var history = new FakeResearchHistoryService();
+        var providers = new FakeProviderResolver(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://example", TimeoutSeconds = 60 });
+
+        var sp = new FakeServiceProvider().Add<IResearchService>(research);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), history, providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.Equal(1, notifications.AskCount); // not 2
+    }
+
     private sealed class FakeJobService : IScheduledJobService
     {
         private readonly List<ScheduledJob> _due = new();
@@ -225,12 +305,19 @@ public class ScheduledJobBackgroundServiceTests
     {
         public int SuccessCount { get; private set; }
         public int FailureCount { get; private set; }
-        public bool? AskAnswer { get; set; }
+        public bool? AskAnswer { get; set; } = false;
+        public int AskCount { get; private set; }
+        public TaskCompletionSource<bool?>? PendingAsk { get; set; }
 
         public void NotifySuccess(ScheduledJob job, ResearchHistoryEntry entry) => SuccessCount++;
         public void NotifyFailure(ScheduledJob job, Guid resultEntryId, string reason) => FailureCount++;
+
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)
-            => Task.FromResult(AskAnswer);
+        {
+            AskCount++;
+            if (PendingAsk is not null) return PendingAsk.Task;
+            return Task.FromResult(AskAnswer);
+        }
     }
 
     private sealed class FakeScopeFactory : IServiceScopeFactory

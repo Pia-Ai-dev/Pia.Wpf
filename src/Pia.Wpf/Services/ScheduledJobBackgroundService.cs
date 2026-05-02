@@ -16,6 +16,7 @@ namespace Pia.Services;
 public class ScheduledJobBackgroundService : BackgroundService
 {
     private static readonly TimeSpan _checkInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _gracePeriod = TimeSpan.FromMinutes(15);
 
     private readonly IScheduledJobService _jobs;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -29,6 +30,14 @@ public class ScheduledJobBackgroundService : BackgroundService
     /// dialog overlapping a fresh due job) can never run concurrently.
     /// </summary>
     private readonly SemaphoreSlim _runLock = new(1, 1);
+
+    /// <summary>
+    /// Tracks jobs currently being prompted (or already prompted-and-unanswered) so we
+    /// don't re-ask on subsequent polling ticks. Cleared on positive/negative answer.
+    /// Not persisted: on app restart, missed runs are re-evaluated against the new now.
+    /// </summary>
+    private readonly HashSet<Guid> _pendingMissedPrompts = new();
+    private readonly object _pendingLock = new();
 
     public ScheduledJobBackgroundService(
         IScheduledJobService jobs,
@@ -83,7 +92,50 @@ public class ScheduledJobBackgroundService : BackgroundService
 
     private async Task RunJobAsync(ScheduledJob job, CancellationToken ct)
     {
-        // Task 12 will wrap this with grace-period + missed-run dialog handling.
+        var lateBy = DateTime.Now - job.NextFireAt;
+
+        if (lateBy <= _gracePeriod)
+        {
+            await ExecuteResearchAsync(job, ct);
+            return;
+        }
+
+        // Grace exceeded — ask user (once per job, this session)
+        lock (_pendingLock)
+        {
+            if (_pendingMissedPrompts.Contains(job.Id)) return;
+            _pendingMissedPrompts.Add(job.Id);
+        }
+
+        bool? answer;
+        try
+        {
+            answer = await _notifications.AskUserToRunMissedAsync(job, job.NextFireAt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Missed-run prompt failed for job {Id}", job.Id);
+            // Treat exception as "no answer" — keep in pending set, do not retry this session.
+            return;
+        }
+
+        if (answer is null)
+        {
+            // User closed without answering — keep in pending set forever this session.
+            return;
+        }
+
+        // User answered — clear the dedup so future occurrences can prompt.
+        lock (_pendingLock) _pendingMissedPrompts.Remove(job.Id);
+
+        if (answer == false)
+        {
+            // Skip this missed run: advance NextFireAt, log only.
+            await _jobs.MarkRunFailedAsync(job.Id, "MissedRunSkippedByUser");
+            _logger.LogInformation("User skipped missed run for job {Id}", job.Id);
+            return;
+        }
+
         await ExecuteResearchAsync(job, ct);
     }
 
