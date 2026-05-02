@@ -40,6 +40,12 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         _localizationService = localizationService;
         _windowManager = windowManager;
         _logger = logger;
+
+        // Register the toast activation callback eagerly. A toast that has been sitting
+        // in Windows Action Center across app sessions only fires its callback if a
+        // handler is wired up at app start — registering lazily on the first NotifySuccess
+        // /NotifyFailure call would miss those clicks.
+        EnsureToastActivationRegistered();
     }
 
     public void NotifySuccess(ScheduledJob job, ResearchHistoryEntry entry)

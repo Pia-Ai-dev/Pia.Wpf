@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -10,20 +11,29 @@ public class ResearchHistoryService : IResearchHistoryService
 {
     private readonly SqliteContext _context;
     private readonly IEmbeddingService _embeddingService;
+    private readonly ILogger<ResearchHistoryService> _logger;
 
     public event EventHandler? SessionsChanged;
 
-    public ResearchHistoryService(SqliteContext context, IEmbeddingService embeddingService)
+    public ResearchHistoryService(
+        SqliteContext context,
+        IEmbeddingService embeddingService,
+        ILogger<ResearchHistoryService> logger)
     {
         _context = context;
         _embeddingService = embeddingService;
+        _logger = logger;
     }
 
     private void OnSessionsChanged() => SessionsChanged?.Invoke(this, EventArgs.Empty);
 
     public async Task AddEntryAsync(ResearchHistoryEntry entry)
     {
-        if (entry.Embedding is null && !string.IsNullOrWhiteSpace(entry.SynthesizedResult))
+        // Only embed completed entries — failure-marker text like "Run failed: timeout"
+        // would otherwise burn embedding compute and pollute vector search.
+        if (entry.Embedding is null
+            && !string.IsNullOrWhiteSpace(entry.SynthesizedResult)
+            && entry.Status == "Completed")
         {
             try
             {
@@ -34,9 +44,11 @@ public class ResearchHistoryService : IResearchHistoryService
                     entry.Embedding = _embeddingService.FloatsToBytes(floats);
                 }
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Best-effort: entry still saves without embedding.
+                _logger.LogWarning(ex,
+                    "Embedding generation failed for research history entry {EntryId}; saving without embedding.",
+                    entry.Id);
             }
         }
 

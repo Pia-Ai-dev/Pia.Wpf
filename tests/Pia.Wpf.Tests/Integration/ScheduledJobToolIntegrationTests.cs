@@ -21,7 +21,7 @@ namespace Pia.Tests.Integration;
 /// <c>%LOCALAPPDATA%\Pia\history.db</c>. That is a known plan-accepted tradeoff: the
 /// project does not yet have a per-test in-memory SQLite harness, and the same convention
 /// is used by other integration tests in this folder. Cleanup deletes only TEST_E2E_-prefixed
-/// rows and Stub-provider entries so dev-local data is not affected.
+/// scheduled jobs and the research sessions linked to them, so dev-local data is not affected.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
@@ -38,7 +38,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
 
         var research = new StubResearchService("Test result for Tesla");
         var embedding = new StubEmbedding();
-        var history = new ResearchHistoryService(_ctx, embedding);
+        var history = new ResearchHistoryService(_ctx, embedding, NullLogger<ResearchHistoryService>.Instance);
         var providers = new StubProviderResolver(new AiProvider
         {
             Id = Guid.NewGuid(),
@@ -112,12 +112,23 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         try
         {
             var conn = _ctx.GetConnection();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = """
-                DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_E2E_%';
-                DELETE FROM ResearchSessions WHERE ProviderName = 'Stub' OR Query LIKE '%Tesla stock pricing%';
-                """;
-            cmd.ExecuteNonQuery();
+
+            // Order matters: delete ResearchSessions BEFORE ScheduledJobs so the subselect
+            // can still resolve the test job IDs. Two separate executions because SQLite
+            // (Microsoft.Data.Sqlite) does not run multi-statement command text reliably.
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "DELETE FROM ResearchSessions WHERE ScheduledJobId IN " +
+                    "(SELECT Id FROM ScheduledJobs WHERE Name LIKE 'TEST_E2E_%')";
+                cmd.ExecuteNonQuery();
+            }
+
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_E2E_%'";
+                cmd.ExecuteNonQuery();
+            }
         }
         finally
         {

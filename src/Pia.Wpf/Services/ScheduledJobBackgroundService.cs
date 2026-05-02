@@ -130,8 +130,9 @@ public class ScheduledJobBackgroundService : BackgroundService
 
         if (answer == false)
         {
-            // Skip this missed run: advance NextFireAt, log only.
-            await _jobs.MarkRunFailedAsync(job.Id, "MissedRunSkippedByUser");
+            // Skip this missed run: advance NextFireAt without touching failure counter.
+            // A user choosing "Skip" is not a job-health signal.
+            await _jobs.AdvanceMissedRunAsync(job.Id);
             _logger.LogInformation("User skipped missed run for job {Id}", job.Id);
             return;
         }

@@ -21,22 +21,22 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task CreateAsync_PersistsAndComputesNextFireAt()
     {
-        var job = await _service.CreateAsync("Tesla briefing", "Latest Tesla news", RecurrenceType.Daily, new TimeOnly(8, 0));
+        var job = await _service.CreateAsync("TEST_TeslaBriefing", "Latest Tesla news", RecurrenceType.Daily, new TimeOnly(8, 0));
         Assert.NotEqual(Guid.Empty, job.Id);
         Assert.True(job.NextFireAt > DateTime.Now);
 
         var fetched = await _service.GetAsync(job.Id);
         Assert.NotNull(fetched);
-        Assert.Equal("Tesla briefing", fetched!.Name);
+        Assert.Equal("TEST_TeslaBriefing", fetched!.Name);
     }
 
     [Fact]
     public async Task GetDueJobsAsync_ReturnsOnlyOverdueAndActive()
     {
-        var due = await _service.CreateAsync("Due", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
+        var due = await _service.CreateAsync("TEST_Due", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
         await ForceNextFireAtAsync(due.Id, DateTime.Now.AddMinutes(-5));
 
-        var disabled = await _service.CreateAsync("Disabled", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
+        var disabled = await _service.CreateAsync("TEST_Disabled", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
         await _service.DisableAsync(disabled.Id);
         await ForceNextFireAtAsync(disabled.Id, DateTime.Now.AddMinutes(-5));
 
@@ -48,7 +48,7 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunFailedAsync_FifthFailure_DisablesJob()
     {
-        var job = await _service.CreateAsync("FlakeJob", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
+        var job = await _service.CreateAsync("TEST_FlakeJob", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
         for (var i = 0; i < 5; i++)
             await _service.MarkRunFailedAsync(job.Id, "test");
 
@@ -60,7 +60,7 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunCompleteAsync_ResetsFailureCount()
     {
-        var job = await _service.CreateAsync("Recovers", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
+        var job = await _service.CreateAsync("TEST_Recovers", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
         await _service.MarkRunFailedAsync(job.Id, "a");
         await _service.MarkRunFailedAsync(job.Id, "b");
         await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
@@ -85,7 +85,7 @@ public class ScheduledJobServiceTests : IDisposable
     {
         var conn = _ctx.GetConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_%' OR Name IN ('Tesla briefing', 'Due', 'Disabled', 'FlakeJob', 'Recovers')";
+        cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_%'";
         cmd.ExecuteNonQuery();
         _ctx.Dispose();
     }

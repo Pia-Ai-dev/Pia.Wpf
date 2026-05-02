@@ -111,6 +111,11 @@ public partial class App : Application
             windowManager.ShowWindow(settings.DefaultWindowMode);
         }
 
+        // Force the scheduled-job notification surface to attach its toast activation
+        // handler immediately, so toasts left in Action Center across app sessions still
+        // route correctly when clicked.
+        _ = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledJobNotificationSurface>();
+
         // Start background services
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);

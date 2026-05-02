@@ -25,4 +25,11 @@ public interface IScheduledJobService
 
     Task MarkRunCompleteAsync(Guid id, Guid resultEntryId);
     Task MarkRunFailedAsync(Guid id, string reason);
+
+    /// <summary>
+    /// Advances <c>NextFireAt</c> for a job whose missed-run prompt was answered "Skip"
+    /// without touching the failure counter. Skipping a missed run is a user choice,
+    /// not a job-health signal.
+    /// </summary>
+    Task AdvanceMissedRunAsync(Guid id);
 }

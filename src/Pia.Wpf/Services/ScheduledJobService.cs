@@ -217,6 +217,22 @@ public class ScheduledJobService : IScheduledJobService
         _logger.SensitiveDebug("Scheduled job {Id} run failed reason: {Reason}", id, reason);
     }
 
+    public async Task AdvanceMissedRunAsync(Guid id)
+    {
+        var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
+        var nextFire = _calculator.ComputeNextFireAt(
+            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
+            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
+
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @NextFireAt WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", id.ToString());
+        command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
+        await command.ExecuteNonQueryAsync();
+        _logger.LogInformation("Scheduled job {Id} missed run advanced to {NextFireAt:g}", id, nextFire);
+    }
+
     private async Task<IReadOnlyList<ScheduledJob>> ReadAsync(string whereOrOrder, Action<SqliteCommand> bind)
     {
         var connection = _context.GetConnection();

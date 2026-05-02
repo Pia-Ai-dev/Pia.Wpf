@@ -139,7 +139,10 @@ public class ScheduledJobBackgroundServiceTests
 
         Assert.Empty(history.Added);
         Assert.Equal(1, notifications.AskCount);
-        Assert.Single(jobs.Failed); // MarkRunFailedAsync called with "MissedRunSkippedByUser"
+        // Skip should advance NextFireAt without incrementing failure counter.
+        Assert.Single(jobs.Advanced);
+        Assert.Equal(late.Id, jobs.Advanced[0]);
+        Assert.Empty(jobs.Failed);
     }
 
     [Fact]
@@ -201,6 +204,7 @@ public class ScheduledJobBackgroundServiceTests
         private readonly List<ScheduledJob> _due = new();
         public List<(Guid JobId, Guid EntryId)> Completed { get; } = new();
         public List<(Guid JobId, string Reason)> Failed { get; } = new();
+        public List<Guid> Advanced { get; } = new();
 
         public void SeedDue(ScheduledJob job) => _due.Add(job);
 
@@ -216,6 +220,12 @@ public class ScheduledJobBackgroundServiceTests
         public Task MarkRunFailedAsync(Guid id, string reason)
         {
             Failed.Add((id, reason));
+            return Task.CompletedTask;
+        }
+
+        public Task AdvanceMissedRunAsync(Guid id)
+        {
+            Advanced.Add(id);
             return Task.CompletedTask;
         }
 
