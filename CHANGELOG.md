@@ -5,6 +5,12 @@ All notable changes to Pia are documented here.
 
 ### Features
 
+- First-run wizard now offers end-to-end encryption setup (default on) with a
+  plain-language explanation of pros and cons, an inline recovery code reveal
+  with a confirmation gate, and a soft opt-out flow. Sync is deferred until the
+  user makes the choice, so unencrypted data is never uploaded to a freshly
+  created cloud account whose owner intended to enable E2EE.
+
 - Swap speech-to-text engine from Whisper.net to sherpa-onnx, and add Parakeet TDT v3
   as a second STT backend selectable in Settings → General → Speech. Parakeet is
   multilingual with automatic language detection (~340 MB on disk); Whisper retains
