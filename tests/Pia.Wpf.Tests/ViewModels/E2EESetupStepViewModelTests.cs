@@ -2,6 +2,7 @@ namespace Pia.Tests.ViewModels;
 
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -38,5 +39,22 @@ public class E2EESetupStepViewModelTests
         Assert.True(sut.ShouldEnableE2EE);
         Assert.Null(sut.ErrorMessage);
         Assert.False(sut.IsBusy);
+    }
+
+    [Fact]
+    public async Task Proceed_FromChoice_WithToggleOn_ShouldBootstrapAndEnterRecoveryState()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync().Returns("XXXX-XXXX-XXXX-XXXX-XXXX-XXXX");
+
+        var sut = CreateSut();
+        Assert.True(sut.ShouldEnableE2EE);
+
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).BootstrapFirstDeviceAsync();
+        Assert.Equal(E2EESetupState.SavingRecoveryCode, sut.State);
+        Assert.Equal("XXXX-XXXX-XXXX-XXXX-XXXX-XXXX", sut.RecoveryCode);
+        Assert.False(sut.IsBusy);
+        Assert.Null(sut.ErrorMessage);
     }
 }
