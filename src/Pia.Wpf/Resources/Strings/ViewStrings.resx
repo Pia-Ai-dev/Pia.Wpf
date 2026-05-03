@@ -603,4 +603,26 @@
   <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' was scheduled for {1} but the app wasn't open. Run it now in the background?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Run now</value></data>
   <data name="MissedRun_Skip" xml:space="preserve"><value>Skip this run</value></data>
+  <!-- First-Run Wizard E2EE Setup Step -->
+  <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Encrypt your data end-to-end</value></data>
+  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Your notes, todos, and memories stay readable only on your devices.</value></data>
+  <data name="Wizard_E2EE_Pros_Title" xml:space="preserve"><value>Why turn this on (recommended)</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia Cloud staff can't read your data.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>If our servers are ever breached, your data is unreadable to attackers.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet3" xml:space="preserve"><value>Only devices you approve can decrypt your data.</value></data>
+  <data name="Wizard_E2EE_Cons_Title" xml:space="preserve"><value>What you should know</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet1" xml:space="preserve"><value>You'll get a recovery code — save it somewhere safe (a password manager or a printed copy).</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet2" xml:space="preserve"><value>If you lose all your devices and the recovery code, your encrypted data is unrecoverable.</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>You can turn it off later in Settings.</value></data>
+  <data name="Wizard_E2EE_Toggle_Label" xml:space="preserve"><value>Encrypt my data with end-to-end encryption</value></data>
+  <data name="Wizard_E2EE_OptOut_Warning_Title" xml:space="preserve"><value>Continue without encryption?</value></data>
+  <data name="Wizard_E2EE_OptOut_Warning_Message" xml:space="preserve"><value>Your synced data will be readable by Pia Cloud staff in case of a server breach. You can turn encryption on later in Settings.</value></data>
+  <data name="Wizard_E2EE_OptOut_Continue" xml:space="preserve"><value>Continue without encryption</value></data>
+  <data name="Wizard_E2EE_OptOut_GoBack" xml:space="preserve"><value>Go back</value></data>
+  <data name="Wizard_E2EE_Recovery_Title" xml:space="preserve"><value>Save your recovery code</value></data>
+  <data name="Wizard_E2EE_Recovery_Description" xml:space="preserve"><value>This is the only way to recover your encrypted data if you lose access to all your devices.</value></data>
+  <data name="Wizard_E2EE_Recovery_Warning" xml:space="preserve"><value>Pia cannot recover this for you. Store it in a password manager or print it.</value></data>
+  <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>I've saved my recovery code somewhere safe</value></data>
+  <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Could not enable encryption</value></data>
+  <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Setting up encryption…</value></data>
 </root>
