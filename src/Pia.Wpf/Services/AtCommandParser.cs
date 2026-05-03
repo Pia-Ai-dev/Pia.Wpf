@@ -9,12 +9,29 @@ namespace Pia.Services;
 /// </summary>
 public static partial class AtCommandParser
 {
-    private static readonly Dictionary<string, AtCommandDomain> DomainMap = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["memory"] = AtCommandDomain.Memory,
-        ["todo"] = AtCommandDomain.Todo,
-        ["reminder"] = AtCommandDomain.Reminder
-    };
+    /// <summary>
+    /// Single source of truth for the canonical keyword of every <see cref="AtCommandDomain"/>.
+    /// When you add a new enum value, add a row here — the round-trip test enforces it.
+    /// </summary>
+    private static readonly (AtCommandDomain Domain, string Keyword)[] Domains =
+    [
+        (AtCommandDomain.Memory, "Memory"),
+        (AtCommandDomain.Todo, "Todo"),
+        (AtCommandDomain.Reminder, "Reminder"),
+        (AtCommandDomain.Research, "Research")
+    ];
+
+    private static readonly Dictionary<string, AtCommandDomain> DomainMap =
+        Domains.ToDictionary(d => d.Keyword, d => d.Domain, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<AtCommandDomain, string> KeywordMap =
+        Domains.ToDictionary(d => d.Domain, d => d.Keyword);
+
+    public static string GetKeyword(AtCommandDomain domain) =>
+        KeywordMap.TryGetValue(domain, out var keyword)
+            ? keyword
+            : throw new ArgumentOutOfRangeException(nameof(domain), domain,
+                $"No at-command keyword registered for domain {domain}. Add a row to AtCommandParser.Domains.");
 
     // Matches @Domain, @Domain:SingleWord, or @Domain:"Quoted title"
     // Must be at start-of-string or after whitespace

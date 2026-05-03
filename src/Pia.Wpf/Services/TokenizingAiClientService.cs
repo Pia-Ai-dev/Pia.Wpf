@@ -14,7 +14,8 @@ public class TokenizingAiClientService : IAiClientService
     [
         "create_object", "update_object", "append_to_list", "delete_object",
         "create_reminder", "update_reminder", "delete_reminder",
-        "create_todo", "update_todo", "complete_todo", "delete_todo"
+        "create_todo", "update_todo", "complete_todo", "delete_todo",
+        "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"
     ];
 
     private readonly IAiClientService _inner;

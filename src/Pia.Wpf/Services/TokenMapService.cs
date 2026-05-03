@@ -52,6 +52,18 @@ public partial class TokenMapService : ITokenMapService
 
         var result = formattedResult;
 
+        // Mask GUIDs first so neither the known-PII pass nor the regex-based
+        // PII detector can mangle hex digit runs inside an ID. Without this, a
+        // query result like "[ID: ...-db79226916b8]" gets its 8-digit hex run
+        // replaced with a [Phone_N] token, breaking the subsequent tool call.
+        var guidPlaceholders = new Dictionary<string, string>();
+        result = GuidRegex().Replace(result, match =>
+        {
+            var placeholder = $"__PIA_GUID_{guidPlaceholders.Count}__";
+            guidPlaceholders[placeholder] = match.Value;
+            return placeholder;
+        });
+
         // Replace known PII values (longer values first to avoid partial matches)
         foreach (var (value, token) in _valueToToken.OrderByDescending(kvp => kvp.Key.Length))
         {
@@ -73,11 +85,17 @@ public partial class TokenMapService : ITokenMapService
         // Fuzzy match custom PII keywords for near-miss typos
         result = FuzzyReplaceCustomKeywords(result);
 
+        foreach (var (placeholder, guid) in guidPlaceholders)
+            result = result.Replace(placeholder, guid);
+
         return result;
     }
 
     [GeneratedRegex(@"\b\w+\b")]
     private static partial Regex WordBoundaryRegex();
+
+    [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")]
+    private static partial Regex GuidRegex();
 
     private string FuzzyReplaceCustomKeywords(string text)
     {

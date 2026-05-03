@@ -178,6 +178,54 @@ public class AtCommandParserTests
         Assert.Equal(AtCommandDomain.Reminder, commands[0].Domain);
     }
 
+    [Fact]
+    public void ExtractAllCommands_ResearchDomain_ReturnsOne()
+    {
+        var commands = AtCommandParser.ExtractAllCommands("@research check status");
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Research, commands[0].Domain);
+        Assert.Null(commands[0].ItemTitle);
+    }
+
+    [Fact]
+    public void ParseTriggerFragment_ResearchExactDomain_ReturnsDomainNoFilter()
+    {
+        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Research");
+        Assert.Equal(AtCommandDomain.Research, domain);
+        Assert.Null(filter);
+    }
+
+    [Fact]
+    public void ParseTriggerFragment_ResearchPartial_ReturnsTier1Filter()
+    {
+        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Res");
+        Assert.Null(domain);
+        Assert.Equal("Res", filter);
+    }
+
+    // --- GetKeyword: enforces that every enum value has a registered keyword ---
+
+    [Fact]
+    public void GetKeyword_EveryEnumValue_HasKeyword()
+    {
+        foreach (AtCommandDomain domain in Enum.GetValues<AtCommandDomain>())
+        {
+            var keyword = AtCommandParser.GetKeyword(domain);
+            Assert.False(string.IsNullOrWhiteSpace(keyword));
+        }
+    }
+
+    [Fact]
+    public void GetKeyword_RoundTripsThroughParseTriggerFragment()
+    {
+        foreach (AtCommandDomain domain in Enum.GetValues<AtCommandDomain>())
+        {
+            var keyword = AtCommandParser.GetKeyword(domain);
+            var (parsedDomain, _) = AtCommandParser.ParseTriggerFragment(keyword);
+            Assert.Equal(domain, parsedDomain);
+        }
+    }
+
     // --- StripCommands ---
 
     [Fact]

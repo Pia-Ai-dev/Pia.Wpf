@@ -4,7 +4,8 @@ public enum AtCommandDomain
 {
     Memory,
     Todo,
-    Reminder
+    Reminder,
+    Research
 }
 
 public class AtCommand

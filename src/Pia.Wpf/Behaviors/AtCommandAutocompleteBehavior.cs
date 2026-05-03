@@ -237,13 +237,7 @@ public static class AtCommandAutocompleteBehavior
         else
         {
             // Tier 2: insert full "@Domain:ItemTitle " with trailing space
-            var domainName = item.Domain switch
-            {
-                AtCommandDomain.Memory => "Memory",
-                AtCommandDomain.Todo => "Todo",
-                AtCommandDomain.Reminder => "Reminder",
-                _ => ""
-            };
+            var domainName = AtCommandParser.GetKeyword(item.Domain!.Value);
             var formattedTitle = AtCommandParser.FormatItemTitle(item.DisplayText);
             replacement = $"@{domainName}:{formattedTitle} ";
         }

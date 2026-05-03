@@ -31,7 +31,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return $"Always respond to the user in {languageName} unless the user explicitly writes in another language or asks you to switch.";
     }
 
-    private string BuildSystemPrompt(bool tokenizationEnabled)
+    private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false)
     {
         var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
         var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
@@ -40,6 +40,25 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var tokenSection = tokenizationEnabled
             ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
             : string.Empty;
+
+        var toolSelectionSection = skipToolSelectionTree
+            ? string.Empty
+            : """
+              ## Tool Selection
+
+              Follow this decision tree strictly:
+
+              1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
+                 - YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
+                 - NO → Continue to step 2.
+              2. Does the request involve a TASK, ACTION ITEM, or something to DO?
+                 - YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
+                 - NO → Continue to step 3.
+              3. Does the request involve STORING, RECALLING, or UPDATING personal information?
+                 - YES → Use Memory tools (remember: query first, then create/update). NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+                 - NO → Respond conversationally without tools.
+
+              """;
 
         return $"""
             ## Identity
@@ -51,25 +70,44 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             {BuildLanguageInstruction()}
 
-            {pluginSection}## Tool Selection
-
-            Follow this decision tree strictly:
-
-            1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
-               - YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
-               - NO → Continue to step 2.
-            2. Does the request involve a TASK, ACTION ITEM, or something to DO?
-               - YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
-               - NO → Continue to step 3.
-            3. Does the request involve STORING, RECALLING, or UPDATING personal information?
-               - YES → Use Memory tools (remember: query first, then create/update). NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
-               - NO → Respond conversationally without tools.
-
-            ## Principles
+            {pluginSection}{toolSelectionSection}## Principles
 
             - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.
             {tokenSection}
             """;
+    }
+
+    private static (string CategoryLabel, string QueryTool, IReadOnlyList<string> ToolNames) GetAtCommandToolMapping(Pia.Models.AtCommandDomain domain) => domain switch
+    {
+        Pia.Models.AtCommandDomain.Memory => (
+            "memory entry",
+            "query_memory",
+            (IReadOnlyList<string>)["query_memory", "list_memories", "create_object", "update_object", "append_to_list", "delete_object"]),
+        Pia.Models.AtCommandDomain.Todo => (
+            "todo",
+            "query_todos",
+            (IReadOnlyList<string>)["query_todos", "create_todo", "complete_todo", "update_todo", "delete_todo"]),
+        Pia.Models.AtCommandDomain.Reminder => (
+            "reminder",
+            "query_reminders",
+            (IReadOnlyList<string>)["query_reminders", "create_reminder", "update_reminder", "delete_reminder"]),
+        Pia.Models.AtCommandDomain.Research => (
+            "scheduled research job",
+            "query_scheduled_research",
+            (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"]),
+        _ => throw new ArgumentOutOfRangeException(nameof(domain), domain,
+            $"No tool mapping registered for at-command domain {domain}. Add a row to GetAtCommandToolMapping.")
+    };
+
+    private static IReadOnlySet<string> GetAllowedToolNames(IReadOnlyList<Pia.Models.AtCommand> commands)
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cmd in commands)
+        {
+            foreach (var name in GetAtCommandToolMapping(cmd.Domain).ToolNames)
+                allowed.Add(name);
+        }
+        return allowed;
     }
 
     private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
@@ -78,24 +116,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var sb = new StringBuilder();
         sb.AppendLine();
-        sb.AppendLine("## User Tool Hints");
+        sb.AppendLine("## User Tool Hints decision");
         sb.AppendLine();
-        sb.AppendLine("The user explicitly requested these tools — prioritize them:");
+        sb.AppendLine("The user explicitly tagged this request with @-commands. These tags identify the item category and target — they are not ambiguous. Only the tools listed below will be loaded for this turn. Do NOT ask the user to clarify which kind of item they mean. Treat the rest of the user's message as the intended action on the tagged item.");
         sb.AppendLine();
         foreach (var cmd in commands)
         {
-            var domainName = cmd.Domain switch
-            {
-                Pia.Models.AtCommandDomain.Memory => "Memory",
-                Pia.Models.AtCommandDomain.Todo => "Todo",
-                Pia.Models.AtCommandDomain.Reminder => "Reminder",
-                _ => "Unknown"
-            };
+            var (categoryLabel, queryTool, toolNames) = GetAtCommandToolMapping(cmd.Domain);
+            var toolFamily = $"{categoryLabel} tools ({string.Join(", ", toolNames)})";
 
             if (cmd.ItemTitle is not null)
-                sb.AppendLine($"- Use the {domainName} tools, specifically for item '{cmd.ItemTitle}'. Query for it first.");
+                sb.AppendLine($"- The user's request targets a {categoryLabel} titled \"{cmd.ItemTitle}\". Call {queryTool} first to obtain its ID, then perform the action described in the rest of the user's message (e.g. delete, update, complete). Available {toolFamily}.");
             else
-                sb.AppendLine($"- Use the {domainName} tools for this request.");
+                sb.AppendLine($"- The user's request is about {categoryLabel}s — use the {toolFamily}.");
         }
         return sb.ToString();
     }
@@ -306,9 +339,20 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             if (supportsTools)
             {
-                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled)
+                var hasAtCommands = atCommands.Count > 0;
+                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, skipToolSelectionTree: hasAtCommands)
                     + BuildAtCommandHint(atCommands);
-                tools = [.. _pluginService.GetAllTools()];
+
+                var allTools = _pluginService.GetAllTools();
+                if (hasAtCommands)
+                {
+                    var allowed = GetAllowedToolNames(atCommands);
+                    tools = [.. allTools.Where(t => allowed.Contains(t.Name))];
+                }
+                else
+                {
+                    tools = [.. allTools];
+                }
             }
             else
             {
@@ -316,8 +360,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 tools = null;
             }
 
-            _logger.LogInformation("SendMessage: provider={ProviderName}, supportsTools={SupportsTools}, toolCount={ToolCount}",
-                provider.Name, supportsTools, tools?.Count ?? 0);
+            _logger.LogInformation("SendMessage: provider={ProviderName}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
+                provider.Name, supportsTools, tools?.Count ?? 0, atCommands.Count);
 
             if (tools is { Count: > 0 })
                 _logger.LogDebug("Tools being sent to AI: [{ToolNames}]",

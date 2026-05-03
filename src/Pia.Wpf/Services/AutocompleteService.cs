@@ -10,7 +10,8 @@ public class AutocompleteService : IAutocompleteService
     [
         new() { DisplayText = "Memory", Icon = SymbolRegular.BrainCircuit24, Domain = AtCommandDomain.Memory, IsTier1 = true },
         new() { DisplayText = "Todo", Icon = SymbolRegular.TaskListSquareLtr24, Domain = AtCommandDomain.Todo, IsTier1 = true },
-        new() { DisplayText = "Reminder", Icon = SymbolRegular.Clock24, Domain = AtCommandDomain.Reminder, IsTier1 = true }
+        new() { DisplayText = "Reminder", Icon = SymbolRegular.Clock24, Domain = AtCommandDomain.Reminder, IsTier1 = true },
+        new() { DisplayText = "Research", Icon = SymbolRegular.Search24, Domain = AtCommandDomain.Research, IsTier1 = true }
     ];
 
     private const int MaxResults = 8;
@@ -18,15 +19,18 @@ public class AutocompleteService : IAutocompleteService
     private readonly IMemoryService _memoryService;
     private readonly ITodoService _todoService;
     private readonly IReminderService _reminderService;
+    private readonly IScheduledJobService _scheduledJobService;
 
     public AutocompleteService(
         IMemoryService memoryService,
         ITodoService todoService,
-        IReminderService reminderService)
+        IReminderService reminderService,
+        IScheduledJobService scheduledJobService)
     {
         _memoryService = memoryService;
         _todoService = todoService;
         _reminderService = reminderService;
+        _scheduledJobService = scheduledJobService;
     }
 
     public async Task<IReadOnlyList<AutocompleteSuggestion>> GetSuggestionsAsync(
@@ -56,6 +60,7 @@ public class AutocompleteService : IAutocompleteService
             AtCommandDomain.Memory => await GetMemorySuggestionsAsync(filter),
             AtCommandDomain.Todo => await GetTodoSuggestionsAsync(filter),
             AtCommandDomain.Reminder => await GetReminderSuggestionsAsync(filter),
+            AtCommandDomain.Research => await GetResearchSuggestionsAsync(filter),
             _ => []
         };
     }
@@ -109,6 +114,24 @@ public class AutocompleteService : IAutocompleteService
                 Icon = SymbolRegular.Clock24,
                 Domain = AtCommandDomain.Reminder,
                 ItemId = r.Id,
+                IsTier1 = false
+            })
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<AutocompleteSuggestion>> GetResearchSuggestionsAsync(string? filter)
+    {
+        var jobs = await _scheduledJobService.GetActiveAsync();
+        return jobs
+            .Where(j => string.IsNullOrEmpty(filter) ||
+                        j.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .Take(MaxResults)
+            .Select(j => new AutocompleteSuggestion
+            {
+                DisplayText = j.Name,
+                Icon = SymbolRegular.Search24,
+                Domain = AtCommandDomain.Research,
+                ItemId = j.Id,
                 IsTier1 = false
             })
             .ToArray();
