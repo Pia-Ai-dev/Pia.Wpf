@@ -603,4 +603,26 @@
   <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' war für {1} geplant, aber die App war nicht geöffnet. Jetzt im Hintergrund ausführen?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Jetzt ausführen</value></data>
   <data name="MissedRun_Skip" xml:space="preserve"><value>Diesen Lauf überspringen</value></data>
+  <!-- First-Run Wizard E2EE Setup Step -->
+  <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
+  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Notizen, Aufgaben und Erinnerungen bleiben nur auf deinen Geräten lesbar.</value></data>
+  <data name="Wizard_E2EE_Pros_Title" xml:space="preserve"><value>Warum aktivieren (empfohlen)</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia-Cloud-Mitarbeitende können deine Daten nicht lesen.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>Bei einem Server-Einbruch bleiben deine Daten für Angreifer unlesbar.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet3" xml:space="preserve"><value>Nur Geräte, die du freigibst, können deine Daten entschlüsseln.</value></data>
+  <data name="Wizard_E2EE_Cons_Title" xml:space="preserve"><value>Das solltest du wissen</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet1" xml:space="preserve"><value>Du erhältst einen Wiederherstellungscode — bewahre ihn sicher auf (Passwort-Manager oder ausgedruckt).</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet2" xml:space="preserve"><value>Verlierst du alle Geräte und den Wiederherstellungscode, sind deine verschlüsselten Daten unwiederbringlich verloren.</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Du kannst die Verschlüsselung später in den Einstellungen abschalten.</value></data>
+  <data name="Wizard_E2EE_Toggle_Label" xml:space="preserve"><value>Meine Daten Ende-zu-Ende verschlüsseln</value></data>
+  <data name="Wizard_E2EE_OptOut_Warning_Title" xml:space="preserve"><value>Ohne Verschlüsselung fortfahren?</value></data>
+  <data name="Wizard_E2EE_OptOut_Warning_Message" xml:space="preserve"><value>Deine synchronisierten Daten könnten bei einem Server-Einbruch von Pia-Cloud-Mitarbeitenden gelesen werden. Du kannst die Verschlüsselung später in den Einstellungen aktivieren.</value></data>
+  <data name="Wizard_E2EE_OptOut_Continue" xml:space="preserve"><value>Ohne Verschlüsselung fortfahren</value></data>
+  <data name="Wizard_E2EE_OptOut_GoBack" xml:space="preserve"><value>Zurück</value></data>
+  <data name="Wizard_E2EE_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode sichern</value></data>
+  <data name="Wizard_E2EE_Recovery_Description" xml:space="preserve"><value>Dies ist die einzige Möglichkeit, deine verschlüsselten Daten wiederherzustellen, falls du den Zugriff auf alle Geräte verlierst.</value></data>
+  <data name="Wizard_E2EE_Recovery_Warning" xml:space="preserve"><value>Pia kann den Code nicht für dich wiederherstellen. Bewahre ihn in einem Passwort-Manager auf oder drucke ihn aus.</value></data>
+  <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>Ich habe meinen Wiederherstellungscode sicher gespeichert</value></data>
+  <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Verschlüsselung konnte nicht aktiviert werden</value></data>
+  <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Verschlüsselung wird eingerichtet…</value></data>
 </root>

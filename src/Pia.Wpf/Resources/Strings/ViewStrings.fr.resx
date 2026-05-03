@@ -603,4 +603,26 @@
   <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' était prévue à {1} mais l'application n'était pas ouverte. L'exécuter maintenant en arrière-plan ?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Exécuter maintenant</value></data>
   <data name="MissedRun_Skip" xml:space="preserve"><value>Passer cette exécution</value></data>
+  <!-- First-Run Wizard E2EE Setup Step -->
+  <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Chiffrer vos données de bout en bout</value></data>
+  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Vos notes, tâches et souvenirs restent lisibles uniquement sur vos appareils.</value></data>
+  <data name="Wizard_E2EE_Pros_Title" xml:space="preserve"><value>Pourquoi activer (recommandé)</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Le personnel de Pia Cloud ne peut pas lire vos données.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>En cas de violation de nos serveurs, vos données restent illisibles pour les attaquants.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet3" xml:space="preserve"><value>Seuls les appareils que vous approuvez peuvent déchiffrer vos données.</value></data>
+  <data name="Wizard_E2EE_Cons_Title" xml:space="preserve"><value>Ce que vous devez savoir</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet1" xml:space="preserve"><value>Vous obtiendrez un code de récupération — conservez-le en lieu sûr (gestionnaire de mots de passe ou copie imprimée).</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet2" xml:space="preserve"><value>Si vous perdez tous vos appareils et le code de récupération, vos données chiffrées sont irrécupérables.</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Vous pourrez désactiver le chiffrement plus tard dans les Paramètres.</value></data>
+  <data name="Wizard_E2EE_Toggle_Label" xml:space="preserve"><value>Chiffrer mes données de bout en bout</value></data>
+  <data name="Wizard_E2EE_OptOut_Warning_Title" xml:space="preserve"><value>Continuer sans chiffrement ?</value></data>
+  <data name="Wizard_E2EE_OptOut_Warning_Message" xml:space="preserve"><value>Vos données synchronisées pourront être lues par le personnel de Pia Cloud en cas de violation des serveurs. Vous pourrez activer le chiffrement plus tard dans les Paramètres.</value></data>
+  <data name="Wizard_E2EE_OptOut_Continue" xml:space="preserve"><value>Continuer sans chiffrement</value></data>
+  <data name="Wizard_E2EE_OptOut_GoBack" xml:space="preserve"><value>Retour</value></data>
+  <data name="Wizard_E2EE_Recovery_Title" xml:space="preserve"><value>Sauvegardez votre code de récupération</value></data>
+  <data name="Wizard_E2EE_Recovery_Description" xml:space="preserve"><value>C'est le seul moyen de récupérer vos données chiffrées si vous perdez l'accès à tous vos appareils.</value></data>
+  <data name="Wizard_E2EE_Recovery_Warning" xml:space="preserve"><value>Pia ne peut pas le récupérer pour vous. Conservez-le dans un gestionnaire de mots de passe ou imprimez-le.</value></data>
+  <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>J'ai sauvegardé mon code de récupération en lieu sûr</value></data>
+  <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Impossible d'activer le chiffrement</value></data>
+  <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Configuration du chiffrement…</value></data>
 </root>
