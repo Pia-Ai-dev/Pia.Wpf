@@ -46,7 +46,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IAutostartService autostartService,
         IPluginService pluginService,
         IPluginIconLoader pluginIconLoader,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IFileDialogService fileDialogService)
     {
         _logger = logger;
 
@@ -58,7 +59,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         ResearchVm = new ResearchSettingsViewModel(ProvidersVm);
 
-        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService);
+        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, fileDialogService);
 
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
 

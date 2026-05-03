@@ -40,6 +40,8 @@
       <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
       <converters:MultiplyConverter x:Key="MultiplyConverter" />
+      <converters:SpeakerToDisplayNameConverter x:Key="SpeakerToDisplayNameConverter" />
+      <converters:DateTimeOffsetToShortTimeConverter x:Key="DateTimeOffsetToShortTimeConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

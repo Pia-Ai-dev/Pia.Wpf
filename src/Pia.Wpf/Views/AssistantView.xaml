@@ -393,6 +393,25 @@
             <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
           </ui:Button>
 
+          <!-- Live Transcription toggle -->
+          <ui:Button Command="{Binding ToggleLiveTranscriptionCommand}"
+                     Width="40"
+                     Height="40"
+                     Margin="0,0,4,0"
+                     ToolTip="{loc:Str LiveTrans_ToggleButton_Tooltip}">
+            <ui:Button.Style>
+              <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Appearance" Value="Secondary" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsLiveTranscriptionVisible}" Value="True">
+                    <Setter Property="Appearance" Value="Primary" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:Button.Style>
+            <ui:SymbolIcon Symbol="Headset24" FontSize="16" />
+          </ui:Button>
+
           <!-- Send button -->
           <ui:Button Command="{Binding SendMessageCommand}"
                      Width="40"
@@ -496,5 +515,13 @@
                             Visibility="{Binding DataContext.IsVoiceModeActive,
                               RelativeSource={RelativeSource AncestorType=UserControl},
                               Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+    <!-- Live Transcription Overlay -->
+    <local:LiveTranscriptionOverlay Grid.Row="0" Grid.RowSpan="2"
+                                    DataContext="{Binding LiveTranscription}"
+                                    Panel.ZIndex="11"
+                                    Visibility="{Binding DataContext.IsLiveTranscriptionVisible,
+                                      RelativeSource={RelativeSource AncestorType=UserControl},
+                                      Converter={StaticResource BooleanToVisibilityConverter}}" />
   </Grid>
 </UserControl>

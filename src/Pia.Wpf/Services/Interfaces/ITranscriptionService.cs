@@ -8,7 +8,13 @@ public interface ITranscriptionService
 
     Task DownloadModelAsync(WhisperModelSize modelSize, IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default);
 
-    event EventHandler<(int Progress, int Total)>? ModelDownloadProgress;
+    Task DownloadParakeetModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default);
 }
 
-public record ModelDownloadProgress(int PercentComplete, long TotalBytes);
+public record ModelDownloadProgress(int PercentComplete, long TotalBytes, ModelDownloadPhase Phase = ModelDownloadPhase.Downloading);
+
+public enum ModelDownloadPhase
+{
+    Downloading,
+    Extracting,
+}

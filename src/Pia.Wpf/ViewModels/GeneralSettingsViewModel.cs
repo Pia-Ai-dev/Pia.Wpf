@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
 using System.Collections.ObjectModel;
 
 namespace Pia.ViewModels;
@@ -20,6 +21,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IAutostartService _autostartService;
     private readonly IPolicyService _policyService;
+    private readonly IFileDialogService _fileDialogService;
     private bool _isLoading;
 
     public GeneralSettingsViewModel(
@@ -32,7 +34,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         IAutostartService autostartService,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IFileDialogService fileDialogService)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -44,14 +47,17 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _autostartService = autostartService;
         _policyService = policyService;
+        _fileDialogService = fileDialogService;
 
         _uiLanguage = _localizationService.CurrentLanguage;
+        _meetingTranscriptFolder = MeetingTranscriptPaths.DefaultMeetingFolder;
     }
 
     // Enterprise policy enforcement
     public bool IsUiLanguageEnforced => _policyService.IsEnforced(nameof(AppSettings.UiLanguage));
     public bool IsStartMinimizedEnforced => _policyService.IsEnforced(nameof(AppSettings.StartMinimized));
     public bool IsLaunchAtStartupEnforced => _policyService.IsEnforced(nameof(AppSettings.LaunchAtStartup));
+    public bool IsSttBackendEnforced => _policyService.IsEnforced(nameof(AppSettings.SttBackend));
     public bool IsWhisperModelEnforced => _policyService.IsEnforced(nameof(AppSettings.WhisperModel));
     public bool IsTargetSpeechLanguageEnforced => _policyService.IsEnforced(nameof(AppSettings.TargetSpeechLanguage));
     public bool IsThemeEnforced => _policyService.IsEnforced(nameof(AppSettings.Theme));
@@ -82,10 +88,22 @@ public partial class GeneralSettingsViewModel : ObservableObject
 
     // Speech
     [ObservableProperty]
+    private SttBackend _sttBackend;
+
+    [ObservableProperty]
     private WhisperModelSize _whisperModel;
 
     [ObservableProperty]
     private TargetSpeechLanguage _targetSpeechLanguage;
+
+    // Meeting transcripts
+    [ObservableProperty]
+    private string _meetingTranscriptFolder = string.Empty;
+
+    public string MeetingTranscriptFolderDefault => MeetingTranscriptPaths.DefaultMeetingFolder;
+
+    public bool IsWhisperSelected => SttBackend == SttBackend.Whisper;
+    public bool IsParakeetSelected => SttBackend == SttBackend.Parakeet;
 
     [ObservableProperty]
     private ObservableCollection<TtsVoice> _ttsVoices = new();
@@ -97,6 +115,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     [ObservableProperty]
     private int _selectedInnerTabIndex;
 
+    public IEnumerable<SttBackend> SttBackends => Enum.GetValues<SttBackend>();
     public IEnumerable<WhisperModelSize> WhisperModels => Enum.GetValues<WhisperModelSize>();
     public IEnumerable<TargetSpeechLanguage> TargetSpeechLanguages => Enum.GetValues<TargetSpeechLanguage>();
     public IEnumerable<TargetLanguage> UiLanguages => Enum.GetValues<TargetLanguage>();
@@ -127,6 +146,13 @@ public partial class GeneralSettingsViewModel : ObservableObject
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnSttBackendChanged(SttBackend value)
+    {
+        OnPropertyChanged(nameof(IsWhisperSelected));
+        OnPropertyChanged(nameof(IsParakeetSelected));
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     partial void OnWhisperModelChanged(WhisperModelSize value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
@@ -137,6 +163,30 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnMeetingTranscriptFolderChanged(string value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    [RelayCommand]
+    private void BrowseMeetingFolder()
+    {
+        var initial = string.IsNullOrWhiteSpace(MeetingTranscriptFolder)
+            ? MeetingTranscriptPaths.DefaultMeetingFolder
+            : MeetingTranscriptFolder;
+        var picked = _fileDialogService.PromptSelectFolder(
+            _localizationService["Settings_MeetingTranscriptFolder_Browse"],
+            initial);
+        if (!string.IsNullOrWhiteSpace(picked))
+            MeetingTranscriptFolder = picked!;
+    }
+
+    [RelayCommand]
+    private void ResetMeetingFolder()
+    {
+        MeetingTranscriptFolder = MeetingTranscriptPaths.DefaultMeetingFolder;
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -145,8 +195,12 @@ public partial class GeneralSettingsViewModel : ObservableObject
         UiLanguage = _localizationService.CurrentLanguage;
         StartMinimized = settings.StartMinimized;
         LaunchAtStartup = settings.LaunchAtStartup;
+        SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
+        MeetingTranscriptFolder = string.IsNullOrWhiteSpace(settings.MeetingTranscriptFolder)
+            ? MeetingTranscriptPaths.DefaultMeetingFolder
+            : settings.MeetingTranscriptFolder!;
 
         _optimizeHotkey = settings.OptimizeHotkey;
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
@@ -256,26 +310,49 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private async Task DownloadWhisperModelAsync()
     {
         var modelName = Services.TranscriptionService.GetModelName(WhisperModel);
+        await DownloadModelInternalAsync(
+            modelName,
+            (progress, ct) => _transcriptionService.DownloadModelAsync(WhisperModel, progress, ct));
+    }
 
-        var downloadCancellationToken = new CancellationTokenSource();
+    [RelayCommand]
+    private async Task DownloadParakeetModelAsync()
+    {
+        await DownloadModelInternalAsync(
+            _localizationService["Settings_Parakeet_DisplayName"],
+            (progress, ct) => _transcriptionService.DownloadParakeetModelAsync(progress, ct));
+    }
+
+    private async Task DownloadModelInternalAsync(
+        string modelDisplayName,
+        Func<IProgress<ModelDownloadProgress>, CancellationToken, Task> downloadFn)
+    {
+        // Two CTS: userCancelCts fires when the user clicks Cancel; dialogCloseCts is what
+        // the dialog watches and we cancel it ourselves when the download finishes (success
+        // or error) so the dialog auto-dismisses.
+        var userCancelCts = new CancellationTokenSource();
+        var dialogCloseCts = CancellationTokenSource.CreateLinkedTokenSource(userCancelCts.Token);
         var progress = new Progress<ModelDownloadProgress>();
 
         try
         {
-            var downloadTask = _transcriptionService.DownloadModelAsync(WhisperModel, progress, downloadCancellationToken.Token);
-            var dialogTask = _dialogService.ShowModelDownloadDialogAsync(modelName, progress, downloadCancellationToken.Token);
+            var downloadTask = downloadFn(progress, userCancelCts.Token);
+            var dialogTask = _dialogService.ShowModelDownloadDialogAsync(modelDisplayName, progress, dialogCloseCts.Token);
 
-            var completedTask = await Task.WhenAny(downloadTask, dialogTask);
-            var wasCancelled = downloadCancellationToken.Token.IsCancellationRequested;
-
-            if (wasCancelled)
+            try
+            {
+                await downloadTask.ConfigureAwait(true);
+                _snackbarService.Show(_localizationService["Msg_Success"], _localizationService.Format("Msg_Settings_ModelDownloadCompleted", modelDisplayName), Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+            }
+            catch (OperationCanceledException) when (userCancelCts.IsCancellationRequested)
             {
                 _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Settings_ModelDownloadCancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
             }
-            else
+            finally
             {
-                await downloadTask;
-                _snackbarService.Show(_localizationService["Msg_Success"], _localizationService["Msg_Settings_ModelDownloadCompleted"], Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+                // Always dismiss the dialog when the download future completes.
+                dialogCloseCts.Cancel();
+                try { await dialogTask.ConfigureAwait(true); } catch { /* dialog already hidden */ }
             }
         }
         catch (Exception ex)
@@ -284,7 +361,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         }
         finally
         {
-            downloadCancellationToken?.Dispose();
+            dialogCloseCts.Dispose();
+            userCancelCts.Dispose();
         }
     }
 
@@ -360,11 +438,19 @@ public partial class GeneralSettingsViewModel : ObservableObject
         settings.UiLanguage = UiLanguage;
         settings.StartMinimized = StartMinimized;
         settings.LaunchAtStartup = LaunchAtStartup;
+        settings.SttBackend = SttBackend;
         settings.WhisperModel = WhisperModel;
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
         settings.ResearchHotkey = _researchHotkey;
+        // Empty / whitespace / "matches default" all collapse to null so the JSON stays clean
+        // and the resolver picks the default automatically.
+        settings.MeetingTranscriptFolder =
+            string.IsNullOrWhiteSpace(MeetingTranscriptFolder) ||
+            string.Equals(MeetingTranscriptFolder, MeetingTranscriptPaths.DefaultMeetingFolder, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : MeetingTranscriptFolder;
         await _settingsService.SaveSettingsAsync(settings);
     }
 

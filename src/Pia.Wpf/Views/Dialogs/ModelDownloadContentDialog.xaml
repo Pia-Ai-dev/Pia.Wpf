@@ -12,23 +12,39 @@
     <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
            TargetType="{x:Type local:ModelDownloadContentDialog}" />
   </ui:ContentDialog.Resources>
-  
-  <StackPanel Margin="0,16,0,8">
+
+  <StackPanel Margin="0,16,0,8" HorizontalAlignment="Stretch">
     <TextBlock x:Name="ModelNameText"
                Text="{loc:Str Dialog_ModelDownload_Message}"
                FontSize="16"
                FontWeight="SemiBold"
+               TextAlignment="Center"
                Margin="0,0,0,16"/>
 
-    <ProgressBar x:Name="DownloadProgressBar"
-                 Value="0"
-                 Maximum="100"
-                 Height="24"
-                 Margin="0,0,0,8"/>
+    <!-- Downloading: deterministic bar with byte/percent text -->
+    <StackPanel x:Name="DownloadingPanel">
+      <ProgressBar x:Name="DownloadProgressBar"
+                   Value="0"
+                   Maximum="100"
+                   Height="24"
+                   Margin="0,0,0,8"/>
+      <TextBlock x:Name="ProgressText"
+                 Text="0%"
+                 Opacity="0.7"
+                 HorizontalAlignment="Center"/>
+    </StackPanel>
 
-    <TextBlock x:Name="ProgressText"
-               Text="0%"
-               Opacity="0.7"
-               HorizontalAlignment="Center"/>
+    <!-- Extracting: indeterminate spinner, matches TranscribingContentDialog -->
+    <StackPanel x:Name="ExtractingPanel" Visibility="Collapsed">
+      <ui:ProgressRing IsIndeterminate="True"
+                       Width="60"
+                       Height="60"
+                       HorizontalAlignment="Center"
+                       Margin="0,4,0,16"/>
+      <TextBlock x:Name="ExtractingHint"
+                 Text="{loc:Str Dialog_ModelDownload_PleaseWait}"
+                 Opacity="0.7"
+                 HorizontalAlignment="Center"/>
+    </StackPanel>
   </StackPanel>
 </ui:ContentDialog>

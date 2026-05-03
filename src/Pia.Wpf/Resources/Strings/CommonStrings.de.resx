@@ -57,4 +57,22 @@
   <data name="Common_End" xml:space="preserve"><value>Beenden</value></data>
   <data name="Common_Finish" xml:space="preserve"><value>Fertig</value></data>
   <data name="Common_Dismiss" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="LiveTrans_Title" xml:space="preserve"><value>Live-Transkription</value></data>
+  <data name="LiveTrans_OtherSpeaker_Label" xml:space="preserve"><value>Andere Person:</value></data>
+  <data name="LiveTrans_OtherSpeaker_Placeholder" xml:space="preserve"><value>andere</value></data>
+  <data name="LiveTrans_ToggleButton_Tooltip" xml:space="preserve"><value>Meeting live transkribieren</value></data>
+  <data name="LiveTrans_Stop" xml:space="preserve"><value>Stoppen</value></data>
+  <data name="LiveTrans_Close" xml:space="preserve"><value>Schließen</value></data>
+  <data name="LiveTrans_Status_Idle" xml:space="preserve"><value>Inaktiv</value></data>
+  <data name="LiveTrans_Status_Starting" xml:space="preserve"><value>Wird gestartet…</value></data>
+  <data name="LiveTrans_Status_Listening" xml:space="preserve"><value>Hört zu…</value></data>
+  <data name="LiveTrans_Status_Stopping" xml:space="preserve"><value>Wird gestoppt…</value></data>
+  <data name="LiveTrans_Status_Error" xml:space="preserve"><value>Fehler</value></data>
+  <data name="LiveTrans_Save" xml:space="preserve"><value>Speichern…</value></data>
+  <data name="LiveTrans_SaveDialog_Title" xml:space="preserve"><value>Transkript speichern</value></data>
+  <data name="LiveTrans_SaveDialog_Filter" xml:space="preserve"><value>Markdown-Datei (*.md)|*.md|Alle Dateien (*.*)|*.*</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Label" xml:space="preserve"><value>Ordner für Besprechungstranskripte</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Browse" xml:space="preserve"><value>Durchsuchen…</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Reset" xml:space="preserve"><value>Zurücksetzen</value></data>
+  <data name="Settings_MeetingTranscriptFolder_Hint" xml:space="preserve"><value>Hier werden gespeicherte Besprechungstranskripte abgelegt. Standard: %LOCALAPPDATA%\Pia\assistant\meetings.</value></data>
 </root>

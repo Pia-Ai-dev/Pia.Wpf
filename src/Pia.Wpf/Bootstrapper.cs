@@ -224,6 +224,8 @@ public static class Bootstrapper
         services.AddSingleton<IWindowManagerService, WindowManagerService>();
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
         services.AddSingleton<ITranscriptionService, TranscriptionService>();
+        services.AddSingleton<ILiveMeetingService, Services.LiveTranscription.LiveMeetingService>();
+        services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<INotificationService, NotificationService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
@@ -278,6 +280,7 @@ public static class Bootstrapper
         services.AddScoped<SettingsViewModel>();
         services.AddScoped<HistoryViewModel>();
         services.AddScoped<AssistantViewModel>();
+        services.AddScoped<LiveTranscriptionViewModel>();
         services.AddScoped<ResearchViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();

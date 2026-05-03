@@ -16,6 +16,12 @@ public enum WhisperModelSize
     Large
 }
 
+public enum SttBackend
+{
+    Whisper,
+    Parakeet
+}
+
 public enum AppTheme
 {
     System,
@@ -45,7 +51,8 @@ public class AppSettings
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public Guid? DefaultProviderId { get; set; }
     public WhisperModelSize WhisperModel { get; set; } = WhisperModelSize.Base;
-public int AutoTypeDelayMs { get; set; } = 10;
+    public SttBackend SttBackend { get; set; } = SttBackend.Whisper;
+    public int AutoTypeDelayMs { get; set; } = 10;
     public string? DraftText { get; set; }
     public string? LastActiveView { get; set; }
     public double WindowWidth { get; set; } = 1000;
@@ -71,6 +78,10 @@ public int AutoTypeDelayMs { get; set; } = 10;
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
+
+    // Live transcription settings
+    public string? LastCounterpartName { get; set; }
+    public string? MeetingTranscriptFolder { get; set; }
 
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
