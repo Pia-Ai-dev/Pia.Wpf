@@ -1,0 +1,223 @@
+<UserControl x:Class="Pia.Views.WizardSteps.E2EESetupStep"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:models="clr-namespace:Pia.Models"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="720">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel HorizontalAlignment="Center" MaxWidth="560" Margin="0,20,0,20"
+                DataContext="{Binding E2EESetupViewModel}">
+
+      <!-- Mode A: Choice + Bootstrapping -->
+      <StackPanel>
+        <StackPanel.Style>
+          <Style TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding State}" Value="{x:Static models:E2EESetupState.Choice}">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+              <DataTrigger Binding="{Binding State}" Value="{x:Static models:E2EESetupState.Bootstrapping}">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </StackPanel.Style>
+
+        <ui:SymbolIcon Symbol="Shield24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,16"
+                       Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
+        <TextBlock Text="{loc:Str Wizard_E2EE_Title}"
+                   Style="{StaticResource H2TextStyle}"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,8"/>
+        <TextBlock Text="{loc:Str Wizard_E2EE_Subtitle}"
+                   Style="{StaticResource BodyTextStyle}"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                   Margin="0,0,0,16"/>
+
+        <!-- Pros card -->
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="8"
+                Padding="16"
+                Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Title}"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <ui:SymbolIcon Symbol="Checkmark24" FontSize="16" Margin="0,0,8,0"
+                             Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
+              <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Bullet1}" TextWrapping="Wrap" FontSize="13"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <ui:SymbolIcon Symbol="Checkmark24" FontSize="16" Margin="0,0,8,0"
+                             Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
+              <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Bullet2}" TextWrapping="Wrap" FontSize="13"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="Checkmark24" FontSize="16" Margin="0,0,8,0"
+                             Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
+              <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Bullet3}" TextWrapping="Wrap" FontSize="13"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Cons card -->
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="8"
+                Padding="16"
+                Margin="0,0,0,16">
+          <StackPanel>
+            <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Title}"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0"/>
+              <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Bullet1}" TextWrapping="Wrap" FontSize="13"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0"/>
+              <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Bullet2}" TextWrapping="Wrap" FontSize="13"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="Info24" FontSize="16" Margin="0,0,8,0"/>
+              <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Bullet3}" TextWrapping="Wrap" FontSize="13"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Toggle -->
+        <ui:ToggleSwitch Content="{loc:Str Wizard_E2EE_Toggle_Label}"
+                         IsChecked="{Binding ShouldEnableE2EE, Mode=TwoWay}"
+                         IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                         Margin="0,0,0,12"/>
+
+        <!-- Bootstrapping spinner -->
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
+          <TextBlock Text="{loc:Str Wizard_E2EE_Bootstrapping}"
+                     VerticalAlignment="Center"
+                     FontSize="13"/>
+        </StackPanel>
+
+        <!-- Error -->
+        <ui:InfoBar Severity="Error"
+                    IsClosable="False"
+                    Title="{loc:Str Wizard_E2EE_Error_Bootstrap}"
+                    Message="{Binding ErrorMessage}"
+                    IsOpen="{Binding HasErrorMessage}"
+                    Margin="0,0,0,12"/>
+      </StackPanel>
+
+      <!-- Mode A — Confirming opt-out -->
+      <StackPanel>
+        <StackPanel.Style>
+          <Style TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding State}" Value="{x:Static models:E2EESetupState.ConfirmingOptOut}">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </StackPanel.Style>
+
+        <ui:SymbolIcon Symbol="Warning24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,16"
+                       Foreground="#f59e0b"/>
+        <TextBlock Text="{loc:Str Wizard_E2EE_OptOut_Warning_Title}"
+                   Style="{StaticResource H2TextStyle}"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,8"/>
+        <TextBlock Text="{loc:Str Wizard_E2EE_OptOut_Warning_Message}"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                   Margin="0,0,0,16"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <ui:Button Content="{loc:Str Wizard_E2EE_OptOut_GoBack}"
+                     Command="{Binding OptOutGoBackCommand}"
+                     Margin="0,0,8,0"/>
+          <ui:Button Content="{loc:Str Wizard_E2EE_OptOut_Continue}"
+                     Appearance="Caution"
+                     Command="{Binding ProceedCommand}"/>
+        </StackPanel>
+      </StackPanel>
+
+      <!-- Mode B — Saving recovery code (and Completed) -->
+      <StackPanel>
+        <StackPanel.Style>
+          <Style TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding State}" Value="{x:Static models:E2EESetupState.SavingRecoveryCode}">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+              <DataTrigger Binding="{Binding State}" Value="{x:Static models:E2EESetupState.Completed}">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </StackPanel.Style>
+
+        <ui:SymbolIcon Symbol="ShieldKeyhole24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,16"
+                       Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
+        <TextBlock Text="{loc:Str Wizard_E2EE_Recovery_Title}"
+                   Style="{StaticResource H2TextStyle}"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,8"/>
+        <TextBlock Text="{loc:Str Wizard_E2EE_Recovery_Description}"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                   Margin="0,0,0,16"/>
+
+        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="8"
+                Padding="20"
+                Margin="0,0,0,12">
+          <TextBlock Text="{Binding RecoveryCode}"
+                     FontFamily="Consolas"
+                     FontSize="20"
+                     FontWeight="Bold"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"/>
+        </Border>
+
+        <ui:Button Content="{loc:Str Enum_CopyToClipboard}"
+                   Icon="{ui:SymbolIcon Copy24}"
+                   Command="{Binding CopyRecoveryCodeCommand}"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,16"/>
+
+        <ui:InfoBar Severity="Warning"
+                    IsOpen="True"
+                    IsClosable="False"
+                    Title="{loc:Str Wizard_E2EE_Recovery_Warning}"
+                    Margin="0,0,0,16"/>
+
+        <CheckBox Content="{loc:Str Wizard_E2EE_Recovery_Confirm}"
+                  IsChecked="{Binding HasConfirmedRecoveryCode, Mode=TwoWay}"
+                  HorizontalAlignment="Center"/>
+      </StackPanel>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
