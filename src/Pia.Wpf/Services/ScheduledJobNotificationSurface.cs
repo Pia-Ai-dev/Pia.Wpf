@@ -216,10 +216,14 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
             {
                 try
                 {
-                    // v1: bring a Research window forward. A richer "navigate to specific
-                    // entry" hub is out of scope; the user lands in Research where they
-                    // can find the entry in history.
-                    _windowManager.ShowWindow(WindowMode.Research);
+                    if (Guid.TryParse(entryIdStr, out var entryId) && entryId != Guid.Empty)
+                    {
+                        _windowManager.ShowResearchHistoryWithEntry(entryId);
+                    }
+                    else
+                    {
+                        _windowManager.ShowWindow(WindowMode.Research);
+                    }
                     BringMainWindowForward();
                 }
                 catch (Exception inner)

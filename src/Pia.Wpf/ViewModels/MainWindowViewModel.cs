@@ -149,6 +149,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         await RefreshSetupRequiredAsync();
 
+        // If the caller pre-navigated (e.g. ShowResearchHistoryWithEntry) before
+        // Loaded fired, don't clobber their selection with the mode default.
+        if (_navigationService.CurrentViewModel is not null)
+            return;
+
         if (Mode == WindowMode.Assistant)
             _navigationService.NavigateTo<AssistantViewModel>();
         else if (Mode == WindowMode.Research)

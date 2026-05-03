@@ -3,6 +3,12 @@
 All notable changes to Pia are documented here.
 ## [Unreleased]
 
+### Fixes
+
+- Scheduled-research toast notifications now open Research History with the
+  finished entry pre-selected when the user clicks "Show". Previously the
+  handler dropped the entry id and dropped the user on an empty Research view.
+
 ### Features
 
 - First-run wizard now offers end-to-end encryption setup (default on) with a

@@ -35,10 +35,12 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         [
             AIFunctionFactory.Create(CreateScheduledSchema, "create_scheduled_research",
                 $"Create a new scheduled research job that fires on a recurring schedule, runs research, and shows a toast when complete. Current date/time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}). " +
+                "PRECONDITION: before calling, you must have explicit user-given values for name (display name), query (the research topic), and answerLength. If the user does not give a query - but a name - suggest a query." +
+                "If the user's request is ambiguous, do NOT call this tool. Ask a single clarifying question that requests the missing fields, then call once the user has answered. " +
                 "Parse the user's natural language request into structured fields. " +
                 "Examples: 'every weekday at 8am check Tesla stock news' -> create 5 separate Weekly jobs (Mon-Fri) since 'weekday' is not a single recurrence type. " +
                 "'every Monday research crypto trends' -> recurrence=Weekly, dayOfWeek=Monday, timeOfDay=08:00. " +
-                "answerLength can be 'Concise', 'Balanced' (default), or 'Detailed'. " +
+                "answerLength can be 'Concise', 'Balanced', or 'Detailed' -> use Concise as default, when the user does not provide input" +
                 "providerName is optional - if omitted, the provider mapped to Research mode at fire time is used."),
 
             AIFunctionFactory.Create(QueryScheduledSchema, "query_scheduled_research",

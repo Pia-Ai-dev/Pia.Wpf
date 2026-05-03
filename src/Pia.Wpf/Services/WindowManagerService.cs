@@ -170,6 +170,17 @@ public partial class WindowManagerService : IWindowManagerService
         }
     }
 
+    public void ShowResearchHistoryWithEntry(Guid entryId)
+    {
+        ShowWindow(WindowMode.Research);
+
+        if (!_windows.TryGetValue(WindowMode.Research, out var managed))
+            return;
+
+        var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
+        navigationService.NavigateTo<ResearchHistoryViewModel, Guid>(entryId);
+    }
+
     public void HideWindow(WindowMode mode)
     {
         if (!_windows.TryGetValue(mode, out var managed))

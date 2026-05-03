@@ -115,9 +115,11 @@
       </Grid.ColumnDefinitions>
 
       <!-- Session List -->
-      <ListBox Grid.Column="0"
+      <ListBox x:Name="EntriesListBox"
+               Grid.Column="0"
                ItemsSource="{Binding Entries}"
                SelectedItem="{Binding SelectedEntry}"
+               SelectionChanged="OnEntriesSelectionChanged"
                Background="{DynamicResource PrimaryBackgroundBrush}"
                BorderBrush="{DynamicResource CardBorderBrush}"
                BorderThickness="1"

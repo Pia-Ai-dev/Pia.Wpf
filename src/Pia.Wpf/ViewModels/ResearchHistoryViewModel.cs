@@ -97,18 +97,46 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
     {
         try
         {
-            if (Entries.Count > 0)
-                return;
+            if (Entries.Count == 0)
+            {
+                FilterStartDate = DateTime.Today.AddDays(-30);
+                FilterEndDate = DateTime.Today;
 
-            FilterStartDate = DateTime.Today.AddDays(-30);
-            FilterEndDate = DateTime.Today;
+                await LoadEntriesAsync(0, 50);
+            }
 
-            await LoadEntriesAsync(0, 50);
+            if (parameter is Guid entryId && entryId != Guid.Empty)
+            {
+                await SelectEntryByIdAsync(entryId);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to initialize ResearchHistoryViewModel");
         }
+    }
+
+    private async Task SelectEntryByIdAsync(Guid entryId)
+    {
+        var existing = Entries.FirstOrDefault(e => e.Id == entryId);
+        if (existing is not null)
+        {
+            SelectedEntry = existing;
+            return;
+        }
+
+        // Entry isn't in the currently filtered/paged view (e.g. the toast was
+        // clicked after the user narrowed filters). Fetch it directly and
+        // surface it at the top of the list so it's visible and selectable.
+        var fetched = await _researchHistoryService.GetEntryAsync(entryId);
+        if (fetched is null)
+        {
+            _logger.LogWarning("Research history entry {Id} not found for selection", entryId);
+            return;
+        }
+
+        Entries.Insert(0, fetched);
+        SelectedEntry = fetched;
     }
 
     public void OnNavigatedFrom() { }
