@@ -21,7 +21,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
     private readonly IDeviceManagementService _deviceManagement;
     private readonly ILogger<FirstRunWizardViewModel> _logger;
 
-    public const int TotalSteps = 6;
+    public const int TotalSteps = 7;
 
     // --- Navigation ---
 
@@ -35,8 +35,22 @@ public partial class FirstRunWizardViewModel : ObservableObject
     public bool IsLastStep => CurrentStep == TotalSteps - 1;
     public string NextButtonText => IsLastStep ? "Get Started" : "Next";
 
-    /// <summary>Visible step count: 5 when logged in (step 2 hidden), 6 otherwise.</summary>
-    public int VisibleStepCount => IsLoggedIn ? 5 : 6;
+    /// <summary>
+    /// Visible step count:
+    /// - 5 when logged in and E2EE is already set up on the account (E2EE step + Provider step both hidden).
+    /// - 6 in all other cases (one of E2EE step or Provider step is hidden).
+    /// </summary>
+    public int VisibleStepCount => IsLoggedIn
+        ? (_cloudAccountHasE2EE || IsE2EEOnboardingRequired ? 5 : 6)
+        : 6;
+
+    /// <summary>
+    /// Show the E2EE setup step only when the user is signed in to cloud
+    /// and the cloud account does not yet have E2EE enabled.
+    /// </summary>
+    public bool IsE2EESetupVisible => IsLoggedIn && !IsE2EEOnboardingRequired && !_cloudAccountHasE2EE;
+
+    private bool _cloudAccountHasE2EE;
 
     // --- Profile (existing) ---
 
@@ -84,6 +98,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(VisibleStepCount))]
     [NotifyPropertyChangedFor(nameof(HasProviderConfigured))]
     [NotifyPropertyChangedFor(nameof(AccountSummary))]
+    [NotifyPropertyChangedFor(nameof(IsE2EESetupVisible))]
     private bool _isLoggedIn;
 
     [ObservableProperty]
@@ -91,9 +106,12 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(VisibleStepCount))]
+    [NotifyPropertyChangedFor(nameof(IsE2EESetupVisible))]
     private bool _isE2EEOnboardingRequired;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
+
+    public E2EESetupStepViewModel E2EESetupViewModel { get; }
 
     [ObservableProperty]
     private string? _loginDisplayName;
@@ -218,6 +236,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         ISyncClientService syncClientService,
         IDeviceManagementService deviceManagement,
         E2EEOnboardingViewModel onboardingViewModel,
+        E2EESetupStepViewModel e2eeSetupViewModel,
         ILogger<FirstRunWizardViewModel> logger)
     {
         _settingsService = settingsService;
@@ -229,6 +248,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         _syncClientService = syncClientService;
         _deviceManagement = deviceManagement;
         OnboardingViewModel = onboardingViewModel;
+        E2EESetupViewModel = e2eeSetupViewModel;
         _logger = logger;
         _uiLanguage = _localizationService.CurrentLanguage;
 
@@ -250,6 +270,20 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
         NextOrFinishCommand = new AsyncRelayCommand(HandleNextOrFinishAsync, CanExecuteNextOrFinish);
         BackCommand = new RelayCommand(ExecuteBack, CanExecuteBack);
+
+        // E2EE setup step controls when the wizard advances past step 2
+        E2EESetupViewModel.AdvanceRequested += AdvanceFromE2EEStep;
+        E2EESetupViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(E2EESetupStepViewModel.State)
+                or nameof(E2EESetupStepViewModel.IsBusy)
+                or nameof(E2EESetupStepViewModel.HasConfirmedRecoveryCode)
+                or nameof(E2EESetupStepViewModel.CanGoBack))
+            {
+                NextOrFinishCommand.NotifyCanExecuteChanged();
+                BackCommand.NotifyCanExecuteChanged();
+            }
+        };
         SkipCommand = new AsyncRelayCommand(ExecuteSkipAsync);
         FinishCommand = new AsyncRelayCommand(ExecuteFinishAsync);
         VoiceInputNameCommand = new AsyncRelayCommand(ExecuteVoiceInputNameAsync);
@@ -274,23 +308,51 @@ public partial class FirstRunWizardViewModel : ObservableObject
         // Block Next on account step while E2EE onboarding is in progress
         if (CurrentStep == 1 && IsE2EEOnboardingRequired) return false;
 
-        // Block Next on provider step unless test passed
-        if (CurrentStep == 2 && !ConnectionTestPassed) return false;
+        // E2EE setup step (step 2): block Next while busy or while waiting for recovery-code confirmation
+        if (CurrentStep == 2 && IsE2EESetupVisible)
+        {
+            if (E2EESetupViewModel.IsBusy) return false;
+            if (E2EESetupViewModel.State == E2EESetupState.SavingRecoveryCode
+                && !E2EESetupViewModel.HasConfirmedRecoveryCode) return false;
+        }
+
+        // Provider step (step 3): block Next unless connection test passed (only when shown)
+        if (CurrentStep == 3 && !IsLoggedIn && !ConnectionTestPassed) return false;
 
         return true;
     }
 
-    private bool CanExecuteBack() => !IsFirstStep && !IsCompleting;
+    private bool CanExecuteBack()
+    {
+        if (IsFirstStep || IsCompleting) return false;
+        if (CurrentStep == 2 && IsE2EESetupVisible && !E2EESetupViewModel.CanGoBack) return false;
+        return true;
+    }
 
     private void ExecuteNext()
     {
         if (CurrentStep >= TotalSteps - 1) return;
 
-        // Skip provider step if logged in
-        if (CurrentStep == 1 && IsLoggedIn)
-            CurrentStep = 3;
+        // From AccountSetup (1): skip both E2EE and Provider as appropriate
+        if (CurrentStep == 1)
+        {
+            if (IsE2EESetupVisible)
+                CurrentStep = 2;
+            else if (IsLoggedIn)
+                CurrentStep = 4; // skip both E2EE (2) and Provider (3)
+            else
+                CurrentStep = 3; // not logged in: go to Provider
+        }
+        // From E2EE step (2): only reachable when visible; skip Provider when logged in
+        else if (CurrentStep == 2)
+        {
+            CurrentStep = IsLoggedIn ? 4 : 3;
+        }
+        // From Provider (3): always advance
         else
+        {
             CurrentStep++;
+        }
 
         NotifyNavigationChanged();
     }
@@ -299,12 +361,33 @@ public partial class FirstRunWizardViewModel : ObservableObject
     {
         if (CurrentStep <= 0) return;
 
-        // Skip provider step if logged in
-        if (CurrentStep == 3 && IsLoggedIn)
+        if (CurrentStep == 2)
+        {
             CurrentStep = 1;
+        }
+        else if (CurrentStep == 3 && IsLoggedIn)
+        {
+            CurrentStep = IsE2EESetupVisible ? 2 : 1;
+        }
+        else if (CurrentStep == 4)
+        {
+            if (IsLoggedIn)
+                CurrentStep = IsE2EESetupVisible ? 2 : 1;
+            else
+                CurrentStep = 3;
+        }
         else
+        {
             CurrentStep--;
+        }
 
+        NotifyNavigationChanged();
+    }
+
+    private void AdvanceFromE2EEStep(bool e2eeEnabled)
+    {
+        // Always called from CurrentStep == 2; skip Provider when logged in.
+        CurrentStep = IsLoggedIn ? 4 : 3;
         NotifyNavigationChanged();
     }
 
@@ -316,6 +399,13 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     private async Task HandleNextOrFinishAsync()
     {
+        // On the E2EE step, route Next through the step view model.
+        if (CurrentStep == 2 && IsE2EESetupVisible)
+        {
+            await E2EESetupViewModel.ProceedCommand.ExecuteAsync(null);
+            return;
+        }
+
         if (IsLastStep)
             await ExecuteFinishAsync();
         else
@@ -432,20 +522,40 @@ public partial class FirstRunWizardViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Check E2EE status before starting sync. If E2EE is enabled on the account,
-    /// show onboarding instead of syncing (to avoid pushing unencrypted data).
+    /// Decide what to do after login:
+    /// - E2EE on account but UMK missing locally → show inline onboarding (existing flow).
+    /// - E2EE NOT on account → defer first sync until the E2EE setup step decides.
+    /// - E2EE already on and UMK available → start sync immediately.
     /// </summary>
     private async Task HandlePostLoginSyncAsync()
     {
         var e2eeStatus = await _deviceManagement.CheckE2EEStatusAsync();
+
         if (e2eeStatus is { IsEnabled: true } && !_deviceManagement.IsInitialized())
         {
             _logger.LogInformation("E2EE enabled on account but UMK not available; showing onboarding in wizard");
+            _cloudAccountHasE2EE = true;
             IsE2EEOnboardingRequired = true;
             _syncClientService.NotifyE2EEOnboardingRequired();
+            OnPropertyChanged(nameof(IsE2EESetupVisible));
+            OnPropertyChanged(nameof(VisibleStepCount));
             return;
         }
 
+        if (e2eeStatus is null or { IsEnabled: false })
+        {
+            _logger.LogInformation("E2EE not enabled on account; deferring first sync until E2EE setup step decides");
+            _cloudAccountHasE2EE = false;
+            OnPropertyChanged(nameof(IsE2EESetupVisible));
+            OnPropertyChanged(nameof(VisibleStepCount));
+            // Do NOT start sync here — the E2EE step will start it when the user makes a choice.
+            return;
+        }
+
+        // E2EE already on and UMK available — start sync.
+        _cloudAccountHasE2EE = true;
+        OnPropertyChanged(nameof(IsE2EESetupVisible));
+        OnPropertyChanged(nameof(VisibleStepCount));
         await _syncClientService.PerformFirstSyncMigrationAsync();
         _syncClientService.StartBackgroundSync();
     }
