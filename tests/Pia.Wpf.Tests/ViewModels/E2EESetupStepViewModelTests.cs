@@ -145,6 +145,38 @@ public class E2EESetupStepViewModelTests
     }
 
     [Fact]
+    public void CanGoBack_ShouldBeTrue_InChoice_AndConfirmingOptOut_ShouldBeFalse_AfterBootstrap()
+    {
+        var sut = CreateSut();
+
+        Assert.True(sut.CanGoBack);
+
+        sut.State = E2EESetupState.ConfirmingOptOut;
+        Assert.True(sut.CanGoBack);
+
+        sut.State = E2EESetupState.Bootstrapping;
+        Assert.False(sut.CanGoBack);
+
+        sut.State = E2EESetupState.SavingRecoveryCode;
+        Assert.False(sut.CanGoBack);
+
+        sut.State = E2EESetupState.Completed;
+        Assert.False(sut.CanGoBack);
+    }
+
+    [Fact]
+    public async Task CopyRecoveryCode_ShouldDelegateToOutputService()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync().Returns("MY-CODE");
+        var sut = CreateSut();
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        await sut.CopyRecoveryCodeCommand.ExecuteAsync(null);
+
+        await _outputService.Received(1).CopyToClipboardAsync("MY-CODE");
+    }
+
+    [Fact]
     public async Task Bootstrap_Failure_ShouldStayInChoice_WithErrorMessage()
     {
         _deviceMgmt.BootstrapFirstDeviceAsync().ThrowsAsync(new InvalidOperationException("server unreachable"));

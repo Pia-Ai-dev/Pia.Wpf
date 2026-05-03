@@ -114,6 +114,24 @@ public partial class E2EESetupStepViewModel : ObservableObject
         AdvanceRequested?.Invoke(true);
     }
 
+    public string DeviceFingerprint => _deviceKeys.GetFingerprint();
+
+    public bool CanGoBack => State is E2EESetupState.Choice or E2EESetupState.ConfirmingOptOut;
+
+    public bool HasErrorMessage => !string.IsNullOrEmpty(ErrorMessage);
+
+    partial void OnStateChanged(E2EESetupState value)
+    {
+        OnPropertyChanged(nameof(CanGoBack));
+        ProceedCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnErrorMessageChanged(string? value) => OnPropertyChanged(nameof(HasErrorMessage));
+
+    [RelayCommand]
+    private Task CopyRecoveryCodeAsync()
+        => RecoveryCode is null ? Task.CompletedTask : _outputService.CopyToClipboardAsync(RecoveryCode);
+
     [RelayCommand]
     private void OptOutGoBack()
     {
