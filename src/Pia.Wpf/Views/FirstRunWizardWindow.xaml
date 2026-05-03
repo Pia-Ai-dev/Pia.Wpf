@@ -89,9 +89,9 @@
           </Ellipse.Style>
         </Ellipse>
 
-        <!-- Dot 2 + connectors: Provider Setup (hidden when logged in) -->
+        <!-- Dot 2 + connectors: E2EE Setup (hidden when not visible) -->
         <StackPanel Orientation="Horizontal"
-                    Visibility="{Binding IsLoggedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                    Visibility="{Binding IsE2EESetupVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
           <Rectangle Width="32" Height="2" VerticalAlignment="Center"
                      Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
           <Ellipse>
@@ -109,28 +109,30 @@
           </Ellipse>
         </StackPanel>
 
+        <!-- Dot 3 + connectors: Provider Setup (hidden when logged in) -->
+        <StackPanel Orientation="Horizontal"
+                    Visibility="{Binding IsLoggedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+          <Rectangle Width="32" Height="2" VerticalAlignment="Center"
+                     Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+          <Ellipse>
+            <Ellipse.Style>
+              <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CurrentStep}" Value="3">
+                    <Setter Property="Width" Value="12" />
+                    <Setter Property="Height" Value="12" />
+                    <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Ellipse.Style>
+          </Ellipse>
+        </StackPanel>
+
         <Rectangle Width="32" Height="2" VerticalAlignment="Center"
                    Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
 
-        <!-- Dot 3: Modes Overview -->
-        <Ellipse>
-          <Ellipse.Style>
-            <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
-              <Style.Triggers>
-                <DataTrigger Binding="{Binding CurrentStep}" Value="3">
-                  <Setter Property="Width" Value="12" />
-                  <Setter Property="Height" Value="12" />
-                  <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </Ellipse.Style>
-        </Ellipse>
-
-        <Rectangle Width="32" Height="2" VerticalAlignment="Center"
-                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
-
-        <!-- Dot 4: User Profile -->
+        <!-- Dot 4: Modes Overview -->
         <Ellipse>
           <Ellipse.Style>
             <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
@@ -148,12 +150,30 @@
         <Rectangle Width="32" Height="2" VerticalAlignment="Center"
                    Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
 
-        <!-- Dot 5: Ready -->
+        <!-- Dot 5: User Profile -->
         <Ellipse>
           <Ellipse.Style>
             <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
               <Style.Triggers>
                 <DataTrigger Binding="{Binding CurrentStep}" Value="5">
+                  <Setter Property="Width" Value="12" />
+                  <Setter Property="Height" Value="12" />
+                  <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+
+        <Rectangle Width="32" Height="2" VerticalAlignment="Center"
+                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
+
+        <!-- Dot 6: Ready -->
+        <Ellipse>
+          <Ellipse.Style>
+            <Style TargetType="Ellipse" BasedOn="{StaticResource DotStyle}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentStep}" Value="6">
                   <Setter Property="Width" Value="12" />
                   <Setter Property="Height" Value="12" />
                   <Setter Property="Fill" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
@@ -195,9 +215,9 @@
         </steps:AccountSetupStep.Style>
       </steps:AccountSetupStep>
 
-      <!-- Step 2: Provider Setup -->
-      <steps:ProviderSetupStep>
-        <steps:ProviderSetupStep.Style>
+      <!-- Step 2: E2EE Setup -->
+      <steps:E2EESetupStep>
+        <steps:E2EESetupStep.Style>
           <Style TargetType="UserControl">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -206,12 +226,12 @@
               </DataTrigger>
             </Style.Triggers>
           </Style>
-        </steps:ProviderSetupStep.Style>
-      </steps:ProviderSetupStep>
+        </steps:E2EESetupStep.Style>
+      </steps:E2EESetupStep>
 
-      <!-- Step 3: Modes Overview -->
-      <steps:ModesOverviewStep>
-        <steps:ModesOverviewStep.Style>
+      <!-- Step 3: Provider Setup -->
+      <steps:ProviderSetupStep>
+        <steps:ProviderSetupStep.Style>
           <Style TargetType="UserControl">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -220,12 +240,12 @@
               </DataTrigger>
             </Style.Triggers>
           </Style>
-        </steps:ModesOverviewStep.Style>
-      </steps:ModesOverviewStep>
+        </steps:ProviderSetupStep.Style>
+      </steps:ProviderSetupStep>
 
-      <!-- Step 4: User Profile -->
-      <steps:UserProfileStep>
-        <steps:UserProfileStep.Style>
+      <!-- Step 4: Modes Overview -->
+      <steps:ModesOverviewStep>
+        <steps:ModesOverviewStep.Style>
           <Style TargetType="UserControl">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -234,16 +254,30 @@
               </DataTrigger>
             </Style.Triggers>
           </Style>
+        </steps:ModesOverviewStep.Style>
+      </steps:ModesOverviewStep>
+
+      <!-- Step 5: User Profile -->
+      <steps:UserProfileStep>
+        <steps:UserProfileStep.Style>
+          <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentStep}" Value="5">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
         </steps:UserProfileStep.Style>
       </steps:UserProfileStep>
 
-      <!-- Step 5: Ready -->
+      <!-- Step 6: Ready -->
       <steps:ReadyStep>
         <steps:ReadyStep.Style>
           <Style TargetType="UserControl">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
-              <DataTrigger Binding="{Binding CurrentStep}" Value="5">
+              <DataTrigger Binding="{Binding CurrentStep}" Value="6">
                 <Setter Property="Visibility" Value="Visible" />
               </DataTrigger>
             </Style.Triggers>
@@ -269,7 +303,22 @@
         <ui:Button Grid.Column="0"
                    Content="{loc:Str Wizard_Skip}"
                    Appearance="Transparent"
-                   Command="{Binding SkipCommand}" />
+                   Command="{Binding SkipCommand}">
+          <ui:Button.Style>
+            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+              <Setter Property="Visibility" Value="Visible" />
+              <Style.Triggers>
+                <MultiDataTrigger>
+                  <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding CurrentStep}" Value="2" />
+                    <Condition Binding="{Binding IsE2EESetupVisible}" Value="True" />
+                  </MultiDataTrigger.Conditions>
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </MultiDataTrigger>
+              </Style.Triggers>
+            </Style>
+          </ui:Button.Style>
+        </ui:Button>
 
         <!-- Back Button -->
         <ui:Button Grid.Column="2"
