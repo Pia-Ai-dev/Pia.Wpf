@@ -57,4 +57,105 @@ public class E2EESetupStepViewModelTests
         Assert.False(sut.IsBusy);
         Assert.Null(sut.ErrorMessage);
     }
+
+    [Fact]
+    public async Task Proceed_FromChoice_WithToggleOff_ShouldEnterConfirmingOptOut()
+    {
+        bool? advanceRaisedWith = null;
+
+        var sut = CreateSut();
+        sut.ShouldEnableE2EE = false;
+        sut.AdvanceRequested += enabled => advanceRaisedWith = enabled;
+
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        Assert.Equal(E2EESetupState.ConfirmingOptOut, sut.State);
+        await _deviceMgmt.DidNotReceive().BootstrapFirstDeviceAsync();
+        Assert.Null(advanceRaisedWith);
+    }
+
+    [Fact]
+    public async Task Proceed_FromConfirmingOptOut_ShouldStartSyncAndSignalAdvance()
+    {
+        bool? advanceRaisedWith = null;
+
+        var sut = CreateSut();
+        sut.ShouldEnableE2EE = false;
+        sut.AdvanceRequested += enabled => advanceRaisedWith = enabled;
+
+        await sut.ProceedCommand.ExecuteAsync(null); // → ConfirmingOptOut
+        await sut.ProceedCommand.ExecuteAsync(null); // → CompleteOptOutAsync → AdvanceRequested(false)
+
+        Assert.False(advanceRaisedWith);
+        await _deviceMgmt.DidNotReceive().BootstrapFirstDeviceAsync();
+        await _syncService.Received(1).PerformFirstSyncMigrationAsync();
+        _syncService.Received(1).StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task OptOutGoBack_FromConfirmingOptOut_ShouldReturnToChoice()
+    {
+        var sut = CreateSut();
+        sut.ShouldEnableE2EE = false;
+        await sut.ProceedCommand.ExecuteAsync(null);
+        Assert.Equal(E2EESetupState.ConfirmingOptOut, sut.State);
+
+        sut.OptOutGoBackCommand.Execute(null);
+
+        Assert.Equal(E2EESetupState.Choice, sut.State);
+    }
+
+    [Fact]
+    public async Task Proceed_FromSavingRecoveryCode_WithoutCheckbox_ShouldNotAdvance()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync().Returns("CODE");
+        var advanceRaised = false;
+
+        var sut = CreateSut();
+        sut.AdvanceRequested += _ => advanceRaised = true;
+        await sut.ProceedCommand.ExecuteAsync(null); // → SavingRecoveryCode
+
+        Assert.Equal(E2EESetupState.SavingRecoveryCode, sut.State);
+        Assert.False(sut.HasConfirmedRecoveryCode);
+
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        Assert.False(advanceRaised);
+        Assert.Equal(E2EESetupState.SavingRecoveryCode, sut.State);
+        _syncService.DidNotReceive().StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task Proceed_FromSavingRecoveryCode_WithCheckbox_ShouldSignalAdvanceAndStartSync()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync().Returns("CODE");
+        bool? advanceRaisedWith = null;
+
+        var sut = CreateSut();
+        sut.AdvanceRequested += enabled => advanceRaisedWith = enabled;
+        await sut.ProceedCommand.ExecuteAsync(null); // → SavingRecoveryCode
+        sut.HasConfirmedRecoveryCode = true;
+
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        Assert.True(advanceRaisedWith);
+        Assert.Equal(E2EESetupState.Completed, sut.State);
+        await _syncService.Received(1).PerformFirstSyncMigrationAsync();
+        _syncService.Received(1).StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task Bootstrap_Failure_ShouldStayInChoice_WithErrorMessage()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync().ThrowsAsync(new InvalidOperationException("server unreachable"));
+
+        var sut = CreateSut();
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        Assert.Equal(E2EESetupState.Choice, sut.State);
+        Assert.NotNull(sut.ErrorMessage);
+        Assert.Contains("server unreachable", sut.ErrorMessage);
+        Assert.False(sut.IsBusy);
+        _syncService.DidNotReceive().StartBackgroundSync();
+    }
 }

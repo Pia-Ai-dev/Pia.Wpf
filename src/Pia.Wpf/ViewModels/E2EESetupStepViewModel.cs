@@ -114,6 +114,15 @@ public partial class E2EESetupStepViewModel : ObservableObject
         AdvanceRequested?.Invoke(true);
     }
 
+    [RelayCommand]
+    private void OptOutGoBack()
+    {
+        if (State == E2EESetupState.ConfirmingOptOut)
+        {
+            State = E2EESetupState.Choice;
+        }
+    }
+
     private async Task CompleteOptOutAsync()
     {
         try
