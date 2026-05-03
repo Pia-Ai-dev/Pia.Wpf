@@ -154,6 +154,10 @@ public class ResearchHistoryToolHandlerTests
         public Task<IReadOnlyList<ResearchHistoryEntry>> VectorSearchAsync(float[] queryEmbedding, int topK = 10, float threshold = 0.2f) =>
             throw new NotImplementedException();
 
+        public Task<IReadOnlyList<ResearchHistoryEntry>> GetModifiedSinceAsync(DateTime since) =>
+            throw new NotImplementedException();
+        public Task UpsertFromSyncAsync(ResearchHistoryEntry entry) => throw new NotImplementedException();
+
         // Quiet down "event never used" warning while preserving the interface contract.
         private void RaiseSessionsChanged() => SessionsChanged?.Invoke(this, EventArgs.Empty);
     }

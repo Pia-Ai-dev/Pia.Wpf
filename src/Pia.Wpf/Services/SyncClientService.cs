@@ -27,6 +27,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IMemoryService _memoryService;
     private readonly ITodoService? _todoService;
     private readonly IKanbanColumnService? _columnService;
+    private readonly IScheduledJobService? _scheduledJobService;
+    private readonly IResearchHistoryService? _researchHistoryService;
     private readonly IE2EEService? _e2ee;
     private readonly IDeviceManagementService? _deviceMgmt;
     private readonly IDeviceKeyService? _deviceKeys;
@@ -75,6 +77,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         SyncDeleteTrackerService deleteTracker,
         ITodoService? todoService = null,
         IKanbanColumnService? columnService = null,
+        IScheduledJobService? scheduledJobService = null,
+        IResearchHistoryService? researchHistoryService = null,
         IE2EEService? e2ee = null,
         IDeviceManagementService? deviceMgmt = null,
         IDeviceKeyService? deviceKeys = null,
@@ -88,6 +92,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         _memoryService = memoryService;
         _todoService = todoService;
         _columnService = columnService;
+        _scheduledJobService = scheduledJobService;
+        _researchHistoryService = researchHistoryService;
         _e2ee = e2ee;
         _deviceMgmt = deviceMgmt;
         _deviceKeys = deviceKeys;
@@ -373,6 +379,12 @@ public class SyncClientService : ISyncClientService, IDisposable
         var todos = _todoService is not null
             ? await _todoService.GetAllAsync()
             : [];
+        var scheduledJobs = _scheduledJobService is not null
+            ? await _scheduledJobService.GetModifiedSinceAsync(lastSync)
+            : [];
+        var researchSessions = _researchHistoryService is not null
+            ? await _researchHistoryService.GetModifiedSinceAsync(lastSync)
+            : [];
 
         var dirtyTemplates = templates.Where(t => !t.IsBuiltIn).Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync).Count();
         var dirtyProviders = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
@@ -380,8 +392,9 @@ public class SyncClientService : ISyncClientService, IDisposable
         var dirtyMemories = memories.Where(m => m.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtyKanbanCols = kanbanColumns.Where(c => c.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtyTodos = todos.Where(t => t.UpdatedAt.ToUniversalTime() >= lastSync).Count();
-        _logger.LogInformation("Push dirty tracking: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanCols}K, {Todos}Todo changed since {LastSync}",
-            dirtyTemplates, dirtyProviders, dirtySessions, dirtyMemories, dirtyKanbanCols, dirtyTodos, lastSync);
+        _logger.LogInformation("Push dirty tracking: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanCols}K, {Todos}Todo, {Jobs}Job, {Research}R changed since {LastSync}",
+            dirtyTemplates, dirtyProviders, dirtySessions, dirtyMemories, dirtyKanbanCols, dirtyTodos,
+            scheduledJobs.Count, researchSessions.Count, lastSync);
 
         var isE2EE = _e2ee?.IsReady() == true;
         var userId = isE2EE ? settings.SyncUserId : null;
@@ -443,26 +456,44 @@ public class SyncClientService : ISyncClientService, IDisposable
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("todos", [])
             },
+            ScheduledJobs = new SyncEntityChanges<SyncScheduledJob>
+            {
+                Upserted = scheduledJobs
+                    .Select(j => _mapper.ToSyncScheduledJob(j, userId))
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("scheduledJobs", [])
+            },
+            ResearchSessions = new SyncEntityChanges<SyncResearchSession>
+            {
+                Upserted = researchSessions
+                    .Select(r => _mapper.ToSyncResearchSession(r, userId))
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("researchSessions", [])
+            },
             PluginPreferences = _pluginService?.GetPendingPreferenceChanges() ?? []
         };
 
-        _logger.LogInformation("Push pending deletes: {Templates}T, {Providers}P, {Memories}M, {Todos}Todo, {KanbanCols}K",
+        _logger.LogInformation("Push pending deletes: {Templates}T, {Providers}P, {Memories}M, {Todos}Todo, {KanbanCols}K, {Jobs}Job, {Research}R",
             request.Templates.Deleted.Count, request.Providers.Deleted.Count,
             request.Memories.Deleted.Count, request.Todos.Deleted.Count,
-            request.KanbanColumns.Deleted.Count);
+            request.KanbanColumns.Deleted.Count,
+            request.ScheduledJobs.Deleted.Count, request.ResearchSessions.Deleted.Count);
 
         var pushedCount = request.Templates.Upserted.Count
             + request.Providers.Upserted.Count
             + request.Sessions.Added.Count
             + request.Memories.Upserted.Count
             + request.KanbanColumns.Upserted.Count
-            + request.Todos.Upserted.Count;
+            + request.Todos.Upserted.Count
+            + request.ScheduledJobs.Upserted.Count
+            + request.ResearchSessions.Upserted.Count;
 
         _logger.LogInformation(
-            "Push request — Templates: {Templates}, Providers: {Providers}, Sessions: {Sessions}, Memories: {Memories}, KanbanColumns: {KanbanColumns}, Todos: {Todos}, LastSync: {LastSync}, DeviceId: {DeviceId}, IsE2EE: {IsE2EE}",
+            "Push request — Templates: {Templates}, Providers: {Providers}, Sessions: {Sessions}, Memories: {Memories}, KanbanColumns: {KanbanColumns}, Todos: {Todos}, ScheduledJobs: {Jobs}, ResearchSessions: {Research}, LastSync: {LastSync}, DeviceId: {DeviceId}, IsE2EE: {IsE2EE}",
             request.Templates.Upserted.Count, request.Providers.Upserted.Count,
             request.Sessions.Added.Count, request.Memories.Upserted.Count,
             request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count,
+            request.ScheduledJobs.Upserted.Count, request.ResearchSessions.Upserted.Count,
             request.LastSyncTimestamp, request.DeviceId, request.IsE2EEEncrypted);
 
         // Short-circuit: skip HTTP POST when there are no changes to push
@@ -887,6 +918,96 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "todos", pullResponse.Todos.Deleted.Count);
         }
 
+        // Apply scheduled jobs
+        if (_scheduledJobService is not null)
+        {
+            foreach (var syncJob in pullResponse.ScheduledJobs.Upserted)
+            {
+                try
+                {
+                    var local = _mapper.FromSyncScheduledJob(syncJob, userId);
+                    var existing = await _scheduledJobService.GetAsync(syncJob.Id);
+
+                    if (existing is null)
+                    {
+                        await _scheduledJobService.UpsertFromSyncAsync(local);
+                        mergeInserted++;
+                    }
+                    else if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
+                    {
+                        await _scheduledJobService.UpsertFromSyncAsync(local);
+                        mergeUpdated++;
+                        _logger.LogInformation("Updated scheduled job {Id}", syncJob.Id);
+                    }
+                    else
+                    {
+                        mergeSkipped++;
+                        _logger.LogDebug("Skipped scheduled job {Id}: local is newer (local={Local}, remote={Remote})",
+                            syncJob.Id, existing.UpdatedAt, local.UpdatedAt);
+                    }
+                }
+                catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                            or System.Security.Cryptography.AuthenticationTagMismatchException)
+                {
+                    decryptionErrors++;
+                    _logger.LogWarning(ex, "Failed to decrypt synced scheduled job {Id}; skipping", syncJob.Id);
+                }
+            }
+
+            foreach (var deletedId in pullResponse.ScheduledJobs.Deleted)
+            {
+                _logger.LogDebug("Pull deleted: {EntityType} {Id}", "scheduledJobs", deletedId);
+                await _scheduledJobService.DeleteAsync(deletedId);
+                mergeDeleted++;
+            }
+            if (pullResponse.ScheduledJobs.Deleted.Count > 0)
+                _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "scheduledJobs", pullResponse.ScheduledJobs.Deleted.Count);
+        }
+
+        // Apply research sessions
+        if (_researchHistoryService is not null)
+        {
+            foreach (var syncEntry in pullResponse.ResearchSessions.Upserted)
+            {
+                try
+                {
+                    var local = _mapper.FromSyncResearchSession(syncEntry, userId);
+                    var existing = await _researchHistoryService.GetEntryAsync(syncEntry.Id);
+
+                    if (existing is null)
+                    {
+                        await _researchHistoryService.UpsertFromSyncAsync(local);
+                        mergeInserted++;
+                    }
+                    else if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
+                    {
+                        await _researchHistoryService.UpsertFromSyncAsync(local);
+                        mergeUpdated++;
+                        _logger.LogInformation("Updated research session {Id}", syncEntry.Id);
+                    }
+                    else
+                    {
+                        mergeSkipped++;
+                    }
+                }
+                catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                            or System.Security.Cryptography.AuthenticationTagMismatchException)
+                {
+                    decryptionErrors++;
+                    _logger.LogWarning(ex, "Failed to decrypt synced research session {Id}; skipping", syncEntry.Id);
+                }
+            }
+
+            foreach (var deletedId in pullResponse.ResearchSessions.Deleted)
+            {
+                _logger.LogDebug("Pull deleted: {EntityType} {Id}", "researchSessions", deletedId);
+                await _researchHistoryService.DeleteEntryAsync(deletedId);
+                mergeDeleted++;
+            }
+            if (pullResponse.ResearchSessions.Deleted.Count > 0)
+                _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "researchSessions", pullResponse.ResearchSessions.Deleted.Count);
+        }
+
         if (decryptionErrors > 0)
         {
             _logger.LogWarning("Pull completed with {Count} decryption error(s) — data may have been encrypted with a different key", decryptionErrors);
@@ -908,6 +1029,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             + pullResponse.Memories.Upserted.Count
             + pullResponse.KanbanColumns.Upserted.Count
             + pullResponse.Todos.Upserted.Count
+            + pullResponse.ScheduledJobs.Upserted.Count
+            + pullResponse.ResearchSessions.Upserted.Count
             + pullResponse.Plugins.Upserted.Count;
 
         _logger.LogInformation("Pull merge: {Inserted} inserted, {Updated} updated, {Skipped} skipped, {Deleted} deleted, {DecryptErrors} decrypt errors",

@@ -320,26 +320,48 @@
                   BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                   Padding="16,8">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-              <ui:Button Command="{Binding CopyResultCommand}"
-                         Appearance="Primary"
-                         Height="32"
-                         Margin="0,0,8,0"
-                         Padding="12,0">
-                <StackPanel Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="Copy24" FontSize="14" Margin="0,0,6,0" />
-                  <TextBlock Text="{loc:Str ResearchHistory_CopyResult}" VerticalAlignment="Center" FontSize="12" />
-                </StackPanel>
-              </ui:Button>
-              <ui:Button Command="{Binding ExportEntryCommand}"
-                         Appearance="Secondary"
-                         Height="32"
-                         Margin="0,0,8,0"
-                         Padding="12,0">
-                <StackPanel Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="ArrowExportUp24" FontSize="14" Margin="0,0,6,0" />
-                  <TextBlock Text="{loc:Str ResearchHistory_Export}" VerticalAlignment="Center" FontSize="12" />
-                </StackPanel>
-              </ui:Button>
+              <ui:DropDownButton Appearance="Primary"
+                                 Height="32"
+                                 Margin="0,0,8,0"
+                                 Padding="12,0">
+                <ui:DropDownButton.Content>
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Copy24" FontSize="14" Margin="0,0,6,0" />
+                    <TextBlock Text="{loc:Str ResearchHistory_CopyResult}" VerticalAlignment="Center" FontSize="12" />
+                  </StackPanel>
+                </ui:DropDownButton.Content>
+                <ui:DropDownButton.Flyout>
+                  <ContextMenu>
+                    <MenuItem Header="{loc:Str Research_Scope_Summary}"
+                              Command="{Binding CopyResultCommand}"
+                              CommandParameter="summary" />
+                    <MenuItem Header="{loc:Str Research_Scope_Full}"
+                              Command="{Binding CopyResultCommand}"
+                              CommandParameter="full" />
+                  </ContextMenu>
+                </ui:DropDownButton.Flyout>
+              </ui:DropDownButton>
+              <ui:DropDownButton Appearance="Secondary"
+                                 Height="32"
+                                 Margin="0,0,8,0"
+                                 Padding="12,0">
+                <ui:DropDownButton.Content>
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="ArrowExportUp24" FontSize="14" Margin="0,0,6,0" />
+                    <TextBlock Text="{loc:Str ResearchHistory_Export}" VerticalAlignment="Center" FontSize="12" />
+                  </StackPanel>
+                </ui:DropDownButton.Content>
+                <ui:DropDownButton.Flyout>
+                  <ContextMenu>
+                    <MenuItem Header="{loc:Str Research_Scope_Summary}"
+                              Command="{Binding ExportEntryCommand}"
+                              CommandParameter="summary" />
+                    <MenuItem Header="{loc:Str Research_Scope_Full}"
+                              Command="{Binding ExportEntryCommand}"
+                              CommandParameter="full" />
+                  </ContextMenu>
+                </ui:DropDownButton.Flyout>
+              </ui:DropDownButton>
               <ui:Button Command="{Binding DeleteEntryCommand}"
                          Appearance="Secondary"
                          Height="32"

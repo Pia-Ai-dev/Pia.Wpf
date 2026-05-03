@@ -11,6 +11,7 @@ public class ResearchHistoryService : IResearchHistoryService
 {
     private readonly SqliteContext _context;
     private readonly IEmbeddingService _embeddingService;
+    private readonly SyncDeleteTrackerService _deleteTracker;
     private readonly ILogger<ResearchHistoryService> _logger;
 
     public event EventHandler? SessionsChanged;
@@ -18,10 +19,12 @@ public class ResearchHistoryService : IResearchHistoryService
     public ResearchHistoryService(
         SqliteContext context,
         IEmbeddingService embeddingService,
+        SyncDeleteTrackerService deleteTracker,
         ILogger<ResearchHistoryService> logger)
     {
         _context = context;
         _embeddingService = embeddingService;
+        _deleteTracker = deleteTracker;
         _logger = logger;
     }
 
@@ -52,13 +55,22 @@ public class ResearchHistoryService : IResearchHistoryService
             }
         }
 
+        if (entry.UpdatedAt == default)
+            entry.UpdatedAt = entry.CreatedAt;
+
+        await InsertAsync(entry);
+        OnSessionsChanged();
+    }
+
+    private async Task InsertAsync(ResearchHistoryEntry entry)
+    {
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO ResearchSessions (Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
-                                          Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding)
+                                          Status, StepCount, CreatedAt, CompletedAt, UpdatedAt, ScheduledJobId, Embedding)
             VALUES (@Id, @Query, @SynthesizedResult, @StepsJson, @ProviderId, @ProviderName,
-                    @Status, @StepCount, @CreatedAt, @CompletedAt, @ScheduledJobId, @Embedding)
+                    @Status, @StepCount, @CreatedAt, @CompletedAt, @UpdatedAt, @ScheduledJobId, @Embedding)
             """;
 
         command.Parameters.AddWithValue("@Id", entry.Id.ToString());
@@ -71,11 +83,11 @@ public class ResearchHistoryService : IResearchHistoryService
         command.Parameters.AddWithValue("@StepCount", entry.StepCount);
         command.Parameters.AddWithValue("@CreatedAt", entry.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("@CompletedAt", entry.CompletedAt.ToString("O"));
+        command.Parameters.AddWithValue("@UpdatedAt", entry.UpdatedAt.ToString("O"));
         command.Parameters.AddWithValue("@ScheduledJobId", entry.ScheduledJobId.HasValue ? (object)entry.ScheduledJobId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@Embedding", entry.Embedding is null ? DBNull.Value : (object)entry.Embedding);
 
         await command.ExecuteNonQueryAsync();
-        OnSessionsChanged();
     }
 
     public async Task<IReadOnlyList<ResearchHistoryEntry>> SearchEntriesAsync(
@@ -92,7 +104,7 @@ public class ResearchHistoryService : IResearchHistoryService
 
         command.CommandText = $"""
             SELECT Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
-                   Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding
+                   Status, StepCount, CreatedAt, CompletedAt, UpdatedAt, ScheduledJobId, Embedding
             FROM ResearchSessions
             {whereClause}
             ORDER BY CreatedAt DESC
@@ -119,7 +131,7 @@ public class ResearchHistoryService : IResearchHistoryService
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
-                   Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding
+                   Status, StepCount, CreatedAt, CompletedAt, UpdatedAt, ScheduledJobId, Embedding
             FROM ResearchSessions
             WHERE Id = @Id
             """;
@@ -141,7 +153,72 @@ public class ResearchHistoryService : IResearchHistoryService
         command.CommandText = "DELETE FROM ResearchSessions WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
         await command.ExecuteNonQueryAsync();
+        _deleteTracker.TrackDeletion("researchSessions", id);
         OnSessionsChanged();
+    }
+
+    public async Task<IReadOnlyList<ResearchHistoryEntry>> GetModifiedSinceAsync(DateTime since)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
+                   Status, StepCount, CreatedAt, CompletedAt, UpdatedAt, ScheduledJobId, Embedding
+            FROM ResearchSessions
+            WHERE UpdatedAt >= @Since
+            """;
+        command.Parameters.AddWithValue("@Since", since.ToString("O"));
+
+        var entries = new List<ResearchHistoryEntry>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            entries.Add(MapEntry(reader));
+        return entries.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Inserts an entry pulled from sync. Skips local embedding generation — the local device
+    /// will compute its own embedding lazily on first vector-search use, since embeddings are
+    /// machine-specific and not synced.
+    /// </summary>
+    public async Task UpsertFromSyncAsync(ResearchHistoryEntry entry)
+    {
+        if (entry.UpdatedAt == default)
+            entry.UpdatedAt = entry.CreatedAt;
+
+        var existing = await GetEntryAsync(entry.Id);
+        if (existing is null)
+        {
+            await InsertAsync(entry);
+            OnSessionsChanged();
+            _logger.LogInformation("Imported research session {Id} from sync", entry.Id);
+            return;
+        }
+
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE ResearchSessions
+            SET Query=@Query, SynthesizedResult=@SynthesizedResult, StepsJson=@StepsJson,
+                ProviderId=@ProviderId, ProviderName=@ProviderName, Status=@Status,
+                StepCount=@StepCount, CompletedAt=@CompletedAt, UpdatedAt=@UpdatedAt,
+                ScheduledJobId=@ScheduledJobId
+            WHERE Id=@Id
+            """;
+        command.Parameters.AddWithValue("@Id", entry.Id.ToString());
+        command.Parameters.AddWithValue("@Query", entry.Query);
+        command.Parameters.AddWithValue("@SynthesizedResult", entry.SynthesizedResult);
+        command.Parameters.AddWithValue("@StepsJson", entry.StepsJson);
+        command.Parameters.AddWithValue("@ProviderId", entry.ProviderId.ToString());
+        command.Parameters.AddWithValue("@ProviderName", entry.ProviderName ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@Status", entry.Status);
+        command.Parameters.AddWithValue("@StepCount", entry.StepCount);
+        command.Parameters.AddWithValue("@CompletedAt", entry.CompletedAt.ToString("O"));
+        command.Parameters.AddWithValue("@UpdatedAt", entry.UpdatedAt.ToString("O"));
+        command.Parameters.AddWithValue("@ScheduledJobId", entry.ScheduledJobId.HasValue ? (object)entry.ScheduledJobId.Value.ToString() : DBNull.Value);
+        await command.ExecuteNonQueryAsync();
+        OnSessionsChanged();
+        _logger.LogInformation("Updated research session {Id} from sync", entry.Id);
     }
 
     public async Task<int> GetEntryCountAsync(
@@ -221,7 +298,7 @@ public class ResearchHistoryService : IResearchHistoryService
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, Query, SynthesizedResult, StepsJson, ProviderId, ProviderName,
-                   Status, StepCount, CreatedAt, CompletedAt, ScheduledJobId, Embedding
+                   Status, StepCount, CreatedAt, CompletedAt, UpdatedAt, ScheduledJobId, Embedding
             FROM ResearchSessions
             WHERE Embedding IS NOT NULL
             """;
@@ -276,8 +353,9 @@ public class ResearchHistoryService : IResearchHistoryService
             StepCount = reader.GetInt32(7),
             CreatedAt = DateTime.Parse(reader.GetString(8)),
             CompletedAt = DateTime.Parse(reader.GetString(9)),
-            ScheduledJobId = reader.IsDBNull(10) ? null : Guid.Parse(reader.GetString(10)),
-            Embedding = reader.IsDBNull(11) ? null : (byte[])reader[11]
+            UpdatedAt = DateTime.Parse(reader.GetString(10)),
+            ScheduledJobId = reader.IsDBNull(11) ? null : Guid.Parse(reader.GetString(11)),
+            Embedding = reader.IsDBNull(12) ? null : (byte[])reader[12]
         };
     }
 }

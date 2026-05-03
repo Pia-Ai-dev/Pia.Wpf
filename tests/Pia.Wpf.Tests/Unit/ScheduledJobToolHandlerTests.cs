@@ -180,6 +180,8 @@ public class ScheduledJobToolHandlerTests
             => Task.FromResult(_all.FirstOrDefault(j => j.Id == id));
 
         public Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync() => throw new NotImplementedException();
+        public Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) => throw new NotImplementedException();
+        public Task UpsertFromSyncAsync(ScheduledJob job) => throw new NotImplementedException();
 
         public Task UpdateAsync(Guid id, string? name = null, string? query = null,
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,

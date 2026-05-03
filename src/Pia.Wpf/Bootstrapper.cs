@@ -103,6 +103,7 @@ public static class Bootstrapper
                 // overriding whatever URL was previously saved via the Account Settings UI.
                 var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
                 var settings = await settingsService.GetSettingsAsync();
+                settings.TrustSelfSignedCertificates = true;
                 if (settings.ServerUrl != envServerUrl)
                 {
                     bootstrapLogger.LogInformation(

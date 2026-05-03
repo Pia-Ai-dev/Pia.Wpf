@@ -246,6 +246,8 @@ public class ScheduledJobBackgroundServiceTests
         public Task DeleteAsync(Guid id) => throw new NotImplementedException();
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) => throw new NotImplementedException();
+        public Task UpsertFromSyncAsync(ScheduledJob job) => throw new NotImplementedException();
     }
 
     private sealed class FakeResearchService : IResearchService
@@ -301,6 +303,10 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task<IReadOnlyList<ResearchHistoryEntry>> HybridSearchAsync(string query,
             float[]? queryEmbedding = null, int topK = 10) => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<ResearchHistoryEntry>> GetModifiedSinceAsync(DateTime since)
+            => throw new NotImplementedException();
+        public Task UpsertFromSyncAsync(ResearchHistoryEntry entry) => throw new NotImplementedException();
     }
 
     private sealed class FakeProviderResolver : IScheduledResearchProviderResolver

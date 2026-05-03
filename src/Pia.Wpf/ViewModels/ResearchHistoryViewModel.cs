@@ -18,6 +18,7 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
     private readonly IOutputService _outputService;
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
+    private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private int _currentOffset;
@@ -54,8 +55,8 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
     private ObservableCollection<ResearchStepDto> _detailSteps = new();
 
     public IAsyncRelayCommand ViewDetailCommand { get; }
-    public IAsyncRelayCommand CopyResultCommand { get; }
-    public IAsyncRelayCommand ExportEntryCommand { get; }
+    public IAsyncRelayCommand<string> CopyResultCommand { get; }
+    public IAsyncRelayCommand<string> ExportEntryCommand { get; }
     public IAsyncRelayCommand DeleteEntryCommand { get; }
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand ClearFilterCommand { get; }
@@ -68,7 +69,8 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
         IResearchExportService exportService,
         IOutputService outputService,
         IDialogService dialogService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        Wpf.Ui.ISnackbarService snackbarService)
     {
         _logger = logger;
         _researchHistoryService = researchHistoryService;
@@ -76,11 +78,12 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
         _outputService = outputService;
         _dialogService = dialogService;
         _localizationService = localizationService;
+        _snackbarService = snackbarService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         ViewDetailCommand = new AsyncRelayCommand(ExecuteViewDetailAsync, CanExecuteAction);
-        CopyResultCommand = new AsyncRelayCommand(ExecuteCopyResult, CanExecuteAction);
-        ExportEntryCommand = new AsyncRelayCommand(ExecuteExportEntry, CanExecuteAction);
+        CopyResultCommand = new AsyncRelayCommand<string>(ExecuteCopyResult, _ => CanExecuteAction());
+        ExportEntryCommand = new AsyncRelayCommand<string>(ExecuteExportEntry, _ => CanExecuteAction());
         DeleteEntryCommand = new AsyncRelayCommand(ExecuteDeleteEntry, CanExecuteAction);
         RefreshCommand = new AsyncRelayCommand(ExecuteRefreshAsync);
         ClearFilterCommand = new AsyncRelayCommand(ExecuteClearFilterAsync);
@@ -217,14 +220,26 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
         DetailSteps.Clear();
     }
 
-    private async Task ExecuteCopyResult()
+    private async Task ExecuteCopyResult(string? scope)
     {
         if (SelectedEntry is null)
             return;
 
+        var isFull = string.Equals(scope, "full", StringComparison.OrdinalIgnoreCase);
+        var content = isFull
+            ? _exportService.BuildMarkdown(ReconstructSession(SelectedEntry))
+            : SelectedEntry.SynthesizedResult;
+
+        if (string.IsNullOrEmpty(content))
+            return;
+
         try
         {
-            await _outputService.CopyToClipboardAsync(SelectedEntry.SynthesizedResult);
+            await _outputService.CopyToClipboardAsync(content);
+            _snackbarService.Show(
+                _localizationService["Msg_Research_Copied"],
+                _localizationService["Msg_Research_ResultCopied"],
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
         }
         catch (Exception ex)
         {
@@ -232,20 +247,22 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
         }
     }
 
-    private async Task ExecuteExportEntry()
+    private async Task ExecuteExportEntry(string? scope)
     {
         if (SelectedEntry is null)
             return;
 
+        var isFull = string.Equals(scope, "full", StringComparison.OrdinalIgnoreCase);
+
         try
         {
-            // Reconstruct a ResearchSession from the history entry for export
             var session = ReconstructSession(SelectedEntry);
+            var sessionToExport = isFull ? session : BuildSummaryOnlySession(session);
 
             var dialog = new SaveFileDialog
             {
                 Title = _localizationService["ResearchHistory_Export"],
-                FileName = $"Research_{SelectedEntry.CreatedAt:yyyyMMdd_HHmmss}",
+                FileName = $"Research_{SelectedEntry.CreatedAt:yyyyMMdd_HHmmss}{(isFull ? "" : "_summary")}",
                 Filter = "Markdown (*.md)|*.md|HTML (*.html)|*.html",
                 FilterIndex = 1,
                 DefaultExt = ".md"
@@ -254,20 +271,49 @@ public partial class ResearchHistoryViewModel : ObservableObject, IDisposable, I
             if (dialog.ShowDialog() != true)
                 return;
 
+            var filePath = dialog.FileName;
+
             switch (dialog.FilterIndex)
             {
                 case 1:
-                    await _exportService.ExportAsMarkdownAsync(session, dialog.FileName);
+                    await _exportService.ExportAsMarkdownAsync(sessionToExport, filePath);
                     break;
                 case 2:
-                    await _exportService.ExportAsHtmlAsync(session, dialog.FileName);
+                    await _exportService.ExportAsHtmlAsync(sessionToExport, filePath);
                     break;
             }
+
+            _snackbarService.Show(
+                _localizationService["Msg_Research_Exported"],
+                _localizationService.Format("Msg_Research_ExportedToFile", filePath),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to export research entry");
         }
+    }
+
+    private static ResearchSession BuildSummaryOnlySession(ResearchSession source)
+    {
+        var summary = new ResearchSession(source.Query)
+        {
+            SynthesizedResult = source.SynthesizedResult,
+            Status = source.Status,
+            CompletedAt = source.CompletedAt
+        };
+        var lastStep = source.Steps.LastOrDefault();
+        if (lastStep is not null && !string.IsNullOrWhiteSpace(lastStep.Content))
+        {
+            summary.Steps.Add(new ResearchStep(1, lastStep.Title)
+            {
+                Content = lastStep.Content,
+                Status = lastStep.Status,
+                StartedAt = lastStep.StartedAt,
+                CompletedAt = lastStep.CompletedAt
+            });
+        }
+        return summary;
     }
 
     private async Task ExecuteDeleteEntry()

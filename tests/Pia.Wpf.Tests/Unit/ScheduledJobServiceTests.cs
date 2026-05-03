@@ -1,7 +1,9 @@
+using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Interfaces;
 using Pia.Services.Scheduling;
 using Xunit;
 
@@ -11,11 +13,27 @@ public class ScheduledJobServiceTests : IDisposable
 {
     private readonly SqliteContext _ctx;
     private readonly ScheduledJobService _service;
+    private readonly string _tmpDir;
 
     public ScheduledJobServiceTests()
     {
         _ctx = new SqliteContext();
-        _service = new ScheduledJobService(_ctx, new RecurrenceCalculator(), NullLogger<ScheduledJobService>.Instance);
+        _tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tmpDir);
+        var settings = new TestSettingsService();
+        var deleteTracker = new SyncDeleteTrackerService(_tmpDir, NullLogger<SyncDeleteTrackerService>.Instance);
+        _service = new ScheduledJobService(_ctx, new RecurrenceCalculator(), settings, deleteTracker, NullLogger<ScheduledJobService>.Instance);
+    }
+
+    private sealed class TestSettingsService : ISettingsService
+    {
+#pragma warning disable CS0067
+        public event EventHandler<AppSettings>? SettingsChanged;
+#pragma warning restore CS0067
+        public Task<AppSettings> GetSettingsAsync() => Task.FromResult(new AppSettings());
+        public Task SaveSettingsAsync(AppSettings settings) => Task.CompletedTask;
+        public Task SaveDraftAsync(string? draftText) => Task.CompletedTask;
+        public Task<string?> GetDraftAsync() => Task.FromResult<string?>(null);
     }
 
     [Fact]
@@ -71,6 +89,40 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.NotNull(fetched.LastResultEntryId);
     }
 
+    [Fact]
+    public async Task GetDueJobsAsync_ExcludesJobsOwnedByOtherDevice()
+    {
+        // Create a job locally with no settings (OwnerDeviceId == null) — i.e. legacy/local-only.
+        // Then re-stamp its OwnerDeviceId to a different device.
+        var job = await _service.CreateAsync("TEST_OtherDevice", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
+        await SetOwnerDeviceIdAsync(job.Id, Guid.NewGuid());
+
+        var due = await _service.GetDueJobsAsync();
+        Assert.DoesNotContain(due, j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task GetDueJobsAsync_IncludesJobsWithNullOwner()
+    {
+        var job = await _service.CreateAsync("TEST_LegacyOwner", "q", RecurrenceType.Daily, new TimeOnly(0, 0));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
+        await SetOwnerDeviceIdAsync(job.Id, null); // legacy row from before sync
+
+        var due = await _service.GetDueJobsAsync();
+        Assert.Contains(due, j => j.Id == job.Id);
+    }
+
+    private async Task SetOwnerDeviceIdAsync(Guid id, Guid? ownerId)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE ScheduledJobs SET OwnerDeviceId = @owner WHERE Id = @id";
+        cmd.Parameters.AddWithValue("@owner", ownerId.HasValue ? (object)ownerId.Value.ToString() : DBNull.Value);
+        cmd.Parameters.AddWithValue("@id", id.ToString());
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     private async Task ForceNextFireAtAsync(Guid id, DateTime when)
     {
         var conn = _ctx.GetConnection();
@@ -88,5 +140,6 @@ public class ScheduledJobServiceTests : IDisposable
         cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_%'";
         cmd.ExecuteNonQuery();
         _ctx.Dispose();
+        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
     }
 }

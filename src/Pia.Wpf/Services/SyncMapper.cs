@@ -575,4 +575,195 @@ public class SyncMapper
             kvp => (WindowMode)kvp.Key, kvp => kvp.Value);
         target.UseSameProviderForAllModes = sync.UseSameProviderForAllModes;
     }
+
+    // --- Scheduled Jobs ---
+
+    public SyncScheduledJob ToSyncScheduledJob(ScheduledJob job, string? userId = null)
+    {
+        var sync = new SyncScheduledJob
+        {
+            Id = job.Id,
+            OwnerDeviceId = job.OwnerDeviceId,
+            CreatedAt = ToUtc(job.CreatedAt),
+            UpdatedAt = ToUtc(job.UpdatedAt)
+        };
+
+        if (IsE2EEActive && userId is not null)
+        {
+            var plainPayload = new
+            {
+                job.Name,
+                job.Query,
+                Kind = (int)job.Kind,
+                AnswerLength = (int)job.AnswerLength,
+                job.ProviderId,
+                Recurrence = (int)job.Recurrence,
+                job.TimeOfDay,
+                DayOfWeek = job.DayOfWeek.HasValue ? (int?)(int)job.DayOfWeek.Value : null,
+                job.DayOfMonth,
+                job.Month,
+                SpecificDate = ToUtc(job.SpecificDate),
+                Status = (int)job.Status
+            };
+            (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
+                plainPayload, userId, "scheduled_job", job.Id.ToString());
+        }
+        else
+        {
+            sync.Name = job.Name;
+            sync.Query = job.Query;
+            sync.Kind = (int)job.Kind;
+            sync.AnswerLength = (int)job.AnswerLength;
+            sync.ProviderId = job.ProviderId;
+            sync.Recurrence = (int)job.Recurrence;
+            sync.TimeOfDay = job.TimeOfDay;
+            sync.DayOfWeek = job.DayOfWeek.HasValue ? (int?)(int)job.DayOfWeek.Value : null;
+            sync.DayOfMonth = job.DayOfMonth;
+            sync.Month = job.Month;
+            sync.SpecificDate = ToUtc(job.SpecificDate);
+            sync.Status = (int)job.Status;
+        }
+
+        return sync;
+    }
+
+    public ScheduledJob FromSyncScheduledJob(SyncScheduledJob sync, string? userId = null)
+    {
+        if (IsE2EEActive
+            && sync.EncryptedPayload is not null
+            && sync.WrappedDek is not null
+            && userId is not null)
+        {
+            var decrypted = _e2ee!.DecryptRecord<SyncScheduledJob>(
+                sync.EncryptedPayload, sync.WrappedDek, userId, "scheduled_job", sync.Id.ToString());
+
+            return new ScheduledJob
+            {
+                Id = sync.Id,
+                Name = decrypted.Name ?? "",
+                Query = decrypted.Query ?? "",
+                Kind = (ScheduledJobKind)(decrypted.Kind ?? 0),
+                AnswerLength = (ResearchAnswerLength)(decrypted.AnswerLength ?? 0),
+                ProviderId = decrypted.ProviderId,
+                Recurrence = (RecurrenceType)(decrypted.Recurrence ?? 0),
+                TimeOfDay = decrypted.TimeOfDay ?? default,
+                DayOfWeek = decrypted.DayOfWeek.HasValue ? (DayOfWeek)decrypted.DayOfWeek.Value : null,
+                DayOfMonth = decrypted.DayOfMonth,
+                Month = decrypted.Month,
+                SpecificDate = decrypted.SpecificDate,
+                Status = (ScheduledJobStatus)(decrypted.Status ?? 0),
+                CreatedAt = sync.CreatedAt,
+                UpdatedAt = sync.UpdatedAt,
+                OwnerDeviceId = sync.OwnerDeviceId
+            };
+        }
+
+        return new ScheduledJob
+        {
+            Id = sync.Id,
+            Name = sync.Name ?? "",
+            Query = sync.Query ?? "",
+            Kind = (ScheduledJobKind)(sync.Kind ?? 0),
+            AnswerLength = (ResearchAnswerLength)(sync.AnswerLength ?? 0),
+            ProviderId = sync.ProviderId,
+            Recurrence = (RecurrenceType)(sync.Recurrence ?? 0),
+            TimeOfDay = sync.TimeOfDay ?? default,
+            DayOfWeek = sync.DayOfWeek.HasValue ? (DayOfWeek)sync.DayOfWeek.Value : null,
+            DayOfMonth = sync.DayOfMonth,
+            Month = sync.Month,
+            SpecificDate = sync.SpecificDate,
+            Status = (ScheduledJobStatus)(sync.Status ?? 0),
+            CreatedAt = sync.CreatedAt,
+            UpdatedAt = sync.UpdatedAt,
+            OwnerDeviceId = sync.OwnerDeviceId
+        };
+    }
+
+    // --- Research Sessions ---
+
+    public SyncResearchSession ToSyncResearchSession(ResearchHistoryEntry entry, string? userId = null)
+    {
+        var sync = new SyncResearchSession
+        {
+            Id = entry.Id,
+            CreatedAt = ToUtc(entry.CreatedAt),
+            UpdatedAt = ToUtc(entry.UpdatedAt),
+            CompletedAt = ToUtc(entry.CompletedAt)
+        };
+
+        if (IsE2EEActive && userId is not null)
+        {
+            var plainPayload = new
+            {
+                entry.Query,
+                entry.SynthesizedResult,
+                entry.StepsJson,
+                entry.ProviderId,
+                entry.ProviderName,
+                entry.Status,
+                entry.StepCount,
+                entry.ScheduledJobId
+            };
+            (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
+                plainPayload, userId, "research_session", entry.Id.ToString());
+        }
+        else
+        {
+            sync.Query = entry.Query;
+            sync.SynthesizedResult = entry.SynthesizedResult;
+            sync.StepsJson = entry.StepsJson;
+            sync.ProviderId = entry.ProviderId;
+            sync.ProviderName = entry.ProviderName;
+            sync.Status = entry.Status;
+            sync.StepCount = entry.StepCount;
+            sync.ScheduledJobId = entry.ScheduledJobId;
+        }
+
+        return sync;
+    }
+
+    public ResearchHistoryEntry FromSyncResearchSession(SyncResearchSession sync, string? userId = null)
+    {
+        if (IsE2EEActive
+            && sync.EncryptedPayload is not null
+            && sync.WrappedDek is not null
+            && userId is not null)
+        {
+            var decrypted = _e2ee!.DecryptRecord<SyncResearchSession>(
+                sync.EncryptedPayload, sync.WrappedDek, userId, "research_session", sync.Id.ToString());
+
+            return new ResearchHistoryEntry
+            {
+                Id = sync.Id,
+                Query = decrypted.Query ?? "",
+                SynthesizedResult = decrypted.SynthesizedResult ?? "",
+                StepsJson = decrypted.StepsJson ?? "[]",
+                ProviderId = decrypted.ProviderId ?? Guid.Empty,
+                ProviderName = decrypted.ProviderName,
+                Status = decrypted.Status ?? "Completed",
+                StepCount = decrypted.StepCount ?? 0,
+                ScheduledJobId = decrypted.ScheduledJobId,
+                CreatedAt = sync.CreatedAt,
+                UpdatedAt = sync.UpdatedAt,
+                CompletedAt = sync.CompletedAt ?? sync.CreatedAt
+                // Embedding intentionally null — recomputed locally on first vector-search use.
+            };
+        }
+
+        return new ResearchHistoryEntry
+        {
+            Id = sync.Id,
+            Query = sync.Query ?? "",
+            SynthesizedResult = sync.SynthesizedResult ?? "",
+            StepsJson = sync.StepsJson ?? "[]",
+            ProviderId = sync.ProviderId ?? Guid.Empty,
+            ProviderName = sync.ProviderName,
+            Status = sync.Status ?? "Completed",
+            StepCount = sync.StepCount ?? 0,
+            ScheduledJobId = sync.ScheduledJobId,
+            CreatedAt = sync.CreatedAt,
+            UpdatedAt = sync.UpdatedAt,
+            CompletedAt = sync.CompletedAt ?? sync.CreatedAt
+        };
+    }
 }

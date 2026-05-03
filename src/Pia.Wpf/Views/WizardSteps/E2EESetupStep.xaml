@@ -54,21 +54,36 @@
             <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Title}"
                        FontWeight="SemiBold"
                        Margin="0,0,0,8"/>
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+            <Grid Margin="0,0,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
               <ui:SymbolIcon Symbol="Checkmark24" FontSize="16" Margin="0,0,8,0"
+                             VerticalAlignment="Top"
                              Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
-              <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Bullet1}" TextWrapping="Wrap" FontSize="13"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <TextBlock Grid.Column="1" Text="{loc:Str Wizard_E2EE_Pros_Bullet1}" TextWrapping="Wrap" FontSize="13"/>
+            </Grid>
+            <Grid Margin="0,0,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
               <ui:SymbolIcon Symbol="Checkmark24" FontSize="16" Margin="0,0,8,0"
+                             VerticalAlignment="Top"
                              Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
-              <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Bullet2}" TextWrapping="Wrap" FontSize="13"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal">
+              <TextBlock Grid.Column="1" Text="{loc:Str Wizard_E2EE_Pros_Bullet2}" TextWrapping="Wrap" FontSize="13"/>
+            </Grid>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
               <ui:SymbolIcon Symbol="Checkmark24" FontSize="16" Margin="0,0,8,0"
+                             VerticalAlignment="Top"
                              Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"/>
-              <TextBlock Text="{loc:Str Wizard_E2EE_Pros_Bullet3}" TextWrapping="Wrap" FontSize="13"/>
-            </StackPanel>
+              <TextBlock Grid.Column="1" Text="{loc:Str Wizard_E2EE_Pros_Bullet3}" TextWrapping="Wrap" FontSize="13"/>
+            </Grid>
           </StackPanel>
         </Border>
 
@@ -81,18 +96,33 @@
             <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Title}"
                        FontWeight="SemiBold"
                        Margin="0,0,0,8"/>
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-              <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0"/>
-              <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Bullet1}" TextWrapping="Wrap" FontSize="13"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-              <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0"/>
-              <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Bullet2}" TextWrapping="Wrap" FontSize="13"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal">
-              <ui:SymbolIcon Symbol="Info24" FontSize="16" Margin="0,0,8,0"/>
-              <TextBlock Text="{loc:Str Wizard_E2EE_Cons_Bullet3}" TextWrapping="Wrap" FontSize="13"/>
-            </StackPanel>
+            <Grid Margin="0,0,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0"
+                             VerticalAlignment="Top"/>
+              <TextBlock Grid.Column="1" Text="{loc:Str Wizard_E2EE_Cons_Bullet1}" TextWrapping="Wrap" FontSize="13"/>
+            </Grid>
+            <Grid Margin="0,0,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0"
+                             VerticalAlignment="Top"/>
+              <TextBlock Grid.Column="1" Text="{loc:Str Wizard_E2EE_Cons_Bullet2}" TextWrapping="Wrap" FontSize="13"/>
+            </Grid>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <ui:SymbolIcon Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                             VerticalAlignment="Top"/>
+              <TextBlock Grid.Column="1" Text="{loc:Str Wizard_E2EE_Cons_Bullet3}" TextWrapping="Wrap" FontSize="13"/>
+            </Grid>
           </StackPanel>
         </Border>
 

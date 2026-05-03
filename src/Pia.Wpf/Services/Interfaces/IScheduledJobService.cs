@@ -12,6 +12,7 @@ public interface IScheduledJobService
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();
     Task<ScheduledJob?> GetAsync(Guid id);
     Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync();
+    Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since);
 
     Task UpdateAsync(Guid id, string? name = null, string? query = null,
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
@@ -32,4 +33,11 @@ public interface IScheduledJobService
     /// not a job-health signal.
     /// </summary>
     Task AdvanceMissedRunAsync(Guid id);
+
+    /// <summary>
+    /// Inserts a new job (no execution state) or updates the synced config of an existing one.
+    /// Leaves NextFireAt/LastFiredAt/LastResultEntryId/ConsecutiveFailures untouched on update,
+    /// since those are device-local execution state.
+    /// </summary>
+    Task UpsertFromSyncAsync(ScheduledJob job);
 }

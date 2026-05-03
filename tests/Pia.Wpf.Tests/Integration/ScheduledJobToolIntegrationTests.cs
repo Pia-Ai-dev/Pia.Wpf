@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,16 +30,31 @@ public class ScheduledJobToolIntegrationTests : IDisposable
 {
     private readonly SqliteContext _ctx = new();
 
+    private sealed class IntegrationSettingsService : ISettingsService
+    {
+#pragma warning disable CS0067
+        public event EventHandler<AppSettings>? SettingsChanged;
+#pragma warning restore CS0067
+        public Task<AppSettings> GetSettingsAsync() => Task.FromResult(new AppSettings());
+        public Task SaveSettingsAsync(AppSettings settings) => Task.CompletedTask;
+        public Task SaveDraftAsync(string? draftText) => Task.CompletedTask;
+        public Task<string?> GetDraftAsync() => Task.FromResult<string?>(null);
+    }
+
     [Fact]
     public async Task EndToEnd_CreateJob_RunDueJob_SearchFinds()
     {
         // Arrange the dependency graph manually for an integration test.
         var calc = new RecurrenceCalculator();
-        var jobs = new ScheduledJobService(_ctx, calc, NullLogger<ScheduledJobService>.Instance);
+        var tmpDir = Path.Combine(Path.GetTempPath(), "PiaIntTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tmpDir);
+        var settings = new IntegrationSettingsService();
+        var deleteTracker = new SyncDeleteTrackerService(tmpDir, NullLogger<SyncDeleteTrackerService>.Instance);
+        var jobs = new ScheduledJobService(_ctx, calc, settings, deleteTracker, NullLogger<ScheduledJobService>.Instance);
 
         var research = new StubResearchService("Test result for Tesla");
         var embedding = new StubEmbedding();
-        var history = new ResearchHistoryService(_ctx, embedding, NullLogger<ResearchHistoryService>.Instance);
+        var history = new ResearchHistoryService(_ctx, embedding, deleteTracker, NullLogger<ResearchHistoryService>.Instance);
         var providers = new StubProviderResolver(new AiProvider
         {
             Id = Guid.NewGuid(),

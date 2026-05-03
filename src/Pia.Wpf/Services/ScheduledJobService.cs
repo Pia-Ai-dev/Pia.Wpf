@@ -14,12 +14,21 @@ public class ScheduledJobService : IScheduledJobService
 
     private readonly SqliteContext _context;
     private readonly IRecurrenceCalculator _calculator;
+    private readonly ISettingsService _settingsService;
+    private readonly SyncDeleteTrackerService _deleteTracker;
     private readonly ILogger<ScheduledJobService> _logger;
 
-    public ScheduledJobService(SqliteContext context, IRecurrenceCalculator calculator, ILogger<ScheduledJobService> logger)
+    public ScheduledJobService(
+        SqliteContext context,
+        IRecurrenceCalculator calculator,
+        ISettingsService settingsService,
+        SyncDeleteTrackerService deleteTracker,
+        ILogger<ScheduledJobService> logger)
     {
         _context = context;
         _calculator = calculator;
+        _settingsService = settingsService;
+        _deleteTracker = deleteTracker;
         _logger = logger;
     }
 
@@ -27,6 +36,7 @@ public class ScheduledJobService : IScheduledJobService
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
         ResearchAnswerLength answerLength = ResearchAnswerLength.Balanced, Guid? providerId = null)
     {
+        var now = DateTime.Now;
         var job = new ScheduledJob
         {
             Name = name,
@@ -39,25 +49,15 @@ public class ScheduledJobService : IScheduledJobService
             SpecificDate = specificDate,
             AnswerLength = answerLength,
             ProviderId = providerId,
-            CreatedAt = DateTime.Now
+            CreatedAt = now,
+            UpdatedAt = now,
+            OwnerDeviceId = await ResolveLocalDeviceIdAsync()
         };
 
         job.NextFireAt = _calculator.ComputeNextFireAt(
-            job.Recurrence, job.TimeOfDay, job.SpecificDate, job.DayOfWeek, job.DayOfMonth, job.Month, DateTime.Now);
+            job.Recurrence, job.TimeOfDay, job.SpecificDate, job.DayOfWeek, job.DayOfMonth, job.Month, now);
 
-        var connection = _context.GetConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO ScheduledJobs
-            (Id, Name, Query, Kind, AnswerLength, ProviderId, Recurrence, TimeOfDay,
-             DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt,
-             LastFiredAt, LastResultEntryId, ConsecutiveFailures)
-            VALUES (@Id, @Name, @Query, @Kind, @AnswerLength, @ProviderId, @Recurrence, @TimeOfDay,
-                    @DayOfWeek, @DayOfMonth, @Month, @SpecificDate, @NextFireAt, @Status, @CreatedAt,
-                    @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures)
-            """;
-        AddJobParameters(command, job);
-        await command.ExecuteNonQueryAsync();
+        await InsertAsync(job);
 
         _logger.LogInformation("Created scheduled job {Id} ({Recurrence})", job.Id, recurrence);
         _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} query: {Query}", job.Id, name, query);
@@ -76,10 +76,23 @@ public class ScheduledJobService : IScheduledJobService
         return list.FirstOrDefault();
     }
 
-    public async Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync() =>
+    public async Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync()
+    {
+        var localDeviceId = await ResolveLocalDeviceIdAsync();
+        var localDeviceParam = localDeviceId.HasValue ? localDeviceId.Value.ToString() : (object)DBNull.Value;
+        return await ReadAsync(
+            "WHERE NextFireAt <= @Now AND Status = 'Active' AND (OwnerDeviceId IS NULL OR OwnerDeviceId = @LocalDevice) ORDER BY NextFireAt ASC",
+            cmd =>
+            {
+                cmd.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O"));
+                cmd.Parameters.AddWithValue("@LocalDevice", localDeviceParam);
+            });
+    }
+
+    public async Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) =>
         await ReadAsync(
-            "WHERE NextFireAt <= @Now AND Status = 'Active' ORDER BY NextFireAt ASC",
-            cmd => cmd.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O")));
+            "WHERE UpdatedAt >= @Since",
+            cmd => cmd.Parameters.AddWithValue("@Since", since.ToString("O")));
 
     public async Task UpdateAsync(Guid id, string? name = null, string? query = null,
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
@@ -101,6 +114,7 @@ public class ScheduledJobService : IScheduledJobService
         existing.NextFireAt = _calculator.ComputeNextFireAt(
             existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
             existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
+        existing.UpdatedAt = DateTime.Now;
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -108,7 +122,8 @@ public class ScheduledJobService : IScheduledJobService
             UPDATE ScheduledJobs
             SET Name=@Name, Query=@Query, Recurrence=@Recurrence, TimeOfDay=@TimeOfDay,
                 DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month,
-                AnswerLength=@AnswerLength, ProviderId=@ProviderId, NextFireAt=@NextFireAt
+                AnswerLength=@AnswerLength, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
+                UpdatedAt=@UpdatedAt
             WHERE Id=@Id
             """;
         command.Parameters.AddWithValue("@Id", existing.Id.ToString());
@@ -122,6 +137,7 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@AnswerLength", existing.AnswerLength.ToString());
         command.Parameters.AddWithValue("@ProviderId", existing.ProviderId.HasValue ? (object)existing.ProviderId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@NextFireAt", existing.NextFireAt.ToString("O"));
+        command.Parameters.AddWithValue("@UpdatedAt", existing.UpdatedAt.ToString("O"));
 
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Updated scheduled job {Id}", id);
@@ -134,6 +150,7 @@ public class ScheduledJobService : IScheduledJobService
         command.CommandText = "DELETE FROM ScheduledJobs WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
         await command.ExecuteNonQueryAsync();
+        _deleteTracker.TrackDeletion("scheduledJobs", id);
         _logger.LogInformation("Deleted scheduled job {Id}", id);
     }
 
@@ -141,8 +158,9 @@ public class ScheduledJobService : IScheduledJobService
     {
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE ScheduledJobs SET Status = 'Disabled' WHERE Id = @Id";
+        command.CommandText = "UPDATE ScheduledJobs SET Status = 'Disabled', UpdatedAt = @UpdatedAt WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
+        command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Disabled scheduled job {Id}", id);
     }
@@ -156,9 +174,14 @@ public class ScheduledJobService : IScheduledJobService
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE ScheduledJobs SET Status = 'Active', NextFireAt = @NextFireAt, ConsecutiveFailures = 0 WHERE Id = @Id";
+        command.CommandText = """
+            UPDATE ScheduledJobs
+            SET Status = 'Active', NextFireAt = @NextFireAt, ConsecutiveFailures = 0, UpdatedAt = @UpdatedAt
+            WHERE Id = @Id
+            """;
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@NextFireAt", existing.NextFireAt.ToString("O"));
+        command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Enabled scheduled job {Id}", id);
     }
@@ -170,6 +193,8 @@ public class ScheduledJobService : IScheduledJobService
             existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
             existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
 
+        // LastFiredAt / LastResultEntryId / NextFireAt / ConsecutiveFailures are device-local
+        // execution state; don't bump UpdatedAt so this doesn't trigger a wasteful re-sync.
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -195,7 +220,9 @@ public class ScheduledJobService : IScheduledJobService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         // Atomic increment + threshold check, so concurrent callers cannot lose increments
-        // or overwrite each other's Status flips.
+        // or overwrite each other's Status flips. UpdatedAt is bumped unconditionally so a
+        // Status flip to 'Failed' propagates to other devices on next sync; the redundant
+        // bumps in non-flip cases are cheap.
         command.CommandText = """
             UPDATE ScheduledJobs
             SET LastFiredAt = @Now,
@@ -204,13 +231,15 @@ public class ScheduledJobService : IScheduledJobService
                     WHEN ConsecutiveFailures + 1 >= @MaxFailures THEN 'Failed'
                     ELSE Status
                 END,
-                NextFireAt = @NextFireAt
+                NextFireAt = @NextFireAt,
+                UpdatedAt = @UpdatedAt
             WHERE Id = @Id
             """;
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O"));
         command.Parameters.AddWithValue("@MaxFailures", MaxConsecutiveFailures);
         command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
+        command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
         await command.ExecuteNonQueryAsync();
 
         _logger.LogWarning("Scheduled job {Id} run failed", id);
@@ -224,6 +253,7 @@ public class ScheduledJobService : IScheduledJobService
             existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
             existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
 
+        // NextFireAt is local execution state; don't bump UpdatedAt.
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @NextFireAt WHERE Id = @Id";
@@ -233,14 +263,83 @@ public class ScheduledJobService : IScheduledJobService
         _logger.LogInformation("Scheduled job {Id} missed run advanced to {NextFireAt:g}", id, nextFire);
     }
 
+    public async Task UpsertFromSyncAsync(ScheduledJob job)
+    {
+        var existing = await GetAsync(job.Id);
+        if (existing is null)
+        {
+            // Imported job hasn't fired locally yet; compute initial NextFireAt from the synced config.
+            job.NextFireAt = _calculator.ComputeNextFireAt(
+                job.Recurrence, job.TimeOfDay, job.SpecificDate,
+                job.DayOfWeek, job.DayOfMonth, job.Month, DateTime.Now);
+            await InsertAsync(job);
+            _logger.LogInformation("Imported scheduled job {Id} from sync", job.Id);
+            return;
+        }
+
+        // Update only the synced config fields; leave execution state (NextFireAt, LastFiredAt,
+        // LastResultEntryId, ConsecutiveFailures) untouched — that is each device's own.
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE ScheduledJobs
+            SET Name=@Name, Query=@Query, Kind=@Kind, AnswerLength=@AnswerLength, ProviderId=@ProviderId,
+                Recurrence=@Recurrence, TimeOfDay=@TimeOfDay, DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth,
+                Month=@Month, SpecificDate=@SpecificDate, Status=@Status, UpdatedAt=@UpdatedAt,
+                OwnerDeviceId=@OwnerDeviceId
+            WHERE Id=@Id
+            """;
+        command.Parameters.AddWithValue("@Id", job.Id.ToString());
+        command.Parameters.AddWithValue("@Name", job.Name);
+        command.Parameters.AddWithValue("@Query", job.Query);
+        command.Parameters.AddWithValue("@Kind", job.Kind.ToString());
+        command.Parameters.AddWithValue("@AnswerLength", job.AnswerLength.ToString());
+        command.Parameters.AddWithValue("@ProviderId", job.ProviderId.HasValue ? (object)job.ProviderId.Value.ToString() : DBNull.Value);
+        command.Parameters.AddWithValue("@Recurrence", job.Recurrence.ToString());
+        command.Parameters.AddWithValue("@TimeOfDay", job.TimeOfDay.ToString("HH:mm"));
+        command.Parameters.AddWithValue("@DayOfWeek", job.DayOfWeek.HasValue ? (object)(int)job.DayOfWeek.Value : DBNull.Value);
+        command.Parameters.AddWithValue("@DayOfMonth", job.DayOfMonth.HasValue ? (object)job.DayOfMonth.Value : DBNull.Value);
+        command.Parameters.AddWithValue("@Month", job.Month.HasValue ? (object)job.Month.Value : DBNull.Value);
+        command.Parameters.AddWithValue("@SpecificDate", job.SpecificDate.HasValue ? (object)job.SpecificDate.Value.ToString("O") : DBNull.Value);
+        command.Parameters.AddWithValue("@Status", job.Status.ToString());
+        command.Parameters.AddWithValue("@UpdatedAt", job.UpdatedAt.ToString("O"));
+        command.Parameters.AddWithValue("@OwnerDeviceId", job.OwnerDeviceId.HasValue ? (object)job.OwnerDeviceId.Value.ToString() : DBNull.Value);
+        await command.ExecuteNonQueryAsync();
+        _logger.LogInformation("Updated scheduled job {Id} from sync", job.Id);
+    }
+
+    private async Task InsertAsync(ScheduledJob job)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO ScheduledJobs
+            (Id, Name, Query, Kind, AnswerLength, ProviderId, Recurrence, TimeOfDay,
+             DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
+             LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId)
+            VALUES (@Id, @Name, @Query, @Kind, @AnswerLength, @ProviderId, @Recurrence, @TimeOfDay,
+                    @DayOfWeek, @DayOfMonth, @Month, @SpecificDate, @NextFireAt, @Status, @CreatedAt, @UpdatedAt,
+                    @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId)
+            """;
+        AddJobParameters(command, job);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<Guid?> ResolveLocalDeviceIdAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (string.IsNullOrWhiteSpace(settings.SyncDeviceId)) return null;
+        return Guid.TryParse(settings.SyncDeviceId, out var id) ? id : null;
+    }
+
     private async Task<IReadOnlyList<ScheduledJob>> ReadAsync(string whereOrOrder, Action<SqliteCommand> bind)
     {
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT Id, Name, Query, Kind, AnswerLength, ProviderId, Recurrence, TimeOfDay,
-                   DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt,
-                   LastFiredAt, LastResultEntryId, ConsecutiveFailures
+                   DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
+                   LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId
             FROM ScheduledJobs
             {whereOrOrder}
             """;
@@ -271,9 +370,11 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@NextFireAt", job.NextFireAt.ToString("O"));
         command.Parameters.AddWithValue("@Status", job.Status.ToString());
         command.Parameters.AddWithValue("@CreatedAt", job.CreatedAt.ToString("O"));
+        command.Parameters.AddWithValue("@UpdatedAt", job.UpdatedAt.ToString("O"));
         command.Parameters.AddWithValue("@LastFiredAt", job.LastFiredAt.HasValue ? (object)job.LastFiredAt.Value.ToString("O") : DBNull.Value);
         command.Parameters.AddWithValue("@LastResultEntryId", job.LastResultEntryId.HasValue ? (object)job.LastResultEntryId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@ConsecutiveFailures", job.ConsecutiveFailures);
+        command.Parameters.AddWithValue("@OwnerDeviceId", job.OwnerDeviceId.HasValue ? (object)job.OwnerDeviceId.Value.ToString() : DBNull.Value);
     }
 
     private static ScheduledJob MapJob(SqliteDataReader r) => new()
@@ -293,8 +394,10 @@ public class ScheduledJobService : IScheduledJobService
         NextFireAt = DateTime.Parse(r.GetString(12)),
         Status = Enum.Parse<ScheduledJobStatus>(r.GetString(13)),
         CreatedAt = DateTime.Parse(r.GetString(14)),
-        LastFiredAt = r.IsDBNull(15) ? null : DateTime.Parse(r.GetString(15)),
-        LastResultEntryId = r.IsDBNull(16) ? null : Guid.Parse(r.GetString(16)),
-        ConsecutiveFailures = r.GetInt32(17)
+        UpdatedAt = DateTime.Parse(r.GetString(15)),
+        LastFiredAt = r.IsDBNull(16) ? null : DateTime.Parse(r.GetString(16)),
+        LastResultEntryId = r.IsDBNull(17) ? null : Guid.Parse(r.GetString(17)),
+        ConsecutiveFailures = r.GetInt32(18),
+        OwnerDeviceId = r.IsDBNull(19) ? null : Guid.Parse(r.GetString(19))
     };
 }

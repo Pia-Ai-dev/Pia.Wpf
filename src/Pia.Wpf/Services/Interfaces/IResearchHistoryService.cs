@@ -21,4 +21,11 @@ public interface IResearchHistoryService
     Task UpdateEmbeddingAsync(Guid id, byte[] embedding);
     Task<IReadOnlyList<ResearchHistoryEntry>> VectorSearchAsync(float[] queryEmbedding, int topK = 10, float threshold = 0.2f);
     Task<IReadOnlyList<ResearchHistoryEntry>> HybridSearchAsync(string query, float[]? queryEmbedding = null, int topK = 10);
+    Task<IReadOnlyList<ResearchHistoryEntry>> GetModifiedSinceAsync(DateTime since);
+
+    /// <summary>
+    /// Inserts (or updates) an entry pulled from sync. Skips local embedding generation —
+    /// the local device computes its own embedding lazily on first vector-search use.
+    /// </summary>
+    Task UpsertFromSyncAsync(ResearchHistoryEntry entry);
 }

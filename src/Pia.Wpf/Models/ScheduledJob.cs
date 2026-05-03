@@ -20,7 +20,16 @@ public class ScheduledJob
     public DateTime NextFireAt { get; set; }
     public ScheduledJobStatus Status { get; set; } = ScheduledJobStatus.Active;
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
     public DateTime? LastFiredAt { get; set; }
     public Guid? LastResultEntryId { get; set; }
     public int ConsecutiveFailures { get; set; }
+
+    /// <summary>
+    /// Device that owns the firing schedule. Only the owner device runs the job; other devices
+    /// see it in the UI and (after sync) see the resulting history but never trigger a run.
+    /// Null on legacy rows created before sync was wired — those stay device-local on whichever
+    /// machine they were originally created on.
+    /// </summary>
+    public Guid? OwnerDeviceId { get; set; }
 }

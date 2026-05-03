@@ -117,7 +117,8 @@ public class SqliteContext : IDisposable
                 Status TEXT NOT NULL DEFAULT 'Completed',
                 StepCount INTEGER NOT NULL DEFAULT 0,
                 CreatedAt TEXT NOT NULL,
-                CompletedAt TEXT NOT NULL
+                CompletedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL DEFAULT ''
             );
 
             CREATE INDEX IF NOT EXISTS IX_ResearchSessions_CreatedAt ON ResearchSessions(CreatedAt);
@@ -162,9 +163,11 @@ public class SqliteContext : IDisposable
                 NextFireAt TEXT NOT NULL,
                 Status TEXT NOT NULL DEFAULT 'Active',
                 CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL DEFAULT '',
                 LastFiredAt TEXT NULL,
                 LastResultEntryId TEXT NULL,
-                ConsecutiveFailures INTEGER NOT NULL DEFAULT 0
+                ConsecutiveFailures INTEGER NOT NULL DEFAULT 0,
+                OwnerDeviceId TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -318,6 +321,69 @@ public class SqliteContext : IDisposable
             using var addEmb = _connection.CreateCommand();
             addEmb.CommandText = "ALTER TABLE ResearchSessions ADD COLUMN Embedding BLOB NULL";
             addEmb.ExecuteNonQuery();
+        }
+
+        // Add UpdatedAt to ResearchSessions for sync dirty-tracking; backfill from CreatedAt
+        var hasResearchUpdatedAt = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(ResearchSessions)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+                if (r.GetString(1) == "UpdatedAt") { hasResearchUpdatedAt = true; break; }
+        }
+        if (!hasResearchUpdatedAt)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ResearchSessions ADD COLUMN UpdatedAt TEXT NOT NULL DEFAULT ''";
+            addCol.ExecuteNonQuery();
+            using var backfill = _connection.CreateCommand();
+            backfill.CommandText = "UPDATE ResearchSessions SET UpdatedAt = CreatedAt WHERE UpdatedAt = ''";
+            backfill.ExecuteNonQuery();
+        }
+        // Ensure index exists for both fresh installs and migrated databases.
+        using (var idx = _connection.CreateCommand())
+        {
+            idx.CommandText = "CREATE INDEX IF NOT EXISTS IX_ResearchSessions_UpdatedAt ON ResearchSessions(UpdatedAt)";
+            idx.ExecuteNonQuery();
+        }
+
+        // Add UpdatedAt and OwnerDeviceId to ScheduledJobs for sync
+        var hasJobUpdatedAt = false;
+        var hasOwnerDeviceId = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(ScheduledJobs)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                var col = r.GetString(1);
+                if (col == "UpdatedAt") hasJobUpdatedAt = true;
+                else if (col == "OwnerDeviceId") hasOwnerDeviceId = true;
+            }
+        }
+        if (!hasJobUpdatedAt)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN UpdatedAt TEXT NOT NULL DEFAULT ''";
+            addCol.ExecuteNonQuery();
+            using var backfill = _connection.CreateCommand();
+            backfill.CommandText = "UPDATE ScheduledJobs SET UpdatedAt = CreatedAt WHERE UpdatedAt = ''";
+            backfill.ExecuteNonQuery();
+        }
+        if (!hasOwnerDeviceId)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN OwnerDeviceId TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        using (var idx = _connection.CreateCommand())
+        {
+            idx.CommandText = """
+                CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_UpdatedAt ON ScheduledJobs(UpdatedAt);
+                CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_OwnerDeviceId ON ScheduledJobs(OwnerDeviceId);
+                """;
+            idx.ExecuteNonQuery();
         }
     }
 
