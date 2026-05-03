@@ -301,6 +301,7 @@ public static class Bootstrapper
         services.AddScoped<TodoViewModel>();
         services.AddScoped<DeviceManagementViewModel>();
         services.AddScoped<E2EEOnboardingViewModel>();
+        services.AddScoped<E2EESetupStepViewModel>();
 
         // First Run Wizard
         services.AddTransient<FirstRunWizardViewModel>();
