@@ -68,7 +68,7 @@ jobs:
           vpk download github --repoUrl https://github.com/Pia-Ai-dev/Pia.Wpf --token ${{ secrets.GITHUB_TOKEN }} -x
         continue-on-error: true
 
-      - name: Create Velopack release
+      - name: Create Velopack release (per-machine MSI)
         run: >
           vpk pack
           -u Pia.Wpf
@@ -77,11 +77,33 @@ jobs:
           --mainExe Pia.Wpf.exe
           --icon src/Pia.Wpf/Resources/Icons/Pia.ico
           --packTitle "Pia"
-          --packAuthors "Pia-Ai-dev"
+          --packAuthors "neo42 GmbH"
           --instLicense src/Pia.Wpf/Resources/Installer/LICENSE.txt
           --msiBanner src/Pia.Wpf/Resources/Installer/banner.bmp
           --msiLogo src/Pia.Wpf/Resources/Installer/logo.bmp
+          --instLocation PerMachine
           --msi
+
+      - name: Create per-user MSI variant
+        run: >
+          vpk pack
+          -u Pia.Wpf
+          -v ${{ steps.info.outputs.version }}
+          -p publish
+          -o ReleasesUser
+          --mainExe Pia.Wpf.exe
+          --icon src/Pia.Wpf/Resources/Icons/Pia.ico
+          --packTitle "Pia"
+          --packAuthors "neo42 GmbH"
+          --instLicense src/Pia.Wpf/Resources/Installer/LICENSE.txt
+          --msiBanner src/Pia.Wpf/Resources/Installer/banner.bmp
+          --msiLogo src/Pia.Wpf/Resources/Installer/logo.bmp
+          --instLocation PerUser
+          --msi
+
+      - name: Stage per-user MSI alongside per-machine artifacts
+        shell: pwsh
+        run: Move-Item ReleasesUser/Pia.Wpf-win.msi Releases/Pia.Wpf-win.User.msi -Force
 
       - name: Install git-cliff
         shell: pwsh
@@ -106,4 +128,7 @@ jobs:
           gh release create "${{ steps.info.outputs.tag }}" \
             --title "${{ steps.info.outputs.title }}" \
             --notes-file release-notes.md \
-            Releases/*
+            Releases/*.msi \
+            Releases/*.nupkg \
+            Releases/RELEASES \
+            Releases/assets.*.json
