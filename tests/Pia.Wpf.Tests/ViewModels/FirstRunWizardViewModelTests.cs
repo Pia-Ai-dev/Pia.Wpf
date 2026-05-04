@@ -172,4 +172,32 @@ public class FirstRunWizardViewModelTests
 
         Assert.False(sut.BackCommand.CanExecute(null));
     }
+
+    [Fact]
+    public void Back_FromProviderStep_NotLoggedIn_ShouldReturnToAccountStep()
+    {
+        var sut = CreateSut();
+        sut.CurrentStep = 3;
+
+        Assert.False(sut.IsLoggedIn);
+        Assert.False(sut.IsE2EESetupVisible);
+        sut.BackCommand.Execute(null);
+
+        Assert.Equal(1, sut.CurrentStep);
+    }
+
+    [Fact]
+    public void NextButtonText_UsesLocalizationService()
+    {
+        _loc["Wizard_Next"].Returns("Weiter");
+        _loc["Wizard_GetStarted"].Returns("Loslegen");
+
+        var sut = CreateSut();
+
+        sut.CurrentStep = 0;
+        Assert.Equal("Weiter", sut.NextButtonText);
+
+        sut.CurrentStep = FirstRunWizardViewModel.TotalSteps - 1;
+        Assert.Equal("Loslegen", sut.NextButtonText);
+    }
 }

@@ -52,14 +52,23 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         if (IsRegistered)
             return;
 
-        _trayHostWindow = new Window();
-        _trayHostWindow.Style = null;
-        _trayHostWindow.AllowsTransparency = false;
-        _trayHostWindow.WindowStyle = WindowStyle.None;
-        _trayHostWindow.ShowInTaskbar = false;
-        _trayHostWindow.ShowActivated = false;
-        _trayHostWindow.Width = 0;
-        _trayHostWindow.Height = 0;
+        // The tray library activates this host window on tray-icon clicks.
+        // ResizeMode.NoResize removes the resize cursor; off-screen placement
+        // ensures it can never appear as a "ghost circle" even if shown.
+        _trayHostWindow = new Window
+        {
+            Style = null,
+            AllowsTransparency = false,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -32000,
+            Top = -32000,
+            Width = 1,
+            Height = 1,
+        };
         _trayHostWindow.Show();
         _trayHostWindow.Hide();
 

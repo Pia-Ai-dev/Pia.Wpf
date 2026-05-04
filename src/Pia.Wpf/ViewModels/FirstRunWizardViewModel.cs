@@ -34,7 +34,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     public bool IsFirstStep => CurrentStep == 0;
     public bool IsLastStep => CurrentStep == TotalSteps - 1;
-    public string NextButtonText => IsLastStep ? "Get Started" : "Next";
+    public string NextButtonText => IsLastStep
+        ? _localizationService["Wizard_GetStarted"]
+        : _localizationService["Wizard_Next"];
 
     /// <summary>
     /// Visible step count:
@@ -259,6 +261,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         E2EESetupViewModel = e2eeSetupViewModel;
         _logger = logger;
         _uiLanguage = _localizationService.CurrentLanguage;
+        _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(NextButtonText));
 
         // When E2EE onboarding completes in wizard, start sync
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
@@ -373,7 +376,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         {
             CurrentStep = 1;
         }
-        else if (CurrentStep == 3 && IsLoggedIn)
+        else if (CurrentStep == 3)
         {
             CurrentStep = IsE2EESetupVisible ? 2 : 1;
         }

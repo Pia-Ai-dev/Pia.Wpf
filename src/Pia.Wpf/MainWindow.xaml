@@ -130,7 +130,7 @@
         <Border Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
                 CornerRadius="12"
                 Padding="40,36"
-                MaxWidth="440"
+                MaxWidth="560"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
           <Border.Effect>
@@ -157,13 +157,12 @@
                        TextWrapping="Wrap"
                        Foreground="{DynamicResource TextPlaceholderColorBrush}"
                        Margin="0,0,0,28" />
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Center">
+            <WrapPanel HorizontalAlignment="Center"
+                       ItemHeight="44">
               <ui:Button Command="{Binding NavigateToSettingsCommand}"
                          Appearance="Primary"
-                         Height="40"
                          Padding="20,0"
-                         Margin="0,0,12,0">
+                         Margin="0,0,12,8">
                 <StackPanel Orientation="Horizontal">
                   <ui:SymbolIcon Symbol="Settings24" FontSize="16" Margin="0,0,8,0" />
                   <TextBlock Text="{loc:Str Setup_Overlay_OpenSettings}" VerticalAlignment="Center" />
@@ -171,14 +170,14 @@
               </ui:Button>
               <ui:Button Command="{Binding OpenFirstRunWizardCommand}"
                          Appearance="Secondary"
-                         Height="40"
-                         Padding="20,0">
+                         Padding="20,0"
+                         Margin="0,0,0,8">
                 <StackPanel Orientation="Horizontal">
                   <ui:SymbolIcon Symbol="Flash24" FontSize="16" Margin="0,0,8,0" />
                   <TextBlock Text="{loc:Str Setup_Overlay_RunWizard}" VerticalAlignment="Center" />
                 </StackPanel>
               </ui:Button>
-            </StackPanel>
+            </WrapPanel>
           </StackPanel>
         </Border>
       </Border>

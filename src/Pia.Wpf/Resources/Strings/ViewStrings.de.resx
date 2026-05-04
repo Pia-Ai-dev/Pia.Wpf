@@ -437,6 +437,8 @@
   <data name="Wizard_WindowTitle" xml:space="preserve"><value>Willkommen bei Pia</value></data>
   <data name="Wizard_Skip" xml:space="preserve"><value>Überspringen</value></data>
   <data name="Wizard_Back" xml:space="preserve"><value>Zurück</value></data>
+  <data name="Wizard_Next" xml:space="preserve"><value>Weiter</value></data>
+  <data name="Wizard_GetStarted" xml:space="preserve"><value>Loslegen</value></data>
   <data name="Wizard_Welcome_Title" xml:space="preserve"><value>Triff Pia</value></data>
   <data name="Wizard_Welcome_Subtitle" xml:space="preserve"><value>Dein persönlicher intelligenter Assistent</value></data>
   <data name="Wizard_Welcome_Description" xml:space="preserve"><value>Pia ist ein KI-gestützter Desktop-Assistent, der dir hilft, Texte zu optimieren, mit einem intelligenten Assistenten zu chatten und tiefgehende Recherchen durchzuführen. Pia lernt aus deinen Interaktionen durch sein leistungsfähiges Gedächtnissystem und ist immer nur ein Tastenkürzel entfernt.</value></data>
