@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
-using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Wpf.Ui.Tray;
@@ -18,7 +17,6 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     private readonly INativeHotkeyServiceFactory _hotkeyServiceFactory;
     private readonly ILocalizationService _localizationService;
     private readonly ISelectedTextService _selectedTextService;
-    private readonly ILogger<TrayIconService> _logger;
     private readonly Dictionary<WindowMode, INativeHotkeyService> _hotkeyServices = new();
     private DateTime _lastHotkeyOpenTime = DateTime.MinValue;
     private static readonly TimeSpan HotkeyDebounceInterval = TimeSpan.FromMilliseconds(500);
@@ -33,8 +31,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         ISettingsService settingsService,
         INativeHotkeyServiceFactory hotkeyServiceFactory,
         ILocalizationService localizationService,
-        ISelectedTextService selectedTextService,
-        ILogger<TrayIconService> logger)
+        ISelectedTextService selectedTextService)
     {
         _windowTrackingService = windowTrackingService;
         _windowManagerService = windowManagerService;
@@ -42,7 +39,6 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         _hotkeyServiceFactory = hotkeyServiceFactory;
         _localizationService = localizationService;
         _selectedTextService = selectedTextService;
-        _logger = logger;
 
         _localizationService.LanguageChanged += OnLanguageChanged;
     }
@@ -71,31 +67,6 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         };
         _trayHostWindow.Show();
         _trayHostWindow.Hide();
-
-        // TEMPORARY ghost-circle diagnostics — see plan
-        // we-lately-updated-src-pia-wpf-services-w-immutable-karp.md (Step 1).
-        // LogInformation so traces are captured in release installs too.
-        // Remove once Step 2 fix is verified.
-        _trayHostWindow.IsVisibleChanged += (_, _) =>
-            _logger.LogInformation(
-                "TrayHost IsVisible={IsVisible} Left={Left} Top={Top} W={W} H={H} State={State} ResizeMode={ResizeMode}",
-                _trayHostWindow.IsVisible,
-                _trayHostWindow.Left,
-                _trayHostWindow.Top,
-                _trayHostWindow.ActualWidth,
-                _trayHostWindow.ActualHeight,
-                _trayHostWindow.WindowState,
-                _trayHostWindow.ResizeMode);
-        _trayHostWindow.LocationChanged += (_, _) =>
-            _logger.LogInformation(
-                "TrayHost LocationChanged Left={Left} Top={Top}",
-                _trayHostWindow.Left,
-                _trayHostWindow.Top);
-        _trayHostWindow.SizeChanged += (_, e) =>
-            _logger.LogInformation(
-                "TrayHost SizeChanged W={W} H={H}",
-                e.NewSize.Width,
-                e.NewSize.Height);
 
         SetParentWindow(_trayHostWindow);
 
