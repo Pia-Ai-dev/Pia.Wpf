@@ -131,4 +131,4 @@ jobs:
             Releases/*.msi \
             Releases/*.nupkg \
             Releases/RELEASES \
-            Releases/assets.*.json
+            Releases/releases.*.json
