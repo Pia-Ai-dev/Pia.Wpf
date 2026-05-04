@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build-and-release:
@@ -29,6 +30,16 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install AzureSignTool
+        run: dotnet tool install --global AzureSignTool
 
       - name: Restore packages
         run: dotnet restore src/Pia.Wpf/Pia.Wpf.csproj
@@ -60,6 +71,19 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=false
           -o publish
 
+      - name: Sign published Pia.Wpf.exe
+        shell: pwsh
+        run: |
+          AzureSignTool sign `
+            -kvu "${{ vars.AZURE_KEY_VAULT_URL }}" `
+            -kvc "${{ vars.AZURE_CERT_NAME }}" `
+            -kvm `
+            -tr http://timestamp.digicert.com `
+            -td sha256 `
+            -fd sha256 `
+            -v `
+            publish/Pia.Wpf.exe
+
       - name: Install Velopack CLI
         run: dotnet tool install -g vpk --allow-roll-forward --prerelease
 
@@ -83,6 +107,7 @@ jobs:
           --msiLogo src/Pia.Wpf/Resources/Installer/logo.bmp
           --instLocation PerMachine
           --msi
+          --signTemplate "AzureSignTool sign -kvu ${{ vars.AZURE_KEY_VAULT_URL }} -kvc ${{ vars.AZURE_CERT_NAME }} -kvm -tr http://timestamp.digicert.com -td sha256 -fd sha256 {{file}}"
 
       - name: Create per-user MSI variant
         run: >
@@ -100,6 +125,7 @@ jobs:
           --msiLogo src/Pia.Wpf/Resources/Installer/logo.bmp
           --instLocation PerUser
           --msi
+          --signTemplate "AzureSignTool sign -kvu ${{ vars.AZURE_KEY_VAULT_URL }} -kvc ${{ vars.AZURE_CERT_NAME }} -kvm -tr http://timestamp.digicert.com -td sha256 -fd sha256 {{file}}"
 
       - name: Stage per-user MSI alongside per-machine artifacts
         shell: pwsh
