@@ -117,7 +117,8 @@ jobs:
       - name: Generate release notes
         shell: bash
         run: |
-          git cliff --unreleased --tag "${{ steps.info.outputs.tag }}" --strip header -o release-notes.md
+          PREV_TAG=$(git describe --tags --abbrev=0)
+          git cliff "${PREV_TAG}..HEAD" --tag "${{ steps.info.outputs.tag }}" --strip header -o release-notes.md
           printf "\n---\n**Full Changelog:** [CHANGELOG.md](https://github.com/Pia-Ai-dev/Pia.Wpf/blob/main/CHANGELOG.md)\n" >> release-notes.md
 
       - name: Create GitHub Release
