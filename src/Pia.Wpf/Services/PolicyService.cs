@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -15,7 +16,8 @@ public class PolicyService : IPolicyService
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     private readonly ILogger<PolicyService> _logger;
@@ -56,6 +58,20 @@ public class PolicyService : IPolicyService
         }
 
         return _enforcedProperties.Contains(propertyName);
+    }
+
+    public bool IsLoginProviderAllowed(string provider)
+    {
+        if (string.IsNullOrEmpty(provider))
+            return false;
+
+        var allowList = _cached?.Enforce?.AllowedSyncProviders
+            ?? _cached?.Defaults?.AllowedSyncProviders;
+
+        if (allowList is null || allowList.Count == 0)
+            return true;
+
+        return allowList.Any(p => string.Equals(p, provider, StringComparison.OrdinalIgnoreCase));
     }
 
     public void ApplyPolicy(AppSettings userSettings)

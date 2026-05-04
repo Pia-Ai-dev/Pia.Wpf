@@ -76,6 +76,13 @@ public class AppSettings
     public Dictionary<WindowMode, Guid> ModeProviderDefaults { get; set; } = new();
     public bool UseSameProviderForAllModes { get; set; } = true;
 
+    /// <summary>
+    /// Allow-list of sync login providers. Null/empty = all providers allowed.
+    /// Recognized values: "local", "google", "microsoft" (case-insensitive).
+    /// Intended to be set via enterprise policy.
+    /// </summary>
+    public List<string>? AllowedSyncProviders { get; set; }
+
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";

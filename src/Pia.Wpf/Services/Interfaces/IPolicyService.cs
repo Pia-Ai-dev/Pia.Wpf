@@ -21,4 +21,11 @@ public interface IPolicyService
     /// - Overwrites enforced properties unconditionally
     /// </summary>
     void ApplyPolicy(AppSettings userSettings);
+
+    /// <summary>
+    /// Returns true if the given login provider name is permitted by the
+    /// <see cref="AppSettings.AllowedSyncProviders"/> allow-list (defaults +
+    /// enforce). When no allow-list is configured by policy, all providers are allowed.
+    /// </summary>
+    bool IsLoginProviderAllowed(string provider);
 }

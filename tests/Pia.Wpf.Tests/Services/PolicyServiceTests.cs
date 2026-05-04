@@ -169,6 +169,45 @@ public class PolicyServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPolicyAsync_HandAuthoredJsonWithStringEnums_DeserializesCorrectly()
+    {
+        // Admins author policy.json by hand using string enum values, e.g. "DE" rather than 1.
+        const string json = """
+        {
+          "defaults": {
+            "uiLanguage": "DE",
+            "targetLanguage": "DE",
+            "targetSpeechLanguage": "DE",
+            "startMinimized": true,
+            "showTodoPanelButton": false
+          },
+          "enforce": {
+            "serverUrl": "https://pia-cloud.example.com",
+            "syncEnabled": true,
+            "autoUpdateEnabled": false,
+            "trustSelfSignedCertificates": false
+          }
+        }
+        """;
+        File.WriteAllText(_policyFilePath, json);
+        var service = CreateService();
+
+        var policy = await service.GetPolicyAsync();
+
+        Assert.NotNull(policy.Defaults);
+        Assert.Equal(TargetLanguage.DE, policy.Defaults!.UiLanguage);
+        Assert.Equal(TargetLanguage.DE, policy.Defaults.TargetLanguage);
+        Assert.Equal(TargetSpeechLanguage.DE, policy.Defaults.TargetSpeechLanguage);
+        Assert.True(policy.Defaults.StartMinimized);
+        Assert.False(policy.Defaults.ShowTodoPanelButton);
+
+        Assert.NotNull(policy.Enforce);
+        Assert.Equal("https://pia-cloud.example.com", policy.Enforce!.ServerUrl);
+        Assert.True(policy.Enforce.SyncEnabled);
+        Assert.False(policy.Enforce.AutoUpdateEnabled);
+    }
+
+    [Fact]
     public async Task GetPolicyAsync_InvalidJson_ReturnsEmptyPolicy()
     {
         File.WriteAllText(_policyFilePath, "{ invalid json }}}");
@@ -195,6 +234,85 @@ public class PolicyServiceTests : IDisposable
         service.ApplyPolicy(settings);
 
         Assert.False(settings.AutoUpdateEnabled);
+    }
+
+    [Fact]
+    public async Task IsLoginProviderAllowed_NoPolicy_AllowsAll()
+    {
+        var service = CreateService();
+        await service.GetPolicyAsync();
+
+        Assert.True(service.IsLoginProviderAllowed("local"));
+        Assert.True(service.IsLoginProviderAllowed("google"));
+        Assert.True(service.IsLoginProviderAllowed("microsoft"));
+    }
+
+    [Fact]
+    public async Task IsLoginProviderAllowed_EnforcedAllowList_RestrictsToList()
+    {
+        WritePolicyFile(new PolicySettings
+        {
+            Enforce = new AppSettings { AllowedSyncProviders = new List<string> { "microsoft" } }
+        });
+        var service = CreateService();
+        await service.GetPolicyAsync();
+
+        Assert.False(service.IsLoginProviderAllowed("local"));
+        Assert.False(service.IsLoginProviderAllowed("google"));
+        Assert.True(service.IsLoginProviderAllowed("microsoft"));
+    }
+
+    [Fact]
+    public async Task IsLoginProviderAllowed_AllowListIsCaseInsensitive()
+    {
+        WritePolicyFile(new PolicySettings
+        {
+            Enforce = new AppSettings { AllowedSyncProviders = new List<string> { "Microsoft" } }
+        });
+        var service = CreateService();
+        await service.GetPolicyAsync();
+
+        Assert.True(service.IsLoginProviderAllowed("microsoft"));
+        Assert.True(service.IsLoginProviderAllowed("MICROSOFT"));
+    }
+
+    [Fact]
+    public async Task IsLoginProviderAllowed_EmptyList_AllowsAll()
+    {
+        WritePolicyFile(new PolicySettings
+        {
+            Enforce = new AppSettings { AllowedSyncProviders = new List<string>() }
+        });
+        var service = CreateService();
+        await service.GetPolicyAsync();
+
+        Assert.True(service.IsLoginProviderAllowed("local"));
+        Assert.True(service.IsLoginProviderAllowed("google"));
+    }
+
+    [Fact]
+    public async Task IsLoginProviderAllowed_DefaultsAllowList_AlsoApplies()
+    {
+        WritePolicyFile(new PolicySettings
+        {
+            Defaults = new AppSettings { AllowedSyncProviders = new List<string> { "local", "microsoft" } }
+        });
+        var service = CreateService();
+        await service.GetPolicyAsync();
+
+        Assert.True(service.IsLoginProviderAllowed("local"));
+        Assert.False(service.IsLoginProviderAllowed("google"));
+        Assert.True(service.IsLoginProviderAllowed("microsoft"));
+    }
+
+    [Fact]
+    public void IsLoginProviderAllowed_PolicyNotLoaded_AllowsAll()
+    {
+        var service = CreateService();
+        // Note: GetPolicyAsync NOT called
+
+        Assert.True(service.IsLoginProviderAllowed("local"));
+        Assert.True(service.IsLoginProviderAllowed("google"));
     }
 
     [Fact]

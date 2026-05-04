@@ -75,7 +75,8 @@
         </StackPanel.Style>
 
         <!-- Local auth form -->
-        <StackPanel Margin="0,0,0,12" MaxWidth="400" HorizontalAlignment="Center">
+        <StackPanel Margin="0,0,0,12" MaxWidth="400" HorizontalAlignment="Center"
+                    Visibility="{Binding IsLocalLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
           <TextBlock Text="{loc:Str Sync_LocalAuth_Email}"
                      FontSize="12"
                      Opacity="0.7"
@@ -107,10 +108,24 @@
           </StackPanel>
         </StackPanel>
 
-        <!-- Divider -->
+        <!-- Divider (only when both local and OAuth are visible) -->
         <StackPanel Orientation="Horizontal"
                     Margin="0,4,0,12"
                     HorizontalAlignment="Center">
+          <StackPanel.Style>
+            <Style TargetType="StackPanel">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <MultiDataTrigger>
+                  <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsLocalLoginVisible}" Value="True"/>
+                    <Condition Binding="{Binding IsAnyOAuthLoginVisible}" Value="True"/>
+                  </MultiDataTrigger.Conditions>
+                  <Setter Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+              </Style.Triggers>
+            </Style>
+          </StackPanel.Style>
           <Border Height="1" Background="#2a2d3a" Width="170" VerticalAlignment="Center"/>
           <TextBlock Text="{loc:Str Sync_Or}"
                      Opacity="0.5"
@@ -120,11 +135,13 @@
         </StackPanel>
 
         <!-- OAuth buttons -->
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                    Visibility="{Binding IsAnyOAuthLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
           <ui:Button Command="{Binding LoginWithGoogleCommand}"
                      MinWidth="180"
                      IsEnabled="False"
-                     Margin="0,0,8,0">
+                     Margin="0,0,8,0"
+                     Visibility="{Binding IsGoogleLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel Orientation="Horizontal">
               <Image Source="{StaticResource GoogleIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
               <TextBlock Text="{loc:Str Sync_SignInWithGoogle}"/>
@@ -132,7 +149,8 @@
           </ui:Button>
           <ui:Button Command="{Binding LoginWithMicrosoftCommand}"
                      MinWidth="180"
-                     IsEnabled="{Binding IsLoggingIn, Converter={StaticResource InverseBooleanConverter}}">
+                     IsEnabled="{Binding IsLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                     Visibility="{Binding IsMicrosoftLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel Orientation="Horizontal">
               <Image Source="{StaticResource MicrosoftIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
               <TextBlock Text="{loc:Str Sync_SignInWithMicrosoft}"/>

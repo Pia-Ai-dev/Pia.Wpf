@@ -19,6 +19,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
     private readonly IProviderService _providerService;
     private readonly ISyncClientService _syncClientService;
     private readonly IDeviceManagementService _deviceManagement;
+    private readonly IPolicyService _policyService;
     private readonly ILogger<FirstRunWizardViewModel> _logger;
 
     public const int TotalSteps = 7;
@@ -126,6 +127,11 @@ public partial class FirstRunWizardViewModel : ObservableObject
     private string _loginEmailInput = string.Empty;
 
     public string LoginPassword { get; set; } = string.Empty;
+
+    public bool IsLocalLoginVisible => _policyService.IsLoginProviderAllowed("local");
+    public bool IsGoogleLoginVisible => _policyService.IsLoginProviderAllowed("google");
+    public bool IsMicrosoftLoginVisible => _policyService.IsLoginProviderAllowed("microsoft");
+    public bool IsAnyOAuthLoginVisible => IsGoogleLoginVisible || IsMicrosoftLoginVisible;
 
     // --- Provider Setup (step 2) ---
 
@@ -235,6 +241,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         IProviderService providerService,
         ISyncClientService syncClientService,
         IDeviceManagementService deviceManagement,
+        IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel,
         E2EESetupStepViewModel e2eeSetupViewModel,
         ILogger<FirstRunWizardViewModel> logger)
@@ -247,6 +254,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         _providerService = providerService;
         _syncClientService = syncClientService;
         _deviceManagement = deviceManagement;
+        _policyService = policyService;
         OnboardingViewModel = onboardingViewModel;
         E2EESetupViewModel = e2eeSetupViewModel;
         _logger = logger;

@@ -155,6 +155,11 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     public bool IsServerUrlEditable => !IsSyncLoggedIn && !IsServerUrlEnforced;
 
+    public bool IsLocalLoginVisible => _policyService.IsLoginProviderAllowed("local");
+    public bool IsGoogleLoginVisible => _policyService.IsLoginProviderAllowed("google");
+    public bool IsMicrosoftLoginVisible => _policyService.IsLoginProviderAllowed("microsoft");
+    public bool IsAnyOAuthLoginVisible => IsGoogleLoginVisible || IsMicrosoftLoginVisible;
+
     [ObservableProperty]
     private string? _syncUserEmail;
 
