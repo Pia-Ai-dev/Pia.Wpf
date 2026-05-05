@@ -11,7 +11,7 @@ namespace Pia.Services;
 public class PolicyService : IPolicyService
 {
     private static readonly string DefaultPolicyDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Pia");
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Pia.Wpf");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

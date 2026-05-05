@@ -1,7 +1,7 @@
 namespace Pia.Models;
 
 /// <summary>
-/// Represents enterprise policy configuration loaded from %ProgramData%/Pia/policy.json.
+/// Represents enterprise policy configuration loaded from %ProgramData%/Pia.Wpf/policy.json.
 /// </summary>
 public class PolicySettings
 {

@@ -21,10 +21,10 @@ For local development, setting the `PIA_CLOUD_SERVER_URL` environment variable o
 Place the policy file at:
 
 ```
-%ProgramData%\Pia\policy.json
+%ProgramData%\Pia.Wpf\policy.json
 ```
 
-On most systems this resolves to `C:\ProgramData\Pia\policy.json`.
+On most systems this resolves to `C:\ProgramData\Pia.Wpf\policy.json`.
 
 This directory is writable by administrators and readable by all users, making it ideal for machine-wide policy deployment.
 
@@ -89,13 +89,13 @@ The policy file can be deployed using any standard enterprise tool:
 
 - **Group Policy (GPO)** - File copy via Group Policy Preferences
 - **Microsoft Intune / SCCM** - Deploy as a Win32 app or script
-- **PowerShell script** - `Copy-Item policy.json "$env:ProgramData\Pia\policy.json"`
+- **PowerShell script** - `Copy-Item policy.json "$env:ProgramData\Pia.Wpf\policy.json"`
 - **Velopack installer** - Include in post-install script
 
 ### Example PowerShell Deployment
 
 ```powershell
-$policyDir = "$env:ProgramData\Pia"
+$policyDir = "$env:ProgramData\Pia.Wpf"
 if (-not (Test-Path $policyDir)) {
     New-Item -ItemType Directory -Path $policyDir -Force
 }
@@ -116,7 +116,7 @@ When a setting has a policy default:
 
 ## Troubleshooting
 
-- **Policy not applied**: Verify the file exists at `%ProgramData%\Pia\policy.json` and is valid JSON
+- **Policy not applied**: Verify the file exists at `%ProgramData%\Pia.Wpf\policy.json` and is valid JSON
 - **Invalid JSON**: If the policy file contains invalid JSON, it is silently ignored and a warning is logged to `%LocalAppData%\Pia\Logs\pia.log`
 - **No effect on a setting**: Ensure the property name matches the camelCase format. Check the sample file in `samples/policy.json`
 
