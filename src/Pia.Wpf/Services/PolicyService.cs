@@ -23,29 +23,55 @@ public class PolicyService : IPolicyService
     };
 
     private readonly ILogger<PolicyService> _logger;
-    private readonly string _policyFilePath;
+    private readonly string[] _candidatePaths;
     private PolicySettings? _cached;
     private HashSet<string>? _enforcedProperties;
 
     public PolicyService(ILogger<PolicyService> logger)
-        : this(logger, ResolvePolicyFilePath(AppContext.BaseDirectory, FallbackPolicyDirectory))
+        : this(logger, GetDefaultCandidatePaths())
     {
     }
 
     public PolicyService(ILogger<PolicyService> logger, string policyFilePath)
+        : this(logger, new[] { policyFilePath })
     {
-        _logger = logger;
-        _policyFilePath = policyFilePath;
     }
 
-    // Primary: policy.json next to the running exe (in production: %ProgramFiles%\Pia.Wpf).
-    // Fallback: %ProgramData%\Pia.Wpf\policy.json (legacy machine-wide location).
-    public static string ResolvePolicyFilePath(string primaryDirectory, string fallbackDirectory)
+    private PolicyService(ILogger<PolicyService> logger, string[] candidatePaths)
     {
-        var primary = Path.Combine(primaryDirectory, PolicyFileName);
-        if (File.Exists(primary))
-            return primary;
-        return Path.Combine(fallbackDirectory, PolicyFileName);
+        _logger = logger;
+        _candidatePaths = candidatePaths;
+    }
+
+    // Search order:
+    //   1. Next to the running exe (AppContext.BaseDirectory) — dev runs and simple deployments.
+    //   2. Parent of (1) — Velopack installs the running exe under <install>\current\, but
+    //      admins drop policy.json next to the visible launcher stub at the install root.
+    //   3. %ProgramData%\Pia.Wpf — legacy machine-wide fallback.
+    private static string[] GetDefaultCandidatePaths()
+    {
+        var exeDir = AppContext.BaseDirectory;
+        var parentDir = new DirectoryInfo(exeDir).Parent?.FullName;
+
+        var paths = new List<string> { Path.Combine(exeDir, PolicyFileName) };
+        if (parentDir is not null && !string.Equals(parentDir, exeDir, StringComparison.OrdinalIgnoreCase))
+            paths.Add(Path.Combine(parentDir, PolicyFileName));
+        paths.Add(Path.Combine(FallbackPolicyDirectory, PolicyFileName));
+        return paths.ToArray();
+    }
+
+    public static string ResolvePolicyFilePath(params string[] candidateDirectories)
+    {
+        if (candidateDirectories.Length == 0)
+            throw new ArgumentException("At least one candidate directory is required", nameof(candidateDirectories));
+
+        foreach (var dir in candidateDirectories)
+        {
+            var path = Path.Combine(dir, PolicyFileName);
+            if (File.Exists(path))
+                return path;
+        }
+        return Path.Combine(candidateDirectories[^1], PolicyFileName);
     }
 
     public async Task<PolicySettings> GetPolicyAsync()
@@ -107,22 +133,23 @@ public class PolicyService : IPolicyService
 
     private async Task<PolicySettings> LoadPolicyAsync()
     {
-        if (!File.Exists(_policyFilePath))
+        var path = _candidatePaths.FirstOrDefault(File.Exists);
+        if (path is null)
         {
-            _logger.LogDebug("No enterprise policy file found at {Path}", _policyFilePath);
+            _logger.LogInformation("No enterprise policy file found. Searched: {Paths}", string.Join("; ", _candidatePaths));
             return new PolicySettings();
         }
 
         try
         {
-            var json = await File.ReadAllTextAsync(_policyFilePath);
+            var json = await File.ReadAllTextAsync(path);
             var policy = JsonSerializer.Deserialize<PolicySettings>(json, JsonOptions);
-            _logger.LogInformation("Loaded enterprise policy from {Path}", _policyFilePath);
+            _logger.LogInformation("Loaded enterprise policy from {Path}", path);
             return policy ?? new PolicySettings();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to load enterprise policy from {Path}, ignoring", _policyFilePath);
+            _logger.LogWarning(ex, "Failed to load enterprise policy from {Path}, ignoring", path);
             return new PolicySettings();
         }
     }

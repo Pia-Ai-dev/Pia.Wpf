@@ -20,10 +20,11 @@ For local development, setting the `PIA_CLOUD_SERVER_URL` environment variable o
 
 The application looks for `policy.json` in this order (first match wins):
 
-1. **Next to the executable** — in production this is `%ProgramFiles%\Pia.Wpf\policy.json`. This is the preferred location and is the one used when the file is shipped alongside the installer.
-2. **Machine-wide fallback** — `%ProgramData%\Pia.Wpf\policy.json` (typically `C:\ProgramData\Pia.Wpf\policy.json`). Kept for backward compatibility with existing deployments and for cases where the install directory is not writable by the deployment tool.
+1. **Next to the running executable** — `AppContext.BaseDirectory`. For Velopack-managed installs this is the versioned subfolder (e.g. `%ProgramFiles%\Pia.Wpf\current\`), which is overwritten on update — generally don't put `policy.json` here.
+2. **Install root** — the parent of (1). For Velopack this is `%ProgramFiles%\Pia.Wpf\` (next to the visible `Pia.Wpf.exe` launcher stub). **This is the recommended location for machine-wide deployment**: it persists across updates because Velopack only replaces the `current\` subfolder.
+3. **Machine-wide fallback** — `%ProgramData%\Pia.Wpf\policy.json` (typically `C:\ProgramData\Pia.Wpf\policy.json`). Kept for backward compatibility with existing deployments.
 
-Both directories are readable by all users; the install directory requires administrator rights to write to, and `%ProgramData%\Pia.Wpf` is writable by administrators — either is suitable for machine-wide policy deployment.
+If no policy file is found, an Information-level entry is written to `%LocalAppData%\Pia\Logs\pia-*.log` listing all paths that were searched — useful for confirming where to drop the file on a given machine.
 
 ## Policy File Format
 
@@ -113,7 +114,7 @@ When a setting has a policy default:
 
 ## Troubleshooting
 
-- **Policy not applied**: Verify the file exists at `%ProgramFiles%\Pia.Wpf\policy.json` (preferred) or `%ProgramData%\Pia.Wpf\policy.json` (fallback) and is valid JSON
+- **Policy not applied**: Open `%LocalAppData%\Pia\Logs\pia-*.log` and look for a line starting with `Loaded enterprise policy from` (success) or `No enterprise policy file found. Searched:` (which lists every path that was checked). Verify the file is at one of the listed paths and contains valid JSON.
 - **Invalid JSON**: If the policy file contains invalid JSON, it is silently ignored and a warning is logged to `%LocalAppData%\Pia\Logs\pia.log`
 - **No effect on a setting**: Ensure the property name matches the camelCase format. Check the sample file in `samples/policy.json`
 

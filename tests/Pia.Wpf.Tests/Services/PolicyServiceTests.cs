@@ -356,6 +356,43 @@ public class PolicyServiceTests : IDisposable
     }
 
     [Fact]
+    public void ResolvePolicyFilePath_ChecksParentWhenExeDirEmpty()
+    {
+        // Mirrors Velopack layout: exe runs from <install>\current\, policy.json sits at <install>\.
+        var installRoot = Path.Combine(_testDir, "install");
+        var exeDir = Path.Combine(installRoot, "current");
+        var fallbackDir = Path.Combine(_testDir, "fallback");
+        Directory.CreateDirectory(exeDir);
+        Directory.CreateDirectory(installRoot);
+        Directory.CreateDirectory(fallbackDir);
+        File.WriteAllText(Path.Combine(installRoot, "policy.json"), "{}");
+
+        var resolved = PolicyService.ResolvePolicyFilePath(exeDir, installRoot, fallbackDir);
+
+        Assert.Equal(Path.Combine(installRoot, "policy.json"), resolved);
+    }
+
+    [Fact]
+    public async Task LoadsPolicyFromInstallRoot_WhenExeDirHasNone()
+    {
+        var installRoot = Path.Combine(_testDir, "install");
+        var exeDir = Path.Combine(installRoot, "current");
+        Directory.CreateDirectory(exeDir);
+
+        var rootPolicyPath = Path.Combine(installRoot, "policy.json");
+        var json = JsonSerializer.Serialize(
+            new PolicySettings { Enforce = new AppSettings { Theme = AppTheme.Dark } },
+            JsonOptions);
+        File.WriteAllText(rootPolicyPath, json);
+
+        var service = new PolicyService(_logger, rootPolicyPath);
+        var policy = await service.GetPolicyAsync();
+
+        Assert.NotNull(policy.Enforce);
+        Assert.Equal(AppTheme.Dark, policy.Enforce!.Theme);
+    }
+
+    [Fact]
     public async Task GetPolicyAsync_CachesResult()
     {
         WritePolicyFile(new PolicySettings
