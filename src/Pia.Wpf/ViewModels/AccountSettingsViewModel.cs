@@ -158,7 +158,8 @@ public partial class AccountSettingsViewModel : ObservableObject
     public bool IsLocalLoginVisible => _policyService.IsLoginProviderAllowed("local");
     public bool IsGoogleLoginVisible => _policyService.IsLoginProviderAllowed("google");
     public bool IsMicrosoftLoginVisible => _policyService.IsLoginProviderAllowed("microsoft");
-    public bool IsAnyOAuthLoginVisible => IsGoogleLoginVisible || IsMicrosoftLoginVisible;
+    public bool IsEntraIdLoginVisible => _policyService.IsLoginProviderAllowed("entraid");
+    public bool IsAnyOAuthLoginVisible => IsGoogleLoginVisible || IsMicrosoftLoginVisible || IsEntraIdLoginVisible;
 
     [ObservableProperty]
     private string? _syncUserEmail;
@@ -351,6 +352,36 @@ public partial class AccountSettingsViewModel : ObservableObject
             }
 
             var (success, errorMessage) = await _authService.LoginAsync("microsoft");
+            if (success)
+            {
+                await HandlePostLoginAsync();
+                await TrySeedPersonalProfileFromAuthAsync();
+            }
+            else if (errorMessage is not null)
+            {
+                LoginErrorMessage = errorMessage;
+            }
+        }
+        finally
+        {
+            IsSyncLoggingIn = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task LoginWithEntraIdAsync()
+    {
+        IsSyncLoggingIn = true;
+        try
+        {
+            if (IsDevMode)
+            {
+                var settings = await _settingsService.GetSettingsAsync();
+                settings.ServerUrl = ServerUrl;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
+
+            var (success, errorMessage) = await _authService.LoginAsync("entraid");
             if (success)
             {
                 await HandlePostLoginAsync();

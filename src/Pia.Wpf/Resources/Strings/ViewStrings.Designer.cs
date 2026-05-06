@@ -2705,7 +2705,16 @@ namespace Pia.Resources.Strings {
                 return ResourceManager.GetString("Sync_SignInWithMicrosoft", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Sign in with Entra ID.
+        /// </summary>
+        public static string Sync_SignInWithEntraId {
+            get {
+                return ResourceManager.GetString("Sync_SignInWithEntraId", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Sign Out.
         /// </summary>

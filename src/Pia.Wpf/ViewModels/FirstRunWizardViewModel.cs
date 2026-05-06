@@ -133,7 +133,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
     public bool IsLocalLoginVisible => _policyService.IsLoginProviderAllowed("local");
     public bool IsGoogleLoginVisible => _policyService.IsLoginProviderAllowed("google");
     public bool IsMicrosoftLoginVisible => _policyService.IsLoginProviderAllowed("microsoft");
-    public bool IsAnyOAuthLoginVisible => IsGoogleLoginVisible || IsMicrosoftLoginVisible;
+    public bool IsEntraIdLoginVisible => _policyService.IsLoginProviderAllowed("entraid");
+    public bool IsAnyOAuthLoginVisible => IsGoogleLoginVisible || IsMicrosoftLoginVisible || IsEntraIdLoginVisible;
 
     // --- Provider Setup (step 2) ---
 
@@ -228,6 +229,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
     public IRelayCommand<string> SetOperatingModeCommand { get; }
     public IAsyncRelayCommand LoginWithGoogleCommand { get; }
     public IAsyncRelayCommand LoginWithMicrosoftCommand { get; }
+    public IAsyncRelayCommand LoginWithEntraIdCommand { get; }
     public IAsyncRelayCommand LoginWithPasswordCommand { get; }
     public IRelayCommand OpenRegistrationPageCommand { get; }
     public IRelayCommand OpenForgotPasswordCommand { get; }
@@ -303,6 +305,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         SetOperatingModeCommand = new RelayCommand<string>(ExecuteSetOperatingMode);
         LoginWithGoogleCommand = new AsyncRelayCommand(LoginWithGoogleAsync);
         LoginWithMicrosoftCommand = new AsyncRelayCommand(LoginWithMicrosoftAsync);
+        LoginWithEntraIdCommand = new AsyncRelayCommand(LoginWithEntraIdAsync);
         LoginWithPasswordCommand = new AsyncRelayCommand(LoginWithPasswordAsync);
         OpenRegistrationPageCommand = new RelayCommand(ExecuteOpenRegistrationPage);
         OpenForgotPasswordCommand = new RelayCommand(ExecuteOpenForgotPassword);
@@ -427,6 +430,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     private async Task LoginWithGoogleAsync() => await LoginAsync("google");
     private async Task LoginWithMicrosoftAsync() => await LoginAsync("microsoft");
+    private async Task LoginWithEntraIdAsync() => await LoginAsync("entraid");
 
     private async Task LoginAsync(string provider)
     {

@@ -359,6 +359,7 @@
   <data name="Sync_SignIn" xml:space="preserve"><value>Anmelden</value></data>
   <data name="Sync_SignInWithGoogle" xml:space="preserve"><value>Mit Google anmelden</value></data>
   <data name="Sync_SignInWithMicrosoft" xml:space="preserve"><value>Mit Microsoft anmelden</value></data>
+  <data name="Sync_SignInWithEntraId" xml:space="preserve"><value>Mit Entra ID anmelden</value></data>
   <data name="Sync_SignIn_Description" xml:space="preserve"><value>Dein Browser wird geöffnet, um den Anmeldevorgang abzuschließen</value></data>
   <data name="Sync_LocalAuth_Email" xml:space="preserve"><value>E-Mail</value></data>
   <data name="Sync_LocalAuth_Password" xml:space="preserve"><value>Passwort</value></data>

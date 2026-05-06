@@ -78,7 +78,7 @@ public class AppSettings
 
     /// <summary>
     /// Allow-list of sync login providers. Null/empty = all providers allowed.
-    /// Recognized values: "local", "google", "microsoft" (case-insensitive).
+    /// Recognized values: "local", "google", "microsoft", "entraid" (case-insensitive).
     /// Intended to be set via enterprise policy.
     /// </summary>
     public List<string>? AllowedSyncProviders { get; set; }

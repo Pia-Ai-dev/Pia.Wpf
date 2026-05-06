@@ -108,11 +108,11 @@
               </StackPanel>
 
               <!-- OAuth buttons -->
-              <StackPanel Orientation="Horizontal"
-                          Visibility="{Binding IsAnyOAuthLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <WrapPanel Orientation="Horizontal"
+                         Visibility="{Binding IsAnyOAuthLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ui:Button Command="{Binding LoginWithGoogleCommand}"
                            IsEnabled="False"
-                           Margin="0,0,8,0"
+                           Margin="0,0,8,8"
                            Visibility="{Binding IsGoogleLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                   <StackPanel Orientation="Horizontal">
                     <Image Source="{StaticResource GoogleIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
@@ -121,13 +121,23 @@
                 </ui:Button>
                 <ui:Button Command="{Binding LoginWithMicrosoftCommand}"
                            IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                           Margin="0,0,8,8"
                            Visibility="{Binding IsMicrosoftLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                   <StackPanel Orientation="Horizontal">
                     <Image Source="{StaticResource MicrosoftIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
                     <TextBlock Text="{loc:Str Sync_SignInWithMicrosoft}"/>
                   </StackPanel>
                 </ui:Button>
-              </StackPanel>
+                <ui:Button Command="{Binding LoginWithEntraIdCommand}"
+                           IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
+                           Margin="0,0,8,8"
+                           Visibility="{Binding IsEntraIdLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <StackPanel Orientation="Horizontal">
+                    <Image Source="{StaticResource EntraIdIcon}" Width="16" Height="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str Sync_SignInWithEntraId}"/>
+                  </StackPanel>
+                </ui:Button>
+              </WrapPanel>
               <TextBlock Text="{loc:Str Sync_SignIn_Description}"
                          Opacity="0.7"
                          FontSize="12"
