@@ -762,6 +762,22 @@ public class AiClientService : IAiClientService
         try
         {
             var httpClient = _httpClientFactory.CreateClient();
+
+            // Add JWT token if available
+            if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
+            {
+                try
+                {
+                    var token = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
+                    httpClient.DefaultRequestHeaders.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                }
+                catch
+                {
+                    // If decryption fails, proceed without auth (will yield 401 below)
+                }
+            }
+
             var response = await httpClient.GetAsync(statusUrl, linkedCts.Token);
 
             _logger.LogInformation("PiaCloud connection test: {StatusCode}", (int)response.StatusCode);
