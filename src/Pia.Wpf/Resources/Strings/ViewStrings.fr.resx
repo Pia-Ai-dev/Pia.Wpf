@@ -388,6 +388,12 @@
   <data name="Sync_LastSynced" xml:space="preserve"><value>Dernière sync : </value></data>
   <data name="Sync_ResyncTitle" xml:space="preserve"><value>Re-synchronisation</value></data>
   <data name="Sync_ResyncComplete" xml:space="preserve"><value>Re-synchronisation complète terminée</value></data>
+  <data name="Sync_LoginPage_AllSet" xml:space="preserve"><value>Tout est prêt</value></data>
+  <data name="Sync_LoginPage_Welcome" xml:space="preserve"><value>Bienvenue, {0}</value></data>
+  <data name="Sync_LoginPage_Subtitle" xml:space="preserve"><value>Connecté à Pia</value></data>
+  <data name="Sync_LoginPage_CloseHint" xml:space="preserve"><value>Vous pouvez fermer cet onglet</value></data>
+  <data name="Sync_LoginPage_ErrorTitle" xml:space="preserve"><value>Pia – Erreur de connexion</value></data>
+  <data name="Sync_LoginPage_ErrorHeading" xml:space="preserve"><value>Échec de la connexion</value></data>
   <!-- Dialogs -->
   <data name="Dialog_Optimizing_Title" xml:space="preserve"><value>Optimisation</value></data>
   <data name="Dialog_Optimizing_Processing" xml:space="preserve"><value>Traitement...</value></data>

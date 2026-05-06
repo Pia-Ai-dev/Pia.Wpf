@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Services.Interfaces;
 using Pia.Shared.Auth;
 
@@ -15,6 +17,7 @@ public class AuthService : IAuthService
     private readonly ISettingsService _settingsService;
     private readonly DpapiHelper _dpapiHelper;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<AuthService> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
@@ -33,11 +36,13 @@ public class AuthService : IAuthService
         ISettingsService settingsService,
         DpapiHelper dpapiHelper,
         IHttpClientFactory httpClientFactory,
+        ILocalizationService localizationService,
         ILogger<AuthService> logger)
     {
         _settingsService = settingsService;
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
+        _localizationService = localizationService;
         _logger = logger;
 
         _ = LoadStoredTokensAsync();
@@ -92,10 +97,12 @@ public class AuthService : IAuthService
             using var listener = new HttpListener();
             listener.Prefixes.Add(redirectUri);
             listener.Start();
+            _logger.LogInformation("OAuth listener started on {Url}", SafeUrl.Format(redirectUri));
 
             // Wait for the callback (timeout after 5 minutes)
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             var context = await listener.GetContextAsync().WaitAsync(cts.Token);
+            _logger.LogInformation("OAuth callback received");
 
             // Parse the tokens from the callback URL query string
             var query = context.Request.QueryString;
@@ -107,16 +114,25 @@ public class AuthService : IAuthService
             var displayName = query["display_name"];
             var userId = query["user_id"];
 
-            // Send appropriate response to the browser
+            // Send appropriate response to the browser. We must:
+            //  - Force Connection: close (KeepAlive=false) so the browser does not wait for more bytes.
+            //  - Flush + Close the OutputStream explicitly before tearing the listener down.
+            //  - Defer listener teardown to scope exit (via `using`) so any in-flight TCP segments
+            //    drain naturally — the browser sees the full response instead of an RST mid-body.
             var browserHtml = string.IsNullOrEmpty(error)
                 ? BuildLoginSuccessHtml(displayName)
                 : BuildLoginErrorHtml(errorMessage ?? "Login failed");
             var responseBytes = System.Text.Encoding.UTF8.GetBytes(browserHtml);
+            context.Response.StatusCode = string.IsNullOrEmpty(error) ? 200 : 400;
             context.Response.ContentType = "text/html; charset=utf-8";
             context.Response.ContentLength64 = responseBytes.Length;
+            context.Response.KeepAlive = false;
+            context.Response.Headers["Cache-Control"] = "no-store";
             await context.Response.OutputStream.WriteAsync(responseBytes);
+            await context.Response.OutputStream.FlushAsync();
+            context.Response.OutputStream.Close();
             context.Response.Close();
-            listener.Stop();
+            _logger.LogInformation("OAuth response written ({Bytes} bytes)", responseBytes.Length);
 
             if (!string.IsNullOrEmpty(error))
             {
@@ -336,10 +352,15 @@ public class AuthService : IAuthService
         return port;
     }
 
-    private static string BuildLoginSuccessHtml(string? displayName)
+    private string BuildLoginSuccessHtml(string? displayName)
     {
         var safe = WebUtility.HtmlEncode(displayName ?? "");
-        var greeting = string.IsNullOrEmpty(safe) ? "You're all set" : $"Welcome, {safe}";
+        var greeting = string.IsNullOrEmpty(safe)
+            ? _localizationService["Sync_LoginPage_AllSet"]
+            : _localizationService.Format("Sync_LoginPage_Welcome", safe);
+        var subtitle = _localizationService["Sync_LoginPage_Subtitle"];
+        var closeHint = _localizationService["Sync_LoginPage_CloseHint"];
+        var fontDataUrl = GetEmbeddedFontDataUrl();
 
         return $$"""
         <!DOCTYPE html>
@@ -348,10 +369,13 @@ public class AuthService : IAuthService
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Pia</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600&display=swap" rel="stylesheet">
         <style>
+        @font-face {
+            font-family: 'Bricolage Grotesque';
+            src: url("{{fontDataUrl}}") format('woff2-variations');
+            font-weight: 400 600;
+            font-display: block;
+        }
         *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
         html, body { height:100%; overflow:hidden; }
         body {
@@ -493,9 +517,9 @@ public class AuthService : IAuthService
             </div>
             <div>
                 <h1>{{greeting}}</h1>
-                <p class="sub">Signed in to Pia</p>
+                <p class="sub">{{subtitle}}</p>
             </div>
-            <p class="hint">You can close this tab</p>
+            <p class="hint">{{closeHint}}</p>
         </div>
         <div class="brand">Pia</div>
         </body>
@@ -503,9 +527,13 @@ public class AuthService : IAuthService
         """;
     }
 
-    private static string BuildLoginErrorHtml(string errorMessage)
+    private string BuildLoginErrorHtml(string errorMessage)
     {
         var safe = WebUtility.HtmlEncode(errorMessage);
+        var pageTitle = _localizationService["Sync_LoginPage_ErrorTitle"];
+        var heading = _localizationService["Sync_LoginPage_ErrorHeading"];
+        var closeHint = _localizationService["Sync_LoginPage_CloseHint"];
+        var fontDataUrl = GetEmbeddedFontDataUrl();
 
         return $$"""
         <!DOCTYPE html>
@@ -513,11 +541,14 @@ public class AuthService : IAuthService
         <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Pia – Login Error</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600&display=swap" rel="stylesheet">
+        <title>{{pageTitle}}</title>
         <style>
+        @font-face {
+            font-family: 'Bricolage Grotesque';
+            src: url("{{fontDataUrl}}") format('woff2-variations');
+            font-weight: 400 600;
+            font-display: block;
+        }
         *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
         html, body { height:100%; overflow:hidden; }
         body {
@@ -555,14 +586,31 @@ public class AuthService : IAuthService
         <div class="wrap">
             <div class="icon">✕</div>
             <div>
-                <h1>Sign in failed</h1>
+                <h1>{{heading}}</h1>
                 <p class="sub">{{safe}}</p>
             </div>
-            <p class="hint">You can close this tab</p>
+            <p class="hint">{{closeHint}}</p>
         </div>
         <div class="brand">Pia</div>
         </body>
         </html>
         """;
+    }
+
+    private static string? _cachedFontDataUrl;
+
+    private static string GetEmbeddedFontDataUrl()
+    {
+        if (_cachedFontDataUrl is not null) return _cachedFontDataUrl;
+
+        var assembly = typeof(AuthService).Assembly;
+        const string resourceName = "Pia.Resources.Fonts.BricolageGrotesque-Variable.woff2";
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream is null) return _cachedFontDataUrl = string.Empty;
+
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        var base64 = Convert.ToBase64String(ms.ToArray());
+        return _cachedFontDataUrl = $"data:font/woff2;base64,{base64}";
     }
 }
