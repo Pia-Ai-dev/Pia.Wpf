@@ -18,15 +18,12 @@ For local development, setting the `PIA_CLOUD_SERVER_URL` environment variable o
 
 ## Policy File Location
 
-Place the policy file at:
+The application looks for `policy.json` in this order (first match wins):
 
-```
-%ProgramData%\Pia.Wpf\policy.json
-```
+1. **Next to the executable** — in production this is `%ProgramFiles%\Pia.Wpf\policy.json`. This is the preferred location and is the one used when the file is shipped alongside the installer.
+2. **Machine-wide fallback** — `%ProgramData%\Pia.Wpf\policy.json` (typically `C:\ProgramData\Pia.Wpf\policy.json`). Kept for backward compatibility with existing deployments and for cases where the install directory is not writable by the deployment tool.
 
-On most systems this resolves to `C:\ProgramData\Pia.Wpf\policy.json`.
-
-This directory is writable by administrators and readable by all users, making it ideal for machine-wide policy deployment.
+Both directories are readable by all users; the install directory requires administrator rights to write to, and `%ProgramData%\Pia.Wpf` is writable by administrators — either is suitable for machine-wide policy deployment.
 
 ## Policy File Format
 
@@ -116,7 +113,7 @@ When a setting has a policy default:
 
 ## Troubleshooting
 
-- **Policy not applied**: Verify the file exists at `%ProgramData%\Pia.Wpf\policy.json` and is valid JSON
+- **Policy not applied**: Verify the file exists at `%ProgramFiles%\Pia.Wpf\policy.json` (preferred) or `%ProgramData%\Pia.Wpf\policy.json` (fallback) and is valid JSON
 - **Invalid JSON**: If the policy file contains invalid JSON, it is silently ignored and a warning is logged to `%LocalAppData%\Pia\Logs\pia.log`
 - **No effect on a setting**: Ensure the property name matches the camelCase format. Check the sample file in `samples/policy.json`
 

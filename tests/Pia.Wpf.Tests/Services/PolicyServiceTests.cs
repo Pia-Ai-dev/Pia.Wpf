@@ -316,6 +316,46 @@ public class PolicyServiceTests : IDisposable
     }
 
     [Fact]
+    public void ResolvePolicyFilePath_PrefersPrimaryWhenFileExists()
+    {
+        var primaryDir = Path.Combine(_testDir, "primary");
+        var fallbackDir = Path.Combine(_testDir, "fallback");
+        Directory.CreateDirectory(primaryDir);
+        Directory.CreateDirectory(fallbackDir);
+        File.WriteAllText(Path.Combine(primaryDir, "policy.json"), "{}");
+        File.WriteAllText(Path.Combine(fallbackDir, "policy.json"), "{}");
+
+        var resolved = PolicyService.ResolvePolicyFilePath(primaryDir, fallbackDir);
+
+        Assert.Equal(Path.Combine(primaryDir, "policy.json"), resolved);
+    }
+
+    [Fact]
+    public void ResolvePolicyFilePath_FallsBackWhenPrimaryMissing()
+    {
+        var primaryDir = Path.Combine(_testDir, "primary");
+        var fallbackDir = Path.Combine(_testDir, "fallback");
+        Directory.CreateDirectory(primaryDir);
+        Directory.CreateDirectory(fallbackDir);
+        File.WriteAllText(Path.Combine(fallbackDir, "policy.json"), "{}");
+
+        var resolved = PolicyService.ResolvePolicyFilePath(primaryDir, fallbackDir);
+
+        Assert.Equal(Path.Combine(fallbackDir, "policy.json"), resolved);
+    }
+
+    [Fact]
+    public void ResolvePolicyFilePath_NeitherExists_ReturnsFallbackPath()
+    {
+        var primaryDir = Path.Combine(_testDir, "primary");
+        var fallbackDir = Path.Combine(_testDir, "fallback");
+
+        var resolved = PolicyService.ResolvePolicyFilePath(primaryDir, fallbackDir);
+
+        Assert.Equal(Path.Combine(fallbackDir, "policy.json"), resolved);
+    }
+
+    [Fact]
     public async Task GetPolicyAsync_CachesResult()
     {
         WritePolicyFile(new PolicySettings

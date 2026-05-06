@@ -10,7 +10,9 @@ namespace Pia.Services;
 
 public class PolicyService : IPolicyService
 {
-    private static readonly string DefaultPolicyDirectory = Path.Combine(
+    private const string PolicyFileName = "policy.json";
+
+    private static readonly string FallbackPolicyDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Pia.Wpf");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -26,7 +28,7 @@ public class PolicyService : IPolicyService
     private HashSet<string>? _enforcedProperties;
 
     public PolicyService(ILogger<PolicyService> logger)
-        : this(logger, Path.Combine(DefaultPolicyDirectory, "policy.json"))
+        : this(logger, ResolvePolicyFilePath(AppContext.BaseDirectory, FallbackPolicyDirectory))
     {
     }
 
@@ -34,6 +36,16 @@ public class PolicyService : IPolicyService
     {
         _logger = logger;
         _policyFilePath = policyFilePath;
+    }
+
+    // Primary: policy.json next to the running exe (in production: %ProgramFiles%\Pia.Wpf).
+    // Fallback: %ProgramData%\Pia.Wpf\policy.json (legacy machine-wide location).
+    public static string ResolvePolicyFilePath(string primaryDirectory, string fallbackDirectory)
+    {
+        var primary = Path.Combine(primaryDirectory, PolicyFileName);
+        if (File.Exists(primary))
+            return primary;
+        return Path.Combine(fallbackDirectory, PolicyFileName);
     }
 
     public async Task<PolicySettings> GetPolicyAsync()
