@@ -6,4 +6,5 @@ public interface ITrayIconService
 {
     void Initialize();
     void UpdateHotkey(WindowMode mode, KeyboardShortcut? shortcut);
+    void UpdateFastPathHotkey(KeyboardShortcut? shortcut);
 }

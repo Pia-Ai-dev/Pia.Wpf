@@ -17,8 +17,11 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     private readonly INativeHotkeyServiceFactory _hotkeyServiceFactory;
     private readonly ILocalizationService _localizationService;
     private readonly ISelectedTextService _selectedTextService;
+    private readonly IFastPathOptimizer _fastPathOptimizer;
     private readonly Dictionary<WindowMode, INativeHotkeyService> _hotkeyServices = new();
+    private INativeHotkeyService? _fastPathHotkeyService;
     private DateTime _lastHotkeyOpenTime = DateTime.MinValue;
+    private const int FastPathHotkeyId = 100;
     private static readonly TimeSpan HotkeyDebounceInterval = TimeSpan.FromMilliseconds(500);
     private MenuItem? _optimizeMenuItem;
     private MenuItem? _assistantMenuItem;
@@ -31,7 +34,8 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         ISettingsService settingsService,
         INativeHotkeyServiceFactory hotkeyServiceFactory,
         ILocalizationService localizationService,
-        ISelectedTextService selectedTextService)
+        ISelectedTextService selectedTextService,
+        IFastPathOptimizer fastPathOptimizer)
     {
         _windowTrackingService = windowTrackingService;
         _windowManagerService = windowManagerService;
@@ -39,6 +43,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         _hotkeyServiceFactory = hotkeyServiceFactory;
         _localizationService = localizationService;
         _selectedTextService = selectedTextService;
+        _fastPathOptimizer = fastPathOptimizer;
 
         _localizationService.LanguageChanged += OnLanguageChanged;
     }
@@ -129,6 +134,14 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
             RegisterHotkey(mode, shortcut);
     }
 
+    public void UpdateFastPathHotkey(KeyboardShortcut? shortcut)
+    {
+        UnregisterFastPathHotkey();
+
+        if (shortcut != null)
+            RegisterFastPathHotkey(shortcut);
+    }
+
     public void Dispose()
     {
         _localizationService.LanguageChanged -= OnLanguageChanged;
@@ -136,6 +149,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         foreach (var service in _hotkeyServices.Values)
             service.Dispose();
         _hotkeyServices.Clear();
+        UnregisterFastPathHotkey();
 
         Unregister();
 
@@ -156,6 +170,9 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
 
             if (settings.ResearchHotkey != null)
                 RegisterHotkey(WindowMode.Research, settings.ResearchHotkey);
+
+            if (settings.FastPathHotkey != null)
+                RegisterFastPathHotkey(settings.FastPathHotkey);
         }
         catch
         {
@@ -180,6 +197,33 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     {
         if (_hotkeyServices.Remove(mode, out var existing))
             existing.Dispose();
+    }
+
+    private void RegisterFastPathHotkey(KeyboardShortcut shortcut)
+    {
+        UnregisterFastPathHotkey();
+
+        var service = _hotkeyServiceFactory.Create(FastPathHotkeyId, shortcut);
+        if (service is null)
+            return;
+
+        service.HotKeyPressed += OnFastPathHotkeyPressed;
+        _fastPathHotkeyService = service;
+    }
+
+    private void UnregisterFastPathHotkey()
+    {
+        if (_fastPathHotkeyService is null)
+            return;
+
+        _fastPathHotkeyService.HotKeyPressed -= OnFastPathHotkeyPressed;
+        _fastPathHotkeyService.Dispose();
+        _fastPathHotkeyService = null;
+    }
+
+    private void OnFastPathHotkeyPressed()
+    {
+        _ = _fastPathOptimizer.RunAsync();
     }
 
     private void OnHotkeyPressed(WindowMode mode)

@@ -11,6 +11,7 @@ public interface IWindowManagerService
     event EventHandler? WindowVisibilityChanged;
 
     void ShowWindow(WindowMode mode);
+    Task<IOptimizeFastPathHandle> ShowOptimizeAndGetViewModelAsync();
     void ShowWindowWithText(WindowMode mode, string text);
     void ShowWindowWithSelection(WindowMode mode, string capturedText);
     void ShowResearchHistoryWithEntry(Guid entryId);

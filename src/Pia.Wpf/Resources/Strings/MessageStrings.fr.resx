@@ -140,6 +140,8 @@
   <data name="Msg_Settings_CustomTemplatePromptInfo" xml:space="preserve"><value>Ceci est un modèle personnalisé. Le prompt est généré dynamiquement en fonction des champs configurés du modèle.</value></data>
   <data name="Msg_Settings_HotkeyAlreadyAssigned" xml:space="preserve"><value>Ce raccourci est déjà attribué au mode {0}.</value></data>
   <data name="Msg_Settings_HotkeyNotSet" xml:space="preserve"><value>Non défini</value></data>
+  <data name="Msg_FastPath_NoContent" xml:space="preserve"><value>Rien à optimiser. Sélectionnez d'abord du texte, puis appuyez sur le raccourci de la voie rapide.</value></data>
+  <data name="Msg_FastPath_NoTargetWindow" xml:space="preserve"><value>Aucune fenêtre cible pour coller / saisie automatique. Le texte optimisé est affiché dans la fenêtre - appliquez-le manuellement.</value></data>
   <data name="Msg_Settings_ModelDownloadCancelled" xml:space="preserve"><value>Le téléchargement du modèle a été annulé.</value></data>
   <data name="Msg_Settings_ModelDownloadCompleted" xml:space="preserve"><value>{0} téléchargé avec succès.</value></data>
   <data name="Msg_Settings_ModelDownloadFailed" xml:space="preserve"><value>Échec du téléchargement du modèle : {0}</value></data>

@@ -140,6 +140,8 @@
   <data name="Msg_Settings_CustomTemplatePromptInfo" xml:space="preserve"><value>Dies ist eine benutzerdefinierte Vorlage. Der Prompt wird dynamisch basierend auf den konfigurierten Feldern der Vorlage generiert.</value></data>
   <data name="Msg_Settings_HotkeyAlreadyAssigned" xml:space="preserve"><value>Dieses Tastenkürzel ist bereits dem Modus {0} zugewiesen.</value></data>
   <data name="Msg_Settings_HotkeyNotSet" xml:space="preserve"><value>Nicht festgelegt</value></data>
+  <data name="Msg_FastPath_NoContent" xml:space="preserve"><value>Nichts zu optimieren. Markieren Sie zuerst Text und drücken Sie dann den Schnellpfad-Hotkey.</value></data>
+  <data name="Msg_FastPath_NoTargetWindow" xml:space="preserve"><value>Kein Zielfenster für Einfügen/Auto-Eingabe. Der optimierte Text wird im Fenster angezeigt - wenden Sie ihn manuell an.</value></data>
   <data name="Msg_Settings_ModelDownloadCancelled" xml:space="preserve"><value>Modell-Download wurde abgebrochen.</value></data>
   <data name="Msg_Settings_ModelDownloadCompleted" xml:space="preserve"><value>{0} erfolgreich heruntergeladen.</value></data>
   <data name="Msg_Settings_ModelDownloadFailed" xml:space="preserve"><value>Modell-Download fehlgeschlagen: {0}</value></data>

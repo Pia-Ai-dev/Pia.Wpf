@@ -126,6 +126,24 @@ public partial class WindowManagerService : IWindowManagerService
         _logger.LogTrace("ShowWindow {Mode} done (created)", mode);
     }
 
+    public async Task<IOptimizeFastPathHandle> ShowOptimizeAndGetViewModelAsync()
+    {
+        ShowWindow(WindowMode.Optimize);
+
+        if (!_windows.TryGetValue(WindowMode.Optimize, out var managed))
+            throw new InvalidOperationException("Optimize window was not created");
+
+        var viewModel = managed.Scope.ServiceProvider.GetRequiredService<OptimizeViewModel>();
+        var readyTask = viewModel.ReadyAsync;
+        var completed = await Task.WhenAny(readyTask, Task.Delay(TimeSpan.FromSeconds(3)));
+        if (completed == readyTask)
+            await readyTask;
+        else
+            _logger.LogWarning("Timed out waiting for OptimizeViewModel readiness during fast-path startup");
+
+        return viewModel;
+    }
+
     public void ShowWindowWithText(WindowMode mode, string text)
     {
         ShowWindow(mode);

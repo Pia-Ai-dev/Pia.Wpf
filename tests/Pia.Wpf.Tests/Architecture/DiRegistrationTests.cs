@@ -44,7 +44,7 @@ public class DiRegistrationTests
 
         // INativeHotkeyService is created by INativeHotkeyServiceFactory, not registered directly.
         // IPluginToolHandler implementations are created by PluginService based on plugin kind.
-        var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler" };
+        var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler", "IOptimizeFastPathHandle" };
 
         var unregistered = allInterfaces
             .Where(i => !factoryCreated.Contains(i.Name))

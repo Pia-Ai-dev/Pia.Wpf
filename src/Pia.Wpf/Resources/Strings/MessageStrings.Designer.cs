@@ -896,6 +896,24 @@ namespace Pia.Resources.Strings {
                 return ResourceManager.GetString("Msg_Settings_CustomTemplatePromptInfo", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Nothing to optimize. Select text first, then press the fast-path hotkey..
+        /// </summary>
+        public static string Msg_FastPath_NoContent {
+            get {
+                return ResourceManager.GetString("Msg_FastPath_NoContent", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to No target window for paste/auto-type. The optimized text is shown in the window - apply it manually..
+        /// </summary>
+        public static string Msg_FastPath_NoTargetWindow {
+            get {
+                return ResourceManager.GetString("Msg_FastPath_NoTargetWindow", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to This hotkey is already assigned to {0} mode..

@@ -308,6 +308,8 @@
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimize</value></data>
   <data name="Settings_Hotkey_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Settings_Hotkey_Research" xml:space="preserve"><value>Research</value></data>
+  <data name="Settings_Hotkey_FastPath" xml:space="preserve"><value>Fast Path</value></data>
+  <data name="Settings_Hotkey_FastPath_Description" xml:space="preserve"><value>Capture, optimize and apply in one keystroke</value></data>
   <data name="Settings_Hotkey_Change" xml:space="preserve"><value>Change</value></data>
   <data name="Settings_Hotkey_ResetToDefault" xml:space="preserve"><value>Reset to default</value></data>
   <data name="Settings_Hotkey_ClearHotkey" xml:space="preserve"><value>Clear hotkey</value></data>

@@ -12,7 +12,7 @@ using Pia.Navigation;
 
 namespace Pia.ViewModels;
 
-public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDisposable
+public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDisposable, IOptimizeFastPathHandle
 {
     private bool _disposed;
     public event EventHandler? FocusInputRequested;
@@ -37,6 +37,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _optimizationCancellationToken;
+    private readonly TaskCompletionSource<bool> _readyTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _isInitialized;
     private Guid? _lastKnownDefaultTemplateId;
 
@@ -100,6 +101,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     public IAsyncRelayCommand LoadTemplatesCommand { get; }
     public IRelayCommand ClearInputCommand { get; }
     public IRelayCommand<string> SendToModeCommand { get; }
+
+    public Task ReadyAsync => _isInitialized ? Task.CompletedTask : _readyTcs.Task;
 
     public OptimizeViewModel(
         ILogger<OptimizeViewModel> logger,
@@ -192,6 +195,43 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         }
     }
 
+    public async Task ShowOptimizingDialogAsync(CancellationToken cancellationToken)
+    {
+        await _dialogService.ShowOptimizingDialogAsync(GetOptimizingMessages(), cancellationToken);
+    }
+
+    public void PrepareForFastPath()
+    {
+        InputText = string.Empty;
+        OptimizedText = string.Empty;
+        IsComparisonView = false;
+        ErrorMessage = null;
+        OptimizeCommand.NotifyCanExecuteChanged();
+    }
+
+    public async Task<bool> RunFastPathOptimizeAsync(CancellationToken externalCt = default)
+    {
+        _optimizationCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
+        using var dialogCancellationToken = new CancellationTokenSource();
+
+        try
+        {
+            IsOptimizing = true;
+            ErrorMessage = null;
+            IsComparisonView = false;
+            OptimizedText = string.Empty;
+
+            await RunOptimizationAsync(_optimizationCancellationToken.Token, dialogCancellationToken);
+            return IsComparisonView;
+        }
+        finally
+        {
+            _optimizationCancellationToken?.Dispose();
+            _optimizationCancellationToken = null;
+            OptimizeCommand.NotifyCanExecuteChanged();
+        }
+    }
+
     private async Task RunOptimizationAsync(CancellationToken cancellationToken, CancellationTokenSource dialogCancellation)
     {
         try
@@ -263,9 +303,20 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
 
     private async Task ExecuteAcceptAsync()
     {
+        await ExecuteAcceptCoreAsync(false);
+    }
+
+    public async Task<bool> RunFastPathAcceptAsync()
+    {
+        return await ExecuteAcceptCoreAsync(true);
+    }
+
+    private async Task<bool> ExecuteAcceptCoreAsync(bool preserveComparisonOnPasteFallback)
+    {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            var pasteFallbackFailed = false;
 
             switch (settings.DefaultOutputAction)
             {
@@ -284,6 +335,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                     {
                         _logger.LogWarning(ex, "Paste to previous window failed, falling back to clipboard");
                         await _outputService.CopyToClipboardAsync(OptimizedText);
+                        pasteFallbackFailed = true;
                         var windowName = _windowTrackingService.GetTrackedWindowTitle() ?? _localizationService["Msg_Optimize_UnknownWindow"];
                         _snackbarService.Show(
                             _localizationService["Msg_Optimize_PasteFailed_Title"],
@@ -295,16 +347,31 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                     break;
             }
 
+            if (pasteFallbackFailed && preserveComparisonOnPasteFallback)
+                return false;
+
             InputText = string.Empty;
             IsComparisonView = false;
             OptimizedText = string.Empty;
             ErrorMessage = null;
             OptimizeCommand.NotifyCanExecuteChanged();
+            return true;
         }
         catch (Exception ex)
         {
             ErrorMessage = $"Output failed: {ex.Message}";
+            return false;
         }
+    }
+
+    public void ShowFastPathSnackbar(string messageKey)
+    {
+        _snackbarService.Show(
+            _localizationService["Msg_Warning"],
+            _localizationService[messageKey],
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            null,
+            TimeSpan.FromSeconds(4));
     }
 
     private async Task UpdateTrackedWindowInfoAsync()
@@ -570,7 +637,10 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     {
         // Only initialize once
         if (_isInitialized)
+        {
+            _readyTcs.TrySetResult(true);
             return;
+        }
 
         await ExecuteLoadTemplates();
         if (_templates.Count > 0)
@@ -609,6 +679,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         }
 
         _isInitialized = true;
+        _readyTcs.TrySetResult(true);
     }
 
     public void OnNavigatedFrom()

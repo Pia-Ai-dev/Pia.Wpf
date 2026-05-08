@@ -2111,6 +2111,24 @@ namespace Pia.Resources.Strings {
                 return ResourceManager.GetString("Settings_Hotkey_ClearHotkey", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Fast Path.
+        /// </summary>
+        public static string Settings_Hotkey_FastPath {
+            get {
+                return ResourceManager.GetString("Settings_Hotkey_FastPath", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Capture, optimize and apply in one keystroke.
+        /// </summary>
+        public static string Settings_Hotkey_FastPath_Description {
+            get {
+                return ResourceManager.GetString("Settings_Hotkey_FastPath_Description", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to Optimize.
