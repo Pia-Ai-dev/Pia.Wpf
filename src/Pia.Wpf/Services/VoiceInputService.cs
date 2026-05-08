@@ -12,6 +12,7 @@ public class VoiceInputService : IVoiceInputService
     private readonly ITranscriptionService _transcriptionService;
     private readonly IDialogService _dialogService;
     private readonly ISettingsService _settingsService;
+    private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILogger<VoiceInputService> _logger;
 
@@ -20,6 +21,7 @@ public class VoiceInputService : IVoiceInputService
         ITranscriptionService transcriptionService,
         IDialogService dialogService,
         ISettingsService settingsService,
+        ILocalizationService localizationService,
         Wpf.Ui.ISnackbarService snackbarService,
         ILogger<VoiceInputService> logger)
     {
@@ -27,38 +29,34 @@ public class VoiceInputService : IVoiceInputService
         _transcriptionService = transcriptionService;
         _dialogService = dialogService;
         _settingsService = settingsService;
+        _localizationService = localizationService;
         _snackbarService = snackbarService;
         _logger = logger;
     }
 
     public async Task<string?> CaptureVoiceInputAsync()
     {
-        if (_audioRecordingService.IsRecording)
-        {
-            _snackbarService.Show(
-                "Recording Busy",
-                "Audio recording is in use by another window",
-                Wpf.Ui.Controls.ControlAppearance.Caution,
-                null,
-                TimeSpan.FromSeconds(4));
-            return null;
-        }
-
         var recordingCts = new CancellationTokenSource();
         string? audioFilePath = null;
+        var recordingStarted = false;
+        var recordingStopped = false;
 
         try
         {
             await _audioRecordingService.StartRecordingAsync();
+            recordingStarted = true;
 
             await _dialogService.ShowRecordingDialogAsync(recordingCts.Token);
 
             var wasCancelled = recordingCts.Token.IsCancellationRequested;
             audioFilePath = await _audioRecordingService.StopRecordingAsync();
+            recordingStopped = true;
 
             if (wasCancelled)
             {
-                _snackbarService.Show("Cancelled", "Recording was cancelled",
+                _snackbarService.Show(
+                    _localizationService["Msg_Cancelled"],
+                    _localizationService["Msg_Voice_RecordingCancelled"],
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                 return null;
             }
@@ -66,8 +64,8 @@ public class VoiceInputService : IVoiceInputService
             if (!_audioRecordingService.HasAudioContent(audioFilePath))
             {
                 _snackbarService.Show(
-                    "No Audio Detected",
-                    "No speech was detected. Please check your microphone settings.",
+                    _localizationService["Msg_Voice_NoAudioTitle"],
+                    _localizationService["Msg_Voice_NoAudioDetected"],
                     Wpf.Ui.Controls.ControlAppearance.Caution,
                     null,
                     TimeSpan.FromSeconds(4));
@@ -79,12 +77,29 @@ public class VoiceInputService : IVoiceInputService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Voice input failed");
-            _snackbarService.Show("Error", $"Recording failed: {ex.Message}",
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Voice_RecordingFailed", ex.Message),
                 Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
             return null;
         }
         finally
         {
+            // Without this guard the singleton AudioRecordingService stayed stuck in
+            // IsRecording=true after any mid-flow throw or cancellation, locking out
+            // STT for the rest of the session.
+            if (recordingStarted && !recordingStopped)
+            {
+                try
+                {
+                    audioFilePath = await _audioRecordingService.StopRecordingAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to stop recording during cleanup");
+                }
+            }
+
             recordingCts.Dispose();
             CleanupAudioFile(audioFilePath);
         }
@@ -111,7 +126,9 @@ public class VoiceInputService : IVoiceInputService
                 if (dialogCancelled)
                 {
                     transcriptionCts.Cancel();
-                    _snackbarService.Show("Cancelled", "Transcription was cancelled",
+                    _snackbarService.Show(
+                        _localizationService["Msg_Cancelled"],
+                        _localizationService["Msg_Voice_TranscriptionCancelled"],
                         Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                     return null;
                 }
@@ -138,7 +155,9 @@ public class VoiceInputService : IVoiceInputService
 
             if (string.IsNullOrWhiteSpace(transcription))
             {
-                _snackbarService.Show("No Speech", "No speech could be transcribed from the recording.",
+                _snackbarService.Show(
+                    _localizationService["Msg_Voice_NoSpeechTitle"],
+                    _localizationService["Msg_Voice_NoSpeechTranscribed"],
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                 return null;
             }
@@ -153,7 +172,9 @@ public class VoiceInputService : IVoiceInputService
         {
             dialogCancellation.Cancel();
             _logger.LogError(ex, "Transcription failed");
-            _snackbarService.Show("Error", $"Transcription failed: {ex.Message}",
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Voice_TranscriptionFailed", ex.Message),
                 Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
             return null;
         }
@@ -194,7 +215,9 @@ public class VoiceInputService : IVoiceInputService
             }
             catch (OperationCanceledException) when (userCancelCts.IsCancellationRequested)
             {
-                _snackbarService.Show("Cancelled", "Model download was cancelled",
+                _snackbarService.Show(
+                    _localizationService["Msg_Cancelled"],
+                    _localizationService["Msg_Settings_ModelDownloadCancelled"],
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                 return false;
             }
@@ -207,7 +230,9 @@ public class VoiceInputService : IVoiceInputService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Model download failed");
-            _snackbarService.Show("Error", $"Model download failed: {ex.Message}",
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Settings_ModelDownloadFailed", ex.Message),
                 Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
             return false;
         }

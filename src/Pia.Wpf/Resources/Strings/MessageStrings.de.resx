@@ -201,6 +201,16 @@
   <data name="Msg_PiiKeyword_Exists_Title" xml:space="preserve"><value>Bereits vorhanden</value></data>
   <data name="Msg_PiiKeyword_Exists" xml:space="preserve"><value>„{0}" ist bereits in der PII-Liste</value></data>
 
+  <!-- Voice input messages -->
+  <data name="Msg_Voice_RecordingCancelled" xml:space="preserve"><value>Aufnahme wurde abgebrochen</value></data>
+  <data name="Msg_Voice_NoAudioTitle" xml:space="preserve"><value>Kein Audio erkannt</value></data>
+  <data name="Msg_Voice_NoAudioDetected" xml:space="preserve"><value>Keine Sprache erkannt. Bitte überprüfen Sie Ihre Mikrofoneinstellungen.</value></data>
+  <data name="Msg_Voice_RecordingFailed" xml:space="preserve"><value>Aufnahme fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Voice_TranscriptionCancelled" xml:space="preserve"><value>Transkription wurde abgebrochen</value></data>
+  <data name="Msg_Voice_NoSpeechTitle" xml:space="preserve"><value>Keine Sprache</value></data>
+  <data name="Msg_Voice_NoSpeechTranscribed" xml:space="preserve"><value>Aus der Aufnahme konnte keine Sprache transkribiert werden.</value></data>
+  <data name="Msg_Voice_TranscriptionFailed" xml:space="preserve"><value>Transkription fehlgeschlagen: {0}</value></data>
+
   <!-- Optimize messages -->
   <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>Optimierung wurde abgebrochen</value></data>
   <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Optimierung fehlgeschlagen: {0}</value></data>

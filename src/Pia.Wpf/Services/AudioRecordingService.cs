@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using Pia.Services.Interfaces;
 
@@ -6,36 +7,50 @@ namespace Pia.Services;
 
 public class AudioRecordingService : IAudioRecordingService
 {
+    private static readonly TimeSpan StopFlushTimeout = TimeSpan.FromSeconds(3);
+
+    private readonly ILogger<AudioRecordingService> _logger;
     private WaveInEvent? _waveIn;
     private WaveFileWriter? _writer;
     private string? _tempFilePath;
+
+    public AudioRecordingService(ILogger<AudioRecordingService> logger)
+    {
+        _logger = logger;
+    }
 
     public bool IsRecording => _waveIn is not null;
 
     public async Task StartRecordingAsync(CancellationToken cancellationToken = default)
     {
         if (IsRecording)
-            throw new InvalidOperationException("Already recording");
+        {
+            // Stale state from a leaked previous session - self-heal so the user is not
+            // locked out for the rest of the process lifetime. Logged so we can see
+            // which leak paths still fire in the wild.
+            _logger.LogWarning("Audio recording state was still active at StartRecording; resetting leaked state before starting a new recording.");
+            ForceCleanup();
+        }
 
         _tempFilePath = Path.Combine(Path.GetTempPath(), $"pia_recording_{Guid.NewGuid()}.wav");
 
-        _waveIn = new WaveInEvent
-        {
-            WaveFormat = new WaveFormat(16000, 16, 1)
-        };
-
-        _writer = new WaveFileWriter(_tempFilePath, _waveIn.WaveFormat);
-
-        _waveIn.DataAvailable += OnDataAvailable;
-        _waveIn.RecordingStopped += OnRecordingStopped;
-
         try
         {
+            _waveIn = new WaveInEvent
+            {
+                WaveFormat = new WaveFormat(16000, 16, 1)
+            };
+
+            _writer = new WaveFileWriter(_tempFilePath, _waveIn.WaveFormat);
+
+            _waveIn.DataAvailable += OnDataAvailable;
+            _waveIn.RecordingStopped += OnRecordingStopped;
+
             _waveIn.StartRecording();
         }
         catch
         {
-            Cleanup();
+            ForceCleanup();
             throw;
         }
     }
@@ -45,23 +60,55 @@ public class AudioRecordingService : IAudioRecordingService
         if (!IsRecording)
             throw new InvalidOperationException("Not recording");
 
-        _waveIn?.StopRecording();
-
-        while (_writer is not null)
+        try
         {
-            await Task.Delay(50, cancellationToken);
+            _waveIn?.StopRecording();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Stopping wave-in raised an exception; will force cleanup.");
+        }
+
+        // Bounded wait for OnRecordingStopped to flush the writer. If it never fires
+        // (NAudio thread/event quirk, or Close/Dispose threw before _writer was nulled)
+        // we fall through and force cleanup, so the singleton never stays stuck in
+        // IsRecording=true forever.
+        var deadline = DateTime.UtcNow + StopFlushTimeout;
+        while (_writer is not null && DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                await Task.Delay(50, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        if (_writer is not null)
+        {
+            _logger.LogWarning("OnRecordingStopped did not flush the writer within {Timeout}; forcing cleanup.", StopFlushTimeout);
         }
 
         var filePath = _tempFilePath ?? string.Empty;
         _tempFilePath = null;
-        Cleanup();
+        ForceCleanup();
 
         return filePath;
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        _writer?.Write(e.Buffer, 0, e.BytesRecorded);
+        try
+        {
+            _writer?.Write(e.Buffer, 0, e.BytesRecorded);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Writer was disposed concurrently during stop; ignore the late buffer.
+            return;
+        }
 
         var level = CalculateRmsLevel(e.Buffer, e.BytesRecorded);
         AudioLevelChanged?.Invoke(this, level);
@@ -86,9 +133,21 @@ public class AudioRecordingService : IAudioRecordingService
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
     {
-        _writer?.Close();
-        _writer?.Dispose();
-        _writer = null;
+        try
+        {
+            _writer?.Close();
+            _writer?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to close writer in recording-stopped handler.");
+        }
+        finally
+        {
+            // Must run regardless of whether Close/Dispose threw, otherwise the
+            // StopRecordingAsync wait loop hangs forever on a non-null _writer.
+            _writer = null;
+        }
 
         if (_tempFilePath is not null && File.Exists(_tempFilePath))
         {
@@ -96,13 +155,34 @@ public class AudioRecordingService : IAudioRecordingService
         }
     }
 
-    private void Cleanup()
+    private void ForceCleanup()
     {
+        if (_writer is not null)
+        {
+            try
+            {
+                _writer.Close();
+                _writer.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to dispose writer during force cleanup.");
+            }
+            _writer = null;
+        }
+
         if (_waveIn is not null)
         {
             _waveIn.DataAvailable -= OnDataAvailable;
             _waveIn.RecordingStopped -= OnRecordingStopped;
-            _waveIn.Dispose();
+            try
+            {
+                _waveIn.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to dispose wave-in during force cleanup.");
+            }
             _waveIn = null;
         }
     }

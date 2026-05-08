@@ -13,39 +13,34 @@ namespace Pia.ViewModels;
 
 public partial class VoiceModeViewModel : ObservableObject, IDisposable
 {
+    private const double SilenceCheckIntervalMs = 100;
+    private const double SilenceTimeoutMs = 1500;
+    private const float SpeechThreshold = 0.03f;
+    private readonly Action<string, string> _addToConversationFunc;
     private readonly IAudioRecordingService _audioRecordingService;
-    private readonly ITranscriptionService _transcriptionService;
-    private readonly ITtsService _ttsService;
+    private readonly Dispatcher _dispatcher;
     private readonly ILogger _logger;
     private readonly Func<string, CancellationToken, IAsyncEnumerable<string>> _streamResponseFunc;
-    private readonly Action<string, string> _addToConversationFunc;
-    private readonly Dispatcher _dispatcher;
-
-    private CancellationTokenSource? _modeCts;
-    private System.Timers.Timer? _silenceTimer;
-    private bool _hasSpoken;
-    private DateTime _lastSpeechTime;
-    private bool _disposed;
-
-    private const float SpeechThreshold = 0.03f;
-    private const double SilenceTimeoutMs = 1500;
-    private const double SilenceCheckIntervalMs = 100;
-
-    [ObservableProperty]
-    private VoiceModeState _state = VoiceModeState.Idle;
+    private readonly ITranscriptionService _transcriptionService;
+    private readonly ITtsService _ttsService;
 
     [ObservableProperty]
     private float _audioLevel;
+
+    private bool _disposed;
+    private bool _hasSpoken;
+    private DateTime _lastSpeechTime;
+    private CancellationTokenSource? _modeCts;
+    private System.Timers.Timer? _silenceTimer;
+
+    [ObservableProperty]
+    private VoiceModeState _state = VoiceModeState.Idle;
 
     [ObservableProperty]
     private string _statusText = string.Empty;
 
     [ObservableProperty]
     private string _transcriptText = string.Empty;
-
-    public IRelayCommand DoneListeningCommand { get; }
-    public IRelayCommand StopSpeakingCommand { get; }
-    public IRelayCommand ExitCommand { get; }
 
     public VoiceModeViewModel(
         IAudioRecordingService audioRecordingService,
@@ -68,10 +63,134 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
         ExitCommand = new RelayCommand(ExitVoiceMode);
     }
 
+    public IRelayCommand DoneListeningCommand { get; }
+    public IRelayCommand ExitCommand { get; }
+    public IRelayCommand StopSpeakingCommand { get; }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+
+        ExitVoiceMode();
+        _modeCts?.Dispose();
+        _modeCts = null;
+
+        GC.SuppressFinalize(this);
+    }
+
     public async Task EnterAsync()
     {
         _modeCts = new CancellationTokenSource();
         await TransitionToListeningAsync();
+    }
+
+    public void ExitVoiceMode()
+    {
+        _modeCts?.Cancel();
+        StopSilenceMonitor();
+        _audioRecordingService.AudioLevelChanged -= OnAudioLevelChanged;
+
+        _ttsService.Stop();
+
+        if (_audioRecordingService.IsRecording)
+        {
+            _ = StopRecordingSafelyAsync();
+        }
+
+        State = VoiceModeState.Idle;
+        StatusText = string.Empty;
+        AudioLevel = 0;
+        NotifyCommandStates();
+    }
+
+    private void AppendToTranscript(string speaker, string text)
+    {
+        var entry = $"{speaker}: {text}";
+        TranscriptText = string.IsNullOrEmpty(TranscriptText)
+            ? entry
+            : $"{TranscriptText}\n\n{entry}";
+    }
+
+    private void NotifyCommandStates()
+    {
+        DoneListeningCommand.NotifyCanExecuteChanged();
+        StopSpeakingCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnAudioLevelChanged(object? sender, float rmsLevel)
+    {
+        _dispatcher.BeginInvoke(() => AudioLevel = rmsLevel);
+
+        if (rmsLevel > SpeechThreshold)
+        {
+            _hasSpoken = true;
+            _lastSpeechTime = DateTime.UtcNow;
+        }
+    }
+
+    private void OnDoneListening()
+    {
+        if (State != VoiceModeState.Listening)
+            return;
+
+        _ = TransitionToProcessingAsync();
+    }
+
+    private partial void OnStateChanged(VoiceModeState value)
+    {
+        _logger.LogDebug("Voice mode state: {State}", value);
+    }
+
+    private void OnStopSpeaking()
+    {
+        if (State != VoiceModeState.Speaking)
+            return;
+
+        _ttsService.Stop();
+    }
+
+    private void StartSilenceMonitor()
+    {
+        StopSilenceMonitor();
+
+        _silenceTimer = new System.Timers.Timer(SilenceCheckIntervalMs);
+        _silenceTimer.Elapsed += (_, _) =>
+        {
+            if (_hasSpoken && (DateTime.UtcNow - _lastSpeechTime).TotalMilliseconds > SilenceTimeoutMs)
+            {
+                StopSilenceMonitor();
+                _dispatcher.BeginInvoke(() =>
+                {
+                    if (State == VoiceModeState.Listening)
+                    {
+                        _ = TransitionToProcessingAsync();
+                    }
+                });
+            }
+        };
+        _silenceTimer.AutoReset = true;
+        _silenceTimer.Start();
+    }
+
+    private async Task StopRecordingSafelyAsync()
+    {
+        try
+        {
+            await _audioRecordingService.StopRecordingAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to stop recording while exiting voice mode");
+        }
+    }
+
+    private void StopSilenceMonitor()
+    {
+        _silenceTimer?.Stop();
+        _silenceTimer?.Dispose();
+        _silenceTimer = null;
     }
 
     private async Task TransitionToListeningAsync()
@@ -224,113 +343,5 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
             _logger.LogError(ex, "Error during voice mode speaking");
             ExitVoiceMode();
         }
-    }
-
-    private void OnDoneListening()
-    {
-        if (State != VoiceModeState.Listening)
-            return;
-
-        _ = TransitionToProcessingAsync();
-    }
-
-    private void OnStopSpeaking()
-    {
-        if (State != VoiceModeState.Speaking)
-            return;
-
-        _ttsService.Stop();
-    }
-
-    public void ExitVoiceMode()
-    {
-        _modeCts?.Cancel();
-        StopSilenceMonitor();
-        _audioRecordingService.AudioLevelChanged -= OnAudioLevelChanged;
-
-        _ttsService.Stop();
-
-        if (_audioRecordingService.IsRecording)
-        {
-            _ = _audioRecordingService.StopRecordingAsync();
-        }
-
-        State = VoiceModeState.Idle;
-        StatusText = string.Empty;
-        AudioLevel = 0;
-        NotifyCommandStates();
-    }
-
-    private void OnAudioLevelChanged(object? sender, float rmsLevel)
-    {
-        _dispatcher.BeginInvoke(() => AudioLevel = rmsLevel);
-
-        if (rmsLevel > SpeechThreshold)
-        {
-            _hasSpoken = true;
-            _lastSpeechTime = DateTime.UtcNow;
-        }
-    }
-
-    private void StartSilenceMonitor()
-    {
-        StopSilenceMonitor();
-
-        _silenceTimer = new System.Timers.Timer(SilenceCheckIntervalMs);
-        _silenceTimer.Elapsed += (_, _) =>
-        {
-            if (_hasSpoken && (DateTime.UtcNow - _lastSpeechTime).TotalMilliseconds > SilenceTimeoutMs)
-            {
-                StopSilenceMonitor();
-                _dispatcher.BeginInvoke(() =>
-                {
-                    if (State == VoiceModeState.Listening)
-                    {
-                        _ = TransitionToProcessingAsync();
-                    }
-                });
-            }
-        };
-        _silenceTimer.AutoReset = true;
-        _silenceTimer.Start();
-    }
-
-    private void StopSilenceMonitor()
-    {
-        _silenceTimer?.Stop();
-        _silenceTimer?.Dispose();
-        _silenceTimer = null;
-    }
-
-    private void AppendToTranscript(string speaker, string text)
-    {
-        var entry = $"{speaker}: {text}";
-        TranscriptText = string.IsNullOrEmpty(TranscriptText)
-            ? entry
-            : $"{TranscriptText}\n\n{entry}";
-    }
-
-    private void NotifyCommandStates()
-    {
-        DoneListeningCommand.NotifyCanExecuteChanged();
-        StopSpeakingCommand.NotifyCanExecuteChanged();
-    }
-
-    partial void OnStateChanged(VoiceModeState value)
-    {
-        _logger.LogDebug("Voice mode state: {State}", value);
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        _disposed = true;
-
-        ExitVoiceMode();
-        _modeCts?.Dispose();
-        _modeCts = null;
-
-        GC.SuppressFinalize(this);
     }
 }
