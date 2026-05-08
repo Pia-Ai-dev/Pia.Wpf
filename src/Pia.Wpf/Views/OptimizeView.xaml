@@ -10,7 +10,8 @@
               xmlns:loc="clr-namespace:Pia.Localization"
               mc:Ignorable="d"
               d:DesignHeight="600" d:DesignWidth="900"
-              nav:ViewModelLocator.AutoWireViewModel="True">
+              nav:ViewModelLocator.AutoWireViewModel="True"
+              PreviewKeyDown="OptimizeView_PreviewKeyDown">
   <Grid>
     <!-- Main content + panel overlay -->
     <Grid>

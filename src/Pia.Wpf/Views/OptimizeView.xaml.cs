@@ -107,6 +107,18 @@ public partial class OptimizeView : UserControl
         }
     }
 
+    private void OptimizeView_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control && ViewModel?.IsComparisonView == true)
+        {
+            if (ViewModel.AcceptCommand.CanExecute(null))
+            {
+                ViewModel.AcceptCommand.Execute(null);
+                e.Handled = true;
+            }
+        }
+    }
+
     private void SendToButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement element && element.ContextMenu is not null)
