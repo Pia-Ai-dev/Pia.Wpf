@@ -101,6 +101,81 @@ public class FastPathOptimizerTests
         _windowManager.DidNotReceive().HideWindow(WindowMode.Optimize);
     }
 
+    [Fact]
+    public async Task RunAsync_WhenInputAlreadyHasText_ShowsInsertAnywaySnackbarAndDoesNotOptimize()
+    {
+        var handle = new FakeFastPathHandle { InputText = "existing draft" };
+        _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
+        _selectedText.CaptureAsync().Returns("captured selection");
+
+        await CreateSut().RunAsync();
+
+        Assert.Equal(1, handle.InsertAnywaySnackbarShownCount);
+        Assert.Equal("captured selection", handle.InsertAnywayCapturedText);
+        Assert.NotNull(handle.InsertAnywayCallback);
+        Assert.Equal(0, handle.OptimizeCalls);
+        Assert.Equal(0, handle.AcceptCalls);
+        Assert.Equal("existing draft", handle.InputText); // input untouched until user clicks
+        _windowManager.DidNotReceive().HideWindow(WindowMode.Optimize);
+    }
+
+    [Fact]
+    public async Task InsertAnywayCallback_ReplacesInputAndRunsPipeline()
+    {
+        var handle = new FakeFastPathHandle { InputText = "existing draft", OptimizeResult = true, AcceptResult = true };
+        _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
+        _selectedText.CaptureAsync().Returns("captured selection");
+        _settings.GetSettingsAsync().Returns(new AppSettings { DefaultOutputAction = OutputAction.CopyToClipboard });
+
+        var sut = CreateSut();
+        await sut.RunAsync();
+        Assert.NotNull(handle.InsertAnywayCallback);
+
+        await handle.InsertAnywayCallback!();
+
+        Assert.Equal("captured selection", handle.CapturedInput);
+        Assert.Equal(1, handle.OptimizeCalls);
+        Assert.Equal(1, handle.AcceptCalls);
+        await _windowManager.Received(2).ShowOptimizeAndGetViewModelAsync(); // initial + continuation
+        _windowManager.Received(1).HideWindow(WindowMode.Optimize);
+    }
+
+    [Fact]
+    public async Task InsertAnywayCallback_WhenAnotherRunActive_IsNoOp()
+    {
+        var handle = new FakeFastPathHandle { InputText = "existing draft", OptimizeResult = true, AcceptResult = true };
+        _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
+        _selectedText.CaptureAsync().Returns("captured selection");
+        _settings.GetSettingsAsync().Returns(new AppSettings { DefaultOutputAction = OutputAction.CopyToClipboard });
+
+        var sut = CreateSut();
+        await sut.RunAsync();
+        Assert.NotNull(handle.InsertAnywayCallback);
+
+        // Start a second RunAsync that blocks inside CaptureAsync - keeps _isRunning held.
+        var captureGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var captureCalled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _selectedText.CaptureAsync().Returns(_ =>
+        {
+            captureCalled.TrySetResult(true);
+            return captureGate.Task;
+        });
+
+        var blocking = sut.RunAsync();
+        await captureCalled.Task;
+
+        // While the blocking run holds the guard, the Insert-Anyway click should be a no-op.
+        var beforeOptimizeCalls = handle.OptimizeCalls;
+        var beforeAcceptCalls = handle.AcceptCalls;
+        await handle.InsertAnywayCallback!();
+
+        Assert.Equal(beforeOptimizeCalls, handle.OptimizeCalls);
+        Assert.Equal(beforeAcceptCalls, handle.AcceptCalls);
+
+        captureGate.SetResult(null);
+        await blocking;
+    }
+
     private FastPathOptimizerService CreateSut()
     {
         return new FastPathOptimizerService(
@@ -124,6 +199,9 @@ public class FastPathOptimizerTests
         public int OptimizeCalls { get; private set; }
         public int AcceptCalls { get; private set; }
         public string? LastSnackbarKey { get; private set; }
+        public string? InsertAnywayCapturedText { get; private set; }
+        public Func<Task>? InsertAnywayCallback { get; private set; }
+        public int InsertAnywaySnackbarShownCount { get; private set; }
 
         public Task ShowOptimizingDialogAsync(CancellationToken cancellationToken)
         {
@@ -132,7 +210,6 @@ public class FastPathOptimizerTests
 
         public void PrepareForFastPath()
         {
-            InputText = string.Empty;
             OptimizedText = string.Empty;
             IsComparisonView = false;
         }
@@ -162,6 +239,14 @@ public class FastPathOptimizerTests
         public void ShowFastPathSnackbar(string messageKey)
         {
             LastSnackbarKey = messageKey;
+        }
+
+        public void ShowFastPathInsertAnywaySnackbar(string capturedText, Func<Task> onInsertAnyway)
+        {
+            InsertAnywaySnackbarShownCount++;
+            InsertAnywayCapturedText = capturedText;
+            InsertAnywayCallback = onInsertAnyway;
+            LastSnackbarKey = "Msg_SelectionNotPastedInputNotEmpty";
         }
     }
 }

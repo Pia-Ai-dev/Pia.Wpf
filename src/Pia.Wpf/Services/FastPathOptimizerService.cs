@@ -35,10 +35,6 @@ public class FastPathOptimizerService : IFastPathOptimizer
             return;
         }
 
-        IOptimizeFastPathHandle? handle = null;
-        using var dialogCts = new CancellationTokenSource();
-        Task? dialogTask = null;
-
         try
         {
             // Track foreground window and capture selection BEFORE opening the Pia
@@ -48,10 +44,8 @@ public class FastPathOptimizerService : IFastPathOptimizer
             _windowTrackingService.TrackWindowAtCursor();
             var captured = await _selectedTextService.CaptureAsync();
 
-            handle = await _windowManagerService.ShowOptimizeAndGetViewModelAsync();
+            var handle = await _windowManagerService.ShowOptimizeAndGetViewModelAsync();
             handle.PrepareForFastPath();
-            handle.IsOptimizing = true;
-            dialogTask = handle.ShowOptimizingDialogAsync(dialogCts.Token);
 
             if (string.IsNullOrWhiteSpace(captured))
             {
@@ -59,7 +53,35 @@ public class FastPathOptimizerService : IFastPathOptimizer
                 return;
             }
 
+            if (!string.IsNullOrEmpty(handle.InputText))
+            {
+                handle.ShowFastPathInsertAnywaySnackbar(captured, () => RunInsertAnywayContinuationAsync(captured));
+                return;
+            }
+
+            await RunFastPathWithInputAsync(handle, captured);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fast-path optimize failed");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isRunning, 0);
+        }
+    }
+
+    private async Task RunFastPathWithInputAsync(IOptimizeFastPathHandle handle, string captured)
+    {
+        using var dialogCts = new CancellationTokenSource();
+        Task? dialogTask = null;
+
+        try
+        {
             handle.InputText = captured;
+            handle.IsOptimizing = true;
+            dialogTask = handle.ShowOptimizingDialogAsync(dialogCts.Token);
+
             var optimized = await handle.RunFastPathOptimizeAsync();
             if (!optimized || !handle.IsComparisonView)
                 return;
@@ -75,15 +97,9 @@ public class FastPathOptimizerService : IFastPathOptimizer
             if (accepted && !handle.IsComparisonView && string.IsNullOrWhiteSpace(handle.InputText) && string.IsNullOrWhiteSpace(handle.OptimizedText))
                 _windowManagerService.HideWindow(WindowMode.Optimize);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Fast-path optimize failed");
-        }
         finally
         {
-            if (handle is not null)
-                handle.IsOptimizing = false;
-
+            handle.IsOptimizing = false;
             dialogCts.Cancel();
             if (dialogTask is not null)
             {
@@ -91,7 +107,31 @@ public class FastPathOptimizerService : IFastPathOptimizer
                 catch (OperationCanceledException) { }
                 catch (Exception ex) { _logger.LogDebug(ex, "Fast-path optimizing dialog ended with an error"); }
             }
+        }
+    }
 
+    private async Task RunInsertAnywayContinuationAsync(string captured)
+    {
+        if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0)
+        {
+            _logger.LogDebug("Fast-path Insert-anyway ignored because another run is already active");
+            return;
+        }
+
+        try
+        {
+            // Re-acquire the handle: the user may have hidden/closed/reopened the window
+            // between the snackbar and the click. Calling Show... again ensures a live VM.
+            var handle = await _windowManagerService.ShowOptimizeAndGetViewModelAsync();
+            handle.PrepareForFastPath();
+            await RunFastPathWithInputAsync(handle, captured);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fast-path Insert-anyway continuation failed");
+        }
+        finally
+        {
             Interlocked.Exchange(ref _isRunning, 0);
         }
     }

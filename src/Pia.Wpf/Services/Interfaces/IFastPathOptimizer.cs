@@ -17,4 +17,5 @@ public interface IOptimizeFastPathHandle
     Task<bool> RunFastPathOptimizeAsync(CancellationToken externalCt = default);
     Task<bool> RunFastPathAcceptAsync();
     void ShowFastPathSnackbar(string messageKey);
+    void ShowFastPathInsertAnywaySnackbar(string capturedText, Func<Task> onInsertAnyway);
 }

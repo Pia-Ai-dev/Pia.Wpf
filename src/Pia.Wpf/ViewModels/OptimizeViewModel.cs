@@ -202,7 +202,8 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
 
     public void PrepareForFastPath()
     {
-        InputText = string.Empty;
+        // Do NOT clear InputText - fast-path now respects the existing draft and surfaces
+        // an "Insert anyway" snackbar via FastPathOptimizerService when input is non-empty.
         OptimizedText = string.Empty;
         IsComparisonView = false;
         ErrorMessage = null;
@@ -372,6 +373,22 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
             Wpf.Ui.Controls.ControlAppearance.Caution,
             null,
             TimeSpan.FromSeconds(4));
+    }
+
+    public void ShowFastPathInsertAnywaySnackbar(string capturedText, Func<Task> onInsertAnyway)
+    {
+        SnackbarActionHelper.ShowWithAction(
+            _snackbarService,
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+            _localizationService["Msg_SelectionNotPasted_InsertAnyway"],
+            () =>
+            {
+                // Fire-and-forget; FastPathOptimizerService logs failures internally.
+                onInsertAnyway().SafeFireAndForget(_logger);
+            },
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            TimeSpan.FromSeconds(8));
     }
 
     private async Task UpdateTrackedWindowInfoAsync()
@@ -621,16 +638,22 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         {
             InputText = text;
             ShouldFocusInput = true;
+            return;
         }
-        else
-        {
-            _snackbarService.Show(
-                _localizationService["Msg_Warning"],
-                _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
-                Wpf.Ui.Controls.ControlAppearance.Caution,
-                null,
-                TimeSpan.FromSeconds(3));
-        }
+
+        SnackbarActionHelper.ShowWithAction(
+            _snackbarService,
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+            _localizationService["Msg_SelectionNotPasted_InsertAnyway"],
+            () =>
+            {
+                InputText = text;
+                ShouldFocusInput = true;
+                OptimizeCommand.NotifyCanExecuteChanged();
+            },
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            TimeSpan.FromSeconds(8));
     }
 
     public async Task OnNavigatedToAsync(object? parameter)
