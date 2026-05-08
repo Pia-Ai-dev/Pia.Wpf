@@ -42,6 +42,7 @@
   <data name="Msg_Warning" xml:space="preserve"><value>Warning</value></data>
   <data name="Msg_Cancelled" xml:space="preserve"><value>Cancelled</value></data>
   <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Selected text not pasted because the input already contains text.</value></data>
+  <data name="Msg_SelectionNotPasted_InsertAnyway" xml:space="preserve"><value>Insert anyway</value></data>
 
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copied</value></data>
