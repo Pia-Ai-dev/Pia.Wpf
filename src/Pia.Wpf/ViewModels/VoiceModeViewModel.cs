@@ -138,7 +138,7 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
         _ = TransitionToProcessingAsync();
     }
 
-    private partial void OnStateChanged(VoiceModeState value)
+    partial void OnStateChanged(VoiceModeState value)
     {
         _logger.LogDebug("Voice mode state: {State}", value);
     }

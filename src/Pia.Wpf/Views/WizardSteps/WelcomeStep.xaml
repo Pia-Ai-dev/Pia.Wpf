@@ -57,11 +57,13 @@
           <!-- Heading -->
           <TextBlock Text="{loc:Str Wizard_Welcome_Title}"
                      Style="{StaticResource H1TextStyle}"
+                     TextWrapping="Wrap"
                      Margin="0,0,0,8" />
 
           <!-- Subtitle -->
           <TextBlock Text="{loc:Str Wizard_Welcome_Subtitle}"
                      Style="{StaticResource H3TextStyle}"
+                     TextWrapping="Wrap"
                      Foreground="{DynamicResource TextPlaceholderColorBrush}"
                      Margin="0,0,0,16" />
 
@@ -75,12 +77,12 @@
       </Grid>
 
       <!-- Feature Pills -->
-      <StackPanel Orientation="Horizontal"
-                  HorizontalAlignment="Center">
+      <WrapPanel Orientation="Horizontal"
+                 HorizontalAlignment="Center">
         <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
                 CornerRadius="16"
                 Padding="16,8"
-                Margin="4,0">
+                Margin="4,4">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0" />
             <TextBlock Text="{loc:Str Wizard_Welcome_Feature_AiPowered}" VerticalAlignment="Center" FontSize="13" />
@@ -90,7 +92,7 @@
         <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
                 CornerRadius="16"
                 Padding="16,8"
-                Margin="4,0">
+                Margin="4,4">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="BrainCircuit24" FontSize="16" Margin="0,0,8,0" />
             <TextBlock Text="{loc:Str Wizard_Welcome_Feature_Memory}" VerticalAlignment="Center" FontSize="13" />
@@ -100,13 +102,13 @@
         <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
                 CornerRadius="16"
                 Padding="16,8"
-                Margin="4,0">
+                Margin="4,4">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Keyboard24" FontSize="16" Margin="0,0,8,0" />
             <TextBlock Text="{loc:Str Wizard_Welcome_Feature_Hotkey}" VerticalAlignment="Center" FontSize="13" />
           </StackPanel>
         </Border>
-      </StackPanel>
+      </WrapPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

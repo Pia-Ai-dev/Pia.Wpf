@@ -40,24 +40,42 @@
               Padding="16"
               Margin="0,0,0,16">
         <StackPanel>
-          <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+          <Grid Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <ui:SymbolIcon Symbol="ArrowSync24" FontSize="18" Margin="0,0,12,0"
+                           VerticalAlignment="Top"
                            Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-            <TextBlock Text="{loc:Str Wizard_Account_Benefit_Sync}"
+            <TextBlock Grid.Column="1"
+                       Text="{loc:Str Wizard_Account_Benefit_Sync}"
                        FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+          </Grid>
+          <Grid Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <ui:SymbolIcon Symbol="Sparkle24" FontSize="18" Margin="0,0,12,0"
+                           VerticalAlignment="Top"
                            Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-            <TextBlock Text="{loc:Str Wizard_Account_Benefit_CloudAi}"
+            <TextBlock Grid.Column="1"
+                       Text="{loc:Str Wizard_Account_Benefit_CloudAi}"
                        FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal">
+          </Grid>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <ui:SymbolIcon Symbol="Shield24" FontSize="18" Margin="0,0,12,0"
+                           VerticalAlignment="Top"
                            Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-            <TextBlock Text="{loc:Str Wizard_Account_Benefit_E2ee}"
+            <TextBlock Grid.Column="1"
+                       Text="{loc:Str Wizard_Account_Benefit_E2ee}"
                        FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
+          </Grid>
         </StackPanel>
       </Border>
 
@@ -225,19 +243,26 @@
             </Style.Triggers>
           </Style>
         </Border.Style>
-        <StackPanel Orientation="Horizontal">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MaxWidth="420" />
+          </Grid.ColumnDefinitions>
           <ui:SymbolIcon Symbol="CheckmarkCircle24"
                          FontSize="24"
                          Margin="0,0,12,0"
+                         VerticalAlignment="Center"
                          Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-          <StackPanel>
+          <StackPanel Grid.Column="1">
             <TextBlock Text="{Binding LoginDisplayName}"
-                       FontSize="14" FontWeight="SemiBold" />
+                       FontSize="14" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
             <TextBlock Text="{Binding LoginEmail}"
                        FontSize="12"
+                       TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource TextPlaceholderColorBrush}" />
           </StackPanel>
-        </StackPanel>
+        </Grid>
       </Border>
 
       <!-- E2EE Onboarding (shown when account has E2EE enabled) -->

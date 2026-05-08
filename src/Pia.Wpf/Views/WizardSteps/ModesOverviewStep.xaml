@@ -19,6 +19,8 @@
       <TextBlock Text="{loc:Str Wizard_Modes_Subtitle}"
                  Style="{StaticResource BodyTextStyle}"
                  HorizontalAlignment="Center"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
                  Foreground="{DynamicResource TextPlaceholderColorBrush}"
                  Margin="0,0,0,32" />
 

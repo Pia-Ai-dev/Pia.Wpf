@@ -28,6 +28,8 @@
       <TextBlock Text="{loc:Str Wizard_Ready_Subtitle}"
                  Style="{StaticResource BodyTextStyle}"
                  HorizontalAlignment="Center"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
                  Foreground="{DynamicResource TextPlaceholderColorBrush}"
                  Margin="0,0,0,24" />
 
@@ -38,64 +40,94 @@
                  Margin="0,0,0,16" />
 
       <!-- Tip 1 -->
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+      <Grid Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="Sparkle24"
                        FontSize="18"
                        Margin="0,0,12,0"
+                       VerticalAlignment="Top"
                        Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-        <TextBlock Text="{loc:Str Wizard_Ready_Tip1}"
+        <TextBlock Grid.Column="1"
+                   Text="{loc:Str Wizard_Ready_Tip1}"
                    FontSize="13"
                    VerticalAlignment="Center"
                    TextWrapping="Wrap" />
-      </StackPanel>
+      </Grid>
 
       <!-- Tip 2 -->
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+      <Grid Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="Chat24"
                        FontSize="18"
                        Margin="0,0,12,0"
+                       VerticalAlignment="Top"
                        Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-        <TextBlock Text="{loc:Str Wizard_Ready_Tip2}"
+        <TextBlock Grid.Column="1"
+                   Text="{loc:Str Wizard_Ready_Tip2}"
                    FontSize="13"
                    VerticalAlignment="Center"
                    TextWrapping="Wrap" />
-      </StackPanel>
+      </Grid>
 
       <!-- Tip 3 -->
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+      <Grid Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="Search24"
                        FontSize="18"
                        Margin="0,0,12,0"
+                       VerticalAlignment="Top"
                        Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-        <TextBlock Text="{loc:Str Wizard_Ready_Tip3}"
+        <TextBlock Grid.Column="1"
+                   Text="{loc:Str Wizard_Ready_Tip3}"
                    FontSize="13"
                    VerticalAlignment="Center"
                    TextWrapping="Wrap" />
-      </StackPanel>
+      </Grid>
 
       <!-- Tip 4 -->
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+      <Grid Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="BrainCircuit24"
                        FontSize="18"
                        Margin="0,0,12,0"
+                       VerticalAlignment="Top"
                        Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-        <TextBlock Text="{loc:Str Wizard_Ready_Tip4}"
+        <TextBlock Grid.Column="1"
+                   Text="{loc:Str Wizard_Ready_Tip4}"
                    FontSize="13"
                    VerticalAlignment="Center"
                    TextWrapping="Wrap" />
-      </StackPanel>
+      </Grid>
 
       <!-- Tip 5 -->
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+      <Grid Margin="0,0,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="Settings24"
                        FontSize="18"
                        Margin="0,0,12,0"
+                       VerticalAlignment="Top"
                        Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
-        <TextBlock Text="{loc:Str Wizard_Ready_Tip5}"
+        <TextBlock Grid.Column="1"
+                   Text="{loc:Str Wizard_Ready_Tip5}"
                    FontSize="13"
                    VerticalAlignment="Center"
                    TextWrapping="Wrap" />
-      </StackPanel>
+      </Grid>
 
     </StackPanel>
   </ScrollViewer>
