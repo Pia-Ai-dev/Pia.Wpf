@@ -18,13 +18,18 @@ public class FastPathOptimizerTests
     public async Task RunAsync_WhenAlreadyRunning_SecondRunIsNoOp()
     {
         var handle = new FakeFastPathHandle();
+        var captureCalled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var captureGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns(_ => captureGate.Task);
+        _selectedText.CaptureAsync().Returns(_ =>
+        {
+            captureCalled.TrySetResult(true);
+            return captureGate.Task;
+        });
 
         var sut = CreateSut();
         var first = sut.RunAsync();
-        await WaitUntilAsync(() => handle.IsOptimizing);
+        await captureCalled.Task;
 
         var second = sut.RunAsync();
         captureGate.SetResult(null);
@@ -104,19 +109,6 @@ public class FastPathOptimizerTests
             _windowTracking,
             _selectedText,
             _settings);
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> predicate)
-    {
-        for (var i = 0; i < 50; i++)
-        {
-            if (predicate())
-                return;
-
-            await Task.Delay(10);
-        }
-
-        throw new TimeoutException("Condition was not reached");
     }
 
     private sealed class FakeFastPathHandle : IOptimizeFastPathHandle

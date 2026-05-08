@@ -41,14 +41,18 @@ public class FastPathOptimizerService : IFastPathOptimizer
 
         try
         {
+            // Track foreground window and capture selection BEFORE opening the Pia
+            // window. Showing it first steals focus, so the synthetic Ctrl+C in
+            // CaptureAsync would land on Pia (with no selection) instead of the
+            // user's app and clipboard would not change.
             _windowTrackingService.TrackWindowAtCursor();
+            var captured = await _selectedTextService.CaptureAsync();
 
             handle = await _windowManagerService.ShowOptimizeAndGetViewModelAsync();
             handle.PrepareForFastPath();
             handle.IsOptimizing = true;
             dialogTask = handle.ShowOptimizingDialogAsync(dialogCts.Token);
 
-            var captured = await _selectedTextService.CaptureAsync();
             if (string.IsNullOrWhiteSpace(captured))
             {
                 handle.ShowFastPathSnackbar("Msg_FastPath_NoContent");
