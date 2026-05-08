@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Documents;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
@@ -21,25 +22,31 @@ public static class SnackbarActionHelper
     {
         // WPF-UI 4.2.0 verified signatures:
         // Snackbar.Snackbar(SnackbarPresenter), Snackbar.Show(),
-        // ISnackbarService.GetSnackbarPresenter(), Snackbar.Content : object.
+        // ISnackbarService.GetSnackbarPresenter(), Snackbar.Content : object,
+        // SnackbarPresenter.HideCurrent(), Snackbar.ContentForeground : Brush.
         var presenter = snackbarService.GetSnackbarPresenter();
         if (presenter is null)
             return;
 
-        var content = BuildContent(message, actionText, onAction);
-
         var snackbar = new Snackbar(presenter)
         {
             Title = title,
-            Content = content,
             Appearance = appearance,
             Timeout = timeout,
         };
 
+        snackbar.Content = BuildContent(snackbar, message, actionText, () =>
+        {
+            // Dismiss the snackbar instantly when the user clicks the action so they
+            // get immediate visual feedback that the click registered.
+            _ = presenter.HideCurrent();
+            onAction();
+        });
+
         snackbar.Show();
     }
 
-    private static FrameworkElement BuildContent(string message, string actionText, Action onAction)
+    private static FrameworkElement BuildContent(Snackbar snackbar, string message, string actionText, Action onAction)
     {
         var textBlock = new System.Windows.Controls.TextBlock
         {
@@ -48,7 +55,19 @@ public static class SnackbarActionHelper
         textBlock.Inlines.Add(new Run(message));
         textBlock.Inlines.Add(new Run("  "));
 
-        var hyperlink = new Hyperlink(new Run(actionText));
+        var hyperlink = new Hyperlink(new Run(actionText))
+        {
+            FontWeight = FontWeights.SemiBold,
+        };
+
+        // Bind the link to the snackbar's appearance-aware ContentForeground so it
+        // adapts to Caution/Danger/Info backgrounds instead of using the default
+        // Hyperlink blue (which clashes with the orange Caution background).
+        hyperlink.SetBinding(Hyperlink.ForegroundProperty, new Binding(nameof(Snackbar.ContentForeground))
+        {
+            Source = snackbar,
+        });
+
         hyperlink.Click += (_, _) =>
         {
             try
