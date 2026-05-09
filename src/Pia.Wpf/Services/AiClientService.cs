@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,14 @@ namespace Pia.Services;
 
 public class AiClientService : IAiClientService
 {
+    private const string NoThinkSystemPrompt =
+        "You produce only the requested output. Do not reason, think, or explain. " +
+        "Do not emit <think> tags. Respond directly with the final text.";
+
+    private static readonly Regex LeadingThinkBlockRegex = new(
+        @"^\s*<think\b[^>]*>[\s\S]*?</think>\s*",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly DpapiHelper _dpapiHelper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ISettingsService _settingsService;
@@ -52,8 +61,17 @@ public class AiClientService : IAiClientService
             _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
             IChatClient chatClient = await CreateChatClientAsync(provider, apiKey);
 
+            var messages = new[]
+            {
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, NoThinkSystemPrompt),
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, prompt ),
+            };
+
+            var options = CreateModeOptions(mode: null, hasTools: false);
+
             var response = await chatClient.GetResponseAsync(
-                [new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, prompt)],
+                messages,
+                options,
                 cancellationToken: linkedCts.Token
             );
 
@@ -87,13 +105,14 @@ public class AiClientService : IAiClientService
             cancellationToken, timeoutCts.Token);
 
         var chatClient = await CreateChatClientAsync(provider, apiKey, mode);
+        var options = CreateModeOptions(mode, hasTools: false);
 
         IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
         try
         {
             try
             {
-                var stream = chatClient.GetStreamingResponseAsync(messages, cancellationToken: linkedCts.Token);
+                var stream = chatClient.GetStreamingResponseAsync(messages, options, cancellationToken: linkedCts.Token);
                 enumerator = stream.GetAsyncEnumerator(linkedCts.Token);
             }
             catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -149,7 +168,7 @@ public class AiClientService : IAiClientService
             IChatClient chatClient = await CreateChatClientAsync(provider, apiKey, mode);
 
             var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
-            var options = new ChatOptions();
+            var options = CreateModeOptions(mode, hasTools: useTools);
             if (useTools)
             {
                 options.Tools = [.. tools!];
@@ -162,7 +181,7 @@ public class AiClientService : IAiClientService
             catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
             {
                 _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
-                options.Tools = null;
+                options = CreateModeOptions(mode, hasTools: false);
                 return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
             }
         }
@@ -194,7 +213,7 @@ public class AiClientService : IAiClientService
         IChatClient chatClient = await CreateChatClientAsync(provider, apiKey, mode);
 
         var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
-        var options = new ChatOptions();
+        var options = CreateModeOptions(mode, hasTools: useTools);
         if (useTools)
         {
             options.Tools = [.. tools!];
@@ -240,7 +259,7 @@ public class AiClientService : IAiClientService
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
-                    options.Tools = null;
+                    options = CreateModeOptions(mode, hasTools: false);
                     useTools = false;
                     if (enumerator != null) await enumerator.DisposeAsync();
 
@@ -310,7 +329,7 @@ public class AiClientService : IAiClientService
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
-                    options.Tools = null;
+                    options = CreateModeOptions(mode, hasTools: false);
                     useTools = false;
                     try
                     {
@@ -407,9 +426,11 @@ public class AiClientService : IAiClientService
         var dummyTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool");
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
+            new(ChatRole.System, NoThinkSystemPrompt),
             new(ChatRole.User, "Say hello.")
         };
-        var options = new ChatOptions { Tools = [dummyTool] };
+        var options = CreateModeOptions(mode: null, hasTools: true);
+        options.Tools = [dummyTool];
 
         try
         {
@@ -442,12 +463,14 @@ public class AiClientService : IAiClientService
 
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
+            new(ChatRole.System, NoThinkSystemPrompt),
             new(ChatRole.User, "Say hello.")
         };
+        var options = CreateModeOptions(mode: null, hasTools: false);
 
         try
         {
-            await foreach (var update in chatClient.GetStreamingResponseAsync(messages, cancellationToken: linkedCts.Token))
+            await foreach (var update in chatClient.GetStreamingResponseAsync(messages, options, linkedCts.Token))
             {
                 return true;
             }
@@ -791,4 +814,37 @@ public class AiClientService : IAiClientService
 
     private static string Truncate(string value, int max)
         => value.Length > max ? value[..max] + "..." : value;
+
+    // Sets reasoning_effort at the API layer per WindowMode. The OpenAI SDK's
+    // RawRepresentationFactory returns a seed ChatCompletionOptions; M.E.AI overlays its mapped
+    // fields on top, so ReasoningEffortLevel is preserved end-to-end. Honored by OpenAI o-series
+    // and Ollama 0.10+; ignored by backends that don't recognize the field. Any request that
+    // carries tools forces None — tool-using turns must not burn reasoning tokens.
+    private static Microsoft.Extensions.AI.ChatOptions CreateModeOptions(string? mode, bool hasTools)
+        => new()
+        {
+            RawRepresentationFactory = _ =>
+            {
+#pragma warning disable OPENAI001 // ReasoningEffortLevel is marked [Experimental] in OpenAI SDK 2.10.
+                return new ChatCompletionOptions
+                {
+                    ReasoningEffortLevel = ResolveEffort(mode, hasTools),
+                };
+#pragma warning restore OPENAI001
+            },
+        };
+
+#pragma warning disable OPENAI001 // ReasoningEffortLevel is marked [Experimental] in OpenAI SDK 2.10.
+    private static ChatReasoningEffortLevel ResolveEffort(string? mode, bool hasTools)
+    {
+        if (hasTools) return ChatReasoningEffortLevel.None;
+        return mode switch
+        {
+            nameof(WindowMode.Optimize) => ChatReasoningEffortLevel.None,
+            nameof(WindowMode.Assistant) => ChatReasoningEffortLevel.None,
+            nameof(WindowMode.Research) => ChatReasoningEffortLevel.Medium,
+            _ => ChatReasoningEffortLevel.None,
+        };
+    }
+#pragma warning restore OPENAI001
 }
