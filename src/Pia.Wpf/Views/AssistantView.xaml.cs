@@ -11,6 +11,7 @@ namespace Pia.Views;
 public partial class AssistantView : UserControl
 {
     private AssistantViewModel? ViewModel => DataContext as AssistantViewModel;
+    private bool _autoScroll = true;
 
     public AssistantView()
     {
@@ -27,6 +28,7 @@ public partial class AssistantView : UserControl
             ViewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
         }
 
+        MessageScrollViewer.ScrollChanged += OnMessageScrollChanged;
         InputTextBox.Focus();
     }
 
@@ -41,6 +43,18 @@ public partial class AssistantView : UserControl
             }
             ViewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
         }
+        MessageScrollViewer.ScrollChanged -= OnMessageScrollChanged;
+    }
+
+    private void OnMessageScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // Re-evaluate auto-scroll only when the viewport moved without content growing —
+        // that's a user-driven scroll. Content growth during streaming leaves VerticalOffset
+        // unchanged when the user has scrolled away from the bottom, so we never confuse the two.
+        if (e.ExtentHeightChange == 0 && e.VerticalChange != 0)
+        {
+            _autoScroll = MessageScrollViewer.VerticalOffset >= MessageScrollViewer.ScrollableHeight - 1.0;
+        }
     }
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -51,11 +65,14 @@ public partial class AssistantView : UserControl
             {
                 message.PropertyChanged += OnMessagePropertyChanged;
             }
+            // A new message is a new logical event — resume following the conversation.
+            _autoScroll = true;
             ScrollToBottom();
         }
         else if (e.Action == NotifyCollectionChangedAction.Reset)
         {
             // All items removed — unsubscribe handled implicitly since objects are gone
+            _autoScroll = true;
         }
     }
 
@@ -69,7 +86,10 @@ public partial class AssistantView : UserControl
 
     private void ScrollToBottom()
     {
-        MessageScrollViewer.ScrollToEnd();
+        if (_autoScroll)
+        {
+            MessageScrollViewer.ScrollToEnd();
+        }
     }
 
     private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
