@@ -44,6 +44,13 @@
   <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Selected text not pasted because the input already contains text.</value></data>
   <data name="Msg_SelectionNotPasted_InsertAnyway" xml:space="preserve"><value>Insert anyway</value></data>
 
+  <!-- File drop -->
+  <data name="Msg_File_Unsupported" xml:space="preserve"><value>"{0}" can't be inserted here — file type isn't supported.</value></data>
+  <data name="Msg_File_TooLarge" xml:space="preserve"><value>"{0}" is too large to insert.</value></data>
+  <data name="Msg_File_ReadFailed" xml:space="preserve"><value>Couldn't read "{0}": {1}</value></data>
+  <data name="Msg_File_Inserted" xml:space="preserve"><value>Inserted contents of {0}.</value></data>
+  <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Drop file to insert its contents</value></data>
+
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copied</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Current value:</value></data>

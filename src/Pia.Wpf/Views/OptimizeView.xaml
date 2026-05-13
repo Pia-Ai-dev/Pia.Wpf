@@ -8,11 +8,15 @@
               xmlns:nav="clr-namespace:Pia.Navigation"
               xmlns:models="clr-namespace:Pia.Models"
               xmlns:loc="clr-namespace:Pia.Localization"
+              xmlns:behaviors="clr-namespace:Pia.Behaviors"
               mc:Ignorable="d"
               d:DesignHeight="600" d:DesignWidth="900"
               nav:ViewModelLocator.AutoWireViewModel="True"
               PreviewKeyDown="OptimizeView_PreviewKeyDown">
-  <Grid>
+  <Grid x:Name="RootGrid"
+        behaviors:FileDropBehavior.IsEnabled="True"
+        behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx"
+        behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}">
     <!-- Main content + panel overlay -->
     <Grid>
       <Grid.RowDefinitions>
@@ -384,5 +388,28 @@
         </Style>
       </local:TodoPanelControl.Style>
     </local:TodoPanelControl>
+
+    <!-- Drag-over overlay (visible while a file is being dragged onto the view) -->
+    <Border IsHitTestVisible="False"
+            Margin="8"
+            CornerRadius="8"
+            BorderThickness="2"
+            BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+            Background="{DynamicResource AcrylicBackgroundFillColorBaseBrush}"
+            Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=RootGrid, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <StackPanel HorizontalAlignment="Center"
+                  VerticalAlignment="Center">
+        <ui:SymbolIcon Symbol="ArrowDownload24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+        <TextBlock Text="{loc:Str FileDrop_Overlay_Hint}"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Margin="0,12,0,0"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+      </StackPanel>
+    </Border>
   </Grid>
 </UserControl>

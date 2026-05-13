@@ -42,6 +42,14 @@
   <data name="Msg_Cancelled" xml:space="preserve"><value>Annulé</value></data>
   <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Le texte sélectionné n'a pas été collé car le champ contient déjà du texte.</value></data>
   <data name="Msg_SelectionNotPasted_InsertAnyway" xml:space="preserve"><value>Insérer quand même</value></data>
+
+  <!-- File drop -->
+  <data name="Msg_File_Unsupported" xml:space="preserve"><value>« {0} » ne peut pas être inséré ici – type de fichier non pris en charge.</value></data>
+  <data name="Msg_File_TooLarge" xml:space="preserve"><value>« {0} » est trop volumineux pour être inséré.</value></data>
+  <data name="Msg_File_ReadFailed" xml:space="preserve"><value>Impossible de lire « {0} » : {1}</value></data>
+  <data name="Msg_File_Inserted" xml:space="preserve"><value>Contenu de {0} inséré.</value></data>
+  <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Déposez un fichier pour insérer son contenu</value></data>
+
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copié</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>

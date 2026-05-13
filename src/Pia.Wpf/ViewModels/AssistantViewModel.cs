@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -228,6 +229,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
+    public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -272,6 +274,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
+        HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
@@ -858,6 +861,89 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 null,
                 TimeSpan.FromSeconds(3));
         }
+    }
+
+    private async Task ExecuteHandleFilesDropped(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0) return;
+        if (IsStreaming) return;
+
+        var combined = new StringBuilder();
+
+        foreach (var path in paths)
+        {
+            var kind = DroppedFileReader.Classify(path);
+            var fileName = Path.GetFileName(path);
+
+            DroppedFileReader.ReadResult result;
+            switch (kind)
+            {
+                case FileKind.Text:
+                    result = await DroppedFileReader.ReadTextAsync(path, CancellationToken.None);
+                    break;
+                case FileKind.Docx:
+                    result = await DroppedFileReader.ReadDocxAsync(path, CancellationToken.None);
+                    break;
+                default:
+                    // Image / Pdf / Audio / Unsupported — Stage 2 will replace Image and Pdf
+                    // with vision attachments. Stage 1: reject with a snackbar so the user
+                    // gets immediate feedback that nothing was inserted.
+                    _logger.LogInformation("Assistant file drop rejected for kind {Kind}", kind);
+                    _snackbarService.Show(
+                        _localizationService["Msg_Warning"],
+                        _localizationService.Format("Msg_File_Unsupported", fileName),
+                        Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                    continue;
+            }
+
+            switch (result.Status)
+            {
+                case DroppedFileReader.ReadStatus.Ok when !string.IsNullOrEmpty(result.Text):
+                    if (combined.Length > 0)
+                        combined.AppendLine().AppendLine("---").AppendLine();
+                    combined.Append(result.Text);
+                    break;
+                case DroppedFileReader.ReadStatus.TooLarge:
+                    _snackbarService.Show(
+                        _localizationService["Msg_Warning"],
+                        _localizationService.Format("Msg_File_TooLarge", fileName),
+                        Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                    break;
+                case DroppedFileReader.ReadStatus.Failed:
+                    _logger.LogError("Assistant file drop read failed for {Kind}: {Error}", kind, result.Error);
+                    _snackbarService.Show(
+                        _localizationService["Msg_Error"],
+                        _localizationService.Format("Msg_File_ReadFailed", fileName, result.Error ?? string.Empty),
+                        Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+                    break;
+            }
+        }
+
+        if (combined.Length > 0)
+            InsertOrPromptInsertAnyway(combined.ToString());
+    }
+
+    private void InsertOrPromptInsertAnyway(string text)
+    {
+        if (string.IsNullOrEmpty(InputText))
+        {
+            InputText = text;
+            SendMessageCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        SnackbarActionHelper.ShowWithAction(
+            _snackbarService,
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+            _localizationService["Msg_SelectionNotPasted_InsertAnyway"],
+            () =>
+            {
+                InputText = text;
+                SendMessageCommand.NotifyCanExecuteChanged();
+            },
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            TimeSpan.FromSeconds(8));
     }
 
     private void ExecuteToggleTts()
