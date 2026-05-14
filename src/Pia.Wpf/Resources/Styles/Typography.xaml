@@ -4,6 +4,8 @@
 
   <!-- Font Family -->
   <FontFamily x:Key="DefaultFontFamily">Segoe UI Variable, Segoe UI, sans-serif</FontFamily>
+  <FontFamily x:Key="CodeFontFamily">Consolas, Cascadia Code, Courier New, monospace</FontFamily>
+  <system:Double x:Key="CodeFontSize">12</system:Double>
 
   <!-- Font Sizes -->
   <system:Double x:Key="FontSizeH1">28</system:Double>

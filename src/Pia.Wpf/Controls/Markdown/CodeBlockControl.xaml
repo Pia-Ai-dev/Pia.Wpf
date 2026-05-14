@@ -1,0 +1,64 @@
+<UserControl x:Class="Pia.Controls.Markdown.CodeBlockControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             x:Name="Root">
+  <Border CornerRadius="8"
+          Background="{DynamicResource CodeBlockSurfaceBrush}"
+          BorderBrush="{DynamicResource CodeBlockBorderBrush}"
+          BorderThickness="1"
+          Margin="0,4,0,8"
+          ClipToBounds="True">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <Border Grid.Row="0"
+              Background="{DynamicResource CodeBlockHeaderBrush}"
+              BorderBrush="{DynamicResource CodeBlockBorderBrush}"
+              BorderThickness="0,0,0,1"
+              Padding="12,4,4,4">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <TextBlock Grid.Column="0"
+                     Text="{Binding LanguageLabel, ElementName=Root}"
+                     VerticalAlignment="Center"
+                     FontSize="11"
+                     FontFamily="{StaticResource DefaultFontFamily}"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+          <ui:Button Grid.Column="1"
+                     Appearance="Transparent"
+                     Padding="6,2"
+                     Click="CopyButton_Click"
+                     ToolTip="{loc:Str Assistant_Copy_Tooltip}">
+            <ui:SymbolIcon x:Name="CopyIcon" Symbol="Copy16" FontSize="12" />
+          </ui:Button>
+        </Grid>
+      </Border>
+
+      <RichTextBox Grid.Row="1"
+                   x:Name="CodeViewer"
+                   IsReadOnly="True"
+                   IsDocumentEnabled="False"
+                   BorderThickness="0"
+                   Background="Transparent"
+                   Padding="12,8"
+                   FontFamily="{StaticResource CodeFontFamily}"
+                   FontSize="{StaticResource CodeFontSize}"
+                   Foreground="{DynamicResource CodeBlockPlainBrush}"
+                   HorizontalScrollBarVisibility="Auto"
+                   VerticalScrollBarVisibility="Disabled"
+                   IsUndoEnabled="False"
+                   AcceptsReturn="False"
+                   AcceptsTab="False" />
+    </Grid>
+  </Border>
+</UserControl>
