@@ -14,11 +14,25 @@
               nav:ViewModelLocator.AutoWireViewModel="True"
               PreviewKeyDown="OptimizeView_PreviewKeyDown">
   <Grid x:Name="RootGrid"
+        Background="Transparent"
         behaviors:FileDropBehavior.IsEnabled="True"
         behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx"
         behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}">
     <!-- Main content + panel overlay -->
-    <Grid>
+    <Grid x:Name="MainContent">
+      <Grid.Style>
+        <Style TargetType="Grid">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=RootGrid}" Value="True">
+              <Setter Property="Effect">
+                <Setter.Value>
+                  <BlurEffect Radius="6" KernelType="Gaussian" />
+                </Setter.Value>
+              </Setter>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Grid.Style>
       <Grid.RowDefinitions>
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
