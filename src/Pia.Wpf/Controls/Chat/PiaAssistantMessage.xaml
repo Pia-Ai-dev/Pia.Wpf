@@ -1,0 +1,123 @@
+<UserControl x:Class="Pia.Controls.Chat.PiaAssistantMessage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:controls="clr-namespace:Pia.Controls"
+             xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             x:Name="Root">
+  <StackPanel>
+
+    <!-- Markdown body (visible only when content present) -->
+    <Border>
+      <Border.Style>
+        <Style TargetType="Border" BasedOn="{StaticResource AssistantBubbleStyle}">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding HasContent}" Value="False">
+              <Setter Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+      <controls:MarkdownMessageControl x:Name="Markdown"
+                                       MarkdownText="{Binding Content}"
+                                       IsStreaming="{Binding IsStreaming}"
+                                       AddToPiiRequested="Markdown_AddToPiiRequested" />
+    </Border>
+
+    <!-- Inline action cards (existing behavior) -->
+    <ItemsControl ItemsSource="{Binding ActionCards}" Margin="0,6,0,0"
+                  Visibility="{Binding HasActionCards, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <controls:ActionCardControl />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- Sources -->
+    <ItemsControl ItemsSource="{Binding Sources}" Margin="0,10,0,0"
+                  Visibility="{Binding HasSources, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <chat:PiaSourceChip Number="{Binding Number}"
+                              Source="{Binding Source}"
+                              Meta="{Binding Meta}"
+                              Margin="0,0,6,6" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- Toolbar -->
+    <chat:PiaAnswerToolbar Margin="-6,6,0,0"
+                           CopyCommand="{Binding CopyCommand, ElementName=Root}"
+                           SpeakCommand="{Binding SpeakCommand, ElementName=Root}"
+                           RegenerateCommand="{Binding RegenerateCommand, ElementName=Root}"
+                           RateCommand="{Binding RateCommand, ElementName=Root}"
+                           CommandParameter="{Binding}"
+                           Stats="{Binding Stats}">
+      <chat:PiaAnswerToolbar.Style>
+        <Style TargetType="chat:PiaAnswerToolbar">
+          <Setter Property="Visibility" Value="Visible" />
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding HasContent}" Value="False">
+              <Setter Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </chat:PiaAnswerToolbar.Style>
+    </chat:PiaAnswerToolbar>
+
+    <!-- Suggestion chips -->
+    <chat:PiaSuggestionChips Margin="0,8,0,0"
+                             ItemsSource="{Binding Suggestions}"
+                             ItemClickCommand="{Binding SuggestionCommand, ElementName=Root}"
+                             Visibility="{Binding HasSuggestions, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+    <!-- Thinking content (preserved from existing) -->
+    <Expander Margin="0,6,0,0"
+              Header="{loc:Str Assistant_ShowReasoning}"
+              IsExpanded="False"
+              FontSize="12">
+      <Expander.Style>
+        <Style TargetType="Expander">
+          <Setter Property="Visibility" Value="Collapsed" />
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding HasThinkingContent}" Value="True">
+              <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Expander.Style>
+      <TextBlock Text="{Binding ThinkingContent}"
+                 TextWrapping="Wrap"
+                 FontSize="12"
+                 FontStyle="Italic"
+                 Margin="12,4"
+                 Foreground="{DynamicResource TextMutedBrush}" />
+    </Expander>
+
+    <!-- Streaming status -->
+    <TextBlock Text="{Binding StatusText}"
+               FontSize="12"
+               Margin="6,4,0,0"
+               FontStyle="Italic"
+               Foreground="{DynamicResource TextSubtleBrush}">
+      <TextBlock.Style>
+        <Style TargetType="TextBlock">
+          <Setter Property="Visibility" Value="Collapsed" />
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding IsStreaming}" Value="True">
+              <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </TextBlock.Style>
+    </TextBlock>
+  </StackPanel>
+</UserControl>

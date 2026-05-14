@@ -28,7 +28,21 @@ public partial class AssistantMessage : ObservableObject
 
     public ObservableCollection<ActionCardInfo> ActionCards { get; } = [];
 
+    public ObservableCollection<SourceRef> Sources { get; } = [];
+
+    public ObservableCollection<string> Suggestions { get; } = [];
+
+    [ObservableProperty]
+    private MessageMeta? _meta;
+
+    [ObservableProperty]
+    private AnswerStats? _stats;
+
     public bool HasActionCards => ActionCards.Count > 0;
+
+    public bool HasSources => Sources.Count > 0;
+
+    public bool HasSuggestions => Suggestions.Count > 0;
 
     public bool HasContent => !string.IsNullOrEmpty(Content);
 
@@ -53,6 +67,8 @@ public partial class AssistantMessage : ObservableObject
         Role = role;
         Content = content;
         ActionCards.CollectionChanged += OnActionCardsChanged;
+        Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSources));
+        Suggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSuggestions));
     }
 
     private void OnActionCardsChanged(object? sender, NotifyCollectionChangedEventArgs e)

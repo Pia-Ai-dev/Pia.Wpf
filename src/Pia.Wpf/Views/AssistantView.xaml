@@ -8,6 +8,7 @@
              xmlns:nav="clr-namespace:Pia.Navigation"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:controls="clr-namespace:Pia.Controls"
+             xmlns:chat="clr-namespace:Pia.Controls.Chat"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
@@ -151,138 +152,10 @@
                 <ContentControl Style="{StaticResource PiaAvatarStyle}"
                                 Margin="0,2,12,0"
                                 VerticalAlignment="Top" />
-                <StackPanel>
-                <Border>
-                  <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource AssistantBubbleStyle}">
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding HasContent}" Value="False">
-                          <Setter Property="Visibility" Value="Collapsed" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Border.Style>
-                  <controls:MarkdownMessageControl
-                      MarkdownText="{Binding Content}"
-                      IsStreaming="{Binding IsStreaming}"
-                      AddToPiiRequested="OnAddToPiiRequested" />
-                </Border>
-                <!-- Inline action cards -->
-                <ItemsControl ItemsSource="{Binding ActionCards}"
-                              Margin="0,4,0,0">
-                  <ItemsControl.Style>
-                    <Style TargetType="ItemsControl">
-                      <Setter Property="Visibility" Value="Collapsed" />
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding HasActionCards}" Value="True">
-                          <Setter Property="Visibility" Value="Visible" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </ItemsControl.Style>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <controls:ActionCardControl />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <!-- Assistant message actions -->
-                <StackPanel Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            Margin="0,4,0,0">
-                  <!-- Play/Stop TTS button -->
-                  <ui:Button Appearance="Transparent"
-                             Padding="4"
-                             Margin="0,0,2,0"
-                             Command="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                             CommandParameter="{Binding}">
-                    <ui:Button.Style>
-                      <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                        <Setter Property="Opacity" Value="0" />
-                        <Setter Property="ToolTip" Value="{loc:Str Assistant_ReadAloud_Tooltip}" />
-                        <Style.Triggers>
-                          <DataTrigger Binding="{Binding IsMouseOver, ElementName=AssistantMessagePanel}" Value="True">
-                            <Setter Property="Opacity" Value="1" />
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding IsSpeaking}" Value="True">
-                            <Setter Property="Opacity" Value="1" />
-                            <Setter Property="ToolTip" Value="{loc:Str Assistant_StopReading_Tooltip}" />
-                          </DataTrigger>
-                        </Style.Triggers>
-                      </Style>
-                    </ui:Button.Style>
-                    <ui:SymbolIcon FontSize="12">
-                      <ui:SymbolIcon.Style>
-                        <Style TargetType="ui:SymbolIcon">
-                          <Setter Property="Symbol" Value="Speaker224" />
-                          <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsSpeaking}" Value="True">
-                              <Setter Property="Symbol" Value="SpeakerOff24" />
-                            </DataTrigger>
-                          </Style.Triggers>
-                        </Style>
-                      </ui:SymbolIcon.Style>
-                    </ui:SymbolIcon>
-                  </ui:Button>
-                  <!-- Copy button -->
-                  <ui:Button Appearance="Transparent"
-                             Padding="4"
-                             Command="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                             CommandParameter="{Binding}"
-                             ToolTip="{loc:Str Assistant_Copy_Tooltip}">
-                    <ui:Button.Style>
-                      <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                        <Setter Property="Opacity" Value="0" />
-                        <Style.Triggers>
-                          <DataTrigger Binding="{Binding IsMouseOver, ElementName=AssistantMessagePanel}" Value="True">
-                            <Setter Property="Opacity" Value="1" />
-                          </DataTrigger>
-                        </Style.Triggers>
-                      </Style>
-                    </ui:Button.Style>
-                    <ui:SymbolIcon Symbol="Copy16" FontSize="12" />
-                  </ui:Button>
-                </StackPanel>
-                <!-- Thinking content (collapsible) -->
-                <Expander Margin="0,4,0,0"
-                          Header="{loc:Str Assistant_ShowReasoning}"
-                          IsExpanded="False"
-                          FontSize="12">
-                  <Expander.Style>
-                    <Style TargetType="Expander">
-                      <Setter Property="Visibility" Value="Collapsed" />
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding HasThinkingContent}" Value="True">
-                          <Setter Property="Visibility" Value="Visible" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Expander.Style>
-                  <TextBlock Text="{Binding ThinkingContent}"
-                             TextWrapping="Wrap"
-                             FontSize="12"
-                             FontStyle="Italic"
-                             Margin="12,4"
-                             Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-                </Expander>
-                <!-- Dynamic status text -->
-                <TextBlock Text="{Binding StatusText}"
-                           FontSize="12"
-                           Margin="12,4,0,0"
-                           FontStyle="Italic"
-                           Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                  <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                      <Setter Property="Visibility" Value="Collapsed" />
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsStreaming}" Value="True">
-                          <Setter Property="Visibility" Value="Visible" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </TextBlock.Style>
-                </TextBlock>
-                </StackPanel>
+                <chat:PiaAssistantMessage
+                    CopyCommand="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    SpeakCommand="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    AddToPiiRequested="OnAddToPiiRequested" />
               </StackPanel>
             </Grid>
           </DataTemplate>
