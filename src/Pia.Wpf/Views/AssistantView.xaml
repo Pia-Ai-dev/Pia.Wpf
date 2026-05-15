@@ -94,7 +94,8 @@
                   Grid.Row="0"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
-                  Padding="20,48,20,0">
+                  Padding="20,48,20,0"
+                  ScrollChanged="MessageScrollViewer_ScrollChanged">
       <ScrollViewer.Style>
         <Style TargetType="ScrollViewer">
           <Setter Property="Visibility" Value="Visible" />
@@ -105,7 +106,8 @@
           </Style.Triggers>
         </Style>
       </ScrollViewer.Style>
-      <ItemsControl ItemsSource="{Binding Messages}">
+      <ItemsControl ItemsSource="{Binding Messages}"
+                    RequestBringIntoView="MessageItemsControl_RequestBringIntoView">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <Grid Margin="0,0,0,12">
@@ -151,13 +153,14 @@
                 </StackPanel>
               </StackPanel>
 
-              <!-- Assistant message (left-aligned) -->
-              <StackPanel Orientation="Horizontal"
-                          HorizontalAlignment="Left"
-                          MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}"
-                          x:Name="AssistantMessagePanel">
-                <StackPanel.Style>
-                  <Style TargetType="StackPanel">
+              <!-- Assistant message (left-aligned).
+                   Grid (Auto, *) instead of horizontal StackPanel so the width constraint
+                   propagates into the markdown body — otherwise long content / code blocks
+                   render at their natural width and overflow when the window narrows. -->
+              <Grid HorizontalAlignment="Stretch"
+                    x:Name="AssistantMessagePanel">
+                <Grid.Style>
+                  <Style TargetType="Grid">
                     <Setter Property="Visibility" Value="Collapsed" />
                     <Style.Triggers>
                       <DataTrigger Binding="{Binding IsUser}" Value="False">
@@ -165,15 +168,22 @@
                       </DataTrigger>
                     </Style.Triggers>
                   </Style>
-                </StackPanel.Style>
-                <ContentControl Style="{StaticResource PiaAvatarStyle}"
+                </Grid.Style>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ContentControl Grid.Column="0"
+                                Style="{StaticResource PiaAvatarStyle}"
                                 Margin="0,2,12,0"
                                 VerticalAlignment="Top" />
-                <chat:PiaAssistantMessage
+                <chat:PiaAssistantMessage Grid.Column="1"
+                    HorizontalAlignment="Left"
+                    MaxWidth="640"
                     CopyCommand="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SpeakCommand="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     AddToPiiRequested="OnAddToPiiRequested" />
-              </StackPanel>
+              </Grid>
             </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
