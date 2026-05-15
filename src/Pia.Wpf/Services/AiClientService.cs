@@ -192,7 +192,7 @@ public class AiClientService : IAiClientService
         }
     }
 
-    public async IAsyncEnumerable<string> GetChatCompletionWithToolsAsync(
+    public async IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(
         IList<Microsoft.Extensions.AI.ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
@@ -202,6 +202,10 @@ public class AiClientService : IAiClientService
     {
         _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
             provider.Name, tools?.Count ?? 0);
+
+        long aggregatedInput = 0;
+        long aggregatedOutput = 0;
+        bool hasUsage = false;
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -287,7 +291,7 @@ public class AiClientService : IAiClientService
                             updates.Add(enumerator!.Current);
                             if (!string.IsNullOrEmpty(enumerator.Current.Text))
                             {
-                                yield return enumerator.Current.Text;
+                                yield return new TextDelta(enumerator.Current.Text);
                             }
 
                             bool hasNext;
@@ -347,8 +351,14 @@ public class AiClientService : IAiClientService
                     round + 1, response.Messages.Count, text?.Length ?? 0);
                 if (!string.IsNullOrEmpty(text))
                 {
-                    yield return text;
+                    yield return new TextDelta(text);
                 }
+            }
+
+            if (response.Usage is { } roundUsage)
+            {
+                if (roundUsage.InputTokenCount is long input) { aggregatedInput += input; hasUsage = true; }
+                if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
             }
 
             // Check if there are tool calls in the response
@@ -406,10 +416,35 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
+            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput);
             yield break;
         }
 
         _logger.LogWarning("Tool loop exhausted max rounds ({MaxRounds}) without final response", maxToolRounds);
+        yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput);
+    }
+
+    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput)
+    {
+        UsageDetails? usage = null;
+        if (hasUsage)
+        {
+            usage = new UsageDetails
+            {
+                InputTokenCount = aggregatedInput,
+                OutputTokenCount = aggregatedOutput,
+                TotalTokenCount = aggregatedInput + aggregatedOutput,
+            };
+        }
+        else
+        {
+            _logger.LogDebug("Stream finished without usage details, providerType={ProviderType}", provider.ProviderType);
+        }
+
+        var modelLabel = !string.IsNullOrWhiteSpace(provider.ModelName)
+            ? provider.ModelName
+            : provider.Name;
+        return new Finished(usage, modelLabel);
     }
 
     public async Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)

@@ -164,12 +164,13 @@ public abstract class ToolPipelineTestBase
         var toolCalls = new List<ToolCallRecord>();
         var responseBuilder = new StringBuilder();
 
-        await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
+        await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             messages, provider, tools,
             async toolCall => await HandleToolCallAsync(toolCall, toolCalls),
             cancellationToken: cancellationToken))
         {
-            responseBuilder.Append(token);
+            if (item is TextDelta td)
+                responseBuilder.Append(td.Text);
         }
 
         return (responseBuilder.ToString(), toolCalls);

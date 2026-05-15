@@ -20,7 +20,7 @@ public interface IAiClientService
         string? mode = null,
         CancellationToken cancellationToken = default);
 
-    IAsyncEnumerable<string> GetChatCompletionWithToolsAsync(
+    IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(
         IList<ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,

@@ -7,7 +7,7 @@ shipped; the UI controls for the surfaces below exist (under
 
 | Plan | Status | Rough effort |
 | --- | --- | --- |
-| [stats-summary.md](stats-summary.md) | not started | ~2h |
+| [stats-summary.md](stats-summary.md) | shipped | ~2h |
 | [suggestion-chips.md](suggestion-chips.md) | not started | 0.5–1d |
 | [source-chips.md](source-chips.md) | not started | ~1d |
 | [callouts.md](callouts.md) | not started | ~1d |

@@ -389,18 +389,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             // Use tool-aware completion with think-tag parsing
             var rawBuffer = new StringBuilder();
 
-            await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
+            await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
                 chatMessages, provider, tools,
                 supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage) : null,
                 nameof(WindowMode.Assistant),
                 _streamingCts.Token))
             {
-                rawBuffer.Append(token);
-                var (visible, thinking) = ParseStreamedContent(rawBuffer.ToString());
+                switch (item)
+                {
+                    case TextDelta td:
+                        rawBuffer.Append(td.Text);
+                        var (visible, thinking) = ParseStreamedContent(rawBuffer.ToString());
 
-                assistantMessage.Content = visible;
-                if (!string.IsNullOrEmpty(thinking))
-                    assistantMessage.ThinkingContent = thinking;
+                        assistantMessage.Content = visible;
+                        if (!string.IsNullOrEmpty(thinking))
+                            assistantMessage.ThinkingContent = thinking;
+                        break;
+
+                    case Finished finished:
+                        ApplyStats(assistantMessage, finished, provider);
+                        break;
+                }
             }
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)
@@ -1015,13 +1024,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var rawBuffer = new StringBuilder();
         var lastVisibleLength = 0;
 
-        await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
+        await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             chatMessages, provider, tools,
             supportsTools ? HandleVoiceModeToolCall : null,
             nameof(WindowMode.Assistant),
             cancellationToken))
         {
-            rawBuffer.Append(token);
+            if (item is not TextDelta td)
+                continue;
+
+            rawBuffer.Append(td.Text);
             var (visible, _) = ParseStreamedContent(rawBuffer.ToString());
 
             // Yield only newly added visible content (strips think tags)
@@ -1032,6 +1044,24 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 yield return newContent;
             }
         }
+    }
+
+    private void ApplyStats(AssistantMessage message, Finished finished, AiProvider provider)
+    {
+        if (finished.Usage is not { } usage)
+        {
+            _logger.LogDebug("Stream finished without usage details (providerType={ProviderType})", provider.ProviderType);
+            return;
+        }
+
+        var totalTokens = (int)((usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
+        if (totalTokens <= 0)
+        {
+            _logger.LogDebug("Stream finished with zero tokens (providerType={ProviderType})", provider.ProviderType);
+            return;
+        }
+
+        message.Stats = new AnswerStats(totalTokens, finished.Model);
     }
 
     private async Task<object?> HandleVoiceModeToolCall(FunctionCallContent toolCall)

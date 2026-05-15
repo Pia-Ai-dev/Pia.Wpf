@@ -141,7 +141,7 @@ public class TokenizingAiClientService : IAiClientService
         return response;
     }
 
-    public async IAsyncEnumerable<string> GetChatCompletionWithToolsAsync(
+    public async IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(
         IList<ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
@@ -154,8 +154,8 @@ public class TokenizingAiClientService : IAiClientService
         if (!await IsEnabledAsync())
         {
             _logger.LogDebug("Tokenization disabled, passing through tool completion");
-            await foreach (var token in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, mode, cancellationToken))
-                yield return token;
+            await foreach (var item in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, mode, cancellationToken))
+                yield return item;
             yield break;
         }
 
@@ -165,17 +165,30 @@ public class TokenizingAiClientService : IAiClientService
         var tokenBuffer = new StringBuilder();
         var isBuffering = false;
 
-        await foreach (var token in _inner.GetChatCompletionWithToolsAsync(
+        await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
             tokenizedMessages, provider, tools, wrappedHandler, mode, cancellationToken))
         {
-            var detokenized = BufferedDetokenize(token, tokenBuffer, ref isBuffering);
-            if (detokenized.Length > 0)
-                yield return detokenized;
+            if (item is TextDelta td)
+            {
+                var detokenized = BufferedDetokenize(td.Text, tokenBuffer, ref isBuffering);
+                if (detokenized.Length > 0)
+                    yield return new TextDelta(detokenized);
+            }
+            else if (item is Finished)
+            {
+                if (tokenBuffer.Length > 0)
+                {
+                    yield return new TextDelta(TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString()));
+                    tokenBuffer.Clear();
+                    isBuffering = false;
+                }
+                yield return item;
+            }
         }
 
-        // Flush any remaining buffer
+        // Safety net flush if Finished was never emitted (e.g. inner faulted before completion)
         if (tokenBuffer.Length > 0)
-            yield return TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString());
+            yield return new TextDelta(TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString()));
     }
 
     public async Task<string> OptimizeViaPiaCloudAsync(

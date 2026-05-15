@@ -1,15 +1,14 @@
 # Plan — Stats summary (token count + model)
 
 **Goal:** the `PiaAnswerToolbar` right-side caption — currently empty — shows
-something like `1.234 Tokens · gpt-4o · lokal` per finished assistant turn.
+something like `1.234 Tokens · Pia.Cloud` per finished assistant turn.
 
 **Surface (already built):**
 - `Pia.Models.AnswerStats(int Tokens, string Model)` → exposes `Summary`.
 - `AssistantMessage.Stats` (`ObservableProperty`).
 - `PiaAnswerToolbar.Stats` DP → renders `Stats.Summary` (auto-hides when null).
 
-**Why:** transparency. Power users see token spend; the "lokal" tag signals
-on-device processing (Pia's differentiator).
+**Why:** transparency. Power users see token spend; the llm name gives transparency.
 
 ---
 
@@ -48,9 +47,6 @@ currentMessage.Stats = new AnswerStats(
     providerModel);
 ```
 
-For the "lokal" label: `AnswerStats.Summary` hardcodes "lokal" today. If
-that should reflect cloud-vs-local based on provider, extend `AnswerStats`
-with a `bool IsLocal` (additive) and conditionally render.
 
 ### 4. Bind the toolbar in the view
 

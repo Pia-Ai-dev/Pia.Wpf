@@ -101,6 +101,18 @@ public sealed class PiaCloudChatClient : IChatClient
             try { json = JsonNode.Parse(data); }
             catch { continue; }
 
+            // OpenAI-compatible streams emit a final chunk with usage and empty choices when
+            // stream_options.include_usage=true. Surface it as a UsageContent update so the
+            // aggregated ChatResponse.Usage is populated downstream.
+            if (TryParseUsage(json?["usage"]) is { } streamUsage)
+            {
+                yield return new ChatResponseUpdate
+                {
+                    Role = ChatRole.Assistant,
+                    Contents = [new UsageContent(streamUsage)]
+                };
+            }
+
             var choice = json?["choices"]?[0];
             if (choice is null) continue;
 
@@ -207,7 +219,37 @@ public sealed class PiaCloudChatClient : IChatClient
         if (options?.MaxOutputTokens is not null)
             body["maxTokens"] = options.MaxOutputTokens.Value;
 
+        if (stream)
+        {
+            body["stream_options"] = new JsonObject { ["include_usage"] = true };
+        }
+
         return body.ToJsonString();
+    }
+
+    private static UsageDetails? TryParseUsage(JsonNode? usageNode)
+    {
+        if (usageNode is null) return null;
+
+        var input = ReadLong(usageNode["prompt_tokens"]) ?? ReadLong(usageNode["input_tokens"]);
+        var output = ReadLong(usageNode["completion_tokens"]) ?? ReadLong(usageNode["output_tokens"]);
+        var total = ReadLong(usageNode["total_tokens"]);
+
+        if (input is null && output is null && total is null) return null;
+
+        return new UsageDetails
+        {
+            InputTokenCount = input,
+            OutputTokenCount = output,
+            TotalTokenCount = total ?? ((input ?? 0) + (output ?? 0)),
+        };
+    }
+
+    private static long? ReadLong(JsonNode? node)
+    {
+        if (node is null) return null;
+        try { return node.GetValue<long>(); }
+        catch { return null; }
     }
 
     private static JsonArray SerializeMessages(IEnumerable<ChatMessage> messages)
@@ -349,7 +391,8 @@ public sealed class PiaCloudChatClient : IChatClient
         return new ChatResponse([chatMessage])
         {
             ModelId = model,
-            FinishReason = chatFinishReason
+            FinishReason = chatFinishReason,
+            Usage = TryParseUsage(json["usage"])
         };
     }
 
