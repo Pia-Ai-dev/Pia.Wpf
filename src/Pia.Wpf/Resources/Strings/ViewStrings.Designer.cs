@@ -230,7 +230,16 @@ namespace Pia.Resources.Strings {
                 return ResourceManager.GetString("Assistant_ReadAloud_Tooltip", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Regenerate.
+        /// </summary>
+        public static string Assistant_Regenerate_Tooltip {
+            get {
+                return ResourceManager.GetString("Assistant_Regenerate_Tooltip", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Record.
         /// </summary>

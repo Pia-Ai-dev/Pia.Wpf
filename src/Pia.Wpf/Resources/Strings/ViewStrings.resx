@@ -79,6 +79,7 @@
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Type a message...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Copy</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Read aloud</value></data>
+  <data name="Assistant_Regenerate_Tooltip" xml:space="preserve"><value>Regenerate</value></data>
   <data name="Assistant_StopReading_Tooltip" xml:space="preserve"><value>Stop reading</value></data>
   <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Show reasoning</value></data>
   <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Clear conversation</value></data>

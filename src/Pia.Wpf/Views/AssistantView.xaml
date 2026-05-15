@@ -165,6 +165,7 @@
                     MaxWidth="640"
                     CopyCommand="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SpeakCommand="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    RegenerateCommand="{Binding DataContext.RegenerateMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     AddToPiiRequested="OnAddToPiiRequested" />
               </Grid>
             </Grid>
@@ -234,24 +235,6 @@
               </ui:Button>
 
               <Separator Width="1" Margin="4,2" Background="{DynamicResource BorderBrush_}" />
-
-              <!-- TTS toggle button -->
-              <ui:Button Command="{Binding ToggleTtsCommand}"
-                         Padding="6,4"
-                         Margin="2,0"
-                         ToolTip="{loc:Str Assistant_ToggleTts_Tooltip}">
-                <ui:Button.Style>
-                  <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                    <Setter Property="Appearance" Value="Transparent" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding IsTtsEnabled}" Value="True">
-                        <Setter Property="Appearance" Value="Primary" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </ui:Button.Style>
-                <ui:SymbolIcon Symbol="Speaker224" FontSize="16" />
-              </ui:Button>
 
               <!-- Record button -->
               <ui:Button Command="{Binding ToggleRecordingCommand}"

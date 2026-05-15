@@ -79,6 +79,7 @@
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Tapez un message...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Copier</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Lire à voix haute</value></data>
+  <data name="Assistant_Regenerate_Tooltip" xml:space="preserve"><value>Régénérer</value></data>
   <data name="Assistant_StopReading_Tooltip" xml:space="preserve"><value>Arrêter la lecture</value></data>
   <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Afficher le raisonnement</value></data>
   <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Effacer la conversation</value></data>

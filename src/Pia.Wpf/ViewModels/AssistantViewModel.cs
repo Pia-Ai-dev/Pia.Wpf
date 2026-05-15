@@ -225,6 +225,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<AssistantMessage> CopyMessageCommand { get; }
     public IRelayCommand ToggleTtsCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> PlayMessageCommand { get; }
+    public IAsyncRelayCommand<AssistantMessage> RegenerateMessageCommand { get; }
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
@@ -269,6 +270,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         CopyMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteCopyMessage);
         ToggleTtsCommand = new RelayCommand(ExecuteToggleTts);
         PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage);
+        RegenerateMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteRegenerateMessage);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
@@ -746,6 +748,28 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             _logger.LogError(ex, "Failed to copy message");
         }
+    }
+
+    private async Task ExecuteRegenerateMessage(AssistantMessage? message)
+    {
+        if (message is null || IsStreaming) return;
+
+        var idx = Messages.IndexOf(message);
+        if (idx <= 0) return;
+
+        var prior = Messages[idx - 1];
+        if (prior.Role != ChatRole.User || string.IsNullOrWhiteSpace(prior.Content)) return;
+
+        CancelPendingActionCards(message);
+
+        var prompt = prior.Content;
+        for (var i = Messages.Count - 1; i >= idx - 1; i--)
+            Messages.RemoveAt(i);
+
+        if (Messages.Count == 0) HasMessages = false;
+
+        InputText = prompt;
+        await SendMessageCommand.ExecuteAsync(null);
     }
 
     private async Task ExecuteAddPiiKeyword(PiiKeywordRequest? request)
