@@ -13,13 +13,16 @@ public class SuggestionService : ISuggestionService
 {
     private const int MaxSuggestions = 4;
     private const int MinSuggestions = 1;
-    private const int MaxSuggestionLength = 120;
+    private const int MaxSuggestionLength = 40;
 
     private const string Prompt = """
-        Given the user's last message and your reply, propose 3 short follow-up
-        questions the user is most likely to ask next. Reply with ONLY a JSON
-        array of strings — no prose, no markdown, no code fences, no <think>
-        tags. Example: ["First question?", "Second question?", "Third question?"]
+        Given the user's last message and your reply, propose 2-3 follow-up
+        actions the user is most likely to take next. Each label MUST be a
+        terse action phrase of 2-5 words — like a button caption, not a
+        sentence. No question marks, no pronouns, no greetings, no trailing
+        punctuation. Match the user's language. Reply with ONLY a JSON array
+        of strings — no prose, no markdown, no code fences, no <think> tags.
+        Example: ["Save as recipe", "Add to weekly plan", "Shorter variant", "Make gluten-free"]
         """;
 
     private static readonly Regex ThinkBlockRegex = new(
@@ -93,22 +96,25 @@ public class SuggestionService : ISuggestionService
         var candidate = fenceMatch.Success ? fenceMatch.Groups[1].Value : stripped;
 
         var start = candidate.IndexOf('[');
+        if (start < 0) return [];
+
         var end = candidate.LastIndexOf(']');
-        if (start < 0 || end <= start) return [];
-
-        var json = candidate[start..(end + 1)];
-
-        List<string>? items;
-        try
+        List<string>? items = null;
+        if (end > start)
         {
-            items = JsonSerializer.Deserialize<List<string>>(json);
-        }
-        catch (JsonException)
-        {
-            return [];
+            try
+            {
+                items = JsonSerializer.Deserialize<List<string>>(candidate[start..(end + 1)]);
+            }
+            catch (JsonException)
+            {
+                // Fall back to lenient extraction below.
+            }
         }
 
-        if (items is null) return [];
+        items ??= ExtractCompleteQuotedStrings(candidate[(start + 1)..]);
+
+        if (items.Count == 0) return [];
 
         var cleaned = items
             .Where(s => !string.IsNullOrWhiteSpace(s))
@@ -119,5 +125,55 @@ public class SuggestionService : ISuggestionService
             .ToList();
 
         return cleaned.Count >= MinSuggestions ? cleaned : [];
+    }
+
+    // Recovers complete "..."-quoted strings from a possibly-truncated JSON
+    // array body. Models occasionally cut the stream off mid-element, so we
+    // accept whatever fully-closed strings were emitted before that point.
+    private static List<string> ExtractCompleteQuotedStrings(string s)
+    {
+        var result = new List<string>();
+        var i = 0;
+        while (i < s.Length)
+        {
+            while (i < s.Length && s[i] != '"') i++;
+            if (i >= s.Length) break;
+            i++;
+
+            var sb = new StringBuilder();
+            var closed = false;
+            while (i < s.Length)
+            {
+                var c = s[i];
+                if (c == '\\' && i + 1 < s.Length)
+                {
+                    var next = s[i + 1];
+                    sb.Append(next switch
+                    {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '"' => '"',
+                        '\\' => '\\',
+                        '/' => '/',
+                        _ => next,
+                    });
+                    i += 2;
+                }
+                else if (c == '"')
+                {
+                    closed = true;
+                    i++;
+                    break;
+                }
+                else
+                {
+                    sb.Append(c);
+                    i++;
+                }
+            }
+            if (closed) result.Add(sb.ToString());
+        }
+        return result;
     }
 }

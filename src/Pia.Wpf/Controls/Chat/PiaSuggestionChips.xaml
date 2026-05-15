@@ -10,9 +10,11 @@
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
       <DataTemplate>
-        <Button Margin="0,0,6,6"
-                Padding="10,4"
+        <Button Margin="0,0,8,8"
+                MinHeight="34"
+                Padding="16,0"
                 Cursor="Hand"
+                FontSize="12"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderBrush_}"
                 BorderThickness="1"
@@ -21,16 +23,19 @@
                 CommandParameter="{Binding}">
           <Button.Template>
             <ControlTemplate TargetType="Button">
-              <Border CornerRadius="999"
+              <Border CornerRadius="{StaticResource BubbleRadius}"
                       Background="{TemplateBinding Background}"
                       BorderBrush="{TemplateBinding BorderBrush}"
                       BorderThickness="{TemplateBinding BorderThickness}"
-                      Padding="{TemplateBinding Padding}">
+                      Padding="{TemplateBinding Padding}"
+                      SnapsToDevicePixels="True">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                  <Ellipse Width="5" Height="5" Margin="0,0,6,0"
+                  <Ellipse Width="6" Height="6" Margin="0,0,8,0"
+                           VerticalAlignment="Center"
                            Fill="{DynamicResource PiaAccentBrush}" />
                   <TextBlock Text="{Binding}"
                              Foreground="{TemplateBinding Foreground}"
+                             FontSize="{TemplateBinding FontSize}"
                              VerticalAlignment="Center" />
                 </StackPanel>
               </Border>
