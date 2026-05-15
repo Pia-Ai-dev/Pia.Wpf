@@ -1,8 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
-using System.IO;
-using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -667,64 +665,10 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         // Don't disrupt the user while they're reviewing an optimization result.
         if (IsComparisonView) return;
 
-        var combined = new StringBuilder();
-
-        foreach (var path in paths)
-        {
-            var kind = DroppedFileReader.Classify(path);
-            var fileName = Path.GetFileName(path);
-
-            DroppedFileReader.ReadResult result;
-            switch (kind)
-            {
-                case FileKind.Text:
-                    result = await DroppedFileReader.ReadTextAsync(path, CancellationToken.None);
-                    break;
-                case FileKind.Docx:
-                    result = await DroppedFileReader.ReadDocxAsync(path, CancellationToken.None);
-                    break;
-                case FileKind.Xlsx:
-                    result = await DroppedFileReader.ReadXlsxAsync(path, CancellationToken.None);
-                    break;
-                default:
-                    ShowFileRejected(fileName, kind);
-                    continue;
-            }
-
-            switch (result.Status)
-            {
-                case DroppedFileReader.ReadStatus.Ok when !string.IsNullOrEmpty(result.Text):
-                    if (combined.Length > 0)
-                        combined.AppendLine().AppendLine("---").AppendLine();
-                    combined.Append(result.Text);
-                    break;
-                case DroppedFileReader.ReadStatus.TooLarge:
-                    _snackbarService.Show(
-                        _localizationService["Msg_Warning"],
-                        _localizationService.Format("Msg_File_TooLarge", fileName),
-                        Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
-                    break;
-                case DroppedFileReader.ReadStatus.Failed:
-                    _logger.LogError("File drop read failed for {Kind}: {Error}", kind, result.Error);
-                    _snackbarService.Show(
-                        _localizationService["Msg_Error"],
-                        _localizationService.Format("Msg_File_ReadFailed", fileName, result.Error ?? string.Empty),
-                        Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
-                    break;
-            }
-        }
-
-        if (combined.Length > 0)
-            ApplyCapturedSelection(combined.ToString());
-    }
-
-    private void ShowFileRejected(string fileName, FileKind kind)
-    {
-        _logger.LogInformation("File drop rejected for kind {Kind}", kind);
-        _snackbarService.Show(
-            _localizationService["Msg_Warning"],
-            _localizationService.Format("Msg_File_Unsupported", fileName),
-            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+        var text = await DroppedFileImporter.TryImportAsync(
+            paths, _logger, _snackbarService, _localizationService);
+        if (text is not null)
+            ApplyCapturedSelection(text);
     }
 
     public async Task OnNavigatedToAsync(object? parameter)
