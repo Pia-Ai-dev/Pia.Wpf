@@ -683,6 +683,9 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
                 case FileKind.Docx:
                     result = await DroppedFileReader.ReadDocxAsync(path, CancellationToken.None);
                     break;
+                case FileKind.Xlsx:
+                    result = await DroppedFileReader.ReadXlsxAsync(path, CancellationToken.None);
+                    break;
                 default:
                     ShowFileRejected(fileName, kind);
                     continue;

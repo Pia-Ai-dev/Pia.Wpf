@@ -884,6 +884,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 case FileKind.Docx:
                     result = await DroppedFileReader.ReadDocxAsync(path, CancellationToken.None);
                     break;
+                case FileKind.Xlsx:
+                    result = await DroppedFileReader.ReadXlsxAsync(path, CancellationToken.None);
+                    break;
                 default:
                     // Image / Pdf / Audio / Unsupported — Stage 2 will replace Image and Pdf
                     // with vision attachments. Stage 1: reject with a snackbar so the user
