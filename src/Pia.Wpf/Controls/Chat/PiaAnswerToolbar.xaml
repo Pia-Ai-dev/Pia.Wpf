@@ -56,7 +56,7 @@
         </StackPanel>
       </Button>
 
-      <!-- Read aloud -->
+      <!-- Read aloud / Stop reading -->
       <Button Padding="8,4"
               Margin="0,0,4,0"
               Cursor="Hand"
@@ -90,12 +90,75 @@
                 </ControlTemplate>
               </Setter.Value>
             </Setter>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CommandParameter.IsSpeaking, ElementName=Root}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+              </DataTrigger>
+            </Style.Triggers>
           </Style>
         </Button.Style>
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Speaker220" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
-          <TextBlock Text="{loc:Str Assistant_ReadAloud_Tooltip}" VerticalAlignment="Center" />
-        </StackPanel>
+        <Grid>
+          <!-- Idle: Read aloud -->
+          <StackPanel Orientation="Horizontal">
+            <StackPanel.Style>
+              <Style TargetType="StackPanel">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CommandParameter.IsSpeaking, ElementName=Root}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </StackPanel.Style>
+            <ui:SymbolIcon Symbol="Speaker220" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
+            <TextBlock Text="{loc:Str Assistant_ReadAloud_Tooltip}" VerticalAlignment="Center" />
+          </StackPanel>
+          <!-- Active: Stop reading, with pulsing indicator -->
+          <StackPanel Orientation="Horizontal">
+            <StackPanel.Style>
+              <Style TargetType="StackPanel">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CommandParameter.IsSpeaking, ElementName=Root}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </StackPanel.Style>
+            <Grid Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center">
+              <Ellipse Fill="{DynamicResource PiaAccentBrush}" Opacity="0.35">
+                <Ellipse.Triggers>
+                  <EventTrigger RoutedEvent="Loaded">
+                    <BeginStoryboard>
+                      <Storyboard RepeatBehavior="Forever">
+                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                         From="0.35" To="0" Duration="0:0:1.1" />
+                        <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                       Duration="0:0:1.1">
+                          <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0.6" />
+                          <LinearDoubleKeyFrame KeyTime="0:0:1.1" Value="1.6" />
+                        </DoubleAnimationUsingKeyFrames>
+                        <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                       Duration="0:0:1.1">
+                          <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0.6" />
+                          <LinearDoubleKeyFrame KeyTime="0:0:1.1" Value="1.6" />
+                        </DoubleAnimationUsingKeyFrames>
+                      </Storyboard>
+                    </BeginStoryboard>
+                  </EventTrigger>
+                </Ellipse.Triggers>
+                <Ellipse.RenderTransformOrigin>0.5,0.5</Ellipse.RenderTransformOrigin>
+                <Ellipse.RenderTransform>
+                  <ScaleTransform ScaleX="1" ScaleY="1" />
+                </Ellipse.RenderTransform>
+              </Ellipse>
+              <Ellipse Width="7" Height="7"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Fill="{DynamicResource PiaAccentBrush}" />
+            </Grid>
+            <TextBlock Text="{loc:Str Assistant_StopReading_Tooltip}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Grid>
       </Button>
 
       <!-- Regenerate -->

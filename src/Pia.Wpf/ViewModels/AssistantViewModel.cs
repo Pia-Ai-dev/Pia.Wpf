@@ -277,7 +277,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ClearConversationCommand = new RelayCommand(ExecuteClearConversation);
         CopyMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteCopyMessage);
         ToggleTtsCommand = new RelayCommand(ExecuteToggleTts);
-        PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage);
+        PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         RegenerateMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteRegenerateMessage);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
