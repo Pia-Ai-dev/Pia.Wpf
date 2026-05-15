@@ -42,6 +42,8 @@
   <data name="Msg_Cancelled" xml:space="preserve"><value>Annulé</value></data>
   <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Le texte sélectionné n'a pas été collé car le champ contient déjà du texte.</value></data>
   <data name="Msg_SelectionNotPasted_InsertAnyway" xml:space="preserve"><value>Insérer quand même</value></data>
+  <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Aucun modèle vocal chargé. Choisissez une voix dans les paramètres pour utiliser Lire à voix haute.</value></data>
+  <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Ouvrir les paramètres</value></data>
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copié</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>

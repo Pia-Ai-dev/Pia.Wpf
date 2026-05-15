@@ -67,8 +67,19 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
     public void OnNavigatedTo(object? parameter)
     {
-        if (parameter is int tabIndex)
-            SelectedTabIndex = tabIndex;
+        switch (parameter)
+        {
+            case int tabIndex:
+                SelectedTabIndex = tabIndex;
+                break;
+            case ValueTuple<int, int> tabs:
+                // (outer tab, inner tab). Inner tab applies only when the outer tab
+                // hosts its own TabControl — currently just General.
+                SelectedTabIndex = tabs.Item1;
+                if (tabs.Item1 == 4)
+                    GeneralVm.SelectedInnerTabIndex = tabs.Item2;
+                break;
+        }
     }
 
     public async Task OnNavigatedToAsync(object? parameter)

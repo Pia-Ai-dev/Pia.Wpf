@@ -14,24 +14,7 @@ surface area; returning users skip the next obvious step.
 
 ---
 
-## Step 1 — Pick a producer
-
-Two paths, you can ship one then upgrade later.
-
-### A) Rule-based (cheap, ship first)
-
-Emit suggestions based on the last assistant turn's *kind*. Heuristics:
-
-- The turn produced **action cards**: suggest the next plausible action
-  ("Add another", "Show all todos", "Mark as done").
-- The turn was a Q&A with no tool: suggest a deepening question
-  ("Erkläre mir das genauer", "Gib mir ein Beispiel").
-- Streaming hit `IsStreaming = false` with empty `Content`: no suggestions.
-
-Implement as `Pia.Services.SuggestionService` with a single
-`IReadOnlyList<string> Suggest(AssistantMessage message)`.
-
-### B) LLM follow-ups (better quality, adds cost)
+## Step 1. LLM follow-ups (better quality, adds cost)
 
 After streaming completes, fire a small completion against the **same**
 provider with:
@@ -42,7 +25,6 @@ provider with:
 
 Cache the result on the message; do not regenerate on reload.
 
-Use a cheaper model if the provider exposes one (e.g. `gpt-4o-mini`).
 Skip entirely if `provider.SupportsStreaming == false` to avoid double
 network round trips on slow paths.
 
@@ -85,6 +67,11 @@ In `AssistantView.xaml` where `PiaAssistantMessage` is instantiated:
 SuggestionCommand="{Binding DataContext.UseFollowupCommand,
                     RelativeSource={RelativeSource AncestorType=UserControl}}"
 ```
+---
+
+## Step 4 — Make optional in settings
+
+In the assistant view settings this can be turned off. Default is on
 
 ---
 

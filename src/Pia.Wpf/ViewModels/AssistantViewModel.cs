@@ -159,6 +159,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ILocalizationService _localizationService;
     private readonly ITokenMapService _tokenMapService;
     private readonly IAutocompleteService _autocompleteService;
+    private readonly INavigationService _navigationService;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
     private bool _tokenizationEnabled;
@@ -245,7 +246,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         ITokenMapService tokenMapService,
-        IAutocompleteService autocompleteService)
+        IAutocompleteService autocompleteService,
+        INavigationService navigationService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -262,6 +264,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
         _autocompleteService = autocompleteService;
+        _navigationService = navigationService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -946,7 +949,26 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         }
 
+        if (!_ttsService.HasVoiceLoaded)
+        {
+            ShowNoVoiceLoadedSnackbar();
+            return;
+        }
+
         await SpeakMessageAsync(message);
+    }
+
+    private void ShowNoVoiceLoadedSnackbar()
+    {
+        // General tab (outer 4) → Speech inner tab (inner 2) hosts the TTS voice selection UI.
+        SnackbarActionHelper.ShowWithAction(
+            _snackbarService,
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_Tts_NoVoiceLoaded"],
+            _localizationService["Msg_Tts_NoVoiceLoaded_OpenSettings"],
+            () => _navigationService.NavigateTo<SettingsViewModel, (int, int)>((4, 2)),
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            TimeSpan.FromSeconds(8));
     }
 
     private async Task SpeakMessageAsync(AssistantMessage message)
