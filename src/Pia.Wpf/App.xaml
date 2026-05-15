@@ -14,6 +14,11 @@
         <ui:ThemesDictionary />
         <ui:ControlsDictionary />
 
+        <!-- Pia design tokens (light baseline; ThemeService swaps to Dark at runtime).
+             Must load BEFORE PiaStyles so its StaticResource lookups resolve. -->
+        <ResourceDictionary Source="Resources/Theme/PiaTokens.Light.xaml" />
+        <ResourceDictionary Source="Resources/Theme/PiaStyles.xaml" />
+
         <!-- Custom Styles -->
         <ResourceDictionary Source="Resources/Styles/Typography.xaml" />
         <ResourceDictionary Source="Resources/Styles/Layout.xaml" />

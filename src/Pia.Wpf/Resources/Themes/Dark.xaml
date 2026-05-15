@@ -42,4 +42,20 @@
   <Color x:Key="PanelShadowColor">#000000</Color>
   <sys:Double x:Key="PanelShadowOpacity">0.3</sys:Double>
 
+  <!-- Code block palette (dark) -->
+  <SolidColorBrush x:Key="CodeBlockSurfaceBrush" Color="#FF1B1B1B" />
+  <SolidColorBrush x:Key="CodeBlockHeaderBrush" Color="#FF252525" />
+  <SolidColorBrush x:Key="CodeBlockBorderBrush" Color="#FF3A3A3A" />
+  <SolidColorBrush x:Key="CodeBlockPlainBrush" Color="#FFDCDCDC" />
+  <SolidColorBrush x:Key="CodeBlockKeywordBrush" Color="#FF569CD6" />
+  <SolidColorBrush x:Key="CodeBlockControlKeywordBrush" Color="#FFC586C0" />
+  <SolidColorBrush x:Key="CodeBlockStringBrush" Color="#FFCE9178" />
+  <SolidColorBrush x:Key="CodeBlockCommentBrush" Color="#FF6A9955" />
+  <SolidColorBrush x:Key="CodeBlockNumberBrush" Color="#FFB5CEA8" />
+  <SolidColorBrush x:Key="CodeBlockTypeBrush" Color="#FF4EC9B0" />
+  <SolidColorBrush x:Key="CodeBlockOperatorBrush" Color="#FFD4D4D4" />
+  <SolidColorBrush x:Key="CodeBlockPreprocessorBrush" Color="#FF9B9B9B" />
+  <SolidColorBrush x:Key="CodeBlockPunctuationBrush" Color="#FF808080" />
+  <SolidColorBrush x:Key="CodeBlockNameBrush" Color="#FF9CDCFE" />
+
 </ResourceDictionary>

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Brand -->
+  <Color x:Key="PiaInkColor">#FF1E2A4A</Color>
+  <Color x:Key="PiaAccentColor">#FF2563EB</Color>
+  <Color x:Key="PiaAccentHoverColor">#FF1D4ED8</Color>
+  <Color x:Key="PiaAccentSoftColor">#FFE7EFFE</Color>
+
+  <!-- Surfaces -->
+  <Color x:Key="BgCanvasColor">#FFF4F6FA</Color>
+  <Color x:Key="SurfaceColor">#FFFFFFFF</Color>
+  <Color x:Key="SurfaceMutedColor">#FFEEF1F6</Color>
+  <Color x:Key="BorderColor">#FFE3E7EE</Color>
+  <Color x:Key="BorderStrongColor">#FFD2D8E2</Color>
+
+  <!-- Text -->
+  <Color x:Key="TextDefaultColor">#FF0F1729</Color>
+  <Color x:Key="TextMutedColor">#FF525E73</Color>
+  <Color x:Key="TextSubtleColor">#FF8893A8</Color>
+
+  <!-- Status -->
+  <Color x:Key="SuccessColor">#FF0F8662</Color>
+  <Color x:Key="SuccessSoftColor">#FFE6F4EF</Color>
+  <Color x:Key="DangerColor">#FFE11D48</Color>
+  <Color x:Key="WarnColor">#FFB45309</Color>
+  <Color x:Key="WarnSoftColor">#FFFEF3C7</Color>
+
+  <!-- Code block palette (Phase 2 — identical in light and dark) -->
+  <Color x:Key="CodeBlockBgColor">#FF0F1729</Color>
+  <Color x:Key="CodeFgColor">#FFE6EAF2</Color>
+  <Color x:Key="CodeKeywordColor">#FF7AA3F5</Color>
+  <Color x:Key="CodeStringColor">#FF86E1A0</Color>
+  <Color x:Key="CodeNumberColor">#FFF5A872</Color>
+  <Color x:Key="CodeCommentColor">#FF6B7790</Color>
+
+  <!-- Brushes — reference these via {DynamicResource}, never the Colors directly. -->
+  <SolidColorBrush x:Key="PiaInkBrush"          Color="{StaticResource PiaInkColor}"/>
+  <SolidColorBrush x:Key="PiaAccentBrush"       Color="{StaticResource PiaAccentColor}"/>
+  <SolidColorBrush x:Key="PiaAccentHoverBrush"  Color="{StaticResource PiaAccentHoverColor}"/>
+  <SolidColorBrush x:Key="PiaAccentSoftBrush"   Color="{StaticResource PiaAccentSoftColor}"/>
+
+  <SolidColorBrush x:Key="BgCanvasBrush"        Color="{StaticResource BgCanvasColor}"/>
+  <SolidColorBrush x:Key="SurfaceBrush"         Color="{StaticResource SurfaceColor}"/>
+  <SolidColorBrush x:Key="SurfaceMutedBrush"    Color="{StaticResource SurfaceMutedColor}"/>
+  <SolidColorBrush x:Key="BorderBrush_"         Color="{StaticResource BorderColor}"/>
+  <SolidColorBrush x:Key="BorderStrongBrush"    Color="{StaticResource BorderStrongColor}"/>
+
+  <SolidColorBrush x:Key="TextDefaultBrush"     Color="{StaticResource TextDefaultColor}"/>
+  <SolidColorBrush x:Key="TextMutedBrush"       Color="{StaticResource TextMutedColor}"/>
+  <SolidColorBrush x:Key="TextSubtleBrush"      Color="{StaticResource TextSubtleColor}"/>
+
+  <SolidColorBrush x:Key="PiaSuccessBrush"      Color="{StaticResource SuccessColor}"/>
+  <SolidColorBrush x:Key="SuccessSoftBrush"     Color="{StaticResource SuccessSoftColor}"/>
+  <SolidColorBrush x:Key="PiaDangerBrush"       Color="{StaticResource DangerColor}"/>
+  <SolidColorBrush x:Key="WarnBrush"            Color="{StaticResource WarnColor}"/>
+  <SolidColorBrush x:Key="WarnSoftBrush"        Color="{StaticResource WarnSoftColor}"/>
+
+  <SolidColorBrush x:Key="CodeBlockBgBrush"     Color="{StaticResource CodeBlockBgColor}"/>
+  <SolidColorBrush x:Key="CodeFgBrush"          Color="{StaticResource CodeFgColor}"/>
+
+  <!-- Sizing -->
+  <CornerRadius x:Key="SmallRadius">6</CornerRadius>
+  <CornerRadius x:Key="MediumRadius">9</CornerRadius>
+  <CornerRadius x:Key="LargeRadius">12</CornerRadius>
+  <CornerRadius x:Key="BubbleRadius">14</CornerRadius>
+
+  <!-- Type -->
+  <FontFamily x:Key="PiaBodyFont">Segoe UI Variable Text, Segoe UI Variable, Segoe UI</FontFamily>
+  <FontFamily x:Key="PiaDisplayFont">Segoe UI Variable Display, Segoe UI Variable, Segoe UI</FontFamily>
+  <FontFamily x:Key="PiaMonoFont">JetBrains Mono, Cascadia Code, Consolas</FontFamily>
+
+  <!-- WPF-UI overrides — re-tint the library by overriding the system brushes it consumes. -->
+  <SolidColorBrush x:Key="SystemAccentColorPrimaryBrush"   Color="{StaticResource PiaAccentColor}"/>
+  <SolidColorBrush x:Key="SystemAccentColorSecondaryBrush" Color="{StaticResource PiaAccentHoverColor}"/>
+  <SolidColorBrush x:Key="AccentFillColorDefaultBrush"     Color="{StaticResource PiaAccentColor}"/>
+  <SolidColorBrush x:Key="AccentFillColorSecondaryBrush"   Color="{StaticResource PiaAccentHoverColor}"/>
+  <SolidColorBrush x:Key="AccentFillColorTertiaryBrush"    Color="{StaticResource PiaAccentSoftColor}"/>
+  <SolidColorBrush x:Key="ApplicationBackgroundBrush"      Color="{StaticResource BgCanvasColor}"/>
+</ResourceDictionary>
