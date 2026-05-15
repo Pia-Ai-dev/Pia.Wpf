@@ -225,6 +225,34 @@
   <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Download multilingual embedding model for semantic search</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Regenerate Embeddings</value></data>
   <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Regenerate embeddings for all memory objects</value></data>
+  <data name="Memory_Regenerate" xml:space="preserve"><value>Regenerate</value></data>
+  <data name="Memory_NewMemory" xml:space="preserve"><value>New memory</value></data>
+  <data name="Memory_SyncedNow" xml:space="preserve"><value>Synced</value></data>
+  <data name="Memory_StatsObjects" xml:space="preserve"><value>objects</value></data>
+  <data name="Memory_StatsStale" xml:space="preserve"><value>stale</value></data>
+  <data name="Memory_Filter_All" xml:space="preserve"><value>All</value></data>
+  <data name="Memory_Filter_Pinned" xml:space="preserve"><value>Pinned</value></data>
+  <data name="Memory_Filter_Stale" xml:space="preserve"><value>Stale</value></data>
+  <data name="Memory_Filter_Today" xml:space="preserve"><value>Today</value></data>
+  <data name="Memory_TogglePin" xml:space="preserve"><value>Pin</value></data>
+  <data name="Memory_CopyJson" xml:space="preserve"><value>Copy JSON</value></data>
+  <data name="Memory_Copied" xml:space="preserve"><value>Copied to clipboard</value></data>
+  <data name="Memory_ValueJsonLabel" xml:space="preserve"><value>VALUE · JSON</value></data>
+  <data name="Memory_SourcePrefix" xml:space="preserve"><value>Source ·</value></data>
+  <data name="Memory_OpenConversation" xml:space="preserve"><value>Open conversation →</value></data>
+  <data name="Memory_Meta_Lifecycle" xml:space="preserve"><value>LIFECYCLE</value></data>
+  <data name="Memory_Meta_Created" xml:space="preserve"><value>Created</value></data>
+  <data name="Memory_Meta_Updated" xml:space="preserve"><value>Updated</value></data>
+  <data name="Memory_Meta_Accessed" xml:space="preserve"><value>Accessed</value></data>
+  <data name="Memory_Meta_Access14d" xml:space="preserve"><value>ACCESS · 14D</value></data>
+  <data name="Memory_Meta_Embedding" xml:space="preserve"><value>EMBEDDING</value></data>
+  <data name="Memory_Meta_Model" xml:space="preserve"><value>Model</value></data>
+  <data name="Memory_Meta_ModelDefault" xml:space="preserve"><value>text-embedding-3-small</value></data>
+  <data name="Memory_Meta_Size" xml:space="preserve"><value>Size</value></data>
+  <data name="Memory_Meta_Related" xml:space="preserve"><value>RELATED</value></data>
+  <data name="Memory_Meta_NoRelated" xml:space="preserve"><value>No related memories</value></data>
+  <data name="Memory_EmptyInspector_Title" xml:space="preserve"><value>Select a memory</value></data>
+  <data name="Memory_EmptyInspector_Hint" xml:space="preserve"><value>Pick a memory from the list to see its details, value and lifecycle.</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Reminders</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Refresh</value></data>

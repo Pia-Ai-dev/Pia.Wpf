@@ -1,0 +1,60 @@
+<UserControl x:Class="Pia.Controls.Memory.PiaInspectorHeader"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:mem="clr-namespace:Pia.Controls.Memory"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:views="clr-namespace:Pia.Views">
+  <Border Padding="14,14,14,14"
+          BorderBrush="{DynamicResource BorderBrush_}"
+          BorderThickness="0,0,0,1">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+
+      <StackPanel Grid.Column="0">
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+          <mem:PiaTypeChip Type="{Binding TypeKind}"/>
+          <TextBlock Text="{Binding ShortId}"
+                     FontFamily="{DynamicResource PiaMonoFont}"
+                     FontSize="11"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Margin="8,0,0,0"
+                     VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <TextBlock Text="{Binding Label}"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
+      </StackPanel>
+
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+        <ui:Button Icon="{ui:SymbolIcon Symbol=Pin20}"
+                   Appearance="Transparent"
+                   ToolTip="{loc:Str Memory_TogglePin}"
+                   Command="{Binding DataContext.TogglePinCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   CommandParameter="{Binding}"/>
+        <ui:Button Icon="{ui:SymbolIcon Symbol=Edit20}"
+                   Appearance="Transparent"
+                   ToolTip="{loc:Str Memory_Edit}"
+                   Command="{Binding DataContext.EditMemoryCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   CommandParameter="{Binding}"/>
+        <ui:Button Icon="{ui:SymbolIcon Symbol=Copy20}"
+                   Appearance="Transparent"
+                   ToolTip="{loc:Str Memory_CopyJson}"
+                   Command="{Binding DataContext.CopyJsonCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   CommandParameter="{Binding}"/>
+        <ui:Button Icon="{ui:SymbolIcon Symbol=Delete20}"
+                   Appearance="Transparent"
+                   ToolTip="{loc:Str Memory_Delete}"
+                   Foreground="{DynamicResource PiaDangerBrush}"
+                   Command="{Binding DataContext.DeleteMemoryCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   CommandParameter="{Binding}"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

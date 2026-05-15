@@ -12,6 +12,7 @@ Your task is a visual refresh — **no structural or view-model changes**. Only 
 
 - `01-migration-guide.md` — base visual refresh (Phase 1)
 - `02-modern-pro-controls.md` — new chat controls for long-form responses (Phase 2)
+- `03-memory-refresh.md` — Memory view refresh (Phase 3)
 - `tokens/PiaTokens.Light.xaml`, `tokens/PiaTokens.Dark.xaml`, `tokens/PiaStyles.xaml` — ready to copy in
 - `reference/` — screenshots showing the target look
 

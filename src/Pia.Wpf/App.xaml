@@ -44,7 +44,13 @@
       <converters:StringEqualsBoolConverter x:Key="StringEqualsBoolConverter" />
       <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+      <converters:InverseNullToVisibilityConverter x:Key="InverseNullToVisibilityConverter" />
       <converters:MultiplyConverter x:Key="MultiplyConverter" />
+      <converters:BoolToAngleConverter x:Key="BoolToAngleConverter" />
+      <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
+      <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />
+      <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushBg" Kind="Background" />
+      <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushFg" Kind="Foreground" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

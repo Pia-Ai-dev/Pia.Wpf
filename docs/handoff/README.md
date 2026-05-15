@@ -10,6 +10,7 @@ desktop application.
 | `PROMPT.md` | **Start here.** Ready-to-paste prompt for Claude Code. |
 | `01-migration-guide.md` | Base refresh: tokens, sidebar, bubbles, action card, input bar, dark-mode wiring. **Ship this first.** |
 | `02-modern-pro-controls.md` | Modern Pro — new reusable controls for long-form Pia responses (Markdig + ColorCode). Build after step 1 is shipped. |
+| `03-memory-refresh.md` | Memory view refresh — dense category tree + full inspector (tags, JSON, lifecycle, access sparkline, related, embedding meta). |
 | `tokens/PiaTokens.Light.xaml` | Drop-in `ResourceDictionary` — Light theme tokens. |
 | `tokens/PiaTokens.Dark.xaml` | Drop-in `ResourceDictionary` — Dark theme tokens. |
 | `tokens/PiaStyles.xaml` | Reusable `Style` definitions referenced from the guides. |
@@ -22,6 +23,7 @@ desktop application.
 - `03a-modern-pro-top.png` / `03b-modern-pro-mid.png` / `03c-modern-pro-bot.png` — Phase 2 (Modern
   Pro) long-form Pia response, captured top → middle → bottom of one scroll position because the
   layout is intentionally tall.
+- `04-memory-before.png` / `04-memory-modern.png` — Phase 3 (Memory) before ↔ after.
 
 ## Stack assumptions
 
@@ -37,6 +39,8 @@ desktop application.
 3. Run, screenshot, review. Ship.
 4. Claude Code reads `02-modern-pro-controls.md`, adds the new chat controls.
 5. Run, screenshot, review. Ship.
+6. Claude Code reads `03-memory-refresh.md`, rebuilds the Memory view from the new controls.
+7. Run, screenshot, review. Ship.
 
 ## Design principles (binding)
 

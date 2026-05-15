@@ -109,4 +109,154 @@
     </Setter>
   </Style>
 
+  <!-- Chrome-less button (e.g. clickable category header). -->
+  <Style x:Key="UnstyledButton" TargetType="Button">
+    <Setter Property="Background"      Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding"         Value="0"/>
+    <Setter Property="Cursor"          Value="Hand"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  Background="{TemplateBinding Background}"
+                  Padding="{TemplateBinding Padding}"
+                  CornerRadius="9">
+            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceMutedBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Dashed "+ tag" affordance. -->
+  <Style x:Key="PiaDashedGhostButton" TargetType="Button">
+    <Setter Property="Background"  Value="Transparent"/>
+    <Setter Property="Foreground"  Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="Padding"     Value="8,3"/>
+    <Setter Property="FontSize"    Value="11.5"/>
+    <Setter Property="Cursor"      Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  CornerRadius="4"
+                  Padding="{TemplateBinding Padding}"
+                  Background="{TemplateBinding Background}"
+                  BorderThickness="1"
+                  BorderBrush="{DynamicResource BorderStrongBrush}"
+                  SnapsToDevicePixels="True">
+            <Border.OpacityMask>
+              <VisualBrush>
+                <VisualBrush.Visual>
+                  <Border CornerRadius="4"
+                          Background="Black"
+                          Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Border}}"
+                          Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Border}}"/>
+                </VisualBrush.Visual>
+              </VisualBrush>
+            </Border.OpacityMask>
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                              TextBlock.FontSize="{TemplateBinding FontSize}"
+                              TextBlock.Foreground="{TemplateBinding Foreground}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="BorderBrush"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter Property="Foreground"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Segmented selector pill (filter strip, JSON/Raw). Selected state uses
+       solid accent fill so it reads clearly against the muted track. -->
+  <Style x:Key="PiaSegmentedButton" TargetType="RadioButton">
+    <Setter Property="Foreground"  Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="FontSize"    Value="12"/>
+    <Setter Property="Padding"     Value="12,5"/>
+    <Setter Property="Cursor"      Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Bd"
+                  CornerRadius="6"
+                  Padding="{TemplateBinding Padding}"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  BorderThickness="1">
+            <ContentPresenter HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              TextBlock.Foreground="{TemplateBinding Foreground}"
+                              TextBlock.FontSize="{TemplateBinding FontSize}"
+                              TextBlock.FontWeight="Medium"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceMutedBrush}"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter TargetName="Bd" Property="BorderBrush"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter Property="Foreground" Value="White"/>
+              <Setter TargetName="Bd" Property="Effect">
+                <Setter.Value>
+                  <DropShadowEffect Color="#1E2A4A" Opacity="0.18"
+                                    BlurRadius="6" ShadowDepth="1"/>
+                </Setter.Value>
+              </Setter>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Memory row container: strips ListBoxItem chrome, draws the 3-px
+       accent bar when selected (matches chat sidebar selection vocabulary). -->
+  <Style x:Key="PiaMemoryRowItemStyle" TargetType="ListBoxItem">
+    <Setter Property="Padding"         Value="0"/>
+    <Setter Property="Margin"          Value="0"/>
+    <Setter Property="Background"      Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Focusable"       Value="True"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Grid>
+            <Border x:Name="AccentBar"
+                    HorizontalAlignment="Left"
+                    Width="3"
+                    Margin="8,8"
+                    CornerRadius="1.5"
+                    Background="{DynamicResource PiaAccentBrush}"
+                    Visibility="Collapsed"/>
+            <ContentPresenter/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="AccentBar" Property="Visibility" Value="Visible"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
 </ResourceDictionary>

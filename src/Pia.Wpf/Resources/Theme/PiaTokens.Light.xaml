@@ -27,6 +27,23 @@
   <Color x:Key="WarnColor">#FFB45309</Color>
   <Color x:Key="WarnSoftColor">#FFFEF3C7</Color>
 
+  <!-- Sunk surface (JSON viewer, related cards, embed-meta tiles) -->
+  <Color x:Key="SurfaceSunkColor">#FFF7F9FC</Color>
+
+  <!-- Memory type palette -->
+  <Color x:Key="TypeProfileBgColor">#FFF0E7FE</Color>
+  <Color x:Key="TypeProfileFgColor">#FF6D28D9</Color>
+  <Color x:Key="TypePreferenceBgColor">#FFE7EFFE</Color>
+  <Color x:Key="TypePreferenceFgColor">#FF2563EB</Color>
+  <Color x:Key="TypeProjectBgColor">#FFE6F4EF</Color>
+  <Color x:Key="TypeProjectFgColor">#FF0F8662</Color>
+  <Color x:Key="TypeSkillBgColor">#FFFEF3C7</Color>
+  <Color x:Key="TypeSkillFgColor">#FFB45309</Color>
+  <Color x:Key="TypeContextBgColor">#FFFFE4E6</Color>
+  <Color x:Key="TypeContextFgColor">#FFE11D48</Color>
+  <Color x:Key="TypeNoteBgColor">#FFEEF1F6</Color>
+  <Color x:Key="TypeNoteFgColor">#FF525E73</Color>
+
   <!-- Code block palette (Phase 2 — identical in light and dark) -->
   <Color x:Key="CodeBlockBgColor">#FF0F1729</Color>
   <Color x:Key="CodeFgColor">#FFE6EAF2</Color>
@@ -59,6 +76,27 @@
 
   <SolidColorBrush x:Key="CodeBlockBgBrush"     Color="{StaticResource CodeBlockBgColor}"/>
   <SolidColorBrush x:Key="CodeFgBrush"          Color="{StaticResource CodeFgColor}"/>
+
+  <SolidColorBrush x:Key="SurfaceSunkBrush"     Color="{StaticResource SurfaceSunkColor}"/>
+
+  <SolidColorBrush x:Key="TypeProfileBgBrush"     Color="{StaticResource TypeProfileBgColor}"/>
+  <SolidColorBrush x:Key="TypeProfileFgBrush"     Color="{StaticResource TypeProfileFgColor}"/>
+  <SolidColorBrush x:Key="TypePreferenceBgBrush"  Color="{StaticResource TypePreferenceBgColor}"/>
+  <SolidColorBrush x:Key="TypePreferenceFgBrush"  Color="{StaticResource TypePreferenceFgColor}"/>
+  <SolidColorBrush x:Key="TypeProjectBgBrush"     Color="{StaticResource TypeProjectBgColor}"/>
+  <SolidColorBrush x:Key="TypeProjectFgBrush"     Color="{StaticResource TypeProjectFgColor}"/>
+  <SolidColorBrush x:Key="TypeSkillBgBrush"       Color="{StaticResource TypeSkillBgColor}"/>
+  <SolidColorBrush x:Key="TypeSkillFgBrush"       Color="{StaticResource TypeSkillFgColor}"/>
+  <SolidColorBrush x:Key="TypeContextBgBrush"     Color="{StaticResource TypeContextBgColor}"/>
+  <SolidColorBrush x:Key="TypeContextFgBrush"     Color="{StaticResource TypeContextFgColor}"/>
+  <SolidColorBrush x:Key="TypeNoteBgBrush"        Color="{StaticResource TypeNoteBgColor}"/>
+  <SolidColorBrush x:Key="TypeNoteFgBrush"        Color="{StaticResource TypeNoteFgColor}"/>
+
+  <SolidColorBrush x:Key="SparklineStrokeBrush"   Color="{StaticResource PiaAccentColor}"/>
+  <LinearGradientBrush x:Key="SparklineFillBrush" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Offset="0" Color="#402563EB"/>
+    <GradientStop Offset="1" Color="#002563EB"/>
+  </LinearGradientBrush>
 
   <!-- Sizing -->
   <CornerRadius x:Key="SmallRadius">6</CornerRadius>
