@@ -304,6 +304,8 @@
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>Lorsque vous appuyez sur un raccourci Pia, le texte sélectionné dans l'application active est automatiquement copié et collé dans le champ de saisie. Le presse-papiers est ensuite restauré.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Afficher le bouton du panneau des tâches</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Afficher le bouton du panneau des tâches dans les vues Optimiser, Assistant et Recherche</value></data>
+  <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Afficher les suggestions de suivi</value></data>
+  <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Après chaque réponse de l'assistant, propose 2 à 4 puces de questions de suivi. Ajoute une petite requête supplémentaire par tour.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Raccourcis globaux</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Appuyez sur un raccourci lorsque l'application est masquée pour capturer la fenêtre sous le curseur et ouvrir Pia dans le mode correspondant</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimiser</value></data>

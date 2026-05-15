@@ -30,6 +30,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _showTodoPanelButton = true;
 
+    [ObservableProperty]
+    private bool _suggestionsEnabled = true;
+
     public IEnumerable<WindowMode> WindowModes => Enum.GetValues<WindowMode>();
 
     partial void OnDefaultWindowModeChanged(WindowMode value)
@@ -42,6 +45,11 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnSuggestionsEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -49,6 +57,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         var settings = await _settingsService.GetSettingsAsync();
         DefaultWindowMode = settings.DefaultWindowMode;
         ShowTodoPanelButton = settings.ShowTodoPanelButton;
+        SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
 
         _isLoading = false;
     }
@@ -58,6 +67,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         var settings = await _settingsService.GetSettingsAsync();
         settings.DefaultWindowMode = DefaultWindowMode;
         settings.ShowTodoPanelButton = ShowTodoPanelButton;
+        settings.AssistantSuggestionsEnabled = SuggestionsEnabled;
         await _settingsService.SaveSettingsAsync(settings);
     }
 

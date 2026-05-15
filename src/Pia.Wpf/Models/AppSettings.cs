@@ -88,6 +88,9 @@ public class AppSettings
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
 
+    // Assistant suggestions (follow-up chips)
+    public bool AssistantSuggestionsEnabled { get; set; } = true;
+
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
 

@@ -160,9 +160,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ITokenMapService _tokenMapService;
     private readonly IAutocompleteService _autocompleteService;
     private readonly INavigationService _navigationService;
+    private readonly ISuggestionService _suggestionService;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
     private bool _tokenizationEnabled;
+    private bool _suggestionsEnabled = true;
 
     [ObservableProperty]
     private string _inputText = string.Empty;
@@ -229,6 +231,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<AssistantMessage> RegenerateMessageCommand { get; }
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
+    public IRelayCommand<string> UseFollowupCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
 
     public AssistantViewModel(
@@ -247,7 +250,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ILocalizationService localizationService,
         ITokenMapService tokenMapService,
         IAutocompleteService autocompleteService,
-        INavigationService navigationService)
+        INavigationService navigationService,
+        ISuggestionService suggestionService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -265,6 +269,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _tokenMapService = tokenMapService;
         _autocompleteService = autocompleteService;
         _navigationService = navigationService;
+        _suggestionService = suggestionService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -276,6 +281,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         RegenerateMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteRegenerateMessage);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
+        UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
@@ -299,6 +305,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (!string.IsNullOrWhiteSpace(suggestion))
             InputText = suggestion;
+    }
+
+    private void ExecuteUseFollowup(string? suggestion)
+    {
+        if (string.IsNullOrWhiteSpace(suggestion) || IsStreaming) return;
+        InputText = suggestion;
+        if (SendMessageCommand.CanExecute(null))
+            SendMessageCommand.Execute(null);
     }
 
     private bool CanExecuteSendMessage() =>
@@ -416,6 +430,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                         break;
                 }
             }
+
+            await GenerateFollowupsAsync(provider, userMessage.Content, assistantMessage, _streamingCts.Token);
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)
         {
@@ -838,6 +854,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             var settings = await _settingsService.GetSettingsAsync();
             IsTtsEnabled = settings.TtsEnabled;
+            _suggestionsEnabled = settings.AssistantSuggestionsEnabled;
 
             // Initialize TTS so HasVoiceLoaded becomes true for voice mode button
             if (!_ttsService.HasVoiceLoaded)
@@ -1090,6 +1107,63 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 yield return newContent;
             }
         }
+    }
+
+    private async Task GenerateFollowupsAsync(
+        AiProvider provider,
+        string userText,
+        AssistantMessage assistantMessage,
+        CancellationToken cancellationToken)
+    {
+        if (!_suggestionsEnabled)
+        {
+            _logger.LogDebug("Follow-up suggestions skipped: disabled in settings");
+            return;
+        }
+        if (!provider.SupportsStreaming)
+        {
+            _logger.LogDebug("Follow-up suggestions skipped: provider {ProviderName} does not support streaming", provider.Name);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(assistantMessage.Content))
+        {
+            _logger.LogDebug("Follow-up suggestions skipped: assistant message has no content");
+            return;
+        }
+        if (assistantMessage.Suggestions.Count > 0) return;
+
+        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderName}", provider.Name);
+
+        IReadOnlyList<string> picks;
+        try
+        {
+            picks = await _suggestionService.SuggestFollowupsAsync(
+                provider, userText, assistantMessage.Content, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Follow-up suggestion generation failed");
+            return;
+        }
+
+        if (picks.Count == 0 || cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Follow-up suggestions: no picks ({Count}) or cancelled ({Cancelled})",
+                picks.Count, cancellationToken.IsCancellationRequested);
+            return;
+        }
+
+        await App.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var s in picks)
+                assistantMessage.Suggestions.Add(s);
+        });
+        _logger.LogInformation("Follow-up suggestions: added {Count} picks (HasSuggestions={Has})",
+            picks.Count, assistantMessage.HasSuggestions);
     }
 
     private void ApplyStats(AssistantMessage message, Finished finished, AiProvider provider)

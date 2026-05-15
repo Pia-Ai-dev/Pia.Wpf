@@ -304,6 +304,8 @@
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>When you press a Pia hotkey, automatically copy the text selected in the active app and paste it into the input. The clipboard is restored afterwards.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Show todo panel button</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Show the todo panel toggle button in Optimize, Assistant, and Research views</value></data>
+  <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Show follow-up suggestions</value></data>
+  <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>After each assistant reply, generate 2–4 follow-up question chips. Adds a small extra request per turn.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Global Hotkeys</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Press a hotkey when the app is hidden to track the window under cursor and open Pia in the corresponding mode</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimize</value></data>

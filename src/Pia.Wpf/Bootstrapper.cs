@@ -205,6 +205,9 @@ public static class Bootstrapper
                 sp.GetRequiredService<ISettingsService>(),
                 sp.GetRequiredService<ILogger<TokenizingAiClientService>>()));
 
+        // Follow-up suggestions (uses IAiClientService internally — transient)
+        services.AddTransient<ISuggestionService, SuggestionService>();
+
         // Enterprise policy
         services.AddSingleton<IPolicyService, PolicyService>();
 

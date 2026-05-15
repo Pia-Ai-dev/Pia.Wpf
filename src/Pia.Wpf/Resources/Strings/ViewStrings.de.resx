@@ -304,6 +304,8 @@
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>Beim Drücken eines Pia-Hotkeys wird der im aktiven Programm markierte Text automatisch kopiert und in die Eingabe übernommen. Die Zwischenablage wird anschließend wiederhergestellt.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
+  <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Folgevorschläge anzeigen</value></data>
+  <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Nach jeder Antwort des Assistenten 2–4 Folgefragen als Chips vorschlagen. Verursacht eine kleine zusätzliche Anfrage pro Runde.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Globale Tastenkürzel</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Drücke ein Tastenkürzel, wenn die App ausgeblendet ist, um das Fenster unter dem Cursor zu erfassen und Pia im entsprechenden Modus zu öffnen</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimieren</value></data>
