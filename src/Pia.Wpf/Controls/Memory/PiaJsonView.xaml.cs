@@ -10,8 +10,6 @@ namespace Pia.Controls.Memory;
 
 public partial class PiaJsonView : UserControl
 {
-    private enum Mode { Json, Raw }
-    private Mode _mode = Mode.Json;
     private MemoryObject? _bound;
 
     public PiaJsonView()
@@ -37,28 +35,12 @@ public partial class PiaJsonView : UserControl
             Render();
     }
 
-    private void OnTabChanged(object sender, RoutedEventArgs e)
-    {
-        if (!IsLoaded) return;
-        if (JsonTab.IsChecked == true) _mode = Mode.Json;
-        else if (RawTab.IsChecked == true) _mode = Mode.Raw;
-        Render();
-    }
-
     private void Render()
     {
         JsonHost.Inlines.Clear();
         if (_bound is null) return;
 
-        var data = _bound.Data ?? string.Empty;
-
-        if (_mode == Mode.Raw)
-        {
-            JsonHost.Inlines.Add(new Run(data));
-            return;
-        }
-
-        RenderJson(data);
+        RenderJson(_bound.Data ?? string.Empty);
     }
 
     private void RenderJson(string raw)

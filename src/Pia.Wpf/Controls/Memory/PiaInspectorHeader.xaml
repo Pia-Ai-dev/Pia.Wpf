@@ -13,31 +13,28 @@
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
 
-      <StackPanel Grid.Column="0">
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-          <mem:PiaTypeChip Type="{Binding TypeKind}"/>
-          <TextBlock Text="{Binding ShortId}"
-                     FontFamily="{DynamicResource PiaMonoFont}"
-                     FontSize="11"
-                     Foreground="{DynamicResource TextSubtleBrush}"
-                     Margin="8,0,0,0"
-                     VerticalAlignment="Center"/>
-        </StackPanel>
-
-        <TextBlock Text="{Binding Label}"
-                   FontSize="18"
-                   FontWeight="SemiBold"
-                   TextWrapping="Wrap"
-                   Foreground="{DynamicResource TextDefaultBrush}"/>
+      <StackPanel Grid.Row="0" Grid.Column="0"
+                  Orientation="Horizontal"
+                  VerticalAlignment="Center"
+                  Margin="0,0,0,6">
+        <mem:PiaTypeChip Type="{Binding TypeKind}"/>
+        <TextBlock Text="{Binding ShortId}"
+                   FontFamily="{DynamicResource PiaMonoFont}"
+                   FontSize="11"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   Margin="8,0,0,0"
+                   VerticalAlignment="Center"/>
       </StackPanel>
 
-      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-        <ui:Button Icon="{ui:SymbolIcon Symbol=Pin20}"
-                   Appearance="Transparent"
-                   ToolTip="{loc:Str Memory_TogglePin}"
-                   Command="{Binding DataContext.TogglePinCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
-                   CommandParameter="{Binding}"/>
+      <StackPanel Grid.Row="0" Grid.Column="1"
+                  Orientation="Horizontal"
+                  VerticalAlignment="Top">
         <ui:Button Icon="{ui:SymbolIcon Symbol=Edit20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Memory_Edit}"
@@ -55,6 +52,30 @@
                    Command="{Binding DataContext.DeleteMemoryCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
                    CommandParameter="{Binding}"/>
       </StackPanel>
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                 Text="{Binding Label}"
+                 FontSize="18"
+                 FontWeight="SemiBold"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource TextDefaultBrush}"/>
+
+      <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                 FontSize="11.5"
+                 Margin="0,8,0,0"
+                 TextWrapping="Wrap">
+        <Run Text="{loc:Str Memory_Meta_Created}" Foreground="{DynamicResource TextMutedBrush}"/>
+        <Run Text=" "/>
+        <Run Text="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+        <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
+        <Run Text="{loc:Str Memory_Meta_Updated}" Foreground="{DynamicResource TextMutedBrush}"/>
+        <Run Text=" "/>
+        <Run Text="{Binding UpdatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+        <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
+        <Run Text="{loc:Str Memory_Meta_Accessed}" Foreground="{DynamicResource TextMutedBrush}"/>
+        <Run Text=" "/>
+        <Run Text="{Binding LastAccessedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+      </TextBlock>
     </Grid>
   </Border>
 </UserControl>

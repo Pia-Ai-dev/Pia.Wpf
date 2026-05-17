@@ -29,18 +29,10 @@
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0">
-        <StackPanel Orientation="Horizontal">
-          <TextBlock Text="★"
-                     Foreground="{DynamicResource WarnBrush}"
-                     FontSize="11"
-                     Margin="0,0,4,0"
-                     VerticalAlignment="Center"
-                     Visibility="{Binding IsPinned, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-          <TextBlock Text="{Binding Label}"
-                     FontSize="13"
-                     Foreground="{DynamicResource TextDefaultBrush}"
-                     TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
+        <TextBlock Text="{Binding Label}"
+                   FontSize="13"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   TextTrimming="CharacterEllipsis"/>
         <TextBlock Text="{Binding ValuePreview}"
                    FontSize="11.5"
                    Margin="0,1,0,0"

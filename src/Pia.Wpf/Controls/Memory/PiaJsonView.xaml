@@ -7,45 +7,13 @@
              x:Name="Root">
   <Grid>
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <Grid Grid.Row="0" Margin="0,0,0,8">
-      <TextBlock Text="{loc:Str Memory_ValueJsonLabel}"
-                 FontSize="11.5"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource TextMutedBrush}"
-                 VerticalAlignment="Center"/>
-      <Border HorizontalAlignment="Right"
-              Background="{DynamicResource SurfaceMutedBrush}"
-              BorderBrush="{DynamicResource BorderBrush_}"
-              BorderThickness="1"
-              CornerRadius="7"
-              Padding="2"
-              Visibility="{Binding DataContext.IsEditing,
-                                   RelativeSource={RelativeSource AncestorType=views:MemoryView},
-                                   Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-        <StackPanel Orientation="Horizontal">
-          <RadioButton x:Name="JsonTab"
-                       Content="JSON"
-                       GroupName="JsonViewMode"
-                       IsChecked="True"
-                       Checked="OnTabChanged"
-                       Style="{StaticResource PiaSegmentedButton}"/>
-          <RadioButton x:Name="RawTab"
-                       Content="Raw"
-                       GroupName="JsonViewMode"
-                       Checked="OnTabChanged"
-                       Style="{StaticResource PiaSegmentedButton}"/>
-        </StackPanel>
-      </Border>
-    </Grid>
-
     <!-- Read-only highlighted view -->
-    <Border Grid.Row="1"
+    <Border Grid.Row="0"
             Background="{DynamicResource SurfaceSunkBrush}"
             BorderBrush="{DynamicResource BorderBrush_}"
             BorderThickness="1"
@@ -64,7 +32,7 @@
     </Border>
 
     <!-- Editable view -->
-    <Border Grid.Row="1"
+    <Border Grid.Row="0"
             Background="{DynamicResource SurfaceSunkBrush}"
             BorderBrush="{DynamicResource PiaAccentBrush}"
             BorderThickness="1"
@@ -90,7 +58,7 @@
     </Border>
 
     <!-- Edit action row -->
-    <StackPanel Grid.Row="2"
+    <StackPanel Grid.Row="1"
                 Orientation="Horizontal"
                 HorizontalAlignment="Right"
                 Margin="0,10,0,0"
@@ -114,7 +82,7 @@
     </StackPanel>
 
     <!-- Source strip -->
-    <Border Grid.Row="3"
+    <Border Grid.Row="2"
             Margin="0,12,0,0"
             Background="{DynamicResource PiaAccentSoftBrush}"
             CornerRadius="8"

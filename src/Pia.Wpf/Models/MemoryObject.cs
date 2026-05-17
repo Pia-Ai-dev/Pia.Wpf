@@ -36,9 +36,6 @@ public partial class MemoryObject : ObservableObject
     public DateTime LastAccessedAt { get; set; } = DateTime.UtcNow;
 
     [ObservableProperty]
-    private bool _isPinned;
-
-    [ObservableProperty]
     private IReadOnlyList<double> _accessTimeline = Array.Empty<double>();
 
     [ObservableProperty]

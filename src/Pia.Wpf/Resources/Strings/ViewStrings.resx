@@ -224,20 +224,14 @@
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Download Model</value></data>
   <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Download multilingual embedding model for semantic search</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Regenerate Embeddings</value></data>
-  <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Regenerate embeddings for all memory objects</value></data>
-  <data name="Memory_Regenerate" xml:space="preserve"><value>Regenerate</value></data>
   <data name="Memory_NewMemory" xml:space="preserve"><value>New memory</value></data>
-  <data name="Memory_SyncedNow" xml:space="preserve"><value>Synced</value></data>
   <data name="Memory_StatsObjects" xml:space="preserve"><value>objects</value></data>
   <data name="Memory_StatsStale" xml:space="preserve"><value>stale</value></data>
   <data name="Memory_Filter_All" xml:space="preserve"><value>All</value></data>
-  <data name="Memory_Filter_Pinned" xml:space="preserve"><value>Pinned</value></data>
   <data name="Memory_Filter_Stale" xml:space="preserve"><value>Stale</value></data>
   <data name="Memory_Filter_Today" xml:space="preserve"><value>Today</value></data>
-  <data name="Memory_TogglePin" xml:space="preserve"><value>Pin</value></data>
   <data name="Memory_CopyJson" xml:space="preserve"><value>Copy JSON</value></data>
   <data name="Memory_Copied" xml:space="preserve"><value>Copied to clipboard</value></data>
-  <data name="Memory_ValueJsonLabel" xml:space="preserve"><value>VALUE · JSON</value></data>
   <data name="Memory_SourcePrefix" xml:space="preserve"><value>Source ·</value></data>
   <data name="Memory_OpenConversation" xml:space="preserve"><value>Open conversation →</value></data>
   <data name="Memory_Meta_Lifecycle" xml:space="preserve"><value>LIFECYCLE</value></data>

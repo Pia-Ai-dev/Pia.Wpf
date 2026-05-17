@@ -84,7 +84,6 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     public IAsyncRelayCommand RegenerateEmbeddingsCommand { get; }
     public IAsyncRelayCommand ReviewStaleCommand { get; }
     public IRelayCommand<MemoryObject> SelectMemoryCommand { get; }
-    public IRelayCommand<MemoryObject> TogglePinCommand { get; }
     public IAsyncRelayCommand<MemoryObject> CopyJsonCommand { get; }
     public IRelayCommand<MemoryObject> OpenSourceCommand { get; }
     public IAsyncRelayCommand NewMemoryCommand { get; }
@@ -114,18 +113,11 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         RegenerateEmbeddingsCommand = new AsyncRelayCommand(ExecuteRegenerateEmbeddings);
         ReviewStaleCommand = new AsyncRelayCommand(ExecuteReviewStale);
         SelectMemoryCommand = new RelayCommand<MemoryObject>(ExecuteSelectMemory);
-        TogglePinCommand = new RelayCommand<MemoryObject>(ExecuteTogglePin);
         CopyJsonCommand = new AsyncRelayCommand<MemoryObject>(ExecuteCopyJson);
         OpenSourceCommand = new RelayCommand<MemoryObject>(ExecuteOpenSource);
         NewMemoryCommand = new AsyncRelayCommand(ExecuteNewMemory);
 
         PropertyChanged += OnPropertyChanged;
-    }
-
-    private void ExecuteTogglePin(MemoryObject? memory)
-    {
-        if (memory is null) return;
-        memory.IsPinned = !memory.IsPinned;
     }
 
     private async Task ExecuteCopyJson(MemoryObject? memory)
@@ -223,6 +215,13 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 MemoryGroups.Add(group);
             }
 
+            if (SelectedMemory is not null &&
+                !MemoryGroups.Any(g => g.Items.Any(m => m.Id == SelectedMemory.Id)))
+            {
+                SelectedMemory = null;
+                IsEditing = false;
+            }
+
             TotalObjectCount = await _memoryService.GetObjectCountAsync();
             var storageSize = await _memoryService.GetStorageSizeAsync();
             StorageSizeText = FormatBytes(storageSize);
@@ -310,9 +309,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             // Validate JSON
             JsonNode.Parse(EditingData);
 
-            // Use the full replacement as a merge patch (replace all data)
             var connection = SelectedMemory;
-            await _memoryService.UpdateObjectAsync(connection.Id, EditingData);
+            await _memoryService.UpdateObjectDataAsync(connection.Id, connection.Label, EditingData);
 
             // Regenerate embedding if model is available
             if (_embeddingService.IsModelAvailable)
@@ -567,7 +565,6 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     {
         return ActiveFilter switch
         {
-            "Pinned" => source.Where(m => m.IsPinned),
             "Stale" => source.Where(m => m.IsStale),
             "Today" => source.Where(m => m.UpdatedAt.Date == DateTime.UtcNow.Date),
             _ => source

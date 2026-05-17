@@ -224,7 +224,6 @@
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Modell herunterladen</value></data>
   <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Mehrsprachiges Embedding-Modell für semantische Suche herunterladen</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Embeddings neu generieren</value></data>
-  <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Embeddings für alle Gedächtnisobjekte neu generieren</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Erinnerungen</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>

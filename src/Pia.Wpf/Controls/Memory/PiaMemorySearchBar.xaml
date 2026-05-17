@@ -17,7 +17,6 @@
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
 
         <ui:SymbolIcon Grid.Column="0"
@@ -33,21 +32,8 @@
                  BorderThickness="0"
                  FontSize="13"
                  Padding="0,10"
+                 Margin="0,0,12,0"
                  VerticalContentAlignment="Center"/>
-
-        <Border Grid.Column="2"
-                Background="{DynamicResource SurfaceMutedBrush}"
-                BorderBrush="{DynamicResource BorderBrush_}"
-                BorderThickness="1"
-                CornerRadius="4"
-                Padding="6,2"
-                Margin="0,0,12,0"
-                VerticalAlignment="Center">
-          <TextBlock Text="⌘K"
-                     FontFamily="{DynamicResource PiaMonoFont}"
-                     FontSize="10.5"
-                     Foreground="{DynamicResource TextSubtleBrush}"/>
-        </Border>
       </Grid>
     </Border>
 
@@ -63,10 +49,6 @@
         <RadioButton Content="{loc:Str Memory_Filter_All}"
                      GroupName="MemoryFilter"
                      IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=All}"
-                     Style="{StaticResource PiaSegmentedButton}"/>
-        <RadioButton Content="{loc:Str Memory_Filter_Pinned}"
-                     GroupName="MemoryFilter"
-                     IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Pinned}"
                      Style="{StaticResource PiaSegmentedButton}"/>
         <RadioButton Content="{loc:Str Memory_Filter_Stale}"
                      GroupName="MemoryFilter"
