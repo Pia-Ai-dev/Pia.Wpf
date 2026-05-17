@@ -1,0 +1,36 @@
+<UserControl x:Class="Pia.Controls.Reminders.PiaRemindersFilterBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             x:Name="Root">
+  <Border HorizontalAlignment="Left"
+          Background="{DynamicResource SurfaceBrush}"
+          BorderBrush="{DynamicResource BorderBrush_}"
+          BorderThickness="1"
+          CornerRadius="9"
+          Padding="2"
+          VerticalAlignment="Center">
+    <StackPanel Orientation="Horizontal">
+      <RadioButton Content="{loc:Str Reminders_Filter_All}"
+                   GroupName="ReminderFilter"
+                   IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=All}"
+                   Style="{StaticResource PiaSegmentedButton}"/>
+      <RadioButton Content="{loc:Str Reminders_Filter_Active}"
+                   GroupName="ReminderFilter"
+                   IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Active}"
+                   Style="{StaticResource PiaSegmentedButton}"/>
+      <RadioButton Content="{loc:Str Reminders_Filter_Snoozed}"
+                   GroupName="ReminderFilter"
+                   IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Snoozed}"
+                   Style="{StaticResource PiaSegmentedButton}"/>
+      <RadioButton Content="{loc:Str Reminders_Filter_Disabled}"
+                   GroupName="ReminderFilter"
+                   IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Disabled}"
+                   Style="{StaticResource PiaSegmentedButton}"/>
+      <RadioButton Content="{loc:Str Reminders_Filter_Completed}"
+                   GroupName="ReminderFilter"
+                   IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Completed}"
+                   Style="{StaticResource PiaSegmentedButton}"/>
+    </StackPanel>
+  </Border>
+</UserControl>

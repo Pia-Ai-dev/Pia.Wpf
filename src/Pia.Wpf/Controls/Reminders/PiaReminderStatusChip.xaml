@@ -1,0 +1,14 @@
+<UserControl x:Class="Pia.Controls.Reminders.PiaReminderStatusChip"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+  <Border Background="{Binding Status, ElementName=Root, Converter={StaticResource ReminderStatusToBrushBg}}"
+          CornerRadius="4"
+          Padding="7,1"
+          VerticalAlignment="Center">
+    <TextBlock Text="{Binding Status, ElementName=Root, Converter={StaticResource ReminderStatusToLabelConverter}}"
+               Foreground="{Binding Status, ElementName=Root, Converter={StaticResource ReminderStatusToBrushFg}}"
+               FontSize="10.5"
+               FontWeight="SemiBold" />
+  </Border>
+</UserControl>

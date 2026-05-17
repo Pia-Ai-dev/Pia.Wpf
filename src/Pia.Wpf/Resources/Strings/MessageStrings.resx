@@ -97,6 +97,11 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Failed to delete memory: {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Delete Memory</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Deleted</value></data>
+  <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Dismissed</value></data>
+  <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Reminder dismissed. Recurring reminders are rescheduled to their next occurrence.</value></data>
+  <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} reminders dismissed.</value></data>
+  <data name="Msg_Reminders_NothingToDismissTitle" xml:space="preserve"><value>Nothing to dismiss</value></data>
+  <data name="Msg_Reminders_NothingToDismissBody" xml:space="preserve"><value>No one-time reminders to dismiss.</value></data>
   <data name="Msg_Memory_DownloadError" xml:space="preserve"><value>Failed to download embedding model: {0}</value></data>
   <data name="Msg_Memory_DownloadFailedMessage" xml:space="preserve"><value>The embedding model download did not complete successfully. Please try again.</value></data>
   <data name="Msg_Memory_DownloadFailedTitle" xml:space="preserve"><value>Download Failed</value></data>

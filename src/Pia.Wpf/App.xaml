@@ -51,6 +51,10 @@
       <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushBg" Kind="Background" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushFg" Kind="Foreground" />
+      <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushBg" Kind="Background" />
+      <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushFg" Kind="Foreground" />
+      <converters:ReminderStatusToLabelConverter x:Key="ReminderStatusToLabelConverter" />
+      <converters:NextFireAtToShortStringConverter x:Key="NextFireAtToShortStringConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

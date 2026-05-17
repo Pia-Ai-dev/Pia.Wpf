@@ -93,6 +93,11 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Löschen der Erinnerung fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Erinnerung löschen</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Gelöscht</value></data>
+  <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Verworfen</value></data>
+  <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Erinnerung verworfen. Wiederkehrende Erinnerungen werden auf den nächsten Termin verschoben.</value></data>
+  <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} Erinnerungen verworfen.</value></data>
+  <data name="Msg_Reminders_NothingToDismissTitle" xml:space="preserve"><value>Nichts zu verwerfen</value></data>
+  <data name="Msg_Reminders_NothingToDismissBody" xml:space="preserve"><value>Keine einmaligen Erinnerungen zum Verwerfen.</value></data>
   <data name="Msg_Memory_DownloadError" xml:space="preserve"><value>Herunterladen des Embedding-Modells fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_DownloadFailedMessage" xml:space="preserve"><value>Der Download des Embedding-Modells wurde nicht erfolgreich abgeschlossen. Bitte versuche es erneut.</value></data>
   <data name="Msg_Memory_DownloadFailedTitle" xml:space="preserve"><value>Download fehlgeschlagen</value></data>

@@ -1,0 +1,78 @@
+<UserControl x:Class="Pia.Controls.Reminders.PiaRemindersHeader"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="Auto"/>
+    </Grid.ColumnDefinitions>
+
+    <TextBlock Grid.Row="0" Grid.Column="0"
+               Text="{loc:Str Reminders_Title}"
+               FontSize="22"
+               FontWeight="SemiBold"
+               Foreground="{DynamicResource TextDefaultBrush}"
+               VerticalAlignment="Center"/>
+
+    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding RefreshCommand}"
+                 ToolTip="{loc:Str Reminders_Refresh}"
+                 Margin="0,0,6,0">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str Reminders_Refresh}"/>
+        </StackPanel>
+      </ui:Button>
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding DismissAllCommand}"
+                 ToolTip="{loc:Str Reminders_DismissAllTooltip}"
+                 Margin="0,0,6,0">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Checkmark24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str Reminders_DismissAll}"/>
+        </StackPanel>
+      </ui:Button>
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding DisableAllCommand}"
+                 ToolTip="{loc:Str Reminders_DisableAllTooltip}"
+                 Margin="0,0,6,0">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="PauseCircle24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str Reminders_DisableAll}"/>
+        </StackPanel>
+      </ui:Button>
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding DeleteAllCommand}"
+                 ToolTip="{loc:Str Reminders_DeleteAllTooltip}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,6,0"
+                         Foreground="{DynamicResource PiaDangerBrush}"/>
+          <TextBlock Text="{loc:Str Reminders_DeleteAll}"
+                     Foreground="{DynamicResource PiaDangerBrush}"/>
+        </StackPanel>
+      </ui:Button>
+    </StackPanel>
+
+    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+               Margin="0,8,0,0"
+               FontSize="12"
+               Foreground="{DynamicResource TextMutedBrush}">
+      <Run Foreground="{DynamicResource PiaDangerBrush}"
+           FontWeight="SemiBold"
+           Text="{Binding OverdueCount, Mode=OneWay}"/><Run Foreground="{DynamicResource PiaDangerBrush}" Text=" "/><Run Foreground="{DynamicResource PiaDangerBrush}" Text="{loc:Str Reminders_Stats_Overdue}"/><Run Text="  ·  "/><Run Text="{Binding ActiveCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Reminders_Stats_Active}"/>
+      <Run Text=" · "/>
+      <Run Text="{Binding SnoozedCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Reminders_Stats_Snoozed}"/>
+      <Run Text=" · "/>
+      <Run Text="{Binding DisabledCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Reminders_Stats_Disabled}"/>
+      <Run Text=" · "/>
+      <Run Text="{Binding CompletedCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Reminders_Stats_Completed}"/>
+    </TextBlock>
+  </Grid>
+</UserControl>

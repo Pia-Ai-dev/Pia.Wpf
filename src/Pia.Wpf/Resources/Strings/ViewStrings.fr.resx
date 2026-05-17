@@ -239,6 +239,29 @@
   <data name="Reminders_Delete" xml:space="preserve"><value>Supprimer</value></data>
   <data name="Reminders_Loading" xml:space="preserve"><value>Chargement des rappels...</value></data>
   <data name="Reminders_EmptyState" xml:space="preserve"><value>Aucun rappel trouvé. Créez des rappels via le chat Assistant.</value></data>
+  <data name="Reminders_DismissAll" xml:space="preserve"><value>Tout ignorer</value></data>
+  <data name="Reminders_DismissAllTooltip" xml:space="preserve"><value>Ignorer tous les rappels actifs et reportés visibles.</value></data>
+  <data name="Reminders_DisableAll" xml:space="preserve"><value>Tout désactiver</value></data>
+  <data name="Reminders_DisableAllTooltip" xml:space="preserve"><value>Désactiver tous les rappels visibles.</value></data>
+  <data name="Reminders_DeleteAll" xml:space="preserve"><value>Tout supprimer</value></data>
+  <data name="Reminders_DeleteAllTooltip" xml:space="preserve"><value>Supprimer définitivement tous les rappels visibles.</value></data>
+  <data name="Reminders_DeleteAllConfirmTitle" xml:space="preserve"><value>Supprimer tous les rappels</value></data>
+  <data name="Reminders_DeleteAllConfirmBody" xml:space="preserve"><value>Supprimer tous les rappels visibles ? Cette action est irréversible.</value></data>
+  <data name="Reminders_Filter_All" xml:space="preserve"><value>Tous</value></data>
+  <data name="Reminders_Filter_Active" xml:space="preserve"><value>Actifs</value></data>
+  <data name="Reminders_Filter_Snoozed" xml:space="preserve"><value>Reportés</value></data>
+  <data name="Reminders_Filter_Disabled" xml:space="preserve"><value>Désactivés</value></data>
+  <data name="Reminders_Filter_Completed" xml:space="preserve"><value>Terminés</value></data>
+  <data name="Reminders_Bucket_Overdue" xml:space="preserve"><value>En retard</value></data>
+  <data name="Reminders_Bucket_Today" xml:space="preserve"><value>Aujourd'hui</value></data>
+  <data name="Reminders_Bucket_Tomorrow" xml:space="preserve"><value>Demain</value></data>
+  <data name="Reminders_Bucket_ThisWeek" xml:space="preserve"><value>Cette semaine</value></data>
+  <data name="Reminders_Bucket_Later" xml:space="preserve"><value>Plus tard</value></data>
+  <data name="Reminders_Stats_Active" xml:space="preserve"><value>actifs</value></data>
+  <data name="Reminders_Stats_Snoozed" xml:space="preserve"><value>reportés</value></data>
+  <data name="Reminders_Stats_Disabled" xml:space="preserve"><value>désactivés</value></data>
+  <data name="Reminders_Stats_Completed" xml:space="preserve"><value>terminés</value></data>
+  <data name="Reminders_Stats_Overdue" xml:space="preserve"><value>en retard</value></data>
   <!-- Settings View -->
   <data name="Settings_Tab_Providers" xml:space="preserve"><value>Fournisseurs</value></data>
   <data name="Settings_Tab_Templates" xml:space="preserve"><value>Modèles</value></data>
