@@ -49,6 +49,8 @@
           </Run>
           <Run Text=" · "/>
           <Run Text="{loc:Str Memory_Meta_ModelDefault}"/>
+          <Run Text=" · "/>
+          <Run Text="{Binding EmbeddingDim, Mode=OneWay}"/><Run Text="-dim"/>
         </TextBlock>
       </StackPanel>
 

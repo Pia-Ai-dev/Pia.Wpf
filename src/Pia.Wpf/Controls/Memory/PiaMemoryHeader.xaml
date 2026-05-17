@@ -32,18 +32,10 @@
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding ReviewStaleCommand}"
-                 ToolTip="{loc:Str Memory_ReviewStaleTooltip}"
-                 Margin="0,0,6,0">
+                 ToolTip="{loc:Str Memory_ReviewStaleTooltip}">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="Clock24" FontSize="16" Margin="0,0,6,0"/>
           <TextBlock Text="{loc:Str Memory_ReviewStale}"/>
-        </StackPanel>
-      </ui:Button>
-      <ui:Button Appearance="Primary"
-                 Command="{Binding NewMemoryCommand}">
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
-          <TextBlock Text="{loc:Str Memory_NewMemory}"/>
         </StackPanel>
       </ui:Button>
     </StackPanel>
@@ -55,8 +47,6 @@
       <Run Text="{Binding TotalObjectCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Memory_StatsObjects}"/>
       <Run Text=" · "/>
       <Run Text="{Binding StorageSizeText, Mode=OneWay}"/>
-      <Run Text=" · "/>
-      <Run Text="{Binding EmbeddingDim, Mode=OneWay}"/><Run Text="-dim"/>
       <Run Text=" · "/>
       <Run Text="{Binding StaleCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Memory_StatsStale}"/>
     </TextBlock>
