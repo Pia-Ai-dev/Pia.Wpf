@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 using Pia.Controls.Markdown;
+using Pia.Helpers;
 using Pia.Models;
 
 namespace Pia.Controls;
@@ -65,7 +66,7 @@ public partial class MarkdownMessageControl : UserControl
     {
         if (e.Handled) return;
 
-        var parent = FindAncestor<ScrollViewer>(this);
+        var parent = this.FindAncestor<ScrollViewer>();
         if (parent is null) return;
 
         e.Handled = true;
@@ -74,17 +75,6 @@ public partial class MarkdownMessageControl : UserControl
             RoutedEvent = MouseWheelEvent,
             Source = this,
         });
-    }
-
-    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
-    {
-        var current = VisualTreeHelper.GetParent(start);
-        while (current is not null)
-        {
-            if (current is T match) return match;
-            current = VisualTreeHelper.GetParent(current);
-        }
-        return null;
     }
 
     private static void OnMarkdownTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

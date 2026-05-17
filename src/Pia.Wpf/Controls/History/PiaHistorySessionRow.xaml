@@ -1,0 +1,64 @@
+<UserControl x:Class="Pia.Controls.History.PiaHistorySessionRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Border x:Name="Root"
+          CornerRadius="8"
+          Padding="28,8,14,8"
+          Background="Transparent"
+          Cursor="Hand">
+    <Border.Style>
+      <Style TargetType="Border">
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                       Value="True">
+            <Setter Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
+          </DataTrigger>
+          <Trigger Property="IsMouseOver" Value="True">
+            <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+          </Trigger>
+        </Style.Triggers>
+      </Style>
+    </Border.Style>
+
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="48"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+
+      <TextBlock Grid.Column="0"
+                 Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}', ConverterCulture=en-US}"
+                 FontSize="11.5"
+                 FontFamily="{DynamicResource PiaMonoFont}"
+                 Foreground="{DynamicResource TextSubtleBrush}"
+                 VerticalAlignment="Center"/>
+
+      <StackPanel Grid.Column="1">
+        <TextBlock FontSize="13"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   TextTrimming="CharacterEllipsis">
+          <Run Text="{Binding TemplateName, Mode=OneWay, FallbackValue='—'}" FontWeight="SemiBold"/>
+          <Run Text=" · " Foreground="{DynamicResource TextSubtleBrush}"/>
+          <Run Text="{Binding ProviderName, Mode=OneWay, FallbackValue='—'}" Foreground="{DynamicResource TextMutedBrush}"/>
+        </TextBlock>
+        <TextBlock Text="{Binding OptimizedText, Converter={StaticResource SingleLineConverter}}"
+                   FontSize="11.5"
+                   Margin="0,1,0,0"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   TextTrimming="CharacterEllipsis"
+                   TextWrapping="NoWrap"/>
+      </StackPanel>
+
+      <TextBlock Grid.Column="2"
+                 Text="{Binding CreatedAt, StringFormat='{}{0:MM-dd}'}"
+                 FontSize="10.5"
+                 FontFamily="{DynamicResource PiaMonoFont}"
+                 Foreground="{DynamicResource TextSubtleBrush}"
+                 TextAlignment="Right"
+                 MinWidth="42"
+                 VerticalAlignment="Center"
+                 Margin="10,0,0,0"/>
+    </Grid>
+  </Border>
+</UserControl>

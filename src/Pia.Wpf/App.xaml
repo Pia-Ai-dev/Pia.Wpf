@@ -47,6 +47,7 @@
       <converters:InverseNullToVisibilityConverter x:Key="InverseNullToVisibilityConverter" />
       <converters:MultiplyConverter x:Key="MultiplyConverter" />
       <converters:BoolToAngleConverter x:Key="BoolToAngleConverter" />
+      <converters:SingleLineConverter x:Key="SingleLineConverter" />
       <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
       <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushBg" Kind="Background" />

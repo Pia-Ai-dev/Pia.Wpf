@@ -5,13 +5,13 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.ViewModels;
 
-namespace Pia.Controls.Memory;
+namespace Pia.Controls.History;
 
-public partial class PiaMemoryCategoryCard : UserControl
+public partial class PiaHistoryGroupCard : UserControl
 {
-    private MemoryViewModel? _vm;
+    private HistoryViewModel? _vm;
 
-    public PiaMemoryCategoryCard()
+    public PiaHistoryGroupCard()
     {
         InitializeComponent();
         Loaded += OnLoaded;
@@ -20,8 +20,8 @@ public partial class PiaMemoryCategoryCard : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        var view = this.FindAncestor<Views.MemoryView>();
-        _vm = view?.DataContext as MemoryViewModel;
+        var view = this.FindAncestor<Views.HistoryView>();
+        _vm = view?.DataContext as HistoryViewModel;
         if (_vm is not null)
             _vm.PropertyChanged += OnVmPropertyChanged;
         SyncFromVm();
@@ -36,14 +36,14 @@ public partial class PiaMemoryCategoryCard : UserControl
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MemoryViewModel.SelectedMemory))
+        if (e.PropertyName == nameof(HistoryViewModel.SelectedSession))
             SyncFromVm();
     }
 
     private void SyncFromVm()
     {
-        if (_vm is null || DataContext is not MemoryGroupViewModel group) return;
-        var target = _vm.SelectedMemory;
+        if (_vm is null || DataContext is not SessionGroupViewModel group) return;
+        var target = _vm.SelectedSession;
         if (target is null || !group.Items.Contains(target))
         {
             if (ItemList.SelectedItem is not null)
@@ -58,13 +58,13 @@ public partial class PiaMemoryCategoryCard : UserControl
     private void ItemList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_vm is null) return;
-        if (ItemList.SelectedItem is MemoryObject mem)
-            _vm.SelectedMemory = mem;
+        if (ItemList.SelectedItem is OptimizationSession session)
+            _vm.SelectedSession = session;
     }
 
     private void ToggleHeader_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is MemoryGroupViewModel group)
+        if (DataContext is SessionGroupViewModel group)
             group.IsExpanded = !group.IsExpanded;
     }
 

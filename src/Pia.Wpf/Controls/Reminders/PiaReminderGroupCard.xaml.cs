@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.ViewModels;
 
@@ -19,7 +20,7 @@ public partial class PiaReminderGroupCard : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        var view = FindAncestor<Views.RemindersView>(this);
+        var view = this.FindAncestor<Views.RemindersView>();
         _vm = view?.DataContext as RemindersViewModel;
         if (_vm is not null)
             _vm.PropertyChanged += OnVmPropertyChanged;
@@ -67,14 +68,4 @@ public partial class PiaReminderGroupCard : UserControl
             group.IsExpanded = !group.IsExpanded;
     }
 
-    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
-    {
-        var current = System.Windows.Media.VisualTreeHelper.GetParent(start);
-        while (current is not null)
-        {
-            if (current is T match) return match;
-            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
-        }
-        return null;
-    }
 }

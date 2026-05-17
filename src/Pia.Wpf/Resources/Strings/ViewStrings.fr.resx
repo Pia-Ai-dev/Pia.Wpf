@@ -159,6 +159,28 @@
   <data name="History_Loading" xml:space="preserve"><value>Chargement des sessions...</value></data>
   <data name="History_NoSessions" xml:space="preserve"><value>Aucune session trouvée</value></data>
   <data name="History_LoadMore" xml:space="preserve"><value>Charger plus</value></data>
+  <data name="History_Group_Today" xml:space="preserve"><value>Aujourd'hui</value></data>
+  <data name="History_Group_Yesterday" xml:space="preserve"><value>Hier</value></data>
+  <data name="History_Group_ThisWeek" xml:space="preserve"><value>Cette semaine</value></data>
+  <data name="History_Group_EarlierThisMonth" xml:space="preserve"><value>Plus tôt ce mois-ci</value></data>
+  <data name="History_Group_Older" xml:space="preserve"><value>Plus ancien</value></data>
+  <data name="History_EmptyState" xml:space="preserve"><value>Aucune session pour l'instant</value></data>
+  <data name="History_EmptyStateHint" xml:space="preserve"><value>Optimisez un prompt pour alimenter l'historique</value></data>
+  <data name="History_EmptyInspector_Title" xml:space="preserve"><value>Sélectionner une session</value></data>
+  <data name="History_EmptyInspector_Hint" xml:space="preserve"><value>Choisissez une session pour comparer le texte original et optimisé.</value></data>
+  <data name="History_TotalCountFormat" xml:space="preserve"><value>{0} sur {1} sessions</value></data>
+  <data name="History_Inspector_Tab_Original" xml:space="preserve"><value>Original</value></data>
+  <data name="History_Inspector_Tab_Optimized" xml:space="preserve"><value>Optimisé</value></data>
+  <data name="History_Inspector_Meta_Created" xml:space="preserve"><value>Créé</value></data>
+  <data name="History_Inspector_Meta_Template" xml:space="preserve"><value>Modèle</value></data>
+  <data name="History_Inspector_Meta_Provider" xml:space="preserve"><value>Fournisseur</value></data>
+  <data name="History_Inspector_Meta_ProcessingTime" xml:space="preserve"><value>Temps de traitement</value></data>
+  <data name="History_Inspector_Meta_Tokens" xml:space="preserve"><value>Jetons</value></data>
+  <data name="History_Inspector_Untitled" xml:space="preserve"><value>Session d'optimisation</value></data>
+  <data name="History_DeleteAll" xml:space="preserve"><value>Tout supprimer</value></data>
+  <data name="History_DeleteAllTooltip" xml:space="preserve"><value>Supprimer définitivement toutes les sessions correspondant au filtre actuel.</value></data>
+  <data name="History_DeleteAllConfirmTitle" xml:space="preserve"><value>Supprimer toutes les sessions</value></data>
+  <data name="History_DeleteAllConfirmBody" xml:space="preserve"><value>Supprimer toutes les sessions correspondant au filtre actuel ? Cette action est irréversible.</value></data>
   <!-- Todo View -->
   <data name="Todo_Title" xml:space="preserve"><value>Liste des tâches</value></data>
   <data name="Todo_Refresh" xml:space="preserve"><value>Actualiser</value></data>

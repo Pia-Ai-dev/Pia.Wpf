@@ -16,6 +16,11 @@ public interface IHistoryService
         int limit = 50);
     Task<OptimizationSession?> GetSessionAsync(Guid id);
     Task DeleteSessionAsync(Guid id);
+    Task<int> DeleteAllSessionsAsync(
+        string? searchText = null,
+        Guid? templateId = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null);
     Task<int> GetSessionCountAsync();
     Task<int> GetSessionCountAsync(
         string? searchText = null,

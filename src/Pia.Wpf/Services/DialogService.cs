@@ -59,14 +59,6 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
-    public async Task ShowSessionDetailDialogAsync(OptimizationSession session)
-    {
-        var dialogHost = _contentDialogService.GetDialogHostEx()
-            ?? throw new InvalidOperationException("No dialog host available");
-        var dialog = new SessionDetailContentDialog(dialogHost, session, _outputService);
-        await dialog.ShowAsync();
-    }
-
     public async Task<bool> ShowConfirmationDialogAsync(string title, string message)
     {
         var result = await _contentDialogService.ShowSimpleDialogAsync(
