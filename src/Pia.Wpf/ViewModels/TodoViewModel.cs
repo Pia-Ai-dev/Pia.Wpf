@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -66,28 +68,21 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     private int _pendingCount;
 
     [ObservableProperty]
+    private int _overdueCount;
+
+    [ObservableProperty]
     private double _progressPercentage;
 
     [ObservableProperty]
     private string _progressText = "";
 
     [ObservableProperty]
-    private TodoItem? _editingTodo;
+    private string _searchQuery = string.Empty;
 
-    [ObservableProperty]
-    private string _editTitle = string.Empty;
-
-    [ObservableProperty]
-    private string _editNotes = string.Empty;
-
-    [ObservableProperty]
-    private TodoPriority _editPriority;
-
-    [ObservableProperty]
-    private DateTime? _editDueDate;
-
-    [ObservableProperty]
-    private bool _isEditing;
+    private readonly DispatcherTimer _widthSaveTimer;
+    private readonly HashSet<Guid> _dirtyWidths = new();
+    private readonly HashSet<KanbanColumnViewModel> _subscribedColumns = new();
+    private bool _suppressWidthPersist;
 
     public IReadOnlyList<TodoPriority> Priorities { get; } =
         [TodoPriority.Low, TodoPriority.Medium, TodoPriority.High];
@@ -98,13 +93,12 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     public IAsyncRelayCommand<TodoItem> CompleteTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> UncompleteTodoCommand { get; }
     public IAsyncRelayCommand<TodoItem> DeleteTodoCommand { get; }
-    public IRelayCommand<TodoItem> StartEditCommand { get; }
-    public IAsyncRelayCommand SaveEditCommand { get; }
-    public IRelayCommand CancelEditCommand { get; }
+    public IAsyncRelayCommand<TodoItem> StartEditCommand { get; }
     public IRelayCommand ToggleTodoPanelCommand { get; }
     public IRelayCommand NavigateToTodoViewCommand { get; }
     public IAsyncRelayCommand AddColumnCommand { get; }
     public IAsyncRelayCommand<KanbanColumnViewModel> DeleteColumnCommand { get; }
+    public IAsyncRelayCommand<KanbanColumnViewModel> RenameColumnCommand { get; }
     public IAsyncRelayCommand<KanbanColumnViewModel> SetDefaultViewColumnCommand { get; }
 
     public TodoViewModel(
@@ -135,14 +129,16 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         CompleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteCompleteTodoAsync);
         UncompleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteUncompleteTodoAsync);
         DeleteTodoCommand = new AsyncRelayCommand<TodoItem>(ExecuteDeleteTodoAsync);
-        StartEditCommand = new RelayCommand<TodoItem>(ExecuteStartEdit);
-        SaveEditCommand = new AsyncRelayCommand(ExecuteSaveEditAsync, CanSaveEdit);
-        CancelEditCommand = new RelayCommand(ExecuteCancelEdit);
+        StartEditCommand = new AsyncRelayCommand<TodoItem>(ExecuteStartEditAsync);
         ToggleTodoPanelCommand = new RelayCommand(() => IsTodoPanelOpen = !IsTodoPanelOpen);
         NavigateToTodoViewCommand = new RelayCommand(ExecuteNavigateToTodoView);
         AddColumnCommand = new AsyncRelayCommand(ExecuteAddColumnAsync);
         DeleteColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteDeleteColumnAsync);
+        RenameColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteRenameColumnAsync);
         SetDefaultViewColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteSetDefaultViewAsync);
+
+        _widthSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _widthSaveTimer.Tick += OnWidthSaveTimerTick;
 
         PropertyChanged += OnPropertyChanged;
         _todoService.TodoChanged += OnTodoChanged;
@@ -150,6 +146,92 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _columnService.ColumnsChanged += OnColumnsChanged;
 
         LoadVisibilitySettingAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnSearchQueryChanged(string value) => ApplySearchFilter();
+
+    public bool IsSearchActive => !string.IsNullOrWhiteSpace(SearchQuery);
+
+    private void ApplySearchFilter()
+    {
+        var query = (SearchQuery ?? string.Empty).Trim();
+        foreach (var columnVm in Columns)
+        {
+            var view = System.Windows.Data.CollectionViewSource.GetDefaultView(columnVm.Todos);
+            if (view is null)
+                continue;
+
+            if (query.Length == 0)
+            {
+                view.Filter = null;
+            }
+            else
+            {
+                view.Filter = item => item is TodoItem t && MatchesSearch(t, query);
+            }
+        }
+    }
+
+    private static bool MatchesSearch(TodoItem todo, string query)
+    {
+        if (todo.Title?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        if (todo.Notes?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        return false;
+    }
+
+    private void SubscribeColumn(KanbanColumnViewModel columnVm)
+    {
+        if (_subscribedColumns.Add(columnVm))
+            columnVm.PropertyChanged += OnColumnVmPropertyChanged;
+    }
+
+    private void UnsubscribeAllColumns()
+    {
+        foreach (var columnVm in _subscribedColumns)
+            columnVm.PropertyChanged -= OnColumnVmPropertyChanged;
+        _subscribedColumns.Clear();
+    }
+
+    private void OnColumnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(KanbanColumnViewModel.Width))
+            return;
+        if (_suppressWidthPersist || sender is not KanbanColumnViewModel columnVm)
+            return;
+
+        _dirtyWidths.Add(columnVm.Id);
+        _widthSaveTimer.Stop();
+        _widthSaveTimer.Start();
+    }
+
+    private async void OnWidthSaveTimerTick(object? sender, EventArgs e)
+    {
+        _widthSaveTimer.Stop();
+        if (_dirtyWidths.Count == 0)
+            return;
+
+        var snapshot = new Dictionary<Guid, double>();
+        foreach (var id in _dirtyWidths)
+        {
+            var columnVm = Columns.FirstOrDefault(c => c.Id == id);
+            if (columnVm is not null)
+                snapshot[id] = columnVm.Width;
+        }
+        _dirtyWidths.Clear();
+
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            foreach (var (id, width) in snapshot)
+                settings.TodoColumnWidths[id] = width;
+            await _settingsService.SaveSettingsAsync(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist Todo column widths");
+        }
     }
 
     private async Task LoadVisibilitySettingAsync()
@@ -204,7 +286,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
             var allColumns = await _columnService.GetAllAsync();
             var completedToday = await _todoService.GetCompletedTodayAsync();
+            var settings = await _settingsService.GetSettingsAsync();
 
+            UnsubscribeAllColumns();
             Columns.Clear();
             PendingTodos.Clear();
             CompletedTodos.Clear();
@@ -216,9 +300,18 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             {
                 var todos = await _todoService.GetByColumnAsync(column.Id);
                 var vm = new KanbanColumnViewModel(column);
+
+                if (settings.TodoColumnWidths.TryGetValue(column.Id, out var savedWidth))
+                {
+                    _suppressWidthPersist = true;
+                    vm.Width = ClampColumnWidth(savedWidth);
+                    _suppressWidthPersist = false;
+                }
+
                 foreach (var todo in todos)
                     vm.Todos.Add(todo);
 
+                SubscribeColumn(vm);
                 Columns.Add(vm);
 
                 if (column.IsDefaultView)
@@ -226,6 +319,8 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
                 if (column.IsClosedColumn)
                     closedColumnVm = vm;
             }
+
+            ApplySearchFilter();
 
             // Populate PendingTodos for the side panel (default view column)
             if (defaultViewColumnVm is not null)
@@ -244,6 +339,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             CompletedTodayCount = completedToday.Count;
             PendingCount = PendingTodos.Count;
             TotalTodayCount = CompletedTodayCount + PendingCount;
+            UpdateOverdueCount();
             UpdateProgress();
         }
         catch (Exception ex)
@@ -405,12 +501,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             TotalTodayCount = CompletedTodayCount + PendingCount;
             UpdateProgress();
 
-            if (EditingTodo == todo)
-            {
-                IsEditing = false;
-                EditingTodo = null;
-            }
-
             _snackbarService.Show(_localizationService["Msg_Todo_Deleted"], _localizationService.Format("Msg_Todo_TodoDeleted", todo.Title),
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
         }
@@ -421,38 +511,20 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         }
     }
 
-    private void ExecuteStartEdit(TodoItem? todo)
+    private async Task ExecuteStartEditAsync(TodoItem? todo)
     {
         if (todo is null)
             return;
 
-        EditingTodo = todo;
-        EditTitle = todo.Title;
-        EditNotes = todo.Notes ?? string.Empty;
-        EditPriority = todo.Priority;
-        EditDueDate = todo.DueDate;
-        IsEditing = true;
-        SaveEditCommand.NotifyCanExecuteChanged();
-    }
-
-    private bool CanSaveEdit() => IsEditing && EditingTodo is not null && !string.IsNullOrWhiteSpace(EditTitle);
-
-    private async Task ExecuteSaveEditAsync()
-    {
-        if (EditingTodo is null)
+        var editModel = TodoEditModel.FromTodo(todo);
+        var confirmed = await _dialogService.ShowTodoEditDialogAsync(editModel);
+        if (!confirmed)
             return;
 
         try
         {
-            EditingTodo.Title = EditTitle.Trim();
-            EditingTodo.Notes = string.IsNullOrWhiteSpace(EditNotes) ? null : EditNotes.Trim();
-            EditingTodo.Priority = EditPriority;
-            EditingTodo.DueDate = EditDueDate;
-
-            await _todoService.UpdateAsync(EditingTodo);
-
-            IsEditing = false;
-            EditingTodo = null;
+            editModel.ApplyTo(todo);
+            await _todoService.UpdateAsync(todo);
 
             // Refresh to reflect priority reordering
             await LoadTodosAsync();
@@ -467,12 +539,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         }
     }
 
-    private void ExecuteCancelEdit()
-    {
-        IsEditing = false;
-        EditingTodo = null;
-    }
-
     private void ExecuteNavigateToTodoView()
     {
         IsTodoPanelOpen = false;
@@ -485,6 +551,34 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             ? (double)CompletedTodayCount / TotalTodayCount * 100.0
             : 0;
         ProgressText = _localizationService.Format("Msg_Todo_ProgressText", CompletedTodayCount, TotalTodayCount);
+    }
+
+    private void UpdateOverdueCount()
+    {
+        var today = DateTime.Today;
+        var count = 0;
+        foreach (var columnVm in Columns)
+        {
+            foreach (var todo in columnVm.Todos)
+            {
+                if (todo.Status == TodoStatus.Pending
+                    && todo.DueDate.HasValue
+                    && todo.DueDate.Value.Date < today)
+                    count++;
+            }
+        }
+        OverdueCount = count;
+    }
+
+    private static double ClampColumnWidth(double width)
+    {
+        const double min = 200.0;
+        const double max = 600.0;
+        if (double.IsNaN(width) || width <= 0)
+            return KanbanColumnViewModel.DefaultWidth;
+        if (width < min) return min;
+        if (width > max) return max;
+        return width;
     }
 
     /// <summary>
@@ -555,9 +649,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     {
         if (e.PropertyName == nameof(NewTodoTitle))
             AddTodoCommand.NotifyCanExecuteChanged();
-
-        if (e.PropertyName is nameof(IsEditing) or nameof(EditTitle))
-            SaveEditCommand.NotifyCanExecuteChanged();
     }
 
     private async Task ExecuteAddColumnAsync()
@@ -672,6 +763,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     public async Task MoveTodoToColumnAsync(TodoItem todo, Guid targetColumnId, int newIndex)
     {
+        if (IsSearchActive)
+            return;
+
         try
         {
             _suppressTodoChanged = true;
@@ -735,6 +829,9 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
     public async Task ReorderWithinColumnAsync(Guid columnId, int oldIndex, int newIndex)
     {
+        if (IsSearchActive)
+            return;
+
         var columnVm = Columns.FirstOrDefault(c => c.Id == columnId);
         if (columnVm is null || oldIndex == newIndex || oldIndex < 0 || newIndex < 0
             || oldIndex >= columnVm.Todos.Count || newIndex >= columnVm.Todos.Count)
@@ -776,15 +873,24 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         }
     }
 
-    public async Task RenameColumnAsync(KanbanColumnViewModel columnVm, string newName)
+    private async Task ExecuteRenameColumnAsync(KanbanColumnViewModel? columnVm)
     {
-        if (columnVm.IsClosedColumn || string.IsNullOrWhiteSpace(newName))
+        if (columnVm is null || columnVm.IsClosedColumn)
             return;
+
+        var newName = await _dialogService.ShowInputDialogAsync(
+            _localizationService["Kanban_RenameColumn"],
+            _localizationService["Kanban_ColumnNamePrompt"]);
+
+        if (string.IsNullOrWhiteSpace(newName))
+            return;
+
+        var trimmed = newName.Trim();
 
         try
         {
-            await _columnService.RenameAsync(columnVm.Id, newName.Trim());
-            columnVm.Name = newName.Trim();
+            await _columnService.RenameAsync(columnVm.Id, trimmed);
+            columnVm.Name = trimmed;
         }
         catch (Exception ex)
         {
@@ -800,6 +906,16 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             return;
 
         _disposed = true;
+
+        if (_widthSaveTimer.IsEnabled)
+        {
+            _widthSaveTimer.Stop();
+            if (_dirtyWidths.Count > 0)
+                OnWidthSaveTimerTick(this, EventArgs.Empty);
+        }
+        _widthSaveTimer.Tick -= OnWidthSaveTimerTick;
+
+        UnsubscribeAllColumns();
         PropertyChanged -= OnPropertyChanged;
         _todoService.TodoChanged -= OnTodoChanged;
         _settingsService.SettingsChanged -= OnSettingsChanged;

@@ -1,12 +1,11 @@
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
-using Microsoft.Extensions.DependencyInjection;
 using Pia.Models;
-using Pia.Services.Interfaces;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 
@@ -14,9 +13,23 @@ namespace Pia.Views;
 
 public partial class TodoView : UserControl
 {
+    private const double MinColumnWidth = 200;
+    private const double MaxColumnWidth = 600;
+
     public TodoView()
     {
         InitializeComponent();
+    }
+
+    private void OnColumnResizeThumbDragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is not Thumb thumb || thumb.DataContext is not KanbanColumnViewModel columnVm)
+            return;
+
+        var newWidth = columnVm.Width + e.HorizontalChange;
+        if (newWidth < MinColumnWidth) newWidth = MinColumnWidth;
+        if (newWidth > MaxColumnWidth) newWidth = MaxColumnWidth;
+        columnVm.Width = newWidth;
     }
 
     private void OnColumnTodoListLoaded(object sender, RoutedEventArgs e)
@@ -166,26 +179,9 @@ public partial class TodoView : UserControl
 
     private async void OnRenameColumnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem { Tag: KanbanColumnViewModel columnVm }
-            || DataContext is not TodoViewModel vm)
-            return;
-
-        try
-        {
-            var dialogService = Bootstrapper.ServiceProvider.GetRequiredService<IDialogService>();
-            var locService = Bootstrapper.ServiceProvider.GetRequiredService<ILocalizationService>();
-
-            var newName = await dialogService.ShowInputDialogAsync(
-                locService["Kanban_RenameColumn"],
-                locService["Kanban_ColumnNamePrompt"]);
-
-            if (!string.IsNullOrWhiteSpace(newName))
-                await vm.RenameColumnAsync(columnVm, newName);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Rename failed: {ex.Message}");
-        }
+        if (sender is MenuItem { Tag: KanbanColumnViewModel columnVm }
+            && DataContext is TodoViewModel vm)
+            await vm.RenameColumnCommand.ExecuteAsync(columnVm);
     }
 
     private static T? FindAncestorByName<T>(DependencyObject? obj, string name) where T : FrameworkElement

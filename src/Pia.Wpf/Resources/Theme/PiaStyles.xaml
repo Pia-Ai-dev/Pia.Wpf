@@ -3,7 +3,8 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
-  <!-- Pia avatar — 28x28 rounded square, gradient + centered "P".
+  <!-- Pia avatar — 28x28 rounded square containing the Pia app icon,
+       styled like an iOS app icon (~22% corner radius). Theme-neutral.
        Targets ContentControl because Border has no Template DP. -->
   <Style x:Key="PiaAvatarStyle" TargetType="ContentControl">
     <Setter Property="Width"     Value="28"/>
@@ -12,20 +13,15 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ContentControl">
-          <Border CornerRadius="8">
-            <Border.Background>
-              <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="{Binding Source={StaticResource PiaInkColor}}"/>
-                <GradientStop Offset="1" Color="{Binding Source={StaticResource PiaAccentColor}}"/>
-              </LinearGradientBrush>
-            </Border.Background>
-            <TextBlock Text="P"
-                       FontFamily="{DynamicResource PiaDisplayFont}"
-                       FontWeight="Bold"
-                       FontSize="14"
-                       Foreground="White"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"/>
+          <Border CornerRadius="6"
+                  Background="{DynamicResource BgCanvasBrush}">
+            <Border.Effect>
+              <DropShadowEffect Color="#0F1729" Opacity="0.18"
+                                BlurRadius="6" ShadowDepth="1"/>
+            </Border.Effect>
+            <Image Source="pack://application:,,,/Resources/Icons/Pia.ico"
+                   Stretch="Uniform"
+                   Margin="2"/>
           </Border>
         </ControlTemplate>
       </Setter.Value>

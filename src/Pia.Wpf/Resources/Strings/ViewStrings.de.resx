@@ -182,6 +182,10 @@
   <data name="Todo_DueDateTooltip" xml:space="preserve"><value>Fälligkeitsdatum (optional)</value></data>
   <data name="Todo_AddTooltip" xml:space="preserve"><value>Aufgabe hinzufügen</value></data>
   <data name="Todo_Add" xml:space="preserve"><value>Hinzufügen</value></data>
+  <data name="Todo_Search_Placeholder" xml:space="preserve"><value>Titel oder Notizen durchsuchen...</value></data>
+  <data name="Todo_Stats_Open" xml:space="preserve"><value>offen</value></data>
+  <data name="Todo_Stats_CompletedToday" xml:space="preserve"><value>heute erledigt</value></data>
+  <data name="Todo_Stats_Overdue" xml:space="preserve"><value>überfällig</value></data>
   <!-- Todo Panel -->
   <data name="TodoPanel_Title" xml:space="preserve"><value>Aufgaben</value></data>
   <data name="TodoPanel_ClosePanel" xml:space="preserve"><value>Leiste schließen</value></data>

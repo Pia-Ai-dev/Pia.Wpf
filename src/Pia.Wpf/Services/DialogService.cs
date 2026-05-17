@@ -50,6 +50,15 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
+    public async Task<bool> ShowTodoEditDialogAsync(TodoEditModel todo)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new TodoEditContentDialog(dialogHost, todo);
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
+    }
+
     public async Task ShowSessionDetailDialogAsync(OptimizationSession session)
     {
         var dialogHost = _contentDialogService.GetDialogHostEx()
