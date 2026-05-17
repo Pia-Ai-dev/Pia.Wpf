@@ -311,8 +311,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (string.IsNullOrWhiteSpace(suggestion) || IsStreaming) return;
         InputText = suggestion;
-        if (SendMessageCommand.CanExecute(null))
-            SendMessageCommand.Execute(null);
     }
 
     private bool CanExecuteSendMessage() =>

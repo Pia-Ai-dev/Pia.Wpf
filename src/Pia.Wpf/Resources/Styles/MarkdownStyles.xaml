@@ -10,6 +10,7 @@
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
         <Setter Property="PagePadding" Value="0" />
+        <Setter Property="TextAlignment" Value="Left" />
 
         <Style.Resources>
             <!-- Paragraph: base + heading triggers -->

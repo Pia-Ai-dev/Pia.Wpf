@@ -162,7 +162,7 @@
                                 VerticalAlignment="Top" />
                 <chat:PiaAssistantMessage Grid.Column="1"
                     HorizontalAlignment="Left"
-                    MaxWidth="640"
+                    MaxWidth="880"
                     CopyCommand="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SpeakCommand="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     RegenerateCommand="{Binding DataContext.RegenerateMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -244,15 +244,6 @@
                          Margin="2,0"
                          ToolTip="{loc:Str Assistant_Record_Tooltip}">
                 <ui:SymbolIcon Symbol="Record24" FontSize="16" />
-              </ui:Button>
-
-              <!-- Voice Mode button -->
-              <ui:Button Command="{Binding EnterVoiceModeCommand}"
-                         Appearance="Transparent"
-                         Padding="6,4"
-                         Margin="2,0"
-                         ToolTip="{loc:Str Assistant_VoiceConversation_Tooltip}">
-                <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
               </ui:Button>
             </StackPanel>
 
