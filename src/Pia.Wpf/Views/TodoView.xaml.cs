@@ -148,6 +148,67 @@ public partial class TodoView : UserControl
             columnVm.IsExpanded = true;
     }
 
+    private static bool TryGetDragTodo(DragEventArgs e, out TodoItem todo, out string sourceColumnId)
+    {
+        todo = null!;
+        sourceColumnId = string.Empty;
+        if (!e.Data.GetDataPresent("DragItem") || !e.Data.GetDataPresent("SourceColumnId"))
+            return false;
+        if (e.Data.GetData("DragItem") is not TodoItem t) return false;
+        todo = t;
+        sourceColumnId = (string)e.Data.GetData("SourceColumnId")!;
+        return true;
+    }
+
+    private void OnClosedCollapsedDragEnter(object sender, DragEventArgs e)
+    {
+        if (sender is Border border && TryGetDragTodo(e, out _, out var sourceId)
+            && border.Tag is KanbanColumnViewModel columnVm
+            && columnVm.Id.ToString() != sourceId)
+        {
+            border.BorderBrush = (Brush)FindResource("PiaAccentBrush");
+            border.Background = (Brush)FindResource("SurfaceBrush");
+            e.Effects = DragDropEffects.Move;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+        e.Handled = true;
+    }
+
+    private void OnClosedCollapsedDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = TryGetDragTodo(e, out _, out _) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnClosedCollapsedDragLeave(object sender, DragEventArgs e)
+    {
+        if (sender is Border border)
+        {
+            border.BorderBrush = (Brush)FindResource("BorderBrush_");
+            border.Background = (Brush)FindResource("SurfaceMutedBrush");
+        }
+        e.Handled = true;
+    }
+
+    private async void OnClosedCollapsedDrop(object sender, DragEventArgs e)
+    {
+        if (sender is not Border border) return;
+
+        border.BorderBrush = (Brush)FindResource("BorderBrush_");
+        border.Background = (Brush)FindResource("SurfaceMutedBrush");
+        e.Handled = true;
+
+        if (!TryGetDragTodo(e, out var todo, out var sourceId)) return;
+        if (border.Tag is not KanbanColumnViewModel columnVm) return;
+        if (columnVm.Id.ToString() == sourceId) return;
+        if (DataContext is not TodoViewModel vm) return;
+
+        await vm.MoveTodoToColumnAsync(todo, columnVm.Id, columnVm.Todos.Count);
+    }
+
     private void OnCollapseClosedClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement fe && fe.DataContext is KanbanColumnViewModel columnVm)
