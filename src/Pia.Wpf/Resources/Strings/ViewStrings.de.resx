@@ -328,6 +328,11 @@
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Folgevorschläge anzeigen</value></data>
   <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Nach jeder Antwort des Assistenten 2–4 Folgefragen als Chips vorschlagen. Verursacht eine kleine zusätzliche Anfrage pro Runde.</value></data>
+  <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Assistenten-Dateiordner</value></data>
+  <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>Kein Ordner ausgewählt</value></data>
+  <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Durchsuchen…</value></data>
+  <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Leeren</value></data>
+  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Ordner, in dem der Assistent Textdateien lesen, zusammenfassen, ändern oder löschen darf. Der Assistent ist auf diesen Ordner beschränkt und kann nicht auf Dateien außerhalb davon zugreifen. Leer lassen, um die Datei-Tools zu deaktivieren.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Globale Tastenkürzel</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Drücke ein Tastenkürzel, wenn die App ausgeblendet ist, um das Fenster unter dem Cursor zu erfassen und Pia im entsprechenden Modus zu öffnen</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimieren</value></data>
@@ -564,10 +569,12 @@
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>
   <data name="ActionCard_Category_Todo" xml:space="preserve"><value>Aufgabe</value></data>
   <data name="ActionCard_Category_Reminder" xml:space="preserve"><value>Erinnerung</value></data>
+  <data name="ActionCard_Category_File" xml:space="preserve"><value>Datei</value></data>
   <data name="ActionCard_Action_Create" xml:space="preserve"><value>Erstellen</value></data>
   <data name="ActionCard_Action_Update" xml:space="preserve"><value>Aktualisieren</value></data>
   <data name="ActionCard_Action_Delete" xml:space="preserve"><value>Löschen</value></data>
   <data name="ActionCard_Action_Complete" xml:space="preserve"><value>Abschließen</value></data>
+  <data name="ActionCard_Action_Write" xml:space="preserve"><value>Schreiben</value></data>
   <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Erledigt</value></data>
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Abgelehnt</value></data>
   <!-- Enum Display Names -->

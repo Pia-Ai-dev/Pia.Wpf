@@ -91,6 +91,10 @@ public class AppSettings
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = true;
 
+    // Sandboxed folder the assistant's file tool may read/write/delete in.
+    // Null/empty disables the tool entirely.
+    public string? AssistantFilesFolder { get; set; }
+
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
 

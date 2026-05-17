@@ -13,10 +13,11 @@ public static class BuiltInPluginDefaults
     public static readonly Guid ReminderPluginId = new("10000000-0000-0000-0000-000000000003");
     public static readonly Guid ScheduledResearchPluginId = new("10000000-0000-0000-0000-000000000004");
     public static readonly Guid ResearchHistoryPluginId = new("10000000-0000-0000-0000-000000000005");
+    public static readonly Guid FilesPluginId = new("10000000-0000-0000-0000-000000000006");
 
     public static readonly HashSet<Guid> PreloadedPluginIds = [
         MemoryPluginId, TodoPluginId, ReminderPluginId,
-        ScheduledResearchPluginId, ResearchHistoryPluginId];
+        ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -79,6 +80,18 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"research-history","defaultEnabled":true,"systemPromptAddition":"You can search the user's prior research findings. Use search_research_history to find past research and get_research_entry to retrieve a full entry by ID."}""",
             UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [FilesPluginId] = new SyncPlugin
+        {
+            Id = FilesPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "files",
+            Description = "Read, summarize, update and delete text files inside a user-configured sandbox folder.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"files","defaultEnabled":true,"systemPromptAddition":"You have access to a sandboxed local folder configured by the user under Settings > Assistant. Tools: list_files, read_file, write_file, delete_file. All paths are RELATIVE to that folder and must not contain absolute paths or '..' traversal — the host rejects anything that would escape the folder. If a tool returns an error about the folder not being configured, tell the user to set it in Settings > Assistant. When the user asks to summarize a file, call read_file first and then summarize the returned content in your reply."}""",
+            UpdatedAt = new DateTime(2026, 5, 17, 0, 0, 0, DateTimeKind.Utc)
         }
     };
 }

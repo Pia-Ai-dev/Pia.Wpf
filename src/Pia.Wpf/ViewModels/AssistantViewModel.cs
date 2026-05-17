@@ -650,6 +650,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             "memory" => ActionCardCategory.Memory,
             "todo" => ActionCardCategory.Todo,
             "reminder" => ActionCardCategory.Reminder,
+            "files" => ActionCardCategory.Files,
             _ => ActionCardCategory.Memory
         };
 
@@ -660,6 +661,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             "memory" => _localizationService["Msg_Assistant_PermanentDeleteMemory"],
             "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
             "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
+            "files" => _localizationService["Msg_Assistant_PermanentDeleteFile"],
             _ => null
         } : null;
 
@@ -690,6 +692,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ActionCardCategory.Memory => "ActionCard_Category_Memory",
             ActionCardCategory.Todo => "ActionCard_Category_Todo",
             ActionCardCategory.Reminder => "ActionCard_Category_Reminder",
+            ActionCardCategory.Files => "ActionCard_Category_File",
             _ => "ActionCard_Category_Memory"
         };
 
@@ -697,8 +700,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             "create_object" or "create_todo" or "create_reminder" => "ActionCard_Action_Create",
             "update_object" or "append_to_list" or "update_todo" or "update_reminder" => "ActionCard_Action_Update",
-            "delete_object" or "delete_todo" or "delete_reminder" => "ActionCard_Action_Delete",
+            "delete_object" or "delete_todo" or "delete_reminder" or "delete_file" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
+            "write_file" => "ActionCard_Action_Write",
             _ => "ActionCard_Action_Create"
         };
 

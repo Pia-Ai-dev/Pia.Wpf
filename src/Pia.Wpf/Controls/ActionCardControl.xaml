@@ -57,6 +57,9 @@
                     <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Reminder}">
                       <Setter Property="Symbol" Value="Alert24" />
                     </DataTrigger>
+                    <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Files}">
+                      <Setter Property="Symbol" Value="Document24" />
+                    </DataTrigger>
                   </Style.Triggers>
                 </Style>
               </ui:SymbolIcon.Style>
