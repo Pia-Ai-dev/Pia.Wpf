@@ -92,6 +92,15 @@
                   Margin="0,0,0,16" />
     </StackPanel>
 
+    <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=ReasoningEffort}">
+      <TextBlock Text="Reasoning effort"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
+                SelectedItem="{Binding ReasoningEffort, Mode=TwoWay}"
+                Margin="0,0,0,16" />
+    </StackPanel>
+
     <TextBlock Text="{loc:Str Dialog_ProviderEdit_Timeout}"
                FontWeight="SemiBold"
                Margin="0,0,0,4" />

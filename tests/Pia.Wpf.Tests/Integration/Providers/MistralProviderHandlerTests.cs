@@ -1,0 +1,99 @@
+using Microsoft.Extensions.AI;
+using Pia.Models;
+using Xunit;
+using ReasoningEffort = Pia.Models.ReasoningEffort;
+
+namespace Pia.Wpf.Tests.Integration.Providers;
+
+public class MistralProviderHandlerTests
+{
+    private readonly ProviderIntegrationFixture _fixture = new();
+
+    private static AiProvider? TryBuildProvider(
+        ReasoningEffort effort = ReasoningEffort.None,
+        string? modelOverride = null)
+    {
+        var (endpoint, key, model) = ProviderTestEnvironment.Mistral();
+        if (string.IsNullOrEmpty(key)) return null;
+        return new AiProvider
+        {
+            Name = "Mistral Integration",
+            ProviderType = AiProviderType.Mistral,
+            Endpoint = endpoint,
+            ModelName = modelOverride ?? model,
+            EncryptedApiKey = key,
+            SupportsToolCalling = true,
+            SupportsStreaming = true,
+            TimeoutSeconds = 60,
+            ReasoningEffort = effort,
+        };
+    }
+
+    [Fact]
+    public async Task SendRequestAsync_ReturnsCompletion()
+    {
+        var provider = TryBuildProvider();
+        if (provider is null) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
+
+        var result = await _fixture.BuildClient().SendRequestAsync(provider, "Reply with the single word: ready.", TestContext.Current.CancellationToken);
+        Assert.False(string.IsNullOrWhiteSpace(result.Text));
+    }
+
+    [Fact]
+    public async Task StreamChatCompletionAsync_YieldsAtLeastOneDelta()
+    {
+        var provider = TryBuildProvider();
+        if (provider is null) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
+
+        var client = _fixture.BuildClient();
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.User, "Reply with the single word: ready."),
+        };
+
+        var any = false;
+        await foreach (var token in client.StreamChatCompletionAsync(messages, provider, cancellationToken: TestContext.Current.CancellationToken))
+        {
+            if (!string.IsNullOrEmpty(token)) { any = true; break; }
+        }
+        Assert.True(any);
+    }
+
+    [Fact]
+    public async Task TestStreamingAsync_ReturnsTrue()
+    {
+        var provider = TryBuildProvider();
+        if (provider is null) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
+
+        Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Regression: with ReasoningEffort=Medium on the default (small-latest)
+    /// model, the handler must clamp to High before sending and not 422.
+    /// </summary>
+    [Fact]
+    public async Task SendRequestAsync_WithMediumReasoning_ClampsToHighAndSucceeds()
+    {
+        var provider = TryBuildProvider(ReasoningEffort.Medium);
+        if (provider is null) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
+
+        var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);
+        Assert.False(string.IsNullOrWhiteSpace(result.Text));
+    }
+
+    /// <summary>
+    /// Regression: on a non-reasoning-capable model (mistral-large), the
+    /// handler must NOT send `reasoning_effort` at all, even if the user
+    /// configured one. Otherwise Mistral returns 422.
+    /// </summary>
+    [Fact]
+    public async Task SendRequestAsync_WithIncompatibleModel_OmitsReasoningField()
+    {
+        var provider = TryBuildProvider(ReasoningEffort.Medium, modelOverride: "mistral-large-latest");
+        if (provider is null) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
+
+        var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);
+        Assert.False(string.IsNullOrWhiteSpace(result.Text));
+    }
+}

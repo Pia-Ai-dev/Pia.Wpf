@@ -40,8 +40,13 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private bool _supportsStreaming = true;
 
+    [ObservableProperty]
+    private ReasoningEffort _reasoningEffort = ReasoningEffort.None;
+
     public static AiProviderType[] EditableProviderTypes { get; } =
         Enum.GetValues<AiProviderType>().Where(t => t != AiProviderType.PiaCloud).ToArray();
+
+    public ReasoningEffort[] ReasoningEffortOptions { get; } = Enum.GetValues<ReasoningEffort>();
 
     public ObservableCollection<string> AvailableModels { get; } = [];
 
@@ -57,6 +62,7 @@ public partial class ProviderEditModel : ObservableValidator
         [AiProviderType.OpenRouter] = "https://openrouter.ai/api/v1",
         [AiProviderType.OpenAI] = "https://api.openai.com/v1",
         [AiProviderType.Mistral] = "https://api.mistral.ai/v1",
+        [AiProviderType.VLlm] = "http://localhost:8000/v1",
     };
 
     partial void OnProviderTypeChanged(AiProviderType oldValue, AiProviderType newValue)
@@ -86,7 +92,8 @@ public partial class ProviderEditModel : ObservableValidator
             AzureDeploymentName = provider.AzureDeploymentName,
             TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 300 ? provider.TimeoutSeconds : 300,
             SupportsToolCalling = provider.SupportsToolCalling,
-            SupportsStreaming = provider.SupportsStreaming
+            SupportsStreaming = provider.SupportsStreaming,
+            ReasoningEffort = provider.ReasoningEffort ?? ReasoningEffort.None,
         };
     }
 
@@ -102,7 +109,8 @@ public partial class ProviderEditModel : ObservableValidator
             AzureDeploymentName = AzureDeploymentName,
             SupportsToolCalling = SupportsToolCalling,
             SupportsStreaming = SupportsStreaming,
-            TimeoutSeconds = TimeoutSeconds
+            TimeoutSeconds = TimeoutSeconds,
+            ReasoningEffort = ReasoningEffort,
         };
     }
 }

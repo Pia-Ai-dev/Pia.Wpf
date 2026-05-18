@@ -8,6 +8,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 
 namespace Pia.Tests.Integration;
 
@@ -118,10 +119,26 @@ public abstract class ToolPipelineTestBase
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
 
+        var handlers = new IAiProviderHandler[]
+        {
+            new OpenAiProviderHandler(),
+            new AzureOpenAiProviderHandler(),
+            new OllamaProviderHandler(),
+            new MistralProviderHandler(),
+            new OpenRouterProviderHandler(),
+            new OpenAiCompatibleProviderHandler(),
+            new VLlmProviderHandler(),
+            new PiaCloudProviderHandler(
+                dpapiHelper,
+                settingsService,
+                NullLogger<PiaCloudProviderHandler>.Instance),
+        };
+
         _aiClientService = new AiClientService(
             dpapiHelper,
             httpClientFactory,
             settingsService,
+            new AiProviderHandlerResolver(handlers),
             NullLogger<AiClientService>.Instance);
     }
 
