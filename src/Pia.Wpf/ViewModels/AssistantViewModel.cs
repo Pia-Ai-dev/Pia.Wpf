@@ -28,7 +28,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private string BuildLanguageInstruction()
     {
         var languageName = GetLanguageName(_localizationService.CurrentLanguage);
-        return $"Always respond to the user in {languageName} unless the user explicitly writes in another language or asks you to switch.";
+        return $"Always respond to the user in '{languageName}' unless the user asks you to switch.";
     }
 
     private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false)
@@ -72,6 +72,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             {pluginSection}{toolSelectionSection}## Principles
 
+            - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+            - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
+            - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+            - Do not restate the user's question and do not summarize what you just said at the end of a reply.
             - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.
             {tokenSection}
             """;
@@ -142,6 +146,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ## Language
 
         {BuildLanguageInstruction()}
+
+        ## Principles
+
+        - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+        - Write plain prose. Use formatting elements rare. Avoid bold, italics; reserve **bold** only for safety-critical warnings.
+        - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+        - Do not restate the user's question and do not summarize what you just said at the end of a reply.
         """;
 
     private readonly ILogger<AssistantViewModel> _logger;
