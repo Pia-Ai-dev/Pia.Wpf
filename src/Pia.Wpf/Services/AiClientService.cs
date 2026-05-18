@@ -96,6 +96,11 @@ public class AiClientService : IAiClientService
             _logger.LogWarning("SendRequestAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SendRequestAsync: provider {ProviderName} threw an exception", provider.Name);
+            throw;
+        }
     }
 
     public async IAsyncEnumerable<string> StreamChatCompletionAsync(
