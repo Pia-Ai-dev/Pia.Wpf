@@ -8,26 +8,29 @@
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
     <converters:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
   </UserControl.Resources>
-  <ScrollViewer Margin="16"
-                HorizontalScrollBarVisibility="Auto">
-    <StackPanel MinWidth="500">
+  <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+    <StackPanel MaxWidth="720" HorizontalAlignment="Left">
       <!-- Provider selector for Optimize mode -->
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_Tab_Providers}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{loc:Str Settings_Tab_Providers}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ComboBox ItemsSource="{Binding ProvidersVm.Providers}"
                   SelectedValue="{Binding ProvidersVm.OptimizeProviderId}"
                   SelectedValuePath="Id"
                   DisplayMemberPath="Name"
-                  Width="400"/>
+                  Width="400"
+                  HorizontalAlignment="Left"/>
       </StackPanel>
 
       <!-- Output Action -->
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_OutputAction}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{loc:Str Settings_OutputAction}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ComboBox ItemsSource="{Binding OutputActions}"
                   SelectedItem="{Binding OutputAction}"
                   IsEnabled="{Binding IsOutputActionEnforced, Converter={StaticResource InverseBooleanConverter}}"
-                  Width="400">
+                  Width="400"
+                  HorizontalAlignment="Left">
           <ComboBox.ItemTemplate>
             <DataTemplate>
               <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
@@ -37,7 +40,7 @@
       </StackPanel>
 
       <!-- Auto-Type Delay -->
-      <StackPanel Margin="0,0,0,24">
+      <StackPanel Margin="0,0,0,20">
         <StackPanel.Style>
           <Style TargetType="StackPanel">
             <Setter Property="Visibility" Value="Collapsed"/>
@@ -48,25 +51,24 @@
             </Style.Triggers>
           </Style>
         </StackPanel.Style>
-        <TextBlock Text="{loc:Str Settings_AutoTypeDelay}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Text="{loc:Str Settings_AutoTypeDelay}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ui:NumberBox Value="{Binding AutoTypeDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                       IsEnabled="{Binding IsAutoTypeDelayEnforced, Converter={StaticResource InverseBooleanConverter}}"
                       Minimum="5"
                       Maximum="100"
-                      Width="200"/>
+                      Width="200"
+                      HorizontalAlignment="Left"/>
         <TextBlock Text="{loc:Str Settings_AutoTypeDelay_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,4,0,0"/>
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
       </StackPanel>
 
-      <!-- Separator -->
       <Border BorderThickness="0,1,0,0"
-              BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-              Margin="0,8,0,24" />
+              BorderBrush="{DynamicResource BorderBrush_}"
+              Margin="0,4,0,20"/>
 
       <!-- Templates section -->
-      <Grid Margin="0,0,0,12">
+      <Grid Margin="0,0,0,8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
@@ -74,40 +76,45 @@
         <TextBlock Text="{loc:Str Settings_Tab_Templates}"
                    FontSize="14"
                    FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
                    VerticalAlignment="Center"/>
-        <ui:Button Grid.Column="1" Command="{Binding AddTemplateCommand}">
+        <ui:Button Grid.Column="1"
+                   Appearance="Secondary"
+                   Command="{Binding AddTemplateCommand}">
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,8,0"/>
+            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
             <TextBlock Text="{loc:Str Templates_Add}"/>
           </StackPanel>
         </ui:Button>
       </Grid>
 
       <TextBlock Text="{loc:Str Templates_Description}"
-                 Opacity="0.7"
-                 Margin="0,0,0,16"/>
+                 FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,12"/>
 
       <ItemsControl ItemsSource="{Binding Templates}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Border Background="{DynamicResource SecondaryBackgroundBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorBrush}"
-                    BorderThickness="1"
-                    CornerRadius="4"
-                    Padding="10"
-                    Margin="0,0,0,4">
+            <Border Style="{StaticResource PiaSettingsCardStyle}"
+                    Padding="14,12"
+                    Margin="0,0,0,8">
               <StackPanel>
-                <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}"/>
+                <TextBlock FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextDefaultBrush}"
+                           Text="{Binding Name}"/>
                 <TextBlock Text="{Binding Description}"
-                           Opacity="0.7"
                            FontSize="12"
+                           Foreground="{DynamicResource TextMutedBrush}"
                            Margin="0,2,0,0"
                            TextWrapping="Wrap"/>
-                <DockPanel Margin="0,6,0,0">
+                <DockPanel Margin="0,10,0,0">
                   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:Button Command="{Binding DataContext.ViewTemplatePromptCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                               CommandParameter="{Binding}"
-                              Appearance="Caution"
+                              Appearance="Secondary"
                               Height="30"
                               Padding="8,0"
                               FontSize="12"
@@ -119,6 +126,7 @@
                     </ui:Button>
                     <ui:Button Command="{Binding DataContext.SetDefaultTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                               CommandParameter="{Binding}"
+                              Appearance="Secondary"
                               Height="30"
                               Padding="8,0"
                               FontSize="12"
@@ -133,6 +141,7 @@
                               Appearance="Secondary"
                               Width="30"
                               Height="30"
+                              Padding="0"
                               Margin="0,0,4,0"
                               Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <ui:SymbolIcon Symbol="Edit24" FontSize="14"/>
@@ -142,11 +151,13 @@
                     </ui:Button>
                     <ui:Button Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                               CommandParameter="{Binding}"
-                              Appearance="Danger"
+                              Appearance="Secondary"
                               Width="30"
                               Height="30"
+                              Padding="0"
                               Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                      <ui:SymbolIcon Symbol="Delete24" FontSize="14"/>
+                      <ui:SymbolIcon Symbol="Delete24" FontSize="14"
+                                     Foreground="{DynamicResource PiaDangerBrush}"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Templates_Delete}"/>
                       </ui:Button.ToolTip>

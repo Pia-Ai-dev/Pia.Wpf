@@ -223,6 +223,96 @@
     </Setter>
   </Style>
 
+  <!-- Settings — section label above a field row. -->
+  <Style x:Key="PiaSettingsSectionLabelStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"   Value="13"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
+    <Setter Property="Margin"     Value="0,0,0,6"/>
+  </Style>
+
+  <!-- Settings — small muted explanation under a field. -->
+  <Style x:Key="PiaSettingsDescriptionStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"     Value="12"/>
+    <Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="Margin"       Value="0,6,0,0"/>
+  </Style>
+
+  <!-- Settings — large page title (matches History/Memory/Todo headers). -->
+  <Style x:Key="PiaSettingsPageTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"   Value="22"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
+  </Style>
+
+  <!-- Settings — content card. Lighter than PiaCardStyle (no shadow) so that
+       stacked rows in a section stay readable without competing for attention. -->
+  <Style x:Key="PiaSettingsCardStyle" TargetType="Border">
+    <Setter Property="Background"      Value="{DynamicResource SurfaceBrush}"/>
+    <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush_}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius"    Value="{StaticResource LargeRadius}"/>
+    <Setter Property="Padding"         Value="14,12"/>
+  </Style>
+
+  <!-- Settings — left sidebar item. Replaces the inline ListBoxItem template
+       that used to live in SettingsView.xaml; same 3-px accent indicator
+       vocabulary used elsewhere in the app. -->
+  <Style x:Key="PiaSettingsSidebarItemStyle" TargetType="ListBoxItem">
+    <Setter Property="Padding"      Value="10,8"/>
+    <Setter Property="Margin"       Value="0,2"/>
+    <Setter Property="Cursor"       Value="Hand"/>
+    <Setter Property="Background"   Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="Bd"
+                  Background="{TemplateBinding Background}"
+                  CornerRadius="8"
+                  Padding="{TemplateBinding Padding}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="Indicator"
+                      Grid.Column="0"
+                      Width="3"
+                      Height="16"
+                      CornerRadius="1.5"
+                      Background="{DynamicResource PiaAccentBrush}"
+                      Margin="0,0,10,0"
+                      VerticalAlignment="Center"
+                      Visibility="Hidden"/>
+              <ContentPresenter Grid.Column="1"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"/>
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceMutedBrush}"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceBrush}"/>
+              <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+              <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Memory row container: strips ListBoxItem chrome, draws the 3-px
        accent bar when selected (matches chat sidebar selection vocabulary). -->
   <Style x:Key="PiaMemoryRowItemStyle" TargetType="ListBoxItem">

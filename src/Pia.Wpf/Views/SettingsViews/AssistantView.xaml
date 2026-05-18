@@ -7,24 +7,28 @@
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
   </UserControl.Resources>
-  <ScrollViewer Margin="16">
-    <StackPanel MaxWidth="600" HorizontalAlignment="Left">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel MaxWidth="640" HorizontalAlignment="Left">
       <!-- Provider selector for Assistant mode -->
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_Tab_Providers}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{loc:Str Settings_Tab_Providers}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ComboBox ItemsSource="{Binding ProvidersVm.Providers}"
                   SelectedValue="{Binding ProvidersVm.AssistantProviderId}"
                   SelectedValuePath="Id"
                   DisplayMemberPath="Name"
-                  Width="400"/>
+                  Width="400"
+                  HorizontalAlignment="Left"/>
       </StackPanel>
 
       <!-- Default Window Mode -->
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_DefaultWindowMode}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{loc:Str Settings_DefaultWindowMode}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ComboBox ItemsSource="{Binding WindowModes}"
                   SelectedItem="{Binding DefaultWindowMode}"
-                  Width="400">
+                  Width="400"
+                  HorizontalAlignment="Left">
           <ComboBox.ItemTemplate>
             <DataTemplate>
               <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
@@ -32,48 +36,41 @@
           </ComboBox.ItemTemplate>
         </ComboBox>
         <TextBlock Text="{loc:Str Settings_DefaultWindowMode_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="0,4,0,0"/>
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
       </StackPanel>
 
       <!-- Todo Panel Toggle -->
-      <StackPanel Margin="0,0,0,24">
+      <StackPanel Margin="0,0,0,20">
         <CheckBox Content="{loc:Str Settings_ShowTodoPanelButton}"
-                  IsChecked="{Binding ShowTodoPanelButton}"
-                  Margin="0,4,0,0"/>
+                  IsChecked="{Binding ShowTodoPanelButton}"/>
         <TextBlock Text="{loc:Str Settings_ShowTodoPanelButton_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="20,4,0,0"/>
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                   Margin="22,4,0,0"/>
       </StackPanel>
 
       <!-- Follow-up Suggestion Chips -->
-      <StackPanel Margin="0,0,0,24">
+      <StackPanel Margin="0,0,0,20">
         <CheckBox Content="{loc:Str Settings_AssistantSuggestions}"
-                  IsChecked="{Binding SuggestionsEnabled}"
-                  Margin="0,4,0,0"/>
+                  IsChecked="{Binding SuggestionsEnabled}"/>
         <TextBlock Text="{loc:Str Settings_AssistantSuggestions_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   Margin="20,4,0,0"/>
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                   Margin="22,4,0,0"/>
       </StackPanel>
 
       <!-- Files Folder (sandboxed) -->
-      <StackPanel Margin="0,0,0,24">
-        <TextBlock Text="{loc:Str Settings_AssistantFilesFolder}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <Grid>
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{loc:Str Settings_AssistantFilesFolder}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+        <Grid HorizontalAlignment="Left">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="400"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <ui:TextBox Grid.Column="0"
                       Text="{Binding FilesFolder, UpdateSourceTrigger=PropertyChanged}"
                       PlaceholderText="{loc:Str Settings_AssistantFilesFolder_Placeholder}"
-                      PlaceholderEnabled="True"
-                      Width="400"
-                      HorizontalAlignment="Left"/>
+                      PlaceholderEnabled="True"/>
           <ui:Button Grid.Column="1"
                      Content="{loc:Str Settings_AssistantFilesFolder_Browse}"
                      Command="{Binding BrowseFilesFolderCommand}"
@@ -85,10 +82,7 @@
                      Margin="4,0,0,0"/>
         </Grid>
         <TextBlock Text="{loc:Str Settings_AssistantFilesFolder_Description}"
-                   Opacity="0.7"
-                   FontSize="12"
-                   TextWrapping="Wrap"
-                   Margin="0,4,0,0"/>
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>
