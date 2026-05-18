@@ -11,6 +11,7 @@
   <ui:NavigationView x:Name="SidebarNavigationView"
                      PaneDisplayMode="Left"
                      IsPaneOpen="False"
+                     OpenPaneLength="200"
                      Transition="FadeInWithSlide">
 
     <ui:NavigationView.MenuItems>
