@@ -244,6 +244,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand<string> UseSuggestionCommand { get; }
     public IRelayCommand<string> UseFollowupCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
+    public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -294,6 +295,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
         UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
+        HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
@@ -924,6 +926,40 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 null,
                 TimeSpan.FromSeconds(3));
         }
+    }
+
+    private async Task ExecuteHandleFilesDropped(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0) return;
+        if (IsStreaming) return;
+
+        var text = await DroppedFileImporter.TryImportAsync(
+            paths, _logger, _snackbarService, _localizationService);
+        if (text is not null)
+            InsertOrPromptInsertAnyway(text);
+    }
+
+    private void InsertOrPromptInsertAnyway(string text)
+    {
+        if (string.IsNullOrEmpty(InputText))
+        {
+            InputText = text;
+            SendMessageCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        SnackbarActionHelper.ShowWithAction(
+            _snackbarService,
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+            _localizationService["Msg_SelectionNotPasted_InsertAnyway"],
+            () =>
+            {
+                InputText = text;
+                SendMessageCommand.NotifyCanExecuteChanged();
+            },
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            TimeSpan.FromSeconds(8));
     }
 
     private void ExecuteToggleTts()
