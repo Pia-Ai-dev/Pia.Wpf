@@ -43,7 +43,7 @@ public class AiClientService : IAiClientService
         _logger = logger;
     }
 
-    public async Task<string> SendRequestAsync(
+    public async Task<AiCompletionResult> SendRequestAsync(
         AiProvider provider,
         string prompt,
         CancellationToken cancellationToken = default)
@@ -82,7 +82,14 @@ public class AiClientService : IAiClientService
             if (response.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length)
                 throw new LlmTruncatedException(provider.Name, text.Length);
 
-            return text;
+            var tokensUsed = 0;
+            if (response.Usage is { } usage)
+            {
+                if (usage.InputTokenCount is long input) tokensUsed += (int)input;
+                if (usage.OutputTokenCount is long output) tokensUsed += (int)output;
+            }
+
+            return new AiCompletionResult(text, tokensUsed);
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
@@ -532,7 +539,7 @@ public class AiClientService : IAiClientService
         }
     }
 
-    public async Task<string> OptimizeViaPiaCloudAsync(
+    public async Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
         string text,
         Guid templateId,
         string language,
@@ -622,10 +629,19 @@ public class AiClientService : IAiClientService
             }
 
             using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
-            var optimizedText = doc.RootElement.GetProperty("optimizedText").GetString()
+            var responseRoot = doc.RootElement;
+            var optimizedText = responseRoot.GetProperty("optimizedText").GetString()
                 ?? throw new InvalidOperationException("Server returned empty optimized text");
-            _logger.LogDebug("PiaCloud optimize: extracted text length={Length}", optimizedText.Length);
-            return optimizedText;
+
+            var tokensUsed = 0;
+            if (responseRoot.TryGetProperty("inputTokens", out var inputEl) && inputEl.TryGetInt32(out var inputTokens))
+                tokensUsed += inputTokens;
+            if (responseRoot.TryGetProperty("outputTokens", out var outputEl) && outputEl.TryGetInt32(out var outputTokens))
+                tokensUsed += outputTokens;
+
+            _logger.LogDebug("PiaCloud optimize: extracted text length={Length}, tokens={Tokens}",
+                optimizedText.Length, tokensUsed);
+            return new AiCompletionResult(optimizedText, tokensUsed);
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {

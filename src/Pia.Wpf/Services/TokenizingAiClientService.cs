@@ -69,17 +69,17 @@ public class TokenizingAiClientService : IAiClientService
         return _enabled.Value;
     }
 
-    public async Task<string> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
+    public async Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
     {
         if (!await IsEnabledAsync())
             return await _inner.SendRequestAsync(provider, prompt, cancellationToken);
 
         var tokenizedPrompt = TryGetTokenMapService()!.TokenizeStructuredResult(prompt);
         var result = await _inner.SendRequestAsync(provider, tokenizedPrompt, cancellationToken);
-        var detokenized = TryGetTokenMapService()!.Detokenize(result);
+        var detokenized = TryGetTokenMapService()!.Detokenize(result.Text);
         _logger.LogDebug("Tokenizing.SendRequest: pre-detok length={Pre}, post-detok length={Post}",
-            result.Length, detokenized.Length);
-        return detokenized;
+            result.Text.Length, detokenized.Length);
+        return result with { Text = detokenized };
     }
 
     public async IAsyncEnumerable<string> StreamChatCompletionAsync(
@@ -191,7 +191,7 @@ public class TokenizingAiClientService : IAiClientService
             yield return new TextDelta(TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString()));
     }
 
-    public async Task<string> OptimizeViaPiaCloudAsync(
+    public async Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
         string text, Guid templateId, string language, bool isVoiceInput,
         string? mode = null, CancellationToken cancellationToken = default)
     {
@@ -200,10 +200,10 @@ public class TokenizingAiClientService : IAiClientService
 
         var tokenizedText = TryGetTokenMapService()!.TokenizeStructuredResult(text);
         var result = await _inner.OptimizeViaPiaCloudAsync(tokenizedText, templateId, language, isVoiceInput, mode, cancellationToken);
-        var detokenized = TryGetTokenMapService()!.Detokenize(result);
+        var detokenized = TryGetTokenMapService()!.Detokenize(result.Text);
         _logger.LogDebug("Tokenizing.OptimizeViaPiaCloud: pre-detok length={Pre}, post-detok length={Post}",
-            result.Length, detokenized.Length);
-        return detokenized;
+            result.Text.Length, detokenized.Length);
+        return result with { Text = detokenized };
     }
 
     public Task<string> GeneratePromptViaPiaCloudAsync(string styleDescription, string? mode = null, CancellationToken cancellationToken = default)

@@ -294,7 +294,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             {
                 var testPrompt = "Say 'Connection successful' if you can read this.";
                 var response = await _aiClientService.SendRequestAsync(provider, testPrompt);
-                if (string.IsNullOrWhiteSpace(response))
+                if (string.IsNullOrWhiteSpace(response.Text))
                     throw new InvalidOperationException("Provider returned empty response");
             }
         catch (Exception ex)

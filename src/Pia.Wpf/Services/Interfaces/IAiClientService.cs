@@ -5,7 +5,7 @@ namespace Pia.Services.Interfaces;
 
 public interface IAiClientService
 {
-    Task<string> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default);
+    Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default);
 
     IAsyncEnumerable<string> StreamChatCompletionAsync(
         IList<ChatMessage> messages,
@@ -32,7 +32,7 @@ public interface IAiClientService
 
     Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default);
 
-    Task<string> OptimizeViaPiaCloudAsync(
+    Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
         string text,
         Guid templateId,
         string language,
