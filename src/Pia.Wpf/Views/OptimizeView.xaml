@@ -49,12 +49,10 @@
         <Grid Margin="40,40,40,20">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" MinHeight="80" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="120" />
           </Grid.RowDefinitions>
 
-          <!-- Welcome Header (always visible) -->
+          <!-- Welcome Header -->
           <StackPanel Grid.Row="0">
             <ui:SymbolIcon Symbol="Sparkle24"
                            FontSize="48"
@@ -75,113 +73,118 @@
                        Margin="0,0,0,24" />
           </StackPanel>
 
-          <!-- Input TextBox (resizable via drag handle below) -->
-          <ui:TextBox x:Name="InputTextBox" Grid.Row="1"
-                      Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                      PlaceholderText="{loc:Str Optimize_InputPlaceholder}"
-                      PlaceholderEnabled="True"
-                      TextWrapping="Wrap"
-                      AcceptsReturn="True"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      FontSize="14"
-                      Padding="15"
-                      ClearButtonEnabled="False"
-                      PreviewKeyDown="InputTextBox_PreviewKeyDown" />
+          <!-- Composer Card -->
+          <Border Grid.Row="1" Style="{StaticResource PiaComposerCardStyle}">
+            <Grid Margin="8">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
 
-          <!-- Resize Handle -->
-          <GridSplitter Grid.Row="2"
-                        Height="14"
-                        HorizontalAlignment="Stretch"
-                        ResizeDirection="Rows"
-                        Background="Transparent">
-            <GridSplitter.Template>
-              <ControlTemplate TargetType="{x:Type GridSplitter}">
-                <Grid Background="Transparent" Cursor="SizeNS">
-                  <Border Width="32"
-                          Height="4"
-                          CornerRadius="2"
-                          Background="{DynamicResource ControlStrokeColorDefaultBrush}"
-                          HorizontalAlignment="Center"
-                          VerticalAlignment="Center"
-                          Opacity="0.4" />
-                </Grid>
-              </ControlTemplate>
-            </GridSplitter.Template>
-          </GridSplitter>
+              <ui:TextBox x:Name="InputTextBox" Grid.Row="0"
+                          Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                          PlaceholderText="{loc:Str Optimize_InputPlaceholder}"
+                          PlaceholderEnabled="True"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          FontSize="14"
+                          Padding="6,6"
+                          BorderThickness="0"
+                          Background="Transparent"
+                          ClearButtonEnabled="False"
+                          PreviewKeyDown="InputTextBox_PreviewKeyDown" />
 
-          <!-- Action Buttons -->
-          <StackPanel Grid.Row="3"
-                      Orientation="Horizontal"
-                      HorizontalAlignment="Center"
-                      VerticalAlignment="Bottom"
-                      Margin="0,4,0,0">
-            <ui:Button Command="{Binding ClearInputCommand}"
-                       Appearance="Secondary"
-                       Width="40"
-                       Height="40"
-                       Margin="0,0,8,0"
-                       ToolTip="{loc:Str Optimize_Clear_Tooltip}">
-              <ui:SymbolIcon Symbol="Eraser24" FontSize="16" />
-            </ui:Button>
+              <Grid Grid.Row="1" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <ComboBox ItemsSource="{Binding Templates}"
-                      SelectedValue="{Binding SelectedTemplateId}"
-                      DisplayMemberPath="Name"
-                      SelectedValuePath="Id"
-                      Width="175"
-                      Height="40"
-                      FontSize="13"
-                      Padding="10"
-                      Margin="0,0,8,0"
-                      ToolTip="{loc:Str Optimize_Template_Tooltip}"
-                      local:ComboBoxBehaviors.DropDownOpenedCommand="{Binding LoadTemplatesCommand}"
-                      local:ComboBoxBehaviors.KeepSelection="True" />
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                  <!-- Clear button -->
+                  <ui:Button Command="{Binding ClearInputCommand}"
+                             Appearance="Transparent"
+                             Width="36"
+                             Height="36"
+                             Padding="0"
+                             Margin="0,0,2,0"
+                             ToolTip="{loc:Str Optimize_Clear_Tooltip}">
+                    <ui:SymbolIcon Symbol="Eraser24" FontSize="16" />
+                  </ui:Button>
 
-            <ComboBox ItemsSource="{Binding Languages}"
-                      SelectedItem="{Binding SelectedLanguage, UpdateSourceTrigger=PropertyChanged}"
-                      Width="75"
-                      Height="40"
-                      FontSize="13"
-                      Padding="10"
-                      Margin="0,0,8,0"
-                      ToolTip="{loc:Str Optimize_Language_Tooltip}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding Converter={StaticResource LanguageToFlagConverter}}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+                  <Separator Width="1" Margin="4,6" Background="{DynamicResource BorderBrush_}" />
 
-            <ui:Button Command="{Binding ToggleRecordingCommand}"
-                       Appearance="Secondary"
-                       Width="40"
-                       Height="40"
-                       Margin="0,0,8,0"
-                       ToolTip="{loc:Str Optimize_Record_Tooltip}">
-              <ui:SymbolIcon Symbol="Record24" FontSize="16" />
-            </ui:Button>
+                  <!-- Record button -->
+                  <ui:Button Command="{Binding ToggleRecordingCommand}"
+                             Appearance="Transparent"
+                             Width="36"
+                             Height="36"
+                             Padding="0"
+                             Margin="2,0"
+                             ToolTip="{loc:Str Optimize_Record_Tooltip}">
+                    <ui:SymbolIcon Symbol="Record24" FontSize="16" />
+                  </ui:Button>
 
-            <ui:Button Appearance="Secondary"
-                       Width="40"
-                       Height="40"
-                       Margin="0,0,8,0"
-                       ToolTip="{loc:Str Optimize_Attach_Tooltip}"
-                       Click="AttachFileButton_Click">
-              <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
-            </ui:Button>
+                  <!-- Attach file button -->
+                  <ui:Button Appearance="Transparent"
+                             Width="36"
+                             Height="36"
+                             Padding="0"
+                             Margin="2,0"
+                             ToolTip="{loc:Str Optimize_Attach_Tooltip}"
+                             Click="AttachFileButton_Click">
+                    <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
+                  </ui:Button>
+                </StackPanel>
 
-            <ui:Button Command="{Binding OptimizeCommand}"
-                       Appearance="Primary"
-                       Height="40"
-                       Padding="16,0"
-                       ToolTip="{loc:Str Optimize_Optimize_Tooltip}">
-              <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0" />
-                <TextBlock Text="{loc:Str Optimize_Optimize}" VerticalAlignment="Center" />
-              </StackPanel>
-            </ui:Button>
-          </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                  <!-- Template combo -->
+                  <ComboBox ItemsSource="{Binding Templates}"
+                            SelectedValue="{Binding SelectedTemplateId}"
+                            DisplayMemberPath="Name"
+                            SelectedValuePath="Id"
+                            Width="220"
+                            Height="36"
+                            FontSize="13"
+                            Margin="2,0"
+                            VerticalContentAlignment="Center"
+                            ToolTip="{loc:Str Optimize_Template_Tooltip}"
+                            local:ComboBoxBehaviors.DropDownOpenedCommand="{Binding LoadTemplatesCommand}"
+                            local:ComboBoxBehaviors.KeepSelection="True" />
+
+                  <!-- Language combo -->
+                  <ComboBox ItemsSource="{Binding Languages}"
+                            SelectedItem="{Binding SelectedLanguage, UpdateSourceTrigger=PropertyChanged}"
+                            Width="90"
+                            Height="36"
+                            FontSize="13"
+                            Margin="2,0,8,0"
+                            VerticalContentAlignment="Center"
+                            ToolTip="{loc:Str Optimize_Language_Tooltip}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Converter={StaticResource LanguageToFlagConverter}}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+
+                  <!-- Optimize button (Primary) -->
+                  <ui:Button Command="{Binding OptimizeCommand}"
+                             Appearance="Primary"
+                             Height="36"
+                             Padding="14,0"
+                             ToolTip="{loc:Str Optimize_Optimize_Tooltip}">
+                    <StackPanel Orientation="Horizontal">
+                      <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,6,0" />
+                      <TextBlock Text="{loc:Str Optimize_Optimize}" VerticalAlignment="Center" FontSize="13" />
+                    </StackPanel>
+                  </ui:Button>
+                </StackPanel>
+              </Grid>
+            </Grid>
+          </Border>
         </Grid>
       </Grid>
 

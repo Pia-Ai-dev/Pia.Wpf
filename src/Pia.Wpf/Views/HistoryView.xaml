@@ -14,7 +14,7 @@
     <KeyBinding Key="Delete" Command="{Binding DeleteSessionCommand}"/>
   </UserControl.InputBindings>
 
-  <Grid Background="{DynamicResource BgCanvasBrush}">
+  <Grid Background="Transparent">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>

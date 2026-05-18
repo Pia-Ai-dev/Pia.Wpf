@@ -10,7 +10,7 @@
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1200"
              nav:ViewModelLocator.AutoWireViewModel="True">
-  <Grid Background="{DynamicResource BgCanvasBrush}">
+  <Grid Background="Transparent">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>

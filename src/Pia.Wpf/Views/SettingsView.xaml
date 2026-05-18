@@ -16,7 +16,7 @@
     <converters:ZeroToVisibilityConverter x:Key="ZeroToVisibilityConverter"/>
   </UserControl.Resources>
 
-  <Grid Background="{DynamicResource BgCanvasBrush}">
+  <Grid Background="Transparent">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
