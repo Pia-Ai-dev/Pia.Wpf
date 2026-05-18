@@ -31,7 +31,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
     private bool _showTodoPanelButton = true;
 
     [ObservableProperty]
-    private bool _suggestionsEnabled = true;
+    private bool _suggestionsEnabled;
 
     [ObservableProperty]
     private string? _filesFolder;

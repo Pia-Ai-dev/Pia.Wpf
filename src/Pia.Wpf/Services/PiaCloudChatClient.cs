@@ -113,7 +113,9 @@ public sealed class PiaCloudChatClient : IChatClient
                 };
             }
 
-            var choice = json?["choices"]?[0];
+            var choices = json?["choices"]?.AsArray();
+            if (choices is null || choices.Count == 0) continue;
+            var choice = choices[0];
             if (choice is null) continue;
 
             var delta = choice["delta"];
@@ -164,35 +166,73 @@ public sealed class PiaCloudChatClient : IChatClient
             // When finish_reason is "tool_calls", emit accumulated tool calls
             if (finishReason == "tool_calls")
             {
-                foreach (var (_, (id, name, args)) in toolCallBuilders)
+                foreach (var update in EmitAccumulatedToolCalls(toolCallBuilders))
+                    yield return update;
+                toolCallBuilders.Clear();
+            }
+
+            // Propagate any finish_reason so aggregated ChatResponse.FinishReason is populated
+            // (lets callers detect truncation, etc.)
+            if (finishReason is not null)
+            {
+                ChatFinishReason? mapped = finishReason switch
                 {
-                    if (name is null) continue;
-
-                    IDictionary<string, object?>? arguments = null;
-                    var argsStr = args.ToString();
-                    if (!string.IsNullOrEmpty(argsStr))
-                    {
-                        try
-                        {
-                            arguments = JsonSerializer.Deserialize<Dictionary<string, object?>>(
-                                argsStr, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        }
-                        catch
-                        {
-                            // If args can't be parsed as dictionary, wrap as raw
-                            arguments = new Dictionary<string, object?> { ["raw"] = argsStr };
-                        }
-                    }
-
+                    "stop" => ChatFinishReason.Stop,
+                    "tool_calls" => ChatFinishReason.ToolCalls,
+                    "length" => ChatFinishReason.Length,
+                    "content_filter" => ChatFinishReason.ContentFilter,
+                    _ => null
+                };
+                if (mapped is not null)
+                {
                     yield return new ChatResponseUpdate
                     {
                         Role = ChatRole.Assistant,
-                        Contents = [new FunctionCallContent(id ?? "", name, arguments)]
+                        FinishReason = mapped
                     };
                 }
-
-                toolCallBuilders.Clear();
             }
+        }
+
+        // Defensive flush: some servers omit finish_reason="tool_calls" on long generations.
+        // Without this, accumulated tool calls would be silently dropped.
+        if (toolCallBuilders.Count > 0)
+        {
+            _logger.LogWarning(
+                "PiaCloudChatClient: stream ended without finish_reason=tool_calls; flushing {Count} accumulated tool call(s)",
+                toolCallBuilders.Count);
+            foreach (var update in EmitAccumulatedToolCalls(toolCallBuilders))
+                yield return update;
+        }
+    }
+
+    private static IEnumerable<ChatResponseUpdate> EmitAccumulatedToolCalls(
+        Dictionary<int, (string? Id, string? Name, StringBuilder Args)> builders)
+    {
+        foreach (var (_, (id, name, args)) in builders)
+        {
+            if (name is null) continue;
+
+            IDictionary<string, object?>? arguments = null;
+            var argsStr = args.ToString();
+            if (!string.IsNullOrEmpty(argsStr))
+            {
+                try
+                {
+                    arguments = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                        argsStr, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch
+                {
+                    arguments = new Dictionary<string, object?> { ["raw"] = argsStr };
+                }
+            }
+
+            yield return new ChatResponseUpdate
+            {
+                Role = ChatRole.Assistant,
+                Contents = [new FunctionCallContent(id ?? "", name, arguments)]
+            };
         }
     }
 
@@ -217,7 +257,7 @@ public sealed class PiaCloudChatClient : IChatClient
             body["temperature"] = options.Temperature.Value;
 
         if (options?.MaxOutputTokens is not null)
-            body["maxTokens"] = options.MaxOutputTokens.Value;
+            body["max_tokens"] = options.MaxOutputTokens.Value;
 
         if (stream)
         {

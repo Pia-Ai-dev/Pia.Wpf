@@ -162,6 +162,15 @@
               <ui:SymbolIcon Symbol="Record24" FontSize="16" />
             </ui:Button>
 
+            <ui:Button Appearance="Secondary"
+                       Width="40"
+                       Height="40"
+                       Margin="0,0,8,0"
+                       ToolTip="{loc:Str Optimize_Attach_Tooltip}"
+                       Click="AttachFileButton_Click">
+              <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
+            </ui:Button>
+
             <ui:Button Command="{Binding OptimizeCommand}"
                        Appearance="Primary"
                        Height="40"

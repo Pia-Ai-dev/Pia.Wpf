@@ -90,7 +90,7 @@ public class AppSettings
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
 
     // Assistant suggestions (follow-up chips)
-    public bool AssistantSuggestionsEnabled { get; set; } = true;
+    public bool AssistantSuggestionsEnabled { get; set; } = false;
 
     // Sandboxed folder the assistant's file tool may read/write/delete in.
     // Null/empty disables the tool entirely.

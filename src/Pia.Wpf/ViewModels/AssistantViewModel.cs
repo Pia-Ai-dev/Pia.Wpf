@@ -454,6 +454,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             _snackbarService.Show(_localizationService["Msg_Error"], localizedMessage, Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(6));
         }
+        catch (Pia.Services.Exceptions.LlmTruncatedException ex)
+        {
+            _logger.LogWarning(ex, "AI response truncated by token cap (provider={ProviderName}, partialChars={PartialChars})", ex.ProviderName, ex.PartialLength);
+            var localizedMessage = _localizationService.Format("Msg_Assistant_ResponseTruncated", ex.ProviderName);
+            // Preserve any partial visible text so the user sees how far the model got;
+            // append the hint underneath. If we have no text yet, show the hint alone.
+            assistantMessage.Content = string.IsNullOrEmpty(assistantMessage.Content)
+                ? localizedMessage
+                : assistantMessage.Content + "\n\n" + localizedMessage;
+            _snackbarService.Show(_localizationService["Msg_Warning"], localizedMessage, Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
+        }
         catch (OperationCanceledException)
         {
             _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Assistant_ResponseCancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));

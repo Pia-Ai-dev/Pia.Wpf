@@ -315,8 +315,8 @@ public class AiClientService : IAiClientService
                 }
 
                 response = updates.ToChatResponse();
-                _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}",
-                    round + 1, response.Messages.Count, response.Text?.Length ?? 0);
+                _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}, finishReason={FinishReason}",
+                    round + 1, response.Messages.Count, response.Text?.Length ?? 0, response.FinishReason);
             }
             else
             {
@@ -359,6 +359,16 @@ public class AiClientService : IAiClientService
             {
                 if (roundUsage.InputTokenCount is long input) { aggregatedInput += input; hasUsage = true; }
                 if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
+            }
+
+            // Detect truncation by output token cap. Surfaced to the UI as a friendly hint
+            // (otherwise an incomplete tool-call argument JSON would just fail silently).
+            if (response.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length)
+            {
+                var partial = response.Text?.Length ?? 0;
+                _logger.LogWarning("Round {Round}: response truncated by token cap (finish_reason=length, partialChars={PartialChars})",
+                    round + 1, partial);
+                throw new LlmTruncatedException(provider.Name, partial);
             }
 
             // Check if there are tool calls in the response

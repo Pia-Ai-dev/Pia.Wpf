@@ -54,6 +54,7 @@
   <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Output language</value></data>
   <data name="Optimize_Optimize_Tooltip" xml:space="preserve"><value>Optimize (Ctrl+Enter)</value></data>
   <data name="Optimize_Record_Tooltip" xml:space="preserve"><value>Record</value></data>
+  <data name="Optimize_Attach_Tooltip" xml:space="preserve"><value>Attach file</value></data>
   <data name="Optimize_Accept_Tooltip" xml:space="preserve"><value>Accept</value></data>
   <data name="Optimize_Reject_Tooltip" xml:space="preserve"><value>Reject</value></data>
   <data name="Optimize_Copy_Tooltip" xml:space="preserve"><value>Copy</value></data>
@@ -86,6 +87,7 @@
   <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Cancel</value></data>
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Toggle text-to-speech</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Record</value></data>
+  <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Attach file</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>

@@ -67,6 +67,7 @@
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Rappel mis à jour</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>La génération de la réponse a été annulée.</value></data>
   <data name="Msg_Assistant_ResponseTimedOut" xml:space="preserve"><value>Le fournisseur « {0} » n'a pas répondu en {1} secondes.</value></data>
+  <data name="Msg_Assistant_ResponseTruncated" xml:space="preserve"><value>Le fournisseur « {0} » a atteint la limite de tokens en sortie avant d'avoir terminé. Essayez une requête plus courte ou plus ciblée, ou découpez le travail en étapes plus petites.</value></data>
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>L'assistant n'a pas fourni de réponse. Veuillez réessayer.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Échec de la récupération de la réponse IA : {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Vérification de la mémoire...</value></data>

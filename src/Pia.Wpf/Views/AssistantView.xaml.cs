@@ -3,6 +3,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Pia.Behaviors;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.ViewModels;
 
@@ -139,5 +141,15 @@ public partial class AssistantView : UserControl
     private void OnAddToPiiRequested(object? sender, PiiKeywordRequest request)
     {
         ViewModel?.AddPiiKeywordCommand.Execute(request);
+    }
+
+    private void AttachFileButton_Click(object sender, RoutedEventArgs e)
+    {
+        var accepted = FileDropBehavior.GetAcceptedExtensions(RootGrid);
+        var files = FilePicker.PickFiles(accepted);
+        if (files.Count == 0) return;
+
+        if (ViewModel?.HandleFilesDroppedCommand.CanExecute(files) == true)
+            ViewModel.HandleFilesDroppedCommand.Execute(files);
     }
 }
