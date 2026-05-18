@@ -59,12 +59,10 @@ public class TextOptimizationService : ITextOptimizationService
         {
             // Server builds the prompt — send raw text + template ID
             completion = await _aiClientService.OptimizeViaPiaCloudAsync(
-                prompt, templateId, targetLanguage, isVoiceInput, mode, cancellationToken);
+                processedInput, templateId, targetLanguage, isVoiceInput, mode, cancellationToken);
         }
         else
         {
-            // Client builds the prompt — existing logic
-
             completion = await _aiClientService.SendRequestAsync(provider, prompt, cancellationToken);
         }
 

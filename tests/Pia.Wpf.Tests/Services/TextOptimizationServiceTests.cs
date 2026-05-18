@@ -60,7 +60,7 @@ public class TextOptimizationServiceTests
 
         Assert.Equal("Optimized via PiaCloud", result.OptimizedText);
         await _aiClientService.Received(1).OptimizeViaPiaCloudAsync(
-            Arg.Is<string>(p => p.Contains("hello world") && p.Contains(BusinessEmailTemplate.Prompt)),
+            "hello world",
             BusinessEmailTemplateId, "EN", false, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().SendRequestAsync(
             Arg.Any<AiProvider>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -88,7 +88,7 @@ public class TextOptimizationServiceTests
     }
 
     [Fact]
-    public async Task OptimizeTextAsync_PiaCloud_SendsFullPromptWithInput()
+    public async Task OptimizeTextAsync_PiaCloud_SendsRawInput()
     {
         _templateService.GetTemplateAsync(BusinessEmailTemplateId)
             .Returns(BusinessEmailTemplate);
@@ -101,12 +101,9 @@ public class TextOptimizationServiceTests
         var service = CreateService();
         await service.OptimizeTextAsync("hello world", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        // PiaCloud path sends the full constructed prompt (template + language + input)
+        // PiaCloud path forwards the raw input — the server is authoritative for the prompt.
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
-            Arg.Is<string>(p =>
-                p.Contains(BusinessEmailTemplate.Prompt) &&
-                p.Contains("Target language: EN") &&
-                p.Contains("hello world")),
+            "hello world",
             BusinessEmailTemplateId,
             "EN",
             false,
@@ -128,12 +125,9 @@ public class TextOptimizationServiceTests
         var service = CreateService();
         await service.OptimizeTextAsync("<voice>um hello world</voice>", BusinessEmailTemplateId, cancellationToken: TestContext.Current.CancellationToken);
 
-        // Should strip voice tags from the input in the constructed prompt and set isVoiceInput = true
+        // Should strip voice tags from the raw input and set isVoiceInput = true so the server adds cleanup.
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
-            Arg.Is<string>(p =>
-                p.Contains("um hello world") &&
-                !p.Contains("<voice>") &&
-                p.Contains("transcribed from spoken word")),
+            "um hello world",
             BusinessEmailTemplateId,
             "EN",
             true,
@@ -156,7 +150,7 @@ public class TextOptimizationServiceTests
         await service.OptimizeTextAsync("hello", BusinessEmailTemplateId, targetLanguage: "DE", cancellationToken: TestContext.Current.CancellationToken);
 
         await _aiClientService.Received().OptimizeViaPiaCloudAsync(
-            Arg.Is<string>(p => p.Contains("Target language: DE") && p.Contains("hello")),
+            "hello",
             BusinessEmailTemplateId,
             "DE",
             false,
