@@ -88,6 +88,17 @@
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
+      <!-- Chat history (Assistant only) -->
+      <ui:NavigationViewItem Content="{loc:Str AssistantHistory_Nav}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="AssistantHistory"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=AssistantHistory}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Clock24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
       <!-- Memory (Assistant only) -->
       <ui:NavigationViewItem Content="{loc:Str Nav_Memory}"
                              Command="{Binding NavigationCommand}"

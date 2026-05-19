@@ -95,7 +95,6 @@
   <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Nouveau chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Afficher tous les chats…</value></data>
-  <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>La vue complète de l'historique des chats arrive dans une étape ultérieure.</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Aucun chat pour l'instant.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Aucun résultat</value></data>

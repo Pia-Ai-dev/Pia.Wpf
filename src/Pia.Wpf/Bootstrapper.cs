@@ -303,6 +303,7 @@ public static class Bootstrapper
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<ResearchViewModel>();
         services.AddScoped<ResearchHistoryViewModel>();
+        services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();
         services.AddScoped<TodoViewModel>();

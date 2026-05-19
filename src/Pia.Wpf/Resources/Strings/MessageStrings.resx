@@ -96,7 +96,6 @@
   <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Search chats…</value></data>
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>New chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Show all chats…</value></data>
-  <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>The full chat history view is coming in a later step.</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>No chats yet.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Search chats…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>No matches</value></data>

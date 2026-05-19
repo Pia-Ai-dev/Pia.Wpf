@@ -316,7 +316,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _loggerFactory.CreateLogger<ChatTitleChipViewModel>(),
             ResumeChatAsync,
             NewChat,
-            ShowAllChatsNotImplemented);
+            NavigateToAssistantHistory);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -917,14 +917,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return message;
     }
 
-    private void ShowAllChatsNotImplemented()
+    private void NavigateToAssistantHistory()
     {
-        _snackbarService.Show(
-            _localizationService["AssistantChat_Flyout_ShowAll"],
-            _localizationService["AssistantChat_Flyout_ShowAllComingSoon"],
-            Wpf.Ui.Controls.ControlAppearance.Info,
-            null,
-            TimeSpan.FromSeconds(3));
+        _navigationService.NavigateTo<AssistantHistoryViewModel>();
     }
 
     private static void CancelPendingActionCards(AssistantMessage? message)
@@ -1025,7 +1020,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         RandomizeSuggestions();
 
-        if (parameter is string text && !string.IsNullOrWhiteSpace(text))
+        if (parameter is Guid chatId && chatId != Guid.Empty)
+        {
+            await ResumeChatAsync(chatId);
+        }
+        else if (parameter is string text && !string.IsNullOrWhiteSpace(text))
         {
             InputText = text;
         }

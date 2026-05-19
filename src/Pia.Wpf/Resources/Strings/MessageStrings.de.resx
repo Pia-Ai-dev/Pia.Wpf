@@ -95,7 +95,6 @@
   <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Chats durchsuchen…</value></data>
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Neuer Chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Alle Chats anzeigen…</value></data>
-  <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>Die vollständige Chatverlaufsansicht folgt in einem späteren Schritt.</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Noch keine Chats.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Chats durchsuchen…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Keine Treffer</value></data>
