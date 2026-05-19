@@ -279,7 +279,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         ResumeChatCommand.NotifyCanExecuteChanged();
     }
 
-    private void OnChatsChanged(object? sender, EventArgs e)
+    private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
         _syncContext.Post(_ => LoadChatsAsync().SafeFireAndForget(_logger), null);
     }

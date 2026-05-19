@@ -142,6 +142,9 @@ public partial class App : Application
         var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
         await scheduledJobService.StartAsync(CancellationToken.None);
 
+        var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
+        await chatSyncService.StartAsync(CancellationToken.None);
+
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StartAsync(CancellationToken.None);
 
@@ -269,6 +272,9 @@ public partial class App : Application
 
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StopAsync(CancellationToken.None);
+
+        var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
+        await chatSyncService.StopAsync(CancellationToken.None);
 
         var windowManager = Bootstrapper.ServiceProvider.GetRequiredService<IWindowManagerService>();
         windowManager.CloseAndDisposeAll();

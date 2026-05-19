@@ -274,6 +274,10 @@ public static class Bootstrapper
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();
 
+        // Cloud capability probe + assistant-chat sync (singletons)
+        services.AddSingleton<ICloudCapabilityService, CloudCapabilityService>();
+        services.AddSingleton<AssistantChatSyncService>();
+
         // Background services
         services.AddSingleton<ReminderBackgroundService>();
         services.AddSingleton<ScheduledJobBackgroundService>();

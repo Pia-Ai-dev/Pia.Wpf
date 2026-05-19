@@ -11,15 +11,18 @@ public class AssistantChatRetentionService : BackgroundService
 
     private readonly IAssistantChatService _chatService;
     private readonly ISettingsService _settingsService;
+    private readonly AssistantChatSyncService _syncService;
     private readonly ILogger<AssistantChatRetentionService> _logger;
 
     public AssistantChatRetentionService(
         IAssistantChatService chatService,
         ISettingsService settingsService,
+        AssistantChatSyncService syncService,
         ILogger<AssistantChatRetentionService> logger)
     {
         _chatService = chatService;
         _settingsService = settingsService;
+        _syncService = syncService;
         _logger = logger;
     }
 
@@ -67,12 +70,14 @@ public class AssistantChatRetentionService : BackgroundService
             var cutoff = DateTime.UtcNow - TimeSpan.FromDays(days);
 
             var evicted = await _chatService.EvictOlderThanAsync(cutoff, ct);
-            // TODO step 6: emit DELETE per evicted chat into the cloud sync worker once it exists.
-            if (evicted > 0)
+            if (evicted.Count > 0)
             {
+                foreach (var id in evicted)
+                    _syncService.EnqueueDelete(id);
+
                 _logger.LogInformation(
                     "Assistant chat retention evicted {Count} chats older than {Days} days",
-                    evicted, days);
+                    evicted.Count, days);
             }
         }
         catch (OperationCanceledException)

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Pia.Shared.Models;
@@ -38,6 +39,13 @@ public class SyncAssistantChat
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? WrappedDek { get; set; }
+
+    /// <summary>
+    /// Round-trips unknown fields the server may add in future schema versions
+    /// (see docs/server/assistant-chat-history.md §1 forward-compatibility).
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public class SyncAssistantChatMessage
@@ -53,4 +61,7 @@ public class SyncAssistantChatMessage
 
     public int? Tokens { get; set; }
     public string? ModelName { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }

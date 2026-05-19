@@ -150,7 +150,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         try
         {
             var deleted = await _chatService.DeleteAllAsync();
-            _logger.LogInformation("Deleted all assistant chats ({Count} chats)", deleted);
+            _logger.LogInformation("Deleted all assistant chats ({Count} chats)", deleted.Count);
         }
         catch (Exception ex)
         {
@@ -179,7 +179,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
             try
             {
                 var deleted = await _chatService.DeleteAllAsync();
-                _logger.LogInformation("Cleared assistant chats after disabling history ({Count} chats)", deleted);
+                _logger.LogInformation("Cleared assistant chats after disabling history ({Count} chats)", deleted.Count);
             }
             catch (Exception ex)
             {

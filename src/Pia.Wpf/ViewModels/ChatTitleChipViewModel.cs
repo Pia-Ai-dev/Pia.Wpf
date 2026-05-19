@@ -101,7 +101,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
             RefreshQuickSwitcherMatches();
     }
 
-    private void OnChatsChanged(object? sender, EventArgs e)
+    private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
         if (IsFlyoutOpen)
             LoadRecentChatsAsync().SafeFireAndForget(_logger);

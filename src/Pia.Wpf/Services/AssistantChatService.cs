@@ -9,14 +9,15 @@ public class AssistantChatService : IAssistantChatService
 {
     private readonly SqliteContext _context;
 
-    public event EventHandler? ChatsChanged;
+    public event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
     public AssistantChatService(SqliteContext context)
     {
         _context = context;
     }
 
-    private void OnChatsChanged() => ChatsChanged?.Invoke(this, EventArgs.Empty);
+    private void OnChatsChanged(Guid id, AssistantChatChangeKind kind) =>
+        ChatsChanged?.Invoke(this, new AssistantChatChangedEventArgs { Id = id, Kind = kind });
 
     public async Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default)
     {
@@ -84,7 +85,7 @@ public class AssistantChatService : IAssistantChatService
         await ReplaceFtsRowAsync(connection, transaction, chat, ct);
 
         transaction.Commit();
-        OnChatsChanged();
+        OnChatsChanged(chat.Id, AssistantChatChangeKind.Upserted);
     }
 
     public async Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
@@ -190,7 +191,7 @@ public class AssistantChatService : IAssistantChatService
         }
 
         transaction.Commit();
-        OnChatsChanged();
+        OnChatsChanged(id, AssistantChatChangeKind.Deleted);
     }
 
     public async Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default)
@@ -203,24 +204,34 @@ public class AssistantChatService : IAssistantChatService
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<int> DeleteAllAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default)
     {
         var connection = _context.GetConnection();
 
         using var transaction = connection.BeginTransaction();
 
-        int deleted;
+        List<Guid> deletedIds;
+        using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = "SELECT Id FROM AssistantChats";
+            deletedIds = [];
+            using var reader = await select.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                deletedIds.Add(Guid.Parse(reader.GetString(0)));
+        }
+
+        if (deletedIds.Count == 0)
+        {
+            transaction.Commit();
+            return deletedIds.AsReadOnly();
+        }
+
         using (var deleteChats = connection.CreateCommand())
         {
             deleteChats.Transaction = transaction;
             deleteChats.CommandText = "DELETE FROM AssistantChats";
-            deleted = await deleteChats.ExecuteNonQueryAsync(ct);
-        }
-
-        if (deleted == 0)
-        {
-            transaction.Commit();
-            return 0;
+            await deleteChats.ExecuteNonQueryAsync(ct);
         }
 
         using (var deleteFts = connection.CreateCommand())
@@ -231,15 +242,16 @@ public class AssistantChatService : IAssistantChatService
         }
 
         transaction.Commit();
-        OnChatsChanged();
-        return deleted;
+        foreach (var id in deletedIds)
+            OnChatsChanged(id, AssistantChatChangeKind.Deleted);
+        return deletedIds.AsReadOnly();
     }
 
-    public async Task<int> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default)
+    public async Task<IReadOnlyList<Guid>> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default)
     {
         var connection = _context.GetConnection();
 
-        List<string> evictedIds;
+        List<Guid> evictedIds;
         using (var select = connection.CreateCommand())
         {
             select.CommandText = "SELECT Id FROM AssistantChats WHERE LastAccessedAt < @Cutoff";
@@ -248,10 +260,10 @@ public class AssistantChatService : IAssistantChatService
             evictedIds = [];
             using var reader = await select.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
-                evictedIds.Add(reader.GetString(0));
+                evictedIds.Add(Guid.Parse(reader.GetString(0)));
         }
 
-        if (evictedIds.Count == 0) return 0;
+        if (evictedIds.Count == 0) return evictedIds.AsReadOnly();
 
         using var transaction = connection.BeginTransaction();
 
@@ -260,19 +272,31 @@ public class AssistantChatService : IAssistantChatService
             using var deleteChat = connection.CreateCommand();
             deleteChat.Transaction = transaction;
             deleteChat.CommandText = "DELETE FROM AssistantChats WHERE Id = @Id";
-            deleteChat.Parameters.AddWithValue("@Id", id);
+            deleteChat.Parameters.AddWithValue("@Id", id.ToString());
             await deleteChat.ExecuteNonQueryAsync(ct);
 
             using var deleteFts = connection.CreateCommand();
             deleteFts.Transaction = transaction;
             deleteFts.CommandText = "DELETE FROM AssistantChatsFts WHERE ChatId = @ChatId";
-            deleteFts.Parameters.AddWithValue("@ChatId", id);
+            deleteFts.Parameters.AddWithValue("@ChatId", id.ToString());
             await deleteFts.ExecuteNonQueryAsync(ct);
         }
 
         transaction.Commit();
-        OnChatsChanged();
-        return evictedIds.Count;
+        foreach (var id in evictedIds)
+            OnChatsChanged(id, AssistantChatChangeKind.Deleted);
+        return evictedIds.AsReadOnly();
+    }
+
+    public async Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT MAX(UpdatedAt) FROM AssistantChats";
+
+        var result = await command.ExecuteScalarAsync(ct);
+        if (result is null or DBNull) return null;
+        return DateTime.Parse((string)result).ToUniversalTime();
     }
 
     private static async Task<List<SyncAssistantChatMessage>> GetMessagesAsync(

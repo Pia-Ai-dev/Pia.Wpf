@@ -2,9 +2,21 @@ using Pia.Shared.Models;
 
 namespace Pia.Services.Interfaces;
 
+public enum AssistantChatChangeKind
+{
+    Upserted,
+    Deleted,
+}
+
+public sealed class AssistantChatChangedEventArgs : EventArgs
+{
+    public required Guid Id { get; init; }
+    public required AssistantChatChangeKind Kind { get; init; }
+}
+
 public interface IAssistantChatService
 {
-    event EventHandler? ChatsChanged;
+    event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
     Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default);
 
@@ -23,7 +35,9 @@ public interface IAssistantChatService
 
     Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default);
 
-    Task<int> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default);
+    Task<IReadOnlyList<Guid>> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default);
 
-    Task<int> DeleteAllAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default);
+
+    Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default);
 }
