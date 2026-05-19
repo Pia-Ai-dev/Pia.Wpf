@@ -390,6 +390,18 @@
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Browse…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Clear</value></data>
   <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Folder the assistant can read, summarize, update or delete text files in. The assistant is restricted to this folder and cannot access files outside it. Leave empty to disable the file tools.</value></data>
+  <data name="Settings_Chat_Section" xml:space="preserve"><value>Chat history</value></data>
+  <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Save chat history</value></data>
+  <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Store assistant chats on this device so you can resume and search them later.</value></data>
+  <data name="Settings_Chat_RetentionDays" xml:space="preserve"><value>Delete chats not opened for {0} days</value></data>
+  <data name="Settings_Chat_RetentionDays_Label" xml:space="preserve"><value>Retention (days)</value></data>
+  <data name="Settings_Chat_AutoTitle" xml:space="preserve"><value>Auto-generate chat titles (uses tokens)</value></data>
+  <data name="Settings_Chat_AutoTitle_Hint" xml:space="preserve"><value>Makes a small extra completion call to generate a short title for each chat.</value></data>
+  <data name="Settings_Chat_DeleteAllNow" xml:space="preserve"><value>Delete all chat history now</value></data>
+  <data name="Settings_Chat_DisableConfirmTitle" xml:space="preserve"><value>Disable chat history?</value></data>
+  <data name="Settings_Chat_DisableConfirmBody" xml:space="preserve"><value>Turning off chat history will delete all existing local chats. This cannot be undone. Continue?</value></data>
+  <data name="AssistantHistory_DeleteAllConfirmTitle" xml:space="preserve"><value>Delete all chats</value></data>
+  <data name="AssistantHistory_DeleteAllConfirmBody" xml:space="preserve"><value>Delete every chat on this device? This cannot be undone.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Global Hotkeys</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Press a hotkey when the app is hidden to track the window under cursor and open Pia in the corresponding mode</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimize</value></data>

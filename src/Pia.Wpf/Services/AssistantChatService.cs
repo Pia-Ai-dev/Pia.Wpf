@@ -203,6 +203,38 @@ public class AssistantChatService : IAssistantChatService
         await command.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<int> DeleteAllAsync(CancellationToken ct = default)
+    {
+        var connection = _context.GetConnection();
+
+        using var transaction = connection.BeginTransaction();
+
+        int deleted;
+        using (var deleteChats = connection.CreateCommand())
+        {
+            deleteChats.Transaction = transaction;
+            deleteChats.CommandText = "DELETE FROM AssistantChats";
+            deleted = await deleteChats.ExecuteNonQueryAsync(ct);
+        }
+
+        if (deleted == 0)
+        {
+            transaction.Commit();
+            return 0;
+        }
+
+        using (var deleteFts = connection.CreateCommand())
+        {
+            deleteFts.Transaction = transaction;
+            deleteFts.CommandText = "DELETE FROM AssistantChatsFts";
+            await deleteFts.ExecuteNonQueryAsync(ct);
+        }
+
+        transaction.Commit();
+        OnChatsChanged();
+        return deleted;
+    }
+
     public async Task<int> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default)
     {
         var connection = _context.GetConnection();

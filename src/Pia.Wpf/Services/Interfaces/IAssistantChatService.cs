@@ -24,4 +24,6 @@ public interface IAssistantChatService
     Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default);
 
     Task<int> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default);
+
+    Task<int> DeleteAllAsync(CancellationToken ct = default);
 }

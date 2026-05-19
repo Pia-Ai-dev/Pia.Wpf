@@ -277,6 +277,7 @@ public static class Bootstrapper
         // Background services
         services.AddSingleton<ReminderBackgroundService>();
         services.AddSingleton<ScheduledJobBackgroundService>();
+        services.AddSingleton<AssistantChatRetentionService>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();

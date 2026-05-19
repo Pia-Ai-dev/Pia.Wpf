@@ -142,6 +142,9 @@ public partial class App : Application
         var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
         await scheduledJobService.StartAsync(CancellationToken.None);
 
+        var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
+        await chatRetentionService.StartAsync(CancellationToken.None);
+
         // Initialize persisted MCP plugins from local database
         var pluginService = Bootstrapper.ServiceProvider.GetRequiredService<IPluginService>();
         _ = pluginService.InitializePersistedPluginsAsync();
@@ -263,6 +266,9 @@ public partial class App : Application
 
         var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
         await scheduledJobService.StopAsync(CancellationToken.None);
+
+        var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
+        await chatRetentionService.StopAsync(CancellationToken.None);
 
         var windowManager = Bootstrapper.ServiceProvider.GetRequiredService<IWindowManagerService>();
         windowManager.CloseAndDisposeAll();

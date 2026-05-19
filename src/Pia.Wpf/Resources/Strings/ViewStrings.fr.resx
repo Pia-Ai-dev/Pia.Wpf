@@ -367,6 +367,18 @@
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Parcourir…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Effacer</value></data>
   <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Dossier dans lequel l'assistant peut lire, résumer, modifier ou supprimer des fichiers texte. L'assistant est limité à ce dossier et ne peut pas accéder aux fichiers en dehors. Laissez vide pour désactiver les outils de fichiers.</value></data>
+  <data name="Settings_Chat_Section" xml:space="preserve"><value>Historique des chats</value></data>
+  <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Enregistrer l'historique des chats</value></data>
+  <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Conserver les chats de l'assistant sur cet appareil pour pouvoir les reprendre et les rechercher plus tard.</value></data>
+  <data name="Settings_Chat_RetentionDays" xml:space="preserve"><value>Supprimer les chats non ouverts depuis {0} jours</value></data>
+  <data name="Settings_Chat_RetentionDays_Label" xml:space="preserve"><value>Conservation (jours)</value></data>
+  <data name="Settings_Chat_AutoTitle" xml:space="preserve"><value>Générer automatiquement les titres des chats (consomme des jetons)</value></data>
+  <data name="Settings_Chat_AutoTitle_Hint" xml:space="preserve"><value>Effectue une petite requête supplémentaire pour générer un titre court par chat.</value></data>
+  <data name="Settings_Chat_DeleteAllNow" xml:space="preserve"><value>Supprimer tout l'historique des chats maintenant</value></data>
+  <data name="Settings_Chat_DisableConfirmTitle" xml:space="preserve"><value>Désactiver l'historique des chats ?</value></data>
+  <data name="Settings_Chat_DisableConfirmBody" xml:space="preserve"><value>Désactiver l'historique des chats supprimera tous les chats locaux existants. Cette action est irréversible. Continuer ?</value></data>
+  <data name="AssistantHistory_DeleteAllConfirmTitle" xml:space="preserve"><value>Supprimer tous les chats</value></data>
+  <data name="AssistantHistory_DeleteAllConfirmBody" xml:space="preserve"><value>Supprimer tous les chats de cet appareil ? Cette action est irréversible.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Raccourcis globaux</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Appuyez sur un raccourci lorsque l'application est masquée pour capturer la fenêtre sous le curseur et ouvrir Pia dans le mode correspondant</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimiser</value></data>

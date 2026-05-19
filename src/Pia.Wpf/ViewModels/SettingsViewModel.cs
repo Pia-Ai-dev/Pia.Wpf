@@ -46,7 +46,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IAutostartService autostartService,
         IPluginService pluginService,
         IPluginIconLoader pluginIconLoader,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IAssistantChatService assistantChatService)
     {
         _logger = logger;
 
@@ -54,7 +55,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService, authService);
 
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, logger, settingsService);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, logger, settingsService, assistantChatService, dialogService, localizationService);
 
         ResearchVm = new ResearchSettingsViewModel(ProvidersVm);
 

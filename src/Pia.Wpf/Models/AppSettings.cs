@@ -96,6 +96,11 @@ public class AppSettings
     // Null/empty disables the tool entirely.
     public string? AssistantFilesFolder { get; set; }
 
+    // Assistant chat history
+    public bool ChatHistoryEnabled { get; set; } = true;
+    public int ChatHistoryRetentionDays { get; set; } = 30;
+    public bool ChatAutoTitleEnabled { get; set; } = false;
+
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
 
