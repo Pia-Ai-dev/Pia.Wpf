@@ -97,6 +97,9 @@
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Afficher tous les chats…</value></data>
   <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>La vue complète de l'historique des chats arrive dans une étape ultérieure.</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Aucun chat pour l'instant.</value></data>
+  <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
+  <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Aucun résultat</value></data>
+  <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ pour naviguer · Entrée pour reprendre · Échap pour fermer</value></data>
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Êtes-vous sûr de vouloir supprimer cette session ? Cette action est irréversible.</value></data>
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Supprimer la session</value></data>

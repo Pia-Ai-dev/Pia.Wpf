@@ -14,6 +14,10 @@
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
              nav:ViewModelLocator.AutoWireViewModel="True">
+  <UserControl.InputBindings>
+    <KeyBinding Modifiers="Control" Key="H"
+                Command="{Binding ChatTitleChip.OpenQuickSwitcherCommand}" />
+  </UserControl.InputBindings>
   <Grid x:Name="RootGrid"
         Background="Transparent"
         behaviors:FileDropBehavior.IsEnabled="True"
@@ -374,6 +378,12 @@
         </Style>
       </local:TodoPanelControl.Style>
     </local:TodoPanelControl>
+
+    <!-- Quick switcher overlay (Ctrl+H) -->
+    <assistant:PiaChatQuickSwitcher Grid.Row="0" Grid.RowSpan="3"
+                                    DataContext="{Binding ChatTitleChip}"
+                                    Panel.ZIndex="9"
+                                    Visibility="{Binding IsQuickSwitcherOpen, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
     <!-- Voice Mode Overlay -->
     <local:VoiceModeOverlay Grid.Row="0" Grid.RowSpan="3"

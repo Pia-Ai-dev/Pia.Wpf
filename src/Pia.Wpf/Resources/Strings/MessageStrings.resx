@@ -98,6 +98,9 @@
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Show all chats…</value></data>
   <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>The full chat history view is coming in a later step.</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>No chats yet.</value></data>
+  <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Search chats…</value></data>
+  <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>No matches</value></data>
+  <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ to navigate · Enter to resume · Esc to close</value></data>
 
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Are you sure you want to delete this session? This action cannot be undone.</value></data>

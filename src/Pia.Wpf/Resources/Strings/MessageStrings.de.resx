@@ -97,6 +97,9 @@
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Alle Chats anzeigen…</value></data>
   <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>Die vollständige Chatverlaufsansicht folgt in einem späteren Schritt.</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Noch keine Chats.</value></data>
+  <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Chats durchsuchen…</value></data>
+  <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Keine Treffer</value></data>
+  <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ zum Navigieren · Enter zum Fortsetzen · Esc zum Schließen</value></data>
 
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Möchtest du diese Sitzung wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.</value></data>

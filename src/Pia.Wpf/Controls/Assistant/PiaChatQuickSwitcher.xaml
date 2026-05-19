@@ -1,0 +1,112 @@
+<UserControl x:Class="Pia.Controls.Assistant.PiaChatQuickSwitcher"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:vm="clr-namespace:Pia.ViewModels"
+             x:Name="QuickSwitcherRoot"
+             Focusable="False"
+             IsVisibleChanged="OnIsVisibleChanged">
+  <Grid Background="#80000000"
+        MouseDown="OnBackdropMouseDown">
+    <Border HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            MinWidth="520"
+            MaxWidth="640"
+            MaxHeight="520"
+            Background="{DynamicResource ApplicationBackgroundBrush}"
+            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="10"
+            MouseDown="OnPanelMouseDown">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="24" Opacity="0.35" ShadowDepth="6" />
+      </Border.Effect>
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TextBox Grid.Row="0"
+                    x:Name="QueryBox"
+                    Margin="2"
+                    PlaceholderText="{loc:Str AssistantChat_QuickSwitcher_Placeholder}"
+                    PlaceholderEnabled="True"
+                    Text="{Binding QuickSwitcherQuery, UpdateSourceTrigger=PropertyChanged}"
+                    PreviewKeyDown="OnQueryKeyDown" />
+
+        <Grid Grid.Row="1" Margin="0,8,0,0">
+          <TextBlock HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                     FontSize="12"
+                     Text="{loc:Str AssistantChat_QuickSwitcher_NoMatches}"
+                     Visibility="{Binding Matches.Count, Converter={StaticResource ZeroToVisibilityConverter}}" />
+
+          <ListBox x:Name="MatchesList"
+                   ItemsSource="{Binding Matches}"
+                   SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   Focusable="False"
+                   MouseDoubleClick="OnMatchesDoubleClick">
+            <ListBox.ItemContainerStyle>
+              <Style TargetType="ListBoxItem">
+                <Setter Property="Padding" Value="10,8" />
+                <Setter Property="Margin" Value="0,1" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Template">
+                  <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                      <Border x:Name="Bd"
+                              Background="Transparent"
+                              CornerRadius="6"
+                              Padding="{TemplateBinding Padding}">
+                        <ContentPresenter />
+                      </Border>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                          <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                          <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                        </Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Setter.Value>
+                </Setter>
+              </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+              <DataTemplate DataType="{x:Type vm:QuickSwitcherMatchViewModel}">
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}"
+                             FontSize="13"
+                             FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Snippet}"
+                             FontSize="11"
+                             Margin="0,2,0,0"
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+
+        <TextBlock Grid.Row="2"
+                   Margin="2,8,2,0"
+                   FontSize="11"
+                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                   Text="{loc:Str AssistantChat_QuickSwitcher_Hint}" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>
