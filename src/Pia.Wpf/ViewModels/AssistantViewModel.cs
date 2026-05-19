@@ -183,6 +183,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private DateTime _currentChatCreatedAt;
     private Guid? _currentChatProviderId;
 
+    public ChatTitleChipViewModel ChatTitleChip { get; }
+
     [ObservableProperty]
     private string _inputText = string.Empty;
 
@@ -307,6 +309,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
+
+        ChatTitleChip = new ChatTitleChipViewModel(
+            _chatService,
+            _localizationService,
+            _loggerFactory.CreateLogger<ChatTitleChipViewModel>(),
+            ResumeChatAsync,
+            NewChat,
+            ShowAllChatsNotImplemented);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -551,6 +561,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         try
         {
             await _chatService.SaveAsync(chat);
+            ChatTitleChip.SetTitle(chat.Title);
             _logger.LogInformation("Persisted assistant chat {ChatId} ({MessageCount} messages)",
                 chat.Id, chat.Messages.Count);
             _logger.SensitiveDebug("Chat {ChatId} title: {Title}", chat.Id, chat.Title);
@@ -832,6 +843,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _currentChatId = null;
         _currentChatCreatedAt = default;
         _currentChatProviderId = null;
+        ChatTitleChip.SetTitle(null);
 
         if (_tokenizationEnabled)
         {
@@ -842,6 +854,77 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after clear"); }
             });
         }
+    }
+
+    private void NewChat() => ExecuteClearConversation();
+
+    private async Task ResumeChatAsync(Guid chatId)
+    {
+        _streamingCts?.Cancel();
+        _ttsService.Stop();
+
+        SyncAssistantChat? chat;
+        try
+        {
+            chat = await _chatService.GetAsync(chatId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load chat {ChatId}", chatId);
+            return;
+        }
+
+        if (chat is null)
+        {
+            _logger.LogWarning("Chat {ChatId} not found during resume", chatId);
+            return;
+        }
+
+        foreach (var msg in Messages)
+            CancelPendingActionCards(msg);
+        Messages.Clear();
+
+        foreach (var dto in chat.Messages)
+            Messages.Add(MapFromDto(dto));
+
+        HasMessages = Messages.Count > 0;
+        _currentChatId = chat.Id;
+        _currentChatCreatedAt = chat.CreatedAt;
+        _currentChatProviderId = chat.ProviderId;
+        ChatTitleChip.SetTitle(chat.Title);
+
+        _logger.LogInformation("Resumed chat {ChatId} ({MessageCount} messages)", chat.Id, chat.Messages.Count);
+        _logger.SensitiveDebug("Resumed chat {ChatId} title: {Title}", chat.Id, chat.Title);
+
+        try
+        {
+            await _chatService.TouchLastAccessedAsync(chat.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to touch LastAccessedAt for {ChatId}", chat.Id);
+        }
+    }
+
+    private static AssistantMessage MapFromDto(SyncAssistantChatMessage dto)
+    {
+        var role = dto.Role == "user" ? ChatRole.User : ChatRole.Assistant;
+        var message = new AssistantMessage(dto.Id, role, dto.Content, dto.Timestamp.ToLocalTime());
+        if (!string.IsNullOrEmpty(dto.ThinkingContent))
+            message.ThinkingContent = dto.ThinkingContent;
+        if (dto.Tokens is { } tokens && !string.IsNullOrEmpty(dto.ModelName))
+            message.Stats = new AnswerStats(tokens, dto.ModelName);
+        return message;
+    }
+
+    private void ShowAllChatsNotImplemented()
+    {
+        _snackbarService.Show(
+            _localizationService["AssistantChat_Flyout_ShowAll"],
+            _localizationService["AssistantChat_Flyout_ShowAllComingSoon"],
+            Wpf.Ui.Controls.ControlAppearance.Info,
+            null,
+            TimeSpan.FromSeconds(3));
     }
 
     private static void CancelPendingActionCards(AssistantMessage? message)
@@ -1369,6 +1452,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PropertyChanged -= OnPropertyChanged;
         _streamingCts?.Cancel();
         _streamingCts?.Dispose();
+        ChatTitleChip.Dispose();
 
         GC.SuppressFinalize(this);
     }

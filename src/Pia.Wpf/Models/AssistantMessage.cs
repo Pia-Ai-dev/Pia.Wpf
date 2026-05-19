@@ -7,7 +7,7 @@ namespace Pia.Models;
 
 public partial class AssistantMessage : ObservableObject
 {
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; }
 
     public ChatRole Role { get; }
 
@@ -60,12 +60,19 @@ public partial class AssistantMessage : ObservableObject
         OnPropertyChanged(nameof(HasThinkingContent));
     }
 
-    public DateTime Timestamp { get; } = DateTime.Now;
+    public DateTime Timestamp { get; }
 
     public AssistantMessage(ChatRole role, string content = "")
+        : this(Guid.NewGuid(), role, content, DateTime.Now)
     {
+    }
+
+    public AssistantMessage(Guid id, ChatRole role, string content, DateTime timestamp)
+    {
+        Id = id;
         Role = role;
         Content = content;
+        Timestamp = timestamp;
         ActionCards.CollectionChanged += OnActionCardsChanged;
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSources));
         Suggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSuggestions));

@@ -88,6 +88,15 @@
   <data name="Msg_Assistant_StatusUpdatingTodo" xml:space="preserve"><value>Mise à jour de la tâche...</value></data>
   <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Tâche mise à jour</value></data>
   <data name="Msg_Assistant_Value" xml:space="preserve"><value>Valeur :</value></data>
+
+  <!-- Assistant chat history -->
+  <data name="AssistantChat_TitlePlaceholder_NewChat" xml:space="preserve"><value>Nouveau chat</value></data>
+  <data name="AssistantChat_Chip_Tooltip" xml:space="preserve"><value>Basculer entre les chats récents</value></data>
+  <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
+  <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Nouveau chat</value></data>
+  <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Afficher tous les chats…</value></data>
+  <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>La vue complète de l'historique des chats arrive dans une étape ultérieure.</value></data>
+  <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Aucun chat pour l'instant.</value></data>
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Êtes-vous sûr de vouloir supprimer cette session ? Cette action est irréversible.</value></data>
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Supprimer la session</value></data>

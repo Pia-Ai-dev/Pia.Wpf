@@ -9,6 +9,7 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:assistant="clr-namespace:Pia.Controls.Assistant"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
@@ -34,12 +35,18 @@
         </Style>
       </Grid.Style>
       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
+    <!-- Chat title chip -->
+    <assistant:PiaChatTitleChip Grid.Row="0"
+                                DataContext="{Binding ChatTitleChip}"
+                                Margin="20,12,20,0" />
+
     <!-- Empty state -->
-    <StackPanel Grid.Row="0"
+    <StackPanel Grid.Row="1"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Visibility="{Binding HasMessages, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
@@ -91,10 +98,10 @@
 
     <!-- Message list -->
     <ScrollViewer x:Name="MessageScrollViewer"
-                  Grid.Row="0"
+                  Grid.Row="1"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
-                  Padding="20,48,20,0"
+                  Padding="20,12,20,0"
                   ScrollChanged="MessageScrollViewer_ScrollChanged">
       <ScrollViewer.Style>
         <Style TargetType="ScrollViewer">
@@ -193,7 +200,7 @@
     </ScrollViewer>
 
     <!-- Input area -->
-    <Border Grid.Row="1" Padding="20,8,20,16">
+    <Border Grid.Row="2" Padding="20,8,20,16">
       <Border Style="{StaticResource PiaComposerCardStyle}">
         <StackPanel Margin="8">
           <Grid>
@@ -369,7 +376,7 @@
     </local:TodoPanelControl>
 
     <!-- Voice Mode Overlay -->
-    <local:VoiceModeOverlay Grid.Row="0" Grid.RowSpan="2"
+    <local:VoiceModeOverlay Grid.Row="0" Grid.RowSpan="3"
                             DataContext="{Binding VoiceMode}"
                             Panel.ZIndex="10"
                             Visibility="{Binding DataContext.IsVoiceModeActive,

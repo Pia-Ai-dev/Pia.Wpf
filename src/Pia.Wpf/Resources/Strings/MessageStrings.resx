@@ -90,6 +90,15 @@
   <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Todo Updated</value></data>
   <data name="Msg_Assistant_Value" xml:space="preserve"><value>Value:</value></data>
 
+  <!-- Assistant chat history -->
+  <data name="AssistantChat_TitlePlaceholder_NewChat" xml:space="preserve"><value>New chat</value></data>
+  <data name="AssistantChat_Chip_Tooltip" xml:space="preserve"><value>Switch between recent chats</value></data>
+  <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Search chats…</value></data>
+  <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>New chat</value></data>
+  <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Show all chats…</value></data>
+  <data name="AssistantChat_Flyout_ShowAllComingSoon" xml:space="preserve"><value>The full chat history view is coming in a later step.</value></data>
+  <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>No chats yet.</value></data>
+
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Are you sure you want to delete this session? This action cannot be undone.</value></data>
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Delete Session</value></data>
