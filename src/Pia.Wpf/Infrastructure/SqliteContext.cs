@@ -171,11 +171,45 @@ public class SqliteContext : IDisposable
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
+
+            CREATE TABLE IF NOT EXISTS AssistantChats (
+                Id              TEXT PRIMARY KEY,
+                SchemaVersion   INTEGER NOT NULL DEFAULT 1,
+                Title           TEXT,
+                CreatedAt       TEXT NOT NULL,
+                UpdatedAt       TEXT NOT NULL,
+                LastAccessedAt  TEXT NOT NULL,
+                WindowMode      TEXT NOT NULL,
+                ProviderId      TEXT,
+                ExtraJson       TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AssistantChats_UpdatedAt
+                ON AssistantChats(UpdatedAt);
+            CREATE INDEX IF NOT EXISTS IX_AssistantChats_LastAccessedAt
+                ON AssistantChats(LastAccessedAt);
+
+            CREATE TABLE IF NOT EXISTS AssistantChatMessages (
+                Id              TEXT PRIMARY KEY,
+                ChatId          TEXT NOT NULL,
+                Ordinal         INTEGER NOT NULL,
+                Role            TEXT NOT NULL,
+                Content         TEXT NOT NULL,
+                ThinkingContent TEXT,
+                Timestamp       TEXT NOT NULL,
+                Tokens          INTEGER,
+                ModelName       TEXT,
+                FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AssistantChatMessages_ChatId_Ordinal
+                ON AssistantChatMessages(ChatId, Ordinal);
             """;
         command.ExecuteNonQuery();
 
         MigrateSchema();
         EnsureMemoriesFts();
+        EnsureAssistantChatsFts();
     }
 
     private void MigrateSchema()
@@ -415,6 +449,23 @@ public class SqliteContext : IDisposable
                 INSERT INTO MemoriesFts(rowid, Id, Label, Data)
                 VALUES (new.rowid, new.Id, new.Label, new.Data);
             END;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private void EnsureAssistantChatsFts()
+    {
+        // Contentless FTS5 over both Chats (title) and ChatMessages (body).
+        // The service manages rows explicitly on save/delete — no triggers,
+        // because a single FTS row represents an aggregated chat document.
+        using var command = _connection!.CreateCommand();
+        command.CommandText = """
+            CREATE VIRTUAL TABLE IF NOT EXISTS AssistantChatsFts USING fts5(
+                ChatId UNINDEXED,
+                Title,
+                Body,
+                content=''
+            );
             """;
         command.ExecuteNonQuery();
     }

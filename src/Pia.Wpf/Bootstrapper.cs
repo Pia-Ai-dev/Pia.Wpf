@@ -236,6 +236,7 @@ public static class Bootstrapper
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IResearchHistoryService, ResearchHistoryService>();
+        services.AddSingleton<IAssistantChatService, AssistantChatService>();
         services.AddTransient<IResearchExportService, ResearchExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();

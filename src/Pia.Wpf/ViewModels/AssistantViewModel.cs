@@ -13,6 +13,7 @@ using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
+using Pia.Shared.Models;
 
 namespace Pia.ViewModels;
 
@@ -172,10 +173,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAutocompleteService _autocompleteService;
     private readonly INavigationService _navigationService;
     private readonly ISuggestionService _suggestionService;
+    private readonly IAssistantChatService _chatService;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
+
+    private Guid? _currentChatId;
+    private DateTime _currentChatCreatedAt;
+    private Guid? _currentChatProviderId;
 
     [ObservableProperty]
     private string _inputText = string.Empty;
@@ -263,7 +269,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ITokenMapService tokenMapService,
         IAutocompleteService autocompleteService,
         INavigationService navigationService,
-        ISuggestionService suggestionService)
+        ISuggestionService suggestionService,
+        IAssistantChatService chatService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -282,6 +289,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _autocompleteService = autocompleteService;
         _navigationService = navigationService;
         _suggestionService = suggestionService;
+        _chatService = chatService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -359,6 +367,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 _snackbarService.Show(_localizationService["Msg_Error"], _localizationService["Msg_Assistant_NoProviderConfigured"], Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
                 return;
             }
+
+            _currentChatProviderId = provider.Id;
 
             // Determine if this provider supports tool calling
             var supportsTools = provider.SupportsToolCalling;
@@ -508,8 +518,69 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             {
                 _ = SpeakMessageAsync(assistantMessage);
             }
+
+            await PersistCurrentChatAsync();
         }
     }
+
+    private async Task PersistCurrentChatAsync()
+    {
+        if (Messages.Count == 0) return;
+
+        var nowUtc = DateTime.UtcNow;
+
+        if (_currentChatId is null)
+        {
+            _currentChatId = Guid.NewGuid();
+            _currentChatCreatedAt = nowUtc;
+        }
+
+        var chat = new SyncAssistantChat
+        {
+            Id = _currentChatId.Value,
+            SchemaVersion = 1,
+            Title = DeriveChatTitle(),
+            CreatedAt = _currentChatCreatedAt,
+            UpdatedAt = nowUtc,
+            LastAccessedAt = nowUtc,
+            WindowMode = WindowMode.Assistant.ToString(),
+            ProviderId = _currentChatProviderId,
+            Messages = [.. Messages.Select(MapToDto)],
+        };
+
+        try
+        {
+            await _chatService.SaveAsync(chat);
+            _logger.LogInformation("Persisted assistant chat {ChatId} ({MessageCount} messages)",
+                chat.Id, chat.Messages.Count);
+            _logger.SensitiveDebug("Chat {ChatId} title: {Title}", chat.Id, chat.Title);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist assistant chat {ChatId}", chat.Id);
+        }
+    }
+
+    private string? DeriveChatTitle()
+    {
+        var firstUser = Messages.FirstOrDefault(m => m.IsUser);
+        if (firstUser is null || string.IsNullOrWhiteSpace(firstUser.Content)) return null;
+
+        var text = firstUser.Content.Trim();
+        const int max = 40;
+        return text.Length <= max ? text : text[..max].TrimEnd() + "…";
+    }
+
+    private static SyncAssistantChatMessage MapToDto(AssistantMessage m) => new()
+    {
+        Id = m.Id,
+        Role = m.IsUser ? "user" : "assistant",
+        Content = m.Content,
+        ThinkingContent = string.IsNullOrEmpty(m.ThinkingContent) ? null : m.ThinkingContent,
+        Timestamp = m.Timestamp.ToUniversalTime(),
+        Tokens = m.Stats?.Tokens,
+        ModelName = m.Stats?.Model,
+    };
 
     private async Task ExecuteToggleRecording()
     {
@@ -757,6 +828,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Messages.Clear();
         InputText = string.Empty;
         HasMessages = false;
+
+        _currentChatId = null;
+        _currentChatCreatedAt = default;
+        _currentChatProviderId = null;
 
         if (_tokenizationEnabled)
         {
