@@ -238,59 +238,83 @@ public sealed class AssistantChatSyncService : BackgroundService
 
             using (client)
             {
+                // `since` is the inclusive lower bound per server contract §4.1,
+                // so the first paged response will normally re-include the local
+                // newest chat. SaveAsync is an upsert, so that's harmless.
                 var since = await _chatService.GetMaxUpdatedAtAsync(ct);
-                var url = since is null
-                    ? $"{baseUrl}/api/v1/chats"
-                    : $"{baseUrl}/api/v1/chats?since={Uri.EscapeDataString(since.Value.ToUniversalTime().ToString("O"))}";
+                var sinceParam = since is null
+                    ? null
+                    : Uri.EscapeDataString(since.Value.ToUniversalTime().ToString("O"));
 
-                using var response = await client.GetAsync(url, ct);
-                if (!response.IsSuccessStatusCode)
+                string? cursor = null;
+                var totalMerged = 0;
+                var pages = 0;
+                const int maxPages = 100; // safety stop in case the server lies about hasMore
+
+                while (pages < maxPages)
                 {
-                    _logger.LogInformation(
-                        "Startup pull returned status {Status}", (int)response.StatusCode);
-                    return;
+                    var url = BuildPullUrl(baseUrl, sinceParam, cursor);
+
+                    using var response = await client.GetAsync(url, ct);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation(
+                            "Startup pull returned status {Status} (page {Page})",
+                            (int)response.StatusCode, pages + 1);
+                        return;
+                    }
+
+                    await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                    using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+                    if (!doc.RootElement.TryGetProperty("chats", out var chatsArr) ||
+                        chatsArr.ValueKind != JsonValueKind.Array)
+                    {
+                        return;
+                    }
+
+                    foreach (var element in chatsArr.EnumerateArray())
+                    {
+                        SyncAssistantChat? incoming;
+                        try
+                        {
+                            incoming = element.Deserialize<SyncAssistantChat>(JsonOptions);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to deserialize chat from startup pull");
+                            continue;
+                        }
+
+                        if (incoming is null) continue;
+
+                        try
+                        {
+                            await _chatService.SaveAsync(incoming, ct);
+                            totalMerged++;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex,
+                                "Failed to merge incoming chat {ChatId}", incoming.Id);
+                        }
+                    }
+
+                    pages++;
+
+                    var hasMore = doc.RootElement.TryGetProperty("hasMore", out var hasMoreProp) &&
+                        hasMoreProp.ValueKind == JsonValueKind.True;
+                    if (!hasMore) break;
+
+                    cursor = doc.RootElement.TryGetProperty("nextCursor", out var nextProp) &&
+                        nextProp.ValueKind == JsonValueKind.String
+                        ? nextProp.GetString()
+                        : null;
+                    if (string.IsNullOrEmpty(cursor)) break;
                 }
 
-                await using var stream = await response.Content.ReadAsStreamAsync(ct);
-                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-                if (!doc.RootElement.TryGetProperty("chats", out var chatsArr) ||
-                    chatsArr.ValueKind != JsonValueKind.Array)
-                {
-                    return;
-                }
-
-                var merged = 0;
-                foreach (var element in chatsArr.EnumerateArray())
-                {
-                    SyncAssistantChat? incoming;
-                    try
-                    {
-                        incoming = element.Deserialize<SyncAssistantChat>(JsonOptions);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to deserialize chat from startup pull");
-                        continue;
-                    }
-
-                    if (incoming is null) continue;
-
-                    try
-                    {
-                        // SaveAsync is upsert; last-writer-wins falls out naturally
-                        // because the incoming chat's UpdatedAt > any local copy
-                        // (we asked for since=maxLocalUpdatedAt).
-                        await _chatService.SaveAsync(incoming, ct);
-                        merged++;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex,
-                            "Failed to merge incoming chat {ChatId}", incoming.Id);
-                    }
-                }
-
-                _logger.LogInformation("Startup pull merged {Count} chats", merged);
+                _logger.LogInformation(
+                    "Startup pull merged {Count} chats across {Pages} page(s)",
+                    totalMerged, pages);
             }
         }
         catch (OperationCanceledException)
@@ -301,6 +325,16 @@ public sealed class AssistantChatSyncService : BackgroundService
         {
             _logger.LogWarning(ex, "Startup pull failed");
         }
+    }
+
+    private static string BuildPullUrl(string baseUrl, string? sinceParam, string? cursor)
+    {
+        var parts = new List<string>(2);
+        if (!string.IsNullOrEmpty(sinceParam)) parts.Add($"since={sinceParam}");
+        if (!string.IsNullOrEmpty(cursor)) parts.Add($"cursor={Uri.EscapeDataString(cursor)}");
+        return parts.Count == 0
+            ? $"{baseUrl}/api/v1/chats"
+            : $"{baseUrl}/api/v1/chats?{string.Join('&', parts)}";
     }
 
     private async Task<(HttpClient? Client, string? BaseUrl)> BuildClientAsync(CancellationToken ct)

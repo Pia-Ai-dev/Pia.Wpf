@@ -12,4 +12,10 @@ public interface ICloudCapabilityService
     /// Any failure (network error, 404, missing flag) returns false.
     /// </summary>
     Task<bool> ChatsSupportedAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the server-advertised chats schema version, or null if the
+    /// server didn't report one (or the probe failed).
+    /// </summary>
+    Task<int?> ChatsSchemaVersionAsync(CancellationToken ct = default);
 }

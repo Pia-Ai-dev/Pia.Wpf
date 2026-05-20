@@ -55,6 +55,11 @@ public class SyncAssistantChatMessage
     /// <summary>"user" or "assistant".</summary>
     public string Role { get; set; } = "user";
 
+    // Content / ThinkingContent are UTF-8 text only — never inline base64
+    // binaries (images, PDFs, audio, files) here. Per the server contract
+    // (docs/server/assistant-chat-history.md §5 "Text-only payloads"),
+    // attachments must flow through a separate transport and stay out of
+    // chat-history sync.
     public string Content { get; set; } = string.Empty;
     public string? ThinkingContent { get; set; }
     public DateTime Timestamp { get; set; }

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using Pia.Infrastructure;
 using Pia.Services;
 using Pia.Shared.Models;
@@ -80,6 +81,26 @@ public class AssistantChatServiceTests : IDisposable
         var exception = await Record.ExceptionAsync(
             () => _service.SearchAsync(searchText: "hello* OR \"NEAR(\""));
         Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task ExtensionData_SurvivesRoundTrip()
+    {
+        var chat = MakeChat(title: "Forward-compat chat", body: "anything");
+        var futureField = JsonSerializer.Deserialize<JsonElement>("\"server-only value\"");
+        chat.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["serverOnlyFutureField"] = futureField,
+        };
+
+        await _service.SaveAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        var loaded = await _service.GetAsync(chat.Id);
+        Assert.NotNull(loaded);
+        Assert.NotNull(loaded!.ExtensionData);
+        Assert.True(loaded.ExtensionData!.TryGetValue("serverOnlyFutureField", out var value));
+        Assert.Equal("server-only value", value.GetString());
     }
 
     private static SyncAssistantChat MakeChat(string title, string body)

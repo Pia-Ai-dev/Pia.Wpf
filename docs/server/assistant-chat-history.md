@@ -146,7 +146,6 @@ Idempotent. Conflict rules in §6.
 - `201 Created` — new chat written. Body: stored `AssistantChat`.
 - `409 Conflict` — server's `updatedAt` is newer than the body's. Body:
   current server-side `AssistantChat`. Client reconciles per §6.
-- `413 Payload Too Large` — see §7 size limits.
 
 ### 4.4 Delete
 
@@ -178,8 +177,8 @@ endpoints.
   "createdAt": "2026-05-19T08:12:34Z",
   "updatedAt": "2026-05-19T08:18:02Z",
   "lastAccessedAt": "2026-05-19T08:18:02Z",
-  "windowMode": "assistant",
-  "providerId": "openai-gpt5",
+  "windowMode": "Assistant",
+  "providerId": "1c2d3e4f-5678-4abc-9def-0123456789ab",
   "messages": [
     {
       "id": "0e8a...",
@@ -210,9 +209,11 @@ endpoints.
 | `createdAt`      | ISO8601 UTC     | yes      | Immutable after first write. |
 | `updatedAt`      | ISO8601 UTC     | yes      | Client sets on every change; used for conflict resolution. |
 | `lastAccessedAt` | ISO8601 UTC     | yes      | Client-owned. Server stores and returns. Used by client for retention. |
-| `windowMode`     | string          | yes      | Matches the existing `X-Pia-Mode` values (e.g. `"assistant"`). |
-| `providerId`     | string \| null  | no       | Provider used. Free-form string. |
+| `windowMode`     | string          | yes      | Matches the existing `X-Pia-Mode` values — PascalCase enum names (`"Assistant"`, `"Optimize"`, `"Research"`). |
+| `providerId`     | UUID (string) \| null | no | Provider used. UUID matching a client-side provider configuration. |
 | `messages`       | array<Message\> | yes      | Ordered oldest → newest. May be empty for a freshly-titled chat. |
+| `encryptedPayload` | string \| null | no      | Base64 AES-GCM ciphertext (nonce‖ciphertext‖tag) of the chat body. Present only when E2EE is active; when present, plaintext content fields will be null. Server stores and returns verbatim. |
+| `wrappedDek`     | string \| null  | no       | Base64 AES-GCM wrapping of the per-chat DEK with the user's UMK (nonce‖wrapped-DEK‖tag). Present only when E2EE is active. Server stores and returns verbatim. |
 
 ### Message reference
 
@@ -228,6 +229,15 @@ endpoints.
 
 All timestamps are UTC ISO 8601 with a trailing `Z`. The server must not
 rewrite client-supplied timestamps.
+
+### Text-only payloads
+
+Message `content` and `thinkingContent` are UTF-8 text only. Binary
+attachments (images, PDFs, audio, arbitrary files) MUST NOT be inlined as
+base64 or appended in additional fields. If the client gains the ability
+to attach files to LLM requests in a future version, those payloads stay
+in a separate transport and are never mirrored into the chat-history sync.
+The server may reject any message that violates this with `400`.
 
 ---
 
@@ -252,20 +262,7 @@ the chat document as a whole is the unit of conflict.
 
 ---
 
-## 7. Size limits
-
-- Maximum body size for a single chat: **1 MiB** (`413 Payload Too Large`
-  beyond that). The client will refuse to persist chats above this limit and
-  truncate the oldest messages until it fits — see client retention policy.
-- Maximum `title` length: 200 UTF-8 bytes (server may reject longer).
-- Maximum single `content` field: 256 KiB.
-
-These limits exist to keep mobile-network sync sane. Raise them in a future
-schema version if needed.
-
----
-
-## 8. Retention (server side)
+## 7. Retention (server side)
 
 The **client owns retention policy** (user-configurable, default 30 days
 without access, max 365). The server's role:
@@ -281,7 +278,7 @@ chats on the next client sync.
 
 ---
 
-## 9. Error contract
+## 8. Error contract
 
 | Status | When                                           | Client action |
 |--------|------------------------------------------------|---------------|
@@ -289,7 +286,6 @@ chats on the next client sync.
 | 401    | Missing / invalid bearer                       | Surface "Authentication required". Stop syncing. |
 | 404    | Unknown chat ID on GET / DELETE                | Treat DELETE as success; GET as "no longer exists". |
 | 409    | Conflict on PUT                                | Merge per §6, retry once. |
-| 413    | Body exceeds size limits                       | Client truncates oldest messages and retries. |
 | 429    | Rate limit                                     | Back off honoring `Retry-After`. |
 | 5xx    | Transient                                      | Exponential backoff, retry up to 3 times per chat per session. |
 
@@ -298,7 +294,7 @@ client logs the `error` code but only shows generic UI for non-fatal codes.
 
 ---
 
-## 10. Out of scope for v1
+## 9. Out of scope for v1
 
 The following are intentionally **not** in the spec. Adding them later must
 follow the additive rule in §1.
@@ -313,7 +309,7 @@ follow the additive rule in §1.
 
 ---
 
-## 11. Implementation checklist
+## 10. Implementation checklist
 
 - [ ] `GET /api/capabilities` returns `{ "chats": true, "chatsSchemaVersion": 1 }`.
 - [ ] `GET /api/v1/chats` with `since` / `limit` / `cursor` pagination.
@@ -322,6 +318,5 @@ follow the additive rule in §1.
 - [ ] `DELETE /api/v1/chats/{id}` with tombstones.
 - [ ] Unknown JSON fields round-trip untouched.
 - [ ] `createdAt` is immutable.
-- [ ] Size limits enforced with `413`.
 - [ ] Auth shared with existing `/api/ai/chat`.
 - [ ] No change in behavior of `/api/ai/chat` or any other existing endpoint.

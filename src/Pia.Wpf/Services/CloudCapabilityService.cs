@@ -8,6 +8,10 @@ namespace Pia.Services;
 
 public sealed class CloudCapabilityService : ICloudCapabilityService
 {
+    // Client's compiled-in chats schema version. Kept in sync with
+    // SyncAssistantChat.SchemaVersion's default — bump both together.
+    private const int ClientChatsSchemaVersion = 1;
+
     private readonly ISettingsService _settingsService;
     private readonly IAuthService _authService;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -15,6 +19,7 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private bool? _chatsSupported;
+    private int? _chatsSchemaVersion;
 
     public CloudCapabilityService(
         ISettingsService settingsService,
@@ -30,17 +35,40 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
 
     public async Task<bool> ChatsSupportedAsync(CancellationToken ct = default)
     {
-        if (_chatsSupported.HasValue) return _chatsSupported.Value;
+        await EnsureProbedAsync(ct);
+        return _chatsSupported ?? false;
+    }
+
+    public async Task<int?> ChatsSchemaVersionAsync(CancellationToken ct = default)
+    {
+        await EnsureProbedAsync(ct);
+        return _chatsSchemaVersion;
+    }
+
+    private async Task EnsureProbedAsync(CancellationToken ct)
+    {
+        if (_chatsSupported.HasValue) return;
 
         await _gate.WaitAsync(ct);
         try
         {
-            if (_chatsSupported.HasValue) return _chatsSupported.Value;
+            if (_chatsSupported.HasValue) return;
 
-            var supported = await ProbeAsync(ct);
+            var (supported, schemaVersion) = await ProbeAsync(ct);
             _chatsSupported = supported;
-            _logger.LogInformation("Cloud capability probe: chats supported = {Supported}", supported);
-            return supported;
+            _chatsSchemaVersion = schemaVersion;
+
+            _logger.LogInformation(
+                "Cloud capability probe: chats supported = {Supported}, schemaVersion = {SchemaVersion}",
+                supported, schemaVersion);
+
+            if (supported && schemaVersion is int v && v > ClientChatsSchemaVersion)
+            {
+                _logger.LogWarning(
+                    "Server advertises chats schemaVersion {ServerVersion}; client knows {ClientVersion}. " +
+                    "Some chat fields may be hidden until the client is updated.",
+                    v, ClientChatsSchemaVersion);
+            }
         }
         finally
         {
@@ -48,13 +76,13 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         }
     }
 
-    private async Task<bool> ProbeAsync(CancellationToken ct)
+    private async Task<(bool Supported, int? SchemaVersion)> ProbeAsync(CancellationToken ct)
     {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
-            if (string.IsNullOrEmpty(serverUrl)) return false;
+            if (string.IsNullOrEmpty(serverUrl)) return (false, null);
 
             var url = $"{serverUrl}/api/capabilities";
             var client = _httpClientFactory.CreateClient();
@@ -71,15 +99,25 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
             {
                 _logger.LogInformation(
                     "Capability probe non-success status {Status}", (int)response.StatusCode);
-                return false;
+                return (false, null);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
 
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
-            if (!doc.RootElement.TryGetProperty("chats", out var chatsProp)) return false;
-            return chatsProp.ValueKind == JsonValueKind.True;
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (false, null);
+            if (!doc.RootElement.TryGetProperty("chats", out var chatsProp)) return (false, null);
+            var supported = chatsProp.ValueKind == JsonValueKind.True;
+
+            int? schemaVersion = null;
+            if (doc.RootElement.TryGetProperty("chatsSchemaVersion", out var versionProp) &&
+                versionProp.ValueKind == JsonValueKind.Number &&
+                versionProp.TryGetInt32(out var v))
+            {
+                schemaVersion = v;
+            }
+
+            return (supported, schemaVersion);
         }
         catch (OperationCanceledException)
         {
@@ -88,7 +126,7 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         catch (Exception ex)
         {
             _logger.LogInformation("Capability probe failed: {Type}", ex.GetType().Name);
-            return false;
+            return (false, null);
         }
     }
 }
