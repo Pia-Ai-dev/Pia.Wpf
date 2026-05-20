@@ -5,26 +5,28 @@ namespace Pia.Services.Providers;
 
 /// <summary>
 /// Maps the cross-provider <see cref="ReasoningEffort"/> enum onto the OpenAI
-/// SDK's <see cref="ChatReasoningEffortLevel"/>. Tool-using turns force None
-/// regardless of the configured effort — tool calls should not burn reasoning
-/// tokens.
+/// SDK's <see cref="ChatReasoningEffortLevel"/>. Returns null when the parameter
+/// should be omitted (tool-using turns, or effort configured to None) so callers
+/// avoid sending an unsupported value to models that don't accept "none".
 /// </summary>
 internal static class ReasoningEffortMapping
 {
 #pragma warning disable OPENAI001
-    public static ChatReasoningEffortLevel ToOpenAi(ReasoningEffort? effort, bool hasTools)
+    public static ChatReasoningEffortLevel? ToOpenAi(ReasoningEffort? effort, bool hasTools)
     {
-        if (hasTools) return ChatReasoningEffortLevel.None;
+        // Omit the parameter entirely for tool-using turns rather than sending "none",
+        // because not all models accept "none" as a valid reasoning_effort value.
+        if (hasTools) return null;
 
         return effort switch
         {
-            ReasoningEffort.None => ChatReasoningEffortLevel.None,
+            ReasoningEffort.None => null,
             ReasoningEffort.Minimal => ChatReasoningEffortLevel.Low,
             ReasoningEffort.Low => ChatReasoningEffortLevel.Low,
             ReasoningEffort.Medium => ChatReasoningEffortLevel.Medium,
             ReasoningEffort.High => ChatReasoningEffortLevel.High,
             ReasoningEffort.XHigh => ChatReasoningEffortLevel.High,
-            _ => ChatReasoningEffortLevel.None,
+            _ => null,
         };
     }
 #pragma warning restore OPENAI001

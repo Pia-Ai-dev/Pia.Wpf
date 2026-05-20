@@ -30,7 +30,7 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task SendRequestAsync_ReturnsCompletion()
     {
-        var provider = TryBuildProvider();
+        var provider = TryBuildProvider(ReasoningEffort.Minimal);
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         var client = _fixture.BuildClient();
@@ -42,7 +42,7 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task StreamChatCompletionAsync_YieldsAtLeastOneDelta()
     {
-        var provider = TryBuildProvider();
+        var provider = TryBuildProvider(ReasoningEffort.Minimal);
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         var client = _fixture.BuildClient();
@@ -62,7 +62,7 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task TestStreamingAsync_ReturnsTrue()
     {
-        var provider = TryBuildProvider();
+        var provider = TryBuildProvider(ReasoningEffort.Minimal);
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
@@ -71,7 +71,7 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task TestToolCallingAsync_ReturnsTrue()
     {
-        var provider = TryBuildProvider();
+        var provider = TryBuildProvider(ReasoningEffort.Minimal);
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         Assert.True(await _fixture.BuildClient().TestToolCallingAsync(provider, TestContext.Current.CancellationToken));

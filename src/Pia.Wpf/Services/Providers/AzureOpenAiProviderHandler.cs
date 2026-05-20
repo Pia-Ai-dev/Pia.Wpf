@@ -42,10 +42,10 @@ public sealed class AzureOpenAiProviderHandler : IAiProviderHandler
             RawRepresentationFactory = _ =>
             {
 #pragma warning disable OPENAI001
-                return new ChatCompletionOptions
-                {
-                    ReasoningEffortLevel = effort,
-                };
+                var options = new ChatCompletionOptions();
+                if (effort is not null)
+                    options.ReasoningEffortLevel = effort;
+                return options;
 #pragma warning restore OPENAI001
             },
         };

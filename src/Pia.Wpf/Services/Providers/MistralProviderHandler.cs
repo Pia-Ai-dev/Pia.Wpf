@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Chat;
 using Pia.Models;
+using Pia.Services.Providers.Http;
 
 namespace Pia.Services.Providers;
 
@@ -31,13 +32,21 @@ public sealed class MistralProviderHandler : IAiProviderHandler
         string? mode,
         CancellationToken cancellationToken)
     {
+        // Strip "thinking" content parts from responses before the OpenAI SDK
+        // deserialises them — the SDK throws on unknown content part kinds.
+        var responseFilter = new MistralThinkingResponseHandler
+        {
+            InnerHandler = new HttpClientHandler(),
+        };
+        var http = new HttpClient(responseFilter, disposeHandler: true);
+
         var client = new ChatClient(
             model: provider.ModelName ?? "mistral-small-latest",
             credential: new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "unused" : apiKey),
             options: new OpenAIClientOptions
             {
                 Endpoint = new Uri(provider.Endpoint),
-                Transport = new HttpClientPipelineTransport(httpClient),
+                Transport = new HttpClientPipelineTransport(http),
             }).AsIChatClient();
 
         return Task.FromResult(client);
