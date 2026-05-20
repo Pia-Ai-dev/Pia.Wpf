@@ -113,6 +113,18 @@ public partial class AssistantView : UserControl
         }
     }
 
+    private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.H && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (ViewModel?.ChatTitleChip.OpenQuickSwitcherCommand.CanExecute(null) == true)
+            {
+                ViewModel.ChatTitleChip.OpenQuickSwitcherCommand.Execute(null);
+                e.Handled = true;
+            }
+        }
+    }
+
     private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         // Let the autocomplete popup handle Enter/Escape when it's open

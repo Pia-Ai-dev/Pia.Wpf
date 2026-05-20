@@ -13,11 +13,8 @@
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
-             nav:ViewModelLocator.AutoWireViewModel="True">
-  <UserControl.InputBindings>
-    <KeyBinding Modifiers="Control" Key="H"
-                Command="{Binding ChatTitleChip.OpenQuickSwitcherCommand}" />
-  </UserControl.InputBindings>
+             nav:ViewModelLocator.AutoWireViewModel="True"
+             PreviewKeyDown="UserControl_PreviewKeyDown">
   <Grid x:Name="RootGrid"
         Background="Transparent"
         behaviors:FileDropBehavior.IsEnabled="True"
