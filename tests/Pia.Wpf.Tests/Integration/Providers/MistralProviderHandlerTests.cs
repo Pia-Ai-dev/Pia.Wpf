@@ -94,4 +94,5 @@ public class MistralProviderHandlerTests
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
+
 }

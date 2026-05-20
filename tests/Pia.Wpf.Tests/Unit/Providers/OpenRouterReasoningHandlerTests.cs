@@ -83,6 +83,46 @@ public class OpenRouterReasoningHandlerTests
         Assert.Equal("high", node["reasoning"]!["effort"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void Rewrite_AddsPluginsWhenWebSearchEnabled()
+    {
+        var body = """{"model":"openai/gpt-4o","messages":[]}""";
+
+        var result = OpenRouterReasoningHandler.Rewrite(body, ReasoningEffort.None, enableWebSearch: true);
+
+        Assert.NotNull(result);
+        var node = JsonNode.Parse(result!)!.AsObject();
+        var plugins = node["plugins"]!.AsArray();
+        Assert.Single(plugins);
+        Assert.Equal("web", plugins[0]!["id"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Rewrite_DoesNotAddPluginsWhenWebSearchDisabled()
+    {
+        var body = """{"model":"openai/gpt-4o","messages":[]}""";
+
+        var result = OpenRouterReasoningHandler.Rewrite(body, ReasoningEffort.None, enableWebSearch: false);
+
+        Assert.NotNull(result);
+        var node = JsonNode.Parse(result!)!.AsObject();
+        Assert.False(node.ContainsKey("plugins"));
+    }
+
+    [Fact]
+    public void Rewrite_CombinesReasoningAndWebSearch()
+    {
+        var body = """{"model":"openai/gpt-4o","messages":[],"reasoning_effort":"medium"}""";
+
+        var result = OpenRouterReasoningHandler.Rewrite(body, ReasoningEffort.Medium, enableWebSearch: true);
+
+        Assert.NotNull(result);
+        var node = JsonNode.Parse(result!)!.AsObject();
+        Assert.False(node.ContainsKey("reasoning_effort"));
+        Assert.Equal("medium", node["reasoning"]!["effort"]!.GetValue<string>());
+        Assert.Equal("web", node["plugins"]!.AsArray()[0]!["id"]!.GetValue<string>());
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
         public string? LastBody { get; private set; }

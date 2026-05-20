@@ -43,6 +43,9 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private ReasoningEffort _reasoningEffort = ReasoningEffort.None;
 
+    [ObservableProperty]
+    private bool _enableWebSearch;
+
     public static AiProviderType[] EditableProviderTypes { get; } =
         Enum.GetValues<AiProviderType>().Where(t => t != AiProviderType.PiaCloud).ToArray();
 
@@ -105,6 +108,7 @@ public partial class ProviderEditModel : ObservableValidator
             SupportsToolCalling = provider.SupportsToolCalling,
             SupportsStreaming = provider.SupportsStreaming,
             ReasoningEffort = provider.ReasoningEffort ?? ReasoningEffort.None,
+            EnableWebSearch = provider.EnableWebSearch,
         };
     }
 
@@ -122,6 +126,7 @@ public partial class ProviderEditModel : ObservableValidator
             SupportsStreaming = SupportsStreaming,
             TimeoutSeconds = TimeoutSeconds,
             ReasoningEffort = ReasoningEffort,
+            EnableWebSearch = EnableWebSearch,
         };
     }
 }

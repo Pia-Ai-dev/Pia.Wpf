@@ -9,15 +9,18 @@ namespace Pia.Services.Providers.Http;
 /// Rewrites outgoing JSON request bodies for OpenRouter: removes the flat
 /// `reasoning_effort` field (which OpenRouter rejects when paired with a
 /// nested form) and replaces it with `reasoning: { effort: "..." }` per the
-/// OpenRouter API contract.
+/// OpenRouter API contract. Optionally injects `plugins: [{"id":"web"}]` to
+/// enable native web search.
 /// </summary>
 internal sealed class OpenRouterReasoningHandler : DelegatingHandler
 {
     private readonly ReasoningEffort _effort;
+    private readonly bool _enableWebSearch;
 
-    public OpenRouterReasoningHandler(ReasoningEffort effort)
+    public OpenRouterReasoningHandler(ReasoningEffort effort, bool enableWebSearch = false)
     {
         _effort = effort;
+        _enableWebSearch = enableWebSearch;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
@@ -27,7 +30,7 @@ internal sealed class OpenRouterReasoningHandler : DelegatingHandler
         if (request.Content is not null && IsJsonRequest(request))
         {
             var body = await request.Content.ReadAsStringAsync(cancellationToken);
-            var rewritten = Rewrite(body, _effort);
+            var rewritten = Rewrite(body, _effort, _enableWebSearch);
             if (rewritten is not null)
             {
                 request.Content = new StringContent(rewritten, Encoding.UTF8, "application/json");
@@ -37,7 +40,7 @@ internal sealed class OpenRouterReasoningHandler : DelegatingHandler
         return await base.SendAsync(request, cancellationToken);
     }
 
-    internal static string? Rewrite(string requestBody, ReasoningEffort effort)
+    internal static string? Rewrite(string requestBody, ReasoningEffort effort, bool enableWebSearch = false)
     {
         if (string.IsNullOrEmpty(requestBody))
             return null;
@@ -58,15 +61,12 @@ internal sealed class OpenRouterReasoningHandler : DelegatingHandler
         obj.Remove("reasoning_effort");
 
         if (effort == ReasoningEffort.None)
-        {
             obj.Remove("reasoning");
-            return obj.ToJsonString();
-        }
+        else
+            obj["reasoning"] = new JsonObject { ["effort"] = MapEffort(effort) };
 
-        obj["reasoning"] = new JsonObject
-        {
-            ["effort"] = MapEffort(effort),
-        };
+        if (enableWebSearch)
+            obj["plugins"] = new JsonArray { new JsonObject { ["id"] = "web" } };
 
         return obj.ToJsonString();
     }

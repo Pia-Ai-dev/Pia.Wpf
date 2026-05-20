@@ -23,7 +23,9 @@ public sealed class OpenRouterProviderHandler : IAiProviderHandler
         // Build a dedicated HttpClient stack with the rewrite handler so the
         // flat `reasoning_effort` field (which the OpenAI SDK emits) is
         // replaced with OpenRouter's nested `reasoning: { effort: ... }` shape.
-        var rewrite = new OpenRouterReasoningHandler(provider.ReasoningEffort ?? Pia.Models.ReasoningEffort.None)
+        var rewrite = new OpenRouterReasoningHandler(
+            provider.ReasoningEffort ?? Pia.Models.ReasoningEffort.None,
+            provider.EnableWebSearch)
         {
             InnerHandler = new HttpClientHandler(),
         };

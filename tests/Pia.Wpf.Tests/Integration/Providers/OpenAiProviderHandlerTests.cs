@@ -9,7 +9,9 @@ public class OpenAiProviderHandlerTests
 {
     private readonly ProviderIntegrationFixture _fixture = new();
 
-    private static AiProvider? TryBuildProvider(ReasoningEffort effort = ReasoningEffort.None)
+    private static AiProvider? TryBuildProvider(
+        ReasoningEffort effort = ReasoningEffort.None,
+        bool enableWebSearch = false)
     {
         var (endpoint, key, model) = ProviderTestEnvironment.OpenAi();
         if (string.IsNullOrEmpty(key)) return null;
@@ -24,6 +26,7 @@ public class OpenAiProviderHandlerTests
             SupportsStreaming = true,
             TimeoutSeconds = 60,
             ReasoningEffort = effort,
+            EnableWebSearch = enableWebSearch,
         };
     }
 
@@ -87,6 +90,16 @@ public class OpenAiProviderHandlerTests
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);
+        Assert.False(string.IsNullOrWhiteSpace(result.Text));
+    }
+
+    [Fact]
+    public async Task SendRequestAsync_WithWebSearch_ReturnsCompletion()
+    {
+        var provider = TryBuildProvider(enableWebSearch: true);
+        if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
+
+        var result = await _fixture.BuildClient().SendRequestAsync(provider, "What is today's date? Answer briefly.", TestContext.Current.CancellationToken);
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 }

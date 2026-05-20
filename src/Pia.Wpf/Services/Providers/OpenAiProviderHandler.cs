@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Responses;
 using Pia.Models;
+using Pia.Services.Providers.Http;
 
 namespace Pia.Services.Providers;
 
@@ -21,13 +22,20 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
     {
         var model = provider.ModelName ?? "gpt-4o-mini";
 
+        var http = httpClient;
+        if (provider.EnableWebSearch)
+        {
+            var webSearch = new OpenAiWebSearchHandler { InnerHandler = new HttpClientHandler() };
+            http = new HttpClient(webSearch, disposeHandler: true);
+        }
+
 #pragma warning disable OPENAI001
         var client = new ResponsesClient(
             credential: new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "unused" : apiKey),
             options: new OpenAIClientOptions
             {
                 Endpoint = new Uri(provider.Endpoint),
-                Transport = new HttpClientPipelineTransport(httpClient),
+                Transport = new HttpClientPipelineTransport(http),
             }).AsIChatClient(model);
 #pragma warning restore OPENAI001
 

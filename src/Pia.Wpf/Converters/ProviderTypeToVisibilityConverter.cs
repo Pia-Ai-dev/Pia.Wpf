@@ -28,6 +28,8 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
                 ? Visibility.Visible : Visibility.Collapsed,
             "ReasoningEffort" => providerType is AiProviderType.OpenAI or AiProviderType.AzureOpenAI or AiProviderType.Ollama or AiProviderType.Mistral or AiProviderType.OpenRouter or AiProviderType.VLlm
                 ? Visibility.Visible : Visibility.Collapsed,
+            "WebSearch" => providerType is AiProviderType.OpenAI or AiProviderType.OpenRouter
+                ? Visibility.Visible : Visibility.Collapsed,
             _ => Visibility.Collapsed
         };
     }
