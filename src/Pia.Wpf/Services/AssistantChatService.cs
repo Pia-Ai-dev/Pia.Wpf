@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
 using Pia.Services.Interfaces;
@@ -141,10 +142,14 @@ public class AssistantChatService : IAssistantChatService
         }
         if (!string.IsNullOrWhiteSpace(searchText))
         {
-            conditions.Add("""
-                Id IN (SELECT ChatId FROM AssistantChatsFts WHERE AssistantChatsFts MATCH @Search)
-                """);
-            command.Parameters.AddWithValue("@Search", BuildFtsQuery(searchText));
+            var ftsQuery = BuildFtsQuery(searchText);
+            if (!string.IsNullOrEmpty(ftsQuery))
+            {
+                conditions.Add("""
+                    Id IN (SELECT ChatId FROM AssistantChatsFts WHERE AssistantChatsFts MATCH @Search)
+                    """);
+                command.Parameters.AddWithValue("@Search", ftsQuery);
+            }
         }
 
         var whereClause = conditions.Count > 0 ? $"WHERE {string.Join(" AND ", conditions)}" : "";
@@ -373,12 +378,28 @@ public class AssistantChatService : IAssistantChatService
 
     private static string BuildFtsQuery(string searchText)
     {
-        // Treat the input as a phrase to avoid the user accidentally
-        // entering FTS5 operators (quotes, MATCH, NEAR). Double-quote each
-        // token so it is treated literally; combine with implicit AND.
+        // Per-token prefix match: "hello wor" -> hello* wor*. Quoting each
+        // token (phrase query) requires an exact-token match, so partially
+        // typed words never matched — strip FTS5 operator chars and append *.
         var tokens = searchText
             .Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(t => "\"" + t.Replace("\"", "\"\"") + "\"");
+            .Select(SanitizeFtsToken)
+            .Where(t => t.Length > 0)
+            .Select(t => t + "*");
         return string.Join(' ', tokens);
+    }
+
+    private static string SanitizeFtsToken(string token)
+    {
+        // Lowercase, then keep only letters/digits. Lowercasing neutralises
+        // FTS5's uppercase boolean operators (AND/OR/NOT) — without it,
+        // a user typing "OR" produces "OR*" which is a syntax error.
+        var sb = new StringBuilder(token.Length);
+        foreach (var ch in token)
+        {
+            if (char.IsLetterOrDigit(ch))
+                sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
     }
 }

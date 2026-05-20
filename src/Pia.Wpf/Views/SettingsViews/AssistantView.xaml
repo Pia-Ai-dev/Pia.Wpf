@@ -102,25 +102,14 @@
                   IsEnabled="{Binding ChatHistoryEnabled}">
         <TextBlock Text="{loc:Str Settings_Chat_RetentionDays_Label}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-        <Grid HorizontalAlignment="Left" Width="400">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <Slider Grid.Column="0"
-                  Minimum="1"
-                  Maximum="365"
-                  TickFrequency="1"
-                  IsSnapToTickEnabled="True"
-                  Value="{Binding ChatHistoryRetentionDays, Mode=TwoWay}"
-                  VerticalAlignment="Center"/>
-          <ui:NumberBox Grid.Column="1"
-                        Value="{Binding ChatHistoryRetentionDays, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                        Minimum="1"
-                        Maximum="365"
-                        Width="90"
-                        Margin="12,0,0,0"/>
-        </Grid>
+        <Slider HorizontalAlignment="Left"
+                Width="400"
+                Minimum="1"
+                Maximum="365"
+                TickFrequency="1"
+                IsSnapToTickEnabled="True"
+                Value="{Binding ChatHistoryRetentionDays, Mode=TwoWay}"
+                VerticalAlignment="Center"/>
         <TextBlock Text="{Binding RetentionDaysDisplay}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"/>
       </StackPanel>
