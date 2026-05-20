@@ -66,10 +66,20 @@
 
           <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
                      Margin="0,8,0,0"
-                     FontFamily="{DynamicResource PiaMonoFont}"
-                     FontSize="11"
-                     Foreground="{DynamicResource TextSubtleBrush}"
-                     Text="{Binding UpdatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}', Mode=OneWay}"/>
+                     FontSize="11.5"
+                     TextWrapping="Wrap">
+            <Run Text="{loc:Str Memory_Meta_Created}" Foreground="{DynamicResource TextMutedBrush}"/>
+            <Run Text=" "/>
+            <Run Text="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+            <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
+            <Run Text="{loc:Str Memory_Meta_Updated}" Foreground="{DynamicResource TextMutedBrush}"/>
+            <Run Text=" "/>
+            <Run Text="{Binding UpdatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+            <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
+            <Run Text="{loc:Str Memory_Meta_Accessed}" Foreground="{DynamicResource TextMutedBrush}"/>
+            <Run Text=" "/>
+            <Run Text="{Binding LastAccessedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+          </TextBlock>
         </Grid>
       </Border>
 
