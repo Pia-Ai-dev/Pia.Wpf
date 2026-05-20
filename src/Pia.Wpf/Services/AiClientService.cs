@@ -91,6 +91,8 @@ public class AiClientService : IAiClientService
             {
                 if (usage.InputTokenCount is long input) tokensUsed += (int)input;
                 if (usage.OutputTokenCount is long output) tokensUsed += (int)output;
+                _logger.LogDebug("Token usage: input={Input}, output={Output}, cached={Cached}",
+                    usage.InputTokenCount, usage.OutputTokenCount, usage.CachedInputTokenCount);
             }
 
             return new AiCompletionResult(text, tokensUsed);
@@ -381,6 +383,8 @@ public class AiClientService : IAiClientService
             {
                 if (roundUsage.InputTokenCount is long input) { aggregatedInput += input; hasUsage = true; }
                 if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
+                _logger.LogDebug("Round {Round} token usage: input={Input}, output={Output}, cached={Cached}",
+                    round + 1, roundUsage.InputTokenCount, roundUsage.OutputTokenCount, roundUsage.CachedInputTokenCount);
             }
 
             // Detect truncation by output token cap. Surfaced to the UI as a friendly hint
@@ -467,6 +471,8 @@ public class AiClientService : IAiClientService
                 OutputTokenCount = aggregatedOutput,
                 TotalTokenCount = aggregatedInput + aggregatedOutput,
             };
+            _logger.LogDebug("Completion total usage: input={Input}, output={Output}, total={Total}",
+                aggregatedInput, aggregatedOutput, aggregatedInput + aggregatedOutput);
         }
         else
         {
