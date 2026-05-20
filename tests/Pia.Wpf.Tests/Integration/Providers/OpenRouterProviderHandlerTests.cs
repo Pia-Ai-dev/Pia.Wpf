@@ -66,15 +66,16 @@ public class OpenRouterProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    /// <summary>
-    /// Regression: OpenRouter rejects flat `reasoning_effort` paired with a
-    /// nested `reasoning: { effort }`. The handler must send only the nested
-    /// form, not both.
-    /// </summary>
-    [Fact]
-    public async Task SendRequestAsync_WithMediumReasoning_UsesNestedFormAndSucceeds()
+    [Theory]
+    [InlineData(ReasoningEffort.None)]
+    [InlineData(ReasoningEffort.Minimal)]
+    [InlineData(ReasoningEffort.Low)]
+    [InlineData(ReasoningEffort.Medium)]
+    [InlineData(ReasoningEffort.High)]
+    [InlineData(ReasoningEffort.XHigh)]
+    public async Task SendRequestAsync_EachEffortLevel_Succeeds(ReasoningEffort effort)
     {
-        var provider = TryBuildProvider(ReasoningEffort.Medium);
+        var provider = TryBuildProvider(effort);
         if (provider is null) { Assert.Skip("PIA_TEST_OPENROUTER_KEY not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);

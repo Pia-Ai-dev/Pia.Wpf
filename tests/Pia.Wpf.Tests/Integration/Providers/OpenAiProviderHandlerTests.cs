@@ -30,7 +30,7 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task SendRequestAsync_ReturnsCompletion()
     {
-        var provider = TryBuildProvider(ReasoningEffort.Minimal);
+        var provider = TryBuildProvider();
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         var client = _fixture.BuildClient();
@@ -42,7 +42,7 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task StreamChatCompletionAsync_YieldsAtLeastOneDelta()
     {
-        var provider = TryBuildProvider(ReasoningEffort.Minimal);
+        var provider = TryBuildProvider();
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         var client = _fixture.BuildClient();
@@ -62,7 +62,7 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task TestStreamingAsync_ReturnsTrue()
     {
-        var provider = TryBuildProvider(ReasoningEffort.Minimal);
+        var provider = TryBuildProvider();
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
@@ -71,20 +71,19 @@ public class OpenAiProviderHandlerTests
     [Fact]
     public async Task TestToolCallingAsync_ReturnsTrue()
     {
-        var provider = TryBuildProvider(ReasoningEffort.Minimal);
+        var provider = TryBuildProvider();
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         Assert.True(await _fixture.BuildClient().TestToolCallingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    /// <summary>
-    /// Regression test for the original 400/422 bug. OpenAI honours
-    /// `reasoning_effort` natively; this call should succeed.
-    /// </summary>
-    [Fact]
-    public async Task SendRequestAsync_WithMediumReasoning_DoesNotFail()
+    [Theory]
+    [InlineData(ReasoningEffort.None)]
+    [InlineData(ReasoningEffort.Medium)]
+    [InlineData(ReasoningEffort.High)]
+    public async Task SendRequestAsync_EachEffortLevel_Succeeds(ReasoningEffort effort)
     {
-        var provider = TryBuildProvider(ReasoningEffort.Medium);
+        var provider = TryBuildProvider(effort);
         if (provider is null) { Assert.Skip("PIA_TEST_OPENAI_KEY not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);

@@ -60,10 +60,16 @@ public class OllamaProviderHandlerTests
         Assert.True(any);
     }
 
-    [Fact]
-    public async Task SendRequestAsync_WithMediumReasoning_DoesNotFail()
+    [Theory]
+    [InlineData(ReasoningEffort.None)]
+    [InlineData(ReasoningEffort.Minimal)]
+    [InlineData(ReasoningEffort.Low)]
+    [InlineData(ReasoningEffort.Medium)]
+    [InlineData(ReasoningEffort.High)]
+    [InlineData(ReasoningEffort.XHigh)]
+    public async Task SendRequestAsync_EachEffortLevel_Succeeds(ReasoningEffort effort)
     {
-        var provider = TryBuildProvider(ReasoningEffort.Medium);
+        var provider = TryBuildProvider(effort);
         if (provider is null) { Assert.Skip("PIA_TEST_OLLAMA_ENDPOINT not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);

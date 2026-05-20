@@ -46,7 +46,14 @@ public partial class ProviderEditModel : ObservableValidator
     public static AiProviderType[] EditableProviderTypes { get; } =
         Enum.GetValues<AiProviderType>().Where(t => t != AiProviderType.PiaCloud).ToArray();
 
-    public ReasoningEffort[] ReasoningEffortOptions { get; } = Enum.GetValues<ReasoningEffort>();
+    public ReasoningEffort[] ReasoningEffortOptions => ProviderType switch
+    {
+        AiProviderType.OpenAI or AiProviderType.AzureOpenAI =>
+            [ReasoningEffort.None, ReasoningEffort.Medium, ReasoningEffort.High],
+        AiProviderType.Mistral =>
+            [ReasoningEffort.None, ReasoningEffort.High],
+        _ => Enum.GetValues<ReasoningEffort>(),
+    };
 
     public ObservableCollection<string> AvailableModels { get; } = [];
 
@@ -77,6 +84,10 @@ public partial class ProviderEditModel : ObservableValidator
         {
             Endpoint = newDefault;
         }
+
+        OnPropertyChanged(nameof(ReasoningEffortOptions));
+        if (!ReasoningEffortOptions.Contains(ReasoningEffort))
+            ReasoningEffort = ReasoningEffort.None;
     }
 
     public static ProviderEditModel FromProvider(AiProvider provider)

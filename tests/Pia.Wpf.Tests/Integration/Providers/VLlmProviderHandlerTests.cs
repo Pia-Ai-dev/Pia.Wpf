@@ -57,15 +57,16 @@ public class VLlmProviderHandlerTests
         Assert.True(any);
     }
 
-    /// <summary>
-    /// Regression: vLLM rejects unknown fields like `reasoning_effort` on some
-    /// models. The handler must strip that field and inject
-    /// `chat_template_kwargs.enable_thinking` for Qwen3-family templates.
-    /// </summary>
-    [Fact]
-    public async Task SendRequestAsync_WithMediumReasoning_DoesNotFail()
+    [Theory]
+    [InlineData(ReasoningEffort.None)]
+    [InlineData(ReasoningEffort.Minimal)]
+    [InlineData(ReasoningEffort.Low)]
+    [InlineData(ReasoningEffort.Medium)]
+    [InlineData(ReasoningEffort.High)]
+    [InlineData(ReasoningEffort.XHigh)]
+    public async Task SendRequestAsync_EachEffortLevel_Succeeds(ReasoningEffort effort)
     {
-        var provider = TryBuildProvider(ReasoningEffort.Medium);
+        var provider = TryBuildProvider(effort);
         if (provider is null) { Assert.Skip("PIA_TEST_VLLM_ENDPOINT not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);

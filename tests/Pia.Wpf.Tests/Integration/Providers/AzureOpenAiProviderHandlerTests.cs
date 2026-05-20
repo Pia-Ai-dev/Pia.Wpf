@@ -47,10 +47,13 @@ public class AzureOpenAiProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    [Fact]
-    public async Task SendRequestAsync_WithMediumReasoning_DoesNotFail()
+    [Theory]
+    [InlineData(ReasoningEffort.None)]
+    [InlineData(ReasoningEffort.Medium)]
+    [InlineData(ReasoningEffort.High)]
+    public async Task SendRequestAsync_EachEffortLevel_Succeeds(ReasoningEffort effort)
     {
-        var provider = TryBuildProvider(ReasoningEffort.Medium);
+        var provider = TryBuildProvider(effort);
         if (provider is null) { Assert.Skip("PIA_TEST_AZURE_ENDPOINT/KEY not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);

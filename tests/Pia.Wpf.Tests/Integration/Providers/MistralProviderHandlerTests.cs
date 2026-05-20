@@ -68,14 +68,12 @@ public class MistralProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    /// <summary>
-    /// Regression: with ReasoningEffort=Medium on the default (small-latest)
-    /// model, the handler must clamp to High before sending and not 422.
-    /// </summary>
-    [Fact]
-    public async Task SendRequestAsync_WithMediumReasoning_ClampsToHighAndSucceeds()
+    [Theory]
+    [InlineData(ReasoningEffort.None)]
+    [InlineData(ReasoningEffort.High)]
+    public async Task SendRequestAsync_EachEffortLevel_Succeeds(ReasoningEffort effort)
     {
-        var provider = TryBuildProvider(ReasoningEffort.Medium);
+        var provider = TryBuildProvider(effort);
         if (provider is null) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);
@@ -90,7 +88,7 @@ public class MistralProviderHandlerTests
     [Fact]
     public async Task SendRequestAsync_WithIncompatibleModel_OmitsReasoningField()
     {
-        var provider = TryBuildProvider(ReasoningEffort.Medium, modelOverride: "mistral-large-latest");
+        var provider = TryBuildProvider(ReasoningEffort.High, modelOverride: "mistral-large-latest");
         if (provider is null) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
 
         var result = await _fixture.BuildClient().SendRequestAsync(provider, "Say 'ok'.", TestContext.Current.CancellationToken);

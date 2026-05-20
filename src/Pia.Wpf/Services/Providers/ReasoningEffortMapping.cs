@@ -14,19 +14,15 @@ internal static class ReasoningEffortMapping
 #pragma warning disable OPENAI001
     public static ChatReasoningEffortLevel? ToOpenAi(ReasoningEffort? effort, bool hasTools)
     {
-        // Omit the parameter entirely for tool-using turns rather than sending "none",
-        // because not all models accept "none" as a valid reasoning_effort value.
-        if (hasTools) return null;
+        // Omit the parameter entirely when there are tools, when effort is unset,
+        // or when effort is None — not all models accept "none" as a valid value.
+        if (hasTools || effort is null or ReasoningEffort.None) return null;
 
         return effort switch
         {
-            ReasoningEffort.None => null,
-            ReasoningEffort.Minimal => ChatReasoningEffortLevel.Low,
-            ReasoningEffort.Low => ChatReasoningEffortLevel.Low,
+            ReasoningEffort.Minimal or ReasoningEffort.Low => ChatReasoningEffortLevel.Low,
             ReasoningEffort.Medium => ChatReasoningEffortLevel.Medium,
-            ReasoningEffort.High => ChatReasoningEffortLevel.High,
-            ReasoningEffort.XHigh => ChatReasoningEffortLevel.High,
-            _ => null,
+            _ => ChatReasoningEffortLevel.High,
         };
     }
 #pragma warning restore OPENAI001
