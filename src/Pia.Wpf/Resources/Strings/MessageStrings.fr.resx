@@ -104,6 +104,10 @@
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Supprimer la session</value></data>
   <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Échec de la copie dans le presse-papiers : {0}</value></data>
   <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Échec de la suppression de la session : {0}</value></data>
+  <data name="Msg_AssistantHistory_Exported" xml:space="preserve"><value>Exporté</value></data>
+  <data name="Msg_AssistantHistory_ExportedToFile" xml:space="preserve"><value>Chat exporté vers {0}</value></data>
+  <data name="Msg_AssistantHistory_ExportFailed" xml:space="preserve"><value>Échec de l'exportation du chat : {0}</value></data>
+  <data name="Msg_AssistantHistory_DeleteAllFailed" xml:space="preserve"><value>Échec de la suppression de tous les chats : {0}</value></data>
   <!-- Memory messages -->
   <data name="Msg_Memory_AllFresh" xml:space="preserve"><value>Tout est à jour</value></data>
   <data name="Msg_Memory_AndMore" xml:space="preserve"><value>...et {0} de plus.</value></data>

@@ -189,6 +189,8 @@
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Start a chat in Assistant mode to build history</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Resume this chat</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Chat history</value></data>
+  <data name="AssistantHistory_DeleteAll" xml:space="preserve"><value>Delete all</value></data>
+  <data name="AssistantHistory_ExportMarkdown" xml:space="preserve"><value>Export as Markdown</value></data>
   <!-- Todo View -->
   <data name="Todo_Title" xml:space="preserve"><value>Todo List</value></data>
   <data name="Todo_Refresh" xml:space="preserve"><value>Refresh</value></data>

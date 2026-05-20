@@ -189,6 +189,8 @@
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Démarrez un chat en mode Assistant pour alimenter l'historique</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Reprendre ce chat</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Historique des chats</value></data>
+  <data name="AssistantHistory_DeleteAll" xml:space="preserve"><value>Tout supprimer</value></data>
+  <data name="AssistantHistory_ExportMarkdown" xml:space="preserve"><value>Exporter en Markdown</value></data>
   <!-- Todo View -->
   <data name="Todo_Title" xml:space="preserve"><value>Liste des tâches</value></data>
   <data name="Todo_Refresh" xml:space="preserve"><value>Actualiser</value></data>

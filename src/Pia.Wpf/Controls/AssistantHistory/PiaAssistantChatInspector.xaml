@@ -22,6 +22,7 @@
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -41,10 +42,21 @@
                      Appearance="Primary"
                      Margin="10,0,0,0"
                      Padding="10,4"
-                     Content="{loc:Str AssistantHistory_Resume}"
-                     Command="{Binding DataContext.ResumeChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+                     Command="{Binding DataContext.ResumeChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}">
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="Play24" FontSize="14" Margin="0,0,6,0"/>
+              <TextBlock Text="{loc:Str AssistantHistory_Resume}" VerticalAlignment="Center"/>
+            </StackPanel>
+          </ui:Button>
 
           <ui:Button Grid.Row="0" Grid.Column="2"
+                     Icon="{ui:SymbolIcon Symbol=ArrowDownload20}"
+                     Appearance="Transparent"
+                     ToolTip="{loc:Str AssistantHistory_ExportMarkdown}"
+                     Margin="6,0,0,0"
+                     Command="{Binding DataContext.ExportChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+
+          <ui:Button Grid.Row="0" Grid.Column="3"
                      Icon="{ui:SymbolIcon Symbol=Delete20}"
                      Appearance="Transparent"
                      ToolTip="{loc:Str History_Delete}"
@@ -52,7 +64,7 @@
                      Foreground="{DynamicResource PiaDangerBrush}"
                      Command="{Binding DataContext.DeleteChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
 
-          <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+          <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
                      Margin="0,8,0,0"
                      FontFamily="{DynamicResource PiaMonoFont}"
                      FontSize="11"

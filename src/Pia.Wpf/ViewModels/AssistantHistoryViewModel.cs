@@ -1,14 +1,18 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Wpf.Ui.Controls;
 
 namespace Pia.ViewModels;
 
@@ -23,9 +27,12 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
     private readonly INavigationService _navigationService;
+    private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
+    private bool _initialized;
+    private bool _suppressReload;
 
     [ObservableProperty]
     private ObservableCollection<SyncAssistantChat> _chats = new();
@@ -59,9 +66,11 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     public ObservableCollection<AiProvider> Providers { get; } = new();
 
     public IAsyncRelayCommand DeleteChatCommand { get; }
+    public IAsyncRelayCommand DeleteAllChatsCommand { get; }
     public IAsyncRelayCommand ClearFilterCommand { get; }
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand ResumeChatCommand { get; }
+    public IAsyncRelayCommand ExportChatCommand { get; }
 
     public AssistantHistoryViewModel(
         ILogger<AssistantHistoryViewModel> logger,
@@ -69,7 +78,8 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         IProviderService providerService,
         IDialogService dialogService,
         ILocalizationService localizationService,
-        INavigationService navigationService)
+        INavigationService navigationService,
+        Wpf.Ui.ISnackbarService snackbarService)
     {
         _logger = logger;
         _chatService = chatService;
@@ -77,12 +87,15 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         _dialogService = dialogService;
         _localizationService = localizationService;
         _navigationService = navigationService;
+        _snackbarService = snackbarService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         DeleteChatCommand = new AsyncRelayCommand(ExecuteDeleteChatAsync, CanExecuteWithSelection);
+        DeleteAllChatsCommand = new AsyncRelayCommand(ExecuteDeleteAllChatsAsync);
         ClearFilterCommand = new AsyncRelayCommand(ExecuteClearFilterAsync);
         RefreshCommand = new AsyncRelayCommand(ExecuteRefreshAsync);
         ResumeChatCommand = new AsyncRelayCommand(ExecuteResumeChatAsync, CanExecuteWithSelection);
+        ExportChatCommand = new AsyncRelayCommand(ExecuteExportChatAsync, CanExecuteExport);
 
         PropertyChanged += OnPropertyChanged;
         _chatService.ChatsChanged += OnChatsChanged;
@@ -99,6 +112,15 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
                 var providers = await _providerService.GetProvidersAsync();
                 foreach (var p in providers)
                     Providers.Add(p);
+            }
+
+            if (!_initialized)
+            {
+                _suppressReload = true;
+                FilterStartDate = DateTime.Today.AddDays(-30);
+                FilterEndDate = DateTime.Today;
+                _suppressReload = false;
+                _initialized = true;
             }
 
             await LoadChatsAsync();
@@ -253,6 +275,105 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         }
     }
 
+    private async Task ExecuteDeleteAllChatsAsync()
+    {
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["AssistantHistory_DeleteAllConfirmTitle"],
+            _localizationService["AssistantHistory_DeleteAllConfirmBody"]);
+        if (!confirmed) return;
+
+        try
+        {
+            var deleted = await _chatService.DeleteAllAsync();
+            _logger.LogInformation("Deleted all assistant chats ({Count})", deleted.Count);
+            SelectedChat = null;
+            Chats.Clear();
+            RebuildGroups();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete all assistant chats");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_AssistantHistory_DeleteAllFailed", ex.Message));
+        }
+    }
+
+    private bool CanExecuteExport() => SelectedChatDetail is not null && !IsLoading;
+
+    private async Task ExecuteExportChatAsync()
+    {
+        var chat = SelectedChatDetail;
+        if (chat is null) return;
+
+        var defaultName = SanitizeFileName(chat.Title) is { Length: > 0 } title
+            ? $"{title}_{chat.UpdatedAt.ToLocalTime():yyyyMMdd_HHmmss}"
+            : $"Chat_{chat.UpdatedAt.ToLocalTime():yyyyMMdd_HHmmss}";
+
+        var dialog = new SaveFileDialog
+        {
+            Title = _localizationService["AssistantHistory_ExportMarkdown"],
+            FileName = defaultName,
+            Filter = "Markdown (*.md)|*.md",
+            DefaultExt = ".md",
+        };
+
+        if (dialog.ShowDialog() != true)
+            return;
+
+        var filePath = dialog.FileName;
+        try
+        {
+            var markdown = BuildMarkdown(chat);
+            await File.WriteAllTextAsync(filePath, markdown, Encoding.UTF8);
+
+            _logger.LogInformation("Exported assistant chat {ChatId} as markdown", chat.Id);
+            _snackbarService.Show(
+                _localizationService["Msg_AssistantHistory_Exported"],
+                _localizationService.Format("Msg_AssistantHistory_ExportedToFile", filePath),
+                ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export chat {ChatId}", chat.Id);
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_AssistantHistory_ExportFailed", ex.Message));
+        }
+    }
+
+    private static string BuildMarkdown(SyncAssistantChat chat)
+    {
+        var sb = new StringBuilder();
+        var title = string.IsNullOrWhiteSpace(chat.Title) ? "Assistant chat" : chat.Title;
+        sb.Append("# ").AppendLine(title);
+        sb.AppendLine();
+        sb.Append("*").Append(chat.UpdatedAt.ToLocalTime().ToString("f")).AppendLine("*");
+        sb.AppendLine();
+
+        foreach (var msg in chat.Messages)
+        {
+            var role = string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase) ? "User" : "Assistant";
+            sb.Append("## ").Append(role).Append(" — ")
+              .AppendLine(msg.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
+            sb.AppendLine();
+            sb.AppendLine(msg.Content);
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    private static string SanitizeFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        var invalid = Path.GetInvalidFileNameChars();
+        var sb = new StringBuilder(name.Length);
+        foreach (var ch in name)
+            sb.Append(Array.IndexOf(invalid, ch) >= 0 ? '_' : ch);
+        return sb.ToString().Trim();
+    }
+
     private async Task ExecuteResumeChatAsync()
     {
         if (SelectedChat is null) return;
@@ -297,8 +418,12 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             or nameof(FilterEndDate)
             or nameof(SelectedProviderId))
         {
-            DebounceReload();
+            if (!_suppressReload)
+                DebounceReload();
         }
+
+        if (e.PropertyName == nameof(SelectedChatDetail))
+            ExportChatCommand.NotifyCanExecuteChanged();
 
         if (e.PropertyName == nameof(IsLoading))
             UpdateCommandStates();

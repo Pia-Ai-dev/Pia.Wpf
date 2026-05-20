@@ -105,6 +105,10 @@
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Sitzung löschen</value></data>
   <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Kopieren in die Zwischenablage fehlgeschlagen: {0}</value></data>
   <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Löschen der Sitzung fehlgeschlagen: {0}</value></data>
+  <data name="Msg_AssistantHistory_Exported" xml:space="preserve"><value>Exportiert</value></data>
+  <data name="Msg_AssistantHistory_ExportedToFile" xml:space="preserve"><value>Chat exportiert nach {0}</value></data>
+  <data name="Msg_AssistantHistory_ExportFailed" xml:space="preserve"><value>Export des Chats fehlgeschlagen: {0}</value></data>
+  <data name="Msg_AssistantHistory_DeleteAllFailed" xml:space="preserve"><value>Löschen aller Chats fehlgeschlagen: {0}</value></data>
   <!-- Memory messages -->
   <data name="Msg_Memory_AllFresh" xml:space="preserve"><value>Alles aktuell</value></data>
   <data name="Msg_Memory_AndMore" xml:space="preserve"><value>...und {0} weitere.</value></data>

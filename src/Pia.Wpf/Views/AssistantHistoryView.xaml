@@ -27,6 +27,7 @@
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
       <TextBlock Grid.Column="0"
@@ -48,6 +49,18 @@
                            Margin="0,0,6,0"
                            Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
           <TextBlock Text="{loc:Str History_Refresh}"/>
+        </StackPanel>
+      </ui:Button>
+
+      <ui:Button Grid.Column="2"
+                 Appearance="Secondary"
+                 Margin="8,0,0,0"
+                 Command="{Binding DeleteAllChatsCommand}"
+                 ToolTip="{loc:Str AssistantHistory_DeleteAllConfirmBody}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,6,0"
+                         Foreground="{DynamicResource PiaDangerBrush}"/>
+          <TextBlock Text="{loc:Str AssistantHistory_DeleteAll}"/>
         </StackPanel>
       </ui:Button>
     </Grid>
