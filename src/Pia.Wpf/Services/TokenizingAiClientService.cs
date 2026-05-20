@@ -193,13 +193,16 @@ public class TokenizingAiClientService : IAiClientService
 
     public async Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
         string text, Guid templateId, string language, bool isVoiceInput,
-        string? mode = null, CancellationToken cancellationToken = default)
+        string? mode = null,
+        string? customPrompt = null,
+        string? customTemplateName = null,
+        CancellationToken cancellationToken = default)
     {
         if (!await IsEnabledAsync())
-            return await _inner.OptimizeViaPiaCloudAsync(text, templateId, language, isVoiceInput, mode, cancellationToken);
+            return await _inner.OptimizeViaPiaCloudAsync(text, templateId, language, isVoiceInput, mode, customPrompt, customTemplateName, cancellationToken);
 
         var tokenizedText = TryGetTokenMapService()!.TokenizeStructuredResult(text);
-        var result = await _inner.OptimizeViaPiaCloudAsync(tokenizedText, templateId, language, isVoiceInput, mode, cancellationToken);
+        var result = await _inner.OptimizeViaPiaCloudAsync(tokenizedText, templateId, language, isVoiceInput, mode, customPrompt, customTemplateName, cancellationToken);
         var detokenized = TryGetTokenMapService()!.Detokenize(result.Text);
         _logger.LogDebug("Tokenizing.OptimizeViaPiaCloud: pre-detok length={Pre}, post-detok length={Post}",
             result.Text.Length, detokenized.Length);

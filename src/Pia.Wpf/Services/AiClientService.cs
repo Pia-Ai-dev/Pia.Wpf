@@ -545,6 +545,8 @@ public class AiClientService : IAiClientService
         string language,
         bool isVoiceInput,
         string? mode = null,
+        string? customPrompt = null,
+        string? customTemplateName = null,
         CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -565,7 +567,9 @@ public class AiClientService : IAiClientService
             text,
             templateId = templateId.ToString(),
             language,
-            isVoiceInput
+            isVoiceInput,
+            customPrompt,
+            customTemplateName
         };
 
         var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
