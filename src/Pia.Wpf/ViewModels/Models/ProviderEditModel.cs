@@ -46,6 +46,19 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private bool _enableWebSearch;
 
+    [ObservableProperty]
+    private string? _mistralAgentId;
+
+    partial void OnMistralAgentIdChanged(string? value)
+    {
+        OnPropertyChanged(nameof(IsMistralWebSearchAvailable));
+        if (string.IsNullOrWhiteSpace(value))
+            EnableWebSearch = false;
+    }
+
+    public bool IsMistralWebSearchAvailable =>
+        ProviderType == AiProviderType.Mistral && !string.IsNullOrWhiteSpace(MistralAgentId);
+
     public static AiProviderType[] EditableProviderTypes { get; } =
         Enum.GetValues<AiProviderType>().Where(t => t != AiProviderType.PiaCloud).ToArray();
 
@@ -91,6 +104,7 @@ public partial class ProviderEditModel : ObservableValidator
         OnPropertyChanged(nameof(ReasoningEffortOptions));
         if (!ReasoningEffortOptions.Contains(ReasoningEffort))
             ReasoningEffort = ReasoningEffort.None;
+        OnPropertyChanged(nameof(IsMistralWebSearchAvailable));
     }
 
     public static ProviderEditModel FromProvider(AiProvider provider)
@@ -109,6 +123,7 @@ public partial class ProviderEditModel : ObservableValidator
             SupportsStreaming = provider.SupportsStreaming,
             ReasoningEffort = provider.ReasoningEffort ?? ReasoningEffort.None,
             EnableWebSearch = provider.EnableWebSearch,
+            MistralAgentId = provider.MistralAgentId,
         };
     }
 
@@ -127,6 +142,7 @@ public partial class ProviderEditModel : ObservableValidator
             TimeoutSeconds = TimeoutSeconds,
             ReasoningEffort = ReasoningEffort,
             EnableWebSearch = EnableWebSearch,
+            MistralAgentId = MistralAgentId,
         };
     }
 }

@@ -107,6 +107,20 @@
                 Margin="0,0,0,16" />
     </StackPanel>
 
+    <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=MistralAgentId}">
+      <TextBlock Text="{loc:Str Dialog_ProviderEdit_MistralAgentId}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <TextBox Text="{Binding MistralAgentId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+               Margin="0,0,0,16" />
+    </StackPanel>
+
+    <StackPanel Visibility="{Binding IsMistralWebSearchAvailable, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <CheckBox Content="{loc:Str Dialog_ProviderEdit_WebSearch}"
+                IsChecked="{Binding EnableWebSearch}"
+                Margin="0,0,0,16" />
+    </StackPanel>
+
     <TextBlock Text="{loc:Str Dialog_ProviderEdit_Timeout}"
                FontWeight="SemiBold"
                Margin="0,0,0,4" />

@@ -26,6 +26,7 @@ public class AiProvider
     public int TimeoutSeconds { get; set; } = 300;
     public ReasoningEffort? ReasoningEffort { get; set; }
     public bool EnableWebSearch { get; set; } = false;
+    public string? MistralAgentId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

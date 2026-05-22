@@ -32,13 +32,16 @@ public sealed class MistralProviderHandler : IAiProviderHandler
         string? mode,
         CancellationToken cancellationToken)
     {
-        // Strip "thinking" content parts from responses before the OpenAI SDK
-        // deserialises them — the SDK throws on unknown content part kinds.
         var responseFilter = new MistralThinkingResponseHandler
         {
             InnerHandler = new HttpClientHandler(),
         };
-        var http = new HttpClient(responseFilter, disposeHandler: true);
+
+        DelegatingHandler outerHandler = responseFilter;
+        if (provider.EnableWebSearch && !string.IsNullOrWhiteSpace(provider.MistralAgentId))
+            outerHandler = new MistralAgentsHandler(provider.MistralAgentId) { InnerHandler = responseFilter };
+
+        var http = new HttpClient(outerHandler, disposeHandler: true);
 
         var client = new ChatClient(
             model: provider.ModelName ?? "mistral-small-latest",

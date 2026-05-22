@@ -22,6 +22,8 @@ internal static class ProviderTestEnvironment
         ApiKey: Env("PIA_TEST_MISTRAL_KEY"),
         Model: EnvOrDefault("PIA_TEST_MISTRAL_MODEL", "mistral-small-latest"));
 
+    public static string MistralAgentId() => Env("PIA_TEST_MISTRAL_AGENT_ID");
+
     public static (string Endpoint, string ApiKey, string Model) OpenRouter() => (
         Endpoint: "https://openrouter.ai/api/v1",
         ApiKey: Env("PIA_TEST_OPENROUTER_KEY"),

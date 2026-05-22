@@ -95,4 +95,30 @@ public class MistralProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
+    [Fact]
+    public async Task SendRequestAsync_WithWebSearch_ReturnsCompletion()
+    {
+        var (endpoint, key, model) = ProviderTestEnvironment.Mistral();
+        var agentId = ProviderTestEnvironment.MistralAgentId();
+        if (string.IsNullOrEmpty(key)) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
+        if (string.IsNullOrEmpty(agentId)) { Assert.Skip("PIA_TEST_MISTRAL_AGENT_ID not set"); return; }
+
+        var provider = new AiProvider
+        {
+            Name = "Mistral Agent Integration",
+            ProviderType = AiProviderType.Mistral,
+            Endpoint = endpoint,
+            ModelName = model,
+            EncryptedApiKey = key,
+            SupportsToolCalling = true,
+            SupportsStreaming = true,
+            TimeoutSeconds = 60,
+            EnableWebSearch = true,
+            MistralAgentId = agentId,
+        };
+
+        var result = await _fixture.BuildClient().SendRequestAsync(provider, "Reply with the single word: ready.", TestContext.Current.CancellationToken);
+        Assert.False(string.IsNullOrWhiteSpace(result.Text));
+    }
+
 }

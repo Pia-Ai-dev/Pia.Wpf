@@ -30,6 +30,8 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
                 ? Visibility.Visible : Visibility.Collapsed,
             "WebSearch" => providerType is AiProviderType.OpenAI or AiProviderType.OpenRouter
                 ? Visibility.Visible : Visibility.Collapsed,
+            "MistralAgentId" => providerType is AiProviderType.Mistral
+                ? Visibility.Visible : Visibility.Collapsed,
             _ => Visibility.Collapsed
         };
     }
