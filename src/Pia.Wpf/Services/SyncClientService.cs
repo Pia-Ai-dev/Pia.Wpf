@@ -49,6 +49,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     public event EventHandler? E2EEOnboardingCleared;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
     public event EventHandler? CurrentDeviceRevoked;
+    public event EventHandler<SyncCompletedEventArgs>? SyncCompleted;
 
     public void NotifyE2EEOnboardingRequired()
     {
@@ -604,6 +605,9 @@ public class SyncClientService : ISyncClientService, IDisposable
         var mergeSkipped = 0;
         var mergeDeleted = 0;
 
+        var settingsApplied = false;
+        var providersApplied = false;
+
         // Apply settings
         if (pullResponse.Settings is not null)
         {
@@ -612,6 +616,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 var currentSettings = await _settingsService.GetSettingsAsync();
                 _mapper.ApplySyncSettings(pullResponse.Settings, currentSettings, userId);
                 await _settingsService.SaveSettingsAsync(currentSettings);
+                settingsApplied = true;
                 _logger.LogInformation("Imported synced settings");
             }
             catch (CryptographicException ex)
@@ -680,7 +685,25 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (pullResponse.Templates.Deleted.Count > 0)
             _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "templates", pullResponse.Templates.Deleted.Count);
 
-        // Apply providers
+        // Apply providers — match by Id first, fall back to content fingerprint
+        // so providers created independently on two devices (each with their own
+        // Guid) collapse into one row instead of duplicating.
+        var localProviders = (await _providerService.GetProvidersAsync()).ToList();
+        var localByFingerprint = new Dictionary<string, AiProvider>(StringComparer.Ordinal);
+        foreach (var p in localProviders)
+        {
+            if (p.Id == ProviderService.PiaCloudProviderId) continue;
+            var fp = ProviderFingerprint.Compute(p);
+            if (fp == ProviderFingerprint.PiaCloudSentinel) continue;
+            // If two locals share a fingerprint, the most-recently-updated wins as the survivor;
+            // the others get cleaned up by ConsolidateLocalDuplicatesAsync at startup.
+            if (!localByFingerprint.TryGetValue(fp, out var current)
+                || p.UpdatedAt.ToUniversalTime() > current.UpdatedAt.ToUniversalTime())
+            {
+                localByFingerprint[fp] = p;
+            }
+        }
+
         foreach (var provider in pullResponse.Providers.Upserted)
         {
             try
@@ -704,15 +727,42 @@ public class SyncClientService : ISyncClientService, IDisposable
                         _logger.LogDebug("Skipped provider {Id}: local is newer (local={Local}, remote={Remote})",
                             provider.Id, existing.UpdatedAt, local.UpdatedAt);
                     }
+                    continue;
                 }
-                else
+
+                // Fingerprint match against a different local Id => reassign rather than insert.
+                var fingerprint = ProviderFingerprint.Compute(local);
+                if (fingerprint != ProviderFingerprint.PiaCloudSentinel
+                    && localByFingerprint.TryGetValue(fingerprint, out var dup)
+                    && dup.Id != provider.Id
+                    && dup.Id != ProviderService.PiaCloudProviderId)
                 {
-                    var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
-                    await _providerService.AddProviderAsync(local, apiKey);
-                    mergeInserted++;
-                    _logger.LogInformation("Imported provider {Id}", provider.Id);
-                    _logger.SensitiveDebug("Imported provider {Id} name: {Name}", provider.Id, local.Name);
+                    // Server Id wins as the canonical identifier. Content from whichever
+                    // side has the later UpdatedAt wins; UpdatedAt is set to the max
+                    // so the next push does not regress the server row.
+                    var serverNewer = local.UpdatedAt.ToUniversalTime()
+                        >= dup.UpdatedAt.ToUniversalTime();
+                    var merged = serverNewer ? local : dup;
+                    merged.UpdatedAt = local.UpdatedAt.ToUniversalTime() > dup.UpdatedAt.ToUniversalTime()
+                        ? local.UpdatedAt
+                        : dup.UpdatedAt;
+
+                    _logger.LogInformation(
+                        "Provider fingerprint match: reassigning local {OldId} -> server {NewId}",
+                        dup.Id, provider.Id);
+                    await _providerService.ReassignProviderIdAsync(dup.Id, provider.Id, merged);
+                    localByFingerprint[fingerprint] = merged;
+                    mergeUpdated++;
+                    continue;
                 }
+
+                var newApiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
+                await _providerService.AddProviderAsync(local, newApiKey);
+                if (fingerprint != ProviderFingerprint.PiaCloudSentinel)
+                    localByFingerprint[fingerprint] = local;
+                mergeInserted++;
+                _logger.LogInformation("Imported provider {Id}", provider.Id);
+                _logger.SensitiveDebug("Imported provider {Id} name: {Name}", provider.Id, local.Name);
             }
             catch (CryptographicException ex)
             {
@@ -729,6 +779,21 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
         if (pullResponse.Providers.Deleted.Count > 0)
             _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "providers", pullResponse.Providers.Deleted.Count);
+
+        providersApplied = pullResponse.Providers.Upserted.Count > 0
+            || pullResponse.Providers.Deleted.Count > 0;
+
+        // Heal mode-defaults whose Ids may have been reassigned or that now point
+        // at providers the pull removed. Cheap idempotent pass — only writes when
+        // it actually finds something to fix.
+        if (providersApplied || settingsApplied)
+        {
+            try { await _providerService.RepairModeDefaultsAsync(); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "RepairModeDefaultsAsync failed after pull; continuing");
+            }
+        }
 
         // Apply sessions (append-only)
         foreach (var session in pullResponse.Sessions.Added)
@@ -1035,6 +1100,23 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         _logger.LogInformation("Pull merge: {Inserted} inserted, {Updated} updated, {Skipped} skipped, {Deleted} deleted, {DecryptErrors} decrypt errors",
             mergeInserted, mergeUpdated, mergeSkipped, mergeDeleted, decryptionErrors);
+
+        try
+        {
+            SyncCompleted?.Invoke(this, new SyncCompletedEventArgs
+            {
+                MergeInserted = mergeInserted,
+                MergeUpdated = mergeUpdated,
+                MergeDeleted = mergeDeleted,
+                DecryptionErrors = decryptionErrors,
+                SettingsChanged = settingsApplied,
+                ProvidersChanged = providersApplied,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SyncCompleted handler threw — sync continues");
+        }
 
         return (pulledCount, decryptionErrors, true, pullResponse.ServerTimestamp);
     }

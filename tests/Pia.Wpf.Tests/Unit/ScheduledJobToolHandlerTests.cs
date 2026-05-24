@@ -230,6 +230,9 @@ public class ScheduledJobToolHandlerTests
         public Task EnsureBuiltInProviderAsync() => Task.CompletedTask;
         public Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType) => throw new NotImplementedException();
         public Task<bool> IsProviderActiveAsync(AiProvider provider) => Task.FromResult(true);
+        public Task ReassignProviderIdAsync(Guid oldId, Guid newId, AiProvider merged) => Task.CompletedTask;
+        public Task RepairModeDefaultsAsync() => Task.CompletedTask;
+        public Task ConsolidateLocalDuplicatesAsync() => Task.CompletedTask;
     }
 
     private sealed class FakeLocalizationService : ILocalizationService

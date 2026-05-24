@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.E2EE;
@@ -13,11 +15,13 @@ public class SyncMapper
 {
     private readonly DpapiHelper _dpapiHelper;
     private readonly IE2EEService? _e2ee;
+    private readonly ILogger<SyncMapper> _logger;
 
-    public SyncMapper(DpapiHelper dpapiHelper, IE2EEService? e2ee = null)
+    public SyncMapper(DpapiHelper dpapiHelper, IE2EEService? e2ee = null, ILogger<SyncMapper>? logger = null)
     {
         _dpapiHelper = dpapiHelper;
         _e2ee = e2ee;
+        _logger = logger ?? NullLogger<SyncMapper>.Instance;
     }
 
     private bool IsE2EEActive => _e2ee?.IsReady() == true;
@@ -491,6 +495,11 @@ public class SyncMapper
 
     // --- Settings ---
 
+    // ModeProviderDefaults push semantics: we emit exactly what's locally set.
+    // Pull-side uses per-mode merge (see MergeModeProviderDefaults) — absence
+    // means "no change", Guid.Empty would mean "explicit clear". We currently
+    // never emit Guid.Empty, so explicit clears propagate lazily via
+    // RepairModeDefaultsAsync rather than as cross-device tombstones.
     public SyncSettings ToSyncSettings(AppSettings settings, string? userId = null)
     {
         var sync = new SyncSettings
@@ -556,8 +565,7 @@ public class SyncMapper
             target.TargetLanguage = decrypted.TargetLanguage.HasValue ? (TargetLanguage)decrypted.TargetLanguage.Value : null;
             target.TargetSpeechLanguage = (TargetSpeechLanguage)decrypted.TargetSpeechLanguage;
             target.DefaultWindowMode = (WindowMode)decrypted.DefaultWindowMode;
-            target.ModeProviderDefaults = decrypted.ModeProviderDefaults.ToDictionary(
-                kvp => (WindowMode)kvp.Key, kvp => kvp.Value);
+            MergeModeProviderDefaults(decrypted.ModeProviderDefaults, target);
             target.UseSameProviderForAllModes = decrypted.UseSameProviderForAllModes;
             return;
         }
@@ -571,9 +579,43 @@ public class SyncMapper
         target.TargetLanguage = sync.TargetLanguage.HasValue ? (TargetLanguage)sync.TargetLanguage.Value : null;
         target.TargetSpeechLanguage = (TargetSpeechLanguage)sync.TargetSpeechLanguage;
         target.DefaultWindowMode = (WindowMode)sync.DefaultWindowMode;
-        target.ModeProviderDefaults = sync.ModeProviderDefaults.ToDictionary(
-            kvp => (WindowMode)kvp.Key, kvp => kvp.Value);
+        MergeModeProviderDefaults(sync.ModeProviderDefaults, target);
         target.UseSameProviderForAllModes = sync.UseSameProviderForAllModes;
+    }
+
+    // Per-mode merge with Guid.Empty tombstones.
+    //
+    // The previous wholesale `target.ModeProviderDefaults = incoming.ToDictionary(...)`
+    // wiped the local dict whenever sync delivered an empty dictionary (e.g. from
+    // an old device that never set defaults), causing the dropdown-empty regression.
+    //
+    // New semantics:
+    // - Mode key present with Guid.Empty value  -> explicit clear (remove key locally).
+    // - Mode key present with non-empty value   -> set locally.
+    // - Mode key absent from incoming           -> no change locally.
+    internal void MergeModeProviderDefaults(IDictionary<int, Guid> incoming, AppSettings target)
+    {
+        if (incoming is null) return;
+
+        foreach (var kv in incoming)
+        {
+            var mode = (WindowMode)kv.Key;
+            target.ModeProviderDefaults.TryGetValue(mode, out var previous);
+
+            if (kv.Value == Guid.Empty)
+            {
+                if (target.ModeProviderDefaults.Remove(mode))
+                    _logger.LogInformation(
+                        "Sync settings: mode-default {Mode} tombstoned (was {Previous})", mode, previous);
+            }
+            else
+            {
+                target.ModeProviderDefaults[mode] = kv.Value;
+                if (previous != kv.Value)
+                    _logger.LogInformation(
+                        "Sync settings: mode-default {Mode} {Previous} -> {New}", mode, previous, kv.Value);
+            }
+        }
     }
 
     // --- Scheduled Jobs ---
