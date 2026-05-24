@@ -151,8 +151,7 @@
                             Margin="2,0"
                             VerticalContentAlignment="Center"
                             ToolTip="{loc:Str Optimize_Template_Tooltip}"
-                            local:ComboBoxBehaviors.DropDownOpenedCommand="{Binding LoadTemplatesCommand}"
-                            local:ComboBoxBehaviors.KeepSelection="True" />
+                            local:ComboBoxBehaviors.DropDownOpenedCommand="{Binding LoadTemplatesCommand}" />
 
                   <!-- Language combo -->
                   <ComboBox ItemsSource="{Binding Languages}"

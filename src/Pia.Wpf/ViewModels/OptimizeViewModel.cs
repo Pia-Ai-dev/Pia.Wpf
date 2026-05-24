@@ -581,11 +581,37 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         _navigationService.NavigateTo<SettingsViewModel>();
     }
 
+    private Guid ResolveDefaultTemplateId(Guid? configuredDefault)
+    {
+        if (configuredDefault is Guid id && _templates.Any(t => t.Id == id))
+            return id;
+        var clarity = _templates.FirstOrDefault(t => t.Id == Shared.BuiltInTemplates.ClarityAndGrammarId);
+        return clarity?.Id ?? _templates[0].Id;
+    }
+
+    private bool TemplatesMatchCurrent(IReadOnlyList<OptimizationTemplate> incoming)
+    {
+        if (incoming.Count != _templates.Count) return false;
+        for (int i = 0; i < incoming.Count; i++)
+        {
+            if (incoming[i].Id != _templates[i].Id) return false;
+            if (incoming[i].Name != _templates[i].Name) return false;
+        }
+        return true;
+    }
+
     private async Task ExecuteLoadTemplates()
     {
         try
         {
             var templates = await _templateService.GetTemplatesAsync();
+
+            // Skip mutation if the list is unchanged. Clear+Add would otherwise
+            // transiently null the ComboBox SelectedItem and break the SelectedValue
+            // binding (selection ends up empty after the dropdown closes).
+            if (TemplatesMatchCurrent(templates))
+                return;
+
             var previousSelection = SelectedTemplateId;
 
             _templates.Clear();
@@ -605,9 +631,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
             else if (_templates.Count > 0)
             {
                 var settings = await _settingsService.GetSettingsAsync();
-                SelectedTemplateId = settings.DefaultTemplateId
-                    ?? _templates.FirstOrDefault(t => t.Id == Shared.BuiltInTemplates.ClarityAndGrammarId)?.Id
-                    ?? _templates[0].Id;
+                SelectedTemplateId = ResolveDefaultTemplateId(settings.DefaultTemplateId);
             }
         }
         catch (Exception ex)
@@ -685,10 +709,6 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         {
             var settings = await _settingsService.GetSettingsAsync();
             _lastKnownDefaultTemplateId = settings.DefaultTemplateId;
-            var templateId = settings.DefaultTemplateId
-                ?? _templates.FirstOrDefault(t => t.Id == Shared.BuiltInTemplates.ClarityAndGrammarId)?.Id
-                ?? _templates[0].Id;
-            SelectedTemplateId = templateId;
             await UpdateSelectedTemplateAsync();
 
             if (string.IsNullOrEmpty(InputText))
