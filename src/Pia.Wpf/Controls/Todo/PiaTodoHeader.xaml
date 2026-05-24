@@ -1,0 +1,51 @@
+<UserControl x:Class="Pia.Controls.Todo.PiaTodoHeader"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="Auto"/>
+    </Grid.ColumnDefinitions>
+
+    <TextBlock Grid.Row="0" Grid.Column="0"
+               Text="{loc:Str Todo_Title}"
+               FontSize="22"
+               FontWeight="SemiBold"
+               Foreground="{DynamicResource TextDefaultBrush}"
+               VerticalAlignment="Center"/>
+
+    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding AddColumnCommand}"
+                 ToolTip="{loc:Str Kanban_AddColumn}"
+                 Margin="0,0,6,0">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str Kanban_AddColumnShort}"/>
+        </StackPanel>
+      </ui:Button>
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding RefreshCommand}"
+                 ToolTip="{loc:Str Todo_Refresh}">
+        <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"/>
+      </ui:Button>
+    </StackPanel>
+
+    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+               Margin="0,8,0,0"
+               FontSize="12"
+               Foreground="{DynamicResource TextMutedBrush}">
+      <Run Text="{Binding PendingCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Todo_Stats_Open}"/>
+      <Run Text=" · "/>
+      <Run Text="{Binding CompletedTodayCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Todo_Stats_CompletedToday}"/>
+      <Run Text=" · "/>
+      <Run Text="{Binding OverdueCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Todo_Stats_Overdue}"/>
+    </TextBlock>
+  </Grid>
+</UserControl>

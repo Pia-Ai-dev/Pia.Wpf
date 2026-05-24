@@ -42,6 +42,16 @@
   <data name="Msg_Cancelled" xml:space="preserve"><value>Annulé</value></data>
   <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Le texte sélectionné n'a pas été collé car le champ contient déjà du texte.</value></data>
   <data name="Msg_SelectionNotPasted_InsertAnyway" xml:space="preserve"><value>Insérer quand même</value></data>
+
+  <!-- File drop -->
+  <data name="Msg_File_Unsupported" xml:space="preserve"><value>« {0} » ne peut pas être inséré ici – type de fichier non pris en charge.</value></data>
+  <data name="Msg_File_TooLarge" xml:space="preserve"><value>« {0} » est trop volumineux pour être inséré.</value></data>
+  <data name="Msg_File_ReadFailed" xml:space="preserve"><value>Impossible de lire « {0} » : {1}</value></data>
+  <data name="Msg_File_Inserted" xml:space="preserve"><value>Contenu de {0} inséré.</value></data>
+  <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Déposez un fichier pour insérer son contenu</value></data>
+
+  <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Aucun modèle vocal chargé. Choisissez une voix dans les paramètres pour utiliser Lire à voix haute.</value></data>
+  <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Ouvrir les paramètres</value></data>
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copié</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>
@@ -53,9 +63,11 @@
   <data name="Msg_Assistant_PermanentDeleteMemory" xml:space="preserve"><value>Cette mémoire sera définitivement supprimée.</value></data>
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Ce rappel sera définitivement supprimé.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Cette tâche sera définitivement supprimée.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>Ce fichier sera définitivement supprimé.</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Rappel mis à jour</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>La génération de la réponse a été annulée.</value></data>
   <data name="Msg_Assistant_ResponseTimedOut" xml:space="preserve"><value>Le fournisseur « {0} » n'a pas répondu en {1} secondes.</value></data>
+  <data name="Msg_Assistant_ResponseTruncated" xml:space="preserve"><value>Le fournisseur « {0} » a atteint la limite de tokens en sortie avant d'avoir terminé. Essayez une requête plus courte ou plus ciblée, ou découpez le travail en étapes plus petites.</value></data>
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>L'assistant n'a pas fourni de réponse. Veuillez réessayer.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Échec de la récupération de la réponse IA : {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Vérification de la mémoire...</value></data>
@@ -91,6 +103,11 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Échec de la suppression de la mémoire : {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Supprimer la mémoire</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Supprimé</value></data>
+  <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Ignoré</value></data>
+  <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Rappel ignoré. Les rappels récurrents sont reprogrammés à leur prochaine occurrence.</value></data>
+  <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} rappels ignorés.</value></data>
+  <data name="Msg_Reminders_NothingToDismissTitle" xml:space="preserve"><value>Rien à ignorer</value></data>
+  <data name="Msg_Reminders_NothingToDismissBody" xml:space="preserve"><value>Aucun rappel ponctuel à ignorer.</value></data>
   <data name="Msg_Memory_DownloadError" xml:space="preserve"><value>Échec du téléchargement du modèle d'embedding : {0}</value></data>
   <data name="Msg_Memory_DownloadFailedMessage" xml:space="preserve"><value>Le téléchargement du modèle d'embedding n'a pas abouti. Veuillez réessayer.</value></data>
   <data name="Msg_Memory_DownloadFailedTitle" xml:space="preserve"><value>Échec du téléchargement</value></data>

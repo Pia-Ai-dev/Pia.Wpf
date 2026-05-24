@@ -15,9 +15,12 @@ public class ThemeService : IThemeService
     private const string ThemeValueName = "AppsUseLightTheme";
     private const string DarkThemePath = "pack://application:,,,/Resources/Themes/Dark.xaml";
     private const string LightThemePath = "pack://application:,,,/Resources/Themes/Light.xaml";
+    private const string PiaTokensDarkPath = "pack://application:,,,/Resources/Theme/PiaTokens.Dark.xaml";
+    private const string PiaTokensLightPath = "pack://application:,,,/Resources/Theme/PiaTokens.Light.xaml";
 
     private AppTheme _currentAppliedTheme = AppTheme.System;
     private ResourceDictionary? _currentCustomTheme;
+    private ResourceDictionary? _currentPiaTokens;
     private bool _isMonitoring = false;
 
     public ThemeService(ILogger<ThemeService> logger)
@@ -100,6 +103,7 @@ public class ThemeService : IThemeService
 
         ApplicationThemeManager.Apply(wpfUiTheme);
         ApplyCustomTheme(theme);
+        ApplyPiaTokens(theme);
     }
 
     private void ApplyCustomTheme(AppTheme theme)
@@ -122,6 +126,36 @@ public class ThemeService : IThemeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to apply custom {Theme} theme", theme);
+        }
+    }
+
+    private void ApplyPiaTokens(AppTheme theme)
+    {
+        var tokensPath = theme == AppTheme.Light ? PiaTokensLightPath : PiaTokensDarkPath;
+
+        try
+        {
+            var newTokens = new ResourceDictionary { Source = new Uri(tokensPath) };
+            var mergedDictionaries = Application.Current.Resources.MergedDictionaries;
+
+            // Drop any previously-merged Pia token dictionary so the swap wins on key
+            // collisions (e.g. SystemAccentColorPrimaryBrush). Match by source path so the
+            // baseline merged from App.xaml is also removed on the first apply.
+            for (var i = mergedDictionaries.Count - 1; i >= 0; i--)
+            {
+                var src = mergedDictionaries[i].Source?.OriginalString;
+                if (src != null && src.Contains("PiaTokens", StringComparison.OrdinalIgnoreCase))
+                    mergedDictionaries.RemoveAt(i);
+            }
+
+            mergedDictionaries.Add(newTokens);
+            _currentPiaTokens = newTokens;
+
+            _logger.LogInformation("Applied Pia {Theme} tokens", theme);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to apply Pia {Theme} tokens", theme);
         }
     }
 }

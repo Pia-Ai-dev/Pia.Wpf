@@ -54,18 +54,16 @@ public class TextOptimizationService : ITextOptimizationService
 
         var outputInstruction = "ONLY the transformed text. No introductions, explanations, labels — just the final text itself without any md, xml, or other formattings.";
         var prompt = $"Base prompt: {template.Prompt}\nOutput: {outputInstruction}{voiceCleanupPrompt}\n{languagePrompt}\nInput: {processedInput}";
-        string optimizedText;
+        AiCompletionResult completion;
         if (provider.ProviderType == AiProviderType.PiaCloud)
         {
             // Server builds the prompt — send raw text + template ID
-            optimizedText = await _aiClientService.OptimizeViaPiaCloudAsync(
-                prompt, templateId, targetLanguage, isVoiceInput, mode, cancellationToken);
+            completion = await _aiClientService.OptimizeViaPiaCloudAsync(
+                processedInput, templateId, targetLanguage, isVoiceInput, mode, cancellationToken);
         }
         else
         {
-            // Client builds the prompt — existing logic
-            
-            optimizedText = await _aiClientService.SendRequestAsync(provider, prompt, cancellationToken);
+            completion = await _aiClientService.SendRequestAsync(provider, prompt, cancellationToken);
         }
 
         stopwatch.Stop();
@@ -73,13 +71,13 @@ public class TextOptimizationService : ITextOptimizationService
         var session = new OptimizationSession
         {
             OriginalText = inputText,
-            OptimizedText = optimizedText,
+            OptimizedText = completion.Text,
             TemplateId = template.Id,
             TemplateName = template.Name,
             ProviderId = provider.Id,
             ProviderName = provider.Name,
             WasTranscribed = isVoiceInput,
-            TokensUsed = 0,
+            TokensUsed = completion.TokensUsed,
             ProcessingTimeMs = stopwatch.ElapsedMilliseconds
         };
 
@@ -129,6 +127,7 @@ Style description:
 
 Provide only the generated prompt, no additional explanation.";
 
-        return await _aiClientService.SendRequestAsync(provider, extractionPrompt);
+        var completion = await _aiClientService.SendRequestAsync(provider, extractionPrompt);
+        return completion.Text;
     }
 }

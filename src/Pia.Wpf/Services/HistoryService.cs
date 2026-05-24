@@ -117,6 +117,26 @@ public class HistoryService : IHistoryService
         OnSessionsChanged();
     }
 
+    public async Task<int> DeleteAllSessionsAsync(
+        string? searchText = null,
+        Guid? templateId = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+
+        var whereClause = BuildWhereClause(command, searchText, templateId, fromDate, toDate);
+
+        command.CommandText = $"DELETE FROM Sessions {whereClause}";
+        var deleted = await command.ExecuteNonQueryAsync();
+
+        if (deleted > 0)
+            OnSessionsChanged();
+
+        return deleted;
+    }
+
     public async Task<int> GetSessionCountAsync()
     {
         return await GetSessionCountAsync(null, null, null, null);

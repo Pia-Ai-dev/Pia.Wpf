@@ -3,25 +3,23 @@
               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
               xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
               xmlns:loc="clr-namespace:Pia.Localization">
-  <Grid Margin="16">
+  <Grid>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="260"/>
+      <ColumnDefinition Width="280"/>
+      <ColumnDefinition Width="16"/>
       <ColumnDefinition Width="*"/>
     </Grid.ColumnDefinitions>
 
     <!-- Left panel: Default Providers -->
     <Border Grid.Column="0"
-            Background="{DynamicResource SecondaryBackgroundBrush}"
-            BorderBrush="{DynamicResource CardStrokeColorBrush}"
-            BorderThickness="1"
-            CornerRadius="4"
+            Style="{StaticResource PiaCardStyle}"
             Padding="16"
-            Margin="0,0,16,0"
             VerticalAlignment="Top">
       <StackPanel>
         <TextBlock Text="{loc:Str Providers_DefaultProviders}"
                    FontSize="14"
                    FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
                    Margin="0,0,0,12"/>
 
         <CheckBox Content="{loc:Str Providers_SameForAllModes}"
@@ -31,8 +29,7 @@
 
         <!-- Optimize / All Modes dropdown -->
         <TextBlock Text="{Binding OptimizeProviderLabel}"
-                   Opacity="0.7"
-                   Margin="0,0,0,4"/>
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ComboBox ItemsSource="{Binding Providers}"
                   SelectedValue="{Binding OptimizeProviderId}"
                   SelectedValuePath="Id"
@@ -42,8 +39,7 @@
         <!-- Assistant and Research dropdowns only when "same for all" is unchecked -->
         <StackPanel Visibility="{Binding UseSameProviderForAllModes, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
           <TextBlock Text="{loc:Str Providers_Assistant}"
-                     Opacity="0.7"
-                     Margin="0,0,0,4"/>
+                     Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
           <ComboBox ItemsSource="{Binding Providers}"
                     SelectedValue="{Binding AssistantProviderId}"
                     SelectedValuePath="Id"
@@ -51,8 +47,7 @@
                     Margin="0,0,0,8"/>
 
           <TextBlock Text="{loc:Str Providers_Research}"
-                     Opacity="0.7"
-                     Margin="0,0,0,4"/>
+                     Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
           <ComboBox ItemsSource="{Binding Providers}"
                     SelectedValue="{Binding ResearchProviderId}"
                     SelectedValuePath="Id"
@@ -62,7 +57,7 @@
     </Border>
 
     <!-- Right panel: Provider list -->
-    <Grid Grid.Column="1">
+    <Grid Grid.Column="2">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
@@ -71,22 +66,31 @@
 
       <!-- Cloud not set up banner -->
       <Border Grid.Row="0"
-              Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-              BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+              Background="{DynamicResource WarnSoftBrush}"
+              BorderBrush="{DynamicResource WarnBrush}"
               BorderThickness="1"
-              CornerRadius="4"
+              CornerRadius="{StaticResource MediumRadius}"
               Padding="12"
               Margin="0,0,0,12"
               Visibility="{Binding ShowCloudSetupBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid>
           <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
-          <TextBlock Text="{loc:Str Providers_CloudNotSetup}"
+          <ui:SymbolIcon Grid.Column="0"
+                         Symbol="Warning24"
+                         FontSize="18"
+                         VerticalAlignment="Center"
+                         Margin="0,0,10,0"
+                         Foreground="{DynamicResource WarnBrush}"/>
+          <TextBlock Grid.Column="1"
+                     Text="{loc:Str Providers_CloudNotSetup}"
                      VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextDefaultBrush}"
                      TextWrapping="Wrap"/>
-          <ui:Button Grid.Column="1"
+          <ui:Button Grid.Column="2"
                      Command="{Binding GoToCloudSyncCommand}"
                      Appearance="Primary"
                      Margin="12,0,0,0">
@@ -107,24 +111,24 @@
         <TextBlock Text="{loc:Str Providers_Title}"
                    FontSize="14"
                    FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
                    VerticalAlignment="Center"/>
-        <ui:Button Grid.Column="1" Command="{Binding AddProviderCommand}">
+        <ui:Button Grid.Column="1"
+                   Appearance="Secondary"
+                   Command="{Binding AddProviderCommand}">
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,8,0"/>
+            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
             <TextBlock Text="{loc:Str Providers_Add}"/>
           </StackPanel>
         </ui:Button>
       </Grid>
 
       <!-- Provider cards -->
-      <ScrollViewer Grid.Row="2">
+      <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
         <ItemsControl ItemsSource="{Binding ProviderDisplayItems}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <Border Background="{DynamicResource SecondaryBackgroundBrush}"
-                      BorderBrush="{DynamicResource CardStrokeColorBrush}"
-                      BorderThickness="1"
-                      CornerRadius="4"
+              <Border Style="{StaticResource PiaSettingsCardStyle}"
                       Padding="16"
                       Margin="0,0,0,8">
                 <Grid>
@@ -134,18 +138,21 @@
                   </Grid.ColumnDefinitions>
 
                   <StackPanel Grid.Column="0">
-                    <TextBlock FontSize="16" FontWeight="SemiBold">
+                    <TextBlock FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextDefaultBrush}">
                       <Run Text="{Binding Provider.Name}"/>
-                      <Run Text=" (" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
-                      <Run Text="{Binding Provider.ProviderType}" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
-                      <Run Text=")" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                      <Run Text=" · " Foreground="{DynamicResource TextSubtleBrush}"/>
+                      <Run Text="{Binding Provider.ProviderType}" Foreground="{DynamicResource TextSubtleBrush}"/>
                     </TextBlock>
                     <TextBlock Text="{Binding Provider.Endpoint}"
-                               Opacity="0.7"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextMutedBrush}"
                                Margin="0,4,0,0"
                                TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding Provider.ModelName}"
-                               Opacity="0.7"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextSubtleBrush}"
                                Margin="0,2,0,0"/>
                     <!-- Mode chips + status badges -->
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
@@ -195,13 +202,15 @@
                   </StackPanel>
 
                   <!-- Action buttons: Test, Edit, Delete -->
-                  <StackPanel Grid.Column="1" Orientation="Horizontal">
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
                     <ui:Button Command="{Binding DataContext.TestConnectionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                               CommandParameter="{Binding Provider}"
                               IsEnabled="{Binding DataContext.IsTestConnectionInProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBooleanConverter}}"
-                              Width="40"
-                              Height="40"
-                              Margin="0,0,8,0">
+                              Appearance="Secondary"
+                              Width="36"
+                              Height="36"
+                              Padding="0"
+                              Margin="0,0,6,0">
                       <Grid>
                         <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16">
                           <ui:SymbolIcon.Visibility>
@@ -227,9 +236,10 @@
                     <ui:Button Command="{Binding DataContext.EditProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                               CommandParameter="{Binding Provider}"
                               Appearance="Secondary"
-                              Width="40"
-                              Height="40"
-                              Margin="0,0,8,0">
+                              Width="36"
+                              Height="36"
+                              Padding="0"
+                              Margin="0,0,6,0">
                       <ui:SymbolIcon Symbol="Edit24" FontSize="16"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Providers_Edit}"/>
@@ -238,10 +248,12 @@
                     <ui:Button Command="{Binding DataContext.DeleteProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                               CommandParameter="{Binding Provider}"
                               Visibility="{Binding Provider.ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Delete}"
-                              Appearance="Danger"
-                              Width="40"
-                              Height="40">
-                      <ui:SymbolIcon Symbol="Delete24" FontSize="16"/>
+                              Appearance="Secondary"
+                              Width="36"
+                              Height="36"
+                              Padding="0">
+                      <ui:SymbolIcon Symbol="Delete24" FontSize="16"
+                                     Foreground="{DynamicResource PiaDangerBrush}"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Providers_Delete}"/>
                       </ui:Button.ToolTip>

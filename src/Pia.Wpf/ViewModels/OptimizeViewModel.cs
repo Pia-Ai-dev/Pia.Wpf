@@ -101,6 +101,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     public IAsyncRelayCommand LoadTemplatesCommand { get; }
     public IRelayCommand ClearInputCommand { get; }
     public IRelayCommand<string> SendToModeCommand { get; }
+    public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
 
     public Task ReadyAsync => _isInitialized ? Task.CompletedTask : _readyTcs.Task;
 
@@ -145,6 +146,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         LoadTemplatesCommand = new AsyncRelayCommand(ExecuteLoadTemplates);
         ClearInputCommand = new RelayCommand(ExecuteClearInput);
         SendToModeCommand = new RelayCommand<string>(ExecuteSendToMode);
+        HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
 
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
@@ -654,6 +656,19 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
             },
             Wpf.Ui.Controls.ControlAppearance.Caution,
             TimeSpan.FromSeconds(8));
+    }
+
+    private async Task ExecuteHandleFilesDropped(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0) return;
+
+        // Don't disrupt the user while they're reviewing an optimization result.
+        if (IsComparisonView) return;
+
+        var text = await DroppedFileImporter.TryImportAsync(
+            paths, _logger, _snackbarService, _localizationService);
+        if (text is not null)
+            ApplyCapturedSelection(text);
     }
 
     public async Task OnNavigatedToAsync(object? parameter)

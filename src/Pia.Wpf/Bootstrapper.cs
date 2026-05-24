@@ -205,6 +205,9 @@ public static class Bootstrapper
                 sp.GetRequiredService<ISettingsService>(),
                 sp.GetRequiredService<ILogger<TokenizingAiClientService>>()));
 
+        // Follow-up suggestions (uses IAiClientService internally — transient)
+        services.AddTransient<ISuggestionService, SuggestionService>();
+
         // Enterprise policy
         services.AddSingleton<IPolicyService, PolicyService>();
 
@@ -223,6 +226,7 @@ public static class Bootstrapper
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<IFilesToolHandler, FilesToolHandler>();
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
         services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();

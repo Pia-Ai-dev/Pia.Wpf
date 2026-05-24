@@ -28,7 +28,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private string BuildLanguageInstruction()
     {
         var languageName = GetLanguageName(_localizationService.CurrentLanguage);
-        return $"Always respond to the user in {languageName} unless the user explicitly writes in another language or asks you to switch.";
+        return $"Always respond to the user in '{languageName}' unless the user asks you to switch.";
     }
 
     private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false)
@@ -72,6 +72,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             {pluginSection}{toolSelectionSection}## Principles
 
+            - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+            - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
+            - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+            - Do not restate the user's question and do not summarize what you just said at the end of a reply.
             - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.
             {tokenSection}
             """;
@@ -142,6 +146,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ## Language
 
         {BuildLanguageInstruction()}
+
+        ## Principles
+
+        - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+        - Write plain prose. Use formatting elements rare. Avoid bold, italics; reserve **bold** only for safety-critical warnings.
+        - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+        - Do not restate the user's question and do not summarize what you just said at the end of a reply.
         """;
 
     private readonly ILogger<AssistantViewModel> _logger;
@@ -159,9 +170,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ILocalizationService _localizationService;
     private readonly ITokenMapService _tokenMapService;
     private readonly IAutocompleteService _autocompleteService;
+    private readonly INavigationService _navigationService;
+    private readonly ISuggestionService _suggestionService;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
     private bool _tokenizationEnabled;
+    private bool _suggestionsEnabled = true;
 
     [ObservableProperty]
     private string _inputText = string.Empty;
@@ -225,9 +239,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<AssistantMessage> CopyMessageCommand { get; }
     public IRelayCommand ToggleTtsCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> PlayMessageCommand { get; }
+    public IAsyncRelayCommand<AssistantMessage> RegenerateMessageCommand { get; }
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
+    public IRelayCommand<string> UseFollowupCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
+    public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -244,7 +261,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         ITokenMapService tokenMapService,
-        IAutocompleteService autocompleteService)
+        IAutocompleteService autocompleteService,
+        INavigationService navigationService,
+        ISuggestionService suggestionService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -261,6 +280,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
         _autocompleteService = autocompleteService;
+        _navigationService = navigationService;
+        _suggestionService = suggestionService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -268,10 +289,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ClearConversationCommand = new RelayCommand(ExecuteClearConversation);
         CopyMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteCopyMessage);
         ToggleTtsCommand = new RelayCommand(ExecuteToggleTts);
-        PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage);
+        PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage, AsyncRelayCommandOptions.AllowConcurrentExecutions);
+        RegenerateMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteRegenerateMessage);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
+        UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
+        HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
@@ -294,6 +318,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (!string.IsNullOrWhiteSpace(suggestion))
             InputText = suggestion;
+    }
+
+    private void ExecuteUseFollowup(string? suggestion)
+    {
+        if (string.IsNullOrWhiteSpace(suggestion) || IsStreaming) return;
+        InputText = suggestion;
     }
 
     private bool CanExecuteSendMessage() =>
@@ -389,19 +419,30 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             // Use tool-aware completion with think-tag parsing
             var rawBuffer = new StringBuilder();
 
-            await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
+            await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
                 chatMessages, provider, tools,
                 supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage) : null,
                 nameof(WindowMode.Assistant),
                 _streamingCts.Token))
             {
-                rawBuffer.Append(token);
-                var (visible, thinking) = ParseStreamedContent(rawBuffer.ToString());
+                switch (item)
+                {
+                    case TextDelta td:
+                        rawBuffer.Append(td.Text);
+                        var (visible, thinking) = ParseStreamedContent(rawBuffer.ToString());
 
-                assistantMessage.Content = visible;
-                if (!string.IsNullOrEmpty(thinking))
-                    assistantMessage.ThinkingContent = thinking;
+                        assistantMessage.Content = visible;
+                        if (!string.IsNullOrEmpty(thinking))
+                            assistantMessage.ThinkingContent = thinking;
+                        break;
+
+                    case Finished finished:
+                        ApplyStats(assistantMessage, finished, provider);
+                        break;
+                }
             }
+
+            await GenerateFollowupsAsync(provider, userMessage.Content, assistantMessage, _streamingCts.Token);
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)
         {
@@ -412,6 +453,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 assistantMessage.Content = localizedMessage;
             }
             _snackbarService.Show(_localizationService["Msg_Error"], localizedMessage, Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(6));
+        }
+        catch (Pia.Services.Exceptions.LlmTruncatedException ex)
+        {
+            _logger.LogWarning(ex, "AI response truncated by token cap (provider={ProviderName}, partialChars={PartialChars})", ex.ProviderName, ex.PartialLength);
+            var localizedMessage = _localizationService.Format("Msg_Assistant_ResponseTruncated", ex.ProviderName);
+            // Preserve any partial visible text so the user sees how far the model got;
+            // append the hint underneath. If we have no text yet, show the hint alone.
+            assistantMessage.Content = string.IsNullOrEmpty(assistantMessage.Content)
+                ? localizedMessage
+                : assistantMessage.Content + "\n\n" + localizedMessage;
+            _snackbarService.Show(_localizationService["Msg_Warning"], localizedMessage, Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
         }
         catch (OperationCanceledException)
         {
@@ -622,6 +674,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             "memory" => ActionCardCategory.Memory,
             "todo" => ActionCardCategory.Todo,
             "reminder" => ActionCardCategory.Reminder,
+            "files" => ActionCardCategory.Files,
             _ => ActionCardCategory.Memory
         };
 
@@ -632,6 +685,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             "memory" => _localizationService["Msg_Assistant_PermanentDeleteMemory"],
             "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
             "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
+            "files" => _localizationService["Msg_Assistant_PermanentDeleteFile"],
             _ => null
         } : null;
 
@@ -662,6 +716,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ActionCardCategory.Memory => "ActionCard_Category_Memory",
             ActionCardCategory.Todo => "ActionCard_Category_Todo",
             ActionCardCategory.Reminder => "ActionCard_Category_Reminder",
+            ActionCardCategory.Files => "ActionCard_Category_File",
             _ => "ActionCard_Category_Memory"
         };
 
@@ -669,8 +724,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             "create_object" or "create_todo" or "create_reminder" => "ActionCard_Action_Create",
             "update_object" or "append_to_list" or "update_todo" or "update_reminder" => "ActionCard_Action_Update",
-            "delete_object" or "delete_todo" or "delete_reminder" => "ActionCard_Action_Delete",
+            "delete_object" or "delete_todo" or "delete_reminder" or "delete_file" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
+            "write_file" => "ActionCard_Action_Write",
             _ => "ActionCard_Action_Create"
         };
 
@@ -739,6 +795,28 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
+    private async Task ExecuteRegenerateMessage(AssistantMessage? message)
+    {
+        if (message is null || IsStreaming) return;
+
+        var idx = Messages.IndexOf(message);
+        if (idx <= 0) return;
+
+        var prior = Messages[idx - 1];
+        if (prior.Role != ChatRole.User || string.IsNullOrWhiteSpace(prior.Content)) return;
+
+        CancelPendingActionCards(message);
+
+        var prompt = prior.Content;
+        for (var i = Messages.Count - 1; i >= idx - 1; i--)
+            Messages.RemoveAt(i);
+
+        if (Messages.Count == 0) HasMessages = false;
+
+        InputText = prompt;
+        await SendMessageCommand.ExecuteAsync(null);
+    }
+
     private async Task ExecuteAddPiiKeyword(PiiKeywordRequest? request)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Keyword))
@@ -802,6 +880,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             var settings = await _settingsService.GetSettingsAsync();
             IsTtsEnabled = settings.TtsEnabled;
+            _suggestionsEnabled = settings.AssistantSuggestionsEnabled;
 
             // Initialize TTS so HasVoiceLoaded becomes true for voice mode button
             if (!_ttsService.HasVoiceLoaded)
@@ -860,6 +939,40 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
+    private async Task ExecuteHandleFilesDropped(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0) return;
+        if (IsStreaming) return;
+
+        var text = await DroppedFileImporter.TryImportAsync(
+            paths, _logger, _snackbarService, _localizationService);
+        if (text is not null)
+            InsertOrPromptInsertAnyway(text);
+    }
+
+    private void InsertOrPromptInsertAnyway(string text)
+    {
+        if (string.IsNullOrEmpty(InputText))
+        {
+            InputText = text;
+            SendMessageCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        SnackbarActionHelper.ShowWithAction(
+            _snackbarService,
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_SelectionNotPastedInputNotEmpty"],
+            _localizationService["Msg_SelectionNotPasted_InsertAnyway"],
+            () =>
+            {
+                InputText = text;
+                SendMessageCommand.NotifyCanExecuteChanged();
+            },
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            TimeSpan.FromSeconds(8));
+    }
+
     private void ExecuteToggleTts()
     {
         IsTtsEnabled = !IsTtsEnabled;
@@ -913,7 +1026,26 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         }
 
+        if (!_ttsService.HasVoiceLoaded)
+        {
+            ShowNoVoiceLoadedSnackbar();
+            return;
+        }
+
         await SpeakMessageAsync(message);
+    }
+
+    private void ShowNoVoiceLoadedSnackbar()
+    {
+        // General tab (outer 4) → Speech inner tab (inner 2) hosts the TTS voice selection UI.
+        SnackbarActionHelper.ShowWithAction(
+            _snackbarService,
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_Tts_NoVoiceLoaded"],
+            _localizationService["Msg_Tts_NoVoiceLoaded_OpenSettings"],
+            () => _navigationService.NavigateTo<SettingsViewModel, (int, int)>((4, 2)),
+            Wpf.Ui.Controls.ControlAppearance.Caution,
+            TimeSpan.FromSeconds(8));
     }
 
     private async Task SpeakMessageAsync(AssistantMessage message)
@@ -1015,13 +1147,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var rawBuffer = new StringBuilder();
         var lastVisibleLength = 0;
 
-        await foreach (var token in _aiClientService.GetChatCompletionWithToolsAsync(
+        await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             chatMessages, provider, tools,
             supportsTools ? HandleVoiceModeToolCall : null,
             nameof(WindowMode.Assistant),
             cancellationToken))
         {
-            rawBuffer.Append(token);
+            if (item is not TextDelta td)
+                continue;
+
+            rawBuffer.Append(td.Text);
             var (visible, _) = ParseStreamedContent(rawBuffer.ToString());
 
             // Yield only newly added visible content (strips think tags)
@@ -1032,6 +1167,81 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 yield return newContent;
             }
         }
+    }
+
+    private async Task GenerateFollowupsAsync(
+        AiProvider provider,
+        string userText,
+        AssistantMessage assistantMessage,
+        CancellationToken cancellationToken)
+    {
+        if (!_suggestionsEnabled)
+        {
+            _logger.LogDebug("Follow-up suggestions skipped: disabled in settings");
+            return;
+        }
+        if (!provider.SupportsStreaming)
+        {
+            _logger.LogDebug("Follow-up suggestions skipped: provider {ProviderName} does not support streaming", provider.Name);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(assistantMessage.Content))
+        {
+            _logger.LogDebug("Follow-up suggestions skipped: assistant message has no content");
+            return;
+        }
+        if (assistantMessage.Suggestions.Count > 0) return;
+
+        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderName}", provider.Name);
+
+        IReadOnlyList<string> picks;
+        try
+        {
+            picks = await _suggestionService.SuggestFollowupsAsync(
+                provider, userText, assistantMessage.Content, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Follow-up suggestion generation failed");
+            return;
+        }
+
+        if (picks.Count == 0 || cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Follow-up suggestions: no picks ({Count}) or cancelled ({Cancelled})",
+                picks.Count, cancellationToken.IsCancellationRequested);
+            return;
+        }
+
+        await App.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var s in picks)
+                assistantMessage.Suggestions.Add(s);
+        });
+        _logger.LogInformation("Follow-up suggestions: added {Count} picks (HasSuggestions={Has})",
+            picks.Count, assistantMessage.HasSuggestions);
+    }
+
+    private void ApplyStats(AssistantMessage message, Finished finished, AiProvider provider)
+    {
+        if (finished.Usage is not { } usage)
+        {
+            _logger.LogDebug("Stream finished without usage details (providerType={ProviderType})", provider.ProviderType);
+            return;
+        }
+
+        var totalTokens = (int)((usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
+        if (totalTokens <= 0)
+        {
+            _logger.LogDebug("Stream finished with zero tokens (providerType={ProviderType})", provider.ProviderType);
+            return;
+        }
+
+        message.Stats = new AnswerStats(totalTokens, finished.Model);
     }
 
     private async Task<object?> HandleVoiceModeToolCall(FunctionCallContent toolCall)

@@ -63,6 +63,7 @@ public class AppSettings
     public bool StartMinimized { get; set; } = false;
     public bool LaunchAtStartup { get; set; } = true;
     public bool ShowTodoPanelButton { get; set; } = true;
+    public Dictionary<Guid, double> TodoColumnWidths { get; set; } = new();
     public bool HasCompletedFirstRunWizard { get; set; } = false;
     public UserOperatingMode? UserOperatingMode { get; set; }
     public KeyboardShortcut OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
@@ -87,6 +88,13 @@ public class AppSettings
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
+
+    // Assistant suggestions (follow-up chips)
+    public bool AssistantSuggestionsEnabled { get; set; } = false;
+
+    // Sandboxed folder the assistant's file tool may read/write/delete in.
+    // Null/empty disables the tool entirely.
+    public string? AssistantFilesFolder { get; set; }
 
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;

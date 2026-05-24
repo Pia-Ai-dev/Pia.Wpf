@@ -1,0 +1,58 @@
+<UserControl x:Class="Pia.Controls.Memory.PiaMemoryRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mem="clr-namespace:Pia.Controls.Memory">
+  <Border x:Name="Root"
+          CornerRadius="8"
+          Padding="28,8,14,8"
+          Background="Transparent"
+          Cursor="Hand">
+    <Border.Style>
+      <Style TargetType="Border">
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                       Value="True">
+            <Setter Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
+          </DataTrigger>
+          <Trigger Property="IsMouseOver" Value="True">
+            <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+          </Trigger>
+        </Style.Triggers>
+      </Style>
+    </Border.Style>
+
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <StackPanel Grid.Column="0">
+        <TextBlock Text="{Binding Label}"
+                   FontSize="13"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   TextTrimming="CharacterEllipsis"/>
+        <TextBlock Text="{Binding ValuePreview}"
+                   FontSize="11.5"
+                   Margin="0,1,0,0"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   TextTrimming="CharacterEllipsis"/>
+      </StackPanel>
+
+      <mem:PiaTypeChip Grid.Column="1"
+                       Type="{Binding TypeKind}"
+                       Margin="10,0"
+                       VerticalAlignment="Center"/>
+
+      <TextBlock Grid.Column="2"
+                 Text="{Binding UpdatedAt, StringFormat='{}{0:MM-dd}'}"
+                 FontSize="10.5"
+                 FontFamily="{DynamicResource PiaMonoFont}"
+                 Foreground="{DynamicResource TextSubtleBrush}"
+                 TextAlignment="Right"
+                 MinWidth="42"
+                 VerticalAlignment="Center"/>
+    </Grid>
+  </Border>
+</UserControl>

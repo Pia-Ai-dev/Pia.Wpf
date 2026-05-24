@@ -1,12 +1,13 @@
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
-using Microsoft.Extensions.DependencyInjection;
+using Pia.Behaviors;
+using Pia.Helpers;
 using Pia.Models;
-using Pia.Services.Interfaces;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 
@@ -14,9 +15,25 @@ namespace Pia.Views;
 
 public partial class TodoView : UserControl
 {
+    private const double MinColumnWidth = 200;
+    private const double MaxColumnWidth = 600;
+
+    private bool _closedColumnAcceptsDrop;
+
     public TodoView()
     {
         InitializeComponent();
+    }
+
+    private void OnColumnResizeThumbDragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is not Thumb thumb || thumb.DataContext is not KanbanColumnViewModel columnVm)
+            return;
+
+        var newWidth = columnVm.Width + e.HorizontalChange;
+        if (newWidth < MinColumnWidth) newWidth = MinColumnWidth;
+        if (newWidth > MaxColumnWidth) newWidth = MaxColumnWidth;
+        columnVm.Width = newWidth;
     }
 
     private void OnColumnTodoListLoaded(object sender, RoutedEventArgs e)
@@ -70,11 +87,11 @@ public partial class TodoView : UserControl
 
         try
         {
-            var itemBorder = FindAncestorByName<Border>(checkBox, "TodoCardBorder");
+            var itemBorder = checkBox.FindAncestorByName<Border>("TodoCardBorder");
             if (itemBorder is null) return;
 
-            var strikethrough = FindChild<Line>(itemBorder, "StrikethroughLine");
-            var titleBlock = FindChild<TextBlock>(itemBorder, "TodoTitle");
+            var strikethrough = itemBorder.FindChild<Line>("StrikethroughLine");
+            var titleBlock = itemBorder.FindChild<TextBlock>("TodoTitle");
 
             if (strikethrough is not null && titleBlock is not null)
             {
@@ -135,6 +152,73 @@ public partial class TodoView : UserControl
             columnVm.IsExpanded = true;
     }
 
+    private static bool TryGetDragTodo(DragEventArgs e, out TodoItem? todo, out string sourceColumnId)
+    {
+        todo = null;
+        sourceColumnId = string.Empty;
+        if (!e.Data.GetDataPresent(KanbanDragDropBehavior.DragItemFormat)
+            || !e.Data.GetDataPresent(KanbanDragDropBehavior.SourceColumnIdFormat))
+            return false;
+        if (e.Data.GetData(KanbanDragDropBehavior.DragItemFormat) is not TodoItem t) return false;
+        todo = t;
+        sourceColumnId = e.Data.GetData(KanbanDragDropBehavior.SourceColumnIdFormat) as string ?? string.Empty;
+        return true;
+    }
+
+    private void OnClosedCollapsedDragEnter(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        _closedColumnAcceptsDrop = false;
+
+        if (sender is not Border border) { e.Effects = DragDropEffects.None; return; }
+        if (!TryGetDragTodo(e, out _, out var sourceId)) { e.Effects = DragDropEffects.None; return; }
+        if (border.Tag is not KanbanColumnViewModel columnVm || columnVm.Id.ToString() == sourceId)
+        {
+            e.Effects = DragDropEffects.None;
+            return;
+        }
+
+        _closedColumnAcceptsDrop = true;
+        border.BorderBrush = (Brush)FindResource("PiaAccentBrush");
+        border.Background = (Brush)FindResource("SurfaceBrush");
+        e.Effects = DragDropEffects.Move;
+    }
+
+    private void OnClosedCollapsedDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = _closedColumnAcceptsDrop ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnClosedCollapsedDragLeave(object sender, DragEventArgs e)
+    {
+        _closedColumnAcceptsDrop = false;
+        if (sender is Border border) ResetClosedCollapsedChrome(border);
+        e.Handled = true;
+    }
+
+    private async void OnClosedCollapsedDrop(object sender, DragEventArgs e)
+    {
+        _closedColumnAcceptsDrop = false;
+        if (sender is not Border border) return;
+
+        ResetClosedCollapsedChrome(border);
+        e.Handled = true;
+
+        if (!TryGetDragTodo(e, out var todo, out var sourceId) || todo is null) return;
+        if (border.Tag is not KanbanColumnViewModel columnVm) return;
+        if (columnVm.Id.ToString() == sourceId) return;
+        if (DataContext is not TodoViewModel vm) return;
+
+        await vm.MoveTodoToColumnAsync(todo, columnVm.Id, columnVm.Todos.Count);
+    }
+
+    private void ResetClosedCollapsedChrome(Border border)
+    {
+        border.BorderBrush = (Brush)FindResource("BorderBrush_");
+        border.Background = (Brush)FindResource("SurfaceMutedBrush");
+    }
+
     private void OnCollapseClosedClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement fe && fe.DataContext is KanbanColumnViewModel columnVm)
@@ -166,47 +250,9 @@ public partial class TodoView : UserControl
 
     private async void OnRenameColumnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem { Tag: KanbanColumnViewModel columnVm }
-            || DataContext is not TodoViewModel vm)
-            return;
-
-        try
-        {
-            var dialogService = Bootstrapper.ServiceProvider.GetRequiredService<IDialogService>();
-            var locService = Bootstrapper.ServiceProvider.GetRequiredService<ILocalizationService>();
-
-            var newName = await dialogService.ShowInputDialogAsync(
-                locService["Kanban_RenameColumn"],
-                locService["Kanban_ColumnNamePrompt"]);
-
-            if (!string.IsNullOrWhiteSpace(newName))
-                await vm.RenameColumnAsync(columnVm, newName);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Rename failed: {ex.Message}");
-        }
+        if (sender is MenuItem { Tag: KanbanColumnViewModel columnVm }
+            && DataContext is TodoViewModel vm)
+            await vm.RenameColumnCommand.ExecuteAsync(columnVm);
     }
 
-    private static T? FindAncestorByName<T>(DependencyObject? obj, string name) where T : FrameworkElement
-    {
-        while (obj is not null)
-        {
-            obj = VisualTreeHelper.GetParent(obj);
-            if (obj is T fe && fe.Name == name) return fe;
-        }
-        return null;
-    }
-
-    private static T? FindChild<T>(DependencyObject parent, string name) where T : FrameworkElement
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T fe && fe.Name == name) return fe;
-            var result = FindChild<T>(child, name);
-            if (result is not null) return result;
-        }
-        return null;
-    }
 }

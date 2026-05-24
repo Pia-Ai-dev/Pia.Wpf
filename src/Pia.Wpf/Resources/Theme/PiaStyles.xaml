@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+
+  <!-- Pia avatar — 28x28 rounded square containing the Pia app icon,
+       styled like an iOS app icon (~22% corner radius). Theme-neutral.
+       Targets ContentControl because Border has no Template DP. -->
+  <Style x:Key="PiaAvatarStyle" TargetType="ContentControl">
+    <Setter Property="Width"     Value="28"/>
+    <Setter Property="Height"    Value="28"/>
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ContentControl">
+          <Border CornerRadius="6"
+                  Background="{DynamicResource BgCanvasBrush}">
+            <Border.Effect>
+              <DropShadowEffect Color="#0F1729" Opacity="0.18"
+                                BlurRadius="6" ShadowDepth="1"/>
+            </Border.Effect>
+            <Image Source="pack://application:,,,/Resources/Icons/Pia.ico"
+                   Stretch="Uniform"
+                   Margin="2"/>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Chat bubbles -->
+
+  <!-- Assistant bubble: no background, typography only. -->
+  <Style x:Key="AssistantBubbleStyle" TargetType="Border">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Padding"    Value="0"/>
+    <Setter Property="MaxWidth"   Value="820"/>
+    <Setter Property="HorizontalAlignment" Value="Left"/>
+  </Style>
+
+  <!-- User bubble: solid accent, asymmetric corner radius. -->
+  <Style x:Key="UserBubbleStyle" TargetType="Border">
+    <Setter Property="Background"   Value="{DynamicResource PiaAccentBrush}"/>
+    <Setter Property="CornerRadius" Value="14,14,4,14"/>
+    <Setter Property="Padding"      Value="14,10"/>
+    <Setter Property="MaxWidth"     Value="520"/>
+    <Setter Property="HorizontalAlignment" Value="Right"/>
+    <Setter Property="Effect">
+      <Setter.Value>
+        <DropShadowEffect Color="#1E2A4A" Opacity="0.10"
+                          BlurRadius="8" ShadowDepth="1"/>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="UserBubbleTextStyle" TargetType="TextBlock">
+    <Setter Property="Foreground"   Value="White"/>
+    <Setter Property="FontSize"     Value="14"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="LineHeight"   Value="21"/>
+  </Style>
+
+  <!-- Generic elevated card. Used by ActionCard and inline panels. -->
+  <Style x:Key="PiaCardStyle" TargetType="Border">
+    <Setter Property="Background"      Value="{DynamicResource SurfaceBrush}"/>
+    <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush_}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius"    Value="{StaticResource LargeRadius}"/>
+    <Setter Property="Effect">
+      <Setter.Value>
+        <DropShadowEffect Color="#0F1729" Opacity="0.08"
+                          BlurRadius="16" ShadowDepth="3"/>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Header stripe used at the top of cards. Rounds top corners, divides body. -->
+  <Style x:Key="PiaCardHeaderStripeStyle" TargetType="Border">
+    <Setter Property="Background"      Value="{DynamicResource SurfaceMutedBrush}"/>
+    <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush_}"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <Setter Property="Padding"         Value="14,10"/>
+    <Setter Property="CornerRadius"    Value="12,12,0,0"/>
+  </Style>
+
+  <!-- Round 22-square chip behind a header icon. -->
+  <Style x:Key="PiaIconChipStyle" TargetType="Border">
+    <Setter Property="Width"        Value="22"/>
+    <Setter Property="Height"       Value="22"/>
+    <Setter Property="CornerRadius" Value="{StaticResource SmallRadius}"/>
+    <Setter Property="Background"   Value="{DynamicResource PiaAccentSoftBrush}"/>
+  </Style>
+
+  <!-- Composer / input bar card. -->
+  <Style x:Key="PiaComposerCardStyle" TargetType="Border">
+    <Setter Property="Background"      Value="{DynamicResource SurfaceBrush}"/>
+    <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush_}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius"    Value="{StaticResource BubbleRadius}"/>
+    <Setter Property="Effect">
+      <Setter.Value>
+        <DropShadowEffect Color="#0F1729" Opacity="0.08"
+                          BlurRadius="18" ShadowDepth="3"/>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Chrome-less button (e.g. clickable category header). -->
+  <Style x:Key="UnstyledButton" TargetType="Button">
+    <Setter Property="Background"      Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding"         Value="0"/>
+    <Setter Property="Cursor"          Value="Hand"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  Background="{TemplateBinding Background}"
+                  Padding="{TemplateBinding Padding}"
+                  CornerRadius="9">
+            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceMutedBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Dashed "+ tag" affordance. -->
+  <Style x:Key="PiaDashedGhostButton" TargetType="Button">
+    <Setter Property="Background"  Value="Transparent"/>
+    <Setter Property="Foreground"  Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="Padding"     Value="8,3"/>
+    <Setter Property="FontSize"    Value="11.5"/>
+    <Setter Property="Cursor"      Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  CornerRadius="4"
+                  Padding="{TemplateBinding Padding}"
+                  Background="{TemplateBinding Background}"
+                  BorderThickness="1"
+                  BorderBrush="{DynamicResource BorderStrongBrush}"
+                  SnapsToDevicePixels="True">
+            <Border.OpacityMask>
+              <VisualBrush>
+                <VisualBrush.Visual>
+                  <Border CornerRadius="4"
+                          Background="Black"
+                          Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Border}}"
+                          Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Border}}"/>
+                </VisualBrush.Visual>
+              </VisualBrush>
+            </Border.OpacityMask>
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                              TextBlock.FontSize="{TemplateBinding FontSize}"
+                              TextBlock.Foreground="{TemplateBinding Foreground}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="BorderBrush"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter Property="Foreground"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Segmented selector pill (filter strip, JSON/Raw). Selected state uses
+       solid accent fill so it reads clearly against the muted track. -->
+  <Style x:Key="PiaSegmentedButton" TargetType="RadioButton">
+    <Setter Property="Foreground"  Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="FontSize"    Value="12"/>
+    <Setter Property="Padding"     Value="12,5"/>
+    <Setter Property="Cursor"      Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Bd"
+                  CornerRadius="6"
+                  Padding="{TemplateBinding Padding}"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  BorderThickness="1">
+            <ContentPresenter HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              TextBlock.Foreground="{TemplateBinding Foreground}"
+                              TextBlock.FontSize="{TemplateBinding FontSize}"
+                              TextBlock.FontWeight="Medium"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceMutedBrush}"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter TargetName="Bd" Property="BorderBrush"
+                      Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter Property="Foreground" Value="White"/>
+              <Setter TargetName="Bd" Property="Effect">
+                <Setter.Value>
+                  <DropShadowEffect Color="#1E2A4A" Opacity="0.18"
+                                    BlurRadius="6" ShadowDepth="1"/>
+                </Setter.Value>
+              </Setter>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Settings — section label above a field row. -->
+  <Style x:Key="PiaSettingsSectionLabelStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"   Value="13"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
+    <Setter Property="Margin"     Value="0,0,0,6"/>
+  </Style>
+
+  <!-- Settings — small muted explanation under a field. -->
+  <Style x:Key="PiaSettingsDescriptionStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"     Value="12"/>
+    <Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="Margin"       Value="0,6,0,0"/>
+  </Style>
+
+  <!-- Settings — large page title (matches History/Memory/Todo headers). -->
+  <Style x:Key="PiaSettingsPageTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"   Value="22"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
+  </Style>
+
+  <!-- Settings — content card. Lighter than PiaCardStyle (no shadow) so that
+       stacked rows in a section stay readable without competing for attention. -->
+  <Style x:Key="PiaSettingsCardStyle" TargetType="Border">
+    <Setter Property="Background"      Value="{DynamicResource SurfaceBrush}"/>
+    <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush_}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius"    Value="{StaticResource LargeRadius}"/>
+    <Setter Property="Padding"         Value="14,12"/>
+  </Style>
+
+  <!-- Settings — left sidebar item. Replaces the inline ListBoxItem template
+       that used to live in SettingsView.xaml; same 3-px accent indicator
+       vocabulary used elsewhere in the app. -->
+  <Style x:Key="PiaSettingsSidebarItemStyle" TargetType="ListBoxItem">
+    <Setter Property="Padding"      Value="10,8"/>
+    <Setter Property="Margin"       Value="0,2"/>
+    <Setter Property="Cursor"       Value="Hand"/>
+    <Setter Property="Background"   Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="Bd"
+                  Background="{TemplateBinding Background}"
+                  CornerRadius="8"
+                  Padding="{TemplateBinding Padding}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="Indicator"
+                      Grid.Column="0"
+                      Width="3"
+                      Height="16"
+                      CornerRadius="1.5"
+                      Background="{DynamicResource PiaAccentBrush}"
+                      Margin="0,0,10,0"
+                      VerticalAlignment="Center"
+                      Visibility="Hidden"/>
+              <ContentPresenter Grid.Column="1"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"/>
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceMutedBrush}"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="Bd" Property="Background"
+                      Value="{DynamicResource SurfaceBrush}"/>
+              <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+              <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Memory row container: strips ListBoxItem chrome, draws the 3-px
+       accent bar when selected (matches chat sidebar selection vocabulary). -->
+  <Style x:Key="PiaMemoryRowItemStyle" TargetType="ListBoxItem">
+    <Setter Property="Padding"         Value="0"/>
+    <Setter Property="Margin"          Value="0"/>
+    <Setter Property="Background"      Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Focusable"       Value="True"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Grid>
+            <Border x:Name="AccentBar"
+                    HorizontalAlignment="Left"
+                    Width="3"
+                    Margin="8,8"
+                    CornerRadius="1.5"
+                    Background="{DynamicResource PiaAccentBrush}"
+                    Visibility="Collapsed"/>
+            <ContentPresenter/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="AccentBar" Property="Visibility" Value="Visible"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+</ResourceDictionary>

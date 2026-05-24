@@ -10,206 +10,174 @@
               xmlns:loc="clr-namespace:Pia.Localization"
               xmlns:converters="clr-namespace:Pia.Converters"
               mc:Ignorable="d"
-              d:DesignHeight="450" d:DesignWidth="800"
+              d:DesignHeight="700" d:DesignWidth="1100"
               nav:ViewModelLocator.AutoWireViewModel="True">
   <UserControl.Resources>
     <converters:ZeroToVisibilityConverter x:Key="ZeroToVisibilityConverter"/>
   </UserControl.Resources>
-  <Grid Background="{DynamicResource PrimaryBackgroundBrush}" Margin="20 45 20 20">
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="180"/>
-      <ColumnDefinition Width="*"/>
-    </Grid.ColumnDefinitions>
 
-    <!-- Left sidebar -->
-    <ListBox Grid.Column="0"
-             SelectedIndex="{Binding SelectedTabIndex}"
-             Background="Transparent"
-             BorderThickness="0"
-             Margin="0,0,8,0">
-      <ListBox.ItemContainerStyle>
-        <Style TargetType="ListBoxItem">
-          <Setter Property="Padding" Value="10,9"/>
-          <Setter Property="Margin" Value="0,2"/>
-          <Setter Property="Cursor" Value="Hand"/>
-          <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-          <Setter Property="Template">
-            <Setter.Value>
-              <ControlTemplate TargetType="ListBoxItem">
-                <Border x:Name="Bd"
-                        Background="Transparent"
-                        CornerRadius="6"
-                        Padding="{TemplateBinding Padding}">
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto"/>
-                      <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Border x:Name="Indicator"
-                            Grid.Column="0"
-                            Width="3"
-                            Height="16"
-                            CornerRadius="1.5"
-                            Background="{DynamicResource AccentBrush}"
-                            Margin="0,0,10,0"
-                            VerticalAlignment="Center"
-                            Visibility="Collapsed"/>
-                    <ContentPresenter Grid.Column="1"
-                                      HorizontalAlignment="Left"
-                                      VerticalAlignment="Center"/>
-                  </Grid>
-                </Border>
-                <ControlTemplate.Triggers>
-                  <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/>
-                  </Trigger>
-                  <Trigger Property="IsSelected" Value="True">
-                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
-                    <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
-                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-                  </Trigger>
-                </ControlTemplate.Triggers>
-              </ControlTemplate>
-            </Setter.Value>
-          </Setter>
-        </Style>
-      </ListBox.ItemContainerStyle>
-      <ListBoxItem>
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16" Margin="0,0,10,0"/>
-          <TextBlock Text="{loc:Str Settings_Tab_Providers}" VerticalAlignment="Center"/>
-        </StackPanel>
-      </ListBoxItem>
-      <ListBoxItem>
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,10,0"/>
-          <TextBlock Text="{loc:Str Settings_Tab_Optimize}" VerticalAlignment="Center"/>
-        </StackPanel>
-      </ListBoxItem>
-      <ListBoxItem>
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,10,0"/>
-          <TextBlock Text="{loc:Str Settings_Tab_Assistant}" VerticalAlignment="Center"/>
-        </StackPanel>
-      </ListBoxItem>
-      <ListBoxItem>
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Search24" FontSize="16" Margin="0,0,10,0"/>
-          <TextBlock Text="{loc:Str Settings_Tab_Research}" VerticalAlignment="Center"/>
-        </StackPanel>
-      </ListBoxItem>
-      <ListBoxItem>
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Settings24" FontSize="16" Margin="0,0,10,0"/>
-          <TextBlock Text="{loc:Str Settings_Tab_General}" VerticalAlignment="Center"/>
-        </StackPanel>
-      </ListBoxItem>
-      <ListBoxItem>
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Person24" FontSize="16" Margin="0,0,10,0"/>
-          <TextBlock Text="{loc:Str Settings_Tab_Account}" VerticalAlignment="Center"/>
-        </StackPanel>
-      </ListBoxItem>
-      <ListBoxItem IsEnabled="{Binding PluginsVm.IsCloudConnected}">
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="AppFolder24" FontSize="16" Margin="0,0,10,0"/>
-          <TextBlock Text="{loc:Str Settings_Tab_Plugins}" VerticalAlignment="Center"/>
-        </StackPanel>
-      </ListBoxItem>
-    </ListBox>
+  <Grid Background="Transparent">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
 
-    <!-- Content area -->
-    <Grid Grid.Column="1">
-      <localSettings:ProvidersView DataContext="{Binding ProvidersVm}">
-        <localSettings:ProvidersView.Style>
-          <Style TargetType="localSettings:ProvidersView">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="0">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </localSettings:ProvidersView.Style>
-      </localSettings:ProvidersView>
+    <!-- Page header -->
+    <TextBlock Grid.Row="0"
+               Style="{StaticResource PiaSettingsPageTitleStyle}"
+               Text="{loc:Str Nav_Settings}"
+               Margin="24,20,24,14"/>
 
-      <localSettings:OptimizeView DataContext="{Binding OptimizeVm}">
-        <localSettings:OptimizeView.Style>
-          <Style TargetType="localSettings:OptimizeView">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="1">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </localSettings:OptimizeView.Style>
-      </localSettings:OptimizeView>
+    <Grid Grid.Row="1" Margin="24,0,24,20">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="200"/>
+        <ColumnDefinition Width="16"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
 
-      <localSettings:AssistantView DataContext="{Binding AssistantVm}">
-        <localSettings:AssistantView.Style>
-          <Style TargetType="localSettings:AssistantView">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="2">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </localSettings:AssistantView.Style>
-      </localSettings:AssistantView>
+      <!-- Left sidebar -->
+      <ListBox Grid.Column="0"
+               SelectedIndex="{Binding SelectedTabIndex}"
+               Background="Transparent"
+               BorderThickness="0"
+               ItemContainerStyle="{StaticResource PiaSettingsSidebarItemStyle}">
+        <ListBoxItem>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_Providers}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
+        <ListBoxItem>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_Optimize}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
+        <ListBoxItem>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_Assistant}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
+        <ListBoxItem>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Search24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_Research}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
+        <ListBoxItem>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Settings24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_General}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
+        <ListBoxItem>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Person24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_Account}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
+        <ListBoxItem IsEnabled="{Binding PluginsVm.IsCloudConnected}">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="AppFolder24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_Plugins}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
+      </ListBox>
 
-      <localSettings:ResearchView DataContext="{Binding ResearchVm}">
-        <localSettings:ResearchView.Style>
-          <Style TargetType="localSettings:ResearchView">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="3">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </localSettings:ResearchView.Style>
-      </localSettings:ResearchView>
+      <!-- Content area -->
+      <Grid Grid.Column="2">
+        <localSettings:ProvidersView DataContext="{Binding ProvidersVm}">
+          <localSettings:ProvidersView.Style>
+            <Style TargetType="localSettings:ProvidersView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="0">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:ProvidersView.Style>
+        </localSettings:ProvidersView>
 
-      <localSettings:GeneralView DataContext="{Binding GeneralVm}">
-        <localSettings:GeneralView.Style>
-          <Style TargetType="localSettings:GeneralView">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="4">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </localSettings:GeneralView.Style>
-      </localSettings:GeneralView>
+        <localSettings:OptimizeView DataContext="{Binding OptimizeVm}">
+          <localSettings:OptimizeView.Style>
+            <Style TargetType="localSettings:OptimizeView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="1">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:OptimizeView.Style>
+        </localSettings:OptimizeView>
 
-      <localSettings:AccountView DataContext="{Binding AccountVm}">
-        <localSettings:AccountView.Style>
-          <Style TargetType="localSettings:AccountView">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="5">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </localSettings:AccountView.Style>
-      </localSettings:AccountView>
+        <localSettings:AssistantView DataContext="{Binding AssistantVm}">
+          <localSettings:AssistantView.Style>
+            <Style TargetType="localSettings:AssistantView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="2">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:AssistantView.Style>
+        </localSettings:AssistantView>
 
-      <localSettings:PluginsView DataContext="{Binding PluginsVm}">
-        <localSettings:PluginsView.Style>
-          <Style TargetType="localSettings:PluginsView">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="6">
-                <Setter Property="Visibility" Value="Visible"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </localSettings:PluginsView.Style>
-      </localSettings:PluginsView>
+        <localSettings:ResearchView DataContext="{Binding ResearchVm}">
+          <localSettings:ResearchView.Style>
+            <Style TargetType="localSettings:ResearchView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="3">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:ResearchView.Style>
+        </localSettings:ResearchView>
+
+        <localSettings:GeneralView DataContext="{Binding GeneralVm}">
+          <localSettings:GeneralView.Style>
+            <Style TargetType="localSettings:GeneralView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="4">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:GeneralView.Style>
+        </localSettings:GeneralView>
+
+        <localSettings:AccountView DataContext="{Binding AccountVm}">
+          <localSettings:AccountView.Style>
+            <Style TargetType="localSettings:AccountView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="5">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:AccountView.Style>
+        </localSettings:AccountView>
+
+        <localSettings:PluginsView DataContext="{Binding PluginsVm}">
+          <localSettings:PluginsView.Style>
+            <Style TargetType="localSettings:PluginsView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="6">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:PluginsView.Style>
+        </localSettings:PluginsView>
+      </Grid>
     </Grid>
   </Grid>
 </UserControl>

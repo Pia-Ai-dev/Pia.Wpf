@@ -43,7 +43,7 @@ public class AiClientService : IAiClientService
         _logger = logger;
     }
 
-    public async Task<string> SendRequestAsync(
+    public async Task<AiCompletionResult> SendRequestAsync(
         AiProvider provider,
         string prompt,
         CancellationToken cancellationToken = default)
@@ -82,7 +82,14 @@ public class AiClientService : IAiClientService
             if (response.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length)
                 throw new LlmTruncatedException(provider.Name, text.Length);
 
-            return text;
+            var tokensUsed = 0;
+            if (response.Usage is { } usage)
+            {
+                if (usage.InputTokenCount is long input) tokensUsed += (int)input;
+                if (usage.OutputTokenCount is long output) tokensUsed += (int)output;
+            }
+
+            return new AiCompletionResult(text, tokensUsed);
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
@@ -192,7 +199,7 @@ public class AiClientService : IAiClientService
         }
     }
 
-    public async IAsyncEnumerable<string> GetChatCompletionWithToolsAsync(
+    public async IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(
         IList<Microsoft.Extensions.AI.ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
@@ -202,6 +209,10 @@ public class AiClientService : IAiClientService
     {
         _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
             provider.Name, tools?.Count ?? 0);
+
+        long aggregatedInput = 0;
+        long aggregatedOutput = 0;
+        bool hasUsage = false;
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -287,7 +298,7 @@ public class AiClientService : IAiClientService
                             updates.Add(enumerator!.Current);
                             if (!string.IsNullOrEmpty(enumerator.Current.Text))
                             {
-                                yield return enumerator.Current.Text;
+                                yield return new TextDelta(enumerator.Current.Text);
                             }
 
                             bool hasNext;
@@ -311,8 +322,8 @@ public class AiClientService : IAiClientService
                 }
 
                 response = updates.ToChatResponse();
-                _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}",
-                    round + 1, response.Messages.Count, response.Text?.Length ?? 0);
+                _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}, finishReason={FinishReason}",
+                    round + 1, response.Messages.Count, response.Text?.Length ?? 0, response.FinishReason);
             }
             else
             {
@@ -347,8 +358,24 @@ public class AiClientService : IAiClientService
                     round + 1, response.Messages.Count, text?.Length ?? 0);
                 if (!string.IsNullOrEmpty(text))
                 {
-                    yield return text;
+                    yield return new TextDelta(text);
                 }
+            }
+
+            if (response.Usage is { } roundUsage)
+            {
+                if (roundUsage.InputTokenCount is long input) { aggregatedInput += input; hasUsage = true; }
+                if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
+            }
+
+            // Detect truncation by output token cap. Surfaced to the UI as a friendly hint
+            // (otherwise an incomplete tool-call argument JSON would just fail silently).
+            if (response.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length)
+            {
+                var partial = response.Text?.Length ?? 0;
+                _logger.LogWarning("Round {Round}: response truncated by token cap (finish_reason=length, partialChars={PartialChars})",
+                    round + 1, partial);
+                throw new LlmTruncatedException(provider.Name, partial);
             }
 
             // Check if there are tool calls in the response
@@ -406,10 +433,35 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
+            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput);
             yield break;
         }
 
         _logger.LogWarning("Tool loop exhausted max rounds ({MaxRounds}) without final response", maxToolRounds);
+        yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput);
+    }
+
+    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput)
+    {
+        UsageDetails? usage = null;
+        if (hasUsage)
+        {
+            usage = new UsageDetails
+            {
+                InputTokenCount = aggregatedInput,
+                OutputTokenCount = aggregatedOutput,
+                TotalTokenCount = aggregatedInput + aggregatedOutput,
+            };
+        }
+        else
+        {
+            _logger.LogDebug("Stream finished without usage details, providerType={ProviderType}", provider.ProviderType);
+        }
+
+        var modelLabel = !string.IsNullOrWhiteSpace(provider.ModelName)
+            ? provider.ModelName
+            : provider.Name;
+        return new Finished(usage, modelLabel);
     }
 
     public async Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
@@ -487,7 +539,7 @@ public class AiClientService : IAiClientService
         }
     }
 
-    public async Task<string> OptimizeViaPiaCloudAsync(
+    public async Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
         string text,
         Guid templateId,
         string language,
@@ -577,10 +629,19 @@ public class AiClientService : IAiClientService
             }
 
             using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
-            var optimizedText = doc.RootElement.GetProperty("optimizedText").GetString()
+            var responseRoot = doc.RootElement;
+            var optimizedText = responseRoot.GetProperty("optimizedText").GetString()
                 ?? throw new InvalidOperationException("Server returned empty optimized text");
-            _logger.LogDebug("PiaCloud optimize: extracted text length={Length}", optimizedText.Length);
-            return optimizedText;
+
+            var tokensUsed = 0;
+            if (responseRoot.TryGetProperty("inputTokens", out var inputEl) && inputEl.TryGetInt32(out var inputTokens))
+                tokensUsed += inputTokens;
+            if (responseRoot.TryGetProperty("outputTokens", out var outputEl) && outputEl.TryGetInt32(out var outputTokens))
+                tokensUsed += outputTokens;
+
+            _logger.LogDebug("PiaCloud optimize: extracted text length={Length}, tokens={Tokens}",
+                optimizedText.Length, tokensUsed);
+            return new AiCompletionResult(optimizedText, tokensUsed);
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {

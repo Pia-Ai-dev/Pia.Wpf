@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 
 namespace Pia.Converters;
@@ -15,6 +16,8 @@ public class StringEqualsBoolConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        throw new NotSupportedException();
+        if (value is bool b && b && parameter is string target)
+            return target;
+        return DependencyProperty.UnsetValue;
     }
 }

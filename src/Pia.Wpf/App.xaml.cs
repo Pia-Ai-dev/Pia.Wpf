@@ -92,6 +92,25 @@ public partial class App : Application
         var settingsService = Bootstrapper.ServiceProvider.GetRequiredService<ISettingsService>();
         var settings = await settingsService.GetSettingsAsync();
 
+        // Initialize assistant files folder default on first run (or after upgrade).
+        // Once the user clears the path the empty value sticks — we only seed it when it's missing.
+        if (string.IsNullOrWhiteSpace(settings.AssistantFilesFolder))
+        {
+            var defaultFolder = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Pia", "workdir");
+            try
+            {
+                System.IO.Directory.CreateDirectory(defaultFolder);
+                settings.AssistantFilesFolder = defaultFolder;
+                await settingsService.SaveSettingsAsync(settings);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to create default assistant files folder: {ex.Message}");
+            }
+        }
+
         // Sync autostart registry state with setting (covers existing installs upgrading to this version)
         var autostartService = Bootstrapper.ServiceProvider.GetRequiredService<IAutostartService>();
         if (settings.LaunchAtStartup && !autostartService.IsEnabled())

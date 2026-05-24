@@ -69,17 +69,17 @@ public class TokenizingAiClientService : IAiClientService
         return _enabled.Value;
     }
 
-    public async Task<string> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
+    public async Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
     {
         if (!await IsEnabledAsync())
             return await _inner.SendRequestAsync(provider, prompt, cancellationToken);
 
         var tokenizedPrompt = TryGetTokenMapService()!.TokenizeStructuredResult(prompt);
         var result = await _inner.SendRequestAsync(provider, tokenizedPrompt, cancellationToken);
-        var detokenized = TryGetTokenMapService()!.Detokenize(result);
+        var detokenized = TryGetTokenMapService()!.Detokenize(result.Text);
         _logger.LogDebug("Tokenizing.SendRequest: pre-detok length={Pre}, post-detok length={Post}",
-            result.Length, detokenized.Length);
-        return detokenized;
+            result.Text.Length, detokenized.Length);
+        return result with { Text = detokenized };
     }
 
     public async IAsyncEnumerable<string> StreamChatCompletionAsync(
@@ -141,7 +141,7 @@ public class TokenizingAiClientService : IAiClientService
         return response;
     }
 
-    public async IAsyncEnumerable<string> GetChatCompletionWithToolsAsync(
+    public async IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(
         IList<ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
@@ -154,8 +154,8 @@ public class TokenizingAiClientService : IAiClientService
         if (!await IsEnabledAsync())
         {
             _logger.LogDebug("Tokenization disabled, passing through tool completion");
-            await foreach (var token in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, mode, cancellationToken))
-                yield return token;
+            await foreach (var item in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, mode, cancellationToken))
+                yield return item;
             yield break;
         }
 
@@ -165,20 +165,33 @@ public class TokenizingAiClientService : IAiClientService
         var tokenBuffer = new StringBuilder();
         var isBuffering = false;
 
-        await foreach (var token in _inner.GetChatCompletionWithToolsAsync(
+        await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
             tokenizedMessages, provider, tools, wrappedHandler, mode, cancellationToken))
         {
-            var detokenized = BufferedDetokenize(token, tokenBuffer, ref isBuffering);
-            if (detokenized.Length > 0)
-                yield return detokenized;
+            if (item is TextDelta td)
+            {
+                var detokenized = BufferedDetokenize(td.Text, tokenBuffer, ref isBuffering);
+                if (detokenized.Length > 0)
+                    yield return new TextDelta(detokenized);
+            }
+            else if (item is Finished)
+            {
+                if (tokenBuffer.Length > 0)
+                {
+                    yield return new TextDelta(TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString()));
+                    tokenBuffer.Clear();
+                    isBuffering = false;
+                }
+                yield return item;
+            }
         }
 
-        // Flush any remaining buffer
+        // Safety net flush if Finished was never emitted (e.g. inner faulted before completion)
         if (tokenBuffer.Length > 0)
-            yield return TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString());
+            yield return new TextDelta(TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString()));
     }
 
-    public async Task<string> OptimizeViaPiaCloudAsync(
+    public async Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
         string text, Guid templateId, string language, bool isVoiceInput,
         string? mode = null, CancellationToken cancellationToken = default)
     {
@@ -187,10 +200,10 @@ public class TokenizingAiClientService : IAiClientService
 
         var tokenizedText = TryGetTokenMapService()!.TokenizeStructuredResult(text);
         var result = await _inner.OptimizeViaPiaCloudAsync(tokenizedText, templateId, language, isVoiceInput, mode, cancellationToken);
-        var detokenized = TryGetTokenMapService()!.Detokenize(result);
+        var detokenized = TryGetTokenMapService()!.Detokenize(result.Text);
         _logger.LogDebug("Tokenizing.OptimizeViaPiaCloud: pre-detok length={Pre}, post-detok length={Post}",
-            result.Length, detokenized.Length);
-        return detokenized;
+            result.Text.Length, detokenized.Length);
+        return result with { Text = detokenized };
     }
 
     public Task<string> GeneratePromptViaPiaCloudAsync(string styleDescription, string? mode = null, CancellationToken cancellationToken = default)

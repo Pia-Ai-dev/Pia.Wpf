@@ -59,6 +59,21 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     [ObservableProperty]
     private bool _isEditing;
 
+    [ObservableProperty]
+    private string _activeFilter = "All";
+
+    [ObservableProperty]
+    private int _staleCount;
+
+    [ObservableProperty]
+    private int _embeddingDim = 384;
+
+    [ObservableProperty]
+    private DateTime _lastSyncedAt = DateTime.UtcNow;
+
+    [ObservableProperty]
+    private DateTime _lastIndexBuiltAt = DateTime.UtcNow;
+
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand<MemoryObject> DeleteMemoryCommand { get; }
     public IAsyncRelayCommand<MemoryObject> EditMemoryCommand { get; }
@@ -69,6 +84,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     public IAsyncRelayCommand RegenerateEmbeddingsCommand { get; }
     public IAsyncRelayCommand ReviewStaleCommand { get; }
     public IRelayCommand<MemoryObject> SelectMemoryCommand { get; }
+    public IAsyncRelayCommand<MemoryObject> CopyJsonCommand { get; }
+    public IRelayCommand<MemoryObject> OpenSourceCommand { get; }
+    public IAsyncRelayCommand NewMemoryCommand { get; }
 
     public MemoryViewModel(
         ILogger<MemoryViewModel> logger,
@@ -95,8 +113,46 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         RegenerateEmbeddingsCommand = new AsyncRelayCommand(ExecuteRegenerateEmbeddings);
         ReviewStaleCommand = new AsyncRelayCommand(ExecuteReviewStale);
         SelectMemoryCommand = new RelayCommand<MemoryObject>(ExecuteSelectMemory);
+        CopyJsonCommand = new AsyncRelayCommand<MemoryObject>(ExecuteCopyJson);
+        OpenSourceCommand = new RelayCommand<MemoryObject>(ExecuteOpenSource);
+        NewMemoryCommand = new AsyncRelayCommand(ExecuteNewMemory);
 
         PropertyChanged += OnPropertyChanged;
+    }
+
+    private async Task ExecuteCopyJson(MemoryObject? memory)
+    {
+        if (memory is null) return;
+        try
+        {
+            var pretty = JsonHelper.FormatJson(memory.Data);
+            System.Windows.Clipboard.SetText(pretty);
+            _snackbarService.Show(_localizationService["Memory_Copied"], string.Empty,
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
+            await Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to copy JSON to clipboard");
+        }
+    }
+
+    private void ExecuteOpenSource(MemoryObject? memory)
+    {
+        if (memory?.SourceConversationId is null) return;
+        _logger.LogInformation("Open source conversation {Id}", memory.SourceConversationId);
+    }
+
+    private async Task ExecuteNewMemory()
+    {
+        await Task.CompletedTask;
+    }
+
+    private static int CountStale(IEnumerable<MemoryObject> items)
+    {
+        var n = 0;
+        foreach (var m in items) if (m.IsStale) n++;
+        return n;
     }
 
     public void OnNavigatedTo(object? parameter)
@@ -132,17 +188,24 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 memories = await _memoryService.GetAllObjectsAsync();
             }
 
+            var filtered = ApplyFilter(memories);
+
             // Group by type
-            var groups = memories
+            var groups = filtered
                 .GroupBy(m => m.Type)
                 .OrderBy(g => g.Key)
-                .Select(g => new MemoryGroupViewModel
+                .Select(g =>
                 {
-                    Type = g.Key,
-                    DisplayName = MemoryObjectTypes.GetDisplayName(g.Key),
-                    Items = new ObservableCollection<MemoryObject>(g.OrderByDescending(m => m.UpdatedAt)),
-                    ItemCount = g.Count(),
-                    LastUpdated = g.Max(m => m.UpdatedAt)
+                    var items = g.OrderByDescending(m => m.UpdatedAt).ToList();
+                    return new MemoryGroupViewModel
+                    {
+                        Type = g.Key,
+                        DisplayName = MemoryObjectTypes.GetDisplayName(g.Key),
+                        Items = new ObservableCollection<MemoryObject>(items),
+                        ItemCount = items.Count,
+                        LastUpdated = items.Max(m => m.UpdatedAt),
+                        StaleCount = CountStale(items)
+                    };
                 })
                 .ToList();
 
@@ -152,9 +215,18 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 MemoryGroups.Add(group);
             }
 
+            if (SelectedMemory is not null &&
+                !MemoryGroups.Any(g => g.Items.Any(m => m.Id == SelectedMemory.Id)))
+            {
+                SelectedMemory = null;
+                IsEditing = false;
+            }
+
             TotalObjectCount = await _memoryService.GetObjectCountAsync();
             var storageSize = await _memoryService.GetStorageSizeAsync();
             StorageSizeText = FormatBytes(storageSize);
+            StaleCount = CountStale(memories);
+            LastSyncedAt = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
@@ -237,9 +309,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             // Validate JSON
             JsonNode.Parse(EditingData);
 
-            // Use the full replacement as a merge patch (replace all data)
             var connection = SelectedMemory;
-            await _memoryService.UpdateObjectAsync(connection.Id, EditingData);
+            await _memoryService.UpdateObjectDataAsync(connection.Id, connection.Label, EditingData);
 
             // Regenerate embedding if model is available
             if (_embeddingService.IsModelAvailable)
@@ -258,8 +329,19 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
 
             IsEditing = false;
 
-            // Refresh to show updated data
+            var savedId = connection.Id;
             await LoadMemoriesAsync();
+
+            // Re-select the saved memory by id so the inspector keeps focus on it.
+            foreach (var group in MemoryGroups)
+            {
+                var match = group.Items.FirstOrDefault(m => m.Id == savedId);
+                if (match is not null)
+                {
+                    SelectedMemory = match;
+                    break;
+                }
+            }
 
             _snackbarService.Show(_localizationService["Msg_Memory_Saved"], _localizationService["Msg_Memory_MemoryUpdated"],
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -468,10 +550,25 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             DebounceSearch();
         }
 
+        if (e.PropertyName == nameof(ActiveFilter))
+        {
+            DebounceSearch();
+        }
+
         if (e.PropertyName == nameof(SelectedMemory) && SelectedMemory is not null)
         {
             SelectedMemoryDataFormatted = JsonHelper.FormatJson(SelectedMemory.Data);
         }
+    }
+
+    private IEnumerable<MemoryObject> ApplyFilter(IEnumerable<MemoryObject> source)
+    {
+        return ActiveFilter switch
+        {
+            "Stale" => source.Where(m => m.IsStale),
+            "Today" => source.Where(m => m.UpdatedAt.Date == DateTime.UtcNow.Date),
+            _ => source
+        };
     }
 
     private static string FormatBytes(long bytes) => bytes switch
@@ -512,5 +609,8 @@ public partial class MemoryGroupViewModel : ObservableObject
     private DateTime _lastUpdated;
 
     [ObservableProperty]
-    private bool _isExpanded;
+    private bool _isExpanded = true;
+
+    [ObservableProperty]
+    private int _staleCount;
 }

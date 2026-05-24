@@ -1,0 +1,48 @@
+<UserControl x:Class="Pia.Controls.Chat.PiaSuggestionChips"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+  <ItemsControl ItemsSource="{Binding ItemsSource, ElementName=Root}">
+    <ItemsControl.ItemsPanel>
+      <ItemsPanelTemplate>
+        <WrapPanel Orientation="Horizontal" />
+      </ItemsPanelTemplate>
+    </ItemsControl.ItemsPanel>
+    <ItemsControl.ItemTemplate>
+      <DataTemplate>
+        <Button Margin="0,0,8,8"
+                MinHeight="34"
+                Padding="16,0"
+                Cursor="Hand"
+                FontSize="12"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush_}"
+                BorderThickness="1"
+                Foreground="{DynamicResource TextDefaultBrush}"
+                Command="{Binding ItemClickCommand, ElementName=Root}"
+                CommandParameter="{Binding}">
+          <Button.Template>
+            <ControlTemplate TargetType="Button">
+              <Border CornerRadius="{StaticResource BubbleRadius}"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      Padding="{TemplateBinding Padding}"
+                      SnapsToDevicePixels="True">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <Ellipse Width="6" Height="6" Margin="0,0,8,0"
+                           VerticalAlignment="Center"
+                           Fill="{DynamicResource PiaAccentBrush}" />
+                  <TextBlock Text="{Binding}"
+                             Foreground="{TemplateBinding Foreground}"
+                             FontSize="{TemplateBinding FontSize}"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </Border>
+            </ControlTemplate>
+          </Button.Template>
+        </Button>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

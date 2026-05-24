@@ -42,6 +42,16 @@
   <data name="Msg_Cancelled" xml:space="preserve"><value>Abgebrochen</value></data>
   <data name="Msg_SelectionNotPastedInputNotEmpty" xml:space="preserve"><value>Markierter Text wurde nicht eingefügt, da das Eingabefeld bereits Text enthält.</value></data>
   <data name="Msg_SelectionNotPasted_InsertAnyway" xml:space="preserve"><value>Trotzdem einfügen</value></data>
+
+  <!-- File drop -->
+  <data name="Msg_File_Unsupported" xml:space="preserve"><value>„{0}" kann hier nicht eingefügt werden – Dateityp wird nicht unterstützt.</value></data>
+  <data name="Msg_File_TooLarge" xml:space="preserve"><value>„{0}" ist zu groß zum Einfügen.</value></data>
+  <data name="Msg_File_ReadFailed" xml:space="preserve"><value>„{0}" konnte nicht gelesen werden: {1}</value></data>
+  <data name="Msg_File_Inserted" xml:space="preserve"><value>Inhalt von {0} eingefügt.</value></data>
+  <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Datei hier ablegen, um Inhalt einzufügen</value></data>
+
+  <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Kein Sprachmodell geladen. Wähle in den Einstellungen eine Stimme aus, um Vorlesen zu nutzen.</value></data>
+  <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Einstellungen öffnen</value></data>
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Kopiert</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
@@ -53,9 +63,11 @@
   <data name="Msg_Assistant_PermanentDeleteMemory" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Diese Aufgabe wird dauerhaft gelöscht.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>Diese Datei wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Erinnerung aktualisiert</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>Antwortgenerierung wurde abgebrochen.</value></data>
   <data name="Msg_Assistant_ResponseTimedOut" xml:space="preserve"><value>Anbieter „{0}" hat nicht innerhalb von {1} Sekunden geantwortet.</value></data>
+  <data name="Msg_Assistant_ResponseTruncated" xml:space="preserve"><value>Anbieter „{0}" hat die maximale Antwortlänge erreicht, bevor die Antwort fertig war. Versuche eine kürzere oder konkretere Anfrage – oder teile die Aufgabe in mehrere Schritte auf.</value></data>
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>Der Assistent hat keine Antwort geliefert. Bitte versuche es erneut.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Fehler beim Abrufen der KI-Antwort: {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Gedächtnis wird überprüft...</value></data>
@@ -91,6 +103,11 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Löschen der Erinnerung fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Erinnerung löschen</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Gelöscht</value></data>
+  <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Verworfen</value></data>
+  <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Erinnerung verworfen. Wiederkehrende Erinnerungen werden auf den nächsten Termin verschoben.</value></data>
+  <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} Erinnerungen verworfen.</value></data>
+  <data name="Msg_Reminders_NothingToDismissTitle" xml:space="preserve"><value>Nichts zu verwerfen</value></data>
+  <data name="Msg_Reminders_NothingToDismissBody" xml:space="preserve"><value>Keine einmaligen Erinnerungen zum Verwerfen.</value></data>
   <data name="Msg_Memory_DownloadError" xml:space="preserve"><value>Herunterladen des Embedding-Modells fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_DownloadFailedMessage" xml:space="preserve"><value>Der Download des Embedding-Modells wurde nicht erfolgreich abgeschlossen. Bitte versuche es erneut.</value></data>
   <data name="Msg_Memory_DownloadFailedTitle" xml:space="preserve"><value>Download fehlgeschlagen</value></data>

@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using Microsoft.Extensions.DependencyInjection;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.ViewModels;
@@ -55,12 +56,12 @@ public partial class TodoPanelControl : UserControl
         try
         {
             // Find the parent border (the todo item card)
-            var itemBorder = FindAncestorByName<Border>(checkBox, "PanelTodoItem");
+            var itemBorder = checkBox.FindAncestorByName<Border>("PanelTodoItem");
             if (itemBorder is null) return;
 
             // Find the strikethrough line and title
-            var strikethrough = FindChild<Line>(itemBorder, "StrikethroughLine");
-            var titleBlock = FindChild<TextBlock>(itemBorder, "TodoTitle");
+            var strikethrough = itemBorder.FindChild<Line>("StrikethroughLine");
+            var titleBlock = itemBorder.FindChild<TextBlock>("TodoTitle");
 
             if (strikethrough is not null && titleBlock is not null)
             {
@@ -135,35 +136,4 @@ public partial class TodoPanelControl : UserControl
         }
     }
 
-    private static T? FindAncestor<T>(DependencyObject? obj) where T : DependencyObject
-    {
-        while (obj is not null)
-        {
-            obj = VisualTreeHelper.GetParent(obj);
-            if (obj is T target) return target;
-        }
-        return null;
-    }
-
-    private static T? FindAncestorByName<T>(DependencyObject? obj, string name) where T : FrameworkElement
-    {
-        while (obj is not null)
-        {
-            obj = VisualTreeHelper.GetParent(obj);
-            if (obj is T fe && fe.Name == name) return fe;
-        }
-        return null;
-    }
-
-    private static T? FindChild<T>(DependencyObject parent, string name) where T : FrameworkElement
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T fe && fe.Name == name) return fe;
-            var result = FindChild<T>(child, name);
-            if (result is not null) return result;
-        }
-        return null;
-    }
 }

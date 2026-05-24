@@ -7,7 +7,7 @@ public interface IDialogService
 {
     Task<bool> ShowProviderEditDialogAsync(ProviderEditModel provider, IProviderService providerService);
     Task<bool> ShowTemplateEditDialogAsync(TemplateEditModel template);
-    Task ShowSessionDetailDialogAsync(OptimizationSession session);
+    Task<bool> ShowTodoEditDialogAsync(TodoEditModel todo);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
     Task ShowMessageDialogAsync(string title, string message);
     Task ShowRecoveryCodeDialogAsync(string recoveryCode);

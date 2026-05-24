@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Pia.Wpf — Shared Styles
+    Drop into: Pia.Wpf/Resources/Theme/PiaStyles.xaml
+    Depends on PiaTokens.Light.xaml or PiaTokens.Dark.xaml being merged first.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+
+    <!-- ════════════════════ Pia avatar
+         A 28×28 rounded square with a gradient and a centered "P".
+         Used in chat next to every assistant message, in the title bar,
+         and inside the action card stripe. -->
+    <Style x:Key="PiaAvatarStyle" TargetType="Border">
+        <Setter Property="Width"  Value="28"/>
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Background">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Offset="0" Color="{Binding Source={StaticResource PiaInkColor}}"/>
+                    <GradientStop Offset="1" Color="{Binding Source={StaticResource PiaAccentColor}}"/>
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Border">
+                    <Border CornerRadius="{TemplateBinding CornerRadius}"
+                            Background="{TemplateBinding Background}">
+                        <TextBlock Text="P"
+                                   FontFamily="{DynamicResource PiaDisplayFont}"
+                                   FontWeight="Bold"
+                                   FontSize="14"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ════════════════════ Navigation item (sidebar) ════════════════════ -->
+    <Style x:Key="PiaNavItemStyle" TargetType="ui:NavigationViewItem">
+        <Setter Property="Margin"     Value="4,2"/>
+        <Setter Property="Padding"    Value="8"/>
+        <Setter Property="MinHeight"  Value="36"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ui:NavigationViewItem">
+                    <Border x:Name="Root"
+                            Background="Transparent"
+                            CornerRadius="9"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Content="{TemplateBinding Icon}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource SurfaceMutedBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsActive" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource PiaAccentSoftBrush}"/>
+                            <Setter Property="Foreground"
+                                    Value="{DynamicResource PiaAccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ════════════════════ Chat bubbles ════════════════════ -->
+
+    <!-- Assistant bubble: no background, typography only.
+         Surrounded by a StackPanel that hosts PiaAvatarStyle + this content. -->
+    <Style x:Key="AssistantBubbleStyle" TargetType="Border">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Padding"    Value="0"/>
+        <Setter Property="MaxWidth"   Value="580"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+
+    <!-- User bubble: solid accent, asymmetric corner radius. -->
+    <Style x:Key="UserBubbleStyle" TargetType="Border">
+        <Setter Property="Background"   Value="{DynamicResource PiaAccentBrush}"/>
+        <Setter Property="CornerRadius" Value="14,14,4,14"/>
+        <Setter Property="Padding"      Value="14,10"/>
+        <Setter Property="MaxWidth"     Value="520"/>
+        <Setter Property="HorizontalAlignment" Value="Right"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="#1E2A4A" Opacity="0.10"
+                                  BlurRadius="8" ShadowDepth="1"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="UserBubbleTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground"   Value="White"/>
+        <Setter Property="FontSize"     Value="14"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="LineHeight"   Value="21"/>
+    </Style>
+
+    <!-- ════════════════════ Card surface ════════════════════
+         Generic elevated card. Used by ActionCard, CodeBlock header etc. -->
+    <Style x:Key="PiaCardStyle" TargetType="Border">
+        <Setter Property="Background"      Value="{DynamicResource SurfaceBrush}"/>
+        <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush_}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius"    Value="{StaticResource LargeRadius}"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="#0F1729" Opacity="0.08"
+                                  BlurRadius="16" ShadowDepth="3"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

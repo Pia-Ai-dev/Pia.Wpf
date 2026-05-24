@@ -7,7 +7,7 @@
   <UserControl.Resources>
     <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
   </UserControl.Resources>
-  <Grid Margin="24">
+  <Grid Background="{DynamicResource BgCanvasBrush}" Margin="24,20,24,20">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
@@ -17,14 +17,12 @@
     <!-- Header -->
     <StackPanel Grid.Row="0">
       <TextBlock Text="Device Management"
-                 FontSize="20"
-                 FontWeight="SemiBold"
-                 Margin="0,0,0,4"/>
-      <TextBlock Opacity="0.7"
-                 FontSize="12"
-                 Margin="0,0,0,0">
+                 Style="{StaticResource PiaSettingsPageTitleStyle}"/>
+      <TextBlock FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Margin="0,6,0,0">
         <Run Text="This device: "/>
-        <Run Text="{Binding CurrentFingerprint, Mode=OneWay}" FontFamily="Consolas"/>
+        <Run Text="{Binding CurrentFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaMonoFont}"/>
       </TextBlock>
     </StackPanel>
 
@@ -32,8 +30,10 @@
     <ui:Button Grid.Row="1"
                Content="Refresh"
                Icon="{ui:SymbolIcon ArrowSync24}"
+               Appearance="Secondary"
                Command="{Binding LoadDevicesCommand}"
-               Margin="0,16,0,16"/>
+               HorizontalAlignment="Left"
+               Margin="0,14,0,14"/>
 
     <!-- Loading indicator -->
     <ui:ProgressRing Grid.Row="2"
@@ -45,43 +45,52 @@
                      Margin="0,16,0,0"/>
 
     <!-- Device list -->
-    <ListView Grid.Row="2"
-              ItemsSource="{Binding Devices}"
-              Margin="0,0,0,0">
-      <ListView.ItemTemplate>
+    <ItemsControl Grid.Row="2"
+                  ItemsSource="{Binding Devices}">
+      <ItemsControl.ItemTemplate>
         <DataTemplate>
-          <Grid Margin="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+          <Border Style="{StaticResource PiaSettingsCardStyle}"
+                  Padding="14,12"
+                  Margin="0,0,0,8">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="0">
-              <TextBlock FontWeight="SemiBold">
-                <Run Text="{Binding DeviceName, Mode=OneWay}"/>
-                <Run Text=" — "/>
-                <Run Text="{Binding Status, Mode=OneWay}"/>
-              </TextBlock>
-              <TextBlock Opacity="0.6" FontFamily="Consolas" FontSize="11">
-                <Run Text="Fingerprint: "/>
-                <Run Text="{Binding Fingerprint, Mode=OneWay}"/>
-              </TextBlock>
-              <TextBlock Opacity="0.5" FontSize="11">
-                <Run Text="Last seen: "/>
-                <Run Text="{Binding LastSeenAt, StringFormat='{}{0:g}', Mode=OneWay}"/>
-              </TextBlock>
-            </StackPanel>
+              <StackPanel Grid.Column="0">
+                <TextBlock FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextDefaultBrush}">
+                  <Run Text="{Binding DeviceName, Mode=OneWay}"/>
+                  <Run Text=" — "/>
+                  <Run Text="{Binding Status, Mode=OneWay}"/>
+                </TextBlock>
+                <TextBlock FontSize="11"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontFamily="{StaticResource PiaMonoFont}"
+                           Margin="0,4,0,0">
+                  <Run Text="Fingerprint: "/>
+                  <Run Text="{Binding Fingerprint, Mode=OneWay}"/>
+                </TextBlock>
+                <TextBlock FontSize="11"
+                           Foreground="{DynamicResource TextSubtleBrush}"
+                           Margin="0,2,0,0">
+                  <Run Text="Last seen: "/>
+                  <Run Text="{Binding LastSeenAt, StringFormat='{}{0:g}', Mode=OneWay}"/>
+                </TextBlock>
+              </StackPanel>
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-              <ui:Button Content="Revoke"
-                         Appearance="Danger"
-                         Command="{Binding DataContext.RevokeDeviceCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
-                         CommandParameter="{Binding}"
-                         Margin="4,0"/>
-            </StackPanel>
-          </Grid>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <ui:Button Content="Revoke"
+                           Appearance="Secondary"
+                           Foreground="{DynamicResource PiaDangerBrush}"
+                           Command="{Binding DataContext.RevokeDeviceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                           CommandParameter="{Binding}"/>
+              </StackPanel>
+            </Grid>
+          </Border>
         </DataTemplate>
-      </ListView.ItemTemplate>
-    </ListView>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
   </Grid>
 </UserControl>

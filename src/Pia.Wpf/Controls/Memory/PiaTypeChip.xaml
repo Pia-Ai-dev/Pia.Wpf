@@ -1,0 +1,14 @@
+<UserControl x:Class="Pia.Controls.Memory.PiaTypeChip"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+  <Border Background="{Binding Type, ElementName=Root, Converter={StaticResource MemoryTypeToBrushBg}}"
+          CornerRadius="4"
+          Padding="7,1"
+          VerticalAlignment="Center">
+    <TextBlock Text="{Binding Type, ElementName=Root, Converter={StaticResource MemoryTypeToLabelConverter}}"
+               Foreground="{Binding Type, ElementName=Root, Converter={StaticResource MemoryTypeToBrushFg}}"
+               FontSize="10.5"
+               FontWeight="SemiBold" />
+  </Border>
+</UserControl>

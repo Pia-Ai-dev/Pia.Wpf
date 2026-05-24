@@ -54,6 +54,7 @@
   <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Ausgabesprache</value></data>
   <data name="Optimize_Optimize_Tooltip" xml:space="preserve"><value>Optimieren (Strg+Eingabe)</value></data>
   <data name="Optimize_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
+  <data name="Optimize_Attach_Tooltip" xml:space="preserve"><value>Datei anhängen</value></data>
   <data name="Optimize_Accept_Tooltip" xml:space="preserve"><value>Annehmen</value></data>
   <data name="Optimize_Reject_Tooltip" xml:space="preserve"><value>Ablehnen</value></data>
   <data name="Optimize_Copy_Tooltip" xml:space="preserve"><value>Kopieren</value></data>
@@ -79,12 +80,14 @@
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Nachricht eingeben...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Kopieren</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Vorlesen</value></data>
+  <data name="Assistant_Regenerate_Tooltip" xml:space="preserve"><value>Neu generieren</value></data>
   <data name="Assistant_StopReading_Tooltip" xml:space="preserve"><value>Vorlesen beenden</value></data>
   <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Überlegungen anzeigen</value></data>
   <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Unterhaltung löschen</value></data>
   <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Abbrechen</value></data>
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Sprachausgabe ein-/ausschalten</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
+  <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Datei anhängen</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
@@ -158,6 +161,28 @@
   <data name="History_Loading" xml:space="preserve"><value>Sitzungen werden geladen...</value></data>
   <data name="History_NoSessions" xml:space="preserve"><value>Keine Sitzungen gefunden</value></data>
   <data name="History_LoadMore" xml:space="preserve"><value>Mehr laden</value></data>
+  <data name="History_Group_Today" xml:space="preserve"><value>Heute</value></data>
+  <data name="History_Group_Yesterday" xml:space="preserve"><value>Gestern</value></data>
+  <data name="History_Group_ThisWeek" xml:space="preserve"><value>Diese Woche</value></data>
+  <data name="History_Group_EarlierThisMonth" xml:space="preserve"><value>Früher in diesem Monat</value></data>
+  <data name="History_Group_Older" xml:space="preserve"><value>Älter</value></data>
+  <data name="History_EmptyState" xml:space="preserve"><value>Noch keine Sitzungen</value></data>
+  <data name="History_EmptyStateHint" xml:space="preserve"><value>Optimiere einen Prompt, um den Verlauf zu füllen</value></data>
+  <data name="History_EmptyInspector_Title" xml:space="preserve"><value>Sitzung auswählen</value></data>
+  <data name="History_EmptyInspector_Hint" xml:space="preserve"><value>Wähle eine Sitzung aus der Liste, um Original- und optimierten Text zu vergleichen.</value></data>
+  <data name="History_TotalCountFormat" xml:space="preserve"><value>{0} von {1} Sitzungen</value></data>
+  <data name="History_Inspector_Tab_Original" xml:space="preserve"><value>Original</value></data>
+  <data name="History_Inspector_Tab_Optimized" xml:space="preserve"><value>Optimiert</value></data>
+  <data name="History_Inspector_Meta_Created" xml:space="preserve"><value>Erstellt</value></data>
+  <data name="History_Inspector_Meta_Template" xml:space="preserve"><value>Vorlage</value></data>
+  <data name="History_Inspector_Meta_Provider" xml:space="preserve"><value>Anbieter</value></data>
+  <data name="History_Inspector_Meta_ProcessingTime" xml:space="preserve"><value>Verarbeitungszeit</value></data>
+  <data name="History_Inspector_Meta_Tokens" xml:space="preserve"><value>Tokens</value></data>
+  <data name="History_Inspector_Untitled" xml:space="preserve"><value>Optimierungssitzung</value></data>
+  <data name="History_DeleteAll" xml:space="preserve"><value>Alle löschen</value></data>
+  <data name="History_DeleteAllTooltip" xml:space="preserve"><value>Alle Sitzungen, die dem aktuellen Filter entsprechen, dauerhaft löschen.</value></data>
+  <data name="History_DeleteAllConfirmTitle" xml:space="preserve"><value>Alle Sitzungen löschen</value></data>
+  <data name="History_DeleteAllConfirmBody" xml:space="preserve"><value>Alle Sitzungen löschen, die dem aktuellen Filter entsprechen? Dies kann nicht rückgängig gemacht werden.</value></data>
   <!-- Todo View -->
   <data name="Todo_Title" xml:space="preserve"><value>Aufgabenliste</value></data>
   <data name="Todo_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
@@ -181,6 +206,10 @@
   <data name="Todo_DueDateTooltip" xml:space="preserve"><value>Fälligkeitsdatum (optional)</value></data>
   <data name="Todo_AddTooltip" xml:space="preserve"><value>Aufgabe hinzufügen</value></data>
   <data name="Todo_Add" xml:space="preserve"><value>Hinzufügen</value></data>
+  <data name="Todo_Search_Placeholder" xml:space="preserve"><value>Titel oder Notizen durchsuchen...</value></data>
+  <data name="Todo_Stats_Open" xml:space="preserve"><value>offen</value></data>
+  <data name="Todo_Stats_CompletedToday" xml:space="preserve"><value>heute erledigt</value></data>
+  <data name="Todo_Stats_Overdue" xml:space="preserve"><value>überfällig</value></data>
   <!-- Todo Panel -->
   <data name="TodoPanel_Title" xml:space="preserve"><value>Aufgaben</value></data>
   <data name="TodoPanel_ClosePanel" xml:space="preserve"><value>Leiste schließen</value></data>
@@ -223,7 +252,6 @@
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Modell herunterladen</value></data>
   <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Mehrsprachiges Embedding-Modell für semantische Suche herunterladen</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Embeddings neu generieren</value></data>
-  <data name="Memory_RegenerateTooltip" xml:space="preserve"><value>Embeddings für alle Gedächtnisobjekte neu generieren</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Erinnerungen</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
@@ -239,6 +267,29 @@
   <data name="Reminders_Delete" xml:space="preserve"><value>Löschen</value></data>
   <data name="Reminders_Loading" xml:space="preserve"><value>Erinnerungen werden geladen...</value></data>
   <data name="Reminders_EmptyState" xml:space="preserve"><value>Keine Erinnerungen gefunden. Erstelle Erinnerungen über den Assistenten-Chat.</value></data>
+  <data name="Reminders_DismissAll" xml:space="preserve"><value>Alle verwerfen</value></data>
+  <data name="Reminders_DismissAllTooltip" xml:space="preserve"><value>Alle sichtbaren aktiven und schlummernden Erinnerungen verwerfen.</value></data>
+  <data name="Reminders_DisableAll" xml:space="preserve"><value>Alle deaktivieren</value></data>
+  <data name="Reminders_DisableAllTooltip" xml:space="preserve"><value>Alle sichtbaren Erinnerungen deaktivieren.</value></data>
+  <data name="Reminders_DeleteAll" xml:space="preserve"><value>Alle löschen</value></data>
+  <data name="Reminders_DeleteAllTooltip" xml:space="preserve"><value>Alle sichtbaren Erinnerungen dauerhaft löschen.</value></data>
+  <data name="Reminders_DeleteAllConfirmTitle" xml:space="preserve"><value>Alle Erinnerungen löschen</value></data>
+  <data name="Reminders_DeleteAllConfirmBody" xml:space="preserve"><value>Alle sichtbaren Erinnerungen löschen? Dies kann nicht rückgängig gemacht werden.</value></data>
+  <data name="Reminders_Filter_All" xml:space="preserve"><value>Alle</value></data>
+  <data name="Reminders_Filter_Active" xml:space="preserve"><value>Aktiv</value></data>
+  <data name="Reminders_Filter_Snoozed" xml:space="preserve"><value>Schlummert</value></data>
+  <data name="Reminders_Filter_Disabled" xml:space="preserve"><value>Deaktiviert</value></data>
+  <data name="Reminders_Filter_Completed" xml:space="preserve"><value>Abgeschlossen</value></data>
+  <data name="Reminders_Bucket_Overdue" xml:space="preserve"><value>Überfällig</value></data>
+  <data name="Reminders_Bucket_Today" xml:space="preserve"><value>Heute</value></data>
+  <data name="Reminders_Bucket_Tomorrow" xml:space="preserve"><value>Morgen</value></data>
+  <data name="Reminders_Bucket_ThisWeek" xml:space="preserve"><value>Diese Woche</value></data>
+  <data name="Reminders_Bucket_Later" xml:space="preserve"><value>Später</value></data>
+  <data name="Reminders_Stats_Active" xml:space="preserve"><value>aktiv</value></data>
+  <data name="Reminders_Stats_Snoozed" xml:space="preserve"><value>schlummern</value></data>
+  <data name="Reminders_Stats_Disabled" xml:space="preserve"><value>deaktiviert</value></data>
+  <data name="Reminders_Stats_Completed" xml:space="preserve"><value>abgeschlossen</value></data>
+  <data name="Reminders_Stats_Overdue" xml:space="preserve"><value>überfällig</value></data>
   <!-- Settings View -->
   <data name="Settings_Tab_Providers" xml:space="preserve"><value>Anbieter</value></data>
   <data name="Settings_Tab_Templates" xml:space="preserve"><value>Vorlagen</value></data>
@@ -303,6 +354,13 @@
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>Beim Drücken eines Pia-Hotkeys wird der im aktiven Programm markierte Text automatisch kopiert und in die Eingabe übernommen. Die Zwischenablage wird anschließend wiederhergestellt.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
+  <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Folgevorschläge anzeigen</value></data>
+  <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Nach jeder Antwort des Assistenten 2–4 Folgefragen als Chips vorschlagen. Verursacht eine kleine zusätzliche Anfrage pro Runde.</value></data>
+  <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Assistenten-Dateiordner</value></data>
+  <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>Kein Ordner ausgewählt</value></data>
+  <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Durchsuchen…</value></data>
+  <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Leeren</value></data>
+  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Ordner, in dem der Assistent Textdateien lesen, zusammenfassen, ändern oder löschen darf. Der Assistent ist auf diesen Ordner beschränkt und kann nicht auf Dateien außerhalb davon zugreifen. Leer lassen, um die Datei-Tools zu deaktivieren.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Globale Tastenkürzel</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Drücke ein Tastenkürzel, wenn die App ausgeblendet ist, um das Fenster unter dem Cursor zu erfassen und Pia im entsprechenden Modus zu öffnen</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimieren</value></data>
@@ -539,10 +597,12 @@
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>
   <data name="ActionCard_Category_Todo" xml:space="preserve"><value>Aufgabe</value></data>
   <data name="ActionCard_Category_Reminder" xml:space="preserve"><value>Erinnerung</value></data>
+  <data name="ActionCard_Category_File" xml:space="preserve"><value>Datei</value></data>
   <data name="ActionCard_Action_Create" xml:space="preserve"><value>Erstellen</value></data>
   <data name="ActionCard_Action_Update" xml:space="preserve"><value>Aktualisieren</value></data>
   <data name="ActionCard_Action_Delete" xml:space="preserve"><value>Löschen</value></data>
   <data name="ActionCard_Action_Complete" xml:space="preserve"><value>Abschließen</value></data>
+  <data name="ActionCard_Action_Write" xml:space="preserve"><value>Schreiben</value></data>
   <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Erledigt</value></data>
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Abgelehnt</value></data>
   <!-- Enum Display Names -->

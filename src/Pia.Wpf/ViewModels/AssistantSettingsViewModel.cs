@@ -30,6 +30,12 @@ public partial class AssistantSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _showTodoPanelButton = true;
 
+    [ObservableProperty]
+    private bool _suggestionsEnabled;
+
+    [ObservableProperty]
+    private string? _filesFolder;
+
     public IEnumerable<WindowMode> WindowModes => Enum.GetValues<WindowMode>();
 
     partial void OnDefaultWindowModeChanged(WindowMode value)
@@ -42,6 +48,16 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnSuggestionsEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnFilesFolderChanged(string? value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -49,15 +65,37 @@ public partial class AssistantSettingsViewModel : ObservableObject
         var settings = await _settingsService.GetSettingsAsync();
         DefaultWindowMode = settings.DefaultWindowMode;
         ShowTodoPanelButton = settings.ShowTodoPanelButton;
+        SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
+        FilesFolder = settings.AssistantFilesFolder;
 
         _isLoading = false;
     }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void BrowseFilesFolder()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select assistant files folder",
+            InitialDirectory = !string.IsNullOrWhiteSpace(FilesFolder) && System.IO.Directory.Exists(FilesFolder)
+                ? FilesFolder
+                : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+        };
+
+        if (dialog.ShowDialog() == true)
+            FilesFolder = dialog.FolderName;
+    }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ClearFilesFolder() => FilesFolder = null;
 
     private async Task SaveSettingsAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
         settings.DefaultWindowMode = DefaultWindowMode;
         settings.ShowTodoPanelButton = ShowTodoPanelButton;
+        settings.AssistantSuggestionsEnabled = SuggestionsEnabled;
+        settings.AssistantFilesFolder = string.IsNullOrWhiteSpace(FilesFolder) ? null : FilesFolder;
         await _settingsService.SaveSettingsAsync(settings);
     }
 

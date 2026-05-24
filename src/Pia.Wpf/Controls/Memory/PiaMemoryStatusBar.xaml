@@ -1,0 +1,65 @@
+<UserControl x:Class="Pia.Controls.Memory.PiaMemoryStatusBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <Border Background="{DynamicResource SurfaceBrush}"
+          BorderBrush="{DynamicResource BorderBrush_}"
+          BorderThickness="0,1,0,0"
+          Padding="14,6">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+
+      <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+        <Ellipse Width="8" Height="8"
+                 VerticalAlignment="Center"
+                 Margin="0,0,6,0">
+          <Ellipse.Style>
+            <Style TargetType="Ellipse">
+              <Setter Property="Fill" Value="{DynamicResource TextSubtleBrush}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsEmbeddingModelAvailable}" Value="True">
+                  <Setter Property="Fill" Value="{DynamicResource PiaSuccessBrush}"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+        <TextBlock VerticalAlignment="Center"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextMutedBrush}">
+          <Run Text="{loc:Str Memory_EmbeddingModel}" FontWeight="SemiBold"/>
+          <Run Text=" "/>
+          <Run>
+            <Run.Style>
+              <Style TargetType="Run">
+                <Setter Property="Text" Value="{loc:Str Memory_ModelNotAvailable}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsEmbeddingModelAvailable}" Value="True">
+                    <Setter Property="Text" Value="{loc:Str Memory_ModelReady}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource PiaSuccessBrush}"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Run.Style>
+          </Run>
+          <Run Text=" · "/>
+          <Run Text="{loc:Str Memory_Meta_ModelDefault}"/>
+          <Run Text=" · "/>
+          <Run Text="{Binding EmbeddingDim, Mode=OneWay}"/><Run Text="-dim"/>
+        </TextBlock>
+      </StackPanel>
+
+      <Button Grid.Column="1"
+              Content="{loc:Str Memory_RegenerateEmbeddings}"
+              Command="{Binding RegenerateEmbeddingsCommand}"
+              Style="{StaticResource UnstyledButton}"
+              Foreground="{DynamicResource PiaAccentBrush}"
+              Padding="10,4"/>
+    </Grid>
+  </Border>
+</UserControl>

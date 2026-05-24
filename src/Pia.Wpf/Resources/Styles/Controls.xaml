@@ -39,7 +39,7 @@
     <Setter Property="MinWidth" Value="120" />
   </Style>
 
-  <!-- Settings inner TabControl style (segmented pill tabs) -->
+  <!-- Settings inner TabControl style (segmented pill tabs). -->
   <Style x:Key="SettingsInnerTabControlStyle" TargetType="TabControl">
     <Setter Property="Background" Value="Transparent"/>
     <Setter Property="BorderThickness" Value="0"/>
@@ -53,9 +53,11 @@
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <Border Grid.Row="0"
-                    Background="{DynamicResource SecondaryBackgroundBrush}"
-                    CornerRadius="6"
-                    Padding="4"
+                    Background="{DynamicResource SurfaceMutedBrush}"
+                    BorderBrush="{DynamicResource BorderBrush_}"
+                    BorderThickness="1"
+                    CornerRadius="9"
+                    Padding="3"
                     HorizontalAlignment="Left"
                     Margin="0,0,0,16">
               <TabPanel IsItemsHost="True"/>
@@ -68,34 +70,41 @@
     </Setter>
   </Style>
 
-  <!-- Settings inner TabItem style (pill tab header) -->
+  <!-- Settings inner TabItem style (pill tab header). Matches PiaSegmentedButton. -->
   <Style x:Key="SettingsInnerTabItemStyle" TargetType="TabItem">
     <Setter Property="Background" Value="Transparent"/>
-    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-    <Setter Property="Padding" Value="14,7"/>
-    <Setter Property="Margin" Value="2,0"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="Padding" Value="14,6"/>
+    <Setter Property="Margin" Value="0"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="TabItem">
           <Border x:Name="Bd"
                   Background="{TemplateBinding Background}"
-                  CornerRadius="4"
+                  CornerRadius="6"
                   Padding="{TemplateBinding Padding}">
             <ContentPresenter x:Name="ContentSite"
                               ContentSource="Header"
                               HorizontalAlignment="Center"
                               VerticalAlignment="Center"
-                              TextBlock.FontSize="13"
-                              TextBlock.FontWeight="Medium"/>
+                              TextBlock.FontSize="12"
+                              TextBlock.FontWeight="Medium"
+                              TextBlock.Foreground="{TemplateBinding Foreground}"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/>
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceBrush}"/>
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
-              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
-              <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter Property="Foreground" Value="White"/>
+              <Setter TargetName="Bd" Property="Effect">
+                <Setter.Value>
+                  <DropShadowEffect Color="#1E2A4A" Opacity="0.18"
+                                    BlurRadius="6" ShadowDepth="1"/>
+                </Setter.Value>
+              </Setter>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

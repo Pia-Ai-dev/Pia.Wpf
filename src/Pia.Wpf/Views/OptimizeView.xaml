@@ -8,13 +8,31 @@
               xmlns:nav="clr-namespace:Pia.Navigation"
               xmlns:models="clr-namespace:Pia.Models"
               xmlns:loc="clr-namespace:Pia.Localization"
+              xmlns:behaviors="clr-namespace:Pia.Behaviors"
               mc:Ignorable="d"
               d:DesignHeight="600" d:DesignWidth="900"
               nav:ViewModelLocator.AutoWireViewModel="True"
               PreviewKeyDown="OptimizeView_PreviewKeyDown">
-  <Grid>
+  <Grid x:Name="RootGrid"
+        Background="Transparent"
+        behaviors:FileDropBehavior.IsEnabled="True"
+        behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx,.xlsx,.xlsm"
+        behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}">
     <!-- Main content + panel overlay -->
-    <Grid>
+    <Grid x:Name="MainContent">
+      <Grid.Style>
+        <Style TargetType="Grid">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=RootGrid}" Value="True">
+              <Setter Property="Effect">
+                <Setter.Value>
+                  <BlurEffect Radius="6" KernelType="Gaussian" />
+                </Setter.Value>
+              </Setter>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Grid.Style>
       <Grid.RowDefinitions>
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
@@ -31,12 +49,10 @@
         <Grid Margin="40,40,40,20">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" MinHeight="80" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="120" />
           </Grid.RowDefinitions>
 
-          <!-- Welcome Header (always visible) -->
+          <!-- Welcome Header -->
           <StackPanel Grid.Row="0">
             <ui:SymbolIcon Symbol="Sparkle24"
                            FontSize="48"
@@ -57,248 +73,324 @@
                        Margin="0,0,0,24" />
           </StackPanel>
 
-          <!-- Input TextBox (resizable via drag handle below) -->
-          <ui:TextBox x:Name="InputTextBox" Grid.Row="1"
-                      Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                      PlaceholderText="{loc:Str Optimize_InputPlaceholder}"
-                      PlaceholderEnabled="True"
-                      TextWrapping="Wrap"
-                      AcceptsReturn="True"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      FontSize="14"
-                      Padding="15"
-                      ClearButtonEnabled="False"
-                      PreviewKeyDown="InputTextBox_PreviewKeyDown" />
+          <!-- Composer Card -->
+          <Border Grid.Row="1" Style="{StaticResource PiaComposerCardStyle}">
+            <Grid Margin="8">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
 
-          <!-- Resize Handle -->
-          <GridSplitter Grid.Row="2"
-                        Height="14"
-                        HorizontalAlignment="Stretch"
-                        ResizeDirection="Rows"
-                        Background="Transparent">
-            <GridSplitter.Template>
-              <ControlTemplate TargetType="{x:Type GridSplitter}">
-                <Grid Background="Transparent" Cursor="SizeNS">
-                  <Border Width="32"
-                          Height="4"
-                          CornerRadius="2"
-                          Background="{DynamicResource ControlStrokeColorDefaultBrush}"
-                          HorizontalAlignment="Center"
-                          VerticalAlignment="Center"
-                          Opacity="0.4" />
-                </Grid>
-              </ControlTemplate>
-            </GridSplitter.Template>
-          </GridSplitter>
+              <ui:TextBox x:Name="InputTextBox" Grid.Row="0"
+                          Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                          PlaceholderText="{loc:Str Optimize_InputPlaceholder}"
+                          PlaceholderEnabled="True"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          FontSize="14"
+                          Padding="6,6"
+                          BorderThickness="0"
+                          Background="Transparent"
+                          ClearButtonEnabled="False"
+                          PreviewKeyDown="InputTextBox_PreviewKeyDown" />
 
-          <!-- Action Buttons -->
-          <StackPanel Grid.Row="3"
-                      Orientation="Horizontal"
-                      HorizontalAlignment="Center"
-                      VerticalAlignment="Bottom"
-                      Margin="0,4,0,0">
-            <ui:Button Command="{Binding ClearInputCommand}"
-                       Appearance="Secondary"
-                       Width="40"
-                       Height="40"
-                       Margin="0,0,8,0"
-                       ToolTip="{loc:Str Optimize_Clear_Tooltip}">
-              <ui:SymbolIcon Symbol="Eraser24" FontSize="16" />
-            </ui:Button>
+              <Grid Grid.Row="1" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <ComboBox ItemsSource="{Binding Templates}"
-                      SelectedValue="{Binding SelectedTemplateId}"
-                      DisplayMemberPath="Name"
-                      SelectedValuePath="Id"
-                      Width="175"
-                      Height="40"
-                      FontSize="13"
-                      Padding="10"
-                      Margin="0,0,8,0"
-                      ToolTip="{loc:Str Optimize_Template_Tooltip}"
-                      local:ComboBoxBehaviors.DropDownOpenedCommand="{Binding LoadTemplatesCommand}"
-                      local:ComboBoxBehaviors.KeepSelection="True" />
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                  <!-- Clear button -->
+                  <ui:Button Command="{Binding ClearInputCommand}"
+                             Appearance="Transparent"
+                             Width="36"
+                             Height="36"
+                             Padding="0"
+                             Margin="0,0,2,0"
+                             ToolTip="{loc:Str Optimize_Clear_Tooltip}">
+                    <ui:SymbolIcon Symbol="Eraser24" FontSize="16" />
+                  </ui:Button>
 
-            <ComboBox ItemsSource="{Binding Languages}"
-                      SelectedItem="{Binding SelectedLanguage, UpdateSourceTrigger=PropertyChanged}"
-                      Width="75"
-                      Height="40"
-                      FontSize="13"
-                      Padding="10"
-                      Margin="0,0,8,0"
-                      ToolTip="{loc:Str Optimize_Language_Tooltip}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding Converter={StaticResource LanguageToFlagConverter}}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+                  <Separator Width="1" Margin="4,6" Background="{DynamicResource BorderBrush_}" />
 
-            <ui:Button Command="{Binding ToggleRecordingCommand}"
-                       Appearance="Secondary"
-                       Width="40"
-                       Height="40"
-                       Margin="0,0,8,0"
-                       ToolTip="{loc:Str Optimize_Record_Tooltip}">
-              <ui:SymbolIcon Symbol="Record24" FontSize="16" />
-            </ui:Button>
+                  <!-- Record button -->
+                  <ui:Button Command="{Binding ToggleRecordingCommand}"
+                             Appearance="Transparent"
+                             Width="36"
+                             Height="36"
+                             Padding="0"
+                             Margin="2,0"
+                             ToolTip="{loc:Str Optimize_Record_Tooltip}">
+                    <ui:SymbolIcon Symbol="Record24" FontSize="16" />
+                  </ui:Button>
 
-            <ui:Button Command="{Binding OptimizeCommand}"
-                       Appearance="Primary"
-                       Height="40"
-                       Padding="16,0"
-                       ToolTip="{loc:Str Optimize_Optimize_Tooltip}">
-              <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0" />
-                <TextBlock Text="{loc:Str Optimize_Optimize}" VerticalAlignment="Center" />
-              </StackPanel>
-            </ui:Button>
-          </StackPanel>
+                  <!-- Attach file button -->
+                  <ui:Button Appearance="Transparent"
+                             Width="36"
+                             Height="36"
+                             Padding="0"
+                             Margin="2,0"
+                             ToolTip="{loc:Str Optimize_Attach_Tooltip}"
+                             Click="AttachFileButton_Click">
+                    <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
+                  </ui:Button>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                  <!-- Template combo -->
+                  <ComboBox ItemsSource="{Binding Templates}"
+                            SelectedValue="{Binding SelectedTemplateId}"
+                            DisplayMemberPath="Name"
+                            SelectedValuePath="Id"
+                            Width="220"
+                            Height="36"
+                            FontSize="13"
+                            Margin="2,0"
+                            VerticalContentAlignment="Center"
+                            ToolTip="{loc:Str Optimize_Template_Tooltip}"
+                            local:ComboBoxBehaviors.DropDownOpenedCommand="{Binding LoadTemplatesCommand}"
+                            local:ComboBoxBehaviors.KeepSelection="True" />
+
+                  <!-- Language combo -->
+                  <ComboBox ItemsSource="{Binding Languages}"
+                            SelectedItem="{Binding SelectedLanguage, UpdateSourceTrigger=PropertyChanged}"
+                            Width="90"
+                            Height="36"
+                            FontSize="13"
+                            Margin="2,0,8,0"
+                            VerticalContentAlignment="Center"
+                            ToolTip="{loc:Str Optimize_Language_Tooltip}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Converter={StaticResource LanguageToFlagConverter}}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+
+                  <!-- Optimize button (Primary) -->
+                  <ui:Button Command="{Binding OptimizeCommand}"
+                             Appearance="Primary"
+                             Height="36"
+                             Padding="14,0"
+                             ToolTip="{loc:Str Optimize_Optimize_Tooltip}">
+                    <StackPanel Orientation="Horizontal">
+                      <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,6,0" />
+                      <TextBlock Text="{loc:Str Optimize_Optimize}" VerticalAlignment="Center" FontSize="13" />
+                    </StackPanel>
+                  </ui:Button>
+                </StackPanel>
+              </Grid>
+            </Grid>
+          </Border>
         </Grid>
       </Grid>
 
       <Grid x:Name="ComparisonViewGrid" Grid.Row="0"
-            Visibility="{Binding IsComparisonView, Converter={StaticResource BooleanToVisibilityConverter}}">
+            Visibility="{Binding IsComparisonView, Converter={StaticResource BooleanToVisibilityConverter}}"
+            Margin="4,4,4,0">
         <Grid.RowDefinitions>
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="10" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
 
-        <Border Grid.Column="0"
-                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                BorderThickness="1"
-                CornerRadius="8"
-                Padding="15">
-          <Grid>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto" />
-              <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0"
-                       Text="{loc:Str Optimize_Original}"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,10" />
-            <ui:TextBox Grid.Row="1"
-                        Text="{Binding InputText}"
-                        TextWrapping="Wrap"
-                        AcceptsReturn="True"
-                        VerticalScrollBarVisibility="Auto"
-                        HorizontalScrollBarVisibility="Disabled"
-                        FontSize="14"
-                        Padding="15"
-                        MinHeight="200"
-                        ClearButtonEnabled="False"
-                        IsReadOnly="True" />
-          </Grid>
-        </Border>
+        <Grid Grid.Row="0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
 
-        <Border Grid.Column="2"
-                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                BorderThickness="1"
-                CornerRadius="8"
-                Padding="15">
-          <Grid>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto" />
-              <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0"
-                       Text="{loc:Str Optimize_Optimized}"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,10" />
-            <ui:TextBox Grid.Row="1"
-                        Text="{Binding OptimizedText}"
-                        TextWrapping="Wrap"
-                        AcceptsReturn="True"
-                        VerticalScrollBarVisibility="Auto"
-                        HorizontalScrollBarVisibility="Disabled"
-                        FontSize="14"
-                        Padding="15"
-                        MinHeight="200"
-                        ClearButtonEnabled="False" />
-          </Grid>
-        </Border>
+          <!-- Original card -->
+          <Border Grid.Column="0" Style="{StaticResource PiaCardStyle}">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
 
-        <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,15,0,0">
+              <Border Grid.Row="0"
+                      Padding="14,12"
+                      BorderBrush="{DynamicResource BorderBrush_}"
+                      BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <Border Background="{DynamicResource SurfaceMutedBrush}"
+                          BorderBrush="{DynamicResource BorderBrush_}"
+                          BorderThickness="1"
+                          CornerRadius="10"
+                          Padding="8,2"
+                          VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <ui:SymbolIcon Symbol="DocumentText20"
+                                     FontSize="12"
+                                     Margin="0,0,4,0"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource TextMutedBrush}" />
+                      <TextBlock Text="{loc:Str Optimize_Original}"
+                                 FontSize="10.5"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextMutedBrush}" />
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </Border>
+
+              <Grid Grid.Row="1" Margin="14,10,14,14">
+                <Border Background="{DynamicResource SurfaceMutedBrush}"
+                        BorderBrush="{DynamicResource BorderBrush_}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="12">
+                  <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <TextBox Text="{Binding InputText}"
+                             IsReadOnly="True"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             FontSize="13"
+                             MinHeight="200"
+                             Foreground="{DynamicResource TextDefaultBrush}" />
+                  </ScrollViewer>
+                </Border>
+              </Grid>
+            </Grid>
+          </Border>
+
+          <!-- Optimized card -->
+          <Border Grid.Column="2" Style="{StaticResource PiaCardStyle}">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+
+              <Border Grid.Row="0"
+                      Padding="14,12"
+                      BorderBrush="{DynamicResource BorderBrush_}"
+                      BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <Border Background="{DynamicResource PiaAccentSoftBrush}"
+                          CornerRadius="10"
+                          Padding="8,2"
+                          VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <ui:SymbolIcon Symbol="Sparkle20"
+                                     FontSize="12"
+                                     Margin="0,0,4,0"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource PiaAccentBrush}" />
+                      <TextBlock Text="{loc:Str Optimize_Optimized}"
+                                 FontSize="10.5"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource PiaAccentBrush}" />
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </Border>
+
+              <Grid Grid.Row="1" Margin="14,10,14,14">
+                <Border Background="{DynamicResource SurfaceMutedBrush}"
+                        BorderBrush="{DynamicResource BorderBrush_}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="12">
+                  <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <TextBox Text="{Binding OptimizedText}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             FontSize="13"
+                             MinHeight="200"
+                             Foreground="{DynamicResource TextDefaultBrush}" />
+                  </ScrollViewer>
+                </Border>
+              </Grid>
+            </Grid>
+          </Border>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,14,0,0">
           <StackPanel Orientation="Horizontal"
                       VerticalAlignment="Center"
                       HorizontalAlignment="Left"
                       Visibility="{Binding ShowTrackedWindowIndicator, Converter={StaticResource BooleanToVisibilityConverter}}">
             <ui:SymbolIcon Symbol="ArrowRight12"
                            FontSize="12"
-                           Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                           Foreground="{DynamicResource TextSubtleBrush}"
                            Margin="0,0,6,0"
                            VerticalAlignment="Center" />
             <TextBlock Text="{Binding TrackedWindowInfo}"
                        FontSize="12"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                       Foreground="{DynamicResource TextMutedBrush}"
                        VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis"
                        MaxWidth="250"
                        ToolTip="{Binding TrackedWindowInfo}" />
           </StackPanel>
 
-          <StackPanel Orientation="Horizontal"
-                      HorizontalAlignment="Right">
-          <ui:Button Command="{Binding AcceptCommand}"
-                     Appearance="Primary"
-                     Width="40"
-                     Height="40"
-                     Margin="0,0,10,0"
-                     ToolTip="{loc:Str Optimize_Accept_Tooltip}">
-            <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="16" />
-          </ui:Button>
-          <ui:Button x:Name="SendToButton"
-                     Appearance="Secondary"
-                     Width="40"
-                     Height="40"
-                     Margin="0,0,10,0"
-                     ToolTip="{loc:Str Optimize_SendTo_Tooltip}"
-                     Click="SendToButton_Click">
-            <ui:SymbolIcon Symbol="Send24" FontSize="16" />
-            <ui:Button.ContextMenu>
-              <ContextMenu>
-                <MenuItem Header="{loc:Str Nav_Assistant}"
-                          Command="{Binding SendToModeCommand}"
-                          CommandParameter="Assistant">
-                  <MenuItem.Icon>
-                    <ui:SymbolIcon Symbol="Chat24" FontSize="14" />
-                  </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="{loc:Str Nav_Research}"
-                          Command="{Binding SendToModeCommand}"
-                          CommandParameter="Research">
-                  <MenuItem.Icon>
-                    <ui:SymbolIcon Symbol="Search24" FontSize="14" />
-                  </MenuItem.Icon>
-                </MenuItem>
-              </ContextMenu>
-            </ui:Button.ContextMenu>
-          </ui:Button>
-          <ui:Button Command="{Binding RejectCommand}"
-                     Appearance="Secondary"
-                     Width="40"
-                     Height="40"
-                     Margin="0,0,10,0"
-                     ToolTip="{loc:Str Optimize_Reject_Tooltip}">
-            <ui:SymbolIcon Symbol="DismissCircle24" FontSize="16" />
-          </ui:Button>
-          <ui:Button Command="{Binding CopyToClipboardCommand}"
-                     Appearance="Secondary"
-                     Width="40"
-                     Height="40"
-                     Visibility="{Binding ShowCopyButton, Converter={StaticResource BooleanToVisibilityConverter}}"
-                     ToolTip="{loc:Str Optimize_Copy_Tooltip}">
-            <ui:SymbolIcon Symbol="Copy24" FontSize="16" />
-          </ui:Button>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <ui:Button Command="{Binding CopyToClipboardCommand}"
+                       Icon="{ui:SymbolIcon Symbol=Copy20}"
+                       Appearance="Transparent"
+                       Margin="0,0,4,0"
+                       Visibility="{Binding ShowCopyButton, Converter={StaticResource BooleanToVisibilityConverter}}"
+                       ToolTip="{loc:Str Optimize_Copy_Tooltip}" />
+            <ui:Button Command="{Binding RejectCommand}"
+                       Appearance="Secondary"
+                       Height="36"
+                       Padding="12,0"
+                       Foreground="{DynamicResource PiaDangerBrush}"
+                       Margin="0,0,8,0"
+                       ToolTip="{loc:Str Optimize_Reject_Tooltip}">
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="DismissCircle20" FontSize="14" Margin="0,0,6,0" />
+                <TextBlock Text="{loc:Str Optimize_Reject_Tooltip}" VerticalAlignment="Center" FontSize="13" />
+              </StackPanel>
+            </ui:Button>
+            <ui:Button x:Name="SendToButton"
+                       Appearance="Secondary"
+                       Height="36"
+                       Padding="12,0"
+                       Margin="0,0,8,0"
+                       ToolTip="{loc:Str Optimize_SendTo_Tooltip}"
+                       Click="SendToButton_Click">
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="Send20" FontSize="14" Margin="0,0,6,0" />
+                <TextBlock Text="{loc:Str Optimize_SendTo_Tooltip}" VerticalAlignment="Center" FontSize="13" />
+              </StackPanel>
+              <ui:Button.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="{loc:Str Nav_Assistant}"
+                            Command="{Binding SendToModeCommand}"
+                            CommandParameter="Assistant">
+                    <MenuItem.Icon>
+                      <ui:SymbolIcon Symbol="Chat24" FontSize="14" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="{loc:Str Nav_Research}"
+                            Command="{Binding SendToModeCommand}"
+                            CommandParameter="Research">
+                    <MenuItem.Icon>
+                      <ui:SymbolIcon Symbol="Search24" FontSize="14" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                </ContextMenu>
+              </ui:Button.ContextMenu>
+            </ui:Button>
+            <ui:Button Command="{Binding AcceptCommand}"
+                       Appearance="Primary"
+                       Height="36"
+                       Padding="14,0"
+                       ToolTip="{loc:Str Optimize_Accept_Tooltip}">
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="CheckmarkCircle20" FontSize="14" Margin="0,0,6,0" />
+                <TextBlock Text="{loc:Str Optimize_Accept_Tooltip}" VerticalAlignment="Center" FontSize="13" />
+              </StackPanel>
+            </ui:Button>
           </StackPanel>
         </Grid>
       </Grid>
@@ -384,5 +476,28 @@
         </Style>
       </local:TodoPanelControl.Style>
     </local:TodoPanelControl>
+
+    <!-- Drag-over overlay (visible while a file is being dragged onto the view) -->
+    <Border IsHitTestVisible="False"
+            Margin="8"
+            CornerRadius="8"
+            BorderThickness="2"
+            BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+            Background="{DynamicResource AcrylicBackgroundFillColorBaseBrush}"
+            Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=RootGrid, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <StackPanel HorizontalAlignment="Center"
+                  VerticalAlignment="Center">
+        <ui:SymbolIcon Symbol="ArrowDownload24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+        <TextBlock Text="{loc:Str FileDrop_Overlay_Hint}"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Margin="0,12,0,0"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+      </StackPanel>
+    </Border>
   </Grid>
 </UserControl>

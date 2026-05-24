@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Pia.Helpers;
 
 namespace Pia.Behaviors;
 
@@ -12,6 +13,10 @@ namespace Pia.Behaviors;
 /// </summary>
 public static class KanbanDragDropBehavior
 {
+    public const string DragItemFormat = "DragItem";
+    public const string SourceColumnIdFormat = "SourceColumnId";
+    public const string DragIndexFormat = "DragIndex";
+
     private static readonly TimeSpan HoldThreshold = TimeSpan.FromMilliseconds(150);
 
     private class DragState
@@ -97,7 +102,7 @@ public static class KanbanDragDropBehavior
         var state = GetOrCreateState(itemsControl);
 
         // Don't start drag if clicking on a CheckBox
-        if (e.OriginalSource is DependencyObject source && FindAncestor<CheckBox>(source) is not null)
+        if (e.OriginalSource is DependencyObject source && source.FindAncestor<CheckBox>() is not null)
             return;
 
         var container = FindItemContainer(itemsControl, e.OriginalSource as DependencyObject);
@@ -141,9 +146,9 @@ public static class KanbanDragDropBehavior
             var sourceColumnId = GetColumnId(itemsControl);
 
             var data = new DataObject();
-            data.SetData("DragIndex", state.DragIndex);
-            data.SetData("SourceColumnId", sourceColumnId);
-            data.SetData("DragItem", dragItem!);
+            data.SetData(DragIndexFormat, state.DragIndex);
+            data.SetData(SourceColumnIdFormat, sourceColumnId);
+            data.SetData(DragItemFormat, dragItem!);
 
             DragDrop.DoDragDrop(itemsControl, data, DragDropEffects.Move);
 
@@ -162,12 +167,12 @@ public static class KanbanDragDropBehavior
     private static void OnDrop(object sender, DragEventArgs e)
     {
         if (sender is not ItemsControl itemsControl) return;
-        if (!e.Data.GetDataPresent("DragIndex") || !e.Data.GetDataPresent("SourceColumnId")) return;
+        if (!e.Data.GetDataPresent(DragIndexFormat) || !e.Data.GetDataPresent(SourceColumnIdFormat)) return;
 
         e.Handled = true;
 
-        var oldIndex = (int)e.Data.GetData("DragIndex")!;
-        var sourceColumnId = (string)e.Data.GetData("SourceColumnId")!;
+        var oldIndex = (int)e.Data.GetData(DragIndexFormat)!;
+        var sourceColumnId = (string)e.Data.GetData(SourceColumnIdFormat)!;
         var targetColumnId = GetColumnId(itemsControl);
 
         // Determine drop index from the container at the drop position
@@ -187,8 +192,8 @@ public static class KanbanDragDropBehavior
         else
         {
             // Cross-column move
-            if (!e.Data.GetDataPresent("DragItem")) return;
-            var dragItem = e.Data.GetData("DragItem")!;
+            if (!e.Data.GetDataPresent(DragItemFormat)) return;
+            var dragItem = e.Data.GetData(DragItemFormat)!;
 
             if (dropIndex < 0)
                 dropIndex = itemsControl.Items.Count;
@@ -228,13 +233,4 @@ public static class KanbanDragDropBehavior
         return null;
     }
 
-    private static T? FindAncestor<T>(DependencyObject? obj) where T : DependencyObject
-    {
-        while (obj is not null)
-        {
-            if (obj is T target) return target;
-            obj = VisualTreeHelper.GetParent(obj);
-        }
-        return null;
-    }
 }

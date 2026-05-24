@@ -23,6 +23,11 @@ public partial class KanbanColumnViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<TodoItem> _todos = new();
 
+    [ObservableProperty]
+    private double _width = DefaultWidth;
+
+    public const double DefaultWidth = 280;
+
     public Guid Id => Column.Id;
 
     public KanbanColumnViewModel(KanbanColumn column)

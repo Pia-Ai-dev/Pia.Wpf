@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Pia.Helpers;
 
 namespace Pia.Behaviors;
 
@@ -82,7 +83,7 @@ public static class DragDropReorderBehavior
         var state = GetOrCreateState(itemsControl);
 
         // Don't start drag if clicking on a CheckBox
-        if (e.OriginalSource is DependencyObject source && FindAncestor<CheckBox>(source) is not null)
+        if (e.OriginalSource is DependencyObject source && source.FindAncestor<CheckBox>() is not null)
             return;
 
         var container = FindItemContainer(itemsControl, e.OriginalSource as DependencyObject);
@@ -183,13 +184,4 @@ public static class DragDropReorderBehavior
         return null;
     }
 
-    private static T? FindAncestor<T>(DependencyObject? obj) where T : DependencyObject
-    {
-        while (obj is not null)
-        {
-            if (obj is T target) return target;
-            obj = VisualTreeHelper.GetParent(obj);
-        }
-        return null;
-    }
 }

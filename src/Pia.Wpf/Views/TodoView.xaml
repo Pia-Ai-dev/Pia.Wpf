@@ -10,18 +10,18 @@
              xmlns:nav="clr-namespace:Pia.Navigation"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:vm="clr-namespace:Pia.ViewModels.Models"
+             xmlns:todo="clr-namespace:Pia.Controls.Todo"
              mc:Ignorable="d"
-             d:DesignHeight="600" d:DesignWidth="900"
+             d:DesignHeight="700" d:DesignWidth="1100"
              nav:ViewModelLocator.AutoWireViewModel="True">
 
   <UserControl.Resources>
-    <!-- Priority to color converter -->
     <Style x:Key="PriorityDotStyle" TargetType="Ellipse">
       <Setter Property="Width" Value="10" />
       <Setter Property="Height" Value="10" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Margin" Value="0,0,8,0" />
-      <Setter Property="Fill" Value="{DynamicResource TextPlaceholderColorBrush}" />
+      <Setter Property="Fill" Value="{DynamicResource TextSubtleBrush}" />
       <Style.Triggers>
         <DataTrigger Binding="{Binding Priority}" Value="{x:Static models:TodoPriority.High}">
           <Setter Property="Fill" Value="{DynamicResource TodoPriorityHighBrush}" />
@@ -34,96 +34,94 @@
         </DataTrigger>
       </Style.Triggers>
     </Style>
+
+    <Style x:Key="ColumnResizeThumbStyle" TargetType="Thumb">
+      <Setter Property="Width" Value="6"/>
+      <Setter Property="Cursor" Value="SizeWE"/>
+      <Setter Property="HorizontalAlignment" Value="Right"/>
+      <Setter Property="VerticalAlignment" Value="Stretch"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Thumb">
+            <Border Background="Transparent">
+              <Rectangle x:Name="GripLine"
+                         Width="1"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Stretch"
+                         Margin="0,12"
+                         Fill="Transparent"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="GripLine" Property="Fill" Value="{DynamicResource BorderStrongBrush}"/>
+              </Trigger>
+              <Trigger Property="IsDragging" Value="True">
+                <Setter TargetName="GripLine" Property="Fill" Value="{DynamicResource BorderStrongBrush}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </UserControl.Resources>
 
-  <Grid Background="{DynamicResource PrimaryBackgroundBrush}"
-        Margin="20,45,20,20">
+  <Grid Background="Transparent">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <!-- Header -->
-    <Grid Grid.Row="0" Margin="20,20,20,10">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
+    <todo:PiaTodoHeader Grid.Row="0" Margin="24,20,24,14"/>
 
-      <TextBlock Grid.Column="0"
-                 Text="{loc:Str Todo_Title}"
-                 Style="{StaticResource H1TextStyle}" />
+    <todo:PiaTodoSearchBar Grid.Row="1"
+                          Margin="24,0,24,12"
+                          Query="{Binding SearchQuery, Mode=TwoWay}"/>
 
-      <TextBlock Grid.Column="1"
-                 Text="{Binding ProgressText}"
-                 FontSize="14"
-                 VerticalAlignment="Center"
-                 Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                 Margin="0,0,12,0" />
-
-      <ui:Button Grid.Column="2"
-                 Command="{Binding AddColumnCommand}"
-                 Appearance="Secondary"
-                 ToolTip="{loc:Str Kanban_AddColumn}"
-                 Margin="0,0,8,0">
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Add24" FontSize="14" Margin="0,0,4,0" />
-          <TextBlock Text="{loc:Str Kanban_AddColumnShort}" FontSize="12" />
-        </StackPanel>
-      </ui:Button>
-
-      <ui:Button Grid.Column="3"
-                 Command="{Binding RefreshCommand}"
-                 Appearance="Secondary"
-                 ToolTip="{loc:Str Todo_Refresh}">
-        <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" />
-      </ui:Button>
-    </Grid>
-
-    <!-- Progress bar -->
-    <Border Grid.Row="1"
-            Margin="20,0,20,10">
+    <Border Grid.Row="2" Margin="24,0,24,12">
       <ProgressBar Value="{Binding ProgressPercentage}"
                    Maximum="100"
                    Minimum="0"
-                   Height="6"
-                   Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                   Height="4"
+                   Background="{DynamicResource SurfaceMutedBrush}"
+                   Foreground="{DynamicResource PiaAccentBrush}"
+                   BorderThickness="0"/>
     </Border>
 
-    <!-- Kanban Board -->
-    <Grid Grid.Row="2" Margin="20,0,20,10">
-      <!-- Loading overlay -->
+    <Grid Grid.Row="3" Margin="24,0,24,14">
       <ui:ProgressRing IsIndeterminate="True"
                        Width="40" Height="40"
                        Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-      <!-- Kanban columns -->
       <ScrollViewer HorizontalScrollBarVisibility="Auto"
                     VerticalScrollBarVisibility="Disabled"
                     Padding="0">
         <ItemsControl ItemsSource="{Binding Columns}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <StackPanel Orientation="Horizontal" />
+              <StackPanel Orientation="Horizontal"/>
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate DataType="{x:Type vm:KanbanColumnViewModel}">
               <Grid>
-                <!-- Closed column collapsed strip -->
                 <Border x:Name="ClosedCollapsedBorder"
                         Width="44"
                         Margin="0,0,12,0"
-                        Background="{DynamicResource ControlFillColorTertiaryBrush}"
-                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource SurfaceMutedBrush}"
+                        BorderBrush="{DynamicResource BorderBrush_}"
                         BorderThickness="1"
-                        CornerRadius="8"
+                        CornerRadius="9"
                         Cursor="Hand"
                         MouseLeftButtonUp="OnClosedColumnClick"
+                        AllowDrop="True"
+                        DragEnter="OnClosedCollapsedDragEnter"
+                        DragOver="OnClosedCollapsedDragOver"
+                        DragLeave="OnClosedCollapsedDragLeave"
+                        Drop="OnClosedCollapsedDrop"
                         Tag="{Binding}"
                         Visibility="Collapsed">
                   <StackPanel VerticalAlignment="Center"
@@ -131,94 +129,91 @@
                     <TextBlock Text="CLOSED"
                                FontSize="11"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                               Foreground="{DynamicResource TextSubtleBrush}"
                                RenderTransformOrigin="0.5,0.5">
                       <TextBlock.LayoutTransform>
-                        <RotateTransform Angle="90" />
+                        <RotateTransform Angle="90"/>
                       </TextBlock.LayoutTransform>
                     </TextBlock>
-                    <Border Background="{DynamicResource AccentFillColorDefaultBrush}"
-                            CornerRadius="8"
-                            Padding="4,2"
+                    <Border Background="{DynamicResource PiaAccentBrush}"
+                            CornerRadius="9"
+                            Padding="6,2"
                             Margin="0,8,0,0"
                             HorizontalAlignment="Center">
                       <TextBlock Text="{Binding Todos.Count}"
                                  FontSize="10"
                                  Foreground="White"
-                                 HorizontalAlignment="Center" />
+                                 HorizontalAlignment="Center"/>
                     </Border>
                   </StackPanel>
                 </Border>
 
-                <!-- Regular column -->
                 <Border x:Name="ColumnBorder"
-                        Width="280"
+                        Width="{Binding Width, Mode=TwoWay}"
+                        MinWidth="200"
+                        MaxWidth="600"
                         Margin="0,0,12,0"
-                        Background="{DynamicResource ControlFillColorDefaultBrush}"
-                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush_}"
                         BorderThickness="1"
-                        CornerRadius="8">
+                        CornerRadius="9">
                   <Grid>
                     <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto" />
-                      <RowDefinition Height="*" />
+                      <RowDefinition Height="Auto"/>
+                      <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Column header -->
                     <Border Grid.Row="0"
                             Padding="12,10"
-                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            BorderBrush="{DynamicResource BorderBrush_}"
                             BorderThickness="0,0,0,1">
                       <Grid>
                         <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- Default view star -->
                         <TextBlock Grid.Column="0"
                                    Text="&#x2605;"
                                    FontSize="12"
-                                   Foreground="{DynamicResource SystemFillColorAttentionBrush}"
+                                   Foreground="{DynamicResource WarnBrush}"
                                    VerticalAlignment="Center"
                                    Margin="0,0,6,0">
                           <TextBlock.Style>
                             <Style TargetType="TextBlock">
-                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Setter Property="Visibility" Value="Collapsed"/>
                               <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsDefaultView}" Value="True">
-                                  <Setter Property="Visibility" Value="Visible" />
+                                  <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                               </Style.Triggers>
                             </Style>
                           </TextBlock.Style>
                         </TextBlock>
 
-                        <!-- Column name -->
                         <TextBlock Grid.Column="1"
                                    Text="{Binding Name}"
                                    FontWeight="SemiBold"
                                    FontSize="14"
+                                   Foreground="{DynamicResource TextDefaultBrush}"
                                    VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" />
+                                   TextTrimming="CharacterEllipsis"/>
 
-                        <!-- Todo count badge -->
                         <Border Grid.Column="2"
-                                Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                Background="{DynamicResource SurfaceMutedBrush}"
                                 CornerRadius="10"
-                                Padding="6,2"
+                                Padding="8,2"
                                 Margin="6,0"
                                 VerticalAlignment="Center">
                           <TextBlock Text="{Binding Todos.Count}"
                                      FontSize="11"
-                                     Foreground="White"
-                                     HorizontalAlignment="Center" />
+                                     Foreground="{DynamicResource TextMutedBrush}"
+                                     HorizontalAlignment="Center"/>
                         </Border>
 
-                        <!-- Context menu button (hidden for closed column) -->
                         <ui:Button Grid.Column="3"
                                    Appearance="Transparent"
                                    Padding="4"
@@ -227,32 +222,31 @@
                                    Click="OnColumnMenuClick">
                           <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                              <Setter Property="Visibility" Value="Visible" />
+                              <Setter Property="Visibility" Value="Visible"/>
                               <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsClosedColumn}" Value="True">
-                                  <Setter Property="Visibility" Value="Collapsed" />
+                                  <Setter Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                               </Style.Triggers>
                             </Style>
                           </ui:Button.Style>
-                          <ui:SymbolIcon Symbol="MoreHorizontal24" FontSize="14" />
+                          <ui:SymbolIcon Symbol="MoreHorizontal24" FontSize="14"/>
                           <ui:Button.ContextMenu>
                             <ContextMenu>
                               <MenuItem Header="{loc:Str Kanban_SetDefault}"
                                         Click="OnSetDefaultColumnClick"
-                                        Tag="{Binding}" />
+                                        Tag="{Binding}"/>
                               <MenuItem Header="{loc:Str Kanban_RenameColumn}"
                                         Click="OnRenameColumnClick"
-                                        Tag="{Binding}" />
-                              <Separator />
+                                        Tag="{Binding}"/>
+                              <Separator/>
                               <MenuItem Header="{loc:Str Kanban_DeleteColumn}"
                                         Click="OnDeleteColumnClick"
-                                        Tag="{Binding}" />
+                                        Tag="{Binding}"/>
                             </ContextMenu>
                           </ui:Button.ContextMenu>
                         </ui:Button>
 
-                        <!-- Collapse button (visible only for closed column when expanded) -->
                         <ui:Button x:Name="CollapseButton"
                                    Grid.Column="4"
                                    Appearance="Transparent"
@@ -260,20 +254,19 @@
                                    Click="OnCollapseClosedClick">
                           <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Setter Property="Visibility" Value="Collapsed"/>
                               <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsClosedColumn}" Value="True">
-                                  <Setter Property="Visibility" Value="Visible" />
+                                  <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                               </Style.Triggers>
                             </Style>
                           </ui:Button.Style>
-                          <ui:SymbolIcon Symbol="ChevronRight24" FontSize="14" />
+                          <ui:SymbolIcon Symbol="ChevronRight24" FontSize="14"/>
                         </ui:Button>
                       </Grid>
                     </Border>
 
-                    <!-- Todo cards list -->
                     <ScrollViewer Grid.Row="1"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
@@ -284,169 +277,170 @@
                                       Loaded="OnColumnTodoListLoaded"
                                       behaviors:KanbanDragDropBehavior.IsEnabled="True"
                                       behaviors:KanbanDragDropBehavior.ColumnId="{Binding Id}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate DataType="{x:Type models:TodoItem}">
-                            <Border x:Name="TodoCardBorder"
-                                    Margin="0,0,0,4"
-                                    Padding="10,8"
-                                    Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="6"
-                                    Opacity="0">
-                              <Border.Triggers>
-                                <EventTrigger RoutedEvent="Loaded">
-                                  <BeginStoryboard>
-                                    <Storyboard>
-                                      <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                       From="0" To="1" Duration="0:0:0.2">
-                                        <DoubleAnimation.EasingFunction>
-                                          <CubicEase EasingMode="EaseOut" />
-                                        </DoubleAnimation.EasingFunction>
-                                      </DoubleAnimation>
-                                    </Storyboard>
-                                  </BeginStoryboard>
-                                </EventTrigger>
-                              </Border.Triggers>
-                              <Grid>
-                                <Grid.ColumnDefinitions>
-                                  <ColumnDefinition Width="Auto" />
-                                  <ColumnDefinition Width="Auto" />
-                                  <ColumnDefinition Width="*" />
-                                  <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:TodoItem}">
+                              <Border x:Name="TodoCardBorder"
+                                      Margin="0,0,0,6"
+                                      Padding="10,8"
+                                      Background="{DynamicResource SurfaceMutedBrush}"
+                                      BorderBrush="{DynamicResource BorderBrush_}"
+                                      BorderThickness="1"
+                                      CornerRadius="6"
+                                      Opacity="0">
+                                <Border.Triggers>
+                                  <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                      <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         From="0" To="1" Duration="0:0:0.2">
+                                          <DoubleAnimation.EasingFunction>
+                                            <CubicEase EasingMode="EaseOut"/>
+                                          </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                      </Storyboard>
+                                    </BeginStoryboard>
+                                  </EventTrigger>
+                                </Border.Triggers>
+                                <Grid>
+                                  <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                  </Grid.ColumnDefinitions>
 
-                                <!-- Checkbox -->
-                                <CheckBox Grid.Column="0"
-                                          VerticalAlignment="Center"
-                                          Margin="0,0,6,0"
-                                          Loaded="OnTodoCheckBoxLoaded"
-                                          Checked="OnTodoCheckBoxChecked"
-                                          Unchecked="OnTodoCheckBoxUnchecked"
-                                          Tag="{Binding}">
-                                  <CheckBox.RenderTransform>
-                                    <ScaleTransform ScaleX="1" ScaleY="1" />
-                                  </CheckBox.RenderTransform>
-                                </CheckBox>
+                                  <CheckBox Grid.Column="0"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,6,0"
+                                            Loaded="OnTodoCheckBoxLoaded"
+                                            Checked="OnTodoCheckBoxChecked"
+                                            Unchecked="OnTodoCheckBoxUnchecked"
+                                            Tag="{Binding}">
+                                    <CheckBox.RenderTransform>
+                                      <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                    </CheckBox.RenderTransform>
+                                  </CheckBox>
 
-                                <!-- Priority dot -->
-                                <Ellipse Grid.Column="1"
-                                         Style="{StaticResource PriorityDotStyle}" />
+                                  <Ellipse Grid.Column="1"
+                                           Style="{StaticResource PriorityDotStyle}"/>
 
-                                <!-- Title and info -->
-                                <StackPanel Grid.Column="2"
-                                            VerticalAlignment="Center">
-                                  <Grid>
-                                    <TextBlock x:Name="TodoTitle"
-                                               Text="{Binding Title}"
-                                               FontSize="13"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <Line x:Name="StrikethroughLine"
-                                          Y1="0.5" Y2="0.5"
-                                          X1="0" X2="0"
-                                          Stroke="{DynamicResource TextPlaceholderColorBrush}"
-                                          StrokeThickness="1.5"
-                                          VerticalAlignment="Center"
-                                          Stretch="None"
-                                          Visibility="Collapsed" />
-                                  </Grid>
-                                  <TextBlock Text="{Binding Notes}"
-                                             FontSize="10"
-                                             TextTrimming="CharacterEllipsis"
-                                             MaxHeight="14"
-                                             Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                                             ToolTip="{Binding Notes}"
-                                             Margin="0,2,0,0">
-                                    <TextBlock.Style>
-                                      <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                          <DataTrigger Binding="{Binding Notes, Converter={StaticResource StringNotNullOrEmptyToBoolConverter}}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                          </DataTrigger>
-                                        </Style.Triggers>
-                                      </Style>
-                                    </TextBlock.Style>
-                                  </TextBlock>
-                                  <StackPanel Orientation="Horizontal"
-                                              Margin="0,2,0,0">
-                                    <TextBlock FontSize="10"
-                                               Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                                  <StackPanel Grid.Column="2"
+                                              VerticalAlignment="Center">
+                                    <Grid>
+                                      <TextBlock x:Name="TodoTitle"
+                                                 Text="{Binding Title}"
+                                                 FontSize="13"
+                                                 Foreground="{DynamicResource TextDefaultBrush}"
+                                                 TextTrimming="CharacterEllipsis"/>
+                                      <Line x:Name="StrikethroughLine"
+                                            Y1="0.5" Y2="0.5"
+                                            X1="0" X2="0"
+                                            Stroke="{DynamicResource TextSubtleBrush}"
+                                            StrokeThickness="1.5"
+                                            VerticalAlignment="Center"
+                                            Stretch="None"
+                                            Visibility="Collapsed"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding Notes}"
+                                               FontSize="10"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxHeight="14"
+                                               Foreground="{DynamicResource TextSubtleBrush}"
+                                               ToolTip="{Binding Notes}"
+                                               Margin="0,2,0,0">
                                       <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                          <Setter Property="Visibility" Value="Collapsed" />
+                                          <Setter Property="Visibility" Value="Collapsed"/>
                                           <Style.Triggers>
-                                            <DataTrigger Binding="{Binding DueDate, Converter={StaticResource NullToBoolConverter}}" Value="True">
-                                              <Setter Property="Visibility" Value="Visible" />
+                                            <DataTrigger Binding="{Binding Notes, Converter={StaticResource StringNotNullOrEmptyToBoolConverter}}" Value="True">
+                                              <Setter Property="Visibility" Value="Visible"/>
                                             </DataTrigger>
                                           </Style.Triggers>
                                         </Style>
                                       </TextBlock.Style>
-                                      <Run Text="{loc:Str Todo_DuePrefix}" />
-                                      <Run Text="{Binding DueDate, StringFormat='{}{0:d}', Mode=OneWay}" />
                                     </TextBlock>
+                                    <StackPanel Orientation="Horizontal"
+                                                Margin="0,2,0,0">
+                                      <TextBlock FontSize="10"
+                                                 Foreground="{DynamicResource TextSubtleBrush}">
+                                        <TextBlock.Style>
+                                          <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                              <DataTrigger Binding="{Binding DueDate, Converter={StaticResource NullToBoolConverter}}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                              </DataTrigger>
+                                            </Style.Triggers>
+                                          </Style>
+                                        </TextBlock.Style>
+                                        <Run Text="{loc:Str Todo_DuePrefix}"/>
+                                        <Run Text="{Binding DueDate, StringFormat='{}{0:d}', Mode=OneWay}"/>
+                                      </TextBlock>
+                                    </StackPanel>
                                   </StackPanel>
-                                </StackPanel>
 
-                                <!-- Action buttons (visible on hover) -->
-                                <StackPanel Grid.Column="3"
-                                            Orientation="Horizontal"
-                                            VerticalAlignment="Center">
-                                  <ui:Button Appearance="Transparent"
-                                             Padding="3"
-                                             ToolTip="{loc:Str Todo_Edit}"
-                                             Command="{Binding DataContext.StartEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                             CommandParameter="{Binding}">
-                                    <ui:Button.Style>
-                                      <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                        <Setter Property="Opacity" Value="0" />
-                                        <Style.Triggers>
-                                          <DataTrigger Binding="{Binding IsMouseOver, ElementName=TodoCardBorder}" Value="True">
-                                            <Setter Property="Opacity" Value="1" />
-                                          </DataTrigger>
-                                        </Style.Triggers>
-                                      </Style>
-                                    </ui:Button.Style>
-                                    <ui:SymbolIcon Symbol="Edit24" FontSize="12" />
-                                  </ui:Button>
+                                  <StackPanel Grid.Column="3"
+                                              Orientation="Horizontal"
+                                              VerticalAlignment="Center">
+                                    <ui:Button Appearance="Transparent"
+                                               Padding="3"
+                                               ToolTip="{loc:Str Todo_Edit}"
+                                               Command="{Binding DataContext.StartEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                               CommandParameter="{Binding}">
+                                      <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                          <Setter Property="Opacity" Value="0"/>
+                                          <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, ElementName=TodoCardBorder}" Value="True">
+                                              <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                          </Style.Triggers>
+                                        </Style>
+                                      </ui:Button.Style>
+                                      <ui:SymbolIcon Symbol="Edit24" FontSize="12"/>
+                                    </ui:Button>
 
-                                  <ui:Button Appearance="Transparent"
-                                             Padding="3"
-                                             ToolTip="{loc:Str Todo_Delete}"
-                                             Command="{Binding DataContext.DeleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                             CommandParameter="{Binding}">
-                                    <ui:Button.Style>
-                                      <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                        <Setter Property="Opacity" Value="0" />
-                                        <Style.Triggers>
-                                          <DataTrigger Binding="{Binding IsMouseOver, ElementName=TodoCardBorder}" Value="True">
-                                            <Setter Property="Opacity" Value="1" />
-                                          </DataTrigger>
-                                        </Style.Triggers>
-                                      </Style>
-                                    </ui:Button.Style>
-                                    <ui:SymbolIcon Symbol="Delete24" FontSize="12" />
-                                  </ui:Button>
-                                </StackPanel>
-                              </Grid>
-                            </Border>
-                          </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                                    <ui:Button Appearance="Transparent"
+                                               Padding="3"
+                                               ToolTip="{loc:Str Todo_Delete}"
+                                               Command="{Binding DataContext.DeleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                               CommandParameter="{Binding}">
+                                      <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                          <Setter Property="Opacity" Value="0"/>
+                                          <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, ElementName=TodoCardBorder}" Value="True">
+                                              <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                          </Style.Triggers>
+                                        </Style>
+                                      </ui:Button.Style>
+                                      <ui:SymbolIcon Symbol="Delete24" FontSize="12"/>
+                                    </ui:Button>
+                                  </StackPanel>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
                         </ItemsControl>
                       </Grid>
                     </ScrollViewer>
+
+                    <Thumb Grid.RowSpan="2"
+                           Style="{StaticResource ColumnResizeThumbStyle}"
+                           DragDelta="OnColumnResizeThumbDragDelta"
+                           DataContext="{Binding}"/>
                   </Grid>
                 </Border>
-
               </Grid>
               <DataTemplate.Triggers>
                 <MultiDataTrigger>
                   <MultiDataTrigger.Conditions>
-                    <Condition Binding="{Binding IsClosedColumn}" Value="True" />
-                    <Condition Binding="{Binding IsExpanded}" Value="False" />
+                    <Condition Binding="{Binding IsClosedColumn}" Value="True"/>
+                    <Condition Binding="{Binding IsExpanded}" Value="False"/>
                   </MultiDataTrigger.Conditions>
-                  <Setter TargetName="ClosedCollapsedBorder" Property="Visibility" Value="Visible" />
-                  <Setter TargetName="ColumnBorder" Property="Visibility" Value="Collapsed" />
+                  <Setter TargetName="ClosedCollapsedBorder" Property="Visibility" Value="Visible"/>
+                  <Setter TargetName="ColumnBorder" Property="Visibility" Value="Collapsed"/>
                 </MultiDataTrigger>
               </DataTemplate.Triggers>
             </DataTemplate>
@@ -454,102 +448,22 @@
         </ItemsControl>
       </ScrollViewer>
 
-      <!-- Edit overlay -->
-      <Border Background="{DynamicResource PrimaryBackgroundBrush}"
-              Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}"
-              Padding="20">
-        <Border Background="{DynamicResource SecondaryBackgroundBrush}"
-                BorderBrush="{DynamicResource CardBorderBrush}"
-                BorderThickness="1"
-                CornerRadius="8"
-                Padding="20"
-                VerticalAlignment="Center"
-                HorizontalAlignment="Center"
-                MinWidth="400"
-                MaxWidth="500">
-          <StackPanel>
-            <TextBlock Text="{loc:Str Todo_EditTitle}"
-                       FontSize="16"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,16" />
-
-            <TextBlock Text="{loc:Str Todo_TitleLabel}"
-                       FontSize="12"
-                       Margin="0,0,0,4" />
-            <ui:TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="{loc:Str Todo_TitlePlaceholder}"
-                        PlaceholderEnabled="True"
-                        Margin="0,0,0,12" />
-
-            <TextBlock Text="{loc:Str Todo_NotesLabel}"
-                       FontSize="12"
-                       Margin="0,0,0,4" />
-            <ui:TextBox Text="{Binding EditNotes, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="{loc:Str Todo_NotesPlaceholder}"
-                        PlaceholderEnabled="True"
-                        AcceptsReturn="True"
-                        TextWrapping="Wrap"
-                        MinHeight="60"
-                        MaxHeight="120"
-                        Margin="0,0,0,12" />
-
-            <Grid Margin="0,0,0,12">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-              </Grid.ColumnDefinitions>
-
-              <StackPanel Grid.Column="0" Margin="0,0,6,0">
-                <TextBlock Text="{loc:Str Todo_PriorityLabel}"
-                           FontSize="12"
-                           Margin="0,0,0,4" />
-                <ComboBox ItemsSource="{Binding Priorities}"
-                          SelectedItem="{Binding EditPriority}" />
-              </StackPanel>
-
-              <StackPanel Grid.Column="1" Margin="6,0,0,0">
-                <TextBlock Text="{loc:Str Todo_DueDateLabel}"
-                           FontSize="12"
-                           Margin="0,0,0,4" />
-                <DatePicker SelectedDate="{Binding EditDueDate}" />
-              </StackPanel>
-            </Grid>
-
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Right">
-              <ui:Button Command="{Binding CancelEditCommand}"
-                         Appearance="Secondary"
-                         Margin="0,0,8,0">
-                <TextBlock Text="{loc:Str Todo_Cancel}" />
-              </ui:Button>
-              <ui:Button Command="{Binding SaveEditCommand}"
-                         Appearance="Primary">
-                <StackPanel Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="Save24" FontSize="16" Margin="0,0,6,0" />
-                  <TextBlock Text="{loc:Str Todo_Save}" />
-                </StackPanel>
-              </ui:Button>
-            </StackPanel>
-          </StackPanel>
-        </Border>
-      </Border>
     </Grid>
 
-    <!-- Add bar (bottom) -->
-    <Border Grid.Row="3"
-            Background="{DynamicResource SecondaryBackgroundBrush}"
-            BorderBrush="{DynamicResource CardBorderBrush}"
+    <Border Grid.Row="4"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush_}"
             BorderThickness="1"
-            CornerRadius="4"
-            Margin="20,0,20,0"
+            CornerRadius="9"
+            Margin="24,0,24,20"
             Padding="12,8">
       <Grid>
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
 
         <ui:TextBox Grid.Column="0"
@@ -560,7 +474,7 @@
                     Margin="0,0,8,0">
           <ui:TextBox.InputBindings>
             <KeyBinding Key="Return"
-                        Command="{Binding AddTodoCommand}" />
+                        Command="{Binding AddTodoCommand}"/>
           </ui:TextBox.InputBindings>
         </ui:TextBox>
 
@@ -569,13 +483,13 @@
                   SelectedItem="{Binding NewTodoPriority}"
                   Width="120"
                   Margin="0,0,8,0"
-                  ToolTip="{loc:Str Todo_PriorityTooltip}" />
+                  ToolTip="{loc:Str Todo_PriorityTooltip}"/>
 
         <DatePicker Grid.Column="2"
                     SelectedDate="{Binding NewTodoDueDate}"
                     Width="130"
                     Margin="0,0,8,0"
-                    ToolTip="{loc:Str Todo_DueDateTooltip}" />
+                    ToolTip="{loc:Str Todo_DueDateTooltip}"/>
 
         <ui:Button Grid.Column="3"
                    Command="{Binding RecordTodoCommand}"
@@ -585,7 +499,7 @@
                    Padding="0"
                    Margin="0,0,8,0"
                    ToolTip="{loc:Str TodoPanel_Record}">
-          <ui:SymbolIcon Symbol="Record24" FontSize="16" />
+          <ui:SymbolIcon Symbol="Record24" FontSize="16"/>
         </ui:Button>
 
         <ui:Button Grid.Column="4"
@@ -593,8 +507,8 @@
                    Appearance="Primary"
                    ToolTip="{loc:Str Todo_AddTooltip}">
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0" />
-            <TextBlock Text="{loc:Str Todo_Add}" />
+            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
+            <TextBlock Text="{loc:Str Todo_Add}"/>
           </StackPanel>
         </ui:Button>
       </Grid>

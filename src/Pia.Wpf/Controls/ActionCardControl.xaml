@@ -5,17 +5,13 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:models="clr-namespace:Pia.Models">
   <Border x:Name="CardBorder"
-          CornerRadius="8"
-          Padding="10,8"
-          Margin="0,4,0,0"
-          BorderThickness="1"
-          BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-          Background="{DynamicResource ControlFillColorTertiaryBrush}">
+          Padding="12,10"
+          Margin="0,4,0,0">
     <Border.Style>
-      <Style TargetType="Border">
+      <Style TargetType="Border" BasedOn="{StaticResource PiaCardStyle}">
         <Style.Triggers>
           <DataTrigger Binding="{Binding IsDestructive}" Value="True">
-            <Setter Property="BorderBrush" Value="#C42B1C" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PiaDangerBrush}" />
             <Setter Property="Background" Value="#1AC42B1C" />
           </DataTrigger>
         </Style.Triggers>
@@ -43,24 +39,32 @@
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
-          <ui:SymbolIcon Grid.Column="0"
-                         FontSize="14"
-                         Margin="0,0,6,0"
-                         VerticalAlignment="Center">
-            <ui:SymbolIcon.Style>
-              <Style TargetType="ui:SymbolIcon">
-                <Setter Property="Symbol" Value="BrainCircuit24" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Todo}">
-                    <Setter Property="Symbol" Value="TaskListSquareLtr24" />
-                  </DataTrigger>
-                  <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Reminder}">
-                    <Setter Property="Symbol" Value="Alert24" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </ui:SymbolIcon.Style>
-          </ui:SymbolIcon>
+          <Border Grid.Column="0"
+                  Style="{StaticResource PiaIconChipStyle}"
+                  Margin="0,0,10,0"
+                  VerticalAlignment="Center">
+            <ui:SymbolIcon FontSize="13"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource PiaAccentBrush}">
+              <ui:SymbolIcon.Style>
+                <Style TargetType="ui:SymbolIcon">
+                  <Setter Property="Symbol" Value="BrainCircuit24" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Todo}">
+                      <Setter Property="Symbol" Value="TaskListSquareLtr24" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Reminder}">
+                      <Setter Property="Symbol" Value="Alert24" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Files}">
+                      <Setter Property="Symbol" Value="Document24" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:SymbolIcon.Style>
+            </ui:SymbolIcon>
+          </Border>
 
           <StackPanel Grid.Column="1"
                       Orientation="Vertical"

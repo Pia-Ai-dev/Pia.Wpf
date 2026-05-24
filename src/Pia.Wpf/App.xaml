@@ -14,6 +14,11 @@
         <ui:ThemesDictionary />
         <ui:ControlsDictionary />
 
+        <!-- Pia design tokens (light baseline; ThemeService swaps to Dark at runtime).
+             Must load BEFORE PiaStyles so its StaticResource lookups resolve. -->
+        <ResourceDictionary Source="Resources/Theme/PiaTokens.Light.xaml" />
+        <ResourceDictionary Source="Resources/Theme/PiaStyles.xaml" />
+
         <!-- Custom Styles -->
         <ResourceDictionary Source="Resources/Styles/Typography.xaml" />
         <ResourceDictionary Source="Resources/Styles/Layout.xaml" />
@@ -39,7 +44,18 @@
       <converters:StringEqualsBoolConverter x:Key="StringEqualsBoolConverter" />
       <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+      <converters:InverseNullToVisibilityConverter x:Key="InverseNullToVisibilityConverter" />
       <converters:MultiplyConverter x:Key="MultiplyConverter" />
+      <converters:BoolToAngleConverter x:Key="BoolToAngleConverter" />
+      <converters:SingleLineConverter x:Key="SingleLineConverter" />
+      <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
+      <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />
+      <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushBg" Kind="Background" />
+      <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushFg" Kind="Foreground" />
+      <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushBg" Kind="Background" />
+      <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushFg" Kind="Foreground" />
+      <converters:ReminderStatusToLabelConverter x:Key="ReminderStatusToLabelConverter" />
+      <converters:NextFireAtToShortStringConverter x:Key="NextFireAtToShortStringConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

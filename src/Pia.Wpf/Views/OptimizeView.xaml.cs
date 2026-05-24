@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.DependencyInjection;
+using Pia.Behaviors;
+using Pia.Helpers;
 using Pia.ViewModels;
 
 namespace Pia.Views;
@@ -127,5 +129,15 @@ public partial class OptimizeView : UserControl
             element.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
             element.ContextMenu.IsOpen = true;
         }
+    }
+
+    private void AttachFileButton_Click(object sender, RoutedEventArgs e)
+    {
+        var accepted = FileDropBehavior.GetAcceptedExtensions(RootGrid);
+        var files = FilePicker.PickFiles(accepted);
+        if (files.Count == 0) return;
+
+        if (ViewModel?.HandleFilesDroppedCommand.CanExecute(files) == true)
+            ViewModel.HandleFilesDroppedCommand.Execute(files);
     }
 }

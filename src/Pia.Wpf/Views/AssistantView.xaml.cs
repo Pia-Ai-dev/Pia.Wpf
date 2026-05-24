@@ -3,6 +3,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Pia.Behaviors;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.ViewModels;
 
@@ -10,6 +12,19 @@ namespace Pia.Views;
 
 public partial class AssistantView : UserControl
 {
+    public static readonly DependencyProperty IsAutoScrollEnabledProperty =
+        DependencyProperty.Register(
+            nameof(IsAutoScrollEnabled),
+            typeof(bool),
+            typeof(AssistantView),
+            new PropertyMetadata(true));
+
+    public bool IsAutoScrollEnabled
+    {
+        get => (bool)GetValue(IsAutoScrollEnabledProperty);
+        set => SetValue(IsAutoScrollEnabledProperty, value);
+    }
+
     private AssistantViewModel? ViewModel => DataContext as AssistantViewModel;
     private bool _autoScroll = true;
 
@@ -65,8 +80,9 @@ public partial class AssistantView : UserControl
             {
                 message.PropertyChanged += OnMessagePropertyChanged;
             }
-            // A new message is a new logical event — resume following the conversation.
-            _autoScroll = true;
+            // A new turn means the user wants to see it: resume auto-scroll regardless of
+            // whether they had paused mid-stream of the previous answer.
+            IsAutoScrollEnabled = true;
             ScrollToBottom();
         }
         else if (e.Action == NotifyCollectionChangedAction.Reset)
@@ -86,9 +102,29 @@ public partial class AssistantView : UserControl
 
     private void ScrollToBottom()
     {
-        if (_autoScroll)
+        if (!IsAutoScrollEnabled) return;
+        MessageScrollViewer.ScrollToEnd();
+    }
+
+    private void MessageScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // Distinguish a user-driven vertical scroll from a scroll caused by content growth.
+        // ExtentHeightChange != 0 means new content arrived; ignore those.
+        if (e.VerticalChange == 0) return;
+        if (e.ExtentHeightChange != 0) return;
+
+        var atBottom = e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 1;
+        IsAutoScrollEnabled = atBottom;
+    }
+
+    private void MessageItemsControl_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        // Streaming markdown bubbles up RequestBringIntoView during layout; the ScrollViewer's
+        // class handler would honor it regardless of our pause flag. Swallow it here so the
+        // user's manual scroll position is preserved while paused.
+        if (!IsAutoScrollEnabled)
         {
-            MessageScrollViewer.ScrollToEnd();
+            e.Handled = true;
         }
     }
 
@@ -120,5 +156,15 @@ public partial class AssistantView : UserControl
     private void OnAddToPiiRequested(object? sender, PiiKeywordRequest request)
     {
         ViewModel?.AddPiiKeywordCommand.Execute(request);
+    }
+
+    private void AttachFileButton_Click(object sender, RoutedEventArgs e)
+    {
+        var accepted = FileDropBehavior.GetAcceptedExtensions(RootGrid);
+        var files = FilePicker.PickFiles(accepted);
+        if (files.Count == 0) return;
+
+        if (ViewModel?.HandleFilesDroppedCommand.CanExecute(files) == true)
+            ViewModel.HandleFilesDroppedCommand.Execute(files);
     }
 }

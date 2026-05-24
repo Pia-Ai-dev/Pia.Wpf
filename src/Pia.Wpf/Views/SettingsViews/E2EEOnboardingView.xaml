@@ -5,15 +5,16 @@
              xmlns:vm="clr-namespace:Pia.ViewModels"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:models="clr-namespace:Pia.Models">
-  <StackPanel MaxWidth="600" HorizontalAlignment="Left">
+  <StackPanel MaxWidth="640" HorizontalAlignment="Left">
     <TextBlock Text="{loc:Str E2EE_Onboarding_Title}"
-               FontSize="20"
+               FontSize="18"
                FontWeight="SemiBold"
-               Margin="0,0,0,8"/>
+               Foreground="{DynamicResource TextDefaultBrush}"
+               Margin="0,0,0,4"/>
     <TextBlock Text="{loc:Str E2EE_Onboarding_Subtitle}"
-               Opacity="0.7"
                FontSize="12"
-               Margin="0,0,0,24"
+               Foreground="{DynamicResource TextMutedBrush}"
+               Margin="0,0,0,16"
                TextWrapping="Wrap"/>
 
     <!-- State: Initial — choose path -->
@@ -29,36 +30,45 @@
         </Style>
       </StackPanel.Style>
 
-      <ui:Card Padding="16" Margin="0,0,0,12">
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="16"
+              Margin="0,0,0,10">
         <StackPanel>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Approve_Title}"
                      FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextDefaultBrush}"
                      Margin="0,0,0,4"/>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Approve_Description}"
-                     Opacity="0.7"
                      FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
           <ui:Button Content="{loc:Str E2EE_Onboarding_Approve_Button}"
                      Appearance="Primary"
+                     HorizontalAlignment="Left"
                      Command="{Binding OnboardingViewModel.StartDeviceApprovalCommand}"/>
         </StackPanel>
-      </ui:Card>
+      </Border>
 
-      <ui:Card Padding="16" Margin="0,0,0,12">
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="16"
+              Margin="0,0,0,10">
         <StackPanel>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_Title}"
                      FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextDefaultBrush}"
                      Margin="0,0,0,4"/>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_Description}"
-                     Opacity="0.7"
                      FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
           <ui:Button Content="{loc:Str E2EE_Onboarding_Recovery_Button}"
+                     Appearance="Secondary"
+                     HorizontalAlignment="Left"
                      Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"/>
         </StackPanel>
-      </ui:Card>
+      </Border>
     </StackPanel>
 
     <!-- State: Waiting for approval -->
@@ -74,40 +84,46 @@
         </Style>
       </StackPanel.Style>
 
-      <ui:Card Padding="16" Margin="0,0,0,12">
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="16"
+              Margin="0,0,0,10">
         <StackPanel>
           <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
             <ui:ProgressRing IsIndeterminate="True"
                              Width="20" Height="20"
                              Margin="0,0,8,0"/>
             <TextBlock Text="{Binding OnboardingViewModel.StatusMessage}"
-                       VerticalAlignment="Center"/>
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextDefaultBrush}"/>
           </StackPanel>
 
           <TextBlock Text="{loc:Str E2EE_Onboarding_Waiting_FingerprintLabel}"
-                     Opacity="0.7"
                      FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
                      Margin="0,0,0,4"/>
           <TextBlock Text="{Binding OnboardingViewModel.DeviceFingerprint}"
-                     FontFamily="Consolas"
+                     FontFamily="{StaticResource PiaMonoFont}"
                      FontSize="16"
                      FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextDefaultBrush}"
                      Margin="0,0,0,12"/>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Waiting_VerifyInstruction}"
-                     Opacity="0.7"
                      FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
 
           <StackPanel Orientation="Horizontal">
             <ui:Button Content="{loc:Str E2EE_Onboarding_Cancel}"
+                       Appearance="Secondary"
                        Command="{Binding OnboardingViewModel.GoBackCommand}"
                        Margin="0,0,8,0"/>
             <ui:Button Content="{loc:Str E2EE_Onboarding_UseRecoveryInstead}"
+                       Appearance="Secondary"
                        Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"/>
           </StackPanel>
         </StackPanel>
-      </ui:Card>
+      </Border>
     </StackPanel>
 
     <!-- State: Entering recovery code -->
@@ -123,26 +139,29 @@
         </Style>
       </StackPanel.Style>
 
-      <ui:Card Padding="16" Margin="0,0,0,12">
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="16"
+              Margin="0,0,0,10">
         <StackPanel>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_EnterTitle}"
                      FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextDefaultBrush}"
                      Margin="0,0,0,4"/>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Recovery_EnterDescription}"
-                     Opacity="0.7"
                      FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
 
           <ui:TextBox PlaceholderText="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
                       Text="{Binding OnboardingViewModel.RecoveryCodeInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                      FontFamily="Consolas"
+                      FontFamily="{StaticResource PiaMonoFont}"
                       FontSize="14"
                       Margin="0,0,0,8"/>
 
           <!-- Error message -->
           <TextBlock Text="{Binding OnboardingViewModel.ErrorMessage}"
-                     Foreground="#f87171"
+                     Foreground="{DynamicResource PiaDangerBrush}"
                      FontSize="12"
                      TextWrapping="Wrap"
                      Margin="0,0,0,8"
@@ -154,10 +173,11 @@
                        Command="{Binding OnboardingViewModel.ActivateWithRecoveryCodeCommand}"
                        Margin="0,0,8,0"/>
             <ui:Button Content="{loc:Str E2EE_Onboarding_Back}"
+                       Appearance="Secondary"
                        Command="{Binding OnboardingViewModel.GoBackCommand}"/>
           </StackPanel>
         </StackPanel>
-      </ui:Card>
+      </Border>
     </StackPanel>
 
     <!-- State: Activating -->
@@ -178,7 +198,8 @@
                          Width="20" Height="20"
                          Margin="0,0,8,0"/>
         <TextBlock Text="{Binding OnboardingViewModel.StatusMessage}"
-                   VerticalAlignment="Center"/>
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
       </StackPanel>
     </StackPanel>
 
@@ -195,22 +216,26 @@
         </Style>
       </StackPanel.Style>
 
-      <ui:Card Padding="16" Margin="0,0,0,12">
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="16"
+              Margin="0,0,0,10">
         <StackPanel>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Success_Title}"
                      FontWeight="SemiBold"
                      FontSize="16"
+                     Foreground="{DynamicResource TextDefaultBrush}"
                      Margin="0,0,0,4"/>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Success_Description}"
-                     Opacity="0.7"
                      FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
                      Margin="0,0,0,8"/>
-          <TextBlock Opacity="0.7" FontSize="12">
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}">
             <Run Text="{loc:Str E2EE_Onboarding_FingerprintPrefix}"/>
-            <Run Text="{Binding OnboardingViewModel.DeviceFingerprint, Mode=OneWay}" FontFamily="Consolas"/>
+            <Run Text="{Binding OnboardingViewModel.DeviceFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaMonoFont}"/>
           </TextBlock>
         </StackPanel>
-      </ui:Card>
+      </Border>
     </StackPanel>
 
     <!-- State: Error -->
@@ -226,16 +251,20 @@
         </Style>
       </StackPanel.Style>
 
-      <ui:Card Padding="16" Margin="0,0,0,12">
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="16"
+              Margin="0,0,0,10">
         <StackPanel>
           <TextBlock Text="{Binding OnboardingViewModel.ErrorMessage}"
-                     Foreground="#f87171"
+                     Foreground="{DynamicResource PiaDangerBrush}"
                      TextWrapping="Wrap"
                      Margin="0,0,0,12"/>
           <ui:Button Content="{loc:Str E2EE_Onboarding_TryAgain}"
+                     Appearance="Secondary"
+                     HorizontalAlignment="Left"
                      Command="{Binding OnboardingViewModel.GoBackCommand}"/>
         </StackPanel>
-      </ui:Card>
+      </Border>
     </StackPanel>
   </StackPanel>
 </UserControl>

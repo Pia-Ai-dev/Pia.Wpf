@@ -8,6 +8,7 @@
                   xmlns:vm="clr-namespace:Pia.ViewModels"
                   xmlns:views="clr-namespace:Pia.Views"
                   xmlns:controls="clr-namespace:Pia.Views.Controls"
+                  xmlns:piactl="clr-namespace:Pia.Controls"
                   xmlns:models="clr-namespace:Pia.Models"
                   xmlns:loc="clr-namespace:Pia.Localization"
                   mc:Ignorable="d"
@@ -197,7 +198,8 @@
                  Title="{Binding WindowTitle}"
                  CloseWindowByDoubleClickOnIcon="True">
       <ui:TitleBar.Icon>
-        <ui:ImageIcon Source="pack://application:,,,/Resources/Icons/Pia.ico" />
+        <piactl:PiaTileImageIcon Source="pack://application:,,,/Resources/Icons/Pia.ico"
+                                 Width="18" Height="18" />
       </ui:TitleBar.Icon>
     </ui:TitleBar>
   </Grid>

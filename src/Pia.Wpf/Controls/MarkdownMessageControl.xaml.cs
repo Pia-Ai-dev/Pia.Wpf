@@ -6,6 +6,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Windows.Threading;
+using Pia.Controls.Markdown;
+using Pia.Helpers;
 using Pia.Models;
 
 namespace Pia.Controls;
@@ -56,16 +58,15 @@ public partial class MarkdownMessageControl : UserControl
         AddHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler(OnRequestNavigate));
 
         PreviewMouseWheel += OnPreviewMouseWheel;
+
+        RenderMarkdown(string.Empty);
     }
 
     private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        // The inner MarkdownScrollViewer is itself a ScrollViewer and consumes
-        // MouseWheel even when its own scrolling is disabled. Forward the wheel
-        // to the nearest ancestor ScrollViewer so the surrounding list scrolls.
         if (e.Handled) return;
 
-        var parent = FindAncestor<ScrollViewer>(this);
+        var parent = this.FindAncestor<ScrollViewer>();
         if (parent is null) return;
 
         e.Handled = true;
@@ -74,17 +75,6 @@ public partial class MarkdownMessageControl : UserControl
             RoutedEvent = MouseWheelEvent,
             Source = this,
         });
-    }
-
-    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
-    {
-        var current = VisualTreeHelper.GetParent(start);
-        while (current is not null)
-        {
-            if (current is T match) return match;
-            current = VisualTreeHelper.GetParent(current);
-        }
-        return null;
     }
 
     private static void OnMarkdownTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -99,7 +89,6 @@ public partial class MarkdownMessageControl : UserControl
     {
         if (d is MarkdownMessageControl control && (bool)e.NewValue == false)
         {
-            // Streaming ended — flush any pending content immediately
             control._debounceTimer.Stop();
             control.RenderMarkdown(control.MarkdownText);
         }
@@ -109,7 +98,6 @@ public partial class MarkdownMessageControl : UserControl
     {
         if (IsStreaming)
         {
-            // Debounce during streaming
             _pendingMarkdown = newText;
             if (!_debounceTimer.IsEnabled)
             {
@@ -118,7 +106,6 @@ public partial class MarkdownMessageControl : UserControl
         }
         else
         {
-            // Render immediately when not streaming
             RenderMarkdown(newText);
         }
     }
@@ -135,7 +122,7 @@ public partial class MarkdownMessageControl : UserControl
 
     private void RenderMarkdown(string? markdown)
     {
-        MarkdownViewer.Markdown = markdown ?? string.Empty;
+        MarkdownViewer.Document = PiaMarkdownRenderer.Render(markdown ?? string.Empty);
     }
 
     public string GetSelectedText() =>
@@ -146,10 +133,7 @@ public partial class MarkdownMessageControl : UserControl
         var selectedText = GetSelectedText();
         var hasSelection = !string.IsNullOrWhiteSpace(selectedText);
 
-        // Store selected text for use by click handlers
         MarkdownViewer.ContextMenu!.Tag = selectedText;
-
-        // Disable PII menu item when no text is selected
         AddToPiiMenu.IsEnabled = hasSelection;
     }
 

@@ -19,6 +19,8 @@ public class PluginService : IPluginService
     private readonly IReminderToolHandler _reminderToolHandler;
     private readonly IScheduledJobToolHandler _scheduledJobToolHandler;
     private readonly IResearchHistoryToolHandler _researchHistoryToolHandler;
+    private readonly IFilesToolHandler _filesToolHandler;
+    private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
     private readonly CabManagerService? _cabManager;
@@ -43,6 +45,8 @@ public class PluginService : IPluginService
         IReminderToolHandler reminderToolHandler,
         IScheduledJobToolHandler scheduledJobToolHandler,
         IResearchHistoryToolHandler researchHistoryToolHandler,
+        IFilesToolHandler filesToolHandler,
+        ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
         CabManagerService? cabManager = null)
@@ -52,12 +56,18 @@ public class PluginService : IPluginService
         _reminderToolHandler = reminderToolHandler;
         _scheduledJobToolHandler = scheduledJobToolHandler;
         _researchHistoryToolHandler = researchHistoryToolHandler;
+        _filesToolHandler = filesToolHandler;
+        _settingsService = settingsService;
         _logger = logger;
         _sqliteContext = sqliteContext;
         _cabManager = cabManager;
 
         InitializeBuiltInPlugins();
         LoadPersistedPlugins();
+
+        // Plugins whose tool list depends on settings (files plugin's sandbox folder)
+        // need their routes rebuilt whenever those settings change.
+        _settingsService.SettingsChanged += (_, _) => RebuildToolNameRoutes();
     }
 
     private void InitializeBuiltInPlugins()
@@ -73,6 +83,7 @@ public class PluginService : IPluginService
                 "reminder" => BuiltInPluginHandler.FromReminderHandler(_reminderToolHandler, config),
                 "scheduled-research" => BuiltInPluginHandler.FromScheduledJobHandler(_scheduledJobToolHandler, config),
                 "research-history" => BuiltInPluginHandler.FromResearchHistoryHandler(_researchHistoryToolHandler, config),
+                "files" => BuiltInPluginHandler.FromFilesHandler(_filesToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

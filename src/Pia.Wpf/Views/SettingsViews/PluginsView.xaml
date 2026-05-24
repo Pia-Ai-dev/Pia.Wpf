@@ -8,41 +8,55 @@
     <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
     <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
   </UserControl.Resources>
-  <Grid Margin="16">
+  <Grid>
     <!-- Not connected overlay -->
     <StackPanel VerticalAlignment="Center"
                 HorizontalAlignment="Center"
                 Visibility="{Binding IsCloudConnected, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-      <ui:SymbolIcon Symbol="CloudDismiss24" FontSize="48" Margin="0,0,0,16"
-                     HorizontalAlignment="Center" Opacity="0.5"/>
+      <ui:SymbolIcon Symbol="CloudDismiss24"
+                     FontSize="48"
+                     Margin="0,0,0,16"
+                     HorizontalAlignment="Center"
+                     Foreground="{DynamicResource TextSubtleBrush}"/>
       <TextBlock Text="{loc:Str Plugins_NotConnected}"
-                 FontSize="14" Opacity="0.7"
-                 HorizontalAlignment="Center" Margin="0,0,0,12"/>
-      <Button Content="{loc:Str Plugins_GoToAccount}"
-              Command="{Binding GoToAccountCommand}"
-              HorizontalAlignment="Center"
-              Style="{DynamicResource AccentButtonStyle}"/>
+                 FontSize="14"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 HorizontalAlignment="Center"
+                 Margin="0,0,0,12"/>
+      <ui:Button Content="{loc:Str Plugins_GoToAccount}"
+                 Command="{Binding GoToAccountCommand}"
+                 Appearance="Primary"
+                 HorizontalAlignment="Center"/>
     </StackPanel>
 
     <!-- Plugin list -->
-    <ScrollViewer Visibility="{Binding IsCloudConnected, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <StackPanel MaxWidth="600" HorizontalAlignment="Left">
-        <TextBlock Text="{loc:Str Settings_Tab_Plugins}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4"/>
-        <TextBlock Text="{loc:Str Plugins_Subtitle}" Opacity="0.7" FontSize="12" Margin="0,0,0,20"/>
+    <ScrollViewer Visibility="{Binding IsCloudConnected, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  VerticalScrollBarVisibility="Auto">
+      <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+        <TextBlock Text="{loc:Str Settings_Tab_Plugins}"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   Margin="0,0,0,4"/>
+        <TextBlock Text="{loc:Str Plugins_Subtitle}"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   Margin="0,0,0,16"/>
 
         <!-- Loading -->
-        <ui:ProgressRing IsIndeterminate="True" Width="32" Height="32"
+        <ui:ProgressRing IsIndeterminate="True"
+                         Width="32" Height="32"
                          Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
-                         HorizontalAlignment="Center" Margin="0,24,0,0"/>
+                         HorizontalAlignment="Center"
+                         Margin="0,24,0,0"/>
 
         <!-- Plugin items -->
         <ItemsControl ItemsSource="{Binding Plugins}"
                       Visibility="{Binding IsLoading, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
-                      CornerRadius="8"
-                      Padding="16"
+              <Border Style="{StaticResource PiaSettingsCardStyle}"
+                      Padding="14,12"
                       Margin="0,0,0,8">
                 <Grid>
                   <Grid.ColumnDefinitions>
@@ -52,14 +66,20 @@
                   </Grid.ColumnDefinitions>
 
                   <!-- Icon -->
-                  <Border Grid.Column="0" Width="32" Height="32" CornerRadius="6"
-                          Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                          VerticalAlignment="Top" Margin="0,2,0,0">
+                  <Border Grid.Column="0"
+                          Width="32" Height="32"
+                          CornerRadius="{StaticResource SmallRadius}"
+                          Background="{DynamicResource SurfaceMutedBrush}"
+                          VerticalAlignment="Top"
+                          Margin="0,2,0,0">
                     <Grid>
-                      <Image Source="{Binding IconImage}" Width="24" Height="24"
+                      <Image Source="{Binding IconImage}"
+                             Width="24" Height="24"
                              RenderOptions.BitmapScalingMode="HighQuality"
                              Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                      <ui:SymbolIcon Symbol="{Binding FallbackIcon}" FontSize="20"
+                      <ui:SymbolIcon Symbol="{Binding FallbackIcon}"
+                                     FontSize="20"
+                                     Foreground="{DynamicResource TextMutedBrush}"
                                      Visibility="{Binding HasIcon, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                     </Grid>
                   </Border>
@@ -67,28 +87,45 @@
                   <!-- Info -->
                   <StackPanel Grid.Column="1" Margin="8,0,12,0">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"
+                      <TextBlock Text="{Binding Name}"
+                                 FontWeight="SemiBold"
+                                 FontSize="14"
+                                 Foreground="{DynamicResource TextDefaultBrush}"
                                  VerticalAlignment="Center"/>
-                      <Border Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                              CornerRadius="4" Padding="6,2" Margin="8,0,0,0"
+                      <Border Background="{DynamicResource SurfaceMutedBrush}"
+                              CornerRadius="4"
+                              Padding="6,2"
+                              Margin="8,0,0,0"
                               VerticalAlignment="Center">
-                        <TextBlock Text="{Binding KindBadge}" FontSize="11" Opacity="0.8"/>
+                        <TextBlock Text="{Binding KindBadge}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
                       </Border>
-                      <TextBlock Text="{Binding Version}" FontSize="11" Opacity="0.5"
-                                 Margin="8,0,0,0" VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding Version}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource TextSubtleBrush}"
+                                 Margin="8,0,0,0"
+                                 VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding Description}" FontSize="12" Opacity="0.7"
-                               TextWrapping="Wrap" Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding Description}"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
                     <StackPanel Orientation="Horizontal">
-                      <TextBlock Text="{Binding StatusText}" FontSize="11" Opacity="0.6"/>
-                      <ui:ProgressRing IsIndeterminate="True" Width="12" Height="12"
+                      <TextBlock Text="{Binding StatusText}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource TextSubtleBrush}"/>
+                      <ui:ProgressRing IsIndeterminate="True"
+                                       Width="12" Height="12"
                                        Margin="8,0,0,0"
                                        Visibility="{Binding IsActivating, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </StackPanel>
                   </StackPanel>
 
                   <!-- Toggle -->
-                  <ui:ToggleSwitch Grid.Column="2" VerticalAlignment="Top"
+                  <ui:ToggleSwitch Grid.Column="2"
+                                   VerticalAlignment="Top"
                                    IsChecked="{Binding IsEnabled, Mode=TwoWay}"
                                    Command="{Binding DataContext.TogglePluginCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                    CommandParameter="{Binding}"/>

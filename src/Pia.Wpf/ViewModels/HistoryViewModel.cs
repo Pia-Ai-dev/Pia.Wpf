@@ -28,6 +28,9 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
     private ObservableCollection<OptimizationSession> _sessions = new();
 
     [ObservableProperty]
+    private ObservableCollection<SessionGroupViewModel> _sessionGroups = new();
+
+    [ObservableProperty]
     private DateTime? _filterStartDate;
 
     [ObservableProperty]
@@ -59,11 +62,10 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
 
     public ObservableCollection<AiProvider> Providers => _providers;
 
-    public IAsyncRelayCommand ViewDetailCommand { get; }
     public IAsyncRelayCommand CopyOriginalCommand { get; }
     public IAsyncRelayCommand CopyOptimizedCommand { get; }
     public IAsyncRelayCommand DeleteSessionCommand { get; }
-    public IAsyncRelayCommand ApplyFilterCommand { get; }
+    public IAsyncRelayCommand DeleteAllCommand { get; }
     public IAsyncRelayCommand ClearFilterCommand { get; }
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand LoadMoreCommand { get; }
@@ -86,11 +88,10 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         _localizationService = localizationService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
-        ViewDetailCommand = new AsyncRelayCommand(ExecuteViewDetailAsync, CanExecuteAction);
         CopyOriginalCommand = new AsyncRelayCommand(ExecuteCopyOriginal, CanExecuteAction);
         CopyOptimizedCommand = new AsyncRelayCommand(ExecuteCopyOptimized, CanExecuteAction);
         DeleteSessionCommand = new AsyncRelayCommand(ExecuteDeleteSession, CanExecuteAction);
-        ApplyFilterCommand = new AsyncRelayCommand(ExecuteApplyFilterAsync);
+        DeleteAllCommand = new AsyncRelayCommand(ExecuteDeleteAllAsync, CanExecuteDeleteAll);
         ClearFilterCommand = new AsyncRelayCommand(ExecuteClearFilterAsync);
         RefreshCommand = new AsyncRelayCommand(ExecuteRefreshAsync);
         LoadMoreCommand = new AsyncRelayCommand(ExecuteLoadMore, CanLoadMore);
@@ -173,6 +174,13 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
                 fromDate: FilterStartDate,
                 toDate: FilterEndDate);
 
+            RebuildGroups();
+
+            if (SelectedSession is not null && !Sessions.Contains(SelectedSession))
+            {
+                SelectedSession = null;
+            }
+
             UpdateCommandStates();
         }
         catch (Exception ex)
@@ -185,10 +193,60 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         }
     }
 
-    private async Task ExecuteApplyFilterAsync()
+    private void RebuildGroups()
     {
-        await LoadSessionsAsync(0, 50);
+        var existingState = SessionGroups.ToDictionary(g => g.Bucket, g => g.IsExpanded);
+
+        var today = DateTime.Today;
+        var startOfWeek = today.AddDays(-(int)today.DayOfWeek);
+        var startOfMonth = new DateTime(today.Year, today.Month, 1);
+
+        var buckets = Sessions
+            .GroupBy(s => Classify(s.CreatedAt.ToLocalTime(), today, startOfWeek, startOfMonth))
+            .OrderBy(g => (int)g.Key)
+            .Select(g =>
+            {
+                var items = g.OrderByDescending(s => s.CreatedAt).ToList();
+                var isExpanded = existingState.TryGetValue(g.Key, out var prev)
+                    ? prev
+                    : (g.Key == HistoryDateBucket.Today || g.Key == HistoryDateBucket.Yesterday);
+                return new SessionGroupViewModel
+                {
+                    Bucket = g.Key,
+                    DisplayName = _localizationService[BucketResourceKey(g.Key)],
+                    Items = new ObservableCollection<OptimizationSession>(items),
+                    ItemCount = items.Count,
+                    IsExpanded = isExpanded,
+                };
+            })
+            .ToList();
+
+        SessionGroups.Clear();
+        foreach (var group in buckets)
+        {
+            SessionGroups.Add(group);
+        }
     }
+
+    private static HistoryDateBucket Classify(DateTime createdLocal, DateTime today, DateTime startOfWeek, DateTime startOfMonth)
+    {
+        var date = createdLocal.Date;
+        if (date == today) return HistoryDateBucket.Today;
+        if (date == today.AddDays(-1)) return HistoryDateBucket.Yesterday;
+        if (date >= startOfWeek) return HistoryDateBucket.ThisWeek;
+        if (date >= startOfMonth) return HistoryDateBucket.EarlierThisMonth;
+        return HistoryDateBucket.Older;
+    }
+
+    private static string BucketResourceKey(HistoryDateBucket bucket) => bucket switch
+    {
+        HistoryDateBucket.Today => "History_Group_Today",
+        HistoryDateBucket.Yesterday => "History_Group_Yesterday",
+        HistoryDateBucket.ThisWeek => "History_Group_ThisWeek",
+        HistoryDateBucket.EarlierThisMonth => "History_Group_EarlierThisMonth",
+        HistoryDateBucket.Older => "History_Group_Older",
+        _ => "History_Group_Older",
+    };
 
     private async Task ExecuteClearFilterAsync()
     {
@@ -219,14 +277,6 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         await action();
     }
 
-    private async Task ExecuteViewDetailAsync()
-    {
-        if (SelectedSession is null)
-            return;
-
-        await _dialogService.ShowSessionDetailDialogAsync(SelectedSession);
-    }
-
     private async Task ExecuteDeleteSession()
     {
         if (SelectedSession is null)
@@ -251,6 +301,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
                 templateId: SelectedTemplateId,
                 fromDate: FilterStartDate,
                 toDate: FilterEndDate);
+            RebuildGroups();
         }
         catch (Exception ex)
         {
@@ -296,9 +347,49 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         await LoadSessionsAsync(_currentOffset, 50);
     }
 
+    private async Task ExecuteDeleteAllAsync()
+    {
+        if (TotalCount == 0)
+            return;
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["History_DeleteAllConfirmTitle"],
+            _localizationService["History_DeleteAllConfirmBody"]);
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            IsLoading = true;
+            await _historyService.DeleteAllSessionsAsync(
+                searchText: SearchQuery,
+                templateId: SelectedTemplateId,
+                fromDate: FilterStartDate,
+                toDate: FilterEndDate);
+            SelectedSession = null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete all sessions");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_History_DeleteSessionFailed", ex.Message));
+        }
+        finally
+        {
+            await LoadSessionsAsync(0, 50);
+        }
+    }
+
     private bool CanExecuteAction()
     {
         return SelectedSession is not null && !IsLoading;
+    }
+
+    private bool CanExecuteDeleteAll()
+    {
+        return !IsLoading && TotalCount > 0;
     }
 
     private bool CanLoadMore()
@@ -308,10 +399,10 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
 
     private void UpdateCommandStates()
     {
-        ViewDetailCommand.NotifyCanExecuteChanged();
         CopyOriginalCommand.NotifyCanExecuteChanged();
         CopyOptimizedCommand.NotifyCanExecuteChanged();
         DeleteSessionCommand.NotifyCanExecuteChanged();
+        DeleteAllCommand.NotifyCanExecuteChanged();
         LoadMoreCommand.NotifyCanExecuteChanged();
     }
 
@@ -337,7 +428,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
             DebounceSearch();
         }
 
-        if (e.PropertyName == nameof(IsLoading))
+        if (e.PropertyName == nameof(IsLoading) || e.PropertyName == nameof(TotalCount))
         {
             UpdateCommandStates();
         }
@@ -360,4 +451,22 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
 
         GC.SuppressFinalize(this);
     }
+}
+
+public partial class SessionGroupViewModel : ObservableObject
+{
+    [ObservableProperty]
+    private HistoryDateBucket _bucket;
+
+    [ObservableProperty]
+    private string _displayName = string.Empty;
+
+    [ObservableProperty]
+    private ObservableCollection<OptimizationSession> _items = new();
+
+    [ObservableProperty]
+    private int _itemCount;
+
+    [ObservableProperty]
+    private bool _isExpanded = true;
 }
