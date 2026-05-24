@@ -45,6 +45,20 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         return _chatsSchemaVersion;
     }
 
+    public void Invalidate()
+    {
+        _gate.Wait();
+        try
+        {
+            _chatsSupported = null;
+            _chatsSchemaVersion = null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private async Task EnsureProbedAsync(CancellationToken ct)
     {
         if (_chatsSupported.HasValue) return;

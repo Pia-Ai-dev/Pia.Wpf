@@ -18,4 +18,11 @@ public interface ICloudCapabilityService
     /// server didn't report one (or the probe failed).
     /// </summary>
     Task<int?> ChatsSchemaVersionAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Discard the cached probe result. The next call to <see cref="ChatsSupportedAsync"/>
+    /// will re-probe /api/capabilities. Use when a sync operation surfaces a hard signal
+    /// that the cache is stale (e.g. 404 from /api/v1/chats after a previous success).
+    /// </summary>
+    void Invalidate();
 }

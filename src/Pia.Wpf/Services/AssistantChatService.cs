@@ -21,7 +21,13 @@ public class AssistantChatService : IAssistantChatService
     private void OnChatsChanged(Guid id, AssistantChatChangeKind kind) =>
         ChatsChanged?.Invoke(this, new AssistantChatChangedEventArgs { Id = id, Kind = kind });
 
-    public async Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default)
+    public Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
+        SaveCoreAsync(chat, raiseEvent: true, ct);
+
+    public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
+        SaveCoreAsync(chat, raiseEvent: false, ct);
+
+    private async Task SaveCoreAsync(SyncAssistantChat chat, bool raiseEvent, CancellationToken ct)
     {
         var connection = _context.GetConnection();
         using var transaction = connection.BeginTransaction();
@@ -89,7 +95,8 @@ public class AssistantChatService : IAssistantChatService
         await ReplaceFtsRowAsync(connection, transaction, chat, ct);
 
         transaction.Commit();
-        OnChatsChanged(chat.Id, AssistantChatChangeKind.Upserted);
+        if (raiseEvent)
+            OnChatsChanged(chat.Id, AssistantChatChangeKind.Upserted);
     }
 
     public async Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
@@ -176,7 +183,13 @@ public class AssistantChatService : IAssistantChatService
         return chats.AsReadOnly();
     }
 
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+    public Task DeleteAsync(Guid id, CancellationToken ct = default) =>
+        DeleteCoreAsync(id, raiseEvent: true, ct);
+
+    public Task DeleteFromRemoteAsync(Guid id, CancellationToken ct = default) =>
+        DeleteCoreAsync(id, raiseEvent: false, ct);
+
+    private async Task DeleteCoreAsync(Guid id, bool raiseEvent, CancellationToken ct)
     {
         var connection = _context.GetConnection();
         using var transaction = connection.BeginTransaction();
@@ -199,7 +212,8 @@ public class AssistantChatService : IAssistantChatService
         }
 
         transaction.Commit();
-        OnChatsChanged(id, AssistantChatChangeKind.Deleted);
+        if (raiseEvent)
+            OnChatsChanged(id, AssistantChatChangeKind.Deleted);
     }
 
     public async Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default)

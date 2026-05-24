@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Pia.Infrastructure;
 using Pia.Services;
+using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Xunit;
 
@@ -81,6 +82,54 @@ public class AssistantChatServiceTests : IDisposable
         var exception = await Record.ExceptionAsync(
             () => _service.SearchAsync(searchText: "hello* OR \"NEAR(\""));
         Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task SaveFromRemoteAsync_DoesNotRaiseChatsChanged()
+    {
+        var raised = new List<AssistantChatChangedEventArgs>();
+        _service.ChatsChanged += (_, e) => raised.Add(e);
+
+        var chat = MakeChat(title: "Remote chat", body: "remote body");
+        await _service.SaveFromRemoteAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        Assert.Empty(raised);
+
+        // Verify the row is actually written so the suppression isn't masking a real bug.
+        var loaded = await _service.GetAsync(chat.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal("Remote chat", loaded!.Title);
+    }
+
+    [Fact]
+    public async Task DeleteFromRemoteAsync_DoesNotRaiseChatsChanged()
+    {
+        var chat = MakeChat(title: "to-delete", body: "x");
+        await _service.SaveAsync(chat);
+
+        var raised = new List<AssistantChatChangedEventArgs>();
+        _service.ChatsChanged += (_, e) => raised.Add(e);
+
+        await _service.DeleteFromRemoteAsync(chat.Id);
+
+        Assert.Empty(raised);
+        Assert.Null(await _service.GetAsync(chat.Id));
+    }
+
+    [Fact]
+    public async Task DeleteFromRemoteAsync_RemovesFromFts()
+    {
+        var chat = MakeChat(title: "UniqueRemoteWordABC", body: "UniqueRemoteWordXYZ");
+        await _service.SaveAsync(chat);
+
+        await _service.DeleteFromRemoteAsync(chat.Id);
+
+        var conn = _ctx.GetConnection();
+        using var countFts = conn.CreateCommand();
+        countFts.CommandText = "SELECT COUNT(*) FROM AssistantChatsFts WHERE ChatId = @Id";
+        countFts.Parameters.AddWithValue("@Id", chat.Id.ToString());
+        Assert.Equal(0, Convert.ToInt32(await countFts.ExecuteScalarAsync()));
     }
 
     [Fact]

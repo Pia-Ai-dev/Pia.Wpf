@@ -20,6 +20,12 @@ public interface IAssistantChatService
 
     Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default);
 
+    /// <summary>
+    /// Apply a chat received from a remote pull WITHOUT raising <see cref="ChatsChanged"/>.
+    /// Prevents the cloud-sync worker from re-enqueuing the merge as a local edit.
+    /// </summary>
+    Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default);
+
     Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default);
 
     Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(
@@ -32,6 +38,12 @@ public interface IAssistantChatService
         CancellationToken ct = default);
 
     Task DeleteAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Apply a deletion received from a remote pull WITHOUT raising <see cref="ChatsChanged"/>.
+    /// Prevents the cloud-sync worker from re-enqueuing the delete as a local edit.
+    /// </summary>
+    Task DeleteFromRemoteAsync(Guid id, CancellationToken ct = default);
 
     Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default);
 

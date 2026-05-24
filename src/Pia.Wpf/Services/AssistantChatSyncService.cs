@@ -29,6 +29,7 @@ public sealed class AssistantChatSyncService : BackgroundService
     private readonly IAuthService _authService;
     private readonly ISettingsService _settingsService;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly SyncMapper _mapper;
     private readonly ILogger<AssistantChatSyncService> _logger;
 
     // Channel is a wakeup signal only; the actual per-chat coalescing lives in
@@ -45,6 +46,7 @@ public sealed class AssistantChatSyncService : BackgroundService
         IAuthService authService,
         ISettingsService settingsService,
         IHttpClientFactory httpClientFactory,
+        SyncMapper mapper,
         ILogger<AssistantChatSyncService> logger)
     {
         _chatService = chatService;
@@ -52,6 +54,7 @@ public sealed class AssistantChatSyncService : BackgroundService
         _authService = authService;
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
+        _mapper = mapper;
         _logger = logger;
     }
 
@@ -178,13 +181,14 @@ public sealed class AssistantChatSyncService : BackgroundService
 
     private async Task SendUpsertAsync(SyncAssistantChat chat, bool retried, CancellationToken ct)
     {
-        var (client, baseUrl) = await BuildClientAsync(ct);
+        var (client, baseUrl, userId) = await BuildClientAsync(ct);
         if (client is null || baseUrl is null) return;
 
         var url = $"{baseUrl}/api/v1/chats/{chat.Id}";
         using (client)
         {
-            using var content = JsonContent.Create(chat, options: JsonOptions);
+            var wire = _mapper.ToSyncAssistantChat(chat, userId);
+            using var content = JsonContent.Create(wire, options: JsonOptions);
             using var response = await client.PutAsync(url, content, ct);
 
             if (response.IsSuccessStatusCode)
@@ -197,15 +201,25 @@ public sealed class AssistantChatSyncService : BackgroundService
 
             if (response.StatusCode == HttpStatusCode.Conflict && !retried)
             {
-                var serverChat = await TryReadAsync(response, ct);
-                if (serverChat is not null)
+                var serverWire = await TryReadAsync(response, ct);
+                if (serverWire is not null)
                 {
+                    // Decrypt server response into plaintext space so the merge can
+                    // reason about Title / Messages / ProviderId.
+                    var serverChat = _mapper.FromSyncAssistantChat(serverWire, userId);
                     var merged = MergeForConflict(serverChat, chat);
                     _logger.LogInformation(
                         "Cloud upsert 409 for chat {ChatId}; merging and retrying", chat.Id);
                     await SendUpsertAsync(merged, retried: true, ct);
                     return;
                 }
+            }
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                // Endpoint disappeared mid-session (feature flag flipped or server downgrade).
+                // Drop the cached capability so the next session re-probes /api/capabilities.
+                _capabilities.Invalidate();
             }
 
             _logger.LogInformation(
@@ -216,13 +230,15 @@ public sealed class AssistantChatSyncService : BackgroundService
 
     private async Task SendDeleteAsync(Guid chatId, CancellationToken ct)
     {
-        var (client, baseUrl) = await BuildClientAsync(ct);
+        var (client, baseUrl, _) = await BuildClientAsync(ct);
         if (client is null || baseUrl is null) return;
 
         var url = $"{baseUrl}/api/v1/chats/{chatId}";
         using (client)
         {
             using var response = await client.DeleteAsync(url, ct);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                _capabilities.Invalidate();
             _logger.LogInformation(
                 "Cloud delete for chat {ChatId} returned status {Status}",
                 chatId, (int)response.StatusCode);
@@ -233,14 +249,14 @@ public sealed class AssistantChatSyncService : BackgroundService
     {
         try
         {
-            var (client, baseUrl) = await BuildClientAsync(ct);
+            var (client, baseUrl, userId) = await BuildClientAsync(ct);
             if (client is null || baseUrl is null) return;
 
             using (client)
             {
                 // `since` is the inclusive lower bound per server contract §4.1,
                 // so the first paged response will normally re-include the local
-                // newest chat. SaveAsync is an upsert, so that's harmless.
+                // newest chat. SaveFromRemoteAsync is an upsert, so that's harmless.
                 var since = await _chatService.GetMaxUpdatedAtAsync(ct);
                 var sinceParam = since is null
                     ? null
@@ -248,6 +264,7 @@ public sealed class AssistantChatSyncService : BackgroundService
 
                 string? cursor = null;
                 var totalMerged = 0;
+                var totalDeleted = 0;
                 var pages = 0;
                 const int maxPages = 100; // safety stop in case the server lies about hasMore
 
@@ -258,6 +275,8 @@ public sealed class AssistantChatSyncService : BackgroundService
                     using var response = await client.GetAsync(url, ct);
                     if (!response.IsSuccessStatusCode)
                     {
+                        if (response.StatusCode == HttpStatusCode.NotFound)
+                            _capabilities.Invalidate();
                         _logger.LogInformation(
                             "Startup pull returned status {Status} (page {Page})",
                             (int)response.StatusCode, pages + 1);
@@ -287,15 +306,50 @@ public sealed class AssistantChatSyncService : BackgroundService
 
                         if (incoming is null) continue;
 
+                        SyncAssistantChat plaintext;
                         try
                         {
-                            await _chatService.SaveAsync(incoming, ct);
+                            plaintext = _mapper.FromSyncAssistantChat(incoming, userId);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Decrypt failure (wrong UMK, AAD mismatch, corrupted ciphertext).
+                            // Skip the row rather than polluting the local store / FTS.
+                            _logger.LogWarning(ex,
+                                "Failed to decrypt incoming chat {ChatId}; skipping", incoming.Id);
+                            continue;
+                        }
+
+                        try
+                        {
+                            await _chatService.SaveFromRemoteAsync(plaintext, ct);
                             totalMerged++;
                         }
                         catch (Exception ex)
                         {
                             _logger.LogWarning(ex,
                                 "Failed to merge incoming chat {ChatId}", incoming.Id);
+                        }
+                    }
+
+                    if (doc.RootElement.TryGetProperty("deleted", out var deletedArr) &&
+                        deletedArr.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var element in deletedArr.EnumerateArray())
+                        {
+                            if (element.ValueKind != JsonValueKind.String) continue;
+                            if (!Guid.TryParse(element.GetString(), out var deletedId)) continue;
+
+                            try
+                            {
+                                await _chatService.DeleteFromRemoteAsync(deletedId, ct);
+                                totalDeleted++;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex,
+                                    "Failed to apply remote delete for chat {ChatId}", deletedId);
+                            }
                         }
                     }
 
@@ -313,8 +367,8 @@ public sealed class AssistantChatSyncService : BackgroundService
                 }
 
                 _logger.LogInformation(
-                    "Startup pull merged {Count} chats across {Pages} page(s)",
-                    totalMerged, pages);
+                    "Startup pull merged {Merged} chats and applied {Deleted} delete(s) across {Pages} page(s)",
+                    totalMerged, totalDeleted, pages);
             }
         }
         catch (OperationCanceledException)
@@ -329,19 +383,21 @@ public sealed class AssistantChatSyncService : BackgroundService
 
     private static string BuildPullUrl(string baseUrl, string? sinceParam, string? cursor)
     {
-        var parts = new List<string>(2);
+        // includeDeleted=true is the opt-in that asks the server to surface
+        // tombstone IDs alongside live chats (see assistant-chat-history.md §4.1).
+        // Old servers ignore the unknown query param and return the legacy shape;
+        // the client just sees no `deleted[]` and falls through to upsert-only.
+        var parts = new List<string>(3) { "includeDeleted=true" };
         if (!string.IsNullOrEmpty(sinceParam)) parts.Add($"since={sinceParam}");
         if (!string.IsNullOrEmpty(cursor)) parts.Add($"cursor={Uri.EscapeDataString(cursor)}");
-        return parts.Count == 0
-            ? $"{baseUrl}/api/v1/chats"
-            : $"{baseUrl}/api/v1/chats?{string.Join('&', parts)}";
+        return $"{baseUrl}/api/v1/chats?{string.Join('&', parts)}";
     }
 
-    private async Task<(HttpClient? Client, string? BaseUrl)> BuildClientAsync(CancellationToken ct)
+    private async Task<(HttpClient? Client, string? BaseUrl, string? UserId)> BuildClientAsync(CancellationToken ct)
     {
         var settings = await _settingsService.GetSettingsAsync();
         var serverUrl = settings.ServerUrl?.TrimEnd('/');
-        if (string.IsNullOrEmpty(serverUrl)) return (null, null);
+        if (string.IsNullOrEmpty(serverUrl)) return (null, null, null);
 
         var token = await _authService.GetAccessTokenAsync();
 
@@ -352,7 +408,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                 new AuthenticationHeaderValue("Bearer", token);
         }
         client.Timeout = TimeSpan.FromSeconds(60);
-        return (client, serverUrl);
+        return (client, serverUrl, settings.SyncUserId);
     }
 
     private static async Task<SyncAssistantChat?> TryReadAsync(HttpResponseMessage response, CancellationToken ct)
