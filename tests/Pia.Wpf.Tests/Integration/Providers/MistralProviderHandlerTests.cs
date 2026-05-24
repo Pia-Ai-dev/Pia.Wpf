@@ -121,4 +121,40 @@ public class MistralProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
+    [Fact]
+    public async Task StreamChatCompletionAsync_WithWebSearch_YieldsAtLeastOneDelta()
+    {
+        var (endpoint, key, model) = ProviderTestEnvironment.Mistral();
+        var agentId = ProviderTestEnvironment.MistralAgentId();
+        if (string.IsNullOrEmpty(key)) { Assert.Skip("PIA_TEST_MISTRAL_KEY not set"); return; }
+        if (string.IsNullOrEmpty(agentId)) { Assert.Skip("PIA_TEST_MISTRAL_AGENT_ID not set"); return; }
+
+        var provider = new AiProvider
+        {
+            Name = "Mistral Agent Integration (stream)",
+            ProviderType = AiProviderType.Mistral,
+            Endpoint = endpoint,
+            ModelName = model,
+            EncryptedApiKey = key,
+            SupportsToolCalling = true,
+            SupportsStreaming = true,
+            TimeoutSeconds = 60,
+            EnableWebSearch = true,
+            MistralAgentId = agentId,
+        };
+
+        var client = _fixture.BuildClient();
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.User, "Reply with the single word: ready."),
+        };
+
+        var any = false;
+        await foreach (var token in client.StreamChatCompletionAsync(messages, provider, cancellationToken: TestContext.Current.CancellationToken))
+        {
+            if (!string.IsNullOrEmpty(token)) { any = true; break; }
+        }
+        Assert.True(any);
+    }
+
 }
