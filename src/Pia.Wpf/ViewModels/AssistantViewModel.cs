@@ -12,6 +12,7 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
+using Pia.Services;
 using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
 
@@ -32,7 +33,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return $"Always respond to the user in '{languageName}' unless the user asks you to switch.";
     }
 
-    private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false)
+    private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
     {
         var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
         var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
@@ -40,6 +41,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             : $"## Plugins\n\n{pluginPrompts}\n\n";
         var tokenSection = tokenizationEnabled
             ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
+            : string.Empty;
+        var webSearchSection = webSearchActive
+            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
             : string.Empty;
 
         var toolSelectionSection = skipToolSelectionTree
@@ -78,7 +82,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
             - Do not restate the user's question and do not summarize what you just said at the end of a reply.
             - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.
-            {tokenSection}
+            {tokenSection}{webSearchSection}
             """;
     }
 
@@ -138,23 +142,30 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return sb.ToString();
     }
 
-    private string BuildSystemPromptNoTools() => $"""
-        ## Identity
+    private string BuildSystemPromptNoTools(bool webSearchActive = false)
+    {
+        var webSearchSection = webSearchActive
+            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
+            : string.Empty;
+        return $"""
+            ## Identity
 
-        You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
-        The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+            You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
+            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
 
-        ## Language
+            ## Language
 
-        {BuildLanguageInstruction()}
+            {BuildLanguageInstruction()}
 
-        ## Principles
+            ## Principles
 
-        - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
-        - Write plain prose. Use formatting elements rare. Avoid bold, italics; reserve **bold** only for safety-critical warnings.
-        - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
-        - Do not restate the user's question and do not summarize what you just said at the end of a reply.
-        """;
+            - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+            - Write plain prose. Use formatting elements rare. Avoid bold, italics; reserve **bold** only for safety-critical warnings.
+            - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+            - Do not restate the user's question and do not summarize what you just said at the end of a reply.
+            {webSearchSection}
+            """;
+    }
 
     private readonly ILogger<AssistantViewModel> _logger;
     private readonly IAiClientService _aiClientService;
@@ -374,6 +385,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             // Determine if this provider supports tool calling
             var supportsTools = provider.SupportsToolCalling;
+            var webSearchActive = IsWebSearchActive(provider);
 
             // Build system prompt with memory context
             string fullSystemPrompt;
@@ -382,7 +394,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             if (supportsTools)
             {
                 var hasAtCommands = atCommands.Count > 0;
-                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, skipToolSelectionTree: hasAtCommands)
+                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive)
                     + BuildAtCommandHint(atCommands);
 
                 var allTools = _pluginService.GetAllTools();
@@ -398,7 +410,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
-                fullSystemPrompt = BuildSystemPromptNoTools();
+                fullSystemPrompt = BuildSystemPromptNoTools(webSearchActive: webSearchActive);
                 tools = null;
             }
 
@@ -453,6 +465,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                         break;
                 }
             }
+
+            if (webSearchActive)
+                ApplyWebCitations(assistantMessage);
 
             await GenerateFollowupsAsync(provider, userMessage.Content, assistantMessage, _streamingCts.Token);
         }
@@ -1177,18 +1192,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
 
         var supportsTools = provider.SupportsToolCalling;
+        var webSearchActive = IsWebSearchActive(provider);
 
         string fullSystemPrompt;
         IList<AITool>? tools;
 
         if (supportsTools)
         {
-            fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled);
+            fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, webSearchActive: webSearchActive);
             tools = [.. _pluginService.GetAllTools()];
         }
         else
         {
-            fullSystemPrompt = BuildSystemPromptNoTools();
+            fullSystemPrompt = BuildSystemPromptNoTools(webSearchActive: webSearchActive);
             tools = null;
         }
 
@@ -1285,6 +1301,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         });
         _logger.LogInformation("Follow-up suggestions: added {Count} picks (HasSuggestions={Has})",
             picks.Count, assistantMessage.HasSuggestions);
+    }
+
+    private static bool IsWebSearchActive(AiProvider provider)
+        => provider.EnableWebSearch || provider.ProviderType == AiProviderType.PiaCloud;
+
+    private void ApplyWebCitations(AssistantMessage message)
+    {
+        if (string.IsNullOrEmpty(message.Content)) return;
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(message.Content);
+        if (sources.Count == 0) return;
+
+        message.Content = cleaned;
+        foreach (var s in sources)
+            message.Sources.Add(s);
+
+        _logger.LogInformation("Extracted {Count} web source(s) from assistant message", sources.Count);
     }
 
     private void ApplyStats(AssistantMessage message, Finished finished, AiProvider provider)

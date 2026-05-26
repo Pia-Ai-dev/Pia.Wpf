@@ -1,6 +1,6 @@
 namespace Pia.Models;
 
-public sealed record SourceRef(int Number, string Source, string Meta);
+public sealed record SourceRef(int Number, string Source, string Meta, string? Url = null);
 
 public sealed record MessageMeta(string Timing, string? ProfileLabel = null);
 
