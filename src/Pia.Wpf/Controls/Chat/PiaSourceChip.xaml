@@ -26,24 +26,27 @@
   <Button Style="{StaticResource ChipButtonStyle}"
           Click="OnClick"
           ToolTip="{Binding Url, ElementName=Root}">
-    <Border CornerRadius="999"
+    <Border MinHeight="34"
+            CornerRadius="{StaticResource BubbleRadius}"
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush_}"
             BorderThickness="1"
-            Padding="3,3,10,3">
-      <StackPanel Orientation="Horizontal">
-        <Border Width="20" Height="20" CornerRadius="10"
-                Background="{DynamicResource PiaAccentSoftBrush}">
+            Padding="6,0,14,0"
+            SnapsToDevicePixels="True">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Border Width="22" Height="22" CornerRadius="11"
+                Background="{DynamicResource PiaAccentSoftBrush}"
+                VerticalAlignment="Center">
           <TextBlock Text="{Binding Number, ElementName=Root}"
                      HorizontalAlignment="Center"
                      VerticalAlignment="Center"
-                     FontSize="10.5"
+                     FontSize="11"
                      FontWeight="Bold"
                      Foreground="{DynamicResource PiaAccentBrush}" />
         </Border>
-        <TextBlock Margin="7,0,4,0"
+        <TextBlock Margin="8,0,4,0"
                    VerticalAlignment="Center"
-                   FontSize="12"
+                   FontSize="13"
                    FontWeight="SemiBold"
                    Foreground="{DynamicResource TextDefaultBrush}"
                    Text="{Binding Source, ElementName=Root}" />
