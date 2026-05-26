@@ -12,6 +12,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 using Pia.Services.Scheduling;
 using Pia.ViewModels;
 using Wpf.Ui;
@@ -195,6 +196,17 @@ public static class Bootstrapper
         services.AddScoped<IContentDialogService, ContentDialogService>();
         services.AddScoped<ISnackbarService, SnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
+
+        // AI provider handlers (one per AiProviderType) + registry
+        services.AddSingleton<IAiProviderHandler, OpenAiProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, AzureOpenAiProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, OllamaProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, MistralProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, OpenRouterProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, OpenAiCompatibleProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, VLlmProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, PiaCloudProviderHandler>();
+        services.AddSingleton<AiProviderHandlerResolver>();
 
         // AI Client (decorator applies PII tokenization transparently)
         services.AddTransient<AiClientService>();

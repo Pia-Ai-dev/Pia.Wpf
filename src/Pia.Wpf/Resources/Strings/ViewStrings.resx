@@ -506,6 +506,8 @@
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure Deployment Name</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Fetch Models</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Timeout (seconds)</value></data>
+  <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Enable web search</value></data>
+  <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>Mistral Agent ID</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Edit Template</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Template Name *</value></data>
   <data name="Dialog_TemplateEdit_StyleDescription" xml:space="preserve"><value>Style Description *</value></data>

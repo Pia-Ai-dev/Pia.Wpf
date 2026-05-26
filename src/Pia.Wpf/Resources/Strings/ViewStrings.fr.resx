@@ -483,6 +483,8 @@
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Nom de déploiement Azure</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Récupérer les modèles</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Délai d'attente (secondes)</value></data>
+  <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Activer la recherche Web</value></data>
+  <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>ID de l'agent Mistral</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Modifier le modèle</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Nom du modèle *</value></data>
   <data name="Dialog_TemplateEdit_StyleDescription" xml:space="preserve"><value>Description du style *</value></data>

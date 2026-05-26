@@ -16,15 +16,21 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
 
         return field switch
         {
-            "ModelName" => providerType is AiProviderType.OpenAI or AiProviderType.Ollama or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Mistral
+            "ModelName" => providerType is AiProviderType.OpenAI or AiProviderType.Ollama or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Mistral or AiProviderType.VLlm
                 ? Visibility.Visible : Visibility.Collapsed,
             "AzureDeployment" => providerType == AiProviderType.AzureOpenAI
                 ? Visibility.Visible : Visibility.Collapsed,
-            "ApiKey" => providerType is not (AiProviderType.PiaCloud or AiProviderType.Ollama)
+            "ApiKey" => providerType is not (AiProviderType.PiaCloud or AiProviderType.Ollama or AiProviderType.VLlm)
                 ? Visibility.Visible : Visibility.Collapsed,
             "Endpoint" => providerType != AiProviderType.PiaCloud
                 ? Visibility.Visible : Visibility.Collapsed,
             "Delete" => providerType != AiProviderType.PiaCloud
+                ? Visibility.Visible : Visibility.Collapsed,
+            "ReasoningEffort" => providerType is AiProviderType.OpenAI or AiProviderType.AzureOpenAI or AiProviderType.Ollama or AiProviderType.Mistral or AiProviderType.OpenRouter or AiProviderType.VLlm
+                ? Visibility.Visible : Visibility.Collapsed,
+            "WebSearch" => providerType is AiProviderType.OpenAI or AiProviderType.OpenRouter
+                ? Visibility.Visible : Visibility.Collapsed,
+            "MistralAgentId" => providerType is AiProviderType.Mistral
                 ? Visibility.Visible : Visibility.Collapsed,
             _ => Visibility.Collapsed
         };

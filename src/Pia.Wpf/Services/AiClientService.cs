@@ -1,18 +1,16 @@
-﻿using System.ClientModel;
-using System.Diagnostics;
+using System.ClientModel;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using OpenAI.Chat;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 
 namespace Pia.Services;
 
@@ -29,17 +27,20 @@ public class AiClientService : IAiClientService
     private readonly DpapiHelper _dpapiHelper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ISettingsService _settingsService;
+    private readonly AiProviderHandlerResolver _handlers;
     private readonly ILogger<AiClientService> _logger;
 
     public AiClientService(
         DpapiHelper dpapiHelper,
         IHttpClientFactory httpClientFactory,
         ISettingsService settingsService,
+        AiProviderHandlerResolver handlers,
         ILogger<AiClientService> logger)
     {
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
         _settingsService = settingsService;
+        _handlers = handlers;
         _logger = logger;
     }
 
@@ -59,15 +60,18 @@ public class AiClientService : IAiClientService
         {
             _logger.LogInformation("SendRequestAsync: type={Type}", provider.ProviderType);
             _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
-            IChatClient chatClient = await CreateChatClientAsync(provider, apiKey);
+
+            var handler = _handlers.Get(provider.ProviderType);
+            var httpClient = _httpClientFactory.CreateClient();
+            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
 
             var messages = new[]
             {
                 new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, NoThinkSystemPrompt),
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, prompt ),
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, prompt),
             };
 
-            var options = CreateModeOptions(mode: null, hasTools: false);
+            var options = handler.CreateChatOptions(provider, hasTools: false);
 
             var response = await chatClient.GetResponseAsync(
                 messages,
@@ -87,6 +91,8 @@ public class AiClientService : IAiClientService
             {
                 if (usage.InputTokenCount is long input) tokensUsed += (int)input;
                 if (usage.OutputTokenCount is long output) tokensUsed += (int)output;
+                _logger.LogDebug("Token usage: input={Input}, output={Output}, cached={Cached}",
+                    usage.InputTokenCount, usage.OutputTokenCount, usage.CachedInputTokenCount);
             }
 
             return new AiCompletionResult(text, tokensUsed);
@@ -95,6 +101,11 @@ public class AiClientService : IAiClientService
         {
             _logger.LogWarning("SendRequestAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SendRequestAsync: provider {ProviderName} threw an exception", provider.Name);
+            throw;
         }
     }
 
@@ -111,8 +122,10 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        var chatClient = await CreateChatClientAsync(provider, apiKey, mode);
-        var options = CreateModeOptions(mode, hasTools: false);
+        var handler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
+        var options = handler.CreateChatOptions(provider, hasTools: false);
 
         IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
         try
@@ -172,10 +185,12 @@ public class AiClientService : IAiClientService
 
         try
         {
-            IChatClient chatClient = await CreateChatClientAsync(provider, apiKey, mode);
+            var handler = _handlers.Get(provider.ProviderType);
+            var httpClient = _httpClientFactory.CreateClient();
+            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
 
             var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
-            var options = CreateModeOptions(mode, hasTools: useTools);
+            var options = handler.CreateChatOptions(provider, hasTools: useTools);
             if (useTools)
             {
                 options.Tools = [.. tools!];
@@ -188,7 +203,7 @@ public class AiClientService : IAiClientService
             catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
             {
                 _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
-                options = CreateModeOptions(mode, hasTools: false);
+                options = handler.CreateChatOptions(provider, hasTools: false);
                 return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
             }
         }
@@ -221,10 +236,12 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        IChatClient chatClient = await CreateChatClientAsync(provider, apiKey, mode);
+        var providerHandler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await providerHandler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
 
         var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
-        var options = CreateModeOptions(mode, hasTools: useTools);
+        var options = providerHandler.CreateChatOptions(provider, hasTools: useTools);
         if (useTools)
         {
             options.Tools = [.. tools!];
@@ -270,7 +287,7 @@ public class AiClientService : IAiClientService
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
-                    options = CreateModeOptions(mode, hasTools: false);
+                    options = providerHandler.CreateChatOptions(provider, hasTools: false);
                     useTools = false;
                     if (enumerator != null) await enumerator.DisposeAsync();
 
@@ -340,7 +357,7 @@ public class AiClientService : IAiClientService
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
-                    options = CreateModeOptions(mode, hasTools: false);
+                    options = providerHandler.CreateChatOptions(provider, hasTools: false);
                     useTools = false;
                     try
                     {
@@ -366,6 +383,8 @@ public class AiClientService : IAiClientService
             {
                 if (roundUsage.InputTokenCount is long input) { aggregatedInput += input; hasUsage = true; }
                 if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
+                _logger.LogDebug("Round {Round} token usage: input={Input}, output={Output}, cached={Cached}",
+                    round + 1, roundUsage.InputTokenCount, roundUsage.OutputTokenCount, roundUsage.CachedInputTokenCount);
             }
 
             // Detect truncation by output token cap. Surfaced to the UI as a friendly hint
@@ -452,6 +471,8 @@ public class AiClientService : IAiClientService
                 OutputTokenCount = aggregatedOutput,
                 TotalTokenCount = aggregatedInput + aggregatedOutput,
             };
+            _logger.LogDebug("Completion total usage: input={Input}, output={Output}, total={Total}",
+                aggregatedInput, aggregatedOutput, aggregatedInput + aggregatedOutput);
         }
         else
         {
@@ -473,7 +494,9 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        IChatClient chatClient = await CreateChatClientAsync(provider, apiKey);
+        var handler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
 
         var dummyTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool");
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
@@ -481,7 +504,7 @@ public class AiClientService : IAiClientService
             new(ChatRole.System, NoThinkSystemPrompt),
             new(ChatRole.User, "Say hello.")
         };
-        var options = CreateModeOptions(mode: null, hasTools: true);
+        var options = handler.CreateChatOptions(provider, hasTools: true);
         options.Tools = [dummyTool];
 
         try
@@ -511,14 +534,16 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        IChatClient chatClient = await CreateChatClientAsync(provider, apiKey);
+        var handler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
 
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
             new(ChatRole.System, NoThinkSystemPrompt),
             new(ChatRole.User, "Say hello.")
         };
-        var options = CreateModeOptions(mode: null, hasTools: false);
+        var options = handler.CreateChatOptions(provider, hasTools: false);
 
         try
         {
@@ -664,81 +689,6 @@ public class AiClientService : IAiClientService
         return false;
     }
 
-    private async Task<IChatClient> CreateChatClientAsync(AiProvider provider, string apiKey, string? mode = null)
-    {
-        var httpClient = _httpClientFactory.CreateClient();
-
-        if (provider.ProviderType == AiProviderType.PiaCloud)
-        {
-            var client = await CreatePiaCloudChatClientAsync(httpClient, mode);
-            _logger.LogDebug("Created PiaCloud chat client");
-            return client;
-        }
-
-        if (provider.ProviderType == AiProviderType.OpenRouter || IsOpenRouterEndpoint(provider.Endpoint))
-        {
-            httpClient.DefaultRequestHeaders.Add("X-Title", "Pia");
-            httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://github.com/Pia-Ai-dev/Pia.Wpf");
-        }
-
-        return provider.ProviderType switch
-        {
-            AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Ollama or AiProviderType.Mistral =>
-                new ChatClient(
-                    model: provider.ModelName ?? "gpt-3.5-turbo",
-                    credential: new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "unused" : apiKey),
-                    options: new OpenAI.OpenAIClientOptions
-                    {
-                        Endpoint = new Uri(provider.Endpoint),
-                        Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient)
-                    }
-                ).AsIChatClient(),
-
-            AiProviderType.AzureOpenAI =>
-                new AzureOpenAIClient(
-                    new Uri(provider.Endpoint),
-                    new ApiKeyCredential(apiKey),
-                    new Azure.AI.OpenAI.AzureOpenAIClientOptions
-                    {
-                        Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient)
-                    }
-                ).GetChatClient(provider.AzureDeploymentName ?? provider.ModelName ?? "gpt-35-turbo")
-                .AsIChatClient(),
-
-            _ => throw new NotSupportedException($"Provider type {provider.ProviderType} is not supported")
-        };
-    }
-
-    private static bool IsOpenRouterEndpoint(string endpoint) =>
-        endpoint.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase);
-
-    private async Task<IChatClient> CreatePiaCloudChatClientAsync(HttpClient httpClient, string? mode = null)
-    {
-        var settings = await _settingsService.GetSettingsAsync();
-        var serverUrl = settings.ServerUrl?.TrimEnd('/');
-
-        if (string.IsNullOrEmpty(serverUrl))
-            throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
-
-        string? accessToken = null;
-        if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
-        {
-            try
-            {
-                accessToken = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
-            }
-            catch
-            {
-                // If decryption fails, proceed without auth
-            }
-        }
-
-        _logger.LogInformation("PiaCloud: creating PiaCloudChatClient with endpoint={ServerUrl}/api/ai/chat",
-            SafeUrl.Format(serverUrl));
-
-        return new PiaCloudChatClient(httpClient, serverUrl, accessToken, _logger, mode);
-    }
-
     public async Task<string> GeneratePromptViaPiaCloudAsync(
         string styleDescription,
         string? mode = null,
@@ -875,37 +825,4 @@ public class AiClientService : IAiClientService
 
     private static string Truncate(string value, int max)
         => value.Length > max ? value[..max] + "..." : value;
-
-    // Sets reasoning_effort at the API layer per WindowMode. The OpenAI SDK's
-    // RawRepresentationFactory returns a seed ChatCompletionOptions; M.E.AI overlays its mapped
-    // fields on top, so ReasoningEffortLevel is preserved end-to-end. Honored by OpenAI o-series
-    // and Ollama 0.10+; ignored by backends that don't recognize the field. Any request that
-    // carries tools forces None — tool-using turns must not burn reasoning tokens.
-    private static Microsoft.Extensions.AI.ChatOptions CreateModeOptions(string? mode, bool hasTools)
-        => new()
-        {
-            RawRepresentationFactory = _ =>
-            {
-#pragma warning disable OPENAI001 // ReasoningEffortLevel is marked [Experimental] in OpenAI SDK 2.10.
-                return new ChatCompletionOptions
-                {
-                    ReasoningEffortLevel = ResolveEffort(mode, hasTools),
-                };
-#pragma warning restore OPENAI001
-            },
-        };
-
-#pragma warning disable OPENAI001 // ReasoningEffortLevel is marked [Experimental] in OpenAI SDK 2.10.
-    private static ChatReasoningEffortLevel ResolveEffort(string? mode, bool hasTools)
-    {
-        if (hasTools) return ChatReasoningEffortLevel.None;
-        return mode switch
-        {
-            nameof(WindowMode.Optimize) => ChatReasoningEffortLevel.None,
-            nameof(WindowMode.Assistant) => ChatReasoningEffortLevel.None,
-            nameof(WindowMode.Research) => ChatReasoningEffortLevel.Medium,
-            _ => ChatReasoningEffortLevel.None,
-        };
-    }
-#pragma warning restore OPENAI001
 }
