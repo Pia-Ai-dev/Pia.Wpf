@@ -88,6 +88,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Sprachausgabe ein-/ausschalten</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Datei anhängen</value></data>
+  <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Anhang entfernen</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>

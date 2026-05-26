@@ -88,6 +88,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Activer/désactiver la synthèse vocale</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Enregistrer</value></data>
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Joindre un fichier</value></data>
+  <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Retirer la pièce jointe</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Conversation vocale</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>

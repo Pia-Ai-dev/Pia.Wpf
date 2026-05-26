@@ -88,6 +88,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Toggle text-to-speech</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Record</value></data>
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Attach file</value></data>
+  <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Remove attachment</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>

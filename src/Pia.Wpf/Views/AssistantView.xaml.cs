@@ -149,6 +149,13 @@ public partial class AssistantView : UserControl
         var files = FilePicker.PickFiles(accepted);
         if (files.Count == 0) return;
 
+        if (files.Count == 1 && DroppedFileReader.Classify(files[0]) == FileKind.Image)
+        {
+            if (ViewModel?.HandleImageAttachedCommand.CanExecute(files[0]) == true)
+                ViewModel.HandleImageAttachedCommand.Execute(files[0]);
+            return;
+        }
+
         if (ViewModel?.HandleFilesDroppedCommand.CanExecute(files) == true)
             ViewModel.HandleFilesDroppedCommand.Execute(files);
     }

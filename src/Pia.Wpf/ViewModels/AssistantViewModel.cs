@@ -12,6 +12,7 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
+using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
@@ -181,6 +182,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private string _inputText = string.Empty;
 
     [ObservableProperty]
+    private ImageAttachment? _pendingAttachment;
+
+    [ObservableProperty]
     private bool _isStreaming;
 
     [ObservableProperty]
@@ -245,6 +249,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand<string> UseFollowupCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
+    public IAsyncRelayCommand<string> HandleImageAttachedCommand { get; }
+    public IRelayCommand RemoveAttachmentCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -296,6 +302,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
         HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
+        HandleImageAttachedCommand = new AsyncRelayCommand<string>(ExecuteHandleImageAttached);
+        RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
@@ -303,7 +311,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming))
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
         }
@@ -327,7 +335,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
+        !IsStreaming && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null);
 
     private async Task ExecuteSendMessage()
     {
@@ -338,7 +346,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // but strip commands from what the AI sees as the user message
         var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
 
-        var userMessage = new AssistantMessage(ChatRole.User, userText);
+        var userMessage = new AssistantMessage(ChatRole.User, userText)
+        {
+            Attachment = PendingAttachment
+        };
+        PendingAttachment = null;
         Messages.Add(userMessage);
         HasMessages = true;
 
@@ -468,6 +480,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         catch (OperationCanceledException)
         {
             _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Assistant_ResponseCancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+        }
+        catch (Exception ex) when (ex.Message.Contains("EnableVision is false", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Provider rejected image attachment (vision disabled)");
+            var localized = _localizationService["Msg_Assistant_ProviderNoVision"];
+            assistantMessage.Content = localized;
+            Messages.Remove(assistantMessage);
+            Messages.Remove(userMessage);
+            HasMessages = Messages.Count > 0;
+            InputText = userMessage.Content;
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"], localized,
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(5));
         }
         catch (Exception ex)
         {
@@ -803,17 +828,20 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (idx <= 0) return;
 
         var prior = Messages[idx - 1];
-        if (prior.Role != ChatRole.User || string.IsNullOrWhiteSpace(prior.Content)) return;
+        if (prior.Role != ChatRole.User) return;
+        if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachment is null) return;
 
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
+        var attachment = prior.Attachment;
         for (var i = Messages.Count - 1; i >= idx - 1; i--)
             Messages.RemoveAt(i);
 
         if (Messages.Count == 0) HasMessages = false;
 
         InputText = prompt;
+        PendingAttachment = attachment;
         await SendMessageCommand.ExecuteAsync(null);
     }
 
@@ -944,10 +972,43 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (paths is null || paths.Count == 0) return;
         if (IsStreaming) return;
 
+        if (paths.Count == 1 && DroppedFileReader.Classify(paths[0]) == FileKind.Image)
+        {
+            await ExecuteHandleImageAttached(paths[0]);
+            return;
+        }
+
         var text = await DroppedFileImporter.TryImportAsync(
             paths, _logger, _snackbarService, _localizationService);
         if (text is not null)
             InsertOrPromptInsertAnyway(text);
+    }
+
+    private async Task ExecuteHandleImageAttached(string? filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return;
+
+        var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+        if (provider?.ProviderType != AiProviderType.PiaCloud)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService["Msg_File_ImageProviderUnsupported"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        var attachment = await Task.Run(() => ImageAttachmentProcessor.TryPrepare(filePath, _logger));
+        if (attachment is null)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService["Msg_File_ImageTooLarge"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        PendingAttachment = attachment;
     }
 
     private void InsertOrPromptInsertAnyway(string text)
