@@ -23,8 +23,12 @@ public interface IAuthService
     /// <summary>Logs out and clears stored tokens.</summary>
     Task LogoutAsync();
 
-    /// <summary>Gets a valid access token (refreshing if needed). Returns null if not logged in.</summary>
-    Task<string?> GetAccessTokenAsync();
+    /// <summary>
+    /// Gets a valid access token, refreshing if it has expired. Returns null if not logged in.
+    /// Pass <paramref name="forceRefresh"/> to bypass the in-memory cache and force a refresh
+    /// (e.g. after a 401, where the cached token may have been revoked server-side).
+    /// </summary>
+    Task<string?> GetAccessTokenAsync(bool forceRefresh = false);
 
     /// <summary>Fired when login state changes.</summary>
     event EventHandler<bool>? LoginStateChanged;

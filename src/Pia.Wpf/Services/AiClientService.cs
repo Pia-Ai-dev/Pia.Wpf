@@ -28,6 +28,7 @@ public class AiClientService : IAiClientService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ISettingsService _settingsService;
     private readonly AiProviderHandlerResolver _handlers;
+    private readonly IAuthService _authService;
     private readonly ILogger<AiClientService> _logger;
 
     public AiClientService(
@@ -35,13 +36,47 @@ public class AiClientService : IAiClientService
         IHttpClientFactory httpClientFactory,
         ISettingsService settingsService,
         AiProviderHandlerResolver handlers,
+        IAuthService authService,
         ILogger<AiClientService> logger)
     {
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
         _settingsService = settingsService;
         _handlers = handlers;
+        _authService = authService;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// POSTs to a Pia Cloud endpoint with a valid bearer token from the auth service, retrying
+    /// once on 401 with a forced token refresh. Caller owns disposing the returned response.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendPiaCloudRequestAsync(
+        HttpClient httpClient, string url, string jsonBody, string? mode, CancellationToken cancellationToken)
+    {
+        async Task<HttpResponseMessage> Attempt(bool forceRefresh)
+        {
+            var token = await _authService.GetAccessTokenAsync(forceRefresh);
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrEmpty(token))
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            if (!string.IsNullOrEmpty(mode))
+                request.Headers.Add("X-Pia-Mode", mode);
+            return await httpClient.SendAsync(request, cancellationToken);
+        }
+
+        var response = await Attempt(forceRefresh: false);
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _logger.LogInformation("PiaCloud request unauthorized; refreshing token and retrying once");
+            response.Dispose();
+            response = await Attempt(forceRefresh: true);
+        }
+        return response;
     }
 
     public async Task<AiCompletionResult> SendRequestAsync(
@@ -598,30 +633,11 @@ public class AiClientService : IAiClientService
         };
 
         var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-        // Add JWT token if available
-        if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
-        {
-            try
-            {
-                var token = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
-                httpClient.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            }
-            catch
-            {
-                // If decryption fails, proceed without auth
-            }
-        }
-
-        if (!string.IsNullOrEmpty(mode))
-            httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
 
         try
         {
-            var response = await httpClient.PostAsync(
-                $"{serverUrl}/api/ai/optimize", content, linkedCts.Token);
+            using var response = await SendPiaCloudRequestAsync(
+                httpClient, $"{serverUrl}/api/ai/optimize", json, mode, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
             _logger.LogDebug("PiaCloud optimize: response body length={Length}", responseJson.Length);
@@ -714,29 +730,11 @@ public class AiClientService : IAiClientService
         var requestBody = new { styleDescription };
 
         var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-        if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
-        {
-            try
-            {
-                var token = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
-                httpClient.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            }
-            catch
-            {
-                // If decryption fails, proceed without auth
-            }
-        }
-
-        if (!string.IsNullOrEmpty(mode))
-            httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
 
         try
         {
-            var response = await httpClient.PostAsync(
-                $"{serverUrl}/api/ai/generate-prompt", content, linkedCts.Token);
+            using var response = await SendPiaCloudRequestAsync(
+                httpClient, $"{serverUrl}/api/ai/generate-prompt", json, mode, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
 

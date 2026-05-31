@@ -29,6 +29,8 @@ internal sealed class ProviderIntegrationFixture
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
 
+        var authService = Substitute.For<IAuthService>();
+
         var handlers = new IAiProviderHandler[]
         {
             new OpenAiProviderHandler(),
@@ -39,7 +41,7 @@ internal sealed class ProviderIntegrationFixture
             new OpenAiCompatibleProviderHandler(),
             new VLlmProviderHandler(),
             new PiaCloudProviderHandler(
-                dpapiHelper,
+                authService,
                 settingsService,
                 NullLogger<PiaCloudProviderHandler>.Instance),
         };
@@ -49,6 +51,7 @@ internal sealed class ProviderIntegrationFixture
             httpClientFactory,
             settingsService,
             new AiProviderHandlerResolver(handlers),
+            authService,
             NullLogger<AiClientService>.Instance);
     }
 }
