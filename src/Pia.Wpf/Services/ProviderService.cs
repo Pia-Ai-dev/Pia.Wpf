@@ -103,17 +103,30 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     public async Task<AiProvider?> GetDefaultProviderForModeAsync(WindowMode mode)
     {
         var settings = await _settingsService.GetSettingsAsync();
-        var providerId = settings.GetProviderForMode(mode);
+        var configuredId = settings.GetProviderForMode(mode);
 
-        if (providerId.HasValue)
+        if (configuredId.HasValue)
         {
-            var provider = await GetProviderAsync(providerId.Value);
+            var provider = await GetProviderAsync(configuredId.Value);
             if (provider is not null)
+            {
+                _logger.LogInformation(
+                    "Resolved provider for mode {Mode}: configured={ConfiguredId} (UsedFallback=False)",
+                    mode, configuredId.Value);
+                _logger.SensitiveDebug(
+                    "Resolved provider for mode {Mode}: {ProviderName}", mode, provider.Name);
                 return provider;
+            }
         }
 
-        // Fallback: return the first provider
-        return await GetDefaultProviderAsync();
+        // Fallback: return the first provider (typically PiaCloud, which always exists).
+        var fallback = await GetDefaultProviderAsync();
+        _logger.LogInformation(
+            "Resolved provider for mode {Mode}: configured={ConfiguredId} resolved={ResolvedId} (UsedFallback=True)",
+            mode, configuredId, fallback?.Id);
+        if (fallback is not null)
+            _logger.SensitiveDebug("Fallback provider for mode {Mode}: {ProviderName}", mode, fallback.Name);
+        return fallback;
     }
 
     public async Task<AiProvider> AddProviderAsync(AiProvider provider, string? apiKey)
@@ -229,6 +242,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             }
             if (updated)
                 await SaveAsync(providers);
+            _logger.LogInformation("Built-in PiaCloud provider already present (CapsMigrated={Migrated})", updated);
             return;
         }
 
@@ -245,6 +259,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         providers.Insert(0, piaCloud);
         await SaveAsync(providers);
+        _logger.LogInformation("Built-in PiaCloud provider created with Id={Id}", piaCloud.Id);
 
         // Set as default for all modes if no other default is configured
         var settings = await _settingsService.GetSettingsAsync();
@@ -255,6 +270,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             settings.SetProviderForMode(WindowMode.Research, piaCloud.Id);
             settings.UseSameProviderForAllModes = true;
             await _settingsService.SaveSettingsAsync(settings);
+            _logger.LogInformation(
+                "Seeded mode defaults to PiaCloud for Optimize/Assistant/Research (Id={Id})", piaCloud.Id);
         }
     }
 
@@ -413,5 +430,172 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         models.Sort(StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation("Fetched {Count} models from {Url}", models.Count, SafeUrl.Format(requestUrl));
         return models;
+    }
+
+    public async Task ReassignProviderIdAsync(Guid oldId, Guid newId, AiProvider merged)
+    {
+        if (oldId == PiaCloudProviderId || newId == PiaCloudProviderId)
+            throw new InvalidOperationException("PiaCloud provider Id is fixed and cannot be reassigned.");
+        if (oldId == newId)
+            return;
+
+        var providers = await LoadAsync();
+        var index = providers.FindIndex(p => p.Id == oldId);
+        if (index < 0)
+        {
+            _logger.LogWarning(
+                "ReassignProviderIdAsync: local row {OldId} not found; treating incoming {NewId} as new",
+                oldId, newId);
+            return;
+        }
+
+        var localApiKey = providers[index].EncryptedApiKey;
+        merged.Id = newId;
+        // Preserve the locally-stored encrypted API key (DPAPI-bound to this machine);
+        // the wire payload doesn't carry a decryptable key for other devices.
+        if (string.IsNullOrEmpty(merged.EncryptedApiKey) && !string.IsNullOrEmpty(localApiKey))
+            merged.EncryptedApiKey = localApiKey;
+
+        providers[index] = merged;
+        await SaveAsync(providers);
+
+        _logger.LogInformation("Reassigned provider Id {OldId} -> {NewId}", oldId, newId);
+        _logger.SensitiveDebug("Reassigned provider name: {Name}", merged.Name);
+
+        // Rewrite any mode defaults pointing at oldId.
+        var settings = await _settingsService.GetSettingsAsync();
+        var rewroteModes = false;
+        foreach (var mode in Enum.GetValues<WindowMode>())
+        {
+            if (settings.ModeProviderDefaults.TryGetValue(mode, out var current) && current == oldId)
+            {
+                settings.ModeProviderDefaults[mode] = newId;
+                rewroteModes = true;
+                _logger.LogInformation("Rewrote mode default {Mode}: {OldId} -> {NewId}", mode, oldId, newId);
+            }
+        }
+        if (rewroteModes)
+            await _settingsService.SaveSettingsAsync(settings);
+
+        ProvidersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task RepairModeDefaultsAsync()
+    {
+        var providers = await LoadAsync();
+        var settings = await _settingsService.GetSettingsAsync();
+
+        var providerIds = new HashSet<Guid>(providers.Select(p => p.Id));
+        var hasPiaCloud = providerIds.Contains(PiaCloudProviderId);
+        var fallback = hasPiaCloud ? PiaCloudProviderId : providers.FirstOrDefault()?.Id;
+
+        var repaired = 0;
+        var removed = 0;
+        var modified = false;
+
+        foreach (var mode in Enum.GetValues<WindowMode>())
+        {
+            if (!settings.ModeProviderDefaults.TryGetValue(mode, out var current))
+                continue;
+
+            if (providerIds.Contains(current))
+                continue;
+
+            // Stale reference.
+            if (fallback.HasValue)
+            {
+                settings.ModeProviderDefaults[mode] = fallback.Value;
+                repaired++;
+                _logger.LogWarning(
+                    "Mode-default for {Mode} pointed to missing provider {OldId}, replaced with {NewId}",
+                    mode, current, fallback.Value);
+            }
+            else
+            {
+                settings.ModeProviderDefaults.Remove(mode);
+                removed++;
+                _logger.LogWarning(
+                    "Mode-default for {Mode} pointed to missing provider {OldId}; removed (no providers available)",
+                    mode, current);
+            }
+            modified = true;
+        }
+
+        if (modified)
+            await _settingsService.SaveSettingsAsync(settings);
+
+        settings.ModeProviderDefaults.TryGetValue(WindowMode.Optimize, out var optId);
+        settings.ModeProviderDefaults.TryGetValue(WindowMode.Assistant, out var asstId);
+        settings.ModeProviderDefaults.TryGetValue(WindowMode.Research, out var resId);
+        _logger.LogInformation(
+            "Mode-default repair: {Repaired} repaired, {Removed} removed (Optimize={OptId} Assistant={AsstId} Research={ResId})",
+            repaired, removed, optId, asstId, resId);
+    }
+
+    public async Task ConsolidateLocalDuplicatesAsync()
+    {
+        var providers = await LoadAsync();
+        if (providers.Count <= 1)
+            return;
+
+        // Build fingerprint groups, keeping the row with the most recent UpdatedAt as the survivor.
+        var groups = providers
+            .Where(p => p.Id != PiaCloudProviderId && p.ProviderType != AiProviderType.PiaCloud)
+            .GroupBy(ProviderFingerprint.Compute)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (groups.Count == 0)
+            return;
+
+        var settings = await _settingsService.GetSettingsAsync();
+        var modifiedSettings = false;
+        var collapsed = 0;
+
+        foreach (var group in groups)
+        {
+            var ordered = group.OrderByDescending(p => p.UpdatedAt.ToUniversalTime()).ToList();
+            var survivor = ordered[0];
+            var duplicates = ordered.Skip(1).ToList();
+
+            foreach (var dup in duplicates)
+            {
+                // Preserve the duplicate's locally-stored API key (DPAPI-bound to this
+                // machine) if the survivor has none. Pulled rows arrive without a
+                // decryptable key for this device, so a fresh-from-sync survivor would
+                // otherwise wipe a user-configured key when consolidating.
+                if (string.IsNullOrEmpty(survivor.EncryptedApiKey)
+                    && !string.IsNullOrEmpty(dup.EncryptedApiKey))
+                {
+                    survivor.EncryptedApiKey = dup.EncryptedApiKey;
+                }
+
+                providers.Remove(dup);
+                _logger.LogInformation(
+                    "Consolidated duplicate provider {DupId} into survivor {SurvivorId} (Fingerprint match)",
+                    dup.Id, survivor.Id);
+
+                foreach (var mode in Enum.GetValues<WindowMode>())
+                {
+                    if (settings.ModeProviderDefaults.TryGetValue(mode, out var current) && current == dup.Id)
+                    {
+                        settings.ModeProviderDefaults[mode] = survivor.Id;
+                        modifiedSettings = true;
+                        _logger.LogInformation(
+                            "Rewrote mode default {Mode}: {DupId} -> {SurvivorId}", mode, dup.Id, survivor.Id);
+                    }
+                }
+                collapsed++;
+            }
+        }
+
+        if (collapsed == 0)
+            return;
+
+        await SaveAsync(providers);
+        if (modifiedSettings)
+            await _settingsService.SaveSettingsAsync(settings);
+        _logger.LogInformation("Local consolidation collapsed {Count} duplicate provider row(s)", collapsed);
+        ProvidersChanged?.Invoke(this, EventArgs.Empty);
     }
 }

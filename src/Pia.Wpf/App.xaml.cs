@@ -2,6 +2,7 @@
 using System.Security.Cryptography;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -74,11 +75,29 @@ public partial class App : Application
             args.Handled = true;
         };
 
-        // Ensure built-in Pia Cloud provider exists (non-critical)
+        // Ensure built-in Pia Cloud provider exists, collapse any leftover sync
+        // duplicates, and heal stale mode-default references (non-critical).
         try
         {
             var providerService = Bootstrapper.ServiceProvider.GetRequiredService<IProviderService>();
+            var startupLogger = Bootstrapper.ServiceProvider.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("ProviderStartup");
+
             await providerService.EnsureBuiltInProviderAsync();
+            await providerService.ConsolidateLocalDuplicatesAsync();
+            await providerService.RepairModeDefaultsAsync();
+
+            var providers = await providerService.GetProvidersAsync();
+            var startupSettings = await Bootstrapper.ServiceProvider
+                .GetRequiredService<ISettingsService>().GetSettingsAsync();
+            startupSettings.ModeProviderDefaults.TryGetValue(WindowMode.Optimize, out var optId);
+            startupSettings.ModeProviderDefaults.TryGetValue(WindowMode.Assistant, out var asstId);
+            startupSettings.ModeProviderDefaults.TryGetValue(WindowMode.Research, out var resId);
+            var hasPiaCloud = providers.Any(p => p.Id == ProviderService.PiaCloudProviderId);
+
+            startupLogger.LogInformation(
+                "Provider startup decision: providers={Count} (PiaCloud={HasPiaCloud}), modeDefaults Optimize={OptId} Assistant={AsstId} Research={ResId}, useSame={UseSame}",
+                providers.Count, hasPiaCloud, optId, asstId, resId, startupSettings.UseSameProviderForAllModes);
         }
         catch (Exception ex)
         {

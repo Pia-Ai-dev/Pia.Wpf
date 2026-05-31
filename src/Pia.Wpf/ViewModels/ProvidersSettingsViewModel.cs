@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
@@ -19,6 +20,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly ILocalizationService _localizationService;
     private readonly IPolicyService _policyService;
+    private readonly ISyncClientService? _syncClientService;
     private bool _isLoading;
 
     private readonly SettingsViewModel _parent;
@@ -31,7 +33,8 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         Wpf.Ui.ISnackbarService snackbarService,
         IAuthService authService,
         ILocalizationService localizationService,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        ISyncClientService? syncClientService = null)
     {
         _parent = parent;
         _logger = logger;
@@ -42,6 +45,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         _authService = authService;
         _localizationService = localizationService;
         _policyService = policyService;
+        _syncClientService = syncClientService;
 
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
@@ -51,6 +55,14 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
         _authService.LoginStateChanged += OnLoginStateChanged;
         _providerService.ProvidersChanged += OnProvidersChanged;
+        if (_syncClientService is not null)
+            _syncClientService.SyncCompleted += OnSyncCompleted;
+    }
+
+    private void OnSyncCompleted(object? sender, SyncCompletedEventArgs e)
+    {
+        if (e.ProvidersChanged || e.SettingsChanged)
+            RefreshProvidersAsync().SafeFireAndForget(_logger);
     }
 
     private void OnLoginStateChanged(object? sender, bool isLoggedIn)
@@ -155,6 +167,12 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     {
         _isLoading = true;
 
+        // Repair stale mode-default Ids BEFORE we read them, so a Guid that no
+        // longer points to an existing provider (e.g. after sync reassignment)
+        // is replaced with a sensible fallback rather than showing as "nothing
+        // selected" in the dropdown.
+        await _providerService.RepairModeDefaultsAsync();
+
         Providers.Clear();
         var providersList = await _providerService.GetProvidersAsync();
         foreach (var provider in providersList)
@@ -162,15 +180,34 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
         var settings = await _settingsService.GetSettingsAsync();
         UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
-        OptimizeProviderId = settings.ModeProviderDefaults.TryGetValue(WindowMode.Optimize, out var optId) ? optId : null;
-        AssistantProviderId = settings.ModeProviderDefaults.TryGetValue(WindowMode.Assistant, out var astId) ? astId : null;
-        ResearchProviderId = settings.ModeProviderDefaults.TryGetValue(WindowMode.Research, out var resId) ? resId : null;
+        OptimizeProviderId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
+        AssistantProviderId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
+        ResearchProviderId = ResolveOrDefault(settings, WindowMode.Research, providersList);
 
         IsSyncLoggedIn = _authService.IsLoggedIn;
 
         await RefreshProviderDisplayItemsAsync();
 
+        _logger.LogInformation(
+            "Settings page initialized: providers={Count}, modeDefaults Optimize={OptId} Assistant={AsstId} Research={ResId}, useSame={UseSame}",
+            providersList.Count, OptimizeProviderId, AssistantProviderId, ResearchProviderId, UseSameProviderForAllModes);
+
         _isLoading = false;
+    }
+
+    private static Guid? ResolveOrDefault(
+        AppSettings settings, WindowMode mode, IReadOnlyList<AiProvider> providers)
+    {
+        if (settings.ModeProviderDefaults.TryGetValue(mode, out var configured)
+            && providers.Any(p => p.Id == configured))
+        {
+            return configured;
+        }
+
+        var piaCloud = providers.FirstOrDefault(p => p.Id == ProviderService.PiaCloudProviderId);
+        if (piaCloud is not null) return piaCloud.Id;
+
+        return providers.FirstOrDefault()?.Id;
     }
 
     [RelayCommand]
@@ -291,19 +328,20 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     public async Task RefreshProvidersAsync()
     {
-        var savedOptimizeId = OptimizeProviderId;
-        var savedAssistantId = AssistantProviderId;
-        var savedResearchId = ResearchProviderId;
-
         _isLoading = true;
         Providers.Clear();
         var providersList = await _providerService.GetProvidersAsync();
         foreach (var provider in providersList)
             Providers.Add(provider);
 
-        OptimizeProviderId = savedOptimizeId;
-        AssistantProviderId = savedAssistantId;
-        ResearchProviderId = savedResearchId;
+        // Re-resolve through ResolveOrDefault rather than restoring the previous
+        // in-memory Ids — those may now be stale (e.g. just reassigned by a sync
+        // pull that called ReassignProviderIdAsync under us).
+        var settings = await _settingsService.GetSettingsAsync();
+        UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
+        OptimizeProviderId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
+        AssistantProviderId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
+        ResearchProviderId = ResolveOrDefault(settings, WindowMode.Research, providersList);
         _isLoading = false;
 
         await RefreshProviderDisplayItemsAsync();

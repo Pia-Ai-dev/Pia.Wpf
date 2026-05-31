@@ -52,6 +52,14 @@ public interface ISyncClientService
     /// </summary>
     event EventHandler? CurrentDeviceRevoked;
 
+    /// <summary>
+    /// Raised once after a successful pull cycle, regardless of whether anything
+    /// changed. Allows view-models to re-validate state (e.g. provider mode
+    /// defaults) without depending on per-entity ProvidersChanged notifications,
+    /// which do not fire for settings imports.
+    /// </summary>
+    event EventHandler<SyncCompletedEventArgs>? SyncCompleted;
+
     /// <summary>Triggers a full sync cycle (push then pull). Returns counts, or null if sync was skipped.</summary>
     Task<SyncResult?> SyncNowAsync();
 

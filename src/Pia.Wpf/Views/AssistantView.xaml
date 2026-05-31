@@ -18,7 +18,7 @@
   <Grid x:Name="RootGrid"
         Background="Transparent"
         behaviors:FileDropBehavior.IsEnabled="True"
-        behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx,.xlsx,.xlsm"
+        behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx,.xlsx,.xlsm,.png,.jpg,.jpeg,.gif,.bmp,.webp"
         behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}">
     <!-- Main content + panel overlay -->
     <Grid x:Name="MainContent">
@@ -134,8 +134,26 @@
                   </Style>
                 </StackPanel.Style>
                 <Border Style="{StaticResource UserBubbleStyle}">
-                  <TextBlock behaviors:AtCommandHighlightBehavior.Text="{Binding Content}"
-                             Style="{StaticResource UserBubbleTextStyle}" />
+                  <StackPanel>
+                    <Image Source="{Binding Attachment.Thumbnail}"
+                           MaxWidth="300" MaxHeight="300"
+                           Stretch="Uniform"
+                           HorizontalAlignment="Left"
+                           Margin="0,0,0,6">
+                      <Image.Style>
+                        <Style TargetType="Image">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasAttachment}" Value="True">
+                              <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Image.Style>
+                    </Image>
+                    <TextBlock behaviors:AtCommandHighlightBehavior.Text="{Binding Content}"
+                               Style="{StaticResource UserBubbleTextStyle}" />
+                  </StackPanel>
                 </Border>
                 <!-- User message actions -->
                 <StackPanel Orientation="Horizontal"
@@ -204,6 +222,35 @@
     <Border Grid.Row="2" Padding="20,8,20,16">
       <Border Style="{StaticResource PiaComposerCardStyle}">
         <StackPanel Margin="8">
+          <Border Margin="0,0,0,6" Padding="6"
+                  CornerRadius="6"
+                  BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                  BorderThickness="1"
+                  HorizontalAlignment="Left">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding PendingAttachment}" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <StackPanel Orientation="Horizontal">
+              <Image Source="{Binding PendingAttachment.Thumbnail}"
+                     MaxWidth="64" MaxHeight="64"
+                     Stretch="Uniform"
+                     Margin="0,0,8,0" />
+              <ui:Button Command="{Binding RemoveAttachmentCommand}"
+                         Appearance="Transparent"
+                         Padding="4"
+                         VerticalAlignment="Center"
+                         ToolTip="{loc:Str Assistant_RemoveAttachment_Tooltip}">
+                <ui:SymbolIcon Symbol="Dismiss16" FontSize="12" />
+              </ui:Button>
+            </StackPanel>
+          </Border>
           <Grid>
             <ui:TextBox x:Name="InputTextBox"
                         Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"

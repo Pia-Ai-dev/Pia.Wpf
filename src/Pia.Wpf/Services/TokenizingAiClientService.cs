@@ -226,14 +226,23 @@ public class TokenizingAiClientService : IAiClientService
         var result = new List<ChatMessage>(messages.Count);
         foreach (var msg in messages)
         {
-            if (msg.Role == ChatRole.User && !string.IsNullOrEmpty(msg.Text))
-            {
-                result.Add(new ChatMessage(ChatRole.User, TryGetTokenMapService()!.TokenizeStructuredResult(msg.Text)));
-            }
-            else
+            if (msg.Role != ChatRole.User || string.IsNullOrEmpty(msg.Text))
             {
                 result.Add(msg);
+                continue;
             }
+
+            var tokenized = TryGetTokenMapService()!.TokenizeStructuredResult(msg.Text);
+            var nonText = msg.Contents.Where(c => c is not TextContent).ToList();
+            if (nonText.Count == 0)
+            {
+                result.Add(new ChatMessage(ChatRole.User, tokenized));
+                continue;
+            }
+
+            var rebuilt = new List<AIContent>(nonText.Count + 1) { new TextContent(tokenized) };
+            rebuilt.AddRange(nonText);
+            result.Add(new ChatMessage(ChatRole.User, rebuilt));
         }
         return result;
     }

@@ -88,6 +88,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Sprachausgabe ein-/ausschalten</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Aufnehmen</value></data>
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Datei anhängen</value></data>
+  <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Anhang entfernen</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
@@ -503,6 +504,8 @@
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure-Bereitstellungsname</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Modelle abrufen</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Zeitlimit (Sekunden)</value></data>
+  <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Websuche aktivieren</value></data>
+  <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>Mistral Agent-ID</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Vorlage bearbeiten</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Vorlagenname *</value></data>
   <data name="Dialog_TemplateEdit_StyleDescription" xml:space="preserve"><value>Stilbeschreibung *</value></data>

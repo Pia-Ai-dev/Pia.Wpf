@@ -12,6 +12,8 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
+using Pia.Services;
+using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
@@ -32,7 +34,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return $"Always respond to the user in '{languageName}' unless the user asks you to switch.";
     }
 
-    private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false)
+    private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
     {
         var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
         var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
@@ -40,6 +42,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             : $"## Plugins\n\n{pluginPrompts}\n\n";
         var tokenSection = tokenizationEnabled
             ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
+            : string.Empty;
+        var webSearchSection = webSearchActive
+            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
             : string.Empty;
 
         var toolSelectionSection = skipToolSelectionTree
@@ -78,7 +83,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
             - Do not restate the user's question and do not summarize what you just said at the end of a reply.
             - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.
-            {tokenSection}
+            {tokenSection}{webSearchSection}
             """;
     }
 
@@ -138,23 +143,30 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return sb.ToString();
     }
 
-    private string BuildSystemPromptNoTools() => $"""
-        ## Identity
+    private string BuildSystemPromptNoTools(bool webSearchActive = false)
+    {
+        var webSearchSection = webSearchActive
+            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
+            : string.Empty;
+        return $"""
+            ## Identity
 
-        You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
-        The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+            You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
+            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
 
-        ## Language
+            ## Language
 
-        {BuildLanguageInstruction()}
+            {BuildLanguageInstruction()}
 
-        ## Principles
+            ## Principles
 
-        - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
-        - Write plain prose. Use formatting elements rare. Avoid bold, italics; reserve **bold** only for safety-critical warnings.
-        - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
-        - Do not restate the user's question and do not summarize what you just said at the end of a reply.
-        """;
+            - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+            - Write plain prose. Use formatting elements rare. Avoid bold, italics; reserve **bold** only for safety-critical warnings.
+            - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+            - Do not restate the user's question and do not summarize what you just said at the end of a reply.
+            {webSearchSection}
+            """;
+    }
 
     private readonly ILogger<AssistantViewModel> _logger;
     private readonly IAiClientService _aiClientService;
@@ -189,6 +201,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     [ObservableProperty]
     private string _inputText = string.Empty;
+
+    [ObservableProperty]
+    private ImageAttachment? _pendingAttachment;
 
     [ObservableProperty]
     private bool _isStreaming;
@@ -255,6 +270,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand<string> UseFollowupCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
+    public IAsyncRelayCommand<string> HandleImageAttachedCommand { get; }
+    public IRelayCommand RemoveAttachmentCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -308,6 +325,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
         HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
+        HandleImageAttachedCommand = new AsyncRelayCommand<string>(ExecuteHandleImageAttached);
+        RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
@@ -323,7 +342,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming))
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
         }
@@ -347,7 +366,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
+        !IsStreaming && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null);
 
     private async Task ExecuteSendMessage()
     {
@@ -358,7 +377,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // but strip commands from what the AI sees as the user message
         var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
 
-        var userMessage = new AssistantMessage(ChatRole.User, userText);
+        var userMessage = new AssistantMessage(ChatRole.User, userText)
+        {
+            Attachment = PendingAttachment
+        };
+        PendingAttachment = null;
         Messages.Add(userMessage);
         HasMessages = true;
 
@@ -384,6 +407,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             // Determine if this provider supports tool calling
             var supportsTools = provider.SupportsToolCalling;
+            var webSearchActive = IsWebSearchActive(provider);
 
             // Build system prompt with memory context
             string fullSystemPrompt;
@@ -392,7 +416,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             if (supportsTools)
             {
                 var hasAtCommands = atCommands.Count > 0;
-                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, skipToolSelectionTree: hasAtCommands)
+                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive)
                     + BuildAtCommandHint(atCommands);
 
                 var allTools = _pluginService.GetAllTools();
@@ -408,7 +432,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
-                fullSystemPrompt = BuildSystemPromptNoTools();
+                fullSystemPrompt = BuildSystemPromptNoTools(webSearchActive: webSearchActive);
                 tools = null;
             }
 
@@ -464,6 +488,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 }
             }
 
+            if (webSearchActive)
+                ApplyWebCitations(assistantMessage);
+
             await GenerateFollowupsAsync(provider, userMessage.Content, assistantMessage, _streamingCts.Token);
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)
@@ -490,6 +517,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         catch (OperationCanceledException)
         {
             _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Assistant_ResponseCancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+        }
+        catch (Exception ex) when (ex.Message.Contains("EnableVision is false", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Provider rejected image attachment (vision disabled)");
+            var localized = _localizationService["Msg_Assistant_ProviderNoVision"];
+            assistantMessage.Content = localized;
+            Messages.Remove(assistantMessage);
+            Messages.Remove(userMessage);
+            HasMessages = Messages.Count > 0;
+            InputText = userMessage.Content;
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"], localized,
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(5));
         }
         catch (Exception ex)
         {
@@ -1086,17 +1126,20 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (idx <= 0) return;
 
         var prior = Messages[idx - 1];
-        if (prior.Role != ChatRole.User || string.IsNullOrWhiteSpace(prior.Content)) return;
+        if (prior.Role != ChatRole.User) return;
+        if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachment is null) return;
 
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
+        var attachment = prior.Attachment;
         for (var i = Messages.Count - 1; i >= idx - 1; i--)
             Messages.RemoveAt(i);
 
         if (Messages.Count == 0) HasMessages = false;
 
         InputText = prompt;
+        PendingAttachment = attachment;
         await SendMessageCommand.ExecuteAsync(null);
     }
 
@@ -1233,10 +1276,43 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (paths is null || paths.Count == 0) return;
         if (IsStreaming) return;
 
+        if (paths.Count == 1 && DroppedFileReader.Classify(paths[0]) == FileKind.Image)
+        {
+            await ExecuteHandleImageAttached(paths[0]);
+            return;
+        }
+
         var text = await DroppedFileImporter.TryImportAsync(
             paths, _logger, _snackbarService, _localizationService);
         if (text is not null)
             InsertOrPromptInsertAnyway(text);
+    }
+
+    private async Task ExecuteHandleImageAttached(string? filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return;
+
+        var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+        if (provider?.ProviderType != AiProviderType.PiaCloud)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService["Msg_File_ImageProviderUnsupported"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        var attachment = await Task.Run(() => ImageAttachmentProcessor.TryPrepare(filePath, _logger));
+        if (attachment is null)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService["Msg_File_ImageTooLarge"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        PendingAttachment = attachment;
     }
 
     private void InsertOrPromptInsertAnyway(string text)
@@ -1405,18 +1481,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
 
         var supportsTools = provider.SupportsToolCalling;
+        var webSearchActive = IsWebSearchActive(provider);
 
         string fullSystemPrompt;
         IList<AITool>? tools;
 
         if (supportsTools)
         {
-            fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled);
+            fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, webSearchActive: webSearchActive);
             tools = [.. _pluginService.GetAllTools()];
         }
         else
         {
-            fullSystemPrompt = BuildSystemPromptNoTools();
+            fullSystemPrompt = BuildSystemPromptNoTools(webSearchActive: webSearchActive);
             tools = null;
         }
 
@@ -1513,6 +1590,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         });
         _logger.LogInformation("Follow-up suggestions: added {Count} picks (HasSuggestions={Has})",
             picks.Count, assistantMessage.HasSuggestions);
+    }
+
+    private static bool IsWebSearchActive(AiProvider provider)
+        => provider.EnableWebSearch || provider.ProviderType == AiProviderType.PiaCloud;
+
+    private void ApplyWebCitations(AssistantMessage message)
+    {
+        if (string.IsNullOrEmpty(message.Content)) return;
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(message.Content);
+        if (sources.Count == 0) return;
+
+        message.Content = cleaned;
+        foreach (var s in sources)
+            message.Sources.Add(s);
+
+        _logger.LogInformation("Extracted {Count} web source(s) from assistant message", sources.Count);
     }
 
     private void ApplyStats(AssistantMessage message, Finished finished, AiProvider provider)

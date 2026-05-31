@@ -38,6 +38,9 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private AnswerStats? _stats;
 
+    [ObservableProperty]
+    private ImageAttachment? _attachment;
+
     public bool HasActionCards => ActionCards.Count > 0;
 
     public bool HasSources => Sources.Count > 0;
@@ -47,6 +50,8 @@ public partial class AssistantMessage : ObservableObject
     public bool HasContent => !string.IsNullOrEmpty(Content);
 
     public bool HasThinkingContent => !string.IsNullOrEmpty(ThinkingContent);
+
+    public bool HasAttachment => Attachment is not null;
 
     public bool IsUser => Role == ChatRole.User;
 
@@ -58,6 +63,11 @@ public partial class AssistantMessage : ObservableObject
     partial void OnThinkingContentChanged(string value)
     {
         OnPropertyChanged(nameof(HasThinkingContent));
+    }
+
+    partial void OnAttachmentChanged(ImageAttachment? value)
+    {
+        OnPropertyChanged(nameof(HasAttachment));
     }
 
     public DateTime Timestamp { get; }
@@ -83,5 +93,16 @@ public partial class AssistantMessage : ObservableObject
         OnPropertyChanged(nameof(HasActionCards));
     }
 
-    public ChatMessage ToChatMessage() => new(Role, Content);
+    public ChatMessage ToChatMessage()
+    {
+        if (Attachment is null) return new ChatMessage(Role, Content);
+
+        var contents = new List<AIContent>();
+        if (HasContent)
+        {
+            contents.Add(new TextContent(Content));
+        }
+        contents.Add(new DataContent(Attachment.JpegBytes, Attachment.MimeType));
+        return new ChatMessage(Role, contents);
+    }
 }

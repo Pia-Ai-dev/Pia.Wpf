@@ -26,6 +26,7 @@ public partial class AssistantView : UserControl
     }
 
     private AssistantViewModel? ViewModel => DataContext as AssistantViewModel;
+    private bool _autoScroll = true;
 
     public AssistantView()
     {
@@ -42,6 +43,7 @@ public partial class AssistantView : UserControl
             ViewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
         }
 
+        MessageScrollViewer.ScrollChanged += OnMessageScrollChanged;
         InputTextBox.Focus();
     }
 
@@ -55,6 +57,18 @@ public partial class AssistantView : UserControl
                 message.PropertyChanged -= OnMessagePropertyChanged;
             }
             ViewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+        }
+        MessageScrollViewer.ScrollChanged -= OnMessageScrollChanged;
+    }
+
+    private void OnMessageScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // Re-evaluate auto-scroll only when the viewport moved without content growing —
+        // that's a user-driven scroll. Content growth during streaming leaves VerticalOffset
+        // unchanged when the user has scrolled away from the bottom, so we never confuse the two.
+        if (e.ExtentHeightChange == 0 && e.VerticalChange != 0)
+        {
+            _autoScroll = MessageScrollViewer.VerticalOffset >= MessageScrollViewer.ScrollableHeight - 1.0;
         }
     }
 
@@ -74,6 +88,7 @@ public partial class AssistantView : UserControl
         else if (e.Action == NotifyCollectionChangedAction.Reset)
         {
             // All items removed — unsubscribe handled implicitly since objects are gone
+            _autoScroll = true;
         }
     }
 
@@ -160,6 +175,13 @@ public partial class AssistantView : UserControl
         var accepted = FileDropBehavior.GetAcceptedExtensions(RootGrid);
         var files = FilePicker.PickFiles(accepted);
         if (files.Count == 0) return;
+
+        if (files.Count == 1 && DroppedFileReader.Classify(files[0]) == FileKind.Image)
+        {
+            if (ViewModel?.HandleImageAttachedCommand.CanExecute(files[0]) == true)
+                ViewModel.HandleImageAttachedCommand.Execute(files[0]);
+            return;
+        }
 
         if (ViewModel?.HandleFilesDroppedCommand.CanExecute(files) == true)
             ViewModel.HandleFilesDroppedCommand.Execute(files);
