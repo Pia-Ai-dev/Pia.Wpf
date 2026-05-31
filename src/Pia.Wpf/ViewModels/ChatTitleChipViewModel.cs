@@ -6,6 +6,7 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
@@ -366,14 +367,6 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         GC.SuppressFinalize(this);
     }
 }
-
-public sealed class ChatChipGroupViewModel
-{
-    public required string DisplayName { get; init; }
-    public required IReadOnlyList<ChatChipItemViewModel> Items { get; init; }
-}
-
-public sealed record ChatChipItemViewModel(Guid Id, string Title);
 
 public sealed partial class QuickSwitcherMatchViewModel : ObservableObject
 {

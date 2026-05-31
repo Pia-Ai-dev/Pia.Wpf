@@ -4,6 +4,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:vm="clr-namespace:Pia.ViewModels"
+             xmlns:vmm="clr-namespace:Pia.ViewModels.Models"
              x:Name="ChipRoot"
              HorizontalAlignment="Left">
   <Grid>
@@ -93,7 +94,7 @@
 
               <ItemsControl ItemsSource="{Binding Groups}">
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate DataType="{x:Type vm:ChatChipGroupViewModel}">
+                  <DataTemplate DataType="{x:Type vmm:ChatChipGroupViewModel}">
                     <StackPanel Margin="0,4,0,0">
                       <TextBlock Text="{Binding DisplayName}"
                                  FontSize="11"
@@ -102,7 +103,7 @@
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                       <ItemsControl ItemsSource="{Binding Items}">
                         <ItemsControl.ItemTemplate>
-                          <DataTemplate DataType="{x:Type vm:ChatChipItemViewModel}">
+                          <DataTemplate DataType="{x:Type vmm:ChatChipItemViewModel}">
                             <ui:Button HorizontalAlignment="Stretch"
                                        HorizontalContentAlignment="Left"
                                        Appearance="Transparent"

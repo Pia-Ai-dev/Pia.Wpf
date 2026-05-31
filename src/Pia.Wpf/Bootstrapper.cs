@@ -197,6 +197,10 @@ public static class Bootstrapper
         services.AddScoped<ISnackbarService, SnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
 
+        // UI abstractions that keep System.Windows out of ViewModels
+        services.AddSingleton<IClipboardService, ClipboardService>();
+        services.AddSingleton<ICollectionViewService, CollectionViewService>();
+
         // AI provider handlers (one per AiProviderType) + registry
         services.AddSingleton<IAiProviderHandler, OpenAiProviderHandler>();
         services.AddSingleton<IAiProviderHandler, AzureOpenAiProviderHandler>();

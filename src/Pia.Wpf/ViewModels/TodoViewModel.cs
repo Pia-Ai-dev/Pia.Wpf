@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -23,6 +22,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     private readonly ILocalizationService _localizationService;
     private readonly IVoiceInputService _voiceInputService;
     private readonly IKanbanColumnService _columnService;
+    private readonly ICollectionViewService _collectionViewService;
     private readonly SynchronizationContext _syncContext;
     private bool _disposed;
     private bool _isRefreshing;
@@ -79,7 +79,8 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     [ObservableProperty]
     private string _searchQuery = string.Empty;
 
-    private readonly DispatcherTimer _widthSaveTimer;
+    private const int WidthSaveDebounceMs = 500;
+    private CancellationTokenSource? _widthSaveCts;
     private readonly HashSet<Guid> _dirtyWidths = new();
     private readonly HashSet<KanbanColumnViewModel> _subscribedColumns = new();
     private bool _suppressWidthPersist;
@@ -110,7 +111,8 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         ISettingsService settingsService,
         ILocalizationService localizationService,
         IVoiceInputService voiceInputService,
-        IKanbanColumnService columnService)
+        IKanbanColumnService columnService,
+        ICollectionViewService collectionViewService)
     {
         _logger = logger;
         _todoService = todoService;
@@ -121,6 +123,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _localizationService = localizationService;
         _voiceInputService = voiceInputService;
         _columnService = columnService;
+        _collectionViewService = collectionViewService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         RefreshCommand = new AsyncRelayCommand(LoadTodosAsync);
@@ -136,9 +139,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         DeleteColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteDeleteColumnAsync);
         RenameColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteRenameColumnAsync);
         SetDefaultViewColumnCommand = new AsyncRelayCommand<KanbanColumnViewModel>(ExecuteSetDefaultViewAsync);
-
-        _widthSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _widthSaveTimer.Tick += OnWidthSaveTimerTick;
 
         PropertyChanged += OnPropertyChanged;
         _todoService.TodoChanged += OnTodoChanged;
@@ -157,18 +157,10 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         var query = (SearchQuery ?? string.Empty).Trim();
         foreach (var columnVm in Columns)
         {
-            var view = System.Windows.Data.CollectionViewSource.GetDefaultView(columnVm.Todos);
-            if (view is null)
-                continue;
-
-            if (query.Length == 0)
-            {
-                view.Filter = null;
-            }
-            else
-            {
-                view.Filter = item => item is TodoItem t && MatchesSearch(t, query);
-            }
+            Predicate<object>? filter = query.Length == 0
+                ? null
+                : item => item is TodoItem t && MatchesSearch(t, query);
+            _collectionViewService.ApplyFilter(columnVm.Todos, filter);
         }
     }
 
@@ -202,13 +194,19 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
             return;
 
         _dirtyWidths.Add(columnVm.Id);
-        _widthSaveTimer.Stop();
-        _widthSaveTimer.Start();
+
+        // Debounce persistence: restart the timer on every width change so we
+        // only write once the user stops dragging. Replaces a DispatcherTimer
+        // to keep System.Windows out of this ViewModel.
+        _widthSaveCts?.Cancel();
+        _widthSaveCts?.Dispose();
+        _widthSaveCts = new CancellationTokenSource();
+        Pia.Helpers.TaskExtensions.DebounceAsync(WidthSaveDebounceMs, SaveDirtyWidthsAsync, _widthSaveCts.Token)
+            .SafeFireAndForget(_logger);
     }
 
-    private async void OnWidthSaveTimerTick(object? sender, EventArgs e)
+    private async Task SaveDirtyWidthsAsync()
     {
-        _widthSaveTimer.Stop();
         if (_dirtyWidths.Count == 0)
             return;
 
@@ -907,13 +905,11 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
         _disposed = true;
 
-        if (_widthSaveTimer.IsEnabled)
-        {
-            _widthSaveTimer.Stop();
-            if (_dirtyWidths.Count > 0)
-                OnWidthSaveTimerTick(this, EventArgs.Empty);
-        }
-        _widthSaveTimer.Tick -= OnWidthSaveTimerTick;
+        _widthSaveCts?.Cancel();
+        _widthSaveCts?.Dispose();
+        // Best-effort flush of any pending width changes (fire-and-forget, as before).
+        if (_dirtyWidths.Count > 0)
+            SaveDirtyWidthsAsync().SafeFireAndForget(_logger);
 
         UnsubscribeAllColumns();
         PropertyChanged -= OnPropertyChanged;

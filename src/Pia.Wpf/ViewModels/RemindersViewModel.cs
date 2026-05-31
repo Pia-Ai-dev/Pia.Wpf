@@ -6,6 +6,7 @@ using Pia.Localization;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 

@@ -1,17 +1,9 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Pia.Models;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
-
-public enum ReminderBucket
-{
-    Overdue,
-    Today,
-    Tomorrow,
-    ThisWeek,
-    Later,
-}
 
 public partial class ReminderGroupViewModel : ObservableObject
 {

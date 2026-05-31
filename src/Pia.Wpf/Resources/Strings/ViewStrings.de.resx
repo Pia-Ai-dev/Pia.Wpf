@@ -261,6 +261,29 @@
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Modell herunterladen</value></data>
   <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Mehrsprachiges Embedding-Modell für semantische Suche herunterladen</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Embeddings neu generieren</value></data>
+  <data name="Memory_NewMemory" xml:space="preserve"><value>Neue Erinnerung</value></data>
+  <data name="Memory_StatsObjects" xml:space="preserve"><value>Objekte</value></data>
+  <data name="Memory_StatsStale" xml:space="preserve"><value>veraltet</value></data>
+  <data name="Memory_Filter_All" xml:space="preserve"><value>Alle</value></data>
+  <data name="Memory_Filter_Stale" xml:space="preserve"><value>Veraltet</value></data>
+  <data name="Memory_Filter_Today" xml:space="preserve"><value>Heute</value></data>
+  <data name="Memory_CopyJson" xml:space="preserve"><value>JSON kopieren</value></data>
+  <data name="Memory_Copied" xml:space="preserve"><value>In Zwischenablage kopiert</value></data>
+  <data name="Memory_SourcePrefix" xml:space="preserve"><value>Quelle ·</value></data>
+  <data name="Memory_OpenConversation" xml:space="preserve"><value>Konversation öffnen →</value></data>
+  <data name="Memory_Meta_Lifecycle" xml:space="preserve"><value>LEBENSZYKLUS</value></data>
+  <data name="Memory_Meta_Created" xml:space="preserve"><value>Erstellt</value></data>
+  <data name="Memory_Meta_Updated" xml:space="preserve"><value>Aktualisiert</value></data>
+  <data name="Memory_Meta_Accessed" xml:space="preserve"><value>Zugegriffen</value></data>
+  <data name="Memory_Meta_Access14d" xml:space="preserve"><value>ZUGRIFF · 14T</value></data>
+  <data name="Memory_Meta_Embedding" xml:space="preserve"><value>EMBEDDING</value></data>
+  <data name="Memory_Meta_Model" xml:space="preserve"><value>Modell</value></data>
+  <data name="Memory_Meta_ModelDefault" xml:space="preserve"><value>text-embedding-3-small</value></data>
+  <data name="Memory_Meta_Size" xml:space="preserve"><value>Größe</value></data>
+  <data name="Memory_Meta_Related" xml:space="preserve"><value>VERKNÜPFT</value></data>
+  <data name="Memory_Meta_NoRelated" xml:space="preserve"><value>Keine verknüpften Erinnerungen</value></data>
+  <data name="Memory_EmptyInspector_Title" xml:space="preserve"><value>Erinnerung auswählen</value></data>
+  <data name="Memory_EmptyInspector_Hint" xml:space="preserve"><value>Wähle eine Erinnerung aus der Liste, um Details, Wert und Lebenszyklus zu sehen.</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Erinnerungen</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
