@@ -8,7 +8,8 @@ public enum AiProviderType
     Ollama,
     OpenRouter,
     OpenAICompatible,
-    Mistral
+    Mistral,
+    VLlm,
 }
 
 public class AiProvider
@@ -23,6 +24,9 @@ public class AiProvider
     public bool SupportsToolCalling { get; set; } = true;
     public bool SupportsStreaming { get; set; } = true;
     public int TimeoutSeconds { get; set; } = 300;
+    public ReasoningEffort? ReasoningEffort { get; set; }
+    public bool EnableWebSearch { get; set; } = false;
+    public string? MistralAgentId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
