@@ -321,6 +321,22 @@ public class AssistantChatService : IAssistantChatService
         return DateTime.Parse((string)result).ToUniversalTime();
     }
 
+    public async Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken ct = default)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id FROM AssistantChats";
+
+        var ids = new List<Guid>();
+        using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            if (Guid.TryParse(reader.GetString(0), out var id))
+                ids.Add(id);
+        }
+        return ids.AsReadOnly();
+    }
+
     private static async Task<List<SyncAssistantChatMessage>> GetMessagesAsync(
         SqliteConnection connection, Guid chatId, CancellationToken ct)
     {

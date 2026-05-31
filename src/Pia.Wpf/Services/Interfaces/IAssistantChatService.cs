@@ -52,4 +52,10 @@ public interface IAssistantChatService
     Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default);
 
     Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// All locally stored chat IDs. Used by the cloud-sync worker's one-time
+    /// startup backfill to push chats that predate cloud sign-in.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken ct = default);
 }

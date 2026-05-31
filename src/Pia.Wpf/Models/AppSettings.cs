@@ -118,6 +118,12 @@ public class AppSettings
     public string? LastPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
+    // One-time gate for the assistant-chat startup backfill. Chats predating
+    // cloud sign-in never raised ChatsChanged, so without a backfill they'd
+    // never reach the cloud. Set once the full push completes; cleared on logout
+    // so a different account re-backfills. See AssistantChatSyncService.
+    public DateTime? AssistantChatsBackfilledAt { get; set; }
+
     // E2EE settings
     public bool IsE2EEEnabled { get; set; }
     public string? E2EEEncryptedUmk { get; set; }

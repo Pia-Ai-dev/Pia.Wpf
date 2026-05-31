@@ -12,11 +12,14 @@ public class AssistantChatServiceTests : IDisposable
 {
     private readonly SqliteContext _ctx;
     private readonly AssistantChatService _service;
+    private readonly string _tmpDir;
     private readonly List<Guid> _createdIds = [];
 
     public AssistantChatServiceTests()
     {
-        _ctx = new SqliteContext();
+        _tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tmpDir);
+        _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
         _service = new AssistantChatService(_ctx);
     }
 
@@ -181,11 +184,9 @@ public class AssistantChatServiceTests : IDisposable
 
     public void Dispose()
     {
-        foreach (var id in _createdIds)
-        {
-            try { _service.DeleteAsync(id).GetAwaiter().GetResult(); }
-            catch { /* best-effort cleanup */ }
-        }
+        // The whole database lives under _tmpDir, so disposing the connection and
+        // deleting the directory discards everything this fixture created.
         _ctx.Dispose();
+        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
     }
 }

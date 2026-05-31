@@ -124,6 +124,42 @@ public class AssistantChatSyncServiceTests
         Assert.Equal(0, msgs.GetArrayLength());
     }
 
+    [Fact]
+    public async Task StartupPush_BackfillsAllLocalChats_AndSetsFlag()
+    {
+        var chat = SampleChat();
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created,
+            @"{""id"":""" + chat.Id + @""",""schemaVersion"":1,""windowMode"":""Assistant""}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        Assert.Contains(_handler.RequestsByUri.Keys,
+            u => u.EndsWith("/api/v1/chats/" + chat.Id));
+        await _settings.Received(1).SaveSettingsAsync(
+            Arg.Is<AppSettings>(s => s.AssistantChatsBackfilledAt != null));
+    }
+
+    [Fact]
+    public async Task StartupPush_WhenAlreadyBackfilled_DoesNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            AssistantChatsBackfilledAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        await _chatService.DidNotReceive().GetAllIdsAsync(Arg.Any<CancellationToken>());
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
     // ===== Helpers =====
 
     private AssistantChatSyncService CreateSut(SyncMapper mapper) =>
@@ -194,6 +230,13 @@ public class AssistantChatSyncServiceTests
         var m = typeof(AssistantChatSyncService)
             .GetMethod("SendUpsertAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
         return (Task)m.Invoke(sut, [chat, false, CancellationToken.None])!;
+    }
+
+    private static Task InvokeRunStartupPushAsync(AssistantChatSyncService sut)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("RunStartupPushAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (Task)m.Invoke(sut, [CancellationToken.None])!;
     }
 
     private static Task InvokeSendDeleteAsync(AssistantChatSyncService sut, Guid chatId)

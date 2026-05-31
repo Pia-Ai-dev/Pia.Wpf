@@ -117,6 +117,7 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
 
         await RunStartupPullAsync(stoppingToken);
+        await RunStartupPushAsync(stoppingToken);
 
         try
         {
@@ -242,6 +243,50 @@ public sealed class AssistantChatSyncService : BackgroundService
             _logger.LogInformation(
                 "Cloud delete for chat {ChatId} returned status {Status}",
                 chatId, (int)response.StatusCode);
+        }
+    }
+
+    /// <summary>
+    /// One-time backfill: pushes every locally stored chat to the cloud. Chats
+    /// created before cloud sign-in never raised <c>ChatsChanged</c>, so the
+    /// event-driven push path alone would never upload them. Runs once per
+    /// connection (gated by <c>AssistantChatsBackfilledAt</c>, cleared on logout)
+    /// and only after the startup pull, so freshly pulled chats are reconciled by
+    /// the upsert path's normal 409-merge rather than overwriting remote state.
+    /// </summary>
+    private async Task RunStartupPushAsync(CancellationToken ct)
+    {
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            if (settings.AssistantChatsBackfilledAt is not null) return;
+
+            var ids = await _chatService.GetAllIdsAsync(ct);
+            foreach (var id in ids)
+            {
+                ct.ThrowIfCancellationRequested();
+                // Reuses the normal op path: fetches the full chat (with messages)
+                // and handles 409 conflicts via merge-and-retry.
+                await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct);
+            }
+
+            // Re-read so we don't clobber any settings written meanwhile.
+            var toSave = await _settingsService.GetSettingsAsync();
+            toSave.AssistantChatsBackfilledAt = DateTime.UtcNow;
+            await _settingsService.SaveSettingsAsync(toSave);
+
+            _logger.LogInformation(
+                "Startup backfill pushed {Count} pre-existing chat(s) to cloud", ids.Count);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Leave AssistantChatsBackfilledAt unset so the next launch retries the
+            // full backfill; pre-existing chats stay local-only until then.
+            _logger.LogWarning(ex, "Startup backfill push failed; will retry next launch");
         }
     }
 

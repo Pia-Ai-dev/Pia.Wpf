@@ -276,6 +276,7 @@ public class AuthService : IAuthService
             settings.SyncUserDisplayName = null;
             settings.SyncProvider = null;
             settings.LastSyncTimestamp = null;
+            settings.AssistantChatsBackfilledAt = null;
             await _settingsService.SaveSettingsAsync(settings);
 
             LoginStateChanged?.Invoke(this, false);

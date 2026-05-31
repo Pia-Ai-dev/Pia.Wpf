@@ -10,13 +10,28 @@ public class SqliteContext : IDisposable
     private bool _disposed;
 
     public SqliteContext()
+        : this(DefaultDbPath())
+    {
+    }
+
+    /// <summary>
+    /// Opens the database at an explicit path. Tests pass a temp file so they
+    /// never read or write the user's real history.db.
+    /// </summary>
+    public SqliteContext(string dbPath)
+    {
+        var directory = Path.GetDirectoryName(dbPath);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        _connectionString = $"Data Source={dbPath}";
+    }
+
+    private static string DefaultDbPath()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var dbDirectory = Path.Combine(localAppData, "Pia");
-        Directory.CreateDirectory(dbDirectory);
-
-        var dbPath = Path.Combine(dbDirectory, "history.db");
-        _connectionString = $"Data Source={dbPath}";
+        return Path.Combine(dbDirectory, "history.db");
     }
 
     public SqliteConnection GetConnection()
