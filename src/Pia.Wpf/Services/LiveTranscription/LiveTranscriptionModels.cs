@@ -155,7 +155,7 @@ public static class LiveTranscriptionModels
     private static void ExtractTarBz2(string archivePath, string targetDir)
     {
         using var fileStream = File.OpenRead(archivePath);
-        using var reader = ReaderFactory.Open(fileStream);
+        using var reader = ReaderFactory.OpenReader(fileStream);
 
         while (reader.MoveToNextEntry())
         {
