@@ -102,6 +102,102 @@ public class SyncMapper
         };
     }
 
+    // --- Personas ---
+    //
+    // E2EE field split (contract §3): the textual fields (Name, Tagline, SystemPrompt, Guardrails,
+    // Expertise) are encrypted into EncryptedPayload/WrappedDek with key "persona"; the structural
+    // fields stay plaintext. Built-ins are never mapped to the wire (the push filter skips them),
+    // and FromSyncPersona always produces a user persona (IsBuiltIn = false).
+
+    public SyncPersona ToSyncPersona(Persona persona, string? userId = null)
+    {
+        var sync = new SyncPersona
+        {
+            Id = persona.Id,
+            Archetype = persona.Archetype,
+            Emoji = persona.Emoji,
+            AccentColor = persona.AccentColor,
+            ToolScope = (int)persona.ToolScope,
+            PreferredProviderId = persona.PreferredProviderId,
+            ReasoningEffort = persona.ReasoningEffort.HasValue ? (int?)persona.ReasoningEffort.Value : null,
+            SchemaVersion = persona.SchemaVersion,
+            CreatedAt = ToUtc(persona.CreatedAt),
+            UpdatedAt = ToUtc(persona.UpdatedAt)
+        };
+
+        if (IsE2EEActive && userId is not null)
+        {
+            var plainPayload = new
+            {
+                persona.Name,
+                persona.Tagline,
+                persona.SystemPrompt,
+                persona.Guardrails,
+                persona.Expertise
+            };
+            (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
+                plainPayload, userId, "persona", persona.Id.ToString());
+        }
+        else
+        {
+            sync.Name = persona.Name;
+            sync.Tagline = persona.Tagline;
+            sync.SystemPrompt = persona.SystemPrompt;
+            sync.Guardrails = persona.Guardrails;
+            sync.Expertise = persona.Expertise;
+        }
+
+        return sync;
+    }
+
+    public Persona FromSyncPersona(SyncPersona sync, string? userId = null)
+    {
+        string? name, tagline, systemPrompt, guardrails;
+        List<string>? expertise;
+
+        if (IsE2EEActive
+            && sync.EncryptedPayload is not null
+            && sync.WrappedDek is not null
+            && userId is not null)
+        {
+            var decrypted = _e2ee!.DecryptRecord<SyncPersona>(
+                sync.EncryptedPayload, sync.WrappedDek, userId, "persona", sync.Id.ToString());
+            name = decrypted.Name;
+            tagline = decrypted.Tagline;
+            systemPrompt = decrypted.SystemPrompt;
+            guardrails = decrypted.Guardrails;
+            expertise = decrypted.Expertise;
+        }
+        else
+        {
+            name = sync.Name;
+            tagline = sync.Tagline;
+            systemPrompt = sync.SystemPrompt;
+            guardrails = sync.Guardrails;
+            expertise = sync.Expertise;
+        }
+
+        return new Persona
+        {
+            Id = sync.Id,
+            Name = name ?? "",
+            Tagline = tagline,
+            SystemPrompt = systemPrompt ?? "",
+            Guardrails = guardrails,
+            Archetype = string.IsNullOrEmpty(sync.Archetype) ? "custom" : sync.Archetype,
+            Expertise = expertise ?? [],
+            Emoji = sync.Emoji,
+            AccentColor = sync.AccentColor,
+            ToolScope = (PersonaToolScope)sync.ToolScope,
+            PreferredProviderId = sync.PreferredProviderId,
+            ReasoningEffort = sync.ReasoningEffort.HasValue ? (ReasoningEffort)sync.ReasoningEffort.Value : null,
+            SchemaVersion = sync.SchemaVersion,
+            IsBuiltIn = false,
+            CreatedAt = sync.CreatedAt,
+            UpdatedAt = sync.UpdatedAt
+        };
+    }
+
     // --- Providers ---
 
     public SyncProvider ToSyncProvider(AiProvider provider, string? userId = null)
@@ -522,6 +618,8 @@ public class SyncMapper
                 DefaultWindowMode = (int)settings.DefaultWindowMode,
                 ModeProviderDefaults = settings.ModeProviderDefaults.ToDictionary(
                     kvp => (int)kvp.Key, kvp => kvp.Value),
+                ModePersonaDefaults = settings.ModePersonaDefaults.ToDictionary(
+                    kvp => (int)kvp.Key, kvp => kvp.Value),
                 settings.UseSameProviderForAllModes
             };
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
@@ -539,6 +637,8 @@ public class SyncMapper
             sync.TargetSpeechLanguage = (int)settings.TargetSpeechLanguage;
             sync.DefaultWindowMode = (int)settings.DefaultWindowMode;
             sync.ModeProviderDefaults = settings.ModeProviderDefaults.ToDictionary(
+                kvp => (int)kvp.Key, kvp => kvp.Value);
+            sync.ModePersonaDefaults = settings.ModePersonaDefaults.ToDictionary(
                 kvp => (int)kvp.Key, kvp => kvp.Value);
             sync.UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
         }
@@ -566,6 +666,7 @@ public class SyncMapper
             target.TargetSpeechLanguage = (TargetSpeechLanguage)decrypted.TargetSpeechLanguage;
             target.DefaultWindowMode = (WindowMode)decrypted.DefaultWindowMode;
             MergeModeProviderDefaults(decrypted.ModeProviderDefaults, target);
+            MergeModePersonaDefaults(decrypted.ModePersonaDefaults, target);
             target.UseSameProviderForAllModes = decrypted.UseSameProviderForAllModes;
             return;
         }
@@ -580,6 +681,7 @@ public class SyncMapper
         target.TargetSpeechLanguage = (TargetSpeechLanguage)sync.TargetSpeechLanguage;
         target.DefaultWindowMode = (WindowMode)sync.DefaultWindowMode;
         MergeModeProviderDefaults(sync.ModeProviderDefaults, target);
+        MergeModePersonaDefaults(sync.ModePersonaDefaults, target);
         target.UseSameProviderForAllModes = sync.UseSameProviderForAllModes;
     }
 
@@ -614,6 +716,35 @@ public class SyncMapper
                 if (previous != kv.Value)
                     _logger.LogInformation(
                         "Sync settings: mode-default {Mode} {Previous} -> {New}", mode, previous, kv.Value);
+            }
+        }
+    }
+
+    // Per-mode merge for active-persona selection, mirroring MergeModeProviderDefaults:
+    // - Mode key present with Guid.Empty value -> explicit clear (remove key locally).
+    // - Mode key present with non-empty value  -> set locally.
+    // - Mode key absent from incoming          -> no change locally.
+    internal void MergeModePersonaDefaults(IDictionary<int, Guid> incoming, AppSettings target)
+    {
+        if (incoming is null) return;
+
+        foreach (var kv in incoming)
+        {
+            var mode = (WindowMode)kv.Key;
+            target.ModePersonaDefaults.TryGetValue(mode, out var previous);
+
+            if (kv.Value == Guid.Empty)
+            {
+                if (target.ModePersonaDefaults.Remove(mode))
+                    _logger.LogInformation(
+                        "Sync settings: mode-persona {Mode} tombstoned (was {Previous})", mode, previous);
+            }
+            else
+            {
+                target.ModePersonaDefaults[mode] = kv.Value;
+                if (previous != kv.Value)
+                    _logger.LogInformation(
+                        "Sync settings: mode-persona {Mode} {Previous} -> {New}", mode, previous, kv.Value);
             }
         }
     }

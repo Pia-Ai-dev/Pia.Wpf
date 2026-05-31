@@ -318,6 +318,25 @@
                          Click="AttachFileButton_Click">
                 <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
               </ui:Button>
+
+              <Separator Width="1" Margin="4,2" Background="{DynamicResource BorderBrush_}" />
+
+              <!-- Persona picker (applies from the next turn) -->
+              <ComboBox ItemsSource="{Binding AvailablePersonas}"
+                        SelectedItem="{Binding ActivePersona}"
+                        MinWidth="140"
+                        MaxWidth="200"
+                        VerticalAlignment="Center"
+                        ToolTip="{loc:Str Settings_Tab_Personas}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="{Binding Emoji}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
             </StackPanel>
 
             <!-- Send button -->

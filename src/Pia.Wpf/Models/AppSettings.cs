@@ -79,6 +79,13 @@ public class AppSettings
     public bool UseSameProviderForAllModes { get; set; } = true;
 
     /// <summary>
+    /// Per-mode active-persona selection. May reference a built-in persona Guid (identical on every
+    /// device). Absent entries fall back to the UserOperatingMode-mapped Pia built-in (contract §7).
+    /// Synced via <c>SyncSettings.ModePersonaDefaults</c>, mirroring <see cref="ModeProviderDefaults"/>.
+    /// </summary>
+    public Dictionary<WindowMode, Guid> ModePersonaDefaults { get; set; } = new();
+
+    /// <summary>
     /// Allow-list of sync login providers. Null/empty = all providers allowed.
     /// Recognized values: "local", "google", "microsoft", "entraid" (case-insensitive).
     /// Intended to be set via enterprise policy.
@@ -138,6 +145,17 @@ public class AppSettings
             ModeProviderDefaults[mode] = providerId.Value;
         else
             ModeProviderDefaults.Remove(mode);
+    }
+
+    public Guid? GetPersonaForMode(WindowMode mode) =>
+        ModePersonaDefaults.TryGetValue(mode, out var id) ? id : null;
+
+    public void SetPersonaForMode(WindowMode mode, Guid? personaId)
+    {
+        if (personaId.HasValue)
+            ModePersonaDefaults[mode] = personaId.Value;
+        else
+            ModePersonaDefaults.Remove(mode);
     }
 
     public void MigrateFromLegacyDefault()

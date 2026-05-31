@@ -19,6 +19,13 @@ public class SyncSettings
     public int TargetSpeechLanguage { get; set; }
     public int DefaultWindowMode { get; set; }
     public Dictionary<int, Guid> ModeProviderDefaults { get; set; } = new();
+
+    /// <summary>
+    /// Per-mode active-persona selection (WindowMode int =&gt; persona Guid), mirroring
+    /// <see cref="ModeProviderDefaults"/>. May reference a built-in persona Guid (identical on
+    /// every device). Absent entries fall back to the UserOperatingMode-mapped Pia built-in.
+    /// </summary>
+    public Dictionary<int, Guid> ModePersonaDefaults { get; set; } = new();
     public bool UseSameProviderForAllModes { get; set; } = true;
     public DateTime ModifiedAt { get; set; }
 

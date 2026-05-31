@@ -170,6 +170,10 @@
   <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Vorlage erfolgreich hinzugefügt.</value></data>
   <data name="Msg_Settings_TemplateDeleted" xml:space="preserve"><value>Vorlage erfolgreich gelöscht.</value></data>
   <data name="Msg_Settings_TemplateUpdated" xml:space="preserve"><value>Vorlage erfolgreich aktualisiert.</value></data>
+  <data name="Msg_Settings_PersonaAdded" xml:space="preserve"><value>Persona erfolgreich hinzugefügt.</value></data>
+  <data name="Msg_Settings_PersonaDeleted" xml:space="preserve"><value>Persona erfolgreich gelöscht.</value></data>
+  <data name="Msg_Settings_PersonaUpdated" xml:space="preserve"><value>Persona erfolgreich aktualisiert.</value></data>
+  <data name="Msg_Settings_CannotDeleteBuiltInPersona" xml:space="preserve"><value>Integrierte Personas können nicht gelöscht werden.</value></data>
   <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Stimme geändert</value></data>
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Stimmen-Download fehlgeschlagen: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Stimme {0} erfolgreich heruntergeladen.</value></data>

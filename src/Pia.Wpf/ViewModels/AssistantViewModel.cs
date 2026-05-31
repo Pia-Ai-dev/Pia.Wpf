@@ -33,7 +33,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return $"Always respond to the user in '{languageName}' unless the user asks you to switch.";
     }
 
-    private string BuildSystemPrompt(bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
+    // Tool gating (contract §5): tools are used only when the provider supports them AND the persona
+    // permits them. ToolScope.None → no tools; ReadOnly is treated as Full in v1.
+    internal static bool ShouldUseTools(bool providerSupportsToolCalling, PersonaToolScope scope) =>
+        providerSupportsToolCalling && scope != PersonaToolScope.None;
+
+    // Builds the persona-driven identity block (contract §8): the persona's SystemPrompt replaces the
+    // hardcoded "You are Pia…" line, optional Guardrails follow as their own paragraph, then the
+    // substrate date line. Everything below the identity stays owned by the substrate.
+    internal static string BuildIdentityBlock(Persona activePersona)
+    {
+        var guardrails = string.IsNullOrWhiteSpace(activePersona.Guardrails)
+            ? string.Empty
+            : $"\n\n{activePersona.Guardrails.Trim()}";
+
+        return $"""
+            {activePersona.SystemPrompt.Trim()}{guardrails}
+            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+            """;
+    }
+
+    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
     {
         var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
         var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
@@ -68,8 +88,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return $"""
             ## Identity
 
-            You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
-            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+            {BuildIdentityBlock(activePersona)}
 
             ## Language
 
@@ -142,7 +161,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return sb.ToString();
     }
 
-    private string BuildSystemPromptNoTools(bool webSearchActive = false)
+    private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
     {
         var webSearchSection = webSearchActive
             ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
@@ -150,8 +169,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return $"""
             ## Identity
 
-            You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
-            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+            {BuildIdentityBlock(activePersona)}
 
             ## Language
 
@@ -170,6 +188,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ILogger<AssistantViewModel> _logger;
     private readonly IAiClientService _aiClientService;
     private readonly IProviderService _providerService;
+    private readonly IPersonaService _personaService;
     private readonly ISettingsService _settingsService;
     private readonly IOutputService _outputService;
     private readonly IPluginService _pluginService;
@@ -222,6 +241,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private string _suggestionMemory = string.Empty;
 
+    /// <summary>The persona shown in the picker chip. Changing it persists the per-mode selection
+    /// (synced via SyncSettings); the new persona applies from the next turn.</summary>
+    [ObservableProperty]
+    private Persona? _activePersona;
+
+    private bool _isLoadingPersonas;
+
     private static readonly string[] SuggestionReminderKeys =
     [
         "Assistant_Suggestion_Reminder1", "Assistant_Suggestion_Reminder2",
@@ -247,6 +273,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     public ObservableCollection<AssistantMessage> Messages { get; } = new();
 
+    public ObservableCollection<Persona> AvailablePersonas { get; } = new();
+
     public IAsyncRelayCommand SendMessageCommand { get; }
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelStreamingCommand { get; }
@@ -267,6 +295,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ILogger<AssistantViewModel> logger,
         IAiClientService aiClientService,
         IProviderService providerService,
+        IPersonaService personaService,
         ISettingsService settingsService,
         IOutputService outputService,
         IPluginService pluginService,
@@ -285,6 +314,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _logger = logger;
         _aiClientService = aiClientService;
         _providerService = providerService;
+        _personaService = personaService;
         _settingsService = settingsService;
         _outputService = outputService;
         _pluginService = pluginService;
@@ -317,7 +347,47 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
+        _personaService.PersonasChanged += OnPersonasChanged;
         PropertyChanged += OnPropertyChanged;
+    }
+
+    private void OnPersonasChanged(object? sender, EventArgs e) =>
+        LoadPersonasAsync().SafeFireAndForget(_logger);
+
+    private async Task LoadPersonasAsync()
+    {
+        try
+        {
+            _isLoadingPersonas = true;
+            var settings = await _settingsService.GetSettingsAsync();
+            var personas = await _personaService.GetPersonasAsync();
+            var active = await _personaService.ResolveActiveAsync(WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+
+            AvailablePersonas.Clear();
+            foreach (var persona in personas)
+                AvailablePersonas.Add(persona);
+
+            ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
+        }
+        finally
+        {
+            _isLoadingPersonas = false;
+        }
+    }
+
+    partial void OnActivePersonaChanged(Persona? value)
+    {
+        if (_isLoadingPersonas || value is null)
+            return;
+        PersistActivePersonaAsync(value.Id).SafeFireAndForget(_logger);
+    }
+
+    private async Task PersistActivePersonaAsync(Guid personaId)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        settings.SetPersonaForMode(WindowMode.Assistant, personaId);
+        await _settingsService.SaveSettingsAsync(settings);
+        _logger.LogInformation("Active persona for Assistant set to {PersonaId}", personaId);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -373,7 +443,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         try
         {
-            var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+            // Resolve the active persona once for this turn (never null).
+            var settings = await _settingsService.GetSettingsAsync();
+            var persona = await _personaService.ResolveActiveAsync(WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+
+            // Provider override (contract §6): the persona's PreferredProviderId wins when it resolves
+            // to a usable provider; otherwise fall back to the Assistant-mode default.
+            var provider = persona.PreferredProviderId.HasValue
+                ? await _providerService.GetProviderAsync(persona.PreferredProviderId.Value)
+                : null;
+            provider ??= await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
             if (provider is null)
             {
                 assistantMessage.Content = _localizationService["Msg_Assistant_NoProviderInline"];
@@ -383,8 +462,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 return;
             }
 
-            // Determine if this provider supports tool calling
-            var supportsTools = provider.SupportsToolCalling;
+            // Reasoning-effort override (contract §6): apply on a shallow copy so the stored provider
+            // is never mutated.
+            if (persona.ReasoningEffort.HasValue)
+            {
+                provider = provider.Clone();
+                provider.ReasoningEffort = persona.ReasoningEffort.Value;
+            }
+
+            _logger.LogInformation("SendMessage: resolved persona {PersonaId} (ToolScope {ToolScope})", persona.Id, persona.ToolScope);
+
+            // Tool gating (contract §5) — see ShouldUseTools.
+            var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
             var webSearchActive = IsWebSearchActive(provider);
 
             // Build system prompt with memory context
@@ -394,7 +483,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             if (supportsTools)
             {
                 var hasAtCommands = atCommands.Count > 0;
-                fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive)
+                fullSystemPrompt = BuildSystemPrompt(persona, _tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive)
                     + BuildAtCommandHint(atCommands);
 
                 var allTools = _pluginService.GetAllTools();
@@ -410,7 +499,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
             else
             {
-                fullSystemPrompt = BuildSystemPromptNoTools(webSearchActive: webSearchActive);
+                fullSystemPrompt = BuildSystemPromptNoTools(persona, webSearchActive: webSearchActive);
                 tools = null;
             }
 
@@ -921,6 +1010,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         try
         {
+            await LoadPersonasAsync();
+
             var settings = await _settingsService.GetSettingsAsync();
             IsTtsEnabled = settings.TtsEnabled;
             _suggestionsEnabled = settings.AssistantSuggestionsEnabled;
@@ -1184,14 +1275,26 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         string userText,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+        var settings = await _settingsService.GetSettingsAsync();
+        var persona = await _personaService.ResolveActiveAsync(WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+
+        var provider = persona.PreferredProviderId.HasValue
+            ? await _providerService.GetProviderAsync(persona.PreferredProviderId.Value)
+            : null;
+        provider ??= await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
         if (provider is null)
         {
             yield return _localizationService["Msg_Assistant_NoProviderConfigured"];
             yield break;
         }
 
-        var supportsTools = provider.SupportsToolCalling;
+        if (persona.ReasoningEffort.HasValue)
+        {
+            provider = provider.Clone();
+            provider.ReasoningEffort = persona.ReasoningEffort.Value;
+        }
+
+        var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
         var webSearchActive = IsWebSearchActive(provider);
 
         string fullSystemPrompt;
@@ -1199,12 +1302,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         if (supportsTools)
         {
-            fullSystemPrompt = BuildSystemPrompt(_tokenizationEnabled, webSearchActive: webSearchActive);
+            fullSystemPrompt = BuildSystemPrompt(persona, _tokenizationEnabled, webSearchActive: webSearchActive);
             tools = [.. _pluginService.GetAllTools()];
         }
         else
         {
-            fullSystemPrompt = BuildSystemPromptNoTools(webSearchActive: webSearchActive);
+            fullSystemPrompt = BuildSystemPromptNoTools(persona, webSearchActive: webSearchActive);
             tools = null;
         }
 
@@ -1385,6 +1488,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         VoiceMode = null;
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
+        _personaService.PersonasChanged -= OnPersonasChanged;
         PropertyChanged -= OnPropertyChanged;
         _streamingCts?.Cancel();
         _streamingCts?.Dispose();

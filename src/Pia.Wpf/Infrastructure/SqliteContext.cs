@@ -171,6 +171,26 @@ public class SqliteContext : IDisposable
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
+
+            CREATE TABLE IF NOT EXISTS Personas (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Tagline TEXT,
+                SystemPrompt TEXT NOT NULL,
+                Guardrails TEXT,
+                Archetype TEXT,
+                Expertise TEXT,
+                Emoji TEXT,
+                AccentColor TEXT,
+                ToolScope INTEGER NOT NULL DEFAULT 2,
+                PreferredProviderId TEXT,
+                ReasoningEffort INTEGER,
+                SchemaVersion INTEGER NOT NULL DEFAULT 1,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
             """;
         command.ExecuteNonQuery();
 
@@ -384,6 +404,43 @@ public class SqliteContext : IDisposable
                 CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_OwnerDeviceId ON ScheduledJobs(OwnerDeviceId);
                 """;
             idx.ExecuteNonQuery();
+        }
+
+        // Create the Personas table for databases that predate it (only user personas are stored;
+        // built-ins are merged in-memory by PersonaService). EnsureSchema already creates it on
+        // fresh installs via CREATE TABLE IF NOT EXISTS — this is a defensive presence check.
+        var hasPersonasTable = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(Personas)";
+            using var r = p.ExecuteReader();
+            if (r.Read()) hasPersonasTable = true;
+        }
+        if (!hasPersonasTable)
+        {
+            using var createPersonas = _connection.CreateCommand();
+            createPersonas.CommandText = """
+                CREATE TABLE IF NOT EXISTS Personas (
+                    Id TEXT PRIMARY KEY,
+                    Name TEXT NOT NULL,
+                    Tagline TEXT,
+                    SystemPrompt TEXT NOT NULL,
+                    Guardrails TEXT,
+                    Archetype TEXT,
+                    Expertise TEXT,
+                    Emoji TEXT,
+                    AccentColor TEXT,
+                    ToolScope INTEGER NOT NULL DEFAULT 2,
+                    PreferredProviderId TEXT,
+                    ReasoningEffort INTEGER,
+                    SchemaVersion INTEGER NOT NULL DEFAULT 1,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
+                """;
+            createPersonas.ExecuteNonQuery();
         }
     }
 

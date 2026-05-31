@@ -246,6 +246,7 @@ public static class Bootstrapper
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<ITemplateService, TemplateService>();
+        services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IResearchHistoryService, ResearchHistoryService>();
         services.AddTransient<IResearchExportService, ResearchExportService>();

@@ -170,6 +170,10 @@
   <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Modèle ajouté avec succès.</value></data>
   <data name="Msg_Settings_TemplateDeleted" xml:space="preserve"><value>Modèle supprimé avec succès.</value></data>
   <data name="Msg_Settings_TemplateUpdated" xml:space="preserve"><value>Modèle mis à jour avec succès.</value></data>
+  <data name="Msg_Settings_PersonaAdded" xml:space="preserve"><value>Persona ajoutée avec succès.</value></data>
+  <data name="Msg_Settings_PersonaDeleted" xml:space="preserve"><value>Persona supprimée avec succès.</value></data>
+  <data name="Msg_Settings_PersonaUpdated" xml:space="preserve"><value>Persona mise à jour avec succès.</value></data>
+  <data name="Msg_Settings_CannotDeleteBuiltInPersona" xml:space="preserve"><value>Les personas intégrées ne peuvent pas être supprimées.</value></data>
   <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Voix modifiée</value></data>
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Échec du téléchargement de la voix : {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Voix {0} téléchargée avec succès.</value></data>

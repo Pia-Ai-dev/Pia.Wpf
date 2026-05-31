@@ -19,6 +19,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     public GeneralSettingsViewModel GeneralVm { get; }
     public AccountSettingsViewModel AccountVm { get; }
     public PluginsSettingsViewModel PluginsVm { get; }
+    public PersonaSettingsViewModel PersonasVm { get; }
 
     [ObservableProperty]
     private int _selectedTabIndex;
@@ -46,7 +47,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IAutostartService autostartService,
         IPluginService pluginService,
         IPluginIconLoader pluginIconLoader,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IPersonaService personaService)
     {
         _logger = logger;
 
@@ -63,6 +65,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
+
+        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService);
     }
 
     public void OnNavigatedTo(object? parameter)
@@ -92,6 +96,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             await GeneralVm.InitializeAsync();
             await AccountVm.InitializeAsync();
             await PluginsVm.InitializeAsync();
+            await PersonasVm.InitializeAsync();
         }
         catch (Exception ex)
         {

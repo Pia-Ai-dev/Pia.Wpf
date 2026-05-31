@@ -1,0 +1,167 @@
+<ui:ContentDialog x:Class="Pia.Views.Dialogs.PersonaEditContentDialog"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:local="clr-namespace:Pia.Views.Dialogs"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                  xmlns:loc="clr-namespace:Pia.Localization"
+                  Title="{loc:Str Dialog_PersonaEdit_Title}"
+                  PrimaryButtonText="{loc:Str Common_Save}"
+                  CloseButtonText="{loc:Str Common_Cancel}"
+                  DefaultButton="Primary"
+                  IsPrimaryButtonEnabled="True"
+                  DialogMaxWidth="640"
+                  DialogMaxHeight="720">
+  <ui:ContentDialog.Resources>
+    <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
+           TargetType="{x:Type local:PersonaEditContentDialog}" />
+  </ui:ContentDialog.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="600">
+    <StackPanel Margin="0,8,8,0" Width="440">
+
+      <!-- AI-assist: draft from a description -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Describe}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_DescribeHint}"
+                 Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,0,0,8" />
+      <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+               TextWrapping="Wrap"
+               AcceptsReturn="True"
+               Height="64"
+               VerticalScrollBarVisibility="Auto"
+               IsReadOnly="{Binding IsGenerating}"
+               Margin="0,0,0,8" />
+      <ui:Button Command="{Binding GenerateDraftCommand}"
+                 IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBooleanConverter}}"
+                 Margin="0,0,0,16">
+        <Grid>
+          <StackPanel Orientation="Horizontal"
+                      Visibility="{Binding IsGenerating, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+            <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0" />
+            <TextBlock Text="{loc:Str Dialog_PersonaEdit_Draft}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal"
+                      Visibility="{Binding IsGenerating, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0" />
+            <TextBlock Text="{loc:Str Dialog_PersonaEdit_Drafting}" />
+          </StackPanel>
+        </Grid>
+      </ui:Button>
+
+      <!-- Name -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Name}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                  Margin="0,0,0,16" />
+
+      <!-- Tagline -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Tagline}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <ui:TextBox Text="{Binding Tagline, UpdateSourceTrigger=PropertyChanged}"
+                  Margin="0,0,0,16" />
+
+      <!-- System prompt -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPrompt}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPromptHint}"
+                 Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,0,0,8" />
+      <TextBox Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}"
+               TextWrapping="Wrap"
+               AcceptsReturn="True"
+               Height="120"
+               VerticalScrollBarVisibility="Auto"
+               IsReadOnly="{Binding IsGenerating}"
+               Margin="0,0,0,16" />
+
+      <!-- Guardrails -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Guardrails}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_GuardrailsHint}"
+                 Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,0,0,8" />
+      <TextBox Text="{Binding Guardrails, UpdateSourceTrigger=PropertyChanged}"
+               TextWrapping="Wrap"
+               AcceptsReturn="True"
+               Height="64"
+               VerticalScrollBarVisibility="Auto"
+               Margin="0,0,0,16" />
+
+      <!-- Archetype + Tool scope -->
+      <Grid Margin="0,0,0,16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="16" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="{loc:Str Dialog_PersonaEdit_Archetype}" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <ComboBox ItemsSource="{Binding ArchetypeOptions}"
+                    SelectedItem="{Binding Archetype}"
+                    HorizontalAlignment="Stretch" />
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Text="{loc:Str Dialog_PersonaEdit_ToolScope}" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <ComboBox ItemsSource="{Binding ToolScopeOptions}"
+                    SelectedItem="{Binding ToolScope}"
+                    HorizontalAlignment="Stretch" />
+        </StackPanel>
+      </Grid>
+
+      <!-- Expertise -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Expertise}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_ExpertiseHint}"
+                 Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,0,0,8" />
+      <ui:TextBox Text="{Binding Expertise, UpdateSourceTrigger=PropertyChanged}"
+                  Margin="0,0,0,16" />
+
+      <!-- Emoji + Accent colour -->
+      <Grid Margin="0,0,0,16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="16" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="{loc:Str Dialog_PersonaEdit_Emoji}" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <ui:TextBox Text="{Binding Emoji, UpdateSourceTrigger=PropertyChanged}" MaxLength="8" />
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Text="{loc:Str Dialog_PersonaEdit_AccentColor}" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <ui:TextBox Text="{Binding AccentColor, UpdateSourceTrigger=PropertyChanged}" MaxLength="7" />
+        </StackPanel>
+      </Grid>
+
+      <!-- Preferred provider + reasoning effort -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Provider}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <ComboBox ItemsSource="{Binding ProviderChoices}"
+                SelectedItem="{Binding SelectedProvider}"
+                DisplayMemberPath="Name"
+                HorizontalAlignment="Stretch"
+                Margin="0,0,0,16" />
+
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_ReasoningEffort}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
+                SelectedItem="{Binding SelectedReasoningEffort}"
+                DisplayMemberPath="Display"
+                HorizontalAlignment="Stretch" />
+    </StackPanel>
+  </ScrollViewer>
+</ui:ContentDialog>

@@ -517,6 +517,30 @@
   <data name="Dialog_TemplateEdit_Generating" xml:space="preserve"><value>Generating...</value></data>
   <data name="Dialog_TemplateEdit_GeneratedPrompt" xml:space="preserve"><value>Generated Prompt</value></data>
   <data name="Dialog_TemplateEdit_PromptEditHint" xml:space="preserve"><value>You can edit the generated prompt manually</value></data>
+  <data name="Dialog_PersonaEdit_Title" xml:space="preserve"><value>Edit Persona</value></data>
+  <data name="Dialog_PersonaEdit_Describe" xml:space="preserve"><value>Describe this persona</value></data>
+  <data name="Dialog_PersonaEdit_DescribeHint" xml:space="preserve"><value>Briefly describe the persona, then let AI draft the fields below</value></data>
+  <data name="Dialog_PersonaEdit_Draft" xml:space="preserve"><value>Draft with AI</value></data>
+  <data name="Dialog_PersonaEdit_Drafting" xml:space="preserve"><value>Drafting...</value></data>
+  <data name="Dialog_PersonaEdit_Name" xml:space="preserve"><value>Name *</value></data>
+  <data name="Dialog_PersonaEdit_Tagline" xml:space="preserve"><value>Tagline</value></data>
+  <data name="Dialog_PersonaEdit_SystemPrompt" xml:space="preserve"><value>System Prompt *</value></data>
+  <data name="Dialog_PersonaEdit_SystemPromptHint" xml:space="preserve"><value>The identity and voice that replaces the assistant's default personality</value></data>
+  <data name="Dialog_PersonaEdit_Guardrails" xml:space="preserve"><value>Guardrails</value></data>
+  <data name="Dialog_PersonaEdit_GuardrailsHint" xml:space="preserve"><value>Optional constraints appended after the identity (e.g. no regulated advice)</value></data>
+  <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archetype</value></data>
+  <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Expertise</value></data>
+  <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Comma-separated domain tags</value></data>
+  <data name="Dialog_PersonaEdit_Emoji" xml:space="preserve"><value>Emoji</value></data>
+  <data name="Dialog_PersonaEdit_AccentColor" xml:space="preserve"><value>Accent Colour</value></data>
+  <data name="Dialog_PersonaEdit_ToolScope" xml:space="preserve"><value>Tool Access</value></data>
+  <data name="Dialog_PersonaEdit_Provider" xml:space="preserve"><value>Preferred Provider</value></data>
+  <data name="Dialog_PersonaEdit_ReasoningEffort" xml:space="preserve"><value>Reasoning Effort</value></data>
+  <data name="Settings_Tab_Personas" xml:space="preserve"><value>Personas</value></data>
+  <data name="Personas_Subtitle" xml:space="preserve"><value>Personas shape the assistant's identity, voice, and expertise.</value></data>
+  <data name="Personas_AddPersona" xml:space="preserve"><value>Add Persona</value></data>
+  <data name="Personas_Duplicate" xml:space="preserve"><value>Duplicate</value></data>
+  <data name="Personas_BuiltIn" xml:space="preserve"><value>Built-in</value></data>
   <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Preparing Model</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Downloading Whisper Model...</value></data>
   <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>Downloading {0}...</value></data>

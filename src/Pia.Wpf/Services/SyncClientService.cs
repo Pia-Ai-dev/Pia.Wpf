@@ -22,6 +22,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IAuthService _authService;
     private readonly ISettingsService _settingsService;
     private readonly ITemplateService _templateService;
+    private readonly IPersonaService? _personaService;
     private readonly IProviderService _providerService;
     private readonly IHistoryService _historyService;
     private readonly IMemoryService _memoryService;
@@ -83,11 +84,13 @@ public class SyncClientService : ISyncClientService, IDisposable
         IE2EEService? e2ee = null,
         IDeviceManagementService? deviceMgmt = null,
         IDeviceKeyService? deviceKeys = null,
-        IPluginService? pluginService = null)
+        IPluginService? pluginService = null,
+        IPersonaService? personaService = null)
     {
         _authService = authService;
         _settingsService = settingsService;
         _templateService = templateService;
+        _personaService = personaService;
         _providerService = providerService;
         _historyService = historyService;
         _memoryService = memoryService;
@@ -249,6 +252,9 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             // Build full push request with all local data
             var templates = await _templateService.GetTemplatesAsync();
+            var personas = _personaService is not null
+                ? await _personaService.GetPersonasAsync()
+                : [];
             var providers = await _providerService.GetProvidersAsync();
             var sessions = await _historyService.GetSessionsAsync(0, 10_000);
             var memories = await _memoryService.GetAllObjectsAsync();
@@ -274,6 +280,13 @@ public class SyncClientService : ISyncClientService, IDisposable
                     Upserted = templates
                         .Where(t => !t.IsBuiltIn)
                         .Select(t => _mapper.ToSyncTemplate(t, userId))
+                        .ToList()
+                },
+                Personas = new SyncEntityChanges<SyncPersona>
+                {
+                    Upserted = personas
+                        .Where(p => !p.IsBuiltIn)
+                        .Select(p => _mapper.ToSyncPersona(p, userId))
                         .ToList()
                 },
                 Providers = new SyncEntityChanges<SyncProvider>
@@ -312,8 +325,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
             await EnsureSuccessAsync(response, "First-sync push");
 
-            _logger.LogInformation("First-sync push completed (templates: {Templates}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos})",
-                request.Templates.Upserted.Count, request.Providers.Upserted.Count,
+            _logger.LogInformation("First-sync push completed (templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos})",
+                request.Templates.Upserted.Count, request.Personas.Upserted.Count, request.Providers.Upserted.Count,
                 request.Sessions.Added.Count, request.Memories.Upserted.Count,
                 request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count);
 
@@ -368,6 +381,9 @@ public class SyncClientService : ISyncClientService, IDisposable
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
 
         var templates = await _templateService.GetTemplatesAsync();
+        var personas = _personaService is not null
+            ? await _personaService.GetPersonasAsync()
+            : [];
         var providers = await _providerService.GetProvidersAsync();
 
         // Only push sessions created since last sync
@@ -388,13 +404,14 @@ public class SyncClientService : ISyncClientService, IDisposable
             : [];
 
         var dirtyTemplates = templates.Where(t => !t.IsBuiltIn).Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync).Count();
+        var dirtyPersonas = personas.Where(p => !p.IsBuiltIn).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtyProviders = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtySessions = sessions.Count;
         var dirtyMemories = memories.Where(m => m.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtyKanbanCols = kanbanColumns.Where(c => c.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtyTodos = todos.Where(t => t.UpdatedAt.ToUniversalTime() >= lastSync).Count();
-        _logger.LogInformation("Push dirty tracking: {Templates}T, {Providers}P, {Sessions}S, {Memories}M, {KanbanCols}K, {Todos}Todo, {Jobs}Job, {Research}R changed since {LastSync}",
-            dirtyTemplates, dirtyProviders, dirtySessions, dirtyMemories, dirtyKanbanCols, dirtyTodos,
+        _logger.LogInformation("Push dirty tracking: {Templates}T, {Personas}Pe, {Providers}P, {Sessions}S, {Memories}M, {KanbanCols}K, {Todos}Todo, {Jobs}Job, {Research}R changed since {LastSync}",
+            dirtyTemplates, dirtyPersonas, dirtyProviders, dirtySessions, dirtyMemories, dirtyKanbanCols, dirtyTodos,
             scheduledJobs.Count, researchSessions.Count, lastSync);
 
         var isE2EE = _e2ee?.IsReady() == true;
@@ -417,6 +434,15 @@ public class SyncClientService : ISyncClientService, IDisposable
                     .Select(t => _mapper.ToSyncTemplate(t, userId))
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("templates", [])
+            },
+            Personas = new SyncEntityChanges<SyncPersona>
+            {
+                Upserted = personas
+                    .Where(p => !p.IsBuiltIn)
+                    .Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync)
+                    .Select(p => _mapper.ToSyncPersona(p, userId))
+                    .ToList(),
+                Deleted = pendingDeletes.GetValueOrDefault("personas", [])
             },
             Providers = new SyncEntityChanges<SyncProvider>
             {
@@ -474,13 +500,14 @@ public class SyncClientService : ISyncClientService, IDisposable
             PluginPreferences = _pluginService?.GetPendingPreferenceChanges() ?? []
         };
 
-        _logger.LogInformation("Push pending deletes: {Templates}T, {Providers}P, {Memories}M, {Todos}Todo, {KanbanCols}K, {Jobs}Job, {Research}R",
-            request.Templates.Deleted.Count, request.Providers.Deleted.Count,
+        _logger.LogInformation("Push pending deletes: {Templates}T, {Personas}Pe, {Providers}P, {Memories}M, {Todos}Todo, {KanbanCols}K, {Jobs}Job, {Research}R",
+            request.Templates.Deleted.Count, request.Personas.Deleted.Count, request.Providers.Deleted.Count,
             request.Memories.Deleted.Count, request.Todos.Deleted.Count,
             request.KanbanColumns.Deleted.Count,
             request.ScheduledJobs.Deleted.Count, request.ResearchSessions.Deleted.Count);
 
         var pushedCount = request.Templates.Upserted.Count
+            + request.Personas.Upserted.Count
             + request.Providers.Upserted.Count
             + request.Sessions.Added.Count
             + request.Memories.Upserted.Count
@@ -490,8 +517,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             + request.ResearchSessions.Upserted.Count;
 
         _logger.LogInformation(
-            "Push request — Templates: {Templates}, Providers: {Providers}, Sessions: {Sessions}, Memories: {Memories}, KanbanColumns: {KanbanColumns}, Todos: {Todos}, ScheduledJobs: {Jobs}, ResearchSessions: {Research}, LastSync: {LastSync}, DeviceId: {DeviceId}, IsE2EE: {IsE2EE}",
-            request.Templates.Upserted.Count, request.Providers.Upserted.Count,
+            "Push request — Templates: {Templates}, Personas: {Personas}, Providers: {Providers}, Sessions: {Sessions}, Memories: {Memories}, KanbanColumns: {KanbanColumns}, Todos: {Todos}, ScheduledJobs: {Jobs}, ResearchSessions: {Research}, LastSync: {LastSync}, DeviceId: {DeviceId}, IsE2EE: {IsE2EE}",
+            request.Templates.Upserted.Count, request.Personas.Upserted.Count, request.Providers.Upserted.Count,
             request.Sessions.Added.Count, request.Memories.Upserted.Count,
             request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count,
             request.ScheduledJobs.Upserted.Count, request.ResearchSessions.Upserted.Count,
@@ -587,9 +614,10 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (pullResponse is null) return (0, 0, false, null);
 
         _logger.LogInformation(
-            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d",
+            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Personas: {PeU}u/{PeD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d",
             pullResponse.ServerTimestamp,
             pullResponse.Templates.Upserted.Count, pullResponse.Templates.Deleted.Count,
+            pullResponse.Personas.Upserted.Count, pullResponse.Personas.Deleted.Count,
             pullResponse.Providers.Upserted.Count, pullResponse.Providers.Deleted.Count,
             pullResponse.Sessions.Added.Count, pullResponse.Sessions.Deleted.Count,
             pullResponse.Memories.Upserted.Count, pullResponse.Memories.Deleted.Count,
@@ -684,6 +712,68 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
         if (pullResponse.Templates.Deleted.Count > 0)
             _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "templates", pullResponse.Templates.Deleted.Count);
+
+        // Apply personas — skip built-ins, last-write-wins on UpdatedAt (mirrors templates).
+        if (_personaService is not null)
+        {
+            foreach (var persona in pullResponse.Personas.Upserted)
+            {
+                try
+                {
+                    var local = _mapper.FromSyncPersona(persona, userId);
+                    var existing = (await _personaService.GetPersonasAsync())
+                        .FirstOrDefault(p => p.Id == persona.Id);
+
+                    if (existing is not null)
+                    {
+                        if (existing.IsBuiltIn)
+                        {
+                            mergeSkipped++;
+                            _logger.LogDebug("Skipped persona {Id}: built-in personas cannot be updated via sync", persona.Id);
+                            continue;
+                        }
+
+                        var remoteTime = local.UpdatedAt.ToUniversalTime();
+                        var localTime = existing.UpdatedAt.ToUniversalTime();
+
+                        if (remoteTime >= localTime)
+                        {
+                            await _personaService.UpdatePersonaAsync(local);
+                            mergeUpdated++;
+                            _logger.LogInformation("Updated persona {Id}", persona.Id);
+                            _logger.SensitiveDebug("Updated persona {Id} name: {Name}", persona.Id, local.Name);
+                        }
+                        else
+                        {
+                            mergeSkipped++;
+                            _logger.LogDebug("Skipped persona {Id}: local is newer (local={Local}, remote={Remote})",
+                                persona.Id, localTime, remoteTime);
+                        }
+                    }
+                    else
+                    {
+                        await _personaService.AddPersonaAsync(local);
+                        mergeInserted++;
+                        _logger.LogInformation("Imported persona {Id}", persona.Id);
+                        _logger.SensitiveDebug("Imported persona {Id} name: {Name}", persona.Id, local.Name);
+                    }
+                }
+                catch (CryptographicException ex)
+                {
+                    decryptionErrors++;
+                    _logger.LogWarning(ex, "Failed to decrypt synced persona {Id}; skipping", persona.Id);
+                }
+            }
+
+            foreach (var deletedId in pullResponse.Personas.Deleted)
+            {
+                _logger.LogDebug("Pull deleted: {EntityType} {Id}", "personas", deletedId);
+                await _personaService.DeletePersonaAsync(deletedId);
+                mergeDeleted++;
+            }
+            if (pullResponse.Personas.Deleted.Count > 0)
+                _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "personas", pullResponse.Personas.Deleted.Count);
+        }
 
         // Apply providers — match by Id first, fall back to content fingerprint
         // so providers created independently on two devices (each with their own
@@ -1089,6 +1179,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         var pulledCount = pullResponse.Templates.Upserted.Count
+            + pullResponse.Personas.Upserted.Count
             + pullResponse.Providers.Upserted.Count
             + pullResponse.Sessions.Added.Count
             + pullResponse.Memories.Upserted.Count

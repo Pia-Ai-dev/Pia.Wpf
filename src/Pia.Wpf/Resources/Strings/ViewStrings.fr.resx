@@ -494,6 +494,30 @@
   <data name="Dialog_TemplateEdit_Generating" xml:space="preserve"><value>Génération...</value></data>
   <data name="Dialog_TemplateEdit_GeneratedPrompt" xml:space="preserve"><value>Prompt généré</value></data>
   <data name="Dialog_TemplateEdit_PromptEditHint" xml:space="preserve"><value>Vous pouvez modifier le prompt généré manuellement</value></data>
+  <data name="Dialog_PersonaEdit_Title" xml:space="preserve"><value>Modifier la persona</value></data>
+  <data name="Dialog_PersonaEdit_Describe" xml:space="preserve"><value>Décrire cette persona</value></data>
+  <data name="Dialog_PersonaEdit_DescribeHint" xml:space="preserve"><value>Décrivez brièvement la persona, puis laissez l'IA rédiger les champs ci-dessous</value></data>
+  <data name="Dialog_PersonaEdit_Draft" xml:space="preserve"><value>Rédiger avec l'IA</value></data>
+  <data name="Dialog_PersonaEdit_Drafting" xml:space="preserve"><value>Rédaction...</value></data>
+  <data name="Dialog_PersonaEdit_Name" xml:space="preserve"><value>Nom *</value></data>
+  <data name="Dialog_PersonaEdit_Tagline" xml:space="preserve"><value>Slogan</value></data>
+  <data name="Dialog_PersonaEdit_SystemPrompt" xml:space="preserve"><value>Invite système *</value></data>
+  <data name="Dialog_PersonaEdit_SystemPromptHint" xml:space="preserve"><value>L'identité et la voix qui remplacent la personnalité par défaut de l'assistant</value></data>
+  <data name="Dialog_PersonaEdit_Guardrails" xml:space="preserve"><value>Garde-fous</value></data>
+  <data name="Dialog_PersonaEdit_GuardrailsHint" xml:space="preserve"><value>Contraintes facultatives ajoutées après l'identité (par ex. aucun conseil réglementé)</value></data>
+  <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archétype</value></data>
+  <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Expertise</value></data>
+  <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Étiquettes de domaine séparées par des virgules</value></data>
+  <data name="Dialog_PersonaEdit_Emoji" xml:space="preserve"><value>Emoji</value></data>
+  <data name="Dialog_PersonaEdit_AccentColor" xml:space="preserve"><value>Couleur d'accent</value></data>
+  <data name="Dialog_PersonaEdit_ToolScope" xml:space="preserve"><value>Accès aux outils</value></data>
+  <data name="Dialog_PersonaEdit_Provider" xml:space="preserve"><value>Fournisseur préféré</value></data>
+  <data name="Dialog_PersonaEdit_ReasoningEffort" xml:space="preserve"><value>Effort de raisonnement</value></data>
+  <data name="Settings_Tab_Personas" xml:space="preserve"><value>Personas</value></data>
+  <data name="Personas_Subtitle" xml:space="preserve"><value>Les personas façonnent l'identité, la voix et l'expertise de l'assistant.</value></data>
+  <data name="Personas_AddPersona" xml:space="preserve"><value>Ajouter une persona</value></data>
+  <data name="Personas_Duplicate" xml:space="preserve"><value>Dupliquer</value></data>
+  <data name="Personas_BuiltIn" xml:space="preserve"><value>Intégré</value></data>
   <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Préparation du modèle</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Téléchargement du modèle Whisper...</value></data>
   <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>Téléchargement de {0}...</value></data>

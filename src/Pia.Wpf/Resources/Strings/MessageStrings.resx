@@ -175,6 +175,10 @@
   <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Template added successfully.</value></data>
   <data name="Msg_Settings_TemplateDeleted" xml:space="preserve"><value>Template deleted successfully.</value></data>
   <data name="Msg_Settings_TemplateUpdated" xml:space="preserve"><value>Template updated successfully.</value></data>
+  <data name="Msg_Settings_PersonaAdded" xml:space="preserve"><value>Persona added successfully.</value></data>
+  <data name="Msg_Settings_PersonaDeleted" xml:space="preserve"><value>Persona deleted successfully.</value></data>
+  <data name="Msg_Settings_PersonaUpdated" xml:space="preserve"><value>Persona updated successfully.</value></data>
+  <data name="Msg_Settings_CannotDeleteBuiltInPersona" xml:space="preserve"><value>Built-in personas cannot be deleted.</value></data>
   <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Voice Changed</value></data>
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Voice download failed: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Voice {0} downloaded successfully.</value></data>
