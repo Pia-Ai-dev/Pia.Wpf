@@ -328,9 +328,9 @@ public sealed class PiaCloudChatClient : IChatClient
 
             var msgObj = new JsonObject { ["role"] = role };
 
-            // Collect text and tool calls separately
             var textParts = new List<string>();
             var toolCalls = new JsonArray();
+            var imageParts = new List<(string MediaType, ReadOnlyMemory<byte> Data)>();
 
             foreach (var content in msg.Contents)
             {
@@ -354,10 +354,32 @@ public sealed class PiaCloudChatClient : IChatClient
                         };
                         toolCalls.Add(funcCall);
                         break;
+                    case DataContent dc when dc.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase):
+                        imageParts.Add((dc.MediaType, dc.Data));
+                        break;
                 }
             }
 
-            if (textParts.Count > 0)
+            if (imageParts.Count > 0)
+            {
+                var parts = new JsonArray();
+                foreach (var text in textParts)
+                {
+                    if (!string.IsNullOrEmpty(text))
+                        parts.Add(new JsonObject { ["type"] = "text", ["text"] = text });
+                }
+                foreach (var (mediaType, data) in imageParts)
+                {
+                    var url = $"data:{mediaType};base64,{Convert.ToBase64String(data.Span)}";
+                    parts.Add(new JsonObject
+                    {
+                        ["type"] = "image_url",
+                        ["image_url"] = new JsonObject { ["url"] = url }
+                    });
+                }
+                msgObj["content"] = parts;
+            }
+            else if (textParts.Count > 0)
                 msgObj["content"] = string.Join("", textParts);
             else if (toolCalls.Count == 0)
                 msgObj["content"] = msg.Text ?? "";
