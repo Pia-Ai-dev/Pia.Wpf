@@ -21,13 +21,13 @@ public sealed class PiaCloudChatClient : IChatClient
     private readonly string _chatUrl;
     private readonly string? _mode;
     private readonly ILogger _logger;
-    private readonly Func<bool, Task<string?>> _tokenProvider;
+    private readonly Func<bool, string?, Task<string?>> _tokenProvider;
 
     /// <param name="tokenProvider">
-    /// Resolves a bearer token; the bool argument requests a forced refresh (used on 401 retry).
-    /// Attached per-request so the token is always current and an expired token can be refreshed.
+    /// Resolves a bearer token; the bool argument requests a forced refresh (used on 401 retry),
+    /// and the string argument carries the token that failed so duplicate refreshes can be avoided.
     /// </param>
-    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, Func<bool, Task<string?>> tokenProvider, ILogger logger, string? mode = null)
+    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, Func<bool, string?, Task<string?>> tokenProvider, ILogger logger, string? mode = null)
     {
         _httpClient = httpClient;
         _chatUrl = $"{serverUrl.TrimEnd('/')}/api/ai/chat";
@@ -39,9 +39,9 @@ public sealed class PiaCloudChatClient : IChatClient
     private async Task<HttpResponseMessage> SendWithAuthRetryAsync(
         string requestBody, HttpCompletionOption completionOption, CancellationToken cancellationToken)
     {
-        async Task<HttpResponseMessage> Attempt(bool forceRefresh)
+        async Task<(HttpResponseMessage Response, string? Token)> Attempt(bool forceRefresh, string? staleAccessToken = null)
         {
-            var token = await _tokenProvider(forceRefresh);
+            var token = await _tokenProvider(forceRefresh, staleAccessToken);
             var request = new HttpRequestMessage(HttpMethod.Post, _chatUrl)
             {
                 Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
@@ -50,15 +50,15 @@ public sealed class PiaCloudChatClient : IChatClient
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             if (!string.IsNullOrEmpty(_mode))
                 request.Headers.Add("X-Pia-Mode", _mode);
-            return await _httpClient.SendAsync(request, completionOption, cancellationToken);
+            return (await _httpClient.SendAsync(request, completionOption, cancellationToken), token);
         }
 
-        var response = await Attempt(forceRefresh: false);
+        var (response, token) = await Attempt(forceRefresh: false);
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
             _logger.LogInformation("PiaCloudChatClient: unauthorized; refreshing token and retrying once");
             response.Dispose();
-            response = await Attempt(forceRefresh: true);
+            (response, _) = await Attempt(forceRefresh: true, token);
         }
         return response;
     }

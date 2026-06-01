@@ -27,8 +27,10 @@ public interface IAuthService
     /// Gets a valid access token, refreshing if it has expired. Returns null if not logged in.
     /// Pass <paramref name="forceRefresh"/> to bypass the in-memory cache and force a refresh
     /// (e.g. after a 401, where the cached token may have been revoked server-side).
+    /// Pass <paramref name="staleAccessToken"/> with the token that failed so concurrent 401
+    /// retries can reuse another caller's newly refreshed token instead of rotating again.
     /// </summary>
-    Task<string?> GetAccessTokenAsync(bool forceRefresh = false);
+    Task<string?> GetAccessTokenAsync(bool forceRefresh = false, string? staleAccessToken = null);
 
     /// <summary>Fired when login state changes.</summary>
     event EventHandler<bool>? LoginStateChanged;

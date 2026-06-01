@@ -20,6 +20,7 @@ public class AuthService : IAuthService
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<AuthService> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly Task _loadStoredTokensTask;
 
     // Tokens are held DPAPI-encrypted in memory and only decrypted transiently when needed,
     // so a plaintext token never lives in a long-lived field (or a memory dump).
@@ -58,7 +59,7 @@ public class AuthService : IAuthService
         _localizationService = localizationService;
         _logger = logger;
 
-        _ = LoadStoredTokensAsync();
+        _loadStoredTokensTask = LoadStoredTokensAsync();
     }
 
     private async Task LoadStoredTokensAsync()
@@ -304,8 +305,10 @@ public class AuthService : IAuthService
         }
     }
 
-    public async Task<string?> GetAccessTokenAsync(bool forceRefresh = false)
+    public async Task<string?> GetAccessTokenAsync(bool forceRefresh = false, string? staleAccessToken = null)
     {
+        await _loadStoredTokensTask;
+
         if (!IsLoggedIn || string.IsNullOrEmpty(_encryptedRefreshToken))
             return null;
 
@@ -316,11 +319,9 @@ public class AuthService : IAuthService
                 return cached;
         }
 
-        // Snapshot the token we intend to replace. If another caller refreshes while we wait
-        // on the lock, the field will have changed and we return their fresh token instead of
-        // refreshing again — a second /auth/refresh would use a now-rotated refresh token and
-        // get rejected, logging the user out.
-        var staleToken = DecryptAccessToken();
+        // If a caller is retrying a 401, compare against the exact token that failed. If
+        // another caller has already refreshed while we waited, return that fresh token.
+        var tokenToReplace = staleAccessToken ?? DecryptAccessToken();
 
         await _refreshLock.WaitAsync();
         try
@@ -330,7 +331,7 @@ public class AuthService : IAuthService
             {
                 if (forceRefresh)
                 {
-                    if (!string.Equals(current, staleToken, StringComparison.Ordinal))
+                    if (!string.Equals(current, tokenToReplace, StringComparison.Ordinal))
                         return current;
                 }
                 else if (_accessTokenExpiry > DateTime.UtcNow)
