@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.AI;
+using Pia.Shared;
 
 namespace Pia.Models;
 
@@ -39,6 +40,9 @@ public partial class AssistantMessage : ObservableObject
     private AnswerStats? _stats;
 
     [ObservableProperty]
+    private PersonaAttribution? _persona;
+
+    [ObservableProperty]
     private ImageAttachment? _attachment;
 
     public bool HasActionCards => ActionCards.Count > 0;
@@ -55,6 +59,13 @@ public partial class AssistantMessage : ObservableObject
 
     public bool IsUser => Role == ChatRole.User;
 
+    public bool HasPersona => Persona is not null;
+
+    /// <summary>Glyph id for the avatar: the snapshot's persona, or the Pia icon for legacy messages.</summary>
+    public Guid PersonaGlyphId => Persona?.Id ?? BuiltInPersonas.PiaPersonalId;
+
+    public string? PersonaGlyphEmoji => Persona?.Emoji;
+
     partial void OnContentChanged(string value)
     {
         OnPropertyChanged(nameof(HasContent));
@@ -68,6 +79,13 @@ public partial class AssistantMessage : ObservableObject
     partial void OnAttachmentChanged(ImageAttachment? value)
     {
         OnPropertyChanged(nameof(HasAttachment));
+    }
+
+    partial void OnPersonaChanged(PersonaAttribution? value)
+    {
+        OnPropertyChanged(nameof(HasPersona));
+        OnPropertyChanged(nameof(PersonaGlyphId));
+        OnPropertyChanged(nameof(PersonaGlyphEmoji));
     }
 
     public DateTime Timestamp { get; }
