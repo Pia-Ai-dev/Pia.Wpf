@@ -150,13 +150,15 @@ Provide only the generated prompt, no additional explanation.";
         if (provider.ProviderType == AiProviderType.PiaCloud)
         {
             var systemPrompt = await _aiClientService.GeneratePromptViaPiaCloudAsync(description);
-            return new PersonaDraft(null, null, systemPrompt, null, null, null);
+            return new PersonaDraft(null, null, systemPrompt, null, null, null, null, null);
         }
 
         var draftPrompt = $@"You are designing an AI assistant persona from a short description. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
 - ""name"": a short display name (max 40 characters)
 - ""tagline"": a one-line summary (max 120 characters)
 - ""systemPrompt"": a 2-5 sentence identity/voice instruction written in the second person (""You are…"") that fully defines how the assistant should speak and behave
+- ""guardrails"": one or two sentences of constraints the assistant must respect (e.g. topics to avoid, disclaimers); use an empty string if none apply
+- ""archetype"": exactly one of ""assistant"", ""analyst"", ""creative"", ""visionary"", ""explainer"", ""custom""
 - ""emoji"": a single emoji that represents the persona
 - ""accentColor"": a hex colour like ""#7C4DFF""
 - ""expertise"": an array of up to 6 short domain tags
@@ -172,7 +174,7 @@ Description:
     {
         var json = ExtractJsonObject(raw);
         if (json is null)
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null);
+            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null);
 
         try
         {
@@ -181,12 +183,14 @@ Description:
                 PropertyNameCaseInsensitive = true
             });
             if (dto is null)
-                return new PersonaDraft(null, null, raw.Trim(), null, null, null);
+                return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null);
 
             return new PersonaDraft(
                 Clean(dto.Name),
                 Clean(dto.Tagline),
                 Clean(dto.SystemPrompt),
+                Clean(dto.Guardrails),
+                Clean(dto.Archetype),
                 Clean(dto.Emoji),
                 Clean(dto.AccentColor),
                 dto.Expertise?.Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e.Trim()).ToList());
@@ -194,7 +198,7 @@ Description:
         catch (JsonException)
         {
             // Model didn't return valid JSON — fall back to using the raw text as the system prompt.
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null);
+            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null);
         }
 
         static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -215,6 +219,8 @@ Description:
         public string? Name { get; set; }
         public string? Tagline { get; set; }
         public string? SystemPrompt { get; set; }
+        public string? Guardrails { get; set; }
+        public string? Archetype { get; set; }
         public string? Emoji { get; set; }
         public string? AccentColor { get; set; }
         public List<string>? Expertise { get; set; }

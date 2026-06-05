@@ -1,0 +1,16 @@
+<UserControl x:Class="Pia.Controls.PersonaGlyph"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False">
+  <Grid>
+    <!-- The two built-in Pia personas use the app icon (same as the assistant chat avatar). -->
+    <Image x:Name="PiaIcon"
+           Source="pack://application:,,,/Resources/Icons/Pia.ico"
+           Stretch="Uniform"
+           Visibility="Collapsed" />
+    <!-- All other personas keep their emoji glyph. -->
+    <TextBlock x:Name="EmojiText"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center" />
+  </Grid>
+</UserControl>

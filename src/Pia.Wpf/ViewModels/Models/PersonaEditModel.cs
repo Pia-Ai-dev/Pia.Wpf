@@ -81,6 +81,23 @@ public partial class PersonaEditModel : ObservableValidator
 
     public PersonaToolScope[] ToolScopeOptions { get; } = Enum.GetValues<PersonaToolScope>();
 
+    /// <summary>Curated emoji suggestions for the in-dialog emoji picker.</summary>
+    public string[] EmojiChoices { get; } =
+    [
+        "🟣", "🔵", "🟢", "🟡", "🟠", "🔴",
+        "✨", "💡", "🧠", "🤖", "💻", "📈",
+        "✍️", "🎨", "📚", "🔬", "🧭", "🛡️",
+        "🌐", "🎯", "🚀", "🧒", "💬", "⚙️",
+    ];
+
+    /// <summary>Preset accent-colour swatches (the built-in persona palette) for the picker.</summary>
+    public string[] AccentSwatches { get; } =
+    [
+        "#7C4DFF", "#2962FF", "#00C853", "#FF4081",
+        "#00BFA5", "#FFAB00", "#FF6D00", "#F44336",
+        "#9C27B0", "#3F51B5", "#009688", "#607D8B",
+    ];
+
     public IReadOnlyList<ReasoningEffortChoice> ReasoningEffortOptions { get; } =
     [
         new(null, "(Provider default)"),
@@ -119,6 +136,20 @@ public partial class PersonaEditModel : ObservableValidator
     }
 
     [RelayCommand]
+    private void PickEmoji(string? emoji)
+    {
+        if (!string.IsNullOrWhiteSpace(emoji))
+            Emoji = emoji;
+    }
+
+    [RelayCommand]
+    private void PickAccentColor(string? hex)
+    {
+        if (!string.IsNullOrWhiteSpace(hex))
+            AccentColor = hex;
+    }
+
+    [RelayCommand]
     private async Task GenerateDraftAsync()
     {
         if (string.IsNullOrWhiteSpace(Description) || _textOptimizationService is null)
@@ -129,18 +160,27 @@ public partial class PersonaEditModel : ObservableValidator
         {
             var draft = await _textOptimizationService.GeneratePersonaDraftAsync(Description, SelectedProvider?.Id);
 
-            if (!string.IsNullOrWhiteSpace(draft.Name)) Name = draft.Name!;
-            if (!string.IsNullOrWhiteSpace(draft.Tagline)) Tagline = draft.Tagline!;
-            if (!string.IsNullOrWhiteSpace(draft.SystemPrompt)) SystemPrompt = draft.SystemPrompt!;
-            if (!string.IsNullOrWhiteSpace(draft.Emoji)) Emoji = draft.Emoji!;
-            if (!string.IsNullOrWhiteSpace(draft.AccentColor)) AccentColor = draft.AccentColor!;
-            if (draft.Expertise is { Count: > 0 }) Expertise = string.Join(", ", draft.Expertise);
+            // Only fill fields the user hasn't already set, so re-drafting (or drafting after some
+            // manual edits) never clobbers their input — "prefill the unset values".
+            if (string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(draft.Name)) Name = draft.Name!;
+            if (string.IsNullOrWhiteSpace(Tagline) && !string.IsNullOrWhiteSpace(draft.Tagline)) Tagline = draft.Tagline!;
+            if (string.IsNullOrWhiteSpace(SystemPrompt) && !string.IsNullOrWhiteSpace(draft.SystemPrompt)) SystemPrompt = draft.SystemPrompt!;
+            if (string.IsNullOrWhiteSpace(Guardrails) && !string.IsNullOrWhiteSpace(draft.Guardrails)) Guardrails = draft.Guardrails!;
+            if (string.IsNullOrWhiteSpace(Emoji) && !string.IsNullOrWhiteSpace(draft.Emoji)) Emoji = draft.Emoji!;
+            if (string.IsNullOrWhiteSpace(AccentColor) && !string.IsNullOrWhiteSpace(draft.AccentColor)) AccentColor = draft.AccentColor!;
+            if (string.IsNullOrWhiteSpace(Expertise) && draft.Expertise is { Count: > 0 }) Expertise = string.Join(", ", draft.Expertise);
+            if (IsUnsetArchetype(Archetype) && !string.IsNullOrWhiteSpace(draft.Archetype) && ArchetypeOptions.Contains(draft.Archetype))
+                Archetype = draft.Archetype!;
         }
         finally
         {
             IsGenerating = false;
         }
     }
+
+    // The "custom" default (and blank) count as unset for draft-prefill purposes.
+    private static bool IsUnsetArchetype(string archetype) =>
+        string.IsNullOrWhiteSpace(archetype) || archetype == "custom";
 
     public static PersonaEditModel FromPersona(Persona persona, ITextOptimizationService? textOptimizationService = null)
     {

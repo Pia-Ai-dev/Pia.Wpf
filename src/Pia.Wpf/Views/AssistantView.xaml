@@ -338,10 +338,34 @@
                         ToolTip="{loc:Str Settings_Tab_Personas}">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Orientation="Horizontal">
-                      <TextBlock Text="{Binding Emoji}" Margin="0,0,6,0" VerticalAlignment="Center" />
-                      <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <controls:PersonaGlyph Grid.Column="0"
+                                             PersonaId="{Binding Id}"
+                                             Emoji="{Binding Emoji}"
+                                             GlyphSize="14"
+                                             Margin="0,0,6,0"
+                                             VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Name}"
+                                 VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis" />
+                      <!-- Accent colour swatch (hidden when the persona has no accent set). -->
+                      <Ellipse Grid.Column="2"
+                               Width="10"
+                               Height="10"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               Fill="{Binding AccentColor, Converter={StaticResource HexToBrushConverter}}"
+                               Stroke="{DynamicResource BorderBrush_}"
+                               StrokeThickness="1"
+                               Visibility="{Binding AccentColor, Converter={StaticResource NullToVisibilityConverter}}"
+                               ToolTip="{Binding AccentColor}" />
+                    </Grid>
                   </DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>

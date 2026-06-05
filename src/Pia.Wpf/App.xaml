@@ -56,6 +56,7 @@
       <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushFg" Kind="Foreground" />
       <converters:ReminderStatusToLabelConverter x:Key="ReminderStatusToLabelConverter" />
       <converters:NextFireAtToShortStringConverter x:Key="NextFireAtToShortStringConverter" />
+      <converters:HexToBrushConverter x:Key="HexToBrushConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

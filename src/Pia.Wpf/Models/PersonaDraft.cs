@@ -9,6 +9,8 @@ public record PersonaDraft(
     string? Name,
     string? Tagline,
     string? SystemPrompt,
+    string? Guardrails,
+    string? Archetype,
     string? Emoji,
     string? AccentColor,
     List<string>? Expertise);

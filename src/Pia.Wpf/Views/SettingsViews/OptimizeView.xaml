@@ -3,13 +3,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
+             xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
     <converters:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
   </UserControl.Resources>
-  <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-    <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel MaxWidth="1080" HorizontalAlignment="Left">
       <!-- Provider selector for Optimize mode -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}"
@@ -95,11 +96,15 @@
                  Margin="0,0,0,12"/>
 
       <ItemsControl ItemsSource="{Binding Templates}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <controls:ColumnsPanel MaxColumns="3" MinColumnWidth="260" ColumnSpacing="10" RowSpacing="10" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <Border Style="{StaticResource PiaSettingsCardStyle}"
-                    Padding="14,12"
-                    Margin="0,0,0,8">
+                    Padding="14,12">
               <StackPanel>
                 <TextBlock FontSize="14"
                            FontWeight="SemiBold"
