@@ -466,6 +466,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             // Resolve the active persona once for this turn (never null).
             var settings = await _settingsService.GetSettingsAsync();
             var persona = await _personaService.ResolveActiveAsync(WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+            assistantMessage.Persona = PersonaAttribution.From(persona);
 
             // Provider override (contract §6): the persona's PreferredProviderId wins when it resolves
             // to a usable provider; otherwise fall back to the Assistant-mode default.
