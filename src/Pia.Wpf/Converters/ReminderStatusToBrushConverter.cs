@@ -6,14 +6,14 @@ using Pia.Models;
 
 namespace Pia.Converters;
 
-public enum ReminderStatusBrushKind
-{
-    Background,
-    Foreground,
-}
-
 public class ReminderStatusToBrushConverter : IValueConverter
 {
+    public enum ReminderStatusBrushKind
+    {
+        Background,
+        Foreground,
+    }
+
     public ReminderStatusBrushKind Kind { get; set; } = ReminderStatusBrushKind.Background;
 
     public object? Convert(object? value, Type targetType, object parameter, CultureInfo culture)

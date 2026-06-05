@@ -93,11 +93,26 @@
   <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Todo Updated</value></data>
   <data name="Msg_Assistant_Value" xml:space="preserve"><value>Value:</value></data>
 
+  <!-- Assistant chat history -->
+  <data name="AssistantChat_TitlePlaceholder_NewChat" xml:space="preserve"><value>New chat</value></data>
+  <data name="AssistantChat_Chip_Tooltip" xml:space="preserve"><value>Switch between recent chats</value></data>
+  <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Search chats…</value></data>
+  <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>New chat</value></data>
+  <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Show all chats…</value></data>
+  <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>No chats yet.</value></data>
+  <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Search chats…</value></data>
+  <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>No matches</value></data>
+  <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ to navigate · Enter to resume · Esc to close</value></data>
+
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Are you sure you want to delete this session? This action cannot be undone.</value></data>
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Delete Session</value></data>
   <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Failed to copy to clipboard: {0}</value></data>
   <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Failed to delete session: {0}</value></data>
+  <data name="Msg_AssistantHistory_Exported" xml:space="preserve"><value>Exported</value></data>
+  <data name="Msg_AssistantHistory_ExportedToFile" xml:space="preserve"><value>Chat exported to {0}</value></data>
+  <data name="Msg_AssistantHistory_ExportFailed" xml:space="preserve"><value>Failed to export chat: {0}</value></data>
+  <data name="Msg_AssistantHistory_DeleteAllFailed" xml:space="preserve"><value>Failed to delete all chats: {0}</value></data>
 
   <!-- Memory messages -->
   <data name="Msg_Memory_AllFresh" xml:space="preserve"><value>All Fresh</value></data>

@@ -197,6 +197,10 @@ public static class Bootstrapper
         services.AddScoped<ISnackbarService, SnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
 
+        // UI abstractions that keep System.Windows out of ViewModels
+        services.AddSingleton<IClipboardService, ClipboardService>();
+        services.AddSingleton<ICollectionViewService, CollectionViewService>();
+
         // AI provider handlers (one per AiProviderType) + registry
         services.AddSingleton<IAiProviderHandler, OpenAiProviderHandler>();
         services.AddSingleton<IAiProviderHandler, AzureOpenAiProviderHandler>();
@@ -249,6 +253,7 @@ public static class Bootstrapper
         services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IResearchHistoryService, ResearchHistoryService>();
+        services.AddSingleton<IAssistantChatService, AssistantChatService>();
         services.AddTransient<IResearchExportService, ResearchExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
@@ -286,9 +291,14 @@ public static class Bootstrapper
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();
 
+        // Cloud capability probe + assistant-chat sync (singletons)
+        services.AddSingleton<ICloudCapabilityService, CloudCapabilityService>();
+        services.AddSingleton<AssistantChatSyncService>();
+
         // Background services
         services.AddSingleton<ReminderBackgroundService>();
         services.AddSingleton<ScheduledJobBackgroundService>();
+        services.AddSingleton<AssistantChatRetentionService>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
@@ -315,6 +325,7 @@ public static class Bootstrapper
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<ResearchViewModel>();
         services.AddScoped<ResearchHistoryViewModel>();
+        services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();
         services.AddScoped<TodoViewModel>();

@@ -22,7 +22,12 @@ public class VLlmProviderHandlerTests
             EncryptedApiKey = null,
             SupportsToolCalling = false,
             SupportsStreaming = true,
-            TimeoutSeconds = 120,
+            // Short timeout so that when the vLLM box is unreachable the test
+            // fails in ~15s instead of ~84s (4 connect-retries × OS timeout).
+            // Note: this also bounds generation, so a slow reasoning run when
+            // the server IS up could time out here. Override with a higher
+            // value locally if you hit that.
+            TimeoutSeconds = 15,
             ReasoningEffort = effort,
         };
     }

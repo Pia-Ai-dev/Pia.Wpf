@@ -38,6 +38,8 @@ public interface IAiClientService
         string language,
         bool isVoiceInput,
         string? mode = null,
+        string? customPrompt = null,
+        string? customTemplateName = null,
         CancellationToken cancellationToken = default);
 
     Task<string> GeneratePromptViaPiaCloudAsync(

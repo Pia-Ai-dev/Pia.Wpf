@@ -1,0 +1,242 @@
+<UserControl x:Class="Pia.Views.AssistantHistoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:nav="clr-namespace:Pia.Navigation"
+             mc:Ignorable="d"
+             d:DesignHeight="700" d:DesignWidth="1200"
+             nav:ViewModelLocator.AutoWireViewModel="True">
+  <UserControl.InputBindings>
+    <KeyBinding Key="Delete" Command="{Binding DeleteChatCommand}"/>
+  </UserControl.InputBindings>
+
+  <Grid Background="Transparent">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- Header -->
+    <Grid Grid.Row="0" Margin="24,20,24,14">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+
+      <TextBlock Grid.Column="0"
+                 Text="{loc:Str AssistantHistory_Title}"
+                 FontSize="22"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource TextDefaultBrush}"
+                 VerticalAlignment="Center"/>
+
+      <ui:Button Grid.Column="1"
+                 Appearance="Secondary"
+                 Command="{Binding RefreshCommand}"
+                 ToolTip="{loc:Str History_Refresh}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" Margin="0,0,6,0"
+                         Visibility="{Binding IsLoading, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+          <ui:ProgressRing IsIndeterminate="True"
+                           Width="16" Height="16"
+                           Margin="0,0,6,0"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+          <TextBlock Text="{loc:Str History_Refresh}"/>
+        </StackPanel>
+      </ui:Button>
+
+      <ui:Button Grid.Column="2"
+                 Appearance="Secondary"
+                 Margin="8,0,0,0"
+                 Command="{Binding DeleteAllChatsCommand}"
+                 ToolTip="{loc:Str AssistantHistory_DeleteAllConfirmBody}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,6,0"
+                         Foreground="{DynamicResource PiaDangerBrush}"/>
+          <TextBlock Text="{loc:Str AssistantHistory_DeleteAll}"/>
+        </StackPanel>
+      </ui:Button>
+    </Grid>
+
+    <!-- Search + filter bar -->
+    <Grid Grid.Row="1" Margin="24,0,24,14">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+
+      <Border Grid.Column="0"
+              Style="{StaticResource PiaComposerCardStyle}"
+              Padding="0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+
+          <ui:SymbolIcon Grid.Column="0"
+                         Symbol="Search24"
+                         FontSize="16"
+                         Margin="14,0,8,0"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextSubtleBrush}"/>
+
+          <TextBox Grid.Column="1"
+                   Text="{Binding SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   FontSize="13"
+                   Padding="0,10"
+                   Margin="0,0,12,0"
+                   VerticalContentAlignment="Center"/>
+        </Grid>
+      </Border>
+
+      <DatePicker Grid.Column="1"
+                  SelectedDate="{Binding FilterStartDate, Mode=TwoWay}"
+                  Width="150"
+                  Margin="10,0,0,0"
+                  VerticalAlignment="Center"/>
+
+      <DatePicker Grid.Column="2"
+                  SelectedDate="{Binding FilterEndDate, Mode=TwoWay}"
+                  Width="150"
+                  Margin="6,0,0,0"
+                  VerticalAlignment="Center"/>
+
+      <ComboBox Grid.Column="3"
+                ItemsSource="{Binding Providers}"
+                SelectedValuePath="Id"
+                SelectedValue="{Binding SelectedProviderId, Mode=TwoWay}"
+                Width="170"
+                Margin="10,0,0,0"
+                VerticalAlignment="Center">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Name}"/>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+
+      <ui:Button Grid.Column="4"
+                 Command="{Binding ClearFilterCommand}"
+                 Appearance="Secondary"
+                 Width="36"
+                 Height="36"
+                 Padding="0"
+                 Margin="10,0,0,0"
+                 VerticalAlignment="Center"
+                 ToolTip="{loc:Str History_ClearFilters}">
+        <ui:SymbolIcon Symbol="FilterDismiss24" FontSize="16"/>
+      </ui:Button>
+    </Grid>
+
+    <Grid Grid.Row="2" Margin="24,0,24,14">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="420"/>
+        <ColumnDefinition Width="14"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+        <Grid>
+          <ui:ProgressRing IsIndeterminate="True"
+                           Width="40" Height="40"
+                           VerticalAlignment="Top"
+                           HorizontalAlignment="Center"
+                           Margin="0,60,0,0"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+          <StackPanel HorizontalAlignment="Center"
+                      VerticalAlignment="Top"
+                      Margin="0,60,0,0"
+                      Visibility="{Binding Chats.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
+            <ui:SymbolIcon Symbol="Chat48"
+                           FontSize="48"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,16"
+                           Foreground="{DynamicResource TextSubtleBrush}"/>
+            <TextBlock Text="{loc:Str AssistantHistory_EmptyState}"
+                       FontSize="14"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+            <TextBlock Text="{loc:Str AssistantHistory_EmptyStateHint}"
+                       FontSize="12"
+                       HorizontalAlignment="Center"
+                       Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextSubtleBrush}"/>
+          </StackPanel>
+
+          <ItemsControl ItemsSource="{Binding ChatGroups}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Vertical"/>
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <ah:PiaAssistantChatGroupCard Margin="0,0,0,10"/>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Grid>
+      </ScrollViewer>
+
+      <ah:PiaAssistantChatInspector Grid.Column="2"
+                                    DataContext="{Binding SelectedChatDetail}"
+                                    Visibility="{Binding RelativeSource={RelativeSource Self},
+                                                         Path=DataContext,
+                                                         Converter={StaticResource NullToVisibilityConverter}}"/>
+
+      <Border Grid.Column="2"
+              Style="{StaticResource PiaCardStyle}"
+              Visibility="{Binding SelectedChatDetail, Converter={StaticResource InverseNullToVisibilityConverter}}">
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="320">
+          <ui:SymbolIcon Symbol="Chat48"
+                         FontSize="36"
+                         HorizontalAlignment="Center"
+                         Margin="0,0,0,12"
+                         Foreground="{DynamicResource TextSubtleBrush}"/>
+          <TextBlock Text="{loc:Str History_EmptyInspector_Title}"
+                     FontSize="14"
+                     FontWeight="SemiBold"
+                     HorizontalAlignment="Center"
+                     Foreground="{DynamicResource TextDefaultBrush}"/>
+          <TextBlock Text="{loc:Str History_EmptyInspector_Hint}"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     TextAlignment="Center"
+                     HorizontalAlignment="Center"
+                     Margin="0,6,0,12"
+                     Foreground="{DynamicResource TextMutedBrush}"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- Status bar -->
+    <Border Grid.Row="3"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush_}"
+            BorderThickness="0,1,0,0"
+            Padding="14,6">
+      <TextBlock VerticalAlignment="Center"
+                 FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}">
+        <Run Text="{Binding Chats.Count, Mode=OneWay}"/>
+        <Run Text=" chats"/>
+      </TextBlock>
+    </Border>
+  </Grid>
+</UserControl>

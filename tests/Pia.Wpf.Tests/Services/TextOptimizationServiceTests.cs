@@ -52,7 +52,7 @@ public class TextOptimizationServiceTests
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCompletionResult("Optimized via PiaCloud", 0));
 
         var service = CreateService();
@@ -61,7 +61,7 @@ public class TextOptimizationServiceTests
         Assert.Equal("Optimized via PiaCloud", result.OptimizedText);
         await _aiClientService.Received(1).OptimizeViaPiaCloudAsync(
             "hello world",
-            BusinessEmailTemplateId, "EN", false, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            BusinessEmailTemplateId, "EN", false, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().SendRequestAsync(
             Arg.Any<AiProvider>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -84,7 +84,7 @@ public class TextOptimizationServiceTests
         await _aiClientService.Received(1).SendRequestAsync(
             OpenAiProvider, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().OptimizeViaPiaCloudAsync(
-            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public class TextOptimizationServiceTests
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCompletionResult("result", 0));
 
         var service = CreateService();
@@ -108,6 +108,8 @@ public class TextOptimizationServiceTests
             "EN",
             false,
             Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -119,7 +121,7 @@ public class TextOptimizationServiceTests
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCompletionResult("result", 0));
 
         var service = CreateService();
@@ -132,6 +134,8 @@ public class TextOptimizationServiceTests
             "EN",
             true,
             Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -143,7 +147,7 @@ public class TextOptimizationServiceTests
         _providerService.GetDefaultProviderAsync()
             .Returns(PiaCloudProvider);
         _aiClientService.OptimizeViaPiaCloudAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCompletionResult("Ergebnis", 0));
 
         var service = CreateService();
@@ -154,6 +158,8 @@ public class TextOptimizationServiceTests
             BusinessEmailTemplateId,
             "DE",
             false,
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }

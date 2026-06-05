@@ -11,6 +11,7 @@ shipped; the UI controls for the surfaces below exist (under
 | [suggestion-chips.md](suggestion-chips.md) | shipped | 0.5–1d |
 | [source-chips.md](source-chips.md) | not started | ~1d |
 | [callouts.md](callouts.md) | not started | ~1d |
+| [assistant-chat-history.md](assistant-chat-history.md) | not started | ~3–5d |
 
 Each plan is self-contained: it states what the surface is, lists the
 producer changes by file, names the symbols to add, and ends with an

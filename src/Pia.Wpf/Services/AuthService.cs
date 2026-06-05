@@ -20,10 +20,24 @@ public class AuthService : IAuthService
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<AuthService> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly Task _loadStoredTokensTask;
 
-    private string? _accessToken;
-    private string? _refreshToken;
+    // Tokens are held DPAPI-encrypted in memory and only decrypted transiently when needed,
+    // so a plaintext token never lives in a long-lived field (or a memory dump).
+    private string? _encryptedAccessToken;
+    private string? _encryptedRefreshToken;
     private DateTime _accessTokenExpiry;
+
+    private string? DecryptAccessToken() => DecryptToken(_encryptedAccessToken);
+    private string? DecryptRefreshToken() => DecryptToken(_encryptedRefreshToken);
+
+    private string? DecryptToken(string? encrypted)
+    {
+        if (string.IsNullOrEmpty(encrypted))
+            return null;
+        var value = _dpapiHelper.Decrypt(encrypted);
+        return string.IsNullOrEmpty(value) ? null : value;
+    }
 
     public bool IsLoggedIn { get; private set; }
     public string? UserDisplayName { get; private set; }
@@ -45,7 +59,7 @@ public class AuthService : IAuthService
         _localizationService = localizationService;
         _logger = logger;
 
-        _ = LoadStoredTokensAsync();
+        _loadStoredTokensTask = LoadStoredTokensAsync();
     }
 
     private async Task LoadStoredTokensAsync()
@@ -56,12 +70,15 @@ public class AuthService : IAuthService
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.EncryptedRefreshToken))
                 return;
 
-            _refreshToken = _dpapiHelper.Decrypt(settings.EncryptedRefreshToken);
+            // Keep the refresh token in its already-encrypted form; no plaintext at rest.
+            // The persisted access token is intentionally not loaded — it is almost certainly
+            // expired by the time the app restarts, so the first GetAccessTokenAsync refreshes it.
+            _encryptedRefreshToken = settings.EncryptedRefreshToken;
             UserDisplayName = settings.SyncUserDisplayName;
             UserEmail = settings.SyncUserEmail;
             Provider = settings.SyncProvider;
 
-            if (!string.IsNullOrEmpty(_refreshToken))
+            if (!string.IsNullOrEmpty(_encryptedRefreshToken))
             {
                 IsLoggedIn = true;
                 LoginStateChanged?.Invoke(this, true);
@@ -146,9 +163,9 @@ public class AuthService : IAuthService
                 return (false, "Login failed - no tokens received");
             }
 
-            // Store tokens
-            _accessToken = accessToken;
-            _refreshToken = refreshToken;
+            // Store tokens (encrypted in memory)
+            _encryptedAccessToken = _dpapiHelper.Encrypt(accessToken);
+            _encryptedRefreshToken = _dpapiHelper.Encrypt(refreshToken);
             _accessTokenExpiry = DateTime.UtcNow.AddMinutes(14); // Slightly less than 15 min
             UserDisplayName = displayName;
             UserEmail = email;
@@ -157,8 +174,8 @@ public class AuthService : IAuthService
 
             // Persist to settings
             settings.SyncEnabled = true;
-            settings.EncryptedAccessToken = _dpapiHelper.Encrypt(accessToken);
-            settings.EncryptedRefreshToken = _dpapiHelper.Encrypt(refreshToken);
+            settings.EncryptedAccessToken = _encryptedAccessToken;
+            settings.EncryptedRefreshToken = _encryptedRefreshToken;
             settings.SyncUserId = userId;
             settings.SyncUserEmail = email;
             settings.SyncUserDisplayName = displayName;
@@ -210,8 +227,8 @@ public class AuthService : IAuthService
             if (loginResponse is null)
                 return (false, "Invalid server response");
 
-            _accessToken = loginResponse.AccessToken;
-            _refreshToken = loginResponse.RefreshToken;
+            _encryptedAccessToken = _dpapiHelper.Encrypt(loginResponse.AccessToken);
+            _encryptedRefreshToken = _dpapiHelper.Encrypt(loginResponse.RefreshToken);
             _accessTokenExpiry = DateTime.UtcNow.AddMinutes(14);
             UserDisplayName = loginResponse.User.DisplayName;
             UserEmail = loginResponse.User.Email;
@@ -219,8 +236,8 @@ public class AuthService : IAuthService
             IsLoggedIn = true;
 
             settings.SyncEnabled = true;
-            settings.EncryptedAccessToken = _dpapiHelper.Encrypt(loginResponse.AccessToken);
-            settings.EncryptedRefreshToken = _dpapiHelper.Encrypt(loginResponse.RefreshToken);
+            settings.EncryptedAccessToken = _encryptedAccessToken;
+            settings.EncryptedRefreshToken = _encryptedRefreshToken;
             settings.SyncUserId = loginResponse.User.Id.ToString();
             settings.SyncUserEmail = loginResponse.User.Email;
             settings.SyncUserDisplayName = loginResponse.User.DisplayName;
@@ -246,13 +263,14 @@ public class AuthService : IAuthService
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
 
             // Revoke refresh token on server
-            if (!string.IsNullOrEmpty(serverUrl) && !string.IsNullOrEmpty(_refreshToken))
+            var refreshToken = DecryptRefreshToken();
+            if (!string.IsNullOrEmpty(serverUrl) && !string.IsNullOrEmpty(refreshToken))
             {
                 try
                 {
                     using var client = _httpClientFactory.CreateClient();
                     await client.PostAsJsonAsync($"{serverUrl}/auth/logout",
-                        new { refreshToken = _refreshToken });
+                        new { refreshToken });
                 }
                 catch (Exception ex)
                 {
@@ -261,8 +279,8 @@ public class AuthService : IAuthService
             }
 
             // Clear local state
-            _accessToken = null;
-            _refreshToken = null;
+            _encryptedAccessToken = null;
+            _encryptedRefreshToken = null;
             UserDisplayName = null;
             UserEmail = null;
             Provider = null;
@@ -276,6 +294,7 @@ public class AuthService : IAuthService
             settings.SyncUserDisplayName = null;
             settings.SyncProvider = null;
             settings.LastSyncTimestamp = null;
+            settings.AssistantChatsBackfilledAt = null;
             await _settingsService.SaveSettingsAsync(settings);
 
             LoginStateChanged?.Invoke(this, false);
@@ -286,19 +305,44 @@ public class AuthService : IAuthService
         }
     }
 
-    public async Task<string?> GetAccessTokenAsync()
+    public async Task<string?> GetAccessTokenAsync(bool forceRefresh = false, string? staleAccessToken = null)
     {
-        if (!IsLoggedIn || string.IsNullOrEmpty(_refreshToken))
+        await _loadStoredTokensTask;
+
+        if (!IsLoggedIn || string.IsNullOrEmpty(_encryptedRefreshToken))
             return null;
 
-        if (_accessToken is not null && _accessTokenExpiry > DateTime.UtcNow)
-            return _accessToken;
+        if (!forceRefresh && _accessTokenExpiry > DateTime.UtcNow)
+        {
+            var cached = DecryptAccessToken();
+            if (cached is not null)
+                return cached;
+        }
+
+        // If a caller is retrying a 401, compare against the exact token that failed. If
+        // another caller has already refreshed while we waited, return that fresh token.
+        var tokenToReplace = staleAccessToken ?? DecryptAccessToken();
 
         await _refreshLock.WaitAsync();
         try
         {
-            if (_accessToken is not null && _accessTokenExpiry > DateTime.UtcNow)
-                return _accessToken;
+            var current = DecryptAccessToken();
+            if (current is not null)
+            {
+                if (forceRefresh)
+                {
+                    if (!string.Equals(current, tokenToReplace, StringComparison.Ordinal))
+                        return current;
+                }
+                else if (_accessTokenExpiry > DateTime.UtcNow)
+                {
+                    return current;
+                }
+            }
+
+            var refreshToken = DecryptRefreshToken();
+            if (refreshToken is null)
+                return null;
 
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
@@ -307,7 +351,7 @@ public class AuthService : IAuthService
 
             using var client = _httpClientFactory.CreateClient();
             var response = await client.PostAsJsonAsync($"{serverUrl}/auth/refresh",
-                new { refreshToken = _refreshToken });
+                new { refreshToken });
 
             if (!response.IsSuccessStatusCode)
             {
@@ -320,16 +364,21 @@ public class AuthService : IAuthService
             }
 
             var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-            _accessToken = json.GetProperty("accessToken").GetString();
-            _refreshToken = json.GetProperty("refreshToken").GetString();
+            var newAccessToken = json.GetProperty("accessToken").GetString();
+            var newRefreshToken = json.GetProperty("refreshToken").GetString();
             _accessTokenExpiry = DateTime.UtcNow.AddMinutes(14);
 
+            _encryptedAccessToken = string.IsNullOrEmpty(newAccessToken)
+                ? null : _dpapiHelper.Encrypt(newAccessToken);
+            _encryptedRefreshToken = string.IsNullOrEmpty(newRefreshToken)
+                ? null : _dpapiHelper.Encrypt(newRefreshToken);
+
             // Persist new tokens
-            settings.EncryptedAccessToken = _dpapiHelper.Encrypt(_accessToken!);
-            settings.EncryptedRefreshToken = _dpapiHelper.Encrypt(_refreshToken!);
+            settings.EncryptedAccessToken = _encryptedAccessToken;
+            settings.EncryptedRefreshToken = _encryptedRefreshToken;
             await _settingsService.SaveSettingsAsync(settings);
 
-            return _accessToken;
+            return newAccessToken;
         }
         catch (Exception ex)
         {

@@ -6,14 +6,14 @@ using Pia.Models;
 
 namespace Pia.Converters;
 
-public enum MemoryTypeBrushKind
-{
-    Background,
-    Foreground
-}
-
 public class MemoryTypeToBrushConverter : IValueConverter
 {
+    public enum MemoryTypeBrushKind
+    {
+        Background,
+        Foreground
+    }
+
     public MemoryTypeBrushKind Kind { get; set; } = MemoryTypeBrushKind.Background;
 
     public object? Convert(object? value, Type targetType, object parameter, CultureInfo culture)

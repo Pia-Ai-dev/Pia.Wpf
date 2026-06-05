@@ -103,6 +103,11 @@ public class AppSettings
     // Null/empty disables the tool entirely.
     public string? AssistantFilesFolder { get; set; }
 
+    // Assistant chat history
+    public bool ChatHistoryEnabled { get; set; } = true;
+    public int ChatHistoryRetentionDays { get; set; } = 30;
+    public bool ChatAutoTitleEnabled { get; set; } = false;
+
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
 
@@ -119,6 +124,12 @@ public class AppSettings
     public DateTime? LastSyncTimestamp { get; set; }
     public string? LastPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
+
+    // One-time gate for the assistant-chat startup backfill. Chats predating
+    // cloud sign-in never raised ChatsChanged, so without a backfill they'd
+    // never reach the cloud. Set once the full push completes; cleared on logout
+    // so a different account re-backfills. See AssistantChatSyncService.
+    public DateTime? AssistantChatsBackfilledAt { get; set; }
 
     // E2EE settings
     public bool IsE2EEEnabled { get; set; }

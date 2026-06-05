@@ -939,4 +939,103 @@ public class SyncMapper
             CompletedAt = sync.CompletedAt ?? sync.CreatedAt
         };
     }
+
+    // --- Assistant Chats ---
+
+    /// <summary>
+    /// Prepare a chat for the wire. When E2EE is active, encrypts Title / ProviderId / Messages
+    /// into EncryptedPayload+WrappedDek and clears the plaintext fields. Otherwise returns a
+    /// copy unchanged. Id, SchemaVersion, timestamps, and WindowMode stay plaintext — the
+    /// server needs them for indexing, conflict resolution, and validation.
+    /// </summary>
+    public SyncAssistantChat ToSyncAssistantChat(SyncAssistantChat chat, string? userId = null)
+    {
+        var wire = new SyncAssistantChat
+        {
+            Id = chat.Id,
+            SchemaVersion = chat.SchemaVersion,
+            CreatedAt = ToUtc(chat.CreatedAt),
+            UpdatedAt = ToUtc(chat.UpdatedAt),
+            LastAccessedAt = ToUtc(chat.LastAccessedAt),
+            WindowMode = chat.WindowMode,
+            ExtensionData = chat.ExtensionData
+        };
+
+        if (IsE2EEActive && userId is not null)
+        {
+            var plainPayload = new
+            {
+                chat.Title,
+                chat.ProviderId,
+                chat.Messages
+            };
+            (wire.EncryptedPayload, wire.WrappedDek) = _e2ee!.EncryptRecord(
+                plainPayload, userId, "assistant_chat", chat.Id.ToString());
+            // Leave Title/ProviderId/Messages defaults — server enforces they stay empty
+            // when EncryptedPayload is set (see assistant-chat-history.md §4.3).
+        }
+        else
+        {
+            wire.Title = chat.Title;
+            wire.ProviderId = chat.ProviderId;
+            wire.Messages = chat.Messages;
+        }
+
+        return wire;
+    }
+
+    /// <summary>
+    /// Materialize an incoming wire chat into a local-store-ready document. When E2EE
+    /// is active and the wire carries ciphertext, decrypts Title / ProviderId / Messages
+    /// back onto the document and clears EncryptedPayload/WrappedDek so the local store
+    /// stays plaintext (matches the pattern used for templates/memories/etc.).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the wire chat carries ciphertext but this client cannot decrypt it
+    /// (E2EE inactive, missing userId). The sync service catches this and skips the row
+    /// rather than persisting an empty plaintext chat to local storage.
+    /// </exception>
+    public SyncAssistantChat FromSyncAssistantChat(SyncAssistantChat wire, string? userId = null)
+    {
+        if (wire.EncryptedPayload is not null && wire.WrappedDek is not null)
+        {
+            if (!IsE2EEActive || userId is null)
+            {
+                throw new InvalidOperationException(
+                    "Incoming chat is encrypted but E2EE is not active on this client.");
+            }
+
+            var decrypted = _e2ee!.DecryptRecord<SyncAssistantChat>(
+                wire.EncryptedPayload, wire.WrappedDek, userId, "assistant_chat", wire.Id.ToString());
+
+            return new SyncAssistantChat
+            {
+                Id = wire.Id,
+                SchemaVersion = wire.SchemaVersion,
+                Title = decrypted.Title,
+                ProviderId = decrypted.ProviderId,
+                Messages = decrypted.Messages ?? [],
+                CreatedAt = wire.CreatedAt,
+                UpdatedAt = wire.UpdatedAt,
+                LastAccessedAt = wire.LastAccessedAt,
+                WindowMode = wire.WindowMode,
+                ExtensionData = wire.ExtensionData
+                // EncryptedPayload / WrappedDek deliberately null — local store holds plaintext.
+            };
+        }
+
+        return new SyncAssistantChat
+        {
+            Id = wire.Id,
+            SchemaVersion = wire.SchemaVersion,
+            Title = wire.Title,
+            ProviderId = wire.ProviderId,
+            Messages = wire.Messages,
+            CreatedAt = wire.CreatedAt,
+            UpdatedAt = wire.UpdatedAt,
+            LastAccessedAt = wire.LastAccessedAt,
+            WindowMode = wire.WindowMode,
+            ExtensionData = wire.ExtensionData
+        };
+    }
 }

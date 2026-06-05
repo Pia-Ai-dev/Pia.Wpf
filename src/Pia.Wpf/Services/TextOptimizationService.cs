@@ -58,9 +58,13 @@ public class TextOptimizationService : ITextOptimizationService
         AiCompletionResult completion;
         if (provider.ProviderType == AiProviderType.PiaCloud)
         {
-            // Server builds the prompt — send raw text + template ID
+            // For built-in templates the server already has the prompt body; for custom
+            // templates we have to send it inline since the server's registry won't know it.
+            var customPrompt = template.IsBuiltIn ? null : template.Prompt;
+            var customName = template.IsBuiltIn ? null : template.Name;
             completion = await _aiClientService.OptimizeViaPiaCloudAsync(
-                processedInput, templateId, targetLanguage, isVoiceInput, mode, cancellationToken);
+                processedInput, templateId, targetLanguage, isVoiceInput, mode,
+                customPrompt, customName, cancellationToken);
         }
         else
         {
