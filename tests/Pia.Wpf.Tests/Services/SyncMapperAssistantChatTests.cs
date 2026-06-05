@@ -78,6 +78,12 @@ public class SyncMapperAssistantChatTests
                     Timestamp = updatedAt,
                     Tokens = 142,
                     ModelName = "gpt-5",
+                    Persona = new SyncMessagePersona
+                    {
+                        Id = Guid.Parse("0000000A-0000-0000-0000-000000000004"),
+                        Name = "Marketing Writer",
+                        Emoji = "✍️",
+                    },
                 },
             ],
         };
@@ -145,6 +151,9 @@ public class SyncMapperAssistantChatTests
         Assert.Equal(original.Messages[0].Content, back.Messages[0].Content);
         Assert.Equal(original.Messages[1].ModelName, back.Messages[1].ModelName);
         Assert.Equal(original.Messages[1].Tokens, back.Messages[1].Tokens);
+        Assert.Equal(original.Messages[1].Persona!.Name, back.Messages[1].Persona!.Name);
+        Assert.Equal(original.Messages[1].Persona!.Id, back.Messages[1].Persona!.Id);
+        Assert.Equal(original.Messages[1].Persona!.Emoji, back.Messages[1].Persona!.Emoji);
     }
 
     [Fact]
