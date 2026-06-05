@@ -1539,12 +1539,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await voiceMode.EnterAsync();
     }
 
+    /// <summary>Persona resolved for the most recent voice-mode turn, used to attribute the stored reply.</summary>
+    private Persona? _lastVoiceModePersona;
+
     private async IAsyncEnumerable<string> StreamVoiceModeResponse(
         string userText,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var settings = await _settingsService.GetSettingsAsync();
         var persona = await _personaService.ResolveActiveAsync(WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+        _lastVoiceModePersona = persona;
 
         var provider = persona.PreferredProviderId.HasValue
             ? await _providerService.GetProviderAsync(persona.PreferredProviderId.Value)
@@ -1741,8 +1745,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void AddVoiceModeConversation(string userText, string assistantText)
     {
+        var assistantMessage = new AssistantMessage(ChatRole.Assistant, assistantText);
+        if (_lastVoiceModePersona is { } persona)
+            assistantMessage.Persona = PersonaAttribution.From(persona);
+
         Messages.Add(new AssistantMessage(ChatRole.User, userText));
-        Messages.Add(new AssistantMessage(ChatRole.Assistant, assistantText));
+        Messages.Add(assistantMessage);
         HasMessages = true;
     }
 
