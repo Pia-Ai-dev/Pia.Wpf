@@ -1,4 +1,3 @@
-using System.Globalization;
 using Pia.Models;
 
 namespace Pia.Controls.Chat;
@@ -13,7 +12,7 @@ internal static class FooterSummaryFormatter
     {
         var parts = new List<string>(3);
         if (stats is not null)
-            parts.Add(stats.Tokens.ToString("N0", CultureInfo.InvariantCulture) + " Tokens");
+            parts.Add($"{stats.Tokens:N0} Tokens");
         if (!string.IsNullOrWhiteSpace(personaName))
             parts.Add(personaName);
         if (stats is not null && !string.IsNullOrWhiteSpace(stats.Model))

@@ -1,11 +1,24 @@
+using System.Globalization;
+using System.Threading;
 using Pia.Controls.Chat;
 using Pia.Models;
 using Xunit;
 
 namespace Pia.Tests.Controls;
 
-public class FooterSummaryFormatterTests
+public class FooterSummaryFormatterTests : IDisposable
 {
+    private readonly CultureInfo _originalCulture = Thread.CurrentThread.CurrentCulture;
+
+    public FooterSummaryFormatterTests()
+    {
+        // Pin to invariant so the literal "1,234" group separator is deterministic
+        // on any machine locale; production formatting stays culture-sensitive.
+        Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+    }
+
+    public void Dispose() => Thread.CurrentThread.CurrentCulture = _originalCulture;
+
     [Fact]
     public void StatsAndPersona_ShowsTokensPersonaModel()
     {
