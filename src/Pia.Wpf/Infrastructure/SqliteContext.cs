@@ -234,6 +234,9 @@ public class SqliteContext : IDisposable
                 Timestamp       TEXT NOT NULL,
                 Tokens          INTEGER,
                 ModelName       TEXT,
+                PersonaId       TEXT,
+                PersonaName     TEXT,
+                PersonaEmoji    TEXT,
                 FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
             );
 
@@ -453,6 +456,41 @@ public class SqliteContext : IDisposable
                 CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_OwnerDeviceId ON ScheduledJobs(OwnerDeviceId);
                 """;
             idx.ExecuteNonQuery();
+        }
+
+        // Persona attribution snapshot on assistant messages.
+        var hasPersonaId = false;
+        var hasPersonaName = false;
+        var hasPersonaEmoji = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AssistantChatMessages)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                var col = r.GetString(1);
+                if (col == "PersonaId") hasPersonaId = true;
+                else if (col == "PersonaName") hasPersonaName = true;
+                else if (col == "PersonaEmoji") hasPersonaEmoji = true;
+            }
+        }
+        if (!hasPersonaId)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChatMessages ADD COLUMN PersonaId TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasPersonaName)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChatMessages ADD COLUMN PersonaName TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasPersonaEmoji)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChatMessages ADD COLUMN PersonaEmoji TEXT";
+            addCol.ExecuteNonQuery();
         }
 
         // Create the Personas table for databases that predate it (only user personas are stored;

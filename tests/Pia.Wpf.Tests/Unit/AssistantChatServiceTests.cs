@@ -155,6 +155,37 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Equal("server-only value", value.GetString());
     }
 
+    [Fact]
+    public async Task SaveAndGet_RoundTripsPersonaSnapshot()
+    {
+        var chat = MakeChat(title: "Persona test", body: "user question");
+        var personaId = Guid.NewGuid();
+        chat.Messages.Add(new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(),
+            Role = "assistant",
+            Content = "assistant answer",
+            Timestamp = DateTime.UtcNow,
+            Tokens = 10,
+            ModelName = "gpt-5",
+            Persona = new SyncMessagePersona { Id = personaId, Name = "Marketing Writer", Emoji = "✍️" },
+        });
+
+        await _service.SaveAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        var loaded = await _service.GetAsync(chat.Id);
+        Assert.NotNull(loaded);
+        var assistant = loaded!.Messages.Single(m => m.Role == "assistant");
+        Assert.NotNull(assistant.Persona);
+        Assert.Equal(personaId, assistant.Persona!.Id);
+        Assert.Equal("Marketing Writer", assistant.Persona.Name);
+        Assert.Equal("✍️", assistant.Persona.Emoji);
+
+        var user = loaded.Messages.Single(m => m.Role == "user");
+        Assert.Null(user.Persona);
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;
