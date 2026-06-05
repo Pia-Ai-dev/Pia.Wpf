@@ -5,6 +5,7 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:vm="clr-namespace:Pia.ViewModels"
              xmlns:vmm="clr-namespace:Pia.ViewModels.Models"
+             xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory"
              x:Name="ChipRoot"
              HorizontalAlignment="Left">
   <Grid>
@@ -135,10 +136,7 @@
                                     Padding="10,7"
                                     Command="{Binding DataContext.ResumeChatCommand, ElementName=ChipRoot}"
                                     CommandParameter="{Binding Id}">
-                              <TextBlock Text="{Binding Title}"
-                                         FontSize="13"
-                                         Foreground="{DynamicResource TextDefaultBrush}"
-                                         TextTrimming="CharacterEllipsis" />
+                              <ah:PiaAssistantChatRowContent/>
                             </Button>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>

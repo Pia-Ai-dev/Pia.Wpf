@@ -11,4 +11,4 @@ public sealed class ChatChipGroupViewModel
 }
 
 /// <summary>A single chat entry within a <see cref="ChatChipGroupViewModel"/>.</summary>
-public sealed record ChatChipItemViewModel(Guid Id, string Title);
+public sealed record ChatChipItemViewModel(Guid Id, string Title, DateTime UpdatedAt);

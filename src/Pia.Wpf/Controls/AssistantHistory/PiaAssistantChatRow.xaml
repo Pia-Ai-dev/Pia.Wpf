@@ -1,6 +1,7 @@
 <UserControl x:Class="Pia.Controls.AssistantHistory.PiaAssistantChatRow"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory">
   <Border x:Name="Root"
           CornerRadius="8"
           Padding="28,8,14,8"
@@ -20,38 +21,6 @@
       </Style>
     </Border.Style>
 
-    <Grid>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="48"/>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-
-      <TextBlock Grid.Column="0"
-                 Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}', ConverterCulture=en-US}"
-                 FontSize="11.5"
-                 FontFamily="{DynamicResource PiaMonoFont}"
-                 Foreground="{DynamicResource TextSubtleBrush}"
-                 VerticalAlignment="Center"/>
-
-      <StackPanel Grid.Column="1">
-        <TextBlock FontSize="13"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextDefaultBrush}"
-                   Text="{Binding Title, FallbackValue='—'}"
-                   TextTrimming="CharacterEllipsis"
-                   TextWrapping="NoWrap"/>
-      </StackPanel>
-
-      <TextBlock Grid.Column="2"
-                 Text="{Binding UpdatedAt, StringFormat='{}{0:MM-dd}'}"
-                 FontSize="10.5"
-                 FontFamily="{DynamicResource PiaMonoFont}"
-                 Foreground="{DynamicResource TextSubtleBrush}"
-                 TextAlignment="Right"
-                 MinWidth="42"
-                 VerticalAlignment="Center"
-                 Margin="10,0,0,0"/>
-    </Grid>
+    <ah:PiaAssistantChatRowContent/>
   </Border>
 </UserControl>

@@ -147,7 +147,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
             .Select(g => new ChatChipGroupViewModel
             {
                 DisplayName = _localizationService[BucketResourceKey(g.Key)],
-                Items = g.Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c))).ToList(),
+                Items = g.Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt)).ToList(),
             })
             .ToList();
 
