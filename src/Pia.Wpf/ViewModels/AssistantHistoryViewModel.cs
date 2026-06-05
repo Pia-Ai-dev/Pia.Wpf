@@ -449,7 +449,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             if (detail is not null)
             {
                 foreach (var msg in detail.Messages)
-                    SelectedChatMessages.Add(MapFromDto(msg));
+                    SelectedChatMessages.Add(AssistantMessageMapper.FromDto(msg));
             }
 
             _logger.LogInformation(
@@ -462,17 +462,6 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             SelectedChatDetail = null;
             SelectedChatMessages.Clear();
         }
-    }
-
-    private static AssistantMessage MapFromDto(SyncAssistantChatMessage dto)
-    {
-        var role = dto.Role == "user" ? ChatRole.User : ChatRole.Assistant;
-        var message = new AssistantMessage(dto.Id, role, dto.Content, dto.Timestamp.ToLocalTime());
-        if (!string.IsNullOrEmpty(dto.ThinkingContent))
-            message.ThinkingContent = dto.ThinkingContent;
-        if (dto.Tokens is { } tokens && !string.IsNullOrEmpty(dto.ModelName))
-            message.Stats = new AnswerStats(tokens, dto.ModelName);
-        return message;
     }
 
     public void Dispose()

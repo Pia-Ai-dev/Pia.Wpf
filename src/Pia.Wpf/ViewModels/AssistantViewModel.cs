@@ -686,7 +686,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             LastAccessedAt = nowUtc,
             WindowMode = WindowMode.Assistant.ToString(),
             ProviderId = _currentChatProviderId,
-            Messages = [.. Messages.Select(MapToDto)],
+            Messages = [.. Messages.Select(AssistantMessageMapper.ToDto)],
         };
 
         try
@@ -838,17 +838,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         return sb.ToString();
     }
-
-    private static SyncAssistantChatMessage MapToDto(AssistantMessage m) => new()
-    {
-        Id = m.Id,
-        Role = m.IsUser ? "user" : "assistant",
-        Content = m.Content,
-        ThinkingContent = string.IsNullOrEmpty(m.ThinkingContent) ? null : m.ThinkingContent,
-        Timestamp = m.Timestamp.ToUniversalTime(),
-        Tokens = m.Stats?.Tokens,
-        ModelName = m.Stats?.Model,
-    };
 
     private async Task ExecuteToggleRecording()
     {
@@ -1143,7 +1132,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Messages.Clear();
 
         foreach (var dto in chat.Messages)
-            Messages.Add(MapFromDto(dto));
+            Messages.Add(AssistantMessageMapper.FromDto(dto));
 
         HasMessages = Messages.Count > 0;
         _currentChatId = chat.Id;
@@ -1163,17 +1152,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             _logger.LogWarning(ex, "Failed to touch LastAccessedAt for {ChatId}", chat.Id);
         }
-    }
-
-    private static AssistantMessage MapFromDto(SyncAssistantChatMessage dto)
-    {
-        var role = dto.Role == "user" ? ChatRole.User : ChatRole.Assistant;
-        var message = new AssistantMessage(dto.Id, role, dto.Content, dto.Timestamp.ToLocalTime());
-        if (!string.IsNullOrEmpty(dto.ThinkingContent))
-            message.ThinkingContent = dto.ThinkingContent;
-        if (dto.Tokens is { } tokens && !string.IsNullOrEmpty(dto.ModelName))
-            message.Stats = new AnswerStats(tokens, dto.ModelName);
-        return message;
     }
 
     private void NavigateToAssistantHistory()
