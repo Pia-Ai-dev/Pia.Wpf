@@ -231,7 +231,7 @@
                Margin="8,0,4,0"
                FontSize="11"
                Foreground="{DynamicResource TextSubtleBrush}"
-               Text="{Binding StatsSummary, ElementName=Root}" />
+               Text="{Binding FooterSummary, ElementName=Root}" />
   </Grid>
   </Border>
 </UserControl>

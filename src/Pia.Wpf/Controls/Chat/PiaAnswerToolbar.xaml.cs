@@ -21,10 +21,14 @@ public partial class PiaAnswerToolbar : UserControl
         DependencyProperty.Register(nameof(Stats), typeof(AnswerStats), typeof(PiaAnswerToolbar),
             new PropertyMetadata(null, OnStatsChanged));
 
-    private static readonly DependencyPropertyKey StatsSummaryKey =
-        DependencyProperty.RegisterReadOnly(nameof(StatsSummary), typeof(string), typeof(PiaAnswerToolbar),
+    public static readonly DependencyProperty PersonaNameProperty =
+        DependencyProperty.Register(nameof(PersonaName), typeof(string), typeof(PiaAnswerToolbar),
+            new PropertyMetadata(null, OnPersonaNameChanged));
+
+    private static readonly DependencyPropertyKey FooterSummaryKey =
+        DependencyProperty.RegisterReadOnly(nameof(FooterSummary), typeof(string), typeof(PiaAnswerToolbar),
             new PropertyMetadata(string.Empty));
-    public static readonly DependencyProperty StatsSummaryProperty = StatsSummaryKey.DependencyProperty;
+    public static readonly DependencyProperty FooterSummaryProperty = FooterSummaryKey.DependencyProperty;
 
     public ICommand? CopyCommand
     {
@@ -62,14 +66,22 @@ public partial class PiaAnswerToolbar : UserControl
         set => SetValue(StatsProperty, value);
     }
 
-    public string StatsSummary => (string)GetValue(StatsSummaryProperty);
+    public string? PersonaName
+    {
+        get => (string?)GetValue(PersonaNameProperty);
+        set => SetValue(PersonaNameProperty, value);
+    }
+
+    public string FooterSummary => (string)GetValue(FooterSummaryProperty);
 
     public PiaAnswerToolbar() => InitializeComponent();
 
-    private static void OnStatsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-    {
-        var bar = (PiaAnswerToolbar)d;
-        var stats = e.NewValue as AnswerStats;
-        bar.SetValue(StatsSummaryKey, stats?.Summary ?? string.Empty);
-    }
+    private static void OnStatsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
+        ((PiaAnswerToolbar)d).RecomputeFooter();
+
+    private static void OnPersonaNameChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
+        ((PiaAnswerToolbar)d).RecomputeFooter();
+
+    private void RecomputeFooter() =>
+        SetValue(FooterSummaryKey, FooterSummaryFormatter.Compose(Stats, PersonaName));
 }

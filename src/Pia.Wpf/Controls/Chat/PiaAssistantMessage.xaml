@@ -61,7 +61,8 @@
                            RegenerateCommand="{Binding RegenerateCommand, ElementName=Root}"
                            RateCommand="{Binding RateCommand, ElementName=Root}"
                            CommandParameter="{Binding}"
-                           Stats="{Binding Stats}">
+                           Stats="{Binding Stats}"
+                           PersonaName="{Binding Persona.Name}">
       <chat:PiaAnswerToolbar.Style>
         <Style TargetType="chat:PiaAnswerToolbar">
           <Setter Property="Visibility" Value="Visible" />
