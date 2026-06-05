@@ -91,11 +91,27 @@
   <data name="Msg_Assistant_StatusUpdatingTodo" xml:space="preserve"><value>Aufgabe wird aktualisiert...</value></data>
   <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Aufgabe aktualisiert</value></data>
   <data name="Msg_Assistant_Value" xml:space="preserve"><value>Wert:</value></data>
+
+  <!-- Assistant chat history -->
+  <data name="AssistantChat_TitlePlaceholder_NewChat" xml:space="preserve"><value>Neuer Chat</value></data>
+  <data name="AssistantChat_Chip_Tooltip" xml:space="preserve"><value>Zwischen letzten Chats wechseln</value></data>
+  <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Chats durchsuchen…</value></data>
+  <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Neuer Chat</value></data>
+  <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Alle Chats anzeigen…</value></data>
+  <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Noch keine Chats.</value></data>
+  <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Chats durchsuchen…</value></data>
+  <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Keine Treffer</value></data>
+  <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ zum Navigieren · Enter zum Fortsetzen · Esc zum Schließen</value></data>
+
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Möchtest du diese Sitzung wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.</value></data>
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Sitzung löschen</value></data>
   <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Kopieren in die Zwischenablage fehlgeschlagen: {0}</value></data>
   <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Löschen der Sitzung fehlgeschlagen: {0}</value></data>
+  <data name="Msg_AssistantHistory_Exported" xml:space="preserve"><value>Exportiert</value></data>
+  <data name="Msg_AssistantHistory_ExportedToFile" xml:space="preserve"><value>Chat exportiert nach {0}</value></data>
+  <data name="Msg_AssistantHistory_ExportFailed" xml:space="preserve"><value>Export des Chats fehlgeschlagen: {0}</value></data>
+  <data name="Msg_AssistantHistory_DeleteAllFailed" xml:space="preserve"><value>Löschen aller Chats fehlgeschlagen: {0}</value></data>
   <!-- Memory messages -->
   <data name="Msg_Memory_AllFresh" xml:space="preserve"><value>Alles aktuell</value></data>
   <data name="Msg_Memory_AndMore" xml:space="preserve"><value>...und {0} weitere.</value></data>

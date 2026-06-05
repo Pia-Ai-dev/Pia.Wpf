@@ -1,0 +1,26 @@
+<UserControl x:Class="Pia.Controls.AssistantHistory.PiaAssistantChatRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory">
+  <Border x:Name="Root"
+          CornerRadius="8"
+          Padding="28,8,14,8"
+          Background="Transparent"
+          Cursor="Hand">
+    <Border.Style>
+      <Style TargetType="Border">
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                       Value="True">
+            <Setter Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
+          </DataTrigger>
+          <Trigger Property="IsMouseOver" Value="True">
+            <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+          </Trigger>
+        </Style.Triggers>
+      </Style>
+    </Border.Style>
+
+    <ah:PiaAssistantChatRowContent/>
+  </Border>
+</UserControl>

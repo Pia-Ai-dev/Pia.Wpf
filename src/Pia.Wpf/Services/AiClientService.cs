@@ -24,203 +24,106 @@ public class AiClientService : IAiClientService
         @"^\s*<think\b[^>]*>[\s\S]*?</think>\s*",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private readonly IAuthService _authService;
     private readonly DpapiHelper _dpapiHelper;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ISettingsService _settingsService;
     private readonly AiProviderHandlerResolver _handlers;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AiClientService> _logger;
+    private readonly ISettingsService _settingsService;
 
     public AiClientService(
         DpapiHelper dpapiHelper,
         IHttpClientFactory httpClientFactory,
         ISettingsService settingsService,
         AiProviderHandlerResolver handlers,
+        IAuthService authService,
         ILogger<AiClientService> logger)
     {
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
         _settingsService = settingsService;
         _handlers = handlers;
+        _authService = authService;
         _logger = logger;
     }
 
-    public async Task<AiCompletionResult> SendRequestAsync(
-        AiProvider provider,
-        string prompt,
-        CancellationToken cancellationToken = default)
+    public async Task<string> GeneratePromptViaPiaCloudAsync(
+            string styleDescription,
+            string? mode = null,
+            CancellationToken cancellationToken = default)
     {
-        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
+        var settings = await _settingsService.GetSettingsAsync();
+        var serverUrl = settings.ServerUrl?.TrimEnd('/');
 
+        if (string.IsNullOrEmpty(serverUrl))
+            throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
+
+        var timeout = TimeSpan.FromSeconds(300);
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        try
-        {
-            _logger.LogInformation("SendRequestAsync: type={Type}", provider.ProviderType);
-            _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
-
-            var handler = _handlers.Get(provider.ProviderType);
-            var httpClient = _httpClientFactory.CreateClient();
-            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
-
-            var messages = new[]
-            {
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, NoThinkSystemPrompt),
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, prompt),
-            };
-
-            var options = handler.CreateChatOptions(provider, hasTools: false);
-
-            var response = await chatClient.GetResponseAsync(
-                messages,
-                options,
-                cancellationToken: linkedCts.Token
-            );
-
-            var text = response.Text ?? string.Empty;
-            _logger.LogDebug("SendRequestAsync: received response, length={Length}, finishReason={FinishReason}",
-                text.Length, response.FinishReason);
-
-            if (response.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length)
-                throw new LlmTruncatedException(provider.Name, text.Length);
-
-            var tokensUsed = 0;
-            if (response.Usage is { } usage)
-            {
-                if (usage.InputTokenCount is long input) tokensUsed += (int)input;
-                if (usage.OutputTokenCount is long output) tokensUsed += (int)output;
-                _logger.LogDebug("Token usage: input={Input}, output={Output}, cached={Cached}",
-                    usage.InputTokenCount, usage.OutputTokenCount, usage.CachedInputTokenCount);
-            }
-
-            return new AiCompletionResult(text, tokensUsed);
-        }
-        catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
-        {
-            _logger.LogWarning("SendRequestAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
-            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "SendRequestAsync: provider {ProviderName} threw an exception", provider.Name);
-            throw;
-        }
-    }
-
-    public async IAsyncEnumerable<string> StreamChatCompletionAsync(
-        IList<Microsoft.Extensions.AI.ChatMessage> messages,
-        AiProvider provider,
-        string? mode = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
-
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, timeoutCts.Token);
-
-        var handler = _handlers.Get(provider.ProviderType);
         var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
-        var options = handler.CreateChatOptions(provider, hasTools: false);
 
-        IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
+        var requestBody = new { styleDescription };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+
         try
         {
-            try
-            {
-                var stream = chatClient.GetStreamingResponseAsync(messages, options, cancellationToken: linkedCts.Token);
-                enumerator = stream.GetAsyncEnumerator(linkedCts.Token);
-            }
-            catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-            {
-                _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
-                throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
-            }
+            using var response = await SendPiaCloudRequestAsync(
+                httpClient, $"{serverUrl}/api/ai/generate-prompt", json, mode, linkedCts.Token);
 
-            while (true)
+            var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {
-                bool hasNext;
+                var friendlyMessage = "Token limit reached.";
                 try
                 {
-                    hasNext = await enumerator.MoveNextAsync();
+                    using var errDoc = System.Text.Json.JsonDocument.Parse(responseJson);
+                    var root = errDoc.RootElement;
+                    if (root.TryGetProperty("resetsAt", out var resetsAtProp))
+                    {
+                        var resetsAt = resetsAtProp.GetDateTime();
+                        var remaining = resetsAt - DateTime.UtcNow;
+                        if (remaining.TotalMinutes > 60)
+                            friendlyMessage = $"Token limit reached. Resets in {remaining.Hours}h {remaining.Minutes}m.";
+                        else if (remaining.TotalMinutes > 1)
+                            friendlyMessage = $"Token limit reached. Resets in {(int)remaining.TotalMinutes} minutes.";
+                        else
+                            friendlyMessage = "Token limit reached. Resets shortly.";
+                    }
                 }
-                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out mid-stream after {Seconds}s", provider.Name, timeout.TotalSeconds);
-                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
-                }
-
-                if (!hasNext) break;
-
-                var update = enumerator.Current;
-                if (!string.IsNullOrEmpty(update.Text))
-                {
-                    yield return update.Text;
-                }
+                catch { }
+                throw new InvalidOperationException(friendlyMessage);
             }
-        }
-        finally
-        {
-            if (enumerator != null) await enumerator.DisposeAsync();
-        }
-    }
 
-    public async Task<ChatResponse> GetChatResponseAsync(
-        IList<Microsoft.Extensions.AI.ChatMessage> messages,
-        AiProvider provider,
-        IList<AITool>? tools = null,
-        string? mode = null,
-        CancellationToken cancellationToken = default)
-    {
-        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
-
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, timeoutCts.Token);
-
-        try
-        {
-            var handler = _handlers.Get(provider.ProviderType);
-            var httpClient = _httpClientFactory.CreateClient();
-            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
-
-            var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
-            var options = handler.CreateChatOptions(provider, hasTools: useTools);
-            if (useTools)
+            if (!response.IsSuccessStatusCode)
             {
-                options.Tools = [.. tools!];
+                _logger.LogWarning("PiaCloud generate-prompt returned {StatusCode}", (int)response.StatusCode);
+                _logger.SensitiveDebug("PiaCloud generate-prompt body: {Body}", responseJson);
+                throw new HttpRequestException(
+                    $"PiaCloud prompt generation failed ({(int)response.StatusCode}): {responseJson}");
             }
 
-            try
-            {
-                return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
-            }
-            catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
-            {
-                _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
-                options = handler.CreateChatOptions(provider, hasTools: false);
-                return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
-            }
+            using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+            return doc.RootElement.GetProperty("prompt").GetString()
+                ?? throw new InvalidOperationException("Server returned empty prompt");
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            _logger.LogWarning("GetChatResponseAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
-            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+            throw new LlmTimeoutException("Pia Cloud", timeout.TotalSeconds);
         }
     }
 
     public async IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(
-        IList<Microsoft.Extensions.AI.ChatMessage> messages,
-        AiProvider provider,
-        IList<AITool>? tools = null,
-        Func<FunctionCallContent, Task<object?>>? toolHandler = null,
-        string? mode = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            IList<Microsoft.Extensions.AI.ChatMessage> messages,
+            AiProvider provider,
+            IList<AITool>? tools = null,
+            Func<FunctionCallContent, Task<object?>>? toolHandler = null,
+            string? mode = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
             provider.Name, tools?.Count ?? 0);
@@ -460,32 +363,12 @@ public class AiClientService : IAiClientService
         yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput);
     }
 
-    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput)
-    {
-        UsageDetails? usage = null;
-        if (hasUsage)
-        {
-            usage = new UsageDetails
-            {
-                InputTokenCount = aggregatedInput,
-                OutputTokenCount = aggregatedOutput,
-                TotalTokenCount = aggregatedInput + aggregatedOutput,
-            };
-            _logger.LogDebug("Completion total usage: input={Input}, output={Output}, total={Total}",
-                aggregatedInput, aggregatedOutput, aggregatedInput + aggregatedOutput);
-        }
-        else
-        {
-            _logger.LogDebug("Stream finished without usage details, providerType={ProviderType}", provider.ProviderType);
-        }
-
-        var modelLabel = !string.IsNullOrWhiteSpace(provider.ModelName)
-            ? provider.ModelName
-            : provider.Name;
-        return new Finished(usage, modelLabel);
-    }
-
-    public async Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
+    public async Task<ChatResponse> GetChatResponseAsync(
+            IList<Microsoft.Extensions.AI.ChatMessage> messages,
+            AiProvider provider,
+            IList<AITool>? tools = null,
+            string? mode = null,
+            CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -494,83 +377,46 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        var handler = _handlers.Get(provider.ProviderType);
-        var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
-
-        var dummyTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool");
-        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
-        {
-            new(ChatRole.System, NoThinkSystemPrompt),
-            new(ChatRole.User, "Say hello.")
-        };
-        var options = handler.CreateChatOptions(provider, hasTools: true);
-        options.Tools = [dummyTool];
-
         try
         {
-            // If the request succeeds with tools in the schema, the provider supports tool calling.
-            // Models that truly don't support tools will reject with 400/404.
-            // We don't force tool use (RequireAny) — many providers silently ignore it.
-            await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
-            return true;
-        }
-        catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
-        {
-            throw new TimeoutException($"Tool calling test timed out after {timeout.TotalSeconds} seconds");
-        }
-        catch (Exception ex) when (IsToolNotSupportedError(ex))
-        {
-            return false;
-        }
-    }
+            var handler = _handlers.Get(provider.ProviderType);
+            var httpClient = _httpClientFactory.CreateClient();
+            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
 
-    public async Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default)
-    {
-        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
-        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
-
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, timeoutCts.Token);
-
-        var handler = _handlers.Get(provider.ProviderType);
-        var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
-
-        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
-        {
-            new(ChatRole.System, NoThinkSystemPrompt),
-            new(ChatRole.User, "Say hello.")
-        };
-        var options = handler.CreateChatOptions(provider, hasTools: false);
-
-        try
-        {
-            await foreach (var update in chatClient.GetStreamingResponseAsync(messages, options, linkedCts.Token))
+            var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
+            var options = handler.CreateChatOptions(provider, hasTools: useTools);
+            if (useTools)
             {
-                return true;
+                options.Tools = [.. tools!];
             }
 
-            return true;
+            try
+            {
+                return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
+            }
+            catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
+            {
+                _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
+                options = handler.CreateChatOptions(provider, hasTools: false);
+                return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
+            }
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            throw new TimeoutException($"Streaming test timed out after {timeout.TotalSeconds} seconds");
-        }
-        catch
-        {
-            return false;
+            _logger.LogWarning("GetChatResponseAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
     }
 
     public async Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
-        string text,
-        Guid templateId,
-        string language,
-        bool isVoiceInput,
-        string? mode = null,
-        CancellationToken cancellationToken = default)
+            string text,
+            Guid templateId,
+            string language,
+            bool isVoiceInput,
+            string? mode = null,
+            string? customPrompt = null,
+            string? customTemplateName = null,
+            CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetSettingsAsync();
         var serverUrl = settings.ServerUrl?.TrimEnd('/');
@@ -590,34 +436,17 @@ public class AiClientService : IAiClientService
             text,
             templateId = templateId.ToString(),
             language,
-            isVoiceInput
+            isVoiceInput,
+            customPrompt,
+            customTemplateName
         };
 
         var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-        // Add JWT token if available
-        if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
-        {
-            try
-            {
-                var token = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
-                httpClient.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            }
-            catch
-            {
-                // If decryption fails, proceed without auth
-            }
-        }
-
-        if (!string.IsNullOrEmpty(mode))
-            httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
 
         try
         {
-            var response = await httpClient.PostAsync(
-                $"{serverUrl}/api/ai/optimize", content, linkedCts.Token);
+            using var response = await SendPiaCloudRequestAsync(
+                httpClient, $"{serverUrl}/api/ai/optimize", json, mode, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
             _logger.LogDebug("PiaCloud optimize: response body length={Length}", responseJson.Length);
@@ -674,106 +503,128 @@ public class AiClientService : IAiClientService
         }
     }
 
-    private static bool IsToolNotSupportedError(Exception ex)
+    public async Task<AiCompletionResult> SendRequestAsync(
+            AiProvider provider,
+            string prompt,
+            CancellationToken cancellationToken = default)
     {
-        if (ex is ClientResultException clientEx)
-        {
-            return clientEx.Status is 404 or 400;
-        }
+        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
-        if (ex is HttpRequestException httpEx)
-        {
-            return httpEx.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.BadRequest;
-        }
-
-        return false;
-    }
-
-    public async Task<string> GeneratePromptViaPiaCloudAsync(
-        string styleDescription,
-        string? mode = null,
-        CancellationToken cancellationToken = default)
-    {
-        var settings = await _settingsService.GetSettingsAsync();
-        var serverUrl = settings.ServerUrl?.TrimEnd('/');
-
-        if (string.IsNullOrEmpty(serverUrl))
-            throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
-
-        var timeout = TimeSpan.FromSeconds(300);
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        var httpClient = _httpClientFactory.CreateClient();
-
-        var requestBody = new { styleDescription };
-
-        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-        if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
-        {
-            try
-            {
-                var token = _dpapiHelper.Decrypt(settings.EncryptedAccessToken);
-                httpClient.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            }
-            catch
-            {
-                // If decryption fails, proceed without auth
-            }
-        }
-
-        if (!string.IsNullOrEmpty(mode))
-            httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
-
         try
         {
-            var response = await httpClient.PostAsync(
-                $"{serverUrl}/api/ai/generate-prompt", content, linkedCts.Token);
+            _logger.LogInformation("SendRequestAsync: type={Type}", provider.ProviderType);
+            _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
 
-            var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
+            var handler = _handlers.Get(provider.ProviderType);
+            var httpClient = _httpClientFactory.CreateClient();
+            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            var messages = new[]
             {
-                var friendlyMessage = "Token limit reached.";
-                try
-                {
-                    using var errDoc = System.Text.Json.JsonDocument.Parse(responseJson);
-                    var root = errDoc.RootElement;
-                    if (root.TryGetProperty("resetsAt", out var resetsAtProp))
-                    {
-                        var resetsAt = resetsAtProp.GetDateTime();
-                        var remaining = resetsAt - DateTime.UtcNow;
-                        if (remaining.TotalMinutes > 60)
-                            friendlyMessage = $"Token limit reached. Resets in {remaining.Hours}h {remaining.Minutes}m.";
-                        else if (remaining.TotalMinutes > 1)
-                            friendlyMessage = $"Token limit reached. Resets in {(int)remaining.TotalMinutes} minutes.";
-                        else
-                            friendlyMessage = "Token limit reached. Resets shortly.";
-                    }
-                }
-                catch { }
-                throw new InvalidOperationException(friendlyMessage);
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, NoThinkSystemPrompt),
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, prompt),
+            };
+
+            var options = handler.CreateChatOptions(provider, hasTools: false);
+
+            var response = await chatClient.GetResponseAsync(
+                messages,
+                options,
+                cancellationToken: linkedCts.Token
+            );
+
+            var text = response.Text ?? string.Empty;
+            _logger.LogDebug("SendRequestAsync: received response, length={Length}, finishReason={FinishReason}",
+                text.Length, response.FinishReason);
+
+            if (response.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length)
+                throw new LlmTruncatedException(provider.Name, text.Length);
+
+            var tokensUsed = 0;
+            if (response.Usage is { } usage)
+            {
+                if (usage.InputTokenCount is long input) tokensUsed += (int)input;
+                if (usage.OutputTokenCount is long output) tokensUsed += (int)output;
+                _logger.LogDebug("Token usage: input={Input}, output={Output}, cached={Cached}",
+                    usage.InputTokenCount, usage.OutputTokenCount, usage.CachedInputTokenCount);
             }
 
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("PiaCloud generate-prompt returned {StatusCode}", (int)response.StatusCode);
-                _logger.SensitiveDebug("PiaCloud generate-prompt body: {Body}", responseJson);
-                throw new HttpRequestException(
-                    $"PiaCloud prompt generation failed ({(int)response.StatusCode}): {responseJson}");
-            }
-
-            using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
-            return doc.RootElement.GetProperty("prompt").GetString()
-                ?? throw new InvalidOperationException("Server returned empty prompt");
+            return new AiCompletionResult(text, tokensUsed);
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            throw new LlmTimeoutException("Pia Cloud", timeout.TotalSeconds);
+            _logger.LogWarning("SendRequestAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SendRequestAsync: provider {ProviderName} threw an exception", provider.Name);
+            throw;
+        }
+    }
+
+    public async IAsyncEnumerable<string> StreamChatCompletionAsync(
+            IList<Microsoft.Extensions.AI.ChatMessage> messages,
+            AiProvider provider,
+            string? mode = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
+
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeoutCts.Token);
+
+        var handler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
+        var options = handler.CreateChatOptions(provider, hasTools: false);
+
+        IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
+        try
+        {
+            try
+            {
+                var stream = chatClient.GetStreamingResponseAsync(messages, options, cancellationToken: linkedCts.Token);
+                enumerator = stream.GetAsyncEnumerator(linkedCts.Token);
+            }
+            catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+            }
+
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out mid-stream after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                }
+
+                if (!hasNext) break;
+
+                var update = enumerator.Current;
+                if (!string.IsNullOrEmpty(update.Text))
+                {
+                    yield return update.Text;
+                }
+            }
+        }
+        finally
+        {
+            if (enumerator != null) await enumerator.DisposeAsync();
         }
     }
 
@@ -823,6 +674,157 @@ public class AiClientService : IAiClientService
         }
     }
 
+    public async Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default)
+    {
+        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
+
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeoutCts.Token);
+
+        var handler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
+
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(ChatRole.System, NoThinkSystemPrompt),
+            new(ChatRole.User, "Say hello.")
+        };
+        var options = handler.CreateChatOptions(provider, hasTools: false);
+
+        try
+        {
+            await foreach (var update in chatClient.GetStreamingResponseAsync(messages, options, linkedCts.Token))
+            {
+                return true;
+            }
+
+            return true;
+        }
+        catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Streaming test timed out after {timeout.TotalSeconds} seconds");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
+    {
+        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
+
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeoutCts.Token);
+
+        var handler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
+
+        var dummyTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool");
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(ChatRole.System, NoThinkSystemPrompt),
+            new(ChatRole.User, "Say hello.")
+        };
+        var options = handler.CreateChatOptions(provider, hasTools: true);
+        options.Tools = [dummyTool];
+
+        try
+        {
+            // If the request succeeds with tools in the schema, the provider supports tool calling.
+            // Models that truly don't support tools will reject with 400/404.
+            // We don't force tool use (RequireAny) — many providers silently ignore it.
+            await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
+            return true;
+        }
+        catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Tool calling test timed out after {timeout.TotalSeconds} seconds");
+        }
+        catch (Exception ex) when (IsToolNotSupportedError(ex))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsToolNotSupportedError(Exception ex)
+    {
+        if (ex is ClientResultException clientEx)
+        {
+            return clientEx.Status is 404 or 400;
+        }
+
+        if (ex is HttpRequestException httpEx)
+        {
+            return httpEx.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.BadRequest;
+        }
+
+        return false;
+    }
+
     private static string Truncate(string value, int max)
-        => value.Length > max ? value[..max] + "..." : value;
+            => value.Length > max ? value[..max] + "..." : value;
+
+    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput)
+    {
+        UsageDetails? usage = null;
+        if (hasUsage)
+        {
+            usage = new UsageDetails
+            {
+                InputTokenCount = aggregatedInput,
+                OutputTokenCount = aggregatedOutput,
+                TotalTokenCount = aggregatedInput + aggregatedOutput,
+            };
+            _logger.LogDebug("Completion total usage: input={Input}, output={Output}, total={Total}",
+                aggregatedInput, aggregatedOutput, aggregatedInput + aggregatedOutput);
+        }
+        else
+        {
+            _logger.LogDebug("Stream finished without usage details, providerType={ProviderType}", provider.ProviderType);
+        }
+
+        var modelLabel = !string.IsNullOrWhiteSpace(provider.ModelName)
+            ? provider.ModelName
+            : provider.Name;
+        return new Finished(usage, modelLabel);
+    }
+
+    /// <summary>
+    /// POSTs to a Pia Cloud endpoint with a valid bearer token from the auth service, retrying
+    /// once on 401 with a forced token refresh. Caller owns disposing the returned response.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendPiaCloudRequestAsync(
+        HttpClient httpClient, string url, string jsonBody, string? mode, CancellationToken cancellationToken)
+    {
+        async Task<(HttpResponseMessage Response, string? Token)> Attempt(bool forceRefresh, string? staleAccessToken = null)
+        {
+            var token = await _authService.GetAccessTokenAsync(forceRefresh, staleAccessToken);
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrEmpty(token))
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            if (!string.IsNullOrEmpty(mode))
+                request.Headers.Add("X-Pia-Mode", mode);
+            return (await httpClient.SendAsync(request, cancellationToken), token);
+        }
+
+        var (response, token) = await Attempt(forceRefresh: false);
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _logger.LogInformation("PiaCloud request unauthorized; refreshing token and retrying once");
+            response.Dispose();
+            (response, _) = await Attempt(forceRefresh: true, token);
+        }
+        return response;
+    }
 }

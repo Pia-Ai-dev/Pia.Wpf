@@ -310,6 +310,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             case "ResearchHistory":
                 _navigationService.NavigateTo<ResearchHistoryViewModel>();
                 break;
+            case "AssistantHistory":
+                _navigationService.NavigateTo<AssistantHistoryViewModel>();
+                break;
             case "Memory":
                 _navigationService.NavigateTo<MemoryViewModel>();
                 break;

@@ -20,4 +20,14 @@ public static class TaskExtensions
             logger.LogError(ex, "Background operation failed");
         }
     }
+
+    /// <summary>
+    /// Delay by <paramref name="delayMs"/>, then await <paramref name="action"/>.
+    /// Caller is expected to cancel via <paramref name="ct"/> to debounce.
+    /// </summary>
+    public static async Task DebounceAsync(int delayMs, Func<Task> action, CancellationToken ct)
+    {
+        await Task.Delay(delayMs, ct);
+        await action();
+    }
 }

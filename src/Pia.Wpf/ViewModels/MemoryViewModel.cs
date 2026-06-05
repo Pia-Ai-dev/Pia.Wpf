@@ -20,6 +20,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private readonly IDialogService _dialogService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
+    private readonly IClipboardService _clipboardService;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
 
@@ -94,7 +95,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         IEmbeddingService embeddingService,
         IDialogService dialogService,
         Wpf.Ui.ISnackbarService snackbarService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IClipboardService clipboardService)
     {
         _logger = logger;
         _memoryService = memoryService;
@@ -102,6 +104,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         _dialogService = dialogService;
         _snackbarService = snackbarService;
         _localizationService = localizationService;
+        _clipboardService = clipboardService;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
         DeleteMemoryCommand = new AsyncRelayCommand<MemoryObject>(ExecuteDeleteMemory);
@@ -126,7 +129,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         try
         {
             var pretty = JsonHelper.FormatJson(memory.Data);
-            System.Windows.Clipboard.SetText(pretty);
+            _clipboardService.SetText(pretty);
             _snackbarService.Show(_localizationService["Memory_Copied"], string.Empty,
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
             await Task.CompletedTask;

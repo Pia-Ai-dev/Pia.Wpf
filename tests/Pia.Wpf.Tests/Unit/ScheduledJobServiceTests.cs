@@ -17,9 +17,9 @@ public class ScheduledJobServiceTests : IDisposable
 
     public ScheduledJobServiceTests()
     {
-        _ctx = new SqliteContext();
         _tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tmpDir);
+        _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
         var settings = new TestSettingsService();
         var deleteTracker = new SyncDeleteTrackerService(_tmpDir, NullLogger<SyncDeleteTrackerService>.Instance);
         _service = new ScheduledJobService(_ctx, new RecurrenceCalculator(), settings, deleteTracker, NullLogger<ScheduledJobService>.Instance);

@@ -91,11 +91,26 @@
   <data name="Msg_Assistant_StatusUpdatingTodo" xml:space="preserve"><value>Mise à jour de la tâche...</value></data>
   <data name="Msg_Assistant_TodoUpdated" xml:space="preserve"><value>Tâche mise à jour</value></data>
   <data name="Msg_Assistant_Value" xml:space="preserve"><value>Valeur :</value></data>
+
+  <!-- Assistant chat history -->
+  <data name="AssistantChat_TitlePlaceholder_NewChat" xml:space="preserve"><value>Nouveau chat</value></data>
+  <data name="AssistantChat_Chip_Tooltip" xml:space="preserve"><value>Basculer entre les chats récents</value></data>
+  <data name="AssistantChat_Flyout_SearchPlaceholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
+  <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Nouveau chat</value></data>
+  <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Afficher tous les chats…</value></data>
+  <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Aucun chat pour l'instant.</value></data>
+  <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
+  <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Aucun résultat</value></data>
+  <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ pour naviguer · Entrée pour reprendre · Échap pour fermer</value></data>
   <!-- History messages -->
   <data name="Msg_History_ConfirmDeleteMessage" xml:space="preserve"><value>Êtes-vous sûr de vouloir supprimer cette session ? Cette action est irréversible.</value></data>
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Supprimer la session</value></data>
   <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Échec de la copie dans le presse-papiers : {0}</value></data>
   <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Échec de la suppression de la session : {0}</value></data>
+  <data name="Msg_AssistantHistory_Exported" xml:space="preserve"><value>Exporté</value></data>
+  <data name="Msg_AssistantHistory_ExportedToFile" xml:space="preserve"><value>Chat exporté vers {0}</value></data>
+  <data name="Msg_AssistantHistory_ExportFailed" xml:space="preserve"><value>Échec de l'exportation du chat : {0}</value></data>
+  <data name="Msg_AssistantHistory_DeleteAllFailed" xml:space="preserve"><value>Échec de la suppression de tous les chats : {0}</value></data>
   <!-- Memory messages -->
   <data name="Msg_Memory_AllFresh" xml:space="preserve"><value>Tout est à jour</value></data>
   <data name="Msg_Memory_AndMore" xml:space="preserve"><value>...et {0} de plus.</value></data>

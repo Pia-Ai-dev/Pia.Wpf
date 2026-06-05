@@ -119,6 +119,8 @@ public abstract class ToolPipelineTestBase
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
 
+        var authService = Substitute.For<IAuthService>();
+
         var handlers = new IAiProviderHandler[]
         {
             new OpenAiProviderHandler(),
@@ -129,7 +131,7 @@ public abstract class ToolPipelineTestBase
             new OpenAiCompatibleProviderHandler(),
             new VLlmProviderHandler(),
             new PiaCloudProviderHandler(
-                dpapiHelper,
+                authService,
                 settingsService,
                 NullLogger<PiaCloudProviderHandler>.Instance),
         };
@@ -139,6 +141,7 @@ public abstract class ToolPipelineTestBase
             httpClientFactory,
             settingsService,
             new AiProviderHandlerResolver(handlers),
+            authService,
             NullLogger<AiClientService>.Instance);
     }
 

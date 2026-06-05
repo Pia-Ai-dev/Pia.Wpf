@@ -184,6 +184,14 @@
   <data name="History_DeleteAllTooltip" xml:space="preserve"><value>Supprimer définitivement toutes les sessions correspondant au filtre actuel.</value></data>
   <data name="History_DeleteAllConfirmTitle" xml:space="preserve"><value>Supprimer toutes les sessions</value></data>
   <data name="History_DeleteAllConfirmBody" xml:space="preserve"><value>Supprimer toutes les sessions correspondant au filtre actuel ? Cette action est irréversible.</value></data>
+  <!-- Assistant chat history view -->
+  <data name="AssistantHistory_Title" xml:space="preserve"><value>Historique des chats</value></data>
+  <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>Aucun chat pour l'instant</value></data>
+  <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Démarrez un chat en mode Assistant pour alimenter l'historique</value></data>
+  <data name="AssistantHistory_Resume" xml:space="preserve"><value>Reprendre ce chat</value></data>
+  <data name="AssistantHistory_Nav" xml:space="preserve"><value>Historique des chats</value></data>
+  <data name="AssistantHistory_DeleteAll" xml:space="preserve"><value>Tout supprimer</value></data>
+  <data name="AssistantHistory_ExportMarkdown" xml:space="preserve"><value>Exporter en Markdown</value></data>
   <!-- Todo View -->
   <data name="Todo_Title" xml:space="preserve"><value>Liste des tâches</value></data>
   <data name="Todo_Refresh" xml:space="preserve"><value>Actualiser</value></data>
@@ -253,6 +261,29 @@
   <data name="Memory_DownloadModel" xml:space="preserve"><value>Télécharger le modèle</value></data>
   <data name="Memory_DownloadModelTooltip" xml:space="preserve"><value>Télécharger le modèle d'embedding multilingue pour la recherche sémantique</value></data>
   <data name="Memory_RegenerateEmbeddings" xml:space="preserve"><value>Régénérer les embeddings</value></data>
+  <data name="Memory_NewMemory" xml:space="preserve"><value>Nouvelle mémoire</value></data>
+  <data name="Memory_StatsObjects" xml:space="preserve"><value>objets</value></data>
+  <data name="Memory_StatsStale" xml:space="preserve"><value>obsolètes</value></data>
+  <data name="Memory_Filter_All" xml:space="preserve"><value>Tout</value></data>
+  <data name="Memory_Filter_Stale" xml:space="preserve"><value>Obsolètes</value></data>
+  <data name="Memory_Filter_Today" xml:space="preserve"><value>Aujourd'hui</value></data>
+  <data name="Memory_CopyJson" xml:space="preserve"><value>Copier le JSON</value></data>
+  <data name="Memory_Copied" xml:space="preserve"><value>Copié dans le presse-papiers</value></data>
+  <data name="Memory_SourcePrefix" xml:space="preserve"><value>Source ·</value></data>
+  <data name="Memory_OpenConversation" xml:space="preserve"><value>Ouvrir la conversation →</value></data>
+  <data name="Memory_Meta_Lifecycle" xml:space="preserve"><value>CYCLE DE VIE</value></data>
+  <data name="Memory_Meta_Created" xml:space="preserve"><value>Créé</value></data>
+  <data name="Memory_Meta_Updated" xml:space="preserve"><value>Mis à jour</value></data>
+  <data name="Memory_Meta_Accessed" xml:space="preserve"><value>Consulté</value></data>
+  <data name="Memory_Meta_Access14d" xml:space="preserve"><value>ACCÈS · 14J</value></data>
+  <data name="Memory_Meta_Embedding" xml:space="preserve"><value>EMBEDDING</value></data>
+  <data name="Memory_Meta_Model" xml:space="preserve"><value>Modèle</value></data>
+  <data name="Memory_Meta_ModelDefault" xml:space="preserve"><value>text-embedding-3-small</value></data>
+  <data name="Memory_Meta_Size" xml:space="preserve"><value>Taille</value></data>
+  <data name="Memory_Meta_Related" xml:space="preserve"><value>ASSOCIÉ</value></data>
+  <data name="Memory_Meta_NoRelated" xml:space="preserve"><value>Aucune mémoire associée</value></data>
+  <data name="Memory_EmptyInspector_Title" xml:space="preserve"><value>Sélectionner une mémoire</value></data>
+  <data name="Memory_EmptyInspector_Hint" xml:space="preserve"><value>Choisissez une mémoire dans la liste pour voir ses détails, sa valeur et son cycle de vie.</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Rappels</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Actualiser</value></data>
@@ -362,6 +393,18 @@
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Parcourir…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Effacer</value></data>
   <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Dossier dans lequel l'assistant peut lire, résumer, modifier ou supprimer des fichiers texte. L'assistant est limité à ce dossier et ne peut pas accéder aux fichiers en dehors. Laissez vide pour désactiver les outils de fichiers.</value></data>
+  <data name="Settings_Chat_Section" xml:space="preserve"><value>Historique des chats</value></data>
+  <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Enregistrer l'historique des chats</value></data>
+  <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Conserver les chats de l'assistant sur cet appareil pour pouvoir les reprendre et les rechercher plus tard.</value></data>
+  <data name="Settings_Chat_RetentionDays" xml:space="preserve"><value>Supprimer les chats non ouverts depuis {0} jours</value></data>
+  <data name="Settings_Chat_RetentionDays_Label" xml:space="preserve"><value>Conservation (jours)</value></data>
+  <data name="Settings_Chat_AutoTitle" xml:space="preserve"><value>Générer automatiquement les titres des chats (consomme des jetons)</value></data>
+  <data name="Settings_Chat_AutoTitle_Hint" xml:space="preserve"><value>Effectue une petite requête supplémentaire pour générer un titre court par chat.</value></data>
+  <data name="Settings_Chat_DeleteAllNow" xml:space="preserve"><value>Supprimer tout l'historique des chats maintenant</value></data>
+  <data name="Settings_Chat_DisableConfirmTitle" xml:space="preserve"><value>Désactiver l'historique des chats ?</value></data>
+  <data name="Settings_Chat_DisableConfirmBody" xml:space="preserve"><value>Désactiver l'historique des chats supprimera tous les chats locaux existants. Cette action est irréversible. Continuer ?</value></data>
+  <data name="AssistantHistory_DeleteAllConfirmTitle" xml:space="preserve"><value>Supprimer tous les chats</value></data>
+  <data name="AssistantHistory_DeleteAllConfirmBody" xml:space="preserve"><value>Supprimer tous les chats de cet appareil ? Cette action est irréversible.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Raccourcis globaux</value></data>
   <data name="Settings_GlobalHotkeys_Description" xml:space="preserve"><value>Appuyez sur un raccourci lorsque l'application est masquée pour capturer la fenêtre sous le curseur et ouvrir Pia dans le mode correspondant</value></data>
   <data name="Settings_Hotkey_Optimize" xml:space="preserve"><value>Optimiser</value></data>

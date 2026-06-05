@@ -10,13 +10,28 @@ public class SqliteContext : IDisposable
     private bool _disposed;
 
     public SqliteContext()
+        : this(DefaultDbPath())
+    {
+    }
+
+    /// <summary>
+    /// Opens the database at an explicit path. Tests pass a temp file so they
+    /// never read or write the user's real history.db.
+    /// </summary>
+    public SqliteContext(string dbPath)
+    {
+        var directory = Path.GetDirectoryName(dbPath);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        _connectionString = $"Data Source={dbPath}";
+    }
+
+    private static string DefaultDbPath()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var dbDirectory = Path.Combine(localAppData, "Pia");
-        Directory.CreateDirectory(dbDirectory);
-
-        var dbPath = Path.Combine(dbDirectory, "history.db");
-        _connectionString = $"Data Source={dbPath}";
+        return Path.Combine(dbDirectory, "history.db");
     }
 
     public SqliteConnection GetConnection()
@@ -171,11 +186,45 @@ public class SqliteContext : IDisposable
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
+
+            CREATE TABLE IF NOT EXISTS AssistantChats (
+                Id              TEXT PRIMARY KEY,
+                SchemaVersion   INTEGER NOT NULL DEFAULT 1,
+                Title           TEXT,
+                CreatedAt       TEXT NOT NULL,
+                UpdatedAt       TEXT NOT NULL,
+                LastAccessedAt  TEXT NOT NULL,
+                WindowMode      TEXT NOT NULL,
+                ProviderId      TEXT,
+                ExtraJson       TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AssistantChats_UpdatedAt
+                ON AssistantChats(UpdatedAt);
+            CREATE INDEX IF NOT EXISTS IX_AssistantChats_LastAccessedAt
+                ON AssistantChats(LastAccessedAt);
+
+            CREATE TABLE IF NOT EXISTS AssistantChatMessages (
+                Id              TEXT PRIMARY KEY,
+                ChatId          TEXT NOT NULL,
+                Ordinal         INTEGER NOT NULL,
+                Role            TEXT NOT NULL,
+                Content         TEXT NOT NULL,
+                ThinkingContent TEXT,
+                Timestamp       TEXT NOT NULL,
+                Tokens          INTEGER,
+                ModelName       TEXT,
+                FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AssistantChatMessages_ChatId_Ordinal
+                ON AssistantChatMessages(ChatId, Ordinal);
             """;
         command.ExecuteNonQuery();
 
         MigrateSchema();
         EnsureMemoriesFts();
+        EnsureAssistantChatsFts();
     }
 
     private void MigrateSchema()
@@ -417,6 +466,72 @@ public class SqliteContext : IDisposable
             END;
             """;
         command.ExecuteNonQuery();
+    }
+
+    private void EnsureAssistantChatsFts()
+    {
+        // FTS5 over both Chats (title) and ChatMessages (body). The service
+        // manages rows explicitly on save/delete — no triggers, because a
+        // single FTS row represents an aggregated chat document.
+        //
+        // The previous schema set content='' (contentless), which silently
+        // dropped column values: SELECT ChatId FROM ... WHERE MATCH ...
+        // then returned NULLs and the outer WHERE Id IN (...) never matched.
+        // Detect and rebuild that old table; the service backfills on first
+        // SaveAsync, and on startup we re-index any chats that lost their
+        // FTS row in the drop.
+        using (var existing = _connection!.CreateCommand())
+        {
+            existing.CommandText = "SELECT sql FROM sqlite_master WHERE name = 'AssistantChatsFts'";
+            var sql = existing.ExecuteScalar() as string;
+            if (sql is not null && sql.Contains("content=''", StringComparison.Ordinal))
+            {
+                using var drop = _connection.CreateCommand();
+                drop.CommandText = "DROP TABLE AssistantChatsFts";
+                drop.ExecuteNonQuery();
+            }
+        }
+
+        using var create = _connection.CreateCommand();
+        create.CommandText = """
+            CREATE VIRTUAL TABLE IF NOT EXISTS AssistantChatsFts USING fts5(
+                ChatId UNINDEXED,
+                Title,
+                Body
+            );
+            """;
+        create.ExecuteNonQuery();
+
+        BackfillAssistantChatsFts();
+    }
+
+    private void BackfillAssistantChatsFts()
+    {
+        using var count = _connection!.CreateCommand();
+        count.CommandText = "SELECT COUNT(*) FROM AssistantChatsFts";
+        var ftsRows = Convert.ToInt32(count.ExecuteScalar());
+        if (ftsRows > 0) return;
+
+        using var hasChats = _connection.CreateCommand();
+        hasChats.CommandText = "SELECT COUNT(*) FROM AssistantChats";
+        var chatRows = Convert.ToInt32(hasChats.ExecuteScalar());
+        if (chatRows == 0) return;
+
+        using var transaction = _connection.BeginTransaction();
+        using var insert = _connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO AssistantChatsFts (ChatId, Title, Body)
+            SELECT
+                c.Id,
+                COALESCE(c.Title, ''),
+                COALESCE((SELECT GROUP_CONCAT(m.Content, char(10) || char(10))
+                          FROM AssistantChatMessages m
+                          WHERE m.ChatId = c.Id), '')
+            FROM AssistantChats c;
+            """;
+        insert.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     public void Dispose()

@@ -62,13 +62,23 @@ public class NamingConventionTests
     [Fact]
     public void Converters_MustEndWith_Converter()
     {
-        var result = Types.InAssembly(PiaAssembly)
+        // The naming convention targets actual converter classes. Enums and
+        // compiler-generated helpers in the namespace (e.g. converter-config
+        // enums nested or alongside their converter) are not converters and
+        // must not be forced to end in 'Converter'.
+        var converterTypes = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ConvertersNamespace)
             .And().AreClasses()
-            .Should().HaveNameEndingWith("Converter")
-            .GetResult();
+            .GetTypes();
 
-        Assert.True(result.IsSuccessful,
-            $"converter classes must end with 'Converter', but these don't: {FormatFailingTypes(result)}");
+        var violations = converterTypes
+            .Where(t => !t.IsEnum)
+            .Where(t => !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
+            .Where(t => !t.Name.EndsWith("Converter"))
+            .Select(t => t.Name)
+            .ToList();
+
+        Assert.True(violations.Count == 0,
+            $"converter classes must end with 'Converter', but these don't: {string.Join(", ", violations)}");
     }
 }

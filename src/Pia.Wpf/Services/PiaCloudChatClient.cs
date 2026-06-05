@@ -21,24 +21,46 @@ public sealed class PiaCloudChatClient : IChatClient
     private readonly string _chatUrl;
     private readonly string? _mode;
     private readonly ILogger _logger;
+    private readonly Func<bool, string?, Task<string?>> _tokenProvider;
 
-    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, string? accessToken, ILogger logger, string? mode = null)
+    /// <param name="tokenProvider">
+    /// Resolves a bearer token; the bool argument requests a forced refresh (used on 401 retry),
+    /// and the string argument carries the token that failed so duplicate refreshes can be avoided.
+    /// </param>
+    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, Func<bool, string?, Task<string?>> tokenProvider, ILogger logger, string? mode = null)
     {
         _httpClient = httpClient;
         _chatUrl = $"{serverUrl.TrimEnd('/')}/api/ai/chat";
         _mode = mode;
         _logger = logger;
+        _tokenProvider = tokenProvider;
+    }
 
-        if (!string.IsNullOrEmpty(accessToken))
+    private async Task<HttpResponseMessage> SendWithAuthRetryAsync(
+        string requestBody, HttpCompletionOption completionOption, CancellationToken cancellationToken)
+    {
+        async Task<(HttpResponseMessage Response, string? Token)> Attempt(bool forceRefresh, string? staleAccessToken = null)
         {
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", accessToken);
+            var token = await _tokenProvider(forceRefresh, staleAccessToken);
+            var request = new HttpRequestMessage(HttpMethod.Post, _chatUrl)
+            {
+                Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrEmpty(token))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (!string.IsNullOrEmpty(_mode))
+                request.Headers.Add("X-Pia-Mode", _mode);
+            return (await _httpClient.SendAsync(request, completionOption, cancellationToken), token);
         }
 
-        if (!string.IsNullOrEmpty(mode))
+        var (response, token) = await Attempt(forceRefresh: false);
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            _httpClient.DefaultRequestHeaders.Add("X-Pia-Mode", mode);
+            _logger.LogInformation("PiaCloudChatClient: unauthorized; refreshing token and retrying once");
+            response.Dispose();
+            (response, _) = await Attempt(forceRefresh: true, token);
         }
+        return response;
     }
 
     public ChatClientMetadata Metadata => new("PiaCloud");
@@ -51,8 +73,8 @@ public sealed class PiaCloudChatClient : IChatClient
         var requestBody = BuildRequestBody(chatMessages, options, stream: false);
         _logger.LogDebug("PiaCloudChatClient: POST {Url} (non-streaming)", SafeUrl.Format(_chatUrl));
 
-        using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
-        using var response = await _httpClient.PostAsync(_chatUrl, content, cancellationToken);
+        using var response = await SendWithAuthRetryAsync(
+            requestBody, HttpCompletionOption.ResponseContentRead, cancellationToken);
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
         await HandleErrorResponse(response, responseJson);
@@ -68,13 +90,8 @@ public sealed class PiaCloudChatClient : IChatClient
         var requestBody = BuildRequestBody(chatMessages, options, stream: true);
         _logger.LogDebug("PiaCloudChatClient: POST {Url} (streaming)", SafeUrl.Format(_chatUrl));
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, _chatUrl)
-        {
-            Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
-        };
-
-        using var response = await _httpClient.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await SendWithAuthRetryAsync(
+            requestBody, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
