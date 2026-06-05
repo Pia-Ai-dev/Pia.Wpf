@@ -199,10 +199,11 @@
                   <ColumnDefinition Width="Auto" />
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <ContentControl Grid.Column="0"
-                                Style="{StaticResource PiaAvatarStyle}"
-                                Margin="0,2,12,0"
-                                VerticalAlignment="Top" />
+                <chat:PiaPersonaAvatar Grid.Column="0"
+                                       PersonaId="{Binding PersonaGlyphId}"
+                                       Emoji="{Binding PersonaGlyphEmoji}"
+                                       Margin="0,2,12,0"
+                                       VerticalAlignment="Top" />
                 <chat:PiaAssistantMessage Grid.Column="1"
                     HorizontalAlignment="Left"
                     MaxWidth="880"
