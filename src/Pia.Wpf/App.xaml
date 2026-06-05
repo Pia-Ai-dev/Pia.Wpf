@@ -42,6 +42,7 @@
       <converters:WindowModeToVisibilityConverter x:Key="WindowModeToVisibilityConverter" />
       <converters:VoiceModeStateToVisibilityConverter x:Key="VoiceModeStateToVisibilityConverter" />
       <converters:StringEqualsBoolConverter x:Key="StringEqualsBoolConverter" />
+      <converters:MultiStringEqualsBoolConverter x:Key="MultiStringEqualsBoolConverter" />
       <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
       <converters:InverseNullToVisibilityConverter x:Key="InverseNullToVisibilityConverter" />

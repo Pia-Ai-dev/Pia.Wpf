@@ -88,14 +88,21 @@ public partial class PersonaEditModel : ObservableValidator
         "✨", "💡", "🧠", "🤖", "💻", "📈",
         "✍️", "🎨", "📚", "🔬", "🧭", "🛡️",
         "🌐", "🎯", "🚀", "🧒", "💬", "⚙️",
+        "🦉", "🌟", "🔥", "💎", "🧩", "📊",
+        "🗂️", "🎓", "⚖️", "🎙️", "🌱", "🔭",
     ];
 
-    /// <summary>Preset accent-colour swatches (the built-in persona palette) for the picker.</summary>
+    /// <summary>
+    /// Preset accent-colour swatches for the picker — a hue-ordered palette (six per row) so the
+    /// popup grid reads as a smooth spectrum.
+    /// </summary>
     public string[] AccentSwatches { get; } =
     [
-        "#7C4DFF", "#2962FF", "#00C853", "#FF4081",
-        "#00BFA5", "#FFAB00", "#FF6D00", "#F44336",
-        "#9C27B0", "#3F51B5", "#009688", "#607D8B",
+        "#F44336", "#E53935", "#FF5252", "#FF4081", "#EC407A", "#D81B60",
+        "#AB47BC", "#9C27B0", "#7C4DFF", "#673AB7", "#5E35B1", "#3F51B5",
+        "#2962FF", "#1E88E5", "#2196F3", "#03A9F4", "#00BCD4", "#00ACC1",
+        "#009688", "#00BFA5", "#00C853", "#43A047", "#7CB342", "#C0CA33",
+        "#FDD835", "#FFB300", "#FB8C00", "#FF6D00", "#8D6E63", "#607D8B",
     ];
 
     public IReadOnlyList<ReasoningEffortChoice> ReasoningEffortOptions { get; } =

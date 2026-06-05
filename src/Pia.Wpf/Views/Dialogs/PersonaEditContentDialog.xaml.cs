@@ -1,3 +1,4 @@
+using System.Windows;
 using Pia.ViewModels.Models;
 using Wpf.Ui.Controls;
 
@@ -38,6 +39,12 @@ public partial class PersonaEditContentDialog : ContentDialog
             return;
         }
     }
+
+    // Picking a swatch inside a popup fires the bound command (which sets the value) and bubbles
+    // here so the popup closes — StaysOpen=False only dismisses on clicks *outside* the popup.
+    private void OnEmojiPicked(object sender, RoutedEventArgs e) => EmojiPopup.IsOpen = false;
+
+    private void OnAccentPicked(object sender, RoutedEventArgs e) => ColorPopup.IsOpen = false;
 
     private static void ShowValidationError(string message)
     {

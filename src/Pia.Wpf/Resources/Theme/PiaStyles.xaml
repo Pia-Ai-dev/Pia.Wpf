@@ -223,6 +223,132 @@
     </Setter>
   </Style>
 
+  <!-- Persona pickers — a combobox-like trigger that opens an emoji/colour popup.
+       Stays a plain bordered field (no accent fill) so it reads as an input, not a button;
+       border highlights on hover and turns accent while its popup is open. -->
+  <Style x:Key="PiaPickerToggleStyle" TargetType="ToggleButton">
+    <Setter Property="Cursor"                      Value="Hand"/>
+    <Setter Property="Foreground"                  Value="{DynamicResource TextDefaultBrush}"/>
+    <Setter Property="HorizontalContentAlignment"  Value="Left"/>
+    <Setter Property="VerticalContentAlignment"    Value="Center"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border x:Name="Bd"
+                  Background="{DynamicResource SurfaceMutedBrush}"
+                  BorderBrush="{DynamicResource BorderBrush_}"
+                  BorderThickness="1"
+                  CornerRadius="6"
+                  Padding="8,6"
+                  MinHeight="34">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <ContentPresenter Grid.Column="0"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="Center"/>
+              <ui:SymbolIcon x:Name="Chevron"
+                             Grid.Column="1"
+                             Symbol="ChevronDown24"
+                             FontSize="14"
+                             Margin="6,0,0,0"
+                             RenderTransformOrigin="0.5,0.5"
+                             Foreground="{DynamicResource TextMutedBrush}"/>
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+              <Setter TargetName="Chevron" Property="RenderTransform">
+                <Setter.Value>
+                  <RotateTransform Angle="180"/>
+                </Setter.Value>
+              </Setter>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Colour swatch button. Keeps its fill at all times (the swatch colour comes in via
+       Background); hover and the current selection are shown with a ring around the fill — so it
+       never washes out to the default button mouse-over fill. Selection: bind Tag to a bool. -->
+  <Style x:Key="PiaColorSwatchButtonStyle" TargetType="Button">
+    <Setter Property="Width"  Value="28"/>
+    <Setter Property="Height" Value="28"/>
+    <Setter Property="Margin" Value="3"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Ellipse x:Name="Ring"
+                     Stroke="{DynamicResource PiaAccentBrush}"
+                     StrokeThickness="2"
+                     Visibility="Collapsed"/>
+            <Ellipse x:Name="Fill"
+                     Margin="3"
+                     Fill="{TemplateBinding Background}"
+                     Stroke="{DynamicResource BorderBrush_}"
+                     StrokeThickness="1"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Ring" Property="Visibility" Value="Visible"/>
+              <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource BorderStrongBrush}"/>
+            </Trigger>
+            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+              <Setter TargetName="Ring" Property="Visibility" Value="Visible"/>
+              <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource PiaAccentBrush}"/>
+            </DataTrigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Emoji swatch button. Transparent tile; hover lifts a muted fill, the current selection
+       draws an accent border + soft fill. Bind Tag to a bool for selection. -->
+  <Style x:Key="PiaEmojiSwatchButtonStyle" TargetType="Button">
+    <Setter Property="Width"    Value="34"/>
+    <Setter Property="Height"   Value="34"/>
+    <Setter Property="Margin"   Value="2"/>
+    <Setter Property="FontSize" Value="17"/>
+    <Setter Property="Cursor"   Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  Background="Transparent"
+                  BorderBrush="{DynamicResource BorderBrush_}"
+                  BorderThickness="1"
+                  CornerRadius="6">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background"  Value="{DynamicResource SurfaceMutedBrush}"/>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
+            </Trigger>
+            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+              <Setter TargetName="Bd" Property="Background"  Value="{DynamicResource PiaAccentSoftBrush}"/>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+            </DataTrigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Settings — section label above a field row. -->
   <Style x:Key="PiaSettingsSectionLabelStyle" TargetType="TextBlock">
     <Setter Property="FontSize"   Value="13"/>

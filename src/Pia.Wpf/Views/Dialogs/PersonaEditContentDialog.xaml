@@ -129,7 +129,7 @@
       <ui:TextBox Text="{Binding Expertise, UpdateSourceTrigger=PropertyChanged}"
                   Margin="0,0,0,16" />
 
-      <!-- Emoji + Accent colour (with in-dialog pickers) -->
+      <!-- Emoji + accent colour (each opens a popup picker) -->
       <Grid Margin="0,0,0,16">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -137,79 +137,146 @@
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Emoji: text field + quick-pick grid -->
+        <!-- Emoji -->
         <StackPanel Grid.Column="0">
           <TextBlock Text="{loc:Str Dialog_PersonaEdit_Emoji}" FontWeight="SemiBold" Margin="0,0,0,4" />
-          <ui:TextBox Text="{Binding Emoji, UpdateSourceTrigger=PropertyChanged}" MaxLength="8" />
-          <ItemsControl ItemsSource="{Binding EmojiChoices}" Margin="0,6,0,0">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <WrapPanel />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <Button Content="{Binding}"
-                        Command="{Binding DataContext.PickEmojiCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                        CommandParameter="{Binding}"
-                        FontSize="16"
-                        Width="34" Height="32"
-                        MinWidth="0" MinHeight="0"
-                        Padding="0"
-                        Margin="0,0,4,4"
-                        Background="Transparent"
-                        BorderThickness="1"
-                        BorderBrush="{DynamicResource BorderBrush_}"
-                        Cursor="Hand" />
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+          <ToggleButton x:Name="EmojiToggle"
+                        Style="{StaticResource PiaPickerToggleStyle}">
+            <Grid>
+              <TextBlock Text="{Binding Emoji}"
+                         FontSize="16"
+                         Visibility="{Binding Emoji, Converter={StaticResource NullToVisibilityConverter}}" />
+              <TextBlock Text="🙂"
+                         FontSize="16"
+                         Opacity="0.4"
+                         Visibility="{Binding Emoji, Converter={StaticResource InverseNullToVisibilityConverter}}" />
+            </Grid>
+          </ToggleButton>
         </StackPanel>
 
-        <!-- Accent colour: preview swatch + hex field + preset palette -->
+        <!-- Accent colour -->
         <StackPanel Grid.Column="2">
           <TextBlock Text="{loc:Str Dialog_PersonaEdit_AccentColor}" FontWeight="SemiBold" Margin="0,0,0,4" />
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Border Grid.Column="0"
-                    Width="28" Height="28"
-                    CornerRadius="6"
-                    Margin="0,0,8,0"
-                    BorderThickness="1"
-                    BorderBrush="{DynamicResource BorderBrush_}"
-                    Background="{Binding AccentColor, Converter={StaticResource HexToBrushConverter}}" />
-            <ui:TextBox Grid.Column="1"
-                        Text="{Binding AccentColor, UpdateSourceTrigger=PropertyChanged}"
-                        MaxLength="7"
-                        VerticalAlignment="Center" />
-          </Grid>
-          <ItemsControl ItemsSource="{Binding AccentSwatches}" Margin="0,6,0,0">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <WrapPanel />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <Button Command="{Binding DataContext.PickAccentColorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                        CommandParameter="{Binding}"
-                        Width="24" Height="24"
-                        MinWidth="0" MinHeight="0"
-                        Padding="0"
-                        Margin="0,0,4,4"
-                        BorderThickness="1"
-                        BorderBrush="{DynamicResource BorderBrush_}"
-                        Background="{Binding Converter={StaticResource HexToBrushConverter}}"
-                        Cursor="Hand"
-                        ToolTip="{Binding}" />
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+          <ToggleButton x:Name="ColorToggle"
+                        Style="{StaticResource PiaPickerToggleStyle}">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Width="16" Height="16"
+                       Margin="0,0,8,0"
+                       StrokeThickness="1"
+                       Stroke="{DynamicResource BorderBrush_}"
+                       Fill="{Binding AccentColor, Converter={StaticResource HexToBrushConverter}}" />
+              <Grid VerticalAlignment="Center">
+                <TextBlock Text="{Binding AccentColor}"
+                           Visibility="{Binding AccentColor, Converter={StaticResource NullToVisibilityConverter}}" />
+                <TextBlock Text="#RRGGBB"
+                           Opacity="0.4"
+                           Visibility="{Binding AccentColor, Converter={StaticResource InverseNullToVisibilityConverter}}" />
+              </Grid>
+            </StackPanel>
+          </ToggleButton>
         </StackPanel>
       </Grid>
+
+      <!-- Emoji picker popup: custom-entry field + quick-pick grid -->
+      <Popup x:Name="EmojiPopup"
+             PlacementTarget="{Binding ElementName=EmojiToggle}"
+             Placement="Bottom"
+             StaysOpen="False"
+             AllowsTransparency="True"
+             PopupAnimation="Fade"
+             IsOpen="{Binding IsChecked, ElementName=EmojiToggle, Mode=TwoWay}">
+        <Border Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush_}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Margin="0,6,0,0"
+                Padding="10"
+                Width="280">
+          <Border.Effect>
+            <DropShadowEffect Color="#0F1729" Opacity="0.25" BlurRadius="16" ShadowDepth="3" />
+          </Border.Effect>
+          <StackPanel>
+            <ui:TextBox Text="{Binding Emoji, UpdateSourceTrigger=PropertyChanged}"
+                        MaxLength="8"
+                        PlaceholderText="🙂"
+                        Margin="0,0,0,8" />
+            <ItemsControl ItemsSource="{Binding EmojiChoices}"
+                          ButtonBase.Click="OnEmojiPicked">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Content="{Binding}"
+                          Style="{StaticResource PiaEmojiSwatchButtonStyle}"
+                          Command="{Binding DataContext.PickEmojiCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          CommandParameter="{Binding}">
+                    <Button.Tag>
+                      <MultiBinding Converter="{StaticResource MultiStringEqualsBoolConverter}">
+                        <Binding />
+                        <Binding Path="DataContext.Emoji" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                      </MultiBinding>
+                    </Button.Tag>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </Popup>
+
+      <!-- Accent-colour picker popup: swatch grid + custom hex field -->
+      <Popup x:Name="ColorPopup"
+             PlacementTarget="{Binding ElementName=ColorToggle}"
+             Placement="Bottom"
+             StaysOpen="False"
+             AllowsTransparency="True"
+             PopupAnimation="Fade"
+             IsOpen="{Binding IsChecked, ElementName=ColorToggle, Mode=TwoWay}">
+        <Border Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush_}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Margin="0,6,0,0"
+                Padding="10"
+                Width="232">
+          <Border.Effect>
+            <DropShadowEffect Color="#0F1729" Opacity="0.25" BlurRadius="16" ShadowDepth="3" />
+          </Border.Effect>
+          <StackPanel>
+            <ItemsControl ItemsSource="{Binding AccentSwatches}"
+                          ButtonBase.Click="OnAccentPicked">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Style="{StaticResource PiaColorSwatchButtonStyle}"
+                          Background="{Binding Converter={StaticResource HexToBrushConverter}}"
+                          Command="{Binding DataContext.PickAccentColorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          CommandParameter="{Binding}"
+                          ToolTip="{Binding}">
+                    <Button.Tag>
+                      <MultiBinding Converter="{StaticResource MultiStringEqualsBoolConverter}">
+                        <Binding />
+                        <Binding Path="DataContext.AccentColor" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                      </MultiBinding>
+                    </Button.Tag>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ui:TextBox Text="{Binding AccentColor, UpdateSourceTrigger=PropertyChanged}"
+                        MaxLength="7"
+                        PlaceholderText="#RRGGBB"
+                        Margin="0,8,0,0" />
+          </StackPanel>
+        </Border>
+      </Popup>
 
       <!-- Preferred provider + reasoning effort -->
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_Provider}"
