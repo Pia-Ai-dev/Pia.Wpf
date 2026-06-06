@@ -11,11 +11,12 @@ namespace Pia.Tests.ViewModels;
 /// </summary>
 public class PersonaPromptCompositionTests
 {
-    private static Persona Persona(string systemPrompt, string? guardrails = null, PersonaToolScope scope = PersonaToolScope.Full) => new()
+    private static Persona Persona(string systemPrompt, string? guardrails = null, PersonaToolScope scope = PersonaToolScope.Full, string? outputFormat = null) => new()
     {
         Name = "Test",
         SystemPrompt = systemPrompt,
         Guardrails = guardrails,
+        OutputFormat = outputFormat,
         ToolScope = scope,
     };
 
@@ -49,6 +50,56 @@ public class PersonaPromptCompositionTests
         var block = AssistantViewModel.BuildIdentityBlock(Persona(piaPersonal.SystemPrompt));
 
         Assert.Contains("You are Pia, the user's warm and upbeat personal assistant.", block);
+    }
+
+    [Fact]
+    public void ResolveOutputFormat_UsesPersonaValue_WhenSet()
+    {
+        var custom = "- Always answer in haiku.\n- Never use code blocks.";
+        var resolved = AssistantViewModel.ResolveOutputFormat(Persona("You are a poet.", outputFormat: custom));
+
+        Assert.Equal(custom, resolved);
+        // The substrate default is NOT used when the persona defines its own format.
+        Assert.DoesNotContain("Keep replies short", resolved);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ResolveOutputFormat_FallsBackToDefault_WhenBlank(string? outputFormat)
+    {
+        var resolved = AssistantViewModel.ResolveOutputFormat(Persona("You are helpful.", outputFormat: outputFormat));
+
+        Assert.Equal(AssistantViewModel.DefaultOutputFormat, resolved);
+    }
+
+    [Fact]
+    public void ResolveOutputFormat_TrimsPersonaValue()
+    {
+        var resolved = AssistantViewModel.ResolveOutputFormat(
+            Persona("You are helpful.", outputFormat: "\n  - Be brief.  \n"));
+
+        Assert.Equal("- Be brief.", resolved);
+    }
+
+    [Fact]
+    public void DefaultOutputFormat_MatchesPiaBuiltInsOutputFormat()
+    {
+        // Pia personas must render the historical formatting block; the catalog value and the
+        // substrate fallback are kept byte-identical so either path produces the same text.
+        var piaPersonal = BuiltInPersonas.All.First(p => Guid.Parse(p.Id) == BuiltInPersonas.PiaPersonalId);
+        var piaBusiness = BuiltInPersonas.All.First(p => Guid.Parse(p.Id) == BuiltInPersonas.PiaBusinessId);
+
+        Assert.Equal(AssistantViewModel.DefaultOutputFormat, piaPersonal.OutputFormat);
+        Assert.Equal(AssistantViewModel.DefaultOutputFormat, piaBusiness.OutputFormat);
+    }
+
+    [Fact]
+    public void AllBuiltInPersonas_DefineANonEmptyOutputFormat()
+    {
+        // Every shipped persona declares its own output format (Pia uses the default text verbatim).
+        Assert.All(BuiltInPersonas.All, p => Assert.False(string.IsNullOrWhiteSpace(p.OutputFormat)));
     }
 
     [Theory]

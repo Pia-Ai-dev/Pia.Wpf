@@ -245,6 +245,7 @@ public class TextOptimizationServiceTests
               "tagline": "Clear answers to German tax questions",
               "systemPrompt": "You are a meticulous German tax advisor.",
               "guardrails": "Do not give binding legal advice.",
+              "outputFormat": "- Lead with the answer.\n- Cite the relevant paragraph.",
               "archetype": "analyst",
               "emoji": "📊",
               "accentColor": "#2962FF",
@@ -268,6 +269,7 @@ public class TextOptimizationServiceTests
         Assert.Equal("Clear answers to German tax questions", draft.Tagline);
         Assert.Equal("You are a meticulous German tax advisor.", draft.SystemPrompt);
         Assert.Equal("Do not give binding legal advice.", draft.Guardrails);
+        Assert.Equal("- Lead with the answer.\n- Cite the relevant paragraph.", draft.OutputFormat);
         Assert.Equal("analyst", draft.Archetype);
         Assert.Equal("📊", draft.Emoji);
         Assert.Equal("#2962FF", draft.AccentColor);

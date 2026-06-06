@@ -45,6 +45,10 @@ public partial class PersonaEditModel : ObservableValidator
     [ObservableProperty]
     private string _guardrails = string.Empty;
 
+    /// <summary>Per-persona response-format guidance; blank ⇒ the substrate default is used.</summary>
+    [ObservableProperty]
+    private string _outputFormat = string.Empty;
+
     [ObservableProperty]
     private string _archetype = "custom";
 
@@ -173,6 +177,7 @@ public partial class PersonaEditModel : ObservableValidator
             if (string.IsNullOrWhiteSpace(Tagline) && !string.IsNullOrWhiteSpace(draft.Tagline)) Tagline = draft.Tagline!;
             if (string.IsNullOrWhiteSpace(SystemPrompt) && !string.IsNullOrWhiteSpace(draft.SystemPrompt)) SystemPrompt = draft.SystemPrompt!;
             if (string.IsNullOrWhiteSpace(Guardrails) && !string.IsNullOrWhiteSpace(draft.Guardrails)) Guardrails = draft.Guardrails!;
+            if (string.IsNullOrWhiteSpace(OutputFormat) && !string.IsNullOrWhiteSpace(draft.OutputFormat)) OutputFormat = draft.OutputFormat!;
             if (string.IsNullOrWhiteSpace(Emoji) && !string.IsNullOrWhiteSpace(draft.Emoji)) Emoji = draft.Emoji!;
             if (string.IsNullOrWhiteSpace(AccentColor) && !string.IsNullOrWhiteSpace(draft.AccentColor)) AccentColor = draft.AccentColor!;
             if (string.IsNullOrWhiteSpace(Expertise) && draft.Expertise is { Count: > 0 }) Expertise = string.Join(", ", draft.Expertise);
@@ -198,6 +203,7 @@ public partial class PersonaEditModel : ObservableValidator
             Tagline = persona.Tagline ?? string.Empty,
             SystemPrompt = persona.SystemPrompt,
             Guardrails = persona.Guardrails ?? string.Empty,
+            OutputFormat = persona.OutputFormat ?? string.Empty,
             Archetype = string.IsNullOrEmpty(persona.Archetype) ? "custom" : persona.Archetype,
             Expertise = persona.Expertise is { Count: > 0 } ? string.Join(", ", persona.Expertise) : string.Empty,
             Emoji = persona.Emoji ?? string.Empty,
@@ -221,6 +227,7 @@ public partial class PersonaEditModel : ObservableValidator
             Tagline = string.IsNullOrWhiteSpace(Tagline) ? null : Tagline.Trim(),
             SystemPrompt = SystemPrompt.Trim(),
             Guardrails = string.IsNullOrWhiteSpace(Guardrails) ? null : Guardrails.Trim(),
+            OutputFormat = string.IsNullOrWhiteSpace(OutputFormat) ? null : OutputFormat.Trim(),
             Archetype = string.IsNullOrWhiteSpace(Archetype) ? "custom" : Archetype,
             Expertise = ParseExpertise(Expertise),
             Emoji = string.IsNullOrWhiteSpace(Emoji) ? null : Emoji.Trim(),

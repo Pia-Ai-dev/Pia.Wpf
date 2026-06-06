@@ -549,6 +549,8 @@
   <data name="Dialog_PersonaEdit_SystemPromptHint" xml:space="preserve"><value>The identity and voice that replaces the assistant's default personality</value></data>
   <data name="Dialog_PersonaEdit_Guardrails" xml:space="preserve"><value>Guardrails</value></data>
   <data name="Dialog_PersonaEdit_GuardrailsHint" xml:space="preserve"><value>Optional constraints appended after the identity (e.g. no regulated advice)</value></data>
+  <data name="Dialog_PersonaEdit_OutputFormat" xml:space="preserve"><value>Output Format</value></data>
+  <data name="Dialog_PersonaEdit_OutputFormatHint" xml:space="preserve"><value>How replies should be formatted (length, prose vs. lists, code). Leave blank for the default.</value></data>
   <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archetype</value></data>
   <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Expertise</value></data>
   <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Comma-separated domain tags</value></data>

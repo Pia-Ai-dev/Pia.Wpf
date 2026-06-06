@@ -202,7 +202,8 @@ public class SqliteContext : IDisposable
                 ReasoningEffort INTEGER,
                 SchemaVersion INTEGER NOT NULL DEFAULT 1,
                 CreatedAt TEXT NOT NULL,
-                UpdatedAt TEXT NOT NULL
+                UpdatedAt TEXT NOT NULL,
+                OutputFormat TEXT
             );
 
             CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
@@ -522,12 +523,33 @@ public class SqliteContext : IDisposable
                     ReasoningEffort INTEGER,
                     SchemaVersion INTEGER NOT NULL DEFAULT 1,
                     CreatedAt TEXT NOT NULL,
-                    UpdatedAt TEXT NOT NULL
+                    UpdatedAt TEXT NOT NULL,
+                    OutputFormat TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
                 """;
             createPersonas.ExecuteNonQuery();
+        }
+
+        // Per-persona output-format guidance, added after the Personas table shipped. Runs after the
+        // defensive create above, so the table is guaranteed to exist (fresh tables already include
+        // the column, so the check below short-circuits and no ALTER is issued).
+        var hasOutputFormat = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(Personas)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                if (r.GetString(1) == "OutputFormat") { hasOutputFormat = true; break; }
+            }
+        }
+        if (!hasOutputFormat)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE Personas ADD COLUMN OutputFormat TEXT";
+            addCol.ExecuteNonQuery();
         }
     }
 

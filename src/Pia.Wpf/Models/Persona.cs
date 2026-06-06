@@ -14,6 +14,12 @@ public class Persona
     public required string SystemPrompt { get; set; }
     public string? Guardrails { get; set; }
 
+    /// <summary>
+    /// Per-persona response-format guidance (the body of the prompt's "Output Format" section).
+    /// <c>null</c>/blank ⇒ the substrate falls back to <c>AssistantViewModel.DefaultOutputFormat</c>.
+    /// </summary>
+    public string? OutputFormat { get; set; }
+
     /// <summary>assistant | analyst | creative | visionary | explainer | custom. Default "custom".</summary>
     public string Archetype { get; set; } = "custom";
 

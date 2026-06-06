@@ -53,6 +53,7 @@ public class SyncMapperPersonaTests
         Tagline = "Senior engineer, production-minded",
         SystemPrompt = "You are a senior software engineer with 15+ years of experience.",
         Guardrails = "Flag security concerns proactively.",
+        OutputFormat = "- Lead with the answer.\n- Use code blocks for code.",
         Archetype = "analyst",
         Expertise = ["C#", "Distributed Systems", "Security"],
         Emoji = "💻",
@@ -79,6 +80,7 @@ public class SyncMapperPersonaTests
         Assert.Equal(original.Name, sync.Name);
         Assert.Equal(original.SystemPrompt, sync.SystemPrompt);
         Assert.Equal(original.Guardrails, sync.Guardrails);
+        Assert.Equal(original.OutputFormat, sync.OutputFormat);
         Assert.Equal(original.Expertise, sync.Expertise);
         // Structural fields stay plaintext in both modes.
         Assert.Equal("analyst", sync.Archetype);
@@ -93,6 +95,7 @@ public class SyncMapperPersonaTests
         Assert.Equal(original.Tagline, back.Tagline);
         Assert.Equal(original.SystemPrompt, back.SystemPrompt);
         Assert.Equal(original.Guardrails, back.Guardrails);
+        Assert.Equal(original.OutputFormat, back.OutputFormat);
         Assert.Equal(original.Expertise, back.Expertise);
         Assert.Equal(original.Archetype, back.Archetype);
         Assert.Equal(original.Emoji, back.Emoji);
@@ -121,6 +124,7 @@ public class SyncMapperPersonaTests
         Assert.Null(sync.Tagline);
         Assert.Null(sync.SystemPrompt);
         Assert.Null(sync.Guardrails);
+        Assert.Null(sync.OutputFormat);
         Assert.Null(sync.Expertise);
         // Structural fields remain plaintext even under E2EE.
         Assert.Equal(original.Id, sync.Id);
@@ -139,6 +143,7 @@ public class SyncMapperPersonaTests
         Assert.Equal(original.Tagline, back.Tagline);
         Assert.Equal(original.SystemPrompt, back.SystemPrompt);
         Assert.Equal(original.Guardrails, back.Guardrails);
+        Assert.Equal(original.OutputFormat, back.OutputFormat);
         Assert.Equal(original.Expertise, back.Expertise);
         Assert.Equal(original.Archetype, back.Archetype);
         Assert.Equal(original.ToolScope, back.ToolScope);

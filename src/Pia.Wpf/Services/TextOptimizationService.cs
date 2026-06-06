@@ -151,6 +151,7 @@ Provide only the generated prompt, no additional explanation.";
 - ""tagline"": a one-line summary (max 120 characters)
 - ""systemPrompt"": a 2-5 sentence identity/voice instruction written in the second person (""You are…"") that fully defines how the assistant should speak and behave
 - ""guardrails"": one or two sentences of constraints the assistant must respect (e.g. topics to avoid, disclaimers); use an empty string if none apply
+- ""outputFormat"": 3-6 short bullet points (each on its own line, starting with ""- "") describing how this persona should format its replies — length, prose vs. structure, when to use headings, lists, tables, or code; tailor it to the persona; use an empty string if nothing special applies
 - ""archetype"": exactly one of ""assistant"", ""analyst"", ""creative"", ""visionary"", ""explainer"", ""custom""
 - ""emoji"": a single emoji that represents the persona
 - ""accentColor"": a hex colour like ""#7C4DFF""
@@ -186,7 +187,7 @@ Description:
     {
         var json = ExtractJsonObject(raw);
         if (json is null)
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null);
+            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
 
         try
         {
@@ -195,13 +196,14 @@ Description:
                 PropertyNameCaseInsensitive = true
             });
             if (dto is null)
-                return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null);
+                return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
 
             return new PersonaDraft(
                 Clean(dto.Name),
                 Clean(dto.Tagline),
                 Clean(dto.SystemPrompt),
                 Clean(dto.Guardrails),
+                Clean(dto.OutputFormat),
                 Clean(dto.Archetype),
                 Clean(dto.Emoji),
                 Clean(dto.AccentColor),
@@ -210,7 +212,7 @@ Description:
         catch (JsonException)
         {
             // Model didn't return valid JSON — fall back to using the raw text as the system prompt.
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null);
+            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
         }
 
         static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -232,6 +234,7 @@ Description:
         public string? Tagline { get; set; }
         public string? SystemPrompt { get; set; }
         public string? Guardrails { get; set; }
+        public string? OutputFormat { get; set; }
         public string? Archetype { get; set; }
         public string? Emoji { get; set; }
         public string? AccentColor { get; set; }

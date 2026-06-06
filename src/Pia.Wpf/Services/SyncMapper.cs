@@ -105,8 +105,8 @@ public class SyncMapper
     // --- Personas ---
     //
     // E2EE field split (contract §3): the textual fields (Name, Tagline, SystemPrompt, Guardrails,
-    // Expertise) are encrypted into EncryptedPayload/WrappedDek with key "persona"; the structural
-    // fields stay plaintext. Built-ins are never mapped to the wire (the push filter skips them),
+    // OutputFormat, Expertise) are encrypted into EncryptedPayload/WrappedDek with key "persona"; the
+    // structural fields stay plaintext. Built-ins are never mapped to the wire (the push filter skips them),
     // and FromSyncPersona always produces a user persona (IsBuiltIn = false).
 
     public SyncPersona ToSyncPersona(Persona persona, string? userId = null)
@@ -133,6 +133,7 @@ public class SyncMapper
                 persona.Tagline,
                 persona.SystemPrompt,
                 persona.Guardrails,
+                persona.OutputFormat,
                 persona.Expertise
             };
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
@@ -144,6 +145,7 @@ public class SyncMapper
             sync.Tagline = persona.Tagline;
             sync.SystemPrompt = persona.SystemPrompt;
             sync.Guardrails = persona.Guardrails;
+            sync.OutputFormat = persona.OutputFormat;
             sync.Expertise = persona.Expertise;
         }
 
@@ -152,7 +154,7 @@ public class SyncMapper
 
     public Persona FromSyncPersona(SyncPersona sync, string? userId = null)
     {
-        string? name, tagline, systemPrompt, guardrails;
+        string? name, tagline, systemPrompt, guardrails, outputFormat;
         List<string>? expertise;
 
         if (IsE2EEActive
@@ -166,6 +168,7 @@ public class SyncMapper
             tagline = decrypted.Tagline;
             systemPrompt = decrypted.SystemPrompt;
             guardrails = decrypted.Guardrails;
+            outputFormat = decrypted.OutputFormat;
             expertise = decrypted.Expertise;
         }
         else
@@ -174,6 +177,7 @@ public class SyncMapper
             tagline = sync.Tagline;
             systemPrompt = sync.SystemPrompt;
             guardrails = sync.Guardrails;
+            outputFormat = sync.OutputFormat;
             expertise = sync.Expertise;
         }
 
@@ -184,6 +188,7 @@ public class SyncMapper
             Tagline = tagline,
             SystemPrompt = systemPrompt ?? "",
             Guardrails = guardrails,
+            OutputFormat = outputFormat,
             Archetype = string.IsNullOrEmpty(sync.Archetype) ? "custom" : sync.Archetype,
             Expertise = expertise ?? [],
             Emoji = sync.Emoji,

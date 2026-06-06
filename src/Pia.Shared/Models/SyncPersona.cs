@@ -17,6 +17,7 @@ public class SyncPersona
     public string? Tagline { get; set; }
     public string? SystemPrompt { get; set; }
     public string? Guardrails { get; set; }
+    public string? OutputFormat { get; set; }
     public List<string>? Expertise { get; set; }
 
     // Structural / config (always plaintext, even under E2EE).

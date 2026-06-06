@@ -66,6 +66,42 @@ public class PersonaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddAndGetPersona_RoundTripsOutputFormat()
+    {
+        var outputFormat = "- Lead with the answer.\n- Use code blocks for code.";
+        var added = await _service.AddPersonaAsync(new Persona
+        {
+            Name = "TEST_OutputFormat",
+            SystemPrompt = "You are a test persona.",
+            OutputFormat = outputFormat,
+            ToolScope = PersonaToolScope.Full,
+        });
+        _created.Add(added.Id);
+
+        var fetched = await _service.GetPersonaAsync(added.Id);
+
+        Assert.NotNull(fetched);
+        Assert.Equal(outputFormat, fetched!.OutputFormat);
+
+        // A persona with no output format round-trips as null (substrate default applies at prompt time).
+        var plain = await AddUserPersonaAsync("TEST_NoOutputFormat");
+        var fetchedPlain = await _service.GetPersonaAsync(plain.Id);
+        Assert.Null(fetchedPlain!.OutputFormat);
+    }
+
+    [Fact]
+    public async Task UpdatePersonaAsync_PersistsOutputFormat()
+    {
+        var user = await AddUserPersonaAsync();
+        user.OutputFormat = "- Be terse.";
+
+        await _service.UpdatePersonaAsync(user);
+
+        var fetched = await _service.GetPersonaAsync(user.Id);
+        Assert.Equal("- Be terse.", fetched!.OutputFormat);
+    }
+
+    [Fact]
     public async Task UpdatePersonaAsync_BuiltIn_Throws()
     {
         var builtIn = (await _service.GetPersonasAsync()).First(p => p.IsBuiltIn);

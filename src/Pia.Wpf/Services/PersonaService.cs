@@ -53,7 +53,7 @@ public class PersonaService : IPersonaService
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, Name, Tagline, SystemPrompt, Guardrails, Archetype, Expertise, Emoji, AccentColor,
-                   ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt
+                   ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat
             FROM Personas ORDER BY CreatedAt ASC
             """;
 
@@ -77,7 +77,7 @@ public class PersonaService : IPersonaService
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, Name, Tagline, SystemPrompt, Guardrails, Archetype, Expertise, Emoji, AccentColor,
-                   ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt
+                   ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat
             FROM Personas WHERE Id = @Id
             """;
         command.Parameters.AddWithValue("@Id", id.ToString());
@@ -100,10 +100,10 @@ public class PersonaService : IPersonaService
         command.CommandText = """
             INSERT OR REPLACE INTO Personas
                 (Id, Name, Tagline, SystemPrompt, Guardrails, Archetype, Expertise, Emoji, AccentColor,
-                 ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt)
+                 ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat)
             VALUES
                 (@Id, @Name, @Tagline, @SystemPrompt, @Guardrails, @Archetype, @Expertise, @Emoji, @AccentColor,
-                 @ToolScope, @PreferredProviderId, @ReasoningEffort, @SchemaVersion, @CreatedAt, @UpdatedAt)
+                 @ToolScope, @PreferredProviderId, @ReasoningEffort, @SchemaVersion, @CreatedAt, @UpdatedAt, @OutputFormat)
             """;
 
         AddPersonaParameters(command, persona);
@@ -128,8 +128,8 @@ public class PersonaService : IPersonaService
         command.CommandText = """
             UPDATE Personas
             SET Name = @Name, Tagline = @Tagline, SystemPrompt = @SystemPrompt, Guardrails = @Guardrails,
-                Archetype = @Archetype, Expertise = @Expertise, Emoji = @Emoji, AccentColor = @AccentColor,
-                ToolScope = @ToolScope, PreferredProviderId = @PreferredProviderId,
+                OutputFormat = @OutputFormat, Archetype = @Archetype, Expertise = @Expertise, Emoji = @Emoji,
+                AccentColor = @AccentColor, ToolScope = @ToolScope, PreferredProviderId = @PreferredProviderId,
                 ReasoningEffort = @ReasoningEffort, SchemaVersion = @SchemaVersion, UpdatedAt = @UpdatedAt
             WHERE Id = @Id
             """;
@@ -193,6 +193,7 @@ public class PersonaService : IPersonaService
         command.Parameters.AddWithValue("@Tagline", persona.Tagline is not null ? (object)persona.Tagline : DBNull.Value);
         command.Parameters.AddWithValue("@SystemPrompt", persona.SystemPrompt);
         command.Parameters.AddWithValue("@Guardrails", persona.Guardrails is not null ? (object)persona.Guardrails : DBNull.Value);
+        command.Parameters.AddWithValue("@OutputFormat", persona.OutputFormat is not null ? (object)persona.OutputFormat : DBNull.Value);
         command.Parameters.AddWithValue("@Archetype", persona.Archetype is not null ? (object)persona.Archetype : DBNull.Value);
         command.Parameters.AddWithValue("@Expertise", JsonSerializer.Serialize(persona.Expertise ?? []));
         command.Parameters.AddWithValue("@Emoji", persona.Emoji is not null ? (object)persona.Emoji : DBNull.Value);
@@ -215,6 +216,8 @@ public class PersonaService : IPersonaService
             Tagline = reader.IsDBNull(2) ? null : reader.GetString(2),
             SystemPrompt = reader.GetString(3),
             Guardrails = reader.IsDBNull(4) ? null : reader.GetString(4),
+            // OutputFormat is appended last in the SELECT (index 15) to keep the other ordinals stable.
+            OutputFormat = reader.IsDBNull(15) ? null : reader.GetString(15),
             Archetype = reader.IsDBNull(5) ? "custom" : reader.GetString(5),
             Expertise = ParseExpertise(expertiseJson),
             Emoji = reader.IsDBNull(7) ? null : reader.GetString(7),
@@ -252,6 +255,7 @@ public class PersonaService : IPersonaService
             Tagline = p.Tagline,
             SystemPrompt = p.SystemPrompt,
             Guardrails = p.Guardrails,
+            OutputFormat = p.OutputFormat,
             Archetype = p.Archetype,
             Expertise = [.. p.Expertise],
             Emoji = p.Emoji,

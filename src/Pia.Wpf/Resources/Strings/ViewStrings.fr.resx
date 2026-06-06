@@ -549,6 +549,8 @@
   <data name="Dialog_PersonaEdit_SystemPromptHint" xml:space="preserve"><value>L'identité et la voix qui remplacent la personnalité par défaut de l'assistant</value></data>
   <data name="Dialog_PersonaEdit_Guardrails" xml:space="preserve"><value>Garde-fous</value></data>
   <data name="Dialog_PersonaEdit_GuardrailsHint" xml:space="preserve"><value>Contraintes facultatives ajoutées après l'identité (par ex. aucun conseil réglementé)</value></data>
+  <data name="Dialog_PersonaEdit_OutputFormat" xml:space="preserve"><value>Format de sortie</value></data>
+  <data name="Dialog_PersonaEdit_OutputFormatHint" xml:space="preserve"><value>Comment les réponses sont formatées (longueur, prose ou listes, code). Laisser vide pour la valeur par défaut.</value></data>
   <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archétype</value></data>
   <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Expertise</value></data>
   <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Étiquettes de domaine séparées par des virgules</value></data>

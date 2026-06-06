@@ -54,6 +54,29 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             """;
     }
 
+    // Output-format guidance the substrate falls back to when the active persona doesn't define its
+    // own (personas created/synced before the field existed, or left blank). Kept byte-identical to
+    // BuiltInPersonas.PiaOutputFormat — pinned by a test — so the Pia personas render the historical
+    // formatting block even via the fallback path.
+    internal const string DefaultOutputFormat =
+        """
+        - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+        - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
+        - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+        - Do not restate the user's question and do not summarize what you just said at the end of a reply.
+        """;
+
+    // Tool-interaction safety rule appended in the tools path regardless of the active persona's
+    // output format, so a custom/creative persona can't accidentally drop it.
+    private const string DeclinedActionRule =
+        "- When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.";
+
+    // The body of the "## Output Format" section: the persona's own guidance, or the substrate default.
+    internal static string ResolveOutputFormat(Persona activePersona) =>
+        string.IsNullOrWhiteSpace(activePersona.OutputFormat)
+            ? DefaultOutputFormat
+            : activePersona.OutputFormat.Trim();
+
     private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
     {
         var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
@@ -95,13 +118,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             {BuildLanguageInstruction()}
 
-            {pluginSection}{toolSelectionSection}## Principles
+            {pluginSection}{toolSelectionSection}## Output Format
 
-            - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
-            - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
-            - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
-            - Do not restate the user's question and do not summarize what you just said at the end of a reply.
-            - When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.
+            {ResolveOutputFormat(activePersona)}
+            {DeclinedActionRule}
             {tokenSection}{webSearchSection}
             """;
     }
@@ -176,12 +196,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             {BuildLanguageInstruction()}
 
-            ## Principles
+            ## Output Format
 
-            - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
-            - Write plain prose. Use formatting elements rare. Avoid bold, italics; reserve **bold** only for safety-critical warnings.
-            - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
-            - Do not restate the user's question and do not summarize what you just said at the end of a reply.
+            {ResolveOutputFormat(activePersona)}
             {webSearchSection}
             """;
     }

@@ -11,6 +11,7 @@ public record PersonaDraft(
     string? Tagline,
     string? SystemPrompt,
     string? Guardrails,
+    string? OutputFormat,
     string? Archetype,
     string? Emoji,
     string? AccentColor,

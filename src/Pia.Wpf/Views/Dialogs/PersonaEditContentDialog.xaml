@@ -98,6 +98,22 @@
                VerticalScrollBarVisibility="Auto"
                Margin="0,0,0,16" />
 
+      <!-- Output format -->
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_OutputFormat}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_OutputFormatHint}"
+                 Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,0,0,8" />
+      <TextBox Text="{Binding OutputFormat, UpdateSourceTrigger=PropertyChanged}"
+               TextWrapping="Wrap"
+               AcceptsReturn="True"
+               Height="96"
+               VerticalScrollBarVisibility="Auto"
+               IsReadOnly="{Binding IsGenerating}"
+               Margin="0,0,0,16" />
+
       <!-- Archetype + Tool scope -->
       <Grid Margin="0,0,0,16">
         <Grid.ColumnDefinitions>

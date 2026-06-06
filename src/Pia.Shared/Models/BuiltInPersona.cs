@@ -11,6 +11,8 @@ namespace Pia.Shared.Models;
 /// <param name="Tagline">One-liner for the picker / Council cards.</param>
 /// <param name="SystemPrompt">Identity/voice block that replaces the assistant identity.</param>
 /// <param name="Guardrails">Optional constraints appended after the identity.</param>
+/// <param name="OutputFormat">Response-format guidance (the per-persona body of the prompt's
+/// "Output Format" section). <c>null</c> ⇒ the client falls back to its substrate default.</param>
 /// <param name="Archetype">assistant | analyst | creative | visionary | explainer | custom.</param>
 /// <param name="Expertise">Domain tags (small list).</param>
 /// <param name="Emoji">Single emoji for the chip.</param>
@@ -22,6 +24,7 @@ public record BuiltInPersona(
     string? Tagline,
     string SystemPrompt,
     string? Guardrails,
+    string? OutputFormat,
     string Archetype,
     IReadOnlyList<string> Expertise,
     string? Emoji,
