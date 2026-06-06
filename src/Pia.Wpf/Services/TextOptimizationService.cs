@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -145,14 +146,6 @@ Provide only the generated prompt, no additional explanation.";
         if (provider is null)
             throw new InvalidOperationException("No AI provider configured");
 
-        // PiaCloud only exposes a single-string prompt-generation endpoint, so we draft the system
-        // prompt there and leave the remaining fields for the user to fill in.
-        if (provider.ProviderType == AiProviderType.PiaCloud)
-        {
-            var systemPrompt = await _aiClientService.GeneratePromptViaPiaCloudAsync(description);
-            return new PersonaDraft(null, null, systemPrompt, null, null, null, null, null);
-        }
-
         var draftPrompt = $@"You are designing an AI assistant persona from a short description. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
 - ""name"": a short display name (max 40 characters)
 - ""tagline"": a one-line summary (max 120 characters)
@@ -166,8 +159,27 @@ Provide only the generated prompt, no additional explanation.";
 Description:
 {description}";
 
-        var completion = await _aiClientService.SendRequestAsync(provider, draftPrompt);
-        return ParsePersonaDraft(completion.Text);
+        // Route through the same streaming chat path that Assistant conversations use. Pia Cloud's
+        // /api/ai/chat only returns the expected shape on the streaming path (its non-streaming
+        // response shape is unsupported here), and this is the proven path for every provider. The
+        // system message keeps reasoning models from wrapping the JSON in think/commentary, which
+        // would defeat the extraction in ParsePersonaDraft.
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(Microsoft.Extensions.AI.ChatRole.System,
+                "You produce only the requested output. Do not reason, think, or explain."),
+            new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
+        };
+
+        var buffer = new StringBuilder();
+        await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
+            messages, provider, tools: null, toolHandler: null, mode: nameof(WindowMode.Assistant)))
+        {
+            if (item is TextDelta delta)
+                buffer.Append(delta.Text);
+        }
+
+        return ParsePersonaDraft(buffer.ToString());
     }
 
     private static PersonaDraft ParsePersonaDraft(string raw)

@@ -339,6 +339,7 @@
   <data name="Plugins_GoToAccount" xml:space="preserve"><value>Go to Account</value></data>
   <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>Disable Built-in Plugin</value></data>
   <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' is a built-in plugin. Disabling it will break default assistant functionality. Are you sure?</value></data>
+  <data name="Settings_InnerTab_General" xml:space="preserve"><value>General</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Appearance</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Hotkeys</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Speech</value></data>

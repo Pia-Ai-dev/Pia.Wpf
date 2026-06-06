@@ -6,7 +6,7 @@
              xmlns:loc="clr-namespace:Pia.Localization">
   <!-- Horizontal scroll disabled so the ColumnsPanel is measured at a finite width and can pick its column count. -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel MaxWidth="1080">
+    <StackPanel MaxWidth="1080" HorizontalAlignment="Left">
 
       <!-- Personas section header -->
       <Grid Margin="0,0,0,8">

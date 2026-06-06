@@ -339,6 +339,7 @@
   <data name="Plugins_GoToAccount" xml:space="preserve"><value>Aller au compte</value></data>
   <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>D&#233;sactiver une extension int&#233;gr&#233;e</value></data>
   <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' est une extension int&#233;gr&#233;e. La d&#233;sactiver perturbera les fonctionnalit&#233;s par d&#233;faut de l'assistant. &#202;tes-vous s&#251;r ?</value></data>
+  <data name="Settings_InnerTab_General" xml:space="preserve"><value>Général</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Apparence</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Raccourcis</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Parole</value></data>

@@ -3,12 +3,17 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
+             xmlns:local="clr-namespace:Pia.Views.SettingsViews"
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
   </UserControl.Resources>
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+  <Grid>
+    <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
+      <!-- General tab -->
+      <TabItem Header="{loc:Str Settings_InnerTab_General}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="640" HorizontalAlignment="Left">
       <!-- Provider selector for Assistant mode -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}"
@@ -128,6 +133,14 @@
                    Appearance="Caution"
                    HorizontalAlignment="Left"/>
       </StackPanel>
-    </StackPanel>
-  </ScrollViewer>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Personas tab -->
+      <TabItem Header="{loc:Str Settings_Tab_Personas}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <local:PersonasView DataContext="{Binding PersonasVm}"/>
+      </TabItem>
+    </TabControl>
+  </Grid>
 </UserControl>

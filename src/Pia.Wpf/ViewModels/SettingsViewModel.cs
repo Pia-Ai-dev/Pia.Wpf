@@ -57,7 +57,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService, authService);
 
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, logger, settingsService, assistantChatService, dialogService, localizationService);
+        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService);
+
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, logger, settingsService, assistantChatService, dialogService, localizationService);
 
         ResearchVm = new ResearchSettingsViewModel(ProvidersVm);
 
@@ -66,8 +68,6 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
-
-        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService);
     }
 
     public void OnNavigatedTo(object? parameter)
@@ -79,9 +79,11 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
                 break;
             case ValueTuple<int, int> tabs:
                 // (outer tab, inner tab). Inner tab applies only when the outer tab
-                // hosts its own TabControl — currently just General.
+                // hosts its own TabControl — Assistant (2) and General (4).
                 SelectedTabIndex = tabs.Item1;
-                if (tabs.Item1 == 4)
+                if (tabs.Item1 == 2)
+                    AssistantVm.SelectedInnerTabIndex = tabs.Item2;
+                else if (tabs.Item1 == 4)
                     GeneralVm.SelectedInnerTabIndex = tabs.Item2;
                 break;
         }

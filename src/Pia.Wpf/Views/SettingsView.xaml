@@ -83,12 +83,6 @@
             <TextBlock Text="{loc:Str Settings_Tab_Plugins}" VerticalAlignment="Center"/>
           </StackPanel>
         </ListBoxItem>
-        <ListBoxItem>
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Person24" FontSize="16" Margin="0,0,10,0"/>
-            <TextBlock Text="{loc:Str Settings_Tab_Personas}" VerticalAlignment="Center"/>
-          </StackPanel>
-        </ListBoxItem>
       </ListBox>
 
       <!-- Content area -->
@@ -183,19 +177,6 @@
             </Style>
           </localSettings:PluginsView.Style>
         </localSettings:PluginsView>
-
-        <localSettings:PersonasView DataContext="{Binding PersonasVm}">
-          <localSettings:PersonasView.Style>
-            <Style TargetType="localSettings:PersonasView">
-              <Setter Property="Visibility" Value="Collapsed"/>
-              <Style.Triggers>
-                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="7">
-                  <Setter Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </localSettings:PersonasView.Style>
-        </localSettings:PersonasView>
       </Grid>
     </Grid>
   </Grid>

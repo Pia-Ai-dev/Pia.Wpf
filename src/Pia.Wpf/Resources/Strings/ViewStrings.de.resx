@@ -339,6 +339,7 @@
   <data name="Plugins_GoToAccount" xml:space="preserve"><value>Zum Konto</value></data>
   <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>Integriertes Plugin deaktivieren</value></data>
   <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' ist ein integriertes Plugin. Das Deaktivieren beeintr&#228;chtigt die Standardfunktionen des Assistenten. Bist du sicher?</value></data>
+  <data name="Settings_InnerTab_General" xml:space="preserve"><value>Allgemein</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Darstellung</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Tastenkürzel</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Sprache</value></data>

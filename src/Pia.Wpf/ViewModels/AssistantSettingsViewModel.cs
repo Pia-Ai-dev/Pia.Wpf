@@ -17,9 +17,15 @@ public partial class AssistantSettingsViewModel : ObservableObject
     private bool _isLoading;
 
     public ProvidersSettingsViewModel ProvidersVm { get; }
+    public PersonaSettingsViewModel PersonasVm { get; }
+
+    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas).</summary>
+    [ObservableProperty]
+    private int _selectedInnerTabIndex;
 
     public AssistantSettingsViewModel(
         ProvidersSettingsViewModel providersVm,
+        PersonaSettingsViewModel personasVm,
         ILogger<SettingsViewModel> logger,
         ISettingsService settingsService,
         IAssistantChatService chatService,
@@ -27,6 +33,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ILocalizationService localizationService)
     {
         ProvidersVm = providersVm;
+        PersonasVm = personasVm;
         _logger = logger;
         _settingsService = settingsService;
         _chatService = chatService;
