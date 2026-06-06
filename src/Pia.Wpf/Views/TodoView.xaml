@@ -195,7 +195,7 @@
                         </TextBlock>
 
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding Name}"
+                                   behaviors:EmojiTextBehavior.Text="{Binding Name}"
                                    FontWeight="SemiBold"
                                    FontSize="14"
                                    Foreground="{DynamicResource TextDefaultBrush}"
@@ -328,7 +328,7 @@
                                               VerticalAlignment="Center">
                                     <Grid>
                                       <TextBlock x:Name="TodoTitle"
-                                                 Text="{Binding Title}"
+                                                 behaviors:EmojiTextBehavior.Text="{Binding Title}"
                                                  FontSize="13"
                                                  Foreground="{DynamicResource TextDefaultBrush}"
                                                  TextTrimming="CharacterEllipsis"/>
@@ -341,7 +341,7 @@
                                             Stretch="None"
                                             Visibility="Collapsed"/>
                                     </Grid>
-                                    <TextBlock Text="{Binding Notes}"
+                                    <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Notes}"
                                                FontSize="10"
                                                TextTrimming="CharacterEllipsis"
                                                MaxHeight="14"

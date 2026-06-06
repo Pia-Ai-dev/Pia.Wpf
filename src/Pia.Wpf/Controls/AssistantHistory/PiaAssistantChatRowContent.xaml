@@ -1,6 +1,7 @@
 <UserControl x:Class="Pia.Controls.AssistantHistory.PiaAssistantChatRowContent"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors">
   <!-- Presentation-only row body: time | title | date. Carries no padding,
        background or selection chrome so each host (history list, chat-title
        flyout) supplies its own. Bound by convention to anything exposing
@@ -23,7 +24,7 @@
       <TextBlock FontSize="13"
                  FontWeight="SemiBold"
                  Foreground="{DynamicResource TextDefaultBrush}"
-                 Text="{Binding Title, FallbackValue='—'}"
+                 behaviors:EmojiTextBehavior.Text="{Binding Title, FallbackValue='—'}"
                  TextTrimming="CharacterEllipsis"
                  TextWrapping="NoWrap"/>
     </StackPanel>

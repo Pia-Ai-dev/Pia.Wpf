@@ -54,7 +54,7 @@ public partial class PersonaGlyph : UserControl
 
     private void UpdateGlyph()
     {
-        if (PiaIcon is null || EmojiText is null)
+        if (PiaIcon is null || EmojiImage is null)
             return;
 
         var isPia = PersonaId == BuiltInPersonas.PiaPersonalId || PersonaId == BuiltInPersonas.PiaBusinessId;
@@ -62,8 +62,8 @@ public partial class PersonaGlyph : UserControl
         PiaIcon.Visibility = isPia ? Visibility.Visible : Visibility.Collapsed;
         PiaIcon.Width = PiaIcon.Height = GlyphSize + 4;
 
-        EmojiText.Visibility = isPia ? Visibility.Collapsed : Visibility.Visible;
-        EmojiText.FontSize = GlyphSize;
-        EmojiText.Text = Emoji;
+        EmojiImage.Visibility = isPia ? Visibility.Collapsed : Visibility.Visible;
+        EmojiImage.GlyphSize = GlyphSize;
+        EmojiImage.Emoji = Emoji;
     }
 }

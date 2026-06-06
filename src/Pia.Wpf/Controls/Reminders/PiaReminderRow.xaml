@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:rem="clr-namespace:Pia.Controls.Reminders"
              xmlns:views="clr-namespace:Pia.Views">
   <Border x:Name="Root"
@@ -33,7 +34,7 @@
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0">
-        <TextBlock Text="{Binding Description}"
+        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Description}"
                    FontSize="13"
                    Foreground="{DynamicResource TextDefaultBrush}"
                    TextTrimming="CharacterEllipsis"/>

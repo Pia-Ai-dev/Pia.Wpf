@@ -4,6 +4,9 @@
 
   <!-- Font Family -->
   <FontFamily x:Key="DefaultFontFamily">Segoe UI Variable, Segoe UI, sans-serif</FontFamily>
+  <!-- Editable fields: same UI font, with Segoe UI Emoji as a fallback so typed/pasted emoji render
+       (monochrome) instead of tofu boxes. Color emoji are shown elsewhere via EmojiImageRenderer. -->
+  <FontFamily x:Key="EmojiCapableFontFamily">Segoe UI Variable, Segoe UI, Segoe UI Emoji, sans-serif</FontFamily>
   <FontFamily x:Key="CodeFontFamily">Consolas, Cascadia Code, Courier New, monospace</FontFamily>
   <system:Double x:Key="CodeFontSize">12</system:Double>
 

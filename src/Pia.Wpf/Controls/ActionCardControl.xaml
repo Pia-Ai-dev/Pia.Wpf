@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:models="clr-namespace:Pia.Models">
   <Border x:Name="CardBorder"
           Padding="12,10"
@@ -69,11 +70,11 @@
           <StackPanel Grid.Column="1"
                       Orientation="Vertical"
                       VerticalAlignment="Center">
-            <TextBlock Text="{Binding Title}"
+            <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Title}"
                        FontSize="13"
                        FontWeight="SemiBold"
                        TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{Binding Summary}"
+            <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Summary}"
                        FontSize="12"
                        Foreground="{DynamicResource TextPlaceholderColorBrush}"
                        TextTrimming="CharacterEllipsis" />

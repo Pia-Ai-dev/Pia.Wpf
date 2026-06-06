@@ -1,6 +1,7 @@
 <UserControl x:Class="Pia.Controls.PersonaGlyph"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Pia.Controls"
              Focusable="False">
   <Grid>
     <!-- The two built-in Pia personas use the app icon (same as the assistant chat avatar). -->
@@ -8,9 +9,9 @@
            Source="pack://application:,,,/Resources/Icons/Pia.ico"
            Stretch="Uniform"
            Visibility="Collapsed" />
-    <!-- All other personas keep their emoji glyph. -->
-    <TextBlock x:Name="EmojiText"
-               HorizontalAlignment="Center"
-               VerticalAlignment="Center" />
+    <!-- All other personas keep their emoji glyph, rendered in color via the OS text stack. -->
+    <controls:EmojiPresenter x:Name="EmojiImage"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center" />
   </Grid>
 </UserControl>
