@@ -201,6 +201,10 @@ public static class Bootstrapper
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ICollectionViewService, CollectionViewService>();
 
+        // Color-emoji renderer (OS Direct2D/DirectWrite/WIC). Same instance the static accessor and
+        // XAML controls use, so the bitmap cache is shared.
+        services.AddSingleton(Pia.Emoji.EmojiImageRenderer.Shared);
+
         // AI provider handlers (one per AiProviderType) + registry
         services.AddSingleton<IAiProviderHandler, OpenAiProviderHandler>();
         services.AddSingleton<IAiProviderHandler, AzureOpenAiProviderHandler>();

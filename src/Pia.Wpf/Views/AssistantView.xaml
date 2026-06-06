@@ -254,6 +254,7 @@
           </Border>
           <Grid>
             <ui:TextBox x:Name="InputTextBox"
+                        FontFamily="{StaticResource EmojiCapableFontFamily}"
                         Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{loc:Str Assistant_InputPlaceholder}"
                         PlaceholderEnabled="True"

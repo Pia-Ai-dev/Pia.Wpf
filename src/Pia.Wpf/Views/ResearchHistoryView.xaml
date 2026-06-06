@@ -6,6 +6,7 @@
               xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
               xmlns:controls="clr-namespace:Pia.Controls"
               xmlns:loc="clr-namespace:Pia.Localization"
+              xmlns:behaviors="clr-namespace:Pia.Behaviors"
               xmlns:nav="clr-namespace:Pia.Navigation"
               mc:Ignorable="d"
               d:DesignHeight="600" d:DesignWidth="900"
@@ -193,7 +194,7 @@
 
                 <!-- Query -->
                 <TextBlock Grid.Row="1"
-                           Text="{Binding Query}"
+                           behaviors:EmojiTextBehavior.Text="{Binding Query}"
                            FontSize="13"
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"
@@ -203,7 +204,7 @@
 
                 <!-- Result Preview -->
                 <TextBlock Grid.Row="2"
-                           Text="{Binding ResultPreview}"
+                           behaviors:EmojiTextBehavior.Text="{Binding ResultPreview}"
                            FontSize="12"
                            Foreground="{DynamicResource TextPlaceholderColorBrush}"
                            TextWrapping="Wrap"
@@ -252,7 +253,7 @@
                            FontSize="11"
                            Foreground="{DynamicResource TextPlaceholderColorBrush}"
                            Margin="0,0,0,2" />
-                <TextBlock Text="{Binding DetailEntry.Query}"
+                <TextBlock behaviors:EmojiTextBehavior.Text="{Binding DetailEntry.Query}"
                            FontSize="14"
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"

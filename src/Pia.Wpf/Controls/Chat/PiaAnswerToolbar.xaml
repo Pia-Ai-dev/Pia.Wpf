@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              x:Name="Root">
   <Border BorderBrush="{DynamicResource BorderBrush_}"
           BorderThickness="0,1,0,0"
@@ -231,7 +232,7 @@
                Margin="8,0,4,0"
                FontSize="11"
                Foreground="{DynamicResource TextSubtleBrush}"
-               Text="{Binding FooterSummary, ElementName=Root}" />
+               behaviors:EmojiTextBehavior.Text="{Binding FooterSummary, ElementName=Root}" />
   </Grid>
   </Border>
 </UserControl>

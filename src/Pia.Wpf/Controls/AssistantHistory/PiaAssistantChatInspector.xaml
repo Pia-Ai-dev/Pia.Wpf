@@ -30,7 +30,7 @@
           </Grid.RowDefinitions>
 
           <TextBlock Grid.Row="0" Grid.Column="0"
-                     Text="{Binding Title, FallbackValue='—'}"
+                     behaviors:EmojiTextBehavior.Text="{Binding Title, FallbackValue='—'}"
                      FontSize="16"
                      FontWeight="SemiBold"
                      TextWrapping="Wrap"

@@ -4,6 +4,7 @@
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   xmlns:loc="clr-namespace:Pia.Localization"
+                  xmlns:controls="clr-namespace:Pia.Controls"
                   Title="{loc:Str Dialog_PersonaEdit_Title}"
                   PrimaryButtonText="{loc:Str Common_Save}"
                   CloseButtonText="{loc:Str Common_Cancel}"
@@ -143,13 +144,13 @@
           <ToggleButton x:Name="EmojiToggle"
                         Style="{StaticResource PiaPickerToggleStyle}">
             <Grid>
-              <TextBlock Text="{Binding Emoji}"
-                         FontSize="16"
-                         Visibility="{Binding Emoji, Converter={StaticResource NullToVisibilityConverter}}" />
-              <TextBlock Text="🙂"
-                         FontSize="16"
-                         Opacity="0.4"
-                         Visibility="{Binding Emoji, Converter={StaticResource InverseNullToVisibilityConverter}}" />
+              <controls:EmojiPresenter Emoji="{Binding Emoji}"
+                                       GlyphSize="16"
+                                       Visibility="{Binding Emoji, Converter={StaticResource NullToVisibilityConverter}}" />
+              <controls:EmojiPresenter Emoji="🙂"
+                                       GlyphSize="16"
+                                       Opacity="0.4"
+                                       Visibility="{Binding Emoji, Converter={StaticResource InverseNullToVisibilityConverter}}" />
             </Grid>
           </ToggleButton>
         </StackPanel>
@@ -197,6 +198,7 @@
           </Border.Effect>
           <StackPanel>
             <ui:TextBox Text="{Binding Emoji, UpdateSourceTrigger=PropertyChanged}"
+                        FontFamily="{StaticResource EmojiCapableFontFamily}"
                         MaxLength="8"
                         PlaceholderText="🙂"
                         Margin="0,0,0,8" />
@@ -209,10 +211,10 @@
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Button Content="{Binding}"
-                          Style="{StaticResource PiaEmojiSwatchButtonStyle}"
+                  <Button Style="{StaticResource PiaEmojiSwatchButtonStyle}"
                           Command="{Binding DataContext.PickEmojiCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                           CommandParameter="{Binding}">
+                    <controls:EmojiPresenter Emoji="{Binding}" GlyphSize="20" />
                     <Button.Tag>
                       <MultiBinding Converter="{StaticResource MultiStringEqualsBoolConverter}">
                         <Binding />
