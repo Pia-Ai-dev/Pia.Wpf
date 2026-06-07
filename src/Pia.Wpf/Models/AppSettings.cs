@@ -141,6 +141,15 @@ public class AppSettings
     // Privacy settings
     public PrivacySettings Privacy { get; set; } = new();
 
+    /// <summary>
+    /// Persistent marker for the memory-vault migration. <c>0</c> = the legacy <c>Memories</c> table has
+    /// not yet been migrated into the on-disk vault; <c>1</c> = migration completed on this device.
+    /// <see cref="Services.Migration.VaultMigrationRunner"/> sets this to <c>1</c> after a successful run
+    /// so the migration is idempotent. Synced across devices via settings so a device that pulls an
+    /// already-migrated vault does not re-migrate.
+    /// </summary>
+    public int VaultVersion { get; set; } = 0;
+
     public Guid? GetProviderForMode(WindowMode mode)
     {
         if (UseSameProviderForAllModes)

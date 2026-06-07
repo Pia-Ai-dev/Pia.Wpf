@@ -117,6 +117,24 @@ public static class Bootstrapper
             }
         }
 
+        // Migrate the legacy Memories table into the on-disk vault (one-shot, idempotent, guarded by
+        // AppSettings.VaultVersion + a populated-vault cross-device check). Migration must NEVER block
+        // startup: on failure the legacy table remains the fallback, so log a warning and continue.
+        try
+        {
+            var migrationReport = await _serviceProvider.GetRequiredService<IVaultMigrationRunner>().RunAsync();
+            if (!migrationReport.Skipped)
+            {
+                bootstrapLogger.LogInformation(
+                    "Vault migration ran: {Rows} row(s) -> {Records} record(s), {Archived} archived",
+                    migrationReport.RowsMigrated, migrationReport.RecordsWritten, migrationReport.Archived);
+            }
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Vault migration failed; legacy memory table remains the fallback");
+        }
+
         // Start the vault file-watcher on the default root so external edits (and Pia's own writes)
         // flow into the index. Start() creates the root dir if absent, so this never throws on a
         // fresh install; guard anyway so a watcher failure cannot block app startup.
@@ -254,6 +272,8 @@ public static class Bootstrapper
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
         services.AddSingleton<IVaultIndexer, VaultIndexer>();
         services.AddSingleton<ISectionUpsertService, SectionUpsertService>();
+        services.AddSingleton<Pia.Services.Migration.MemoryJsonRenderer>();
+        services.AddSingleton<IVaultMigrationRunner, Pia.Services.Migration.VaultMigrationRunner>();
         services.AddSingleton<VaultWatcher>();
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
