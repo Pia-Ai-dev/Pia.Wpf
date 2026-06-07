@@ -240,6 +240,7 @@ public static class Bootstrapper
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
+        services.AddSingleton<IVaultIndexer, VaultIndexer>();
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
         services.AddSingleton<IReminderService, ReminderService>();
