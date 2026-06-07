@@ -175,6 +175,13 @@ public sealed class VaultIndexService
         await _store.WriteAtomicAsync(IndexPath, sb.ToString());
     }
 
+    // Frontmatter keys Pia owns on index.md; everything else is a user/Obsidian addition we must
+    // preserve verbatim on rewrite (spec §2.3).
+    private static readonly HashSet<string> OwnedKeys = new(StringComparer.Ordinal)
+    {
+        "pia", "id", "type", "title", "created", "updated", "schemaVersion",
+    };
+
     private static string BuildFrontmatter(VaultDocument? existing)
     {
         var id = existing is not null && existing.Frontmatter.TryGetValue("id", out var existingId)
@@ -188,15 +195,32 @@ public sealed class VaultIndexService
             ? existingCreated
             : now;
 
-        return "---\n" +
-               "pia: managed\n" +
-               $"id: {id}\n" +
-               "type: note\n" +
-               "title: Index\n" +
-               $"created: {created}\n" +
-               $"updated: {now}\n" +
-               "schemaVersion: 1\n" +
-               "---\n";
+        var sb = new StringBuilder();
+        sb.Append("---\n")
+          .Append("pia: managed\n")
+          .Append("id: ").Append(id).Append('\n')
+          .Append("type: note\n")
+          .Append("title: Index\n")
+          .Append("created: ").Append(created).Append('\n')
+          .Append("updated: ").Append(now).Append('\n')
+          .Append("schemaVersion: 1\n");
+
+        // §2.3: carry through unknown (user-added) frontmatter keys on rewrite. Only single-line
+        // scalar values round-trip — the parser flattens YAML lists/maps to a non-reversible string,
+        // so complex unknown keys cannot be preserved here (a known parser limitation, see plan notes).
+        if (existing is not null)
+        {
+            foreach (var (key, value) in existing.Frontmatter)
+            {
+                if (!OwnedKeys.Contains(key) && !value.Contains('\n'))
+                {
+                    sb.Append(key).Append(": ").Append(value).Append('\n');
+                }
+            }
+        }
+
+        sb.Append("---\n");
+        return sb.ToString();
     }
 
     // ---- path -> link target / type derivation (§7 storage map) ----

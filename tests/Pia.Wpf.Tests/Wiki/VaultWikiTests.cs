@@ -45,6 +45,36 @@ public class VaultWikiTests : IDisposable
         return close < 0 ? raw : raw[(close + 5)..];
     }
 
+    // ---- (0) §2.3: rewriting index.md preserves unknown (user-added) scalar frontmatter keys ----
+
+    [Fact]
+    public async Task Upsert_preserves_unknown_scalar_frontmatter_keys()
+    {
+        var store = NewStore();
+        // Seed an index.md that already carries a user/Obsidian-added scalar key.
+        var seeded =
+            "---\n" +
+            "pia: managed\n" +
+            "id: 11111111-1111-1111-1111-111111111111\n" +
+            "type: note\n" +
+            "title: Index\n" +
+            "created: 2026-06-07T09:00:00Z\n" +
+            "updated: 2026-06-07T09:00:00Z\n" +
+            "schemaVersion: 1\n" +
+            "cssclass: dashboard\n" +
+            "---\n" +
+            "# Index\n";
+        await store.WriteAtomicAsync("memory/index.md", seeded);
+
+        var index = NewIndex(store);
+        await index.UpsertEntryAsync("memory/topics/acme.md", "Acme Corp.");
+
+        var raw = (await store.ReadAsync("memory/index.md"))!.RawText;
+        Assert.Contains("cssclass: dashboard", raw);            // unknown key survived the rewrite (§2.3)
+        Assert.Contains("id: 11111111-1111-1111-1111-111111111111", raw); // stable id preserved
+        Assert.Contains("- [[topics/acme]] — Acme Corp.", raw); // and the entry was added
+    }
+
     // ---- (1) grouping, ordering, exact wikilink format, upsert-replaces, remove, housekeeping ----
 
     [Fact]
