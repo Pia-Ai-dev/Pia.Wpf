@@ -240,36 +240,6 @@ public class DeviceManagementService : IDeviceManagementService
             ?? new DeviceListResponse();
     }
 
-    public async Task<string> ReKeyAsync()
-    {
-        _logger.LogInformation("Re-keying E2EE with new UMK");
-
-        var deviceId = _deviceKeys.GetDeviceId();
-
-        // Generate new UMK (overwrites the old one)
-        var umk = await _e2ee.GenerateAndStoreUmkAsync();
-
-        // Self-wrap new UMK and upload
-        var (selfWrapped, hkdfSalt) = _e2ee.WrapUmkForSelf();
-        await UploadWrappedUmkAsync(deviceId, selfWrapped, hkdfSalt, deviceId);
-
-        // Generate new recovery code and upload recovery-wrapped UMK
-        var recoveryCode = _recovery.GenerateRecoveryCode();
-        var recoveryBlob = _recovery.WrapUmkForRecovery(umk, recoveryCode);
-        await UploadRecoveryWrappedUmkAsync(recoveryBlob);
-
-        // Update settings
-        var settings = await _settings.GetSettingsAsync();
-        settings.IsE2EEEnabled = true;
-        settings.E2EEUmkVersion++;
-        settings.E2EERecoveryConfigured = true;
-        await _settings.SaveSettingsAsync(settings);
-
-        _logger.LogInformation("E2EE re-keyed for device {DeviceId}", deviceId);
-
-        return recoveryCode;
-    }
-
     public bool IsInitialized() => _e2ee.IsReady() && _deviceKeys.HasDeviceKeys();
 
     private async Task<DeviceRegistrationResponse> RegisterDeviceOnServerAsync(
