@@ -76,7 +76,7 @@ public sealed class MarkdownVaultParser
         var preamble = text[contentStart..firstBoundaryStart];
 
         var sections = new List<VaultSection>();
-        var slugCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var assignedSlugs = new HashSet<string>(StringComparer.Ordinal);
 
         for (var b = 0; b < boundaryLineIndices.Count; b++)
         {
@@ -84,7 +84,7 @@ public sealed class MarkdownVaultParser
             var line = lines[lineIdx];
 
             var heading = SectionBoundary.Match(line.Content).Groups[1].Value.Trim(AsciiWhitespace);
-            var slug = DedupeSlug(Slugify(heading), slugCounts);
+            var slug = DedupeSlug(Slugify(heading), assignedSlugs);
 
             // BodyStart = char index just after the heading line's terminator
             // (RawText.Length if the heading line is the file's last line with no trailing '\n').
@@ -146,17 +146,25 @@ public sealed class MarkdownVaultParser
         return slug.Length == 0 ? "section" : slug;
     }
 
-    /// <summary>§6 step 7 collision suffix, applied to post-fallback slugs in document order.</summary>
-    private static string DedupeSlug(string slug, Dictionary<string, int> counts)
+    /// <summary>
+    /// §6 step 7 collision suffix (global uniqueness): assign the post-fallback slug in document
+    /// order, picking the smallest-free <c>{base}-{N}</c> (N ≥ 2) when <paramref name="slug"/> is
+    /// already taken — so a suffixed slug can never clash with a later heading's natural slug.
+    /// </summary>
+    private static string DedupeSlug(string slug, HashSet<string> assigned)
     {
-        if (counts.TryGetValue(slug, out var count))
+        if (assigned.Add(slug))
         {
-            counts[slug] = count + 1;
-            return $"{slug}-{count + 1}";
+            return slug;
         }
 
-        counts[slug] = 1;
-        return slug;
+        var n = 2;
+        while (!assigned.Add($"{slug}-{n}"))
+        {
+            n++;
+        }
+
+        return $"{slug}-{n}";
     }
 
     /// <summary>§2 delimiter test: content (one optional trailing '\r' removed) equals "---".</summary>
