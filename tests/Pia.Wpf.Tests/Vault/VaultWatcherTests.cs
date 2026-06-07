@@ -45,15 +45,30 @@ public class VaultWatcherTests : IDisposable
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (DateTime.UtcNow < deadline)
         {
-            if (await predicate())
+            try
             {
-                return true;
+                if (await predicate())
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Predicate not yet satisfied (e.g. NSubstitute Received() throws when the call has
+                // not been observed) — keep polling until the deadline.
             }
 
             await Task.Delay(25);
         }
 
-        return await predicate();
+        try
+        {
+            return await predicate();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     [Fact]
@@ -64,7 +79,7 @@ public class VaultWatcherTests : IDisposable
         watcher.Start(_vaultRoot);
 
         var fullPath = Path.Combine(_vaultRoot, "profile.md");
-        await File.WriteAllTextAsync(fullPath, "## Preferences\n- likes coffee\n");
+        await File.WriteAllTextAsync(fullPath, "## Preferences\n- likes coffee\n", TestContext.Current.CancellationToken);
 
         var indexed = await WaitUntilAsync(async () =>
         {
@@ -85,7 +100,7 @@ public class VaultWatcherTests : IDisposable
 
         // Seed the file BEFORE starting the watcher so only the delete is observed.
         var fullPath = Path.Combine(_vaultRoot, "contacts.md");
-        await File.WriteAllTextAsync(fullPath, "## John Smith\n- email: john@example.com\n");
+        await File.WriteAllTextAsync(fullPath, "## John Smith\n- email: john@example.com\n", TestContext.Current.CancellationToken);
 
         using var watcher = new VaultWatcher(indexer, _paths, NullLogger<VaultWatcher>.Instance);
         watcher.Start(_vaultRoot);
