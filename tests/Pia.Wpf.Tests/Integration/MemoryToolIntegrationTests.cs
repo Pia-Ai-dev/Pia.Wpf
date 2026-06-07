@@ -90,7 +90,7 @@ public class MemoryToolIntegrationTests : IDisposable
 
         // First call: creates the section. Resolution band is Create -> pending action -> execute (write).
         var (firstResult, firstPending) = await handler.HandleToolCallAsync(
-            RememberCall("contact_list", "John Smith", "- email: a@x"));
+            RememberCall("contact_list", "John Smith", "- email: a@x"), TestContext.Current.CancellationToken);
         Assert.Null(firstResult);
         Assert.NotNull(firstPending);
         Assert.Equal("remember", firstPending!.ToolName);
@@ -98,7 +98,7 @@ public class MemoryToolIntegrationTests : IDisposable
 
         // Second call, SAME subject: resolution band is Edit -> pending action -> execute (merge, no dup).
         var (secondResult, secondPending) = await handler.HandleToolCallAsync(
-            RememberCall("contact_list", "John Smith", "- phone: 5"));
+            RememberCall("contact_list", "John Smith", "- phone: 5"), TestContext.Current.CancellationToken);
         Assert.Null(secondResult);
         Assert.NotNull(secondPending);
         await handler.ExecutePendingActionAsync(secondPending);
@@ -123,7 +123,7 @@ public class MemoryToolIntegrationTests : IDisposable
         var handler = BuildHandler(memory);
 
         var (_, pending) = await handler.HandleToolCallAsync(
-            RememberCall("contact_list", "John Smith", "- email: a@x"));
+            RememberCall("contact_list", "John Smith", "- email: a@x"), TestContext.Current.CancellationToken);
         Assert.NotNull(pending);
         await handler.ExecutePendingActionAsync(pending!);
 
@@ -135,7 +135,7 @@ public class MemoryToolIntegrationTests : IDisposable
             name: "recall",
             arguments: new Dictionary<string, object?> { ["query"] = "John Smith" });
 
-        var (result, recallPending) = await handler.HandleToolCallAsync(recallCall);
+        var (result, recallPending) = await handler.HandleToolCallAsync(recallCall, TestContext.Current.CancellationToken);
 
         // recall is immediate: a result object, never a pending action.
         Assert.Null(recallPending);
@@ -151,7 +151,7 @@ public class MemoryToolIntegrationTests : IDisposable
         var handler = BuildHandler(memory);
 
         var (_, rememberPending) = await handler.HandleToolCallAsync(
-            RememberCall("contact_list", "John Smith", "- email: a@x"));
+            RememberCall("contact_list", "John Smith", "- email: a@x"), TestContext.Current.CancellationToken);
         Assert.NotNull(rememberPending);
         await handler.ExecutePendingActionAsync(rememberPending!);
 
@@ -160,7 +160,7 @@ public class MemoryToolIntegrationTests : IDisposable
             name: "forget",
             arguments: new Dictionary<string, object?> { ["reference"] = "memory/contacts.md#John Smith" });
 
-        var (forgetResult, forgetPending) = await handler.HandleToolCallAsync(forgetCall);
+        var (forgetResult, forgetPending) = await handler.HandleToolCallAsync(forgetCall, TestContext.Current.CancellationToken);
         Assert.Null(forgetResult);
         Assert.NotNull(forgetPending);
         Assert.Equal("forget", forgetPending!.ToolName);
