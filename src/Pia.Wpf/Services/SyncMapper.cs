@@ -480,13 +480,21 @@ public class SyncMapper
     }
 
     /// <summary>Extract the <c>(path, content)</c> of a vault file from its <see cref="SyncMemory"/> envelope.</summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the envelope carries ciphertext but this client cannot decrypt it (E2EE inactive,
+    /// missing userId). The sync layer catches this and skips the row rather than persisting an empty
+    /// vault document — mirrors <see cref="FromSyncAssistantChat"/>.
+    /// </exception>
     public (string Path, string Content) FromVaultSyncMemory(SyncMemory sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (sync.EncryptedPayload is not null && sync.WrappedDek is not null)
         {
+            if (!IsE2EEActive || userId is null)
+            {
+                throw new InvalidOperationException(
+                    "Incoming vault file is encrypted but E2EE is not active on this client.");
+            }
+
             var decrypted = _e2ee!.DecryptRecord<VaultSyncPayload>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "vault_file", sync.Id.ToString());
             return (decrypted.Path, decrypted.Content);

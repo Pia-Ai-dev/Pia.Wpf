@@ -191,6 +191,39 @@ public sealed class VaultSyncTests : IDisposable
         Assert.Equal(content, rtContent);
     }
 
+    // ---- (b'') {path,content} envelope: an encrypted row given to a mapper that CANNOT decrypt
+    //      (E2EE inactive) THROWS instead of materializing an empty (path, content). The sync layer
+    //      catches this and skips the row. The plaintext round-trip still works unchanged. ----
+
+    [Fact]
+    public void FromVaultSyncMemory_EncryptedRow_E2EEInactive_Throws()
+    {
+        var dpapi = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
+        var mapper = new SyncMapper(dpapi); // no E2EE -> cannot decrypt
+        var id = Guid.Parse(Id);
+
+        // Encrypted envelope: ciphertext present, plaintext Path/Data null (C5).
+        var sync = new SyncMemory { Id = id, EncryptedPayload = "CIPHER", WrappedDek = "WDEK" };
+
+        Assert.Throws<InvalidOperationException>(() => mapper.FromVaultSyncMemory(sync, UserId));
+    }
+
+    [Fact]
+    public void FromVaultSyncMemory_PlaintextRow_RoundTrips()
+    {
+        var dpapi = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
+        var mapper = new SyncMapper(dpapi); // no E2EE -> plaintext path
+        var id = Guid.Parse(Id);
+        const string path = "memory/contacts.md";
+        const string content = "---\npia: managed\n---\n## John\n";
+
+        var sync = new SyncMemory { Id = id, Path = path, Data = content };
+        var (rtPath, rtContent) = mapper.FromVaultSyncMemory(sync);
+
+        Assert.Equal(path, rtPath);
+        Assert.Equal(content, rtContent);
+    }
+
     // ---- (c) merge-on-pull: first pull (no base) writes remote verbatim ----
 
     [Fact]
