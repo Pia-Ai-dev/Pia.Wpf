@@ -32,7 +32,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             _ => ActionCardCategory.Memory
         };
 
-        var isDelete = pendingAction.ToolName.Contains("delete");
+        var isDelete = pendingAction.ToolName.Contains("delete", StringComparison.OrdinalIgnoreCase)
+            || pendingAction.ToolName == "forget";
 
         var warningText = isDelete ? pendingAction.PluginName switch
         {
@@ -65,12 +66,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
     public string ResolveStatusText(string toolName) => toolName switch
     {
-        "list_memories" => _localizationService["Msg_Assistant_StatusCheckingMemory"],
-        "query_memory" => _localizationService["Msg_Assistant_StatusSearchingMemory"],
-        "create_object" => _localizationService["Msg_Assistant_StatusCreatingMemory"],
-        "update_object" => _localizationService["Msg_Assistant_StatusUpdatingMemory"],
-        "append_to_list" => _localizationService["Msg_Assistant_StatusUpdatingMemory"],
-        "delete_object" => _localizationService["Msg_Assistant_StatusDeletingMemory"],
+        "recall" => _localizationService["Msg_Assistant_StatusSearchingMemory"],
+        "remember" => _localizationService["Msg_Assistant_StatusUpdatingMemory"],
+        "forget" => _localizationService["Msg_Assistant_StatusDeletingMemory"],
         "create_reminder" => _localizationService["Msg_Assistant_StatusCreatingReminder"],
         "query_reminders" => _localizationService["Msg_Assistant_StatusCheckingReminders"],
         "update_reminder" => _localizationService["Msg_Assistant_StatusUpdatingReminder"],
@@ -104,9 +102,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
         var actionKey = toolName switch
         {
-            "create_object" or "create_todo" or "create_reminder" => "ActionCard_Action_Create",
-            "update_object" or "append_to_list" or "update_todo" or "update_reminder" => "ActionCard_Action_Update",
-            "delete_object" or "delete_todo" or "delete_reminder" or "delete_file" => "ActionCard_Action_Delete",
+            "create_todo" or "create_reminder" => "ActionCard_Action_Create",
+            "remember" or "update_todo" or "update_reminder" => "ActionCard_Action_Update",
+            "forget" or "delete_todo" or "delete_reminder" or "delete_file" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
             "write_file" => "ActionCard_Action_Write",
             _ => "ActionCard_Action_Create"

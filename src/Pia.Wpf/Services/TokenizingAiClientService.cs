@@ -12,7 +12,7 @@ public class TokenizingAiClientService : IAiClientService
 {
     private static readonly string[] WriteOperations =
     [
-        "create_object", "update_object", "append_to_list", "delete_object",
+        "remember", "forget",
         "create_reminder", "update_reminder", "delete_reminder",
         "create_todo", "update_todo", "complete_todo", "delete_todo",
         "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"
@@ -327,6 +327,6 @@ public class TokenizingAiClientService : IAiClientService
         return result.ToString();
     }
 
-    private static bool IsWriteOperation(string toolName) =>
+    internal static bool IsWriteOperation(string toolName) =>
         WriteOperations.Contains(toolName);
 }

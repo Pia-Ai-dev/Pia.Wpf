@@ -30,7 +30,7 @@ public static class BuiltInPluginDefaults
             IsPreloaded = true,
             IsActive = true,
             Version = "1.0.0",
-            ConfigJson = """{"handlerId":"memory","defaultEnabled":true,"systemPromptAddition":"You have a persistent memory system. When the user asks about something personal or tells you something to remember, use your memory tools to look it up or store it. Use list_memories to see what's stored, and query_memory to retrieve details.\n\nMemory workflow — ALWAYS follow this sequence when storing information:\n1. First call query_memory to check if a related memory already exists.\n2. If a match is found, use update_object to modify it (do NOT create a duplicate).\n3. Only if no related memory exists, use create_object to store it as new."}""",
+            ConfigJson = """{"handlerId":"memory","defaultEnabled":true,"systemPromptAddition":"You have a persistent memory system. To store or update personal information, call remember(type, subject, content) — it AUTOMATICALLY finds-or-creates the right record and de-duplicates, so you do NOT need to look anything up first. To look something up, call recall(query). To remove a record, call forget(reference). Valid type values: personal_profile, contact_list, preference, note, project, topic."}""",
             UpdatedAt = new DateTime(2026, 4, 6, 0, 0, 0, DateTimeKind.Utc)
         },
         [TodoPluginId] = new SyncPlugin
