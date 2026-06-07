@@ -119,6 +119,16 @@ public sealed class LintService : ILintService
         foreach (var path in await _store.EnumerateAsync(PagesGlob))
         {
             ct.ThrowIfCancellationRequested();
+            var normalizedPath = path.Replace('\\', '/');
+
+            // Never lint archived copies: a previous duplicate-merge moved the loser here, and
+            // re-loading it would resurrect contradiction/missing-xref noise against the live page
+            // (the merge would self-defeat across runs).
+            if (normalizedPath.StartsWith(ArchiveDir + "/", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             var target = ToTarget(path);
             if (target is null || Housekeeping.Contains(target))
             {
@@ -128,7 +138,7 @@ public sealed class LintService : ILintService
             var doc = await _store.ReadAsync(path);
             if (doc is not null)
             {
-                pages.Add(new Page(path.Replace('\\', '/'), target, doc));
+                pages.Add(new Page(normalizedPath, target, doc));
             }
         }
 
@@ -279,7 +289,8 @@ public sealed class LintService : ILintService
         {
             ct.ThrowIfCancellationRequested();
             var page = pages[i];
-            var body = page.Doc.RawText;
+            var raw = page.Doc.RawText;       // write-back operates on the whole file (preserves frontmatter)
+            var content = page.Body;          // match only against page content, never frontmatter values
             var toLink = new List<(string Entity, string Target)>();
 
             foreach (var (entity, target) in entityTarget)
@@ -290,8 +301,10 @@ public sealed class LintService : ILintService
                 }
 
                 var link = $"[[{target}]]";
-                if (body.Contains(entity, StringComparison.Ordinal)
-                    && !body.Contains(link, StringComparison.Ordinal))
+                // Word-boundary mention so a short title (e.g. "Ace") does not match inside a larger
+                // word (e.g. "Space"); only insert if the page does not already link the target.
+                if (MentionsEntity(content, entity)
+                    && !raw.Contains(link, StringComparison.Ordinal))
                 {
                     toLink.Add((entity, target));
                 }
@@ -302,8 +315,8 @@ public sealed class LintService : ILintService
                 continue;
             }
 
-            var sb = new StringBuilder(body);
-            if (!body.EndsWith('\n'))
+            var sb = new StringBuilder(raw);
+            if (!raw.EndsWith('\n'))
             {
                 sb.Append('\n');
             }
@@ -437,6 +450,19 @@ public sealed class LintService : ILintService
         await _store.WriteAtomicAsync($"{ArchiveDir}/{name}", doc.RawText);
         await _store.DeleteAsync(loser.Path);
         return true;
+    }
+
+    // Whole-word/phrase mention of an entity in page content (alphanumeric boundaries on both sides),
+    // so a short title like "Ace" does not spuriously match inside "Space".
+    private static bool MentionsEntity(string content, string entity)
+    {
+        if (string.IsNullOrEmpty(entity))
+        {
+            return false;
+        }
+
+        var pattern = "(?<![A-Za-z0-9])" + Regex.Escape(entity) + "(?![A-Za-z0-9])";
+        return Regex.IsMatch(content, pattern);
     }
 
     // Stored Chunks vector for the page (first row), else recompute over the page body.
