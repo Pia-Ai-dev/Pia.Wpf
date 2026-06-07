@@ -272,6 +272,8 @@ public static class Bootstrapper
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
         services.AddSingleton<IVaultIndexer, VaultIndexer>();
         services.AddSingleton<ISectionUpsertService, SectionUpsertService>();
+        services.AddSingleton<Pia.Services.Wiki.VaultIndexService>();
+        services.AddSingleton<Pia.Services.Wiki.VaultLogService>();
         services.AddSingleton<Pia.Services.Migration.MemoryJsonRenderer>();
         services.AddSingleton<IVaultMigrationRunner, Pia.Services.Migration.VaultMigrationRunner>();
         services.AddSingleton<VaultWatcher>();
