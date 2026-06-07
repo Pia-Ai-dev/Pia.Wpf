@@ -117,6 +117,19 @@ public static class Bootstrapper
             }
         }
 
+        // Scaffold the §1 vault layout so a fresh install has sources/ and a default AGENTS.md before
+        // anything reads or migrates into the vault. Idempotent and never overwrites a co-evolved
+        // AGENTS.md; like migration and the watcher it must NEVER block startup, so guard and continue.
+        try
+        {
+            await _serviceProvider.GetRequiredService<Pia.Services.Wiki.VaultSchemaService>()
+                .EnsureScaffoldingAsync();
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Vault scaffolding failed; sources/ and AGENTS.md may be missing this session");
+        }
+
         // Migrate the legacy Memories table into the on-disk vault (one-shot, idempotent, guarded by
         // AppSettings.VaultVersion + a populated-vault cross-device check). Migration must NEVER block
         // startup: on failure the legacy table remains the fallback, so log a warning and continue.
@@ -274,6 +287,7 @@ public static class Bootstrapper
         services.AddSingleton<ISectionUpsertService, SectionUpsertService>();
         services.AddSingleton<Pia.Services.Wiki.VaultIndexService>();
         services.AddSingleton<Pia.Services.Wiki.VaultLogService>();
+        services.AddSingleton<Pia.Services.Wiki.VaultSchemaService>();
         services.AddSingleton<Pia.Services.Migration.MemoryJsonRenderer>();
         services.AddSingleton<IVaultMigrationRunner, Pia.Services.Migration.VaultMigrationRunner>();
         services.AddSingleton<VaultWatcher>();
