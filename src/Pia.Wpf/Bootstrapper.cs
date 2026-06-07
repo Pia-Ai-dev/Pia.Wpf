@@ -253,6 +253,7 @@ public static class Bootstrapper
         services.AddSingleton<IMemoryService, MemoryService>();
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
         services.AddSingleton<IVaultIndexer, VaultIndexer>();
+        services.AddSingleton<ISectionUpsertService, SectionUpsertService>();
         services.AddSingleton<VaultWatcher>();
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
