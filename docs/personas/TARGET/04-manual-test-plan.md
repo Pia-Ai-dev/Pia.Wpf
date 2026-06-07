@@ -41,12 +41,27 @@ build. Anything marked **🔁 sync** needs both devices. Record pass/fail + note
 - [ ] **Delete** a user persona → it disappears; confirm it does not reappear after app restart.
 - [ ] Try to **Save** with an empty Name or empty System Prompt → blocked with a validation message.
 - [ ] Expertise entered as comma-separated text round-trips (re-open the persona → tags preserved).
+- [ ] **Output Format**: enter custom guidance (e.g. "- Answer only in haiku.") → Save → re-open → it
+      round-trips. Leave it **blank** on another persona → Save → re-open → still blank (the substrate
+      default applies at prompt time, not stored as text).
 - [ ] Restart the app → all user personas persist (SQLite); built-ins still present and first.
+
+## B′. Output-format behaviour (per-persona)
+
+- [ ] With **Pia · Personal/Business** active, replies stay short/plain (unchanged from before this
+      feature — the historical formatting block).
+- [ ] Switch to **Experienced Coder** → answers lead with the recommendation and use fenced code blocks;
+      switch to **Explain It Simply** → tiny paragraphs, plain words, no headings/tables/code.
+- [ ] A persona with a **custom Output Format** visibly follows it (e.g. the haiku persona above), while a
+      persona left **blank** behaves like the Pia default.
+- [ ] Even with a creative/custom Output Format, the assistant still does **not** retry a declined action
+      (the substrate tool-safety rule is preserved in the tools path).
 
 ## C. Edit dialog + AI-assist ("draft from a description")
 
 - [ ] With a **non-PiaCloud** provider as the Assistant default: type a short description → **Draft with AI**
-      → Name, Tagline, System Prompt, Emoji, Accent, Expertise get populated; fields remain editable.
+      → Name, Tagline, System Prompt, Guardrails, **Output Format**, Archetype, Emoji, Accent, Expertise get
+      populated (only fields you left blank); fields remain editable.
 - [ ] With **PiaCloud**: Draft with AI fills **System Prompt only** (other fields left for you) — no error.
 - [ ] Pick a **Preferred Provider** ("(Use mode default)" is the first/null option) and a **Reasoning Effort**
       ("(Provider default)" is the first/null option); Save; re-open → both selections round-trip.
@@ -117,9 +132,9 @@ build. Anything marked **🔁 sync** needs both devices. Record pass/fail + note
 > Enable E2EE and complete onboarding on both devices.
 
 - [ ] Create/edit a persona on **A** → inspect the server payload (admin/DB): `Name`, `Tagline`,
-      `SystemPrompt`, `Guardrails`, `Expertise` are **absent/encrypted** (in `EncryptedPayload`), while
-      `Archetype`, `Emoji`, `AccentColor`, `ToolScope`, `PreferredProviderId`, `ReasoningEffort`,
-      `SchemaVersion`, `CreatedAt`, `UpdatedAt` are **plaintext**.
+      `SystemPrompt`, `Guardrails`, `OutputFormat`, `Expertise` are **absent/encrypted** (in
+      `EncryptedPayload`), while `Archetype`, `Emoji`, `AccentColor`, `ToolScope`, `PreferredProviderId`,
+      `ReasoningEffort`, `SchemaVersion`, `CreatedAt`, `UpdatedAt` are **plaintext**.
 - [ ] On **B**, the persona decrypts correctly (all textual fields restored).
 - [ ] A device that **cannot** decrypt a record logs a warning and **skips** it without aborting the sync
       cycle (other entities still sync).

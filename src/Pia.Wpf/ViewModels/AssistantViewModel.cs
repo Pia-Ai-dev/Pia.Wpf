@@ -21,188 +21,6 @@ namespace Pia.ViewModels;
 
 public partial class AssistantViewModel : ObservableObject, INavigationAware, IDisposable
 {
-    private static string GetLanguageName(TargetLanguage language) => language switch
-    {
-        TargetLanguage.DE => "German",
-        TargetLanguage.FR => "French",
-        _ => "English"
-    };
-
-    private string BuildLanguageInstruction()
-    {
-        var languageName = GetLanguageName(_localizationService.CurrentLanguage);
-        return $"Always respond to the user in '{languageName}' unless the user asks you to switch.";
-    }
-
-    // Tool gating (contract §5): tools are used only when the provider supports them AND the persona
-    // permits them. ToolScope.None → no tools; ReadOnly is treated as Full in v1.
-    internal static bool ShouldUseTools(bool providerSupportsToolCalling, PersonaToolScope scope) =>
-        providerSupportsToolCalling && scope != PersonaToolScope.None;
-
-    // Builds the persona-driven identity block (contract §8): the persona's SystemPrompt replaces the
-    // hardcoded "You are Pia…" line, optional Guardrails follow as their own paragraph, then the
-    // substrate date line. Everything below the identity stays owned by the substrate.
-    internal static string BuildIdentityBlock(Persona activePersona)
-    {
-        var guardrails = string.IsNullOrWhiteSpace(activePersona.Guardrails)
-            ? string.Empty
-            : $"\n\n{activePersona.Guardrails.Trim()}";
-
-        return $"""
-            {activePersona.SystemPrompt.Trim()}{guardrails}
-            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
-            """;
-    }
-
-    // Output-format guidance the substrate falls back to when the active persona doesn't define its
-    // own (personas created/synced before the field existed, or left blank). Kept byte-identical to
-    // BuiltInPersonas.PiaOutputFormat — pinned by a test — so the Pia personas render the historical
-    // formatting block even via the fallback path.
-    internal const string DefaultOutputFormat =
-        """
-        - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
-        - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
-        - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
-        - Do not restate the user's question and do not summarize what you just said at the end of a reply.
-        """;
-
-    // Tool-interaction safety rule appended in the tools path regardless of the active persona's
-    // output format, so a custom/creative persona can't accidentally drop it.
-    private const string DeclinedActionRule =
-        "- When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.";
-
-    // The body of the "## Output Format" section: the persona's own guidance, or the substrate default.
-    internal static string ResolveOutputFormat(Persona activePersona) =>
-        string.IsNullOrWhiteSpace(activePersona.OutputFormat)
-            ? DefaultOutputFormat
-            : activePersona.OutputFormat.Trim();
-
-    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
-    {
-        var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
-        var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
-            ? string.Empty
-            : $"## Plugins\n\n{pluginPrompts}\n\n";
-        var tokenSection = tokenizationEnabled
-            ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
-            : string.Empty;
-        var webSearchSection = webSearchActive
-            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
-            : string.Empty;
-
-        var toolSelectionSection = skipToolSelectionTree
-            ? string.Empty
-            : """
-              ## Tool Selection
-
-              Follow this decision tree strictly:
-
-              1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
-                 - YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
-                 - NO → Continue to step 2.
-              2. Does the request involve a TASK, ACTION ITEM, or something to DO?
-                 - YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
-                 - NO → Continue to step 3.
-              3. Does the request involve STORING, RECALLING, or UPDATING personal information?
-                 - YES → Use Memory tools (remember: query first, then create/update). NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
-                 - NO → Respond conversationally without tools.
-
-              """;
-
-        return $"""
-            ## Identity
-
-            {BuildIdentityBlock(activePersona)}
-
-            ## Language
-
-            {BuildLanguageInstruction()}
-
-            {pluginSection}{toolSelectionSection}## Output Format
-
-            {ResolveOutputFormat(activePersona)}
-            {DeclinedActionRule}
-            {tokenSection}{webSearchSection}
-            """;
-    }
-
-    private static (string CategoryLabel, string QueryTool, IReadOnlyList<string> ToolNames) GetAtCommandToolMapping(Pia.Models.AtCommandDomain domain) => domain switch
-    {
-        Pia.Models.AtCommandDomain.Memory => (
-            "memory entry",
-            "query_memory",
-            (IReadOnlyList<string>)["query_memory", "list_memories", "create_object", "update_object", "append_to_list", "delete_object"]),
-        Pia.Models.AtCommandDomain.Todo => (
-            "todo",
-            "query_todos",
-            (IReadOnlyList<string>)["query_todos", "create_todo", "complete_todo", "update_todo", "delete_todo"]),
-        Pia.Models.AtCommandDomain.Reminder => (
-            "reminder",
-            "query_reminders",
-            (IReadOnlyList<string>)["query_reminders", "create_reminder", "update_reminder", "delete_reminder"]),
-        Pia.Models.AtCommandDomain.Research => (
-            "scheduled research job",
-            "query_scheduled_research",
-            (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"]),
-        _ => throw new ArgumentOutOfRangeException(nameof(domain), domain,
-            $"No tool mapping registered for at-command domain {domain}. Add a row to GetAtCommandToolMapping.")
-    };
-
-    private static IReadOnlySet<string> GetAllowedToolNames(IReadOnlyList<Pia.Models.AtCommand> commands)
-    {
-        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var cmd in commands)
-        {
-            foreach (var name in GetAtCommandToolMapping(cmd.Domain).ToolNames)
-                allowed.Add(name);
-        }
-        return allowed;
-    }
-
-    private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
-    {
-        if (commands.Count == 0) return string.Empty;
-
-        var sb = new StringBuilder();
-        sb.AppendLine();
-        sb.AppendLine("## User Tool Hints decision");
-        sb.AppendLine();
-        sb.AppendLine("The user explicitly tagged this request with @-commands. These tags identify the item category and target — they are not ambiguous. Only the tools listed below will be loaded for this turn. Do NOT ask the user to clarify which kind of item they mean. Treat the rest of the user's message as the intended action on the tagged item.");
-        sb.AppendLine();
-        foreach (var cmd in commands)
-        {
-            var (categoryLabel, queryTool, toolNames) = GetAtCommandToolMapping(cmd.Domain);
-            var toolFamily = $"{categoryLabel} tools ({string.Join(", ", toolNames)})";
-
-            if (cmd.ItemTitle is not null)
-                sb.AppendLine($"- The user's request targets a {categoryLabel} titled \"{cmd.ItemTitle}\". Call {queryTool} first to obtain its ID, then perform the action described in the rest of the user's message (e.g. delete, update, complete). Available {toolFamily}.");
-            else
-                sb.AppendLine($"- The user's request is about {categoryLabel}s — use the {toolFamily}.");
-        }
-        return sb.ToString();
-    }
-
-    private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
-    {
-        var webSearchSection = webSearchActive
-            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
-            : string.Empty;
-        return $"""
-            ## Identity
-
-            {BuildIdentityBlock(activePersona)}
-
-            ## Language
-
-            {BuildLanguageInstruction()}
-
-            ## Output Format
-
-            {ResolveOutputFormat(activePersona)}
-            {webSearchSection}
-            """;
-    }
-
     private readonly ILogger<AssistantViewModel> _logger;
     private readonly IAiClientService _aiClientService;
     private readonly IProviderService _providerService;
@@ -222,6 +40,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly INavigationService _navigationService;
     private readonly ISuggestionService _suggestionService;
     private readonly IAssistantChatService _chatService;
+    private readonly IAssistantPromptComposer _promptComposer;
+    private readonly IChatTitleService _chatTitleService;
+    private readonly IActionCardBuilder _actionCardBuilder;
     private CancellationTokenSource? _streamingCts;
     private bool _disposed;
     private bool _tokenizationEnabled;
@@ -337,7 +158,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAutocompleteService autocompleteService,
         INavigationService navigationService,
         ISuggestionService suggestionService,
-        IAssistantChatService chatService)
+        IAssistantChatService chatService,
+        IAssistantPromptComposer promptComposer,
+        IChatTitleService chatTitleService,
+        IActionCardBuilder actionCardBuilder)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -358,6 +182,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _navigationService = navigationService;
         _suggestionService = suggestionService;
         _chatService = chatService;
+        _promptComposer = promptComposer;
+        _chatTitleService = chatTitleService;
+        _actionCardBuilder = actionCardBuilder;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -512,36 +339,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             _logger.LogInformation("SendMessage: resolved persona {PersonaId} (ToolScope {ToolScope})", persona.Id, persona.ToolScope);
 
-            // Tool gating (contract §5) — see ShouldUseTools.
-            var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
-            var webSearchActive = IsWebSearchActive(provider);
-
-            // Build system prompt with memory context
-            string fullSystemPrompt;
-            IList<AITool>? tools;
-
-            if (supportsTools)
-            {
-                var hasAtCommands = atCommands.Count > 0;
-                fullSystemPrompt = BuildSystemPrompt(persona, _tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive)
-                    + BuildAtCommandHint(atCommands);
-
-                var allTools = _pluginService.GetAllTools();
-                if (hasAtCommands)
-                {
-                    var allowed = GetAllowedToolNames(atCommands);
-                    tools = [.. allTools.Where(t => allowed.Contains(t.Name))];
-                }
-                else
-                {
-                    tools = [.. allTools];
-                }
-            }
-            else
-            {
-                fullSystemPrompt = BuildSystemPromptNoTools(persona, webSearchActive: webSearchActive);
-                tools = null;
-            }
+            // Resolve the system prompt + tool set for this turn (gating, @-command hints,
+            // privacy-token/web-search sections) — see AssistantPromptComposer.
+            var turnSetup = _promptComposer.PrepareTurn(persona, provider, atCommands, _tokenizationEnabled);
+            var supportsTools = turnSetup.SupportsTools;
+            var webSearchActive = turnSetup.WebSearchActive;
+            var fullSystemPrompt = turnSetup.SystemPrompt;
+            var tools = turnSetup.Tools;
 
             _logger.LogInformation("SendMessage: provider={ProviderName}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
                 provider.Name, supportsTools, tools?.Count ?? 0, atCommands.Count);
@@ -582,7 +386,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 {
                     case TextDelta td:
                         rawBuffer.Append(td.Text);
-                        var (visible, thinking) = ParseStreamedContent(rawBuffer.ToString());
+                        var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
 
                         assistantMessage.Content = visible;
                         if (!string.IsNullOrEmpty(thinking))
@@ -748,40 +552,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         try
         {
-            var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
-            if (provider is null)
-            {
-                _logger.LogWarning("Auto-title skipped for chat {ChatId}: no provider", chatId);
-                return;
-            }
-
-            const int snippetMax = 1000;
-            var userSnippet = firstUserContent.Length > snippetMax ? firstUserContent[..snippetMax] : firstUserContent;
-            var assistantSnippet = firstAssistantContent.Length > snippetMax ? firstAssistantContent[..snippetMax] : firstAssistantContent;
-
-            var messages = new List<ChatMessage>
-            {
-                new(ChatRole.System,
-                    "You write very short chat titles (3-8 words, no quotes, no trailing punctuation). Respond with only the title."),
-                new(ChatRole.User,
-                    $"Summarize this conversation in 3-8 words:\nUser: {userSnippet}\nAssistant: {assistantSnippet}"),
-            };
-
-            _logger.SensitiveDebug("Auto-title prompt for chat {ChatId}: user={User} assistant={Assistant}",
-                chatId, userSnippet, assistantSnippet);
-
-            var response = await _aiClientService.GetChatResponseAsync(
-                messages, provider, tools: null, mode: nameof(WindowMode.Assistant));
-
-            var rawTitle = response.Text ?? string.Empty;
-            var title = SanitizeGeneratedTitle(rawTitle);
+            var title = await _chatTitleService.GenerateAsync(firstUserContent, firstAssistantContent);
             if (string.IsNullOrEmpty(title))
-            {
-                _logger.LogWarning("Auto-title generation returned empty title for chat {ChatId}", chatId);
-                return;
-            }
-
-            _logger.SensitiveDebug("Auto-title result for chat {ChatId}: {Title}", chatId, title);
+                return; // ChatTitleService logged the reason (no provider / empty model output)
 
             var existing = await _chatService.GetAsync(chatId);
             if (existing is null)
@@ -809,52 +582,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
-    private static string SanitizeGeneratedTitle(string raw)
-    {
-        var text = raw.Trim();
-        if (text.Length == 0) return text;
-
-        if (text.Length >= 2 &&
-            ((text[0] == '"' && text[^1] == '"') || (text[0] == '\'' && text[^1] == '\'')))
-        {
-            text = text[1..^1].Trim();
-        }
-
-        text = text.TrimEnd('.', '!', '?').TrimEnd();
-
-        const int max = 80;
-        if (text.Length > max) text = text[..max].TrimEnd() + "…";
-        return CollapseWhitespace(text);
-    }
-
     private string? DeriveChatTitle()
     {
         var firstUser = Messages.FirstOrDefault(m => m.IsUser);
         if (firstUser is null || string.IsNullOrWhiteSpace(firstUser.Content)) return null;
 
-        var collapsed = CollapseWhitespace(firstUser.Content);
+        var collapsed = TextFormatting.CollapseWhitespace(firstUser.Content);
         const int max = 40;
         return collapsed.Length <= max ? collapsed : collapsed[..max].TrimEnd() + "…";
-    }
-
-    private static string CollapseWhitespace(string text)
-    {
-        var sb = new StringBuilder(text.Length);
-        var lastWasSpace = false;
-        foreach (var ch in text.Trim())
-        {
-            if (char.IsWhiteSpace(ch))
-            {
-                if (!lastWasSpace) sb.Append(' ');
-                lastWasSpace = true;
-            }
-            else
-            {
-                sb.Append(ch);
-                lastWasSpace = false;
-            }
-        }
-        return sb.ToString();
     }
 
     private async Task ExecuteToggleRecording()
@@ -869,60 +604,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
-    private static (string visible, string thinking) ParseStreamedContent(string rawText)
-    {
-        var visible = new StringBuilder();
-        var thinking = new StringBuilder();
-        var remaining = rawText.AsSpan();
-
-        while (remaining.Length > 0)
-        {
-            var thinkStart = remaining.IndexOf("<think>".AsSpan(), StringComparison.OrdinalIgnoreCase);
-            if (thinkStart < 0)
-            {
-                visible.Append(remaining);
-                break;
-            }
-
-            visible.Append(remaining[..thinkStart]);
-            remaining = remaining[(thinkStart + 7)..]; // skip "<think>"
-
-            var thinkEnd = remaining.IndexOf("</think>".AsSpan(), StringComparison.OrdinalIgnoreCase);
-            if (thinkEnd < 0)
-            {
-                // Unclosed think block - all remaining is thinking content
-                thinking.Append(remaining);
-                break;
-            }
-
-            thinking.Append(remaining[..thinkEnd]);
-            remaining = remaining[(thinkEnd + 8)..]; // skip "</think>"
-        }
-
-        return (visible.ToString().TrimStart(), thinking.ToString().Trim());
-    }
-
     private async Task<object?> HandleToolCallWithStatus(FunctionCallContent toolCall, AssistantMessage message)
     {
-        message.StatusText = toolCall.Name switch
-        {
-            "list_memories" => _localizationService["Msg_Assistant_StatusCheckingMemory"],
-            "query_memory" => _localizationService["Msg_Assistant_StatusSearchingMemory"],
-            "create_object" => _localizationService["Msg_Assistant_StatusCreatingMemory"],
-            "update_object" => _localizationService["Msg_Assistant_StatusUpdatingMemory"],
-            "append_to_list" => _localizationService["Msg_Assistant_StatusUpdatingMemory"],
-            "delete_object" => _localizationService["Msg_Assistant_StatusDeletingMemory"],
-            "create_reminder" => _localizationService["Msg_Assistant_StatusCreatingReminder"],
-            "query_reminders" => _localizationService["Msg_Assistant_StatusCheckingReminders"],
-            "update_reminder" => _localizationService["Msg_Assistant_StatusUpdatingReminder"],
-            "delete_reminder" => _localizationService["Msg_Assistant_StatusDeletingReminder"],
-            "create_todo" => _localizationService["Msg_Assistant_StatusCreatingTodo"],
-            "query_todos" => _localizationService["Msg_Assistant_StatusCheckingTodos"],
-            "complete_todo" => _localizationService["Msg_Assistant_StatusCompletingTodo"],
-            "update_todo" => _localizationService["Msg_Assistant_StatusUpdatingTodo"],
-            "delete_todo" => _localizationService["Msg_Assistant_StatusDeletingTodo"],
-            _ => _localizationService["Msg_Assistant_StatusProcessing"]
-        };
+        message.StatusText = _actionCardBuilder.ResolveStatusText(toolCall.Name);
 
         var result = await HandleToolCall(toolCall, message);
         message.StatusText = _localizationService["Msg_Assistant_StatusThinking"];
@@ -963,7 +647,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // For write operations, show inline action card
         if (pendingAction is not null)
         {
-            var card = BuildPluginActionCard(pendingAction);
+            var card = _actionCardBuilder.Build(pendingAction, _tokenizationEnabled);
             await App.Current.Dispatcher.InvokeAsync(() => message.ActionCards.Add(card));
 
             bool confirmed;
@@ -983,13 +667,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 var actionResult = await pendingAction.Execute();
                 _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
 
-                var snackbarTitle = pendingAction.PluginName switch
-                {
-                    "memory" => _localizationService["Msg_Assistant_MemoryUpdated"],
-                    "todo" => _localizationService["Msg_Assistant_TodoUpdated"],
-                    "reminder" => _localizationService["Msg_Assistant_ReminderUpdated"],
-                    _ => _localizationService["Msg_Assistant_StatusProcessing"]
-                };
+                var snackbarTitle = _actionCardBuilder.ResolveSuccessTitle(pendingAction.PluginName);
                 _snackbarService.Show(snackbarTitle,
                     DetokenizeForDisplay(pendingAction.Description),
                     Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -1013,80 +691,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         return "Tool call handled.";
     }
 
-    private ActionCardInfo BuildPluginActionCard(PluginToolCall pendingAction)
-    {
-        var category = pendingAction.PluginName switch
-        {
-            "memory" => ActionCardCategory.Memory,
-            "todo" => ActionCardCategory.Todo,
-            "reminder" => ActionCardCategory.Reminder,
-            "files" => ActionCardCategory.Files,
-            _ => ActionCardCategory.Memory
-        };
-
-        var isDelete = pendingAction.ToolName.Contains("delete");
-
-        var warningText = isDelete ? pendingAction.PluginName switch
-        {
-            "memory" => _localizationService["Msg_Assistant_PermanentDeleteMemory"],
-            "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
-            "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
-            "files" => _localizationService["Msg_Assistant_PermanentDeleteFile"],
-            _ => null
-        } : null;
-
-        var details = pendingAction.Details is not null
-            ? pendingAction.PluginName == "memory"
-                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.Details)))
-                : new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details)))
-            : new System.Collections.ObjectModel.ObservableCollection<ActionCardDetail>();
-
-        return new ActionCardInfo
-        {
-            Title = FormatToolTitle(pendingAction.ToolName, category),
-            Summary = DetokenizeForDisplay(pendingAction.Description),
-            Category = category,
-            ToolName = pendingAction.ToolName,
-            IsDestructive = isDelete,
-            WarningText = warningText,
-            Details = details,
-            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, category)),
-            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, category)),
-        };
-    }
-
-    private string FormatToolTitle(string toolName, ActionCardCategory category)
-    {
-        var categoryKey = category switch
-        {
-            ActionCardCategory.Memory => "ActionCard_Category_Memory",
-            ActionCardCategory.Todo => "ActionCard_Category_Todo",
-            ActionCardCategory.Reminder => "ActionCard_Category_Reminder",
-            ActionCardCategory.Files => "ActionCard_Category_File",
-            _ => "ActionCard_Category_Memory"
-        };
-
-        var actionKey = toolName switch
-        {
-            "create_object" or "create_todo" or "create_reminder" => "ActionCard_Action_Create",
-            "update_object" or "append_to_list" or "update_todo" or "update_reminder" => "ActionCard_Action_Update",
-            "delete_object" or "delete_todo" or "delete_reminder" or "delete_file" => "ActionCard_Action_Delete",
-            "complete_todo" => "ActionCard_Action_Complete",
-            "write_file" => "ActionCard_Action_Write",
-            _ => "ActionCard_Action_Create"
-        };
-
-        return $"{_localizationService[actionKey]} {_localizationService[categoryKey]}";
-    }
-
     private string DetokenizeForDisplay(string text) =>
         _tokenizationEnabled ? _tokenMapService.Detokenize(text) : text;
-
-    private List<ActionCardDetail> DetokenizeDetails(List<ActionCardDetail> details)
-    {
-        if (!_tokenizationEnabled) return details;
-        return details.Select(d => new ActionCardDetail(d.Label, _tokenMapService.Detokenize(d.Value))).ToList();
-    }
 
     private void ExecuteCancelStreaming()
     {
@@ -1583,22 +1189,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             provider.ReasoningEffort = persona.ReasoningEffort.Value;
         }
 
-        var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
-        var webSearchActive = IsWebSearchActive(provider);
-
-        string fullSystemPrompt;
-        IList<AITool>? tools;
-
-        if (supportsTools)
-        {
-            fullSystemPrompt = BuildSystemPrompt(persona, _tokenizationEnabled, webSearchActive: webSearchActive);
-            tools = [.. _pluginService.GetAllTools()];
-        }
-        else
-        {
-            fullSystemPrompt = BuildSystemPromptNoTools(persona, webSearchActive: webSearchActive);
-            tools = null;
-        }
+        var turnSetup = _promptComposer.PrepareTurn(persona, provider, Array.Empty<AtCommand>(), _tokenizationEnabled);
+        var supportsTools = turnSetup.SupportsTools;
+        var fullSystemPrompt = turnSetup.SystemPrompt;
+        var tools = turnSetup.Tools;
 
         var chatMessages = new List<ChatMessage>
         {
@@ -1626,7 +1220,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 continue;
 
             rawBuffer.Append(td.Text);
-            var (visible, _) = ParseStreamedContent(rawBuffer.ToString());
+            var (visible, _) = StreamThinkTagParser.Parse(rawBuffer.ToString());
 
             // Yield only newly added visible content (strips think tags)
             if (visible.Length > lastVisibleLength)
@@ -1694,9 +1288,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _logger.LogInformation("Follow-up suggestions: added {Count} picks (HasSuggestions={Has})",
             picks.Count, assistantMessage.HasSuggestions);
     }
-
-    private static bool IsWebSearchActive(AiProvider provider)
-        => provider.EnableWebSearch || provider.ProviderType == AiProviderType.PiaCloud;
 
     private void ApplyWebCitations(AssistantMessage message)
     {

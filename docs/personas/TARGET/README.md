@@ -3,6 +3,12 @@
 > Status: **Plan / not yet implemented.** Target: Assistant-mode personas, synced, with
 > app-shipped defaults + user-authored personas. Council & Brainstorming are **out of scope**
 > for this iteration but the schema is designed so they can reference personas later.
+>
+> **Update (post-plan):** an `OutputFormat` field was added so the prompt's formatting section is
+> per-persona (Pia built-ins keep the historical text; others ship tailored formats). It is a
+> sensitive textual field (encrypted under E2EE). **Implemented on WPF;** server (`ServerPersona`
+> entity/migration/validation) and Mac (`WireSyncPersona`, GRDB column, edit sheet) need the parallel
+> change. See contract §1/§3/§4/§8.
 
 ## 1. What we're building
 

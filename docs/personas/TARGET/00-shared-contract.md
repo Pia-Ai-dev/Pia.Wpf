@@ -15,6 +15,7 @@ Pia.Mac must reproduce the same JSON shape.
 | `Tagline` | `string?` | **yes** | One-liner for the picker / future Council cards. Max 280. |
 | `SystemPrompt` | `string` | **yes** | The identity/voice block that **replaces** the assistant identity. Max 20000. |
 | `Guardrails` | `string?` | **yes** | Optional constraints appended after the identity (e.g. "no regulated advice"). Max 5000. |
+| `OutputFormat` | `string?` | **yes** | Per-persona response-format guidance (the body of the prompt's "Output Format" section). `null`/blank ⇒ the client falls back to its substrate default. Max 5000. |
 | `Archetype` | `string` | no | `assistant` \| `analyst` \| `creative` \| `visionary` \| `explainer` \| `custom`. Drives future Council role. Default `custom`. |
 | `Expertise` | `string[]?` | **yes** | Domain tags. Small list (≤ 16). |
 | `Emoji` | `string?` | no | Single emoji for the chip. |
@@ -45,6 +46,7 @@ public class SyncPersona
     public string? Tagline { get; set; }
     public string? SystemPrompt { get; set; }
     public string? Guardrails { get; set; }
+    public string? OutputFormat { get; set; }
     public string? Archetype { get; set; }            // "assistant" | "analyst" | ... default "custom"
     public List<string>? Expertise { get; set; }
     public string? Emoji { get; set; }
@@ -83,7 +85,7 @@ When E2EE is **off**: textual fields travel as plaintext; `EncryptedPayload`/`Wr
 When E2EE is **on**:
 
 - **Encrypted into `EncryptedPayload`** (and nulled on the wire): `Name`, `Tagline`,
-  `SystemPrompt`, `Guardrails`, `Expertise`.
+  `SystemPrompt`, `Guardrails`, `OutputFormat`, `Expertise`.
 - **Stay plaintext** (non-sensitive structural/config): `Archetype`, `Emoji`, `AccentColor`,
   `ToolScope`, `PreferredProviderId`, `ReasoningEffort`, `SchemaVersion`, `CreatedAt`, `UpdatedAt`.
 
@@ -93,7 +95,7 @@ small structural fields available for non-E2EE-aware tooling/debug endpoints. Th
 service key/id convention mirrors templates: key `"persona"`, id `persona.Id.ToString()`.
 
 > The payload is a JSON object of the encrypted fields, e.g.
-> `{"Name":...,"Tagline":...,"SystemPrompt":...,"Guardrails":...,"Expertise":[...]}`,
+> `{"Name":...,"Tagline":...,"SystemPrompt":...,"Guardrails":...,"OutputFormat":...,"Expertise":[...]}`,
 > then AES-GCM-encrypted. Keep the inner property names identical across platforms.
 
 ---
@@ -172,6 +174,21 @@ because a synced active-persona selection references them.
 >
 > Detect which direction you're in from the user's message and switch automatically.
 
+### Built-in `OutputFormat` values
+
+Every built-in ships an `OutputFormat` (the body of the prompt's "Output Format" section):
+
+- **Pia · Personal** and **Pia · Business** use the historical formatting block verbatim — kept
+  byte-identical to the client's `DefaultOutputFormat` fallback (pinned by a test on WPF):
+  > - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+  > - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
+  > - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+  > - Do not restate the user's question and do not summarize what you just said at the end of a reply.
+- The five non-Pia built-ins ship a **tailored** format derived from their system prompt (e.g.
+  *Experienced Coder* favours fenced code blocks and bullet-listed trade-offs; *Explain It Simply*
+  favours tiny paragraphs and forbids headings/tables/code). See `BuiltInPersonas.All` for the
+  canonical text — copy verbatim into WPF & Mac.
+
 ---
 
 ## 5. ToolScope semantics
@@ -242,16 +259,23 @@ IF activePersona.ToolScope == full (2) AND provider supports tools:
 ELSE (ToolScope == none, or provider has no tool support):
     (omit Plugins + Tool-selection; use the existing no-tools prompt path)
 
-## Principles … (unchanged)
+## Output Format
+{activePersona.OutputFormat}                 ← persona-driven; blank ⇒ substrate DefaultOutputFormat
+{declined-action rule, tools path only}      ← substrate-owned tool-safety rule (NOT persona-controlled)
 ## Privacy / tokenization … (unchanged, if enabled)
 ## Web search … (unchanged, if active)
 ```
 
+The section previously labelled `## Principles` is renamed `## Output Format`; its body is the
+active persona's `OutputFormat` (or the client's `DefaultOutputFormat` when the persona leaves it
+blank). The "don't retry a declined action" rule is **not** formatting — it stays substrate-owned and
+is appended only in the tools path, so a custom persona's output format can't drop it.
+
 Key invariants:
 
-- The persona controls **only** the identity/voice (+ optional guardrails). All functional sections
-  remain owned by the substrate so tool-calling, privacy, and web-search keep working regardless of
-  persona.
+- The persona controls the identity/voice (+ optional guardrails) **and** the output format. All
+  other functional sections — Language, Plugins, Tool-selection, the declined-action rule, privacy,
+  and web-search — remain owned by the substrate so they keep working regardless of persona.
 - `ToolScope == none` ⇒ no tools are attached to the model call **and** the no-tools prompt is used.
 - Resolve the `Persona` object once per turn in the caller and pass it in; keep `BuildSystemPrompt`
   synchronous (don't make it async just to fetch the persona).

@@ -258,6 +258,10 @@ public static class Bootstrapper
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IResearchHistoryService, ResearchHistoryService>();
         services.AddSingleton<IAssistantChatService, AssistantChatService>();
+        // Assistant turn collaborators (extracted from AssistantViewModel).
+        services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
+        services.AddTransient<IChatTitleService, ChatTitleService>();
+        services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
         services.AddTransient<IResearchExportService, ResearchExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
