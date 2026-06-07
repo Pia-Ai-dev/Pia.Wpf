@@ -117,6 +117,18 @@ public static class Bootstrapper
             }
         }
 
+        // Start the vault file-watcher on the default root so external edits (and Pia's own writes)
+        // flow into the index. Start() creates the root dir if absent, so this never throws on a
+        // fresh install; guard anyway so a watcher failure cannot block app startup.
+        try
+        {
+            _serviceProvider.GetRequiredService<VaultWatcher>().Start();
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Failed to start vault watcher; vault edits won't auto-index this session");
+        }
+
         // Initialize ViewModelLocator with root service provider (fallback for design-time)
         ViewModelLocator.Initialize(_serviceProvider);
     }
@@ -241,6 +253,7 @@ public static class Bootstrapper
         services.AddSingleton<IMemoryService, MemoryService>();
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
         services.AddSingleton<IVaultIndexer, VaultIndexer>();
+        services.AddSingleton<VaultWatcher>();
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
         services.AddSingleton<IReminderService, ReminderService>();
