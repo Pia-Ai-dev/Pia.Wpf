@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NReco.Logging.File;
 using Pia.Infrastructure;
+using Pia.Infrastructure.Vault;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
@@ -161,6 +162,11 @@ public static class Bootstrapper
 
         // Infrastructure
         services.AddSingleton<SqliteContext>();
+        services.AddSingleton<VaultPathProvider>();
+        services.AddSingleton<MarkdownVaultParser>();
+        services.AddSingleton<IVaultStore>(sp => new VaultStore(
+            sp.GetRequiredService<VaultPathProvider>().VaultRoot,
+            sp.GetRequiredService<MarkdownVaultParser>()));
         services.AddSingleton<DpapiHelper>();
         services.AddTransient<HttpLoggingHandler>();
         services.AddTransient<RateLimitRetryHandler>();
