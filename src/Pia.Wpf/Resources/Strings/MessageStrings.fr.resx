@@ -329,14 +329,8 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Rechercher dans les recherches passées</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Obtenir une entrée de recherche par ID</value></data>
   <!-- MemoryToolHandler -->
-  <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Créer un nouveau {0} : {1}</value></data>
-  <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>Mettre à jour {0} : {1}</value></data>
-  <data name="Tool_Memory_Desc_Append" xml:space="preserve"><value>Ajouter une entrée à {0} : {1}</value></data>
-  <data name="Tool_Memory_Desc_Delete" xml:space="preserve"><value>Supprimer {0} : {1}</value></data>
-  <data name="Tool_Memory_Desc_Merge" xml:space="preserve"><value>Fusionner {0} mémoires en : {1}</value></data>
-  <data name="Tool_Memory_Exec_Created" xml:space="preserve"><value>Objet mémoire créé avec succès avec l'ID : {0}</value></data>
-  <data name="Tool_Memory_Exec_Updated" xml:space="preserve"><value>Objet mémoire {0} mis à jour avec succès.</value></data>
-  <data name="Tool_Memory_Exec_Appended" xml:space="preserve"><value>Entrée ajoutée avec succès à l'objet mémoire {0}.</value></data>
-  <data name="Tool_Memory_Exec_Deleted" xml:space="preserve"><value>Objet mémoire {0} supprimé avec succès.</value></data>
-  <data name="Tool_Memory_Exec_Merged" xml:space="preserve"><value>{0} mémoires fusionnées en '{1}' (ID : {2}). {3} doublon(s) supprimé(s).</value></data>
+  <data name="Tool_Memory_Desc_Remember" xml:space="preserve"><value>Mémoriser : {0}</value></data>
+  <data name="Tool_Memory_Desc_Forget" xml:space="preserve"><value>Oublier : {0}</value></data>
+  <data name="Tool_Memory_Exec_Remembered" xml:space="preserve"><value>Mémoire enregistrée ({0}).</value></data>
+  <data name="Tool_Memory_Exec_Forgotten" xml:space="preserve"><value>Mémoire supprimée ({0}).</value></data>
 </root>
