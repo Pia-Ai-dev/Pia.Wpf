@@ -292,6 +292,8 @@ public static class Bootstrapper
         services.AddSingleton<IIngestService, Pia.Services.Wiki.IngestService>();
         services.AddSingleton<ILintService, Pia.Services.Wiki.LintService>();
         services.AddSingleton<Pia.Services.Sync.SectionMergeEngine>();
+        services.AddSingleton<Pia.Infrastructure.Sync.SyncBaseStore>();
+        services.AddSingleton<IVaultSyncService, Pia.Services.Sync.VaultSyncService>();
         services.AddSingleton<Pia.Services.Migration.MemoryJsonRenderer>();
         services.AddSingleton<IVaultMigrationRunner, Pia.Services.Migration.VaultMigrationRunner>();
         services.AddSingleton<VaultWatcher>();
