@@ -288,10 +288,13 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Wiki.VaultIndexService>();
         services.AddSingleton<Pia.Services.Wiki.VaultLogService>();
         services.AddSingleton<Pia.Services.Wiki.VaultSchemaService>();
+        services.AddSingleton<IIngestExtractor, Pia.Services.Wiki.AiIngestExtractionService>();
+        services.AddSingleton<IIngestService, Pia.Services.Wiki.IngestService>();
         services.AddSingleton<Pia.Services.Migration.MemoryJsonRenderer>();
         services.AddSingleton<IVaultMigrationRunner, Pia.Services.Migration.VaultMigrationRunner>();
         services.AddSingleton<VaultWatcher>();
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
+        services.AddSingleton<IIngestToolHandler, IngestToolHandler>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<IScheduledJobService, ScheduledJobService>();
