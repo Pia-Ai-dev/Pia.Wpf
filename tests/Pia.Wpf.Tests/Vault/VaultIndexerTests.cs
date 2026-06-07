@@ -211,4 +211,28 @@ public class VaultIndexerTests : IDisposable
         Assert.Equal(1, CountChunksFor("contacts.md"));
         Assert.Equal(1, CountChunks());
     }
+
+    // ---- Path-key consistency: '\' (rebuild-walk on Windows) and '/' (watcher) key the same file ----
+
+    [Fact]
+    public async Task Backslash_and_forwardslash_relative_paths_key_the_same_chunks()
+    {
+        await _store.WriteAtomicAsync("memory/profile.md", ProfileFixture);
+
+        var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
+
+        // Index under the Windows-style backslash key (what Path.GetRelativePath yields on Windows)...
+        await indexer.IndexFileAsync("memory\\profile.md");
+        // ...then under the watcher's forward-slash key for the SAME file.
+        await indexer.IndexFileAsync("memory/profile.md");
+
+        // No duplicate rows: both forms collapse to the canonical forward-slash key.
+        Assert.Equal(2, CountChunks());
+        Assert.Equal(2, CountChunksFor("memory/profile.md"));
+        Assert.Equal(0, CountChunksFor("memory\\profile.md"));
+
+        // Removal via the other separator form still clears the canonical rows.
+        await indexer.RemoveFileAsync("memory\\profile.md");
+        Assert.Equal(0, CountChunks());
+    }
 }

@@ -63,6 +63,11 @@ public class VaultIndexer : IVaultIndexer
     /// <inheritdoc />
     public async Task IndexFileAsync(string relativePath)
     {
+        // Canonicalize the Chunks key to forward-slash so rebuild-walk paths (native separators,
+        // backslash on Windows from Path.GetRelativePath) and watcher paths (already forward-slash)
+        // key the SAME file identically — otherwise Windows would form duplicate/orphan chunk rows.
+        relativePath = NormalizeRelativePath(relativePath);
+
         var doc = await _store.ReadAsync(relativePath);
         if (doc is null)
         {
@@ -102,6 +107,8 @@ public class VaultIndexer : IVaultIndexer
     /// <inheritdoc />
     public async Task RemoveFileAsync(string relativePath)
     {
+        relativePath = NormalizeRelativePath(relativePath);
+
         var connection = _context.GetConnection();
 
         // Drop the FTS rows first (their rowids reference the Chunks rows we are about to delete).
@@ -236,4 +243,9 @@ public class VaultIndexer : IVaultIndexer
         var hash = SHA256.HashData(payload);
         return Convert.ToHexString(hash);
     }
+
+    // Canonical vault-relative key: forward slashes regardless of caller/OS separator. VaultStore
+    // resolves either separator on read, so reads are unaffected; this only fixes the Chunks key.
+    private static string NormalizeRelativePath(string relativePath)
+        => relativePath.Replace('\\', '/');
 }
