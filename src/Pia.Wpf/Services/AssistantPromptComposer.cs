@@ -1,0 +1,245 @@
+using System.Text;
+using Microsoft.Extensions.AI;
+using Pia.Models;
+using Pia.Services.Interfaces;
+
+namespace Pia.Services;
+
+/// <summary>
+/// Builds the persona-driven system prompt and resolves the tool set for an
+/// assistant turn. The prompt-shaping logic (identity block, output format,
+/// tool-selection tree, @-command hints, privacy-token and web-search sections)
+/// lives here as a single responsibility, extracted from AssistantViewModel.
+/// The pure helpers exercised by unit tests are exposed as <c>public static</c>.
+/// </summary>
+public sealed class AssistantPromptComposer : IAssistantPromptComposer
+{
+    private readonly ILocalizationService _localizationService;
+    private readonly IPluginService _pluginService;
+
+    public AssistantPromptComposer(ILocalizationService localizationService, IPluginService pluginService)
+    {
+        _localizationService = localizationService;
+        _pluginService = pluginService;
+    }
+
+    public AssistantTurnSetup PrepareTurn(Persona persona, AiProvider provider, IReadOnlyList<AtCommand> atCommands, bool tokenizationEnabled)
+    {
+        // Tool gating (contract §5) — see ShouldUseTools.
+        var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
+        var webSearchActive = IsWebSearchActive(provider);
+
+        string fullSystemPrompt;
+        IList<AITool>? tools;
+
+        if (supportsTools)
+        {
+            var hasAtCommands = atCommands.Count > 0;
+            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive)
+                + BuildAtCommandHint(atCommands);
+
+            var allTools = _pluginService.GetAllTools();
+            if (hasAtCommands)
+            {
+                var allowed = GetAllowedToolNames(atCommands);
+                tools = [.. allTools.Where(t => allowed.Contains(t.Name))];
+            }
+            else
+            {
+                tools = [.. allTools];
+            }
+        }
+        else
+        {
+            fullSystemPrompt = BuildSystemPromptNoTools(persona, webSearchActive: webSearchActive);
+            tools = null;
+        }
+
+        return new AssistantTurnSetup(fullSystemPrompt, tools, supportsTools, webSearchActive);
+    }
+
+    private static string GetLanguageName(TargetLanguage language) => language switch
+    {
+        TargetLanguage.DE => "German",
+        TargetLanguage.FR => "French",
+        _ => "English"
+    };
+
+    private string BuildLanguageInstruction()
+    {
+        var languageName = GetLanguageName(_localizationService.CurrentLanguage);
+        return $"Always respond to the user in '{languageName}' unless the user asks you to switch.";
+    }
+
+    // Tool gating (contract §5): tools are used only when the provider supports them AND the persona
+    // permits them. ToolScope.None → no tools; ReadOnly is treated as Full in v1.
+    public static bool ShouldUseTools(bool providerSupportsToolCalling, PersonaToolScope scope) =>
+        providerSupportsToolCalling && scope != PersonaToolScope.None;
+
+    // Builds the persona-driven identity block (contract §8): the persona's SystemPrompt replaces the
+    // hardcoded "You are Pia…" line, optional Guardrails follow as their own paragraph, then the
+    // substrate date line. Everything below the identity stays owned by the substrate.
+    public static string BuildIdentityBlock(Persona activePersona)
+    {
+        var guardrails = string.IsNullOrWhiteSpace(activePersona.Guardrails)
+            ? string.Empty
+            : $"\n\n{activePersona.Guardrails.Trim()}";
+
+        return $"""
+            {activePersona.SystemPrompt.Trim()}{guardrails}
+            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
+            """;
+    }
+
+    // Output-format guidance the substrate falls back to when the active persona doesn't define its
+    // own (personas created/synced before the field existed, or left blank). Kept byte-identical to
+    // BuiltInPersonas.PiaOutputFormat — pinned by a test — so the Pia personas render the historical
+    // formatting block even via the fallback path.
+    public const string DefaultOutputFormat =
+        """
+        - Keep replies short. Default to 1–3 sentences; expand only when the user explicitly asks for detail, steps, or code.
+        - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
+        - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
+        - Do not restate the user's question and do not summarize what you just said at the end of a reply.
+        """;
+
+    // Tool-interaction safety rule appended in the tools path regardless of the active persona's
+    // output format, so a custom/creative persona can't accidentally drop it.
+    private const string DeclinedActionRule =
+        "- When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.";
+
+    // The body of the "## Output Format" section: the persona's own guidance, or the substrate default.
+    public static string ResolveOutputFormat(Persona activePersona) =>
+        string.IsNullOrWhiteSpace(activePersona.OutputFormat)
+            ? DefaultOutputFormat
+            : activePersona.OutputFormat.Trim();
+
+    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
+    {
+        var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
+        var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
+            ? string.Empty
+            : $"## Plugins\n\n{pluginPrompts}\n\n";
+        var tokenSection = tokenizationEnabled
+            ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
+            : string.Empty;
+        var webSearchSection = webSearchActive
+            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
+            : string.Empty;
+
+        var toolSelectionSection = skipToolSelectionTree
+            ? string.Empty
+            : """
+              ## Tool Selection
+
+              Follow this decision tree strictly:
+
+              1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
+                 - YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).
+                 - NO → Continue to step 2.
+              2. Does the request involve a TASK, ACTION ITEM, or something to DO?
+                 - YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
+                 - NO → Continue to step 3.
+              3. Does the request involve STORING, RECALLING, or UPDATING personal information?
+                 - YES → Use Memory tools (remember: query first, then create/update). NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+                 - NO → Respond conversationally without tools.
+
+              """;
+
+        return $"""
+            ## Identity
+
+            {BuildIdentityBlock(activePersona)}
+
+            ## Language
+
+            {BuildLanguageInstruction()}
+
+            {pluginSection}{toolSelectionSection}## Output Format
+
+            {ResolveOutputFormat(activePersona)}
+            {DeclinedActionRule}
+            {tokenSection}{webSearchSection}
+            """;
+    }
+
+    private static (string CategoryLabel, string QueryTool, IReadOnlyList<string> ToolNames) GetAtCommandToolMapping(Pia.Models.AtCommandDomain domain) => domain switch
+    {
+        Pia.Models.AtCommandDomain.Memory => (
+            "memory entry",
+            "query_memory",
+            (IReadOnlyList<string>)["query_memory", "list_memories", "create_object", "update_object", "append_to_list", "delete_object"]),
+        Pia.Models.AtCommandDomain.Todo => (
+            "todo",
+            "query_todos",
+            (IReadOnlyList<string>)["query_todos", "create_todo", "complete_todo", "update_todo", "delete_todo"]),
+        Pia.Models.AtCommandDomain.Reminder => (
+            "reminder",
+            "query_reminders",
+            (IReadOnlyList<string>)["query_reminders", "create_reminder", "update_reminder", "delete_reminder"]),
+        Pia.Models.AtCommandDomain.Research => (
+            "scheduled research job",
+            "query_scheduled_research",
+            (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"]),
+        _ => throw new ArgumentOutOfRangeException(nameof(domain), domain,
+            $"No tool mapping registered for at-command domain {domain}. Add a row to GetAtCommandToolMapping.")
+    };
+
+    private static IReadOnlySet<string> GetAllowedToolNames(IReadOnlyList<Pia.Models.AtCommand> commands)
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cmd in commands)
+        {
+            foreach (var name in GetAtCommandToolMapping(cmd.Domain).ToolNames)
+                allowed.Add(name);
+        }
+        return allowed;
+    }
+
+    private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
+    {
+        if (commands.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("## User Tool Hints decision");
+        sb.AppendLine();
+        sb.AppendLine("The user explicitly tagged this request with @-commands. These tags identify the item category and target — they are not ambiguous. Only the tools listed below will be loaded for this turn. Do NOT ask the user to clarify which kind of item they mean. Treat the rest of the user's message as the intended action on the tagged item.");
+        sb.AppendLine();
+        foreach (var cmd in commands)
+        {
+            var (categoryLabel, queryTool, toolNames) = GetAtCommandToolMapping(cmd.Domain);
+            var toolFamily = $"{categoryLabel} tools ({string.Join(", ", toolNames)})";
+
+            if (cmd.ItemTitle is not null)
+                sb.AppendLine($"- The user's request targets a {categoryLabel} titled \"{cmd.ItemTitle}\". Call {queryTool} first to obtain its ID, then perform the action described in the rest of the user's message (e.g. delete, update, complete). Available {toolFamily}.");
+            else
+                sb.AppendLine($"- The user's request is about {categoryLabel}s — use the {toolFamily}.");
+        }
+        return sb.ToString();
+    }
+
+    private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
+    {
+        var webSearchSection = webSearchActive
+            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
+            : string.Empty;
+        return $"""
+            ## Identity
+
+            {BuildIdentityBlock(activePersona)}
+
+            ## Language
+
+            {BuildLanguageInstruction()}
+
+            ## Output Format
+
+            {ResolveOutputFormat(activePersona)}
+            {webSearchSection}
+            """;
+    }
+
+    private static bool IsWebSearchActive(AiProvider provider)
+        => provider.EnableWebSearch || provider.ProviderType == AiProviderType.PiaCloud;
+}

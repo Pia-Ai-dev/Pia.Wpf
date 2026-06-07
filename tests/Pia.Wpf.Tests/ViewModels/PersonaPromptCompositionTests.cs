@@ -1,13 +1,13 @@
 using Pia.Models;
+using Pia.Services;
 using Pia.Shared;
-using Pia.ViewModels;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
 /// <summary>
 /// Unit coverage for the persona-driven prompt composition (contract §8) and tool gating (§5),
-/// exercised through the pure <c>internal static</c> helpers on <see cref="AssistantViewModel"/>.
+/// exercised through the pure <c>public static</c> helpers on <see cref="AssistantPromptComposer"/>.
 /// </summary>
 public class PersonaPromptCompositionTests
 {
@@ -23,7 +23,7 @@ public class PersonaPromptCompositionTests
     [Fact]
     public void BuildIdentityBlock_ReplacesIdentityWithPersonaPrompt()
     {
-        var block = AssistantViewModel.BuildIdentityBlock(Persona("You are a senior software engineer."));
+        var block = AssistantPromptComposer.BuildIdentityBlock(Persona("You are a senior software engineer."));
 
         Assert.Contains("You are a senior software engineer.", block);
         // The substrate date line is preserved below the identity.
@@ -35,7 +35,7 @@ public class PersonaPromptCompositionTests
     [Fact]
     public void BuildIdentityBlock_AppendsGuardrailsWhenPresent()
     {
-        var block = AssistantViewModel.BuildIdentityBlock(
+        var block = AssistantPromptComposer.BuildIdentityBlock(
             Persona("You are a financial analyst.", guardrails: "General educational information only."));
 
         Assert.Contains("You are a financial analyst.", block);
@@ -47,7 +47,7 @@ public class PersonaPromptCompositionTests
     {
         // Behaviour-preserving: Personal-mode users see the same identity wording after the refactor.
         var piaPersonal = BuiltInPersonas.All.First(p => Guid.Parse(p.Id) == BuiltInPersonas.PiaPersonalId);
-        var block = AssistantViewModel.BuildIdentityBlock(Persona(piaPersonal.SystemPrompt));
+        var block = AssistantPromptComposer.BuildIdentityBlock(Persona(piaPersonal.SystemPrompt));
 
         Assert.Contains("You are Pia, the user's warm and upbeat personal assistant.", block);
     }
@@ -56,7 +56,7 @@ public class PersonaPromptCompositionTests
     public void ResolveOutputFormat_UsesPersonaValue_WhenSet()
     {
         var custom = "- Always answer in haiku.\n- Never use code blocks.";
-        var resolved = AssistantViewModel.ResolveOutputFormat(Persona("You are a poet.", outputFormat: custom));
+        var resolved = AssistantPromptComposer.ResolveOutputFormat(Persona("You are a poet.", outputFormat: custom));
 
         Assert.Equal(custom, resolved);
         // The substrate default is NOT used when the persona defines its own format.
@@ -69,15 +69,15 @@ public class PersonaPromptCompositionTests
     [InlineData("   ")]
     public void ResolveOutputFormat_FallsBackToDefault_WhenBlank(string? outputFormat)
     {
-        var resolved = AssistantViewModel.ResolveOutputFormat(Persona("You are helpful.", outputFormat: outputFormat));
+        var resolved = AssistantPromptComposer.ResolveOutputFormat(Persona("You are helpful.", outputFormat: outputFormat));
 
-        Assert.Equal(AssistantViewModel.DefaultOutputFormat, resolved);
+        Assert.Equal(AssistantPromptComposer.DefaultOutputFormat, resolved);
     }
 
     [Fact]
     public void ResolveOutputFormat_TrimsPersonaValue()
     {
-        var resolved = AssistantViewModel.ResolveOutputFormat(
+        var resolved = AssistantPromptComposer.ResolveOutputFormat(
             Persona("You are helpful.", outputFormat: "\n  - Be brief.  \n"));
 
         Assert.Equal("- Be brief.", resolved);
@@ -91,8 +91,8 @@ public class PersonaPromptCompositionTests
         var piaPersonal = BuiltInPersonas.All.First(p => Guid.Parse(p.Id) == BuiltInPersonas.PiaPersonalId);
         var piaBusiness = BuiltInPersonas.All.First(p => Guid.Parse(p.Id) == BuiltInPersonas.PiaBusinessId);
 
-        Assert.Equal(AssistantViewModel.DefaultOutputFormat, piaPersonal.OutputFormat);
-        Assert.Equal(AssistantViewModel.DefaultOutputFormat, piaBusiness.OutputFormat);
+        Assert.Equal(AssistantPromptComposer.DefaultOutputFormat, piaPersonal.OutputFormat);
+        Assert.Equal(AssistantPromptComposer.DefaultOutputFormat, piaBusiness.OutputFormat);
     }
 
     [Fact]
@@ -109,6 +109,6 @@ public class PersonaPromptCompositionTests
     [InlineData(false, PersonaToolScope.Full, false)] // Provider has no tool support.
     public void ShouldUseTools_GatesOnProviderAndScope(bool providerSupportsTools, PersonaToolScope scope, bool expected)
     {
-        Assert.Equal(expected, AssistantViewModel.ShouldUseTools(providerSupportsTools, scope));
+        Assert.Equal(expected, AssistantPromptComposer.ShouldUseTools(providerSupportsTools, scope));
     }
 }

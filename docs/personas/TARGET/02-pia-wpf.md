@@ -78,13 +78,19 @@ CREATE TABLE IF NOT EXISTS Personas (
     ReasoningEffort INTEGER,
     SchemaVersion INTEGER NOT NULL DEFAULT 1,
     CreatedAt TEXT NOT NULL,
-    UpdatedAt TEXT NOT NULL
+    UpdatedAt TEXT NOT NULL,
+    OutputFormat TEXT                -- per-persona "Output Format" section body; null ⇒ substrate default
 );
 CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
 ```
 
 > Only **user** personas are persisted here. Built-ins are merged in-memory from
 > `BuiltInPersonas.All` by the service (they are not rows).
+>
+> `OutputFormat` was added after the table shipped: `MigrateSchema` runs the table-presence check
+> above, then a column-presence check (`PRAGMA table_info(Personas)`) that issues
+> `ALTER TABLE Personas ADD COLUMN OutputFormat TEXT` when missing. It is appended **last** in the
+> `SELECT` column list so existing reader ordinals stay stable.
 
 ## 4. Service — `IPersonaService` / `PersonaService`
 
@@ -121,8 +127,8 @@ Register in `Bootstrapper.cs` (~line 248): `services.AddSingleton<IPersonaServic
 mirroring the Template methods (~lines 37–103):
 
 - `To…`: if E2EE active, encrypt the textual fields (Name, Tagline, SystemPrompt, Guardrails,
-  Expertise) into `EncryptedPayload`/`WrappedDek` (E2EE key `"persona"`), null the plaintext; keep
-  structural fields plaintext. Else plaintext, null blob.
+  OutputFormat, Expertise) into `EncryptedPayload`/`WrappedDek` (E2EE key `"persona"`), null the
+  plaintext; keep structural fields plaintext. Else plaintext, null blob.
 - `From…`: reverse; always set `IsBuiltIn = false`.
 - Add `MergeModePersonaDefaults(IDictionary<int,Guid>, AppSettings)` mirroring
   `MergeModeProviderDefaults`, and call it from both the E2EE and plaintext settings paths; populate
@@ -167,13 +173,15 @@ public void SetPersonaForMode(WindowMode mode, Guid? id)
 ## 7. Edit dialog (single rich form)
 
 - **`PersonaEditModel : ObservableValidator`** (mirror `TemplateEditModel`): `[ObservableProperty]`
-  + `[Required]` on `Name`, `SystemPrompt`; properties for `Tagline`, `Guardrails`, `Archetype`,
-  `Expertise` (comma/string editor), `Emoji`, `AccentColor`, `ToolScope`, `PreferredProviderId`
-  (bound to a provider picker incl. an "(Use mode default)" null entry), `ReasoningEffort`.
-  Add `FromPersona`/`ToPersona` factories and a `CanSave => !HasErrors && !string.IsNullOrWhiteSpace(Name)`.
+  + `[Required]` on `Name`, `SystemPrompt`; properties for `Tagline`, `Guardrails`, `OutputFormat`
+  (multiline editor; blank ⇒ substrate default), `Archetype`, `Expertise` (comma/string editor),
+  `Emoji`, `AccentColor`, `ToolScope`, `PreferredProviderId` (bound to a provider picker incl. an
+  "(Use mode default)" null entry), `ReasoningEffort`. Add `FromPersona`/`ToPersona` factories and a
+  `CanSave => !HasErrors && !string.IsNullOrWhiteSpace(Name)`.
 - **AI-assist command** (mirror `TemplateEditModel.GeneratePromptCommand`): user types a short
-  description → call the assistant provider to draft `Name`, `Tagline`, `SystemPrompt`, `Emoji`,
-  `AccentColor`, `Expertise`; populate the fields for the user to edit.
+  description → call the assistant provider to draft `Name`, `Tagline`, `SystemPrompt`, `Guardrails`,
+  `OutputFormat`, `Emoji`, `AccentColor`, `Expertise`, `Archetype`; populate the fields for the user
+  to edit (prefilling only the values the user hasn't already set).
 - **`PersonaEditContentDialog.xaml(.cs)`** (mirror `TemplateEditContentDialog`): WPF-UI
   `ContentDialog`, validate in `OnClosing` (block close if `!CanSave`).
 - **DialogService**: add to `IDialogService` and `DialogService` (~lines 44–51 pattern):
@@ -203,10 +211,13 @@ empty edit dialog. Add the section to the existing settings navigation.
 3. **Tool gating** (contract §5): use tools only if `provider.SupportsToolCalling` **and**
    `persona.ToolScope == Full`. If `ToolScope == None`, take the existing no-tools path and pass no
    tools.
-4. **`BuildSystemPrompt`** (~lines 68–87) and **`BuildSystemPromptNoTools`** (~lines 145–168): add a
-   `Persona activePersona` parameter; replace the hardcoded identity (lines 69–72 / 151–154) with
-   `activePersona.SystemPrompt`, then `activePersona.Guardrails` (if any), then keep the existing
-   date line and all downstream substrate sections. Composition per contract §8.
+4. **`BuildSystemPrompt`** and **`BuildSystemPromptNoTools`**: take a `Persona activePersona`
+   parameter; the identity comes from `BuildIdentityBlock(activePersona)` (SystemPrompt + optional
+   Guardrails + date line). The old hardcoded `## Principles` block is renamed **`## Output Format`**
+   and its body is `ResolveOutputFormat(activePersona)` — the persona's `OutputFormat`, or the
+   `DefaultOutputFormat` constant when blank. The substrate-owned "don't retry a declined action"
+   rule is appended after it **only in the tools path** (it isn't formatting). Composition per
+   contract §8.
 5. **Picker UI**: a persona selector in the Assistant view (chip showing `Emoji` + `Name`); on
    change, `settings.SetPersonaForMode(Assistant, id)` + save (it syncs via `SyncSettings`). Decide
    whether changing mid-conversation applies from the next turn (recommended) — note it in the UI.
@@ -220,7 +231,10 @@ On finish (where it already writes `UserOperatingMode` / `DefaultTemplateId`), s
 
 - `PersonaService`: merge built-ins + user; built-ins not deletable/updatable; delete tracks
   `"personas"`; `ResolveActiveAsync` falls back to the operating-mode Pia built-in.
-- `SyncMapper`: persona round-trip plaintext **and** E2EE (textual encrypted, structural plaintext).
+- `SyncMapper`: persona round-trip plaintext **and** E2EE (textual incl. `OutputFormat` encrypted,
+  structural plaintext).
 - `BuildSystemPrompt`: identity replaced by persona; guardrails appended; `ToolScope.None` omits the
   tool-selection section and routes to the no-tools path.
+- `ResolveOutputFormat`: uses the persona's `OutputFormat` when set, else `DefaultOutputFormat`; the
+  Pia built-ins' `OutputFormat` is pinned byte-identical to `DefaultOutputFormat`.
 - Provider override resolution incl. dangling `PreferredProviderId` → falls back to mode default.
