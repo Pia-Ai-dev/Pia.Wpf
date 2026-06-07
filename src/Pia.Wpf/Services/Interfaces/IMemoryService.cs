@@ -38,8 +38,15 @@ public interface IMemoryService
     /// either edits the matched section (deterministic bullet merge), creates a new section/file, or
     /// returns <see cref="UpsertBand.Ambiguous"/> without writing. Embeddings are NOT generated here —
     /// the vault watcher/indexer owns reindex on file change.
+    /// <para>When <paramref name="createOnAmbiguous"/> is <c>false</c> (the default, interactive
+    /// behavior) an <see cref="UpsertBand.Ambiguous"/> resolution performs NO write and returns the
+    /// candidate slugs for the caller to disambiguate. When it is <c>true</c> the Ambiguous band is
+    /// resolved deterministically as a CREATE (a new section is appended for structured types, or the
+    /// file is created for freeform types) so a write always lands — the returned outcome's
+    /// <see cref="RememberOutcome.Band"/> is then <see cref="UpsertBand.Create"/>, never
+    /// <see cref="UpsertBand.Ambiguous"/>. The Edit and Create bands are unaffected by this flag.</para>
     /// </summary>
-    Task<RememberOutcome> RememberAsync(string type, string subject, string content);
+    Task<RememberOutcome> RememberAsync(string type, string subject, string content, bool createOnAmbiguous = false);
 
     /// <summary>
     /// Resolution-only twin of <see cref="RememberAsync"/>: classifies where the memory WOULD land

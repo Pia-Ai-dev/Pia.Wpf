@@ -178,6 +178,27 @@ public class SectionUpsertServiceTests
     }
 
     [Fact]
+    public void MergeBullets_preserves_non_bullet_new_body_lines()
+    {
+        var svc = new SectionUpsertService(new StubEmbeddingService());
+
+        // New body carries content that is NOT a top-level "- key: value" bullet: a nested child line,
+        // a scalar-array item, and a fenced block line. None may be dropped (lossless merge).
+        var merged = svc.MergeBullets(
+            existingBody: "- email: a@x\n",
+            newBody: "- name: John\n  - city: NYC\n- vip\n```json\n");
+
+        // The top-level bullet still merges in place / appends.
+        Assert.Contains("- email: a@x", merged);
+        Assert.Contains("- name: John", merged);
+
+        // Non-bullet new-body lines are preserved (appended), not discarded.
+        Assert.Contains("  - city: NYC", merged);
+        Assert.Contains("- vip", merged);
+        Assert.Contains("```json", merged);
+    }
+
+    [Fact]
     public void MergeBullets_preserves_trailing_prose()
     {
         var svc = new SectionUpsertService(new StubEmbeddingService());

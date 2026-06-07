@@ -72,11 +72,16 @@ public sealed class SectionUpsertService : ISectionUpsertService
     /// Prose-handling choice (spec §4): the merge reassembles the existing body's <c>- key: value</c>
     /// bullet block first — in original order, with matching keys' values replaced in place and brand-new
     /// keys appended after the last bullet — then re-appends every non-bullet (prose / blank) line from
-    /// the existing body, in their original relative order, after the bullet block. New body lines that
-    /// are not field bullets are ignored (field-level merge handles bullets only; prose authoring is a
-    /// separate, model-bounded operation). Blank lines from the existing body are preserved as prose, so
-    /// a bullets-then-blank-then-prose layout round-trips. The original line terminator (LF vs CRLF) and
-    /// a trailing terminator are preserved.
+    /// the existing body, in their original relative order, after the bullet block.
+    /// <para>The merge is LOSSLESS for new-body content: new-body lines that ARE top-level field bullets
+    /// drive the replace-by-key/append-new-key upsert above, and new-body lines that are NOT top-level
+    /// bullets (nested child bullets like <c>  - city: NYC</c>, scalar-array items like <c>- vip</c>,
+    /// array markers <c>-</c>, fenced <c>```json</c> lines, and free prose) are PRESERVED by appending
+    /// them — in their original relative order — after the reassembled bullet block and the existing
+    /// prose, rather than being discarded.</para>
+    /// Blank lines from the existing body are preserved as prose, so a bullets-then-blank-then-prose
+    /// layout round-trips. The original line terminator (LF vs CRLF) and a trailing terminator are
+    /// preserved.
     /// </summary>
     public string MergeBullets(string existingBody, string newBody)
     {
@@ -111,12 +116,16 @@ public sealed class SectionUpsertService : ISectionUpsertService
             }
         }
 
-        // Apply the new body's bullets as upserts.
+        // Apply the new body's TOP-LEVEL bullets as upserts; preserve every other new-body line by
+        // appending it after the reassembled block (lossless — nested children, scalar-array items,
+        // array markers, fenced lines and prose are never dropped).
+        var newExtras = new List<string>();
         foreach (var line in SplitLines(newBody))
         {
             var match = BulletRegex.Match(line);
             if (!match.Success)
             {
+                newExtras.Add(line);
                 continue;
             }
 
@@ -128,12 +137,13 @@ public sealed class SectionUpsertService : ISectionUpsertService
             values[key] = match.Groups[2].Value;
         }
 
-        var output = new List<string>(keyOrder.Count + prose.Count);
+        var output = new List<string>(keyOrder.Count + prose.Count + newExtras.Count);
         foreach (var key in keyOrder)
         {
             output.Add($"- {key}: {values[key]}");
         }
         output.AddRange(prose);
+        output.AddRange(newExtras);
 
         var sb = new StringBuilder();
         for (var i = 0; i < output.Count; i++)

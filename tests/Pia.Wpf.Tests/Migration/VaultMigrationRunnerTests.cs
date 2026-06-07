@@ -88,6 +88,68 @@ public class VaultMigrationRunnerTests : IDisposable
         Assert.Single(johns);
     }
 
+    [Fact]
+    public async Task RunAsync_writes_ambiguous_record_instead_of_dropping_it()
+    {
+        // The SECOND contact "Johnny" resolves AMBIGUOUS against the first "John Smith" section:
+        // lexical JaroWinkler("Johnny","John Smith") ~0.69 sits in [0.60, 0.85), and the FNV embedding
+        // stub maps the two distinct inputs to near-orthogonal vectors (cosine ~0), so the score stays
+        // below the 0.85 Edit cut. With createOnAmbiguous the record must still LAND (as a Create) —
+        // it is never dropped (this is the same Ambiguous recipe proven in SectionUpsertServiceTests).
+        await _memory.CreateObjectAsync(
+            "contact_list", "Work", """[{"name":"John Smith","email":"john@x"}]""");
+        await _memory.CreateObjectAsync(
+            "contact_list", "Personal", """[{"name":"Johnny","city":"NYC"}]""");
+
+        var report = await BuildRunner().RunAsync();
+
+        Assert.False(report.Skipped);
+        // No record may be dropped — the ambiguous one was force-created.
+        Assert.Equal(0, report.Dropped);
+        // Both records actually landed (one Create for John Smith, one Create for the ambiguous Johnny).
+        Assert.Equal(2, report.RecordsWritten);
+
+        var doc = await _store.ReadAsync("memory/contacts.md");
+        Assert.NotNull(doc);
+        // The ambiguous record wrote a NEW section rather than merging or being dropped.
+        Assert.Contains(doc!.Sections, s => s.Heading == "John Smith");
+        Assert.Contains(doc.Sections, s => s.Heading == "Johnny");
+    }
+
+    [Fact]
+    public async Task RunAsync_edit_band_merge_preserves_nested_leaves_losslessly()
+    {
+        // Two contact_list rows BOTH containing "John Smith". The first is a flat bullet; the SECOND
+        // carries a NESTED object (address {city, zip}) AND an ARRAY (tags [vip, client]). The second
+        // resolves Edit (exact-heading lexical 1.0) and merges into the one section. The nested/array
+        // leaves arrive as NON-top-level-bullet new-body lines, so the Edit-band MergeBullets must
+        // APPEND them losslessly (this assertion would FAIL before the MergeBullets fix).
+        await _memory.CreateObjectAsync(
+            "contact_list", "Work", """[{"name":"John Smith","email":"john@x"}]""");
+        await _memory.CreateObjectAsync(
+            "contact_list", "Personal",
+            """[{"name":"John Smith","address":{"city":"NYC","zip":"10001"},"tags":["vip","client"]}]""");
+
+        await BuildRunner().RunAsync();
+
+        var doc = await _store.ReadAsync("memory/contacts.md");
+        Assert.NotNull(doc);
+
+        // EXACTLY one "## John Smith" section (the 2nd entry merged via the Edit band, not a duplicate).
+        var johns = doc!.Sections.Where(s => s.Heading == "John Smith").ToList();
+        Assert.Single(johns);
+
+        // All nested leaves from the second record are preserved in that one section's body — nothing
+        // was dropped by the merge.
+        var body = johns[0].Body;
+        Assert.Contains("city", body);
+        Assert.Contains("NYC", body);
+        Assert.Contains("zip", body);
+        Assert.Contains("10001", body);
+        Assert.Contains("vip", body);
+        Assert.Contains("client", body);
+    }
+
     // --- ARCHIVE ------------------------------------------------------------------------------
 
     [Fact]

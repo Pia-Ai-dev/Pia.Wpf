@@ -67,6 +67,25 @@ public class MemoryJsonRendererTests
     }
 
     [Fact]
+    public void Embedded_newline_in_scalar_does_not_forge_a_section_heading()
+    {
+        // A string value with an embedded newline followed by "## ..." must NOT emit a line that the
+        // section-boundary regex (^## (.+)$) would treat as a new section, or one record would split.
+        var body = _renderer.RenderBody("{\"note\":\"line1\\n## Fake Heading\"}");
+
+        foreach (var line in body.Split('\n'))
+        {
+            Assert.False(
+                System.Text.RegularExpressions.Regex.IsMatch(line.TrimEnd('\r'), "^## (.+)$"),
+                $"Line should not match a section boundary: '{line}'");
+        }
+
+        // The text content is still present (lossless flattening, not truncation).
+        Assert.Contains("line1", body);
+        Assert.Contains("Fake Heading", body);
+    }
+
+    [Fact]
     public void Unparseable_input_emits_json_fence_with_raw_text()
     {
         const string raw = "{not valid json";

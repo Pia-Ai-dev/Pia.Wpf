@@ -567,7 +567,8 @@ public class MemoryService : IMemoryService
     private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
 
     /// <inheritdoc />
-    public async Task<RememberOutcome> RememberAsync(string type, string subject, string content)
+    public async Task<RememberOutcome> RememberAsync(
+        string type, string subject, string content, bool createOnAmbiguous = false)
     {
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(subject);
@@ -575,11 +576,12 @@ public class MemoryService : IMemoryService
 
         if (StructuredPaths.TryGetValue(type, out var structuredPath))
         {
-            return await RememberStructuredAsync(type, structuredPath, subject, content);
+            return await RememberStructuredAsync(type, structuredPath, subject, content, createOnAmbiguous);
         }
 
         if (FreeformDirs.TryGetValue(type, out var dir))
         {
+            // Freeform is never ambiguous (exists -> Edit / not -> Create), so the flag is a no-op here.
             return await RememberFreeformAsync(type, dir, subject, content);
         }
 
@@ -634,8 +636,10 @@ public class MemoryService : IMemoryService
     }
 
     // Structured: one shared document, records keyed by ## heading. Resolve -> Edit/Ambiguous/Create.
+    // When createOnAmbiguous is true, the Ambiguous band is resolved as a Create (a new section is
+    // appended) so a write always lands — used by the lossless migration path.
     private async Task<RememberOutcome> RememberStructuredAsync(
-        string type, string path, string subject, string content)
+        string type, string path, string subject, string content, bool createOnAmbiguous)
     {
         var doc = await _vaultStore.ReadAsync(path);
         var bullets = NormalizeContentToBullets(content);
@@ -664,6 +668,15 @@ public class MemoryService : IMemoryService
             }
 
             case UpsertBand.Ambiguous:
+                if (createOnAmbiguous)
+                {
+                    // Deterministic, lossless resolution: append a new section so a write always lands.
+                    await CreateStructuredSectionAsync(type, path, doc, subject, bullets);
+                    _logger.LogInformation(
+                        "Remember resolved an ambiguous match to a new structured section (Create band)");
+                    return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+                }
+
                 // No write: the caller (model/user) disambiguates and re-issues a concrete reference.
                 _logger.LogInformation(
                     "Remember was ambiguous across {Count} candidate sections; no write performed",

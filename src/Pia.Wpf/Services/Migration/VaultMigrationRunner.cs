@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure.Vault;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -14,11 +15,12 @@ namespace Pia.Services.Migration;
 /// One-shot, idempotent migration of the legacy SQLite <c>Memories</c> table into the on-disk memory
 /// vault (format spec v1). See <see cref="IVaultMigrationRunner"/>.
 ///
-/// <para>Records are written THROUGH <see cref="IMemoryService.RememberAsync"/> so the deterministic
-/// upsert merges clear duplicates on the way in (dedup-on-write). Only confident (&gt;= 0.85) duplicates
-/// auto-merge; an <see cref="UpsertBand.Ambiguous"/> result performs NO write, so to keep migration
-/// LOSSLESS we retry once with a disambiguated subject to force a Create — a record is never dropped.
-/// The model-assisted cluster-merge of ambiguous near-duplicates is intentionally DEFERRED.</para>
+/// <para>Records are written THROUGH <see cref="IMemoryService.RememberAsync"/> with
+/// <c>createOnAmbiguous: true</c> so the deterministic upsert merges clear duplicates on the way in
+/// (dedup-on-write): a confident (&gt;= 0.85) match is an Edit, and EVERYTHING else (including the
+/// <see cref="UpsertBand.Ambiguous"/> band) deterministically lands as a Create. No record can be
+/// dropped — <see cref="MigrationReport.Dropped"/> is therefore always 0. The model-assisted
+/// cluster-merge of ambiguous near-duplicates is intentionally DEFERRED.</para>
 ///
 /// <para>Every original row is first snapshotted under <c>memory/.archive/{id}.json</c> so the legacy
 /// payload is fully recoverable, and the legacy <c>Memories</c> table is left INTACT (dropping it and
@@ -73,6 +75,7 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
 
         var rows = await _memory.GetAllObjectsAsync();
         var recordsWritten = 0;
+        var dropped = 0;
         var archived = 0;
 
         foreach (var row in rows)
@@ -81,7 +84,9 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
 
             try
             {
-                recordsWritten += await MigrateRowAsync(row, mappedType);
+                var (written, rowDropped) = await MigrateRowAsync(row, mappedType);
+                recordsWritten += written;
+                dropped += rowDropped;
             }
             catch (Exception ex)
             {
@@ -111,14 +116,15 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
         await _indexer.RebuildAllAsync();
 
         _logger.LogInformation(
-            "Vault migration complete: {Rows} row(s) -> {Records} record(s), {Archived} archived",
-            rows.Count, recordsWritten, archived);
+            "Vault migration complete: {Rows} row(s) -> {Records} record(s), {Archived} archived, {Dropped} dropped",
+            rows.Count, recordsWritten, archived, dropped);
 
-        return new MigrationReport(Skipped: false, rows.Count, recordsWritten, archived);
+        return new MigrationReport(Skipped: false, rows.Count, recordsWritten, archived, dropped);
     }
 
-    // Write one legacy row through the vault write path. Returns the number of records written.
-    private async Task<int> MigrateRowAsync(MemoryObject row, string mappedType)
+    // Write one legacy row through the vault write path. Returns (records actually written, records
+    // dropped). With createOnAmbiguous the dropped count is always 0 short of a defensive anomaly.
+    private async Task<(int Written, int Dropped)> MigrateRowAsync(MemoryObject row, string mappedType)
     {
         if (mappedType == MemoryObjectTypes.ContactList)
         {
@@ -130,12 +136,12 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
             ? MemoryObjectTypes.GetDisplayName(mappedType)
             : row.Label;
         var content = _renderer.RenderBody(row.Data);
-        await RememberLosslessAsync(mappedType, subject, content, row.Id);
-        return 1;
+        var landed = await RememberLosslessAsync(mappedType, subject, content, row.Id);
+        return landed ? (1, 0) : (0, 1);
     }
 
     // A contact_list row's Data is a JSON array; each entry becomes its own ## section.
-    private async Task<int> MigrateContactListAsync(MemoryObject row)
+    private async Task<(int Written, int Dropped)> MigrateContactListAsync(MemoryObject row)
     {
         JsonNode? node;
         try
@@ -154,12 +160,13 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
             var fallbackSubject = string.IsNullOrWhiteSpace(row.Label)
                 ? MemoryObjectTypes.GetDisplayName(MemoryObjectTypes.ContactList)
                 : row.Label;
-            await RememberLosslessAsync(
+            var landedFallback = await RememberLosslessAsync(
                 MemoryObjectTypes.ContactList, fallbackSubject, _renderer.RenderBody(row.Data), row.Id);
-            return 1;
+            return landedFallback ? (1, 0) : (0, 1);
         }
 
         var written = 0;
+        var dropped = 0;
         foreach (var entry in array)
         {
             if (entry is null)
@@ -169,11 +176,17 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
 
             var subject = EntrySubject(entry, row.Label);
             var content = _renderer.RenderBody(entry.ToJsonString());
-            await RememberLosslessAsync(MemoryObjectTypes.ContactList, subject, content, row.Id);
-            written++;
+            if (await RememberLosslessAsync(MemoryObjectTypes.ContactList, subject, content, row.Id))
+            {
+                written++;
+            }
+            else
+            {
+                dropped++;
+            }
         }
 
-        return written;
+        return (written, dropped);
     }
 
     // subject = entry["name"] ?? entry["label"] ?? row.Label (spec mapping for contact entries).
@@ -210,19 +223,25 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
         return false;
     }
 
-    // LOSSLESS GUARANTEE: write through RememberAsync (so confident duplicates merge). If the resolver
-    // returns Ambiguous it performed NO write — retry ONCE with a disambiguated subject to FORCE a Create
-    // so the record is never dropped. The model-assisted ambiguous cluster-merge is DEFERRED.
-    private async Task RememberLosslessAsync(string type, string subject, string content, Guid rowId)
+    // LOSSLESS GUARANTEE: write through RememberAsync with createOnAmbiguous: true. A confident match
+    // merges (Edit); everything else — including the Ambiguous band — deterministically lands as a
+    // Create. The single call always writes, so no record is dropped. Returns whether a write actually
+    // landed; a false return is a defensive anomaly (the band came back Ambiguous despite the flag) and
+    // is logged with a HASHED id only — never raw content. The model-assisted cluster-merge is DEFERRED.
+    private async Task<bool> RememberLosslessAsync(string type, string subject, string content, Guid rowId)
     {
-        var outcome = await _memory.RememberAsync(type, subject, content);
+        var outcome = await _memory.RememberAsync(type, subject, content, createOnAmbiguous: true);
+
         if (outcome.Band == UpsertBand.Ambiguous)
         {
-            var disambiguated = $"{subject} ({rowId.ToString("N")[..6]})";
-            await _memory.RememberAsync(type, disambiguated, content);
-            _logger.LogInformation(
-                "Vault migration force-created an ambiguous record under a disambiguated subject");
+            // Should be unreachable with createOnAmbiguous: true; count it as dropped defensively.
+            _logger.SensitiveDebug(
+                "Vault migration record unexpectedly resolved Ambiguous despite createOnAmbiguous (row {RowHash})",
+                HashId(rowId));
+            return false;
         }
+
+        return true;
     }
 
     // Snapshot the original row so it is fully recoverable after migration.
