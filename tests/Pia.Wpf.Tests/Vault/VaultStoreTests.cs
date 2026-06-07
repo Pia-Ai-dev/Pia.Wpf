@@ -151,6 +151,33 @@ public class VaultStoreTests : IDisposable
         Assert.Empty(leftover);
     }
 
+    [Fact]
+    public async Task Failed_write_after_tmp_created_cleans_up_the_real_tmp()
+    {
+        // Exercises the genuine partial-write path: the .tmp IS created, then a later step throws,
+        // so the catch-block TryDelete(tmpPath) must remove a real file (not a no-op on a missing one).
+        var original =
+            "---\nid: 11111111-1111-1111-1111-111111111111\ntype: note\nschemaVersion: 1\n---\noriginal body\n";
+        var seed = NewStore();
+        await seed.WriteAtomicAsync("memory/notes/z.md", original);
+
+        var throwing = new ThrowAfterTmpVaultStore(_root, _parser);
+        await Assert.ThrowsAsync<IOException>(
+            () => throwing.WriteAtomicAsync("memory/notes/z.md", "new content that must not land\n"));
+
+        // The seam confirms a real .tmp existed at the moment of failure...
+        Assert.True(throwing.TmpExistedAtThrow);
+
+        // ...and the catch-block cleanup removed it.
+        var leftover = Directory.EnumerateFiles(_root, "*.tmp", SearchOption.AllDirectories);
+        Assert.Empty(leftover);
+
+        // Original is byte-for-byte intact (the move never happened).
+        var doc = await seed.ReadAsync("memory/notes/z.md");
+        Assert.NotNull(doc);
+        Assert.Equal(original, doc!.RawText);
+    }
+
     // ---- EnumerateAsync / DeleteAsync ----
 
     [Fact]
@@ -191,5 +218,26 @@ public class VaultStoreTests : IDisposable
 
         protected override Task WriteFileAsync(string fullPath, string content)
             => throw new IOException("simulated write failure");
+    }
+
+    /// <summary>
+    /// Test seam: writes the real tmp file (via the base seam) and only THEN throws, so the
+    /// WriteAtomicAsync catch-block cleanup is exercised against an actually-created .tmp.
+    /// </summary>
+    private sealed class ThrowAfterTmpVaultStore : VaultStore
+    {
+        public ThrowAfterTmpVaultStore(string root, MarkdownVaultParser parser)
+            : base(root, parser)
+        {
+        }
+
+        public bool TmpExistedAtThrow { get; private set; }
+
+        protected override async Task WriteFileAsync(string fullPath, string content)
+        {
+            await base.WriteFileAsync(fullPath, content);
+            TmpExistedAtThrow = File.Exists(fullPath);
+            throw new IOException("simulated failure after tmp was written");
+        }
     }
 }
