@@ -231,12 +231,17 @@ The slug is computed from a heading string by this exact, ordered algorithm:
 5. **Trim** leading and trailing hyphens.
 6. If the result is **empty** (heading had no ASCII-alphanumeric content), use the fallback
    `section`.
-7. **Collision suffix:** dedup is applied to the **post-step-6 slug values** (after fallback
-   substitution), comparing **all** sections — including those that fell back to `section` and any
-   real heading that legitimately slugs to `section` — **strictly in document order**. The first
-   occurrence of a slug value is used as-is; the N-th subsequent occurrence (N ≥ 1) gets `-{N+1}`
-   appended: second → `-2`, third → `-3`, etc. (So `## Section` followed by `## !!!` yields
-   `section` then `section-2`.)
+7. **Collision suffix (global uniqueness):** Slugs are assigned **strictly in document order**,
+   maintaining the set of slugs already assigned to earlier sections in the same document (these
+   are post-step-6 values, after fallback substitution — including any that fell back to `section`
+   and any real heading that legitimately slugs to `section`). For each section, let `base` be its
+   post-step-6 value. If `base` is **not** already in the assigned set, the section's slug is
+   `base`. Otherwise the slug is `{base}-{N}` for the **smallest integer N ≥ 2** such that
+   `{base}-{N}` is **not** already in the assigned set. The chosen slug is then added to the
+   assigned set. This guarantees every section in a document has a **unique** slug. (So
+   `## Section` followed by `## !!!` yields `section` then `section-2`; two `## Café (work)!` yield
+   `cafe-work` then `cafe-work-2`. The smallest-free-suffix rule also resolves the case where a
+   collision suffix would otherwise clash with a different heading's natural slug — see §6.1.)
 
 ### 6.1 Worked examples (normative — these are also Phase 1 test fixtures)
 
@@ -250,6 +255,12 @@ The slug is computed from a heading string by this exact, ordered algorithm:
 Derivation of `Café (work)!`: NFD+strip-marks → `Cafe (work)!` → lowercase → `cafe (work)!` →
 non-`[a-z0-9]` runs → `-`: `cafe` + `-` (from `" ("`) + `work` + `-` (from `")!"`) → `cafe-work-` →
 trim trailing `-` → **`cafe-work`**.
+
+Multi-section collision (normative). The document headings `Cafe Work`, `Cafe Work`, `Cafe Work 2`
+— in that order — yield slugs `cafe-work`, `cafe-work-2`, `cafe-work-2-2`. The second section's
+collision suffix (`cafe-work-2`) is assigned before the third section is processed, so the third
+section (whose natural slug is also `cafe-work-2`) takes the smallest free suffix `cafe-work-2-2`.
+Every slug stays unique.
 
 ---
 
