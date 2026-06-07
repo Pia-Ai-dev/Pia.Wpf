@@ -113,7 +113,8 @@ public class RecallTests : IDisposable
         await indexer.RebuildAllAsync();
 
         return new MemoryService(
-            _ctx, NullLogger<MemoryService>.Instance, _embeddings, _deleteTracker, _store);
+            _ctx, NullLogger<MemoryService>.Instance, _embeddings, _deleteTracker, _store,
+            new SectionUpsertService(_embeddings));
     }
 
     [Fact]

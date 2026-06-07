@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
 using Pia.Models.Vault;
 using YamlDotNet.Serialization;
@@ -16,9 +14,6 @@ public sealed class MarkdownVaultParser
     // §3 boundary predicate: exactly two '#', one space, then at least one char of heading text.
     // Applied to logical-line content (terminator removed), so single-line mode is correct.
     private static readonly Regex SectionBoundary = new(@"^## (.+)$", RegexOptions.Compiled);
-
-    // §6 step 4: maximal runs of non-[a-z0-9] -> single '-'.
-    private static readonly Regex NonSlugRun = new("[^a-z0-9]+", RegexOptions.Compiled);
 
     // §3 ASCII whitespace set for heading trimming: {TAB, LF, VT, FF, CR, SPACE}.
     private static readonly char[] AsciiWhitespace = { '\t', '\n', '\u000B', '\u000C', '\r', ' ' };
@@ -84,7 +79,7 @@ public sealed class MarkdownVaultParser
             var line = lines[lineIdx];
 
             var heading = SectionBoundary.Match(line.Content).Groups[1].Value.Trim(AsciiWhitespace);
-            var slug = DedupeSlug(Slugify(heading), assignedSlugs);
+            var slug = DedupeSlug(VaultSlug.Slugify(heading), assignedSlugs);
 
             // BodyStart = char index just after the heading line's terminator
             // (RawText.Length if the heading line is the file's last line with no trailing '\n').
@@ -126,24 +121,6 @@ public sealed class MarkdownVaultParser
                 _ => value.ToString() ?? string.Empty,
             };
         }
-    }
-
-    /// <summary>§6 slug algorithm (steps 1-6, without dedupe).</summary>
-    private static string Slugify(string heading)
-    {
-        var decomposed = heading.Normalize(NormalizationForm.FormD);
-        var sb = new StringBuilder(decomposed.Length);
-        foreach (var c in decomposed)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-            {
-                sb.Append(c);
-            }
-        }
-
-        var lowered = sb.ToString().ToLowerInvariant();
-        var slug = NonSlugRun.Replace(lowered, "-").Trim('-');
-        return slug.Length == 0 ? "section" : slug;
     }
 
     /// <summary>

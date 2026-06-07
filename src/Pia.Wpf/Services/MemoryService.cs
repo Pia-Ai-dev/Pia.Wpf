@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -19,19 +20,21 @@ public class MemoryService : IMemoryService
     private readonly IEmbeddingService _embeddingService;
     private readonly SyncDeleteTrackerService _deleteTracker;
     private readonly IVaultStore _vaultStore;
+    private readonly ISectionUpsertService _sectionUpsert;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
     };
 
-    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker, IVaultStore vaultStore)
+    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker, IVaultStore vaultStore, ISectionUpsertService sectionUpsert)
     {
         _context = context;
         _logger = logger;
         _embeddingService = embeddingService;
         _deleteTracker = deleteTracker;
         _vaultStore = vaultStore;
+        _sectionUpsert = sectionUpsert;
     }
 
     public async Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData)
@@ -541,6 +544,315 @@ public class MemoryService : IMemoryService
         }
 
         return hits.AsReadOnly();
+    }
+
+    // ---- Vault write path (format spec v1 §2/§4/§6/§7) ----
+
+    // Structured types map to one shared document; records are ## headings within it.
+    private static readonly Dictionary<string, string> StructuredPaths = new(StringComparer.Ordinal)
+    {
+        ["personal_profile"] = "memory/profile.md",
+        ["contact_list"] = "memory/contacts.md",
+        ["preference"] = "memory/preferences.md",
+    };
+
+    // Freeform/compiled types map to one file each under a per-type directory (slug = filename).
+    private static readonly Dictionary<string, string> FreeformDirs = new(StringComparer.Ordinal)
+    {
+        ["note"] = "memory/notes",
+        ["project"] = "memory/projects",
+        ["topic"] = "memory/topics",
+    };
+
+    private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
+
+    /// <inheritdoc />
+    public async Task<RememberOutcome> RememberAsync(string type, string subject, string content)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (StructuredPaths.TryGetValue(type, out var structuredPath))
+        {
+            return await RememberStructuredAsync(type, structuredPath, subject, content);
+        }
+
+        if (FreeformDirs.TryGetValue(type, out var dir))
+        {
+            return await RememberFreeformAsync(type, dir, subject, content);
+        }
+
+        throw new ArgumentException($"Unknown memory type '{type}' (spec §7).", nameof(type));
+    }
+
+    // Structured: one shared document, records keyed by ## heading. Resolve -> Edit/Ambiguous/Create.
+    private async Task<RememberOutcome> RememberStructuredAsync(
+        string type, string path, string subject, string content)
+    {
+        var doc = await _vaultStore.ReadAsync(path);
+        var bullets = NormalizeContentToBullets(content);
+
+        // No file or no sections yet -> always a Create (ResolveAsync would say the same, but we avoid
+        // the embedding round-trip and the null-doc case in one branch).
+        if (doc is null || doc.Sections.Count == 0)
+        {
+            await CreateStructuredSectionAsync(type, path, doc, subject, bullets);
+            _logger.LogInformation("Remember created structured section in vault file (Create band)");
+            return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+        }
+
+        var resolution = await _sectionUpsert.ResolveAsync(doc, subject, content);
+        switch (resolution.Band)
+        {
+            case UpsertBand.Edit:
+            {
+                var matchedSlug = resolution.MatchedSlug!;
+                var section = doc.Sections.First(s => s.Slug == matchedSlug);
+                var newBody = _sectionUpsert.MergeBullets(section.Body, bullets);
+                await _vaultStore.SpliceSectionAsync(path, matchedSlug, newBody);
+                await BumpUpdatedAsync(path);
+                _logger.LogInformation("Remember edited existing structured section (Edit band)");
+                return new RememberOutcome(UpsertBand.Edit, $"{path}#{section.Heading}", []);
+            }
+
+            case UpsertBand.Ambiguous:
+                // No write: the caller (model/user) disambiguates and re-issues a concrete reference.
+                _logger.LogInformation(
+                    "Remember was ambiguous across {Count} candidate sections; no write performed",
+                    resolution.Candidates.Count);
+                return new RememberOutcome(UpsertBand.Ambiguous, string.Empty, resolution.Candidates);
+
+            default: // Create
+                await CreateStructuredSectionAsync(type, path, doc, subject, bullets);
+                _logger.LogInformation("Remember appended new structured section (Create band)");
+                return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+        }
+    }
+
+    // Freeform/compiled: one file per item, slug -> filename. Exists -> Edit (merge into its preamble
+    // bullets); else Create a new file.
+    private async Task<RememberOutcome> RememberFreeformAsync(
+        string type, string dir, string subject, string content)
+    {
+        var path = $"{dir}/{VaultSlug.Slugify(subject)}.md";
+        var bullets = NormalizeContentToBullets(content);
+        var existing = await _vaultStore.ReadAsync(path);
+
+        if (existing is null)
+        {
+            var frontmatter = BuildFrontmatter(type, subject);
+            var body = bullets.EndsWith('\n') ? bullets : bullets + "\n";
+            await _vaultStore.WriteAtomicAsync(path, frontmatter + body);
+            _logger.LogInformation("Remember created freeform vault file (Create band)");
+            return new RememberOutcome(UpsertBand.Create, path, []);
+        }
+
+        // Freeform body lives in the preamble (the single-record file has no ## headings of its own).
+        // The preamble byte-range is [frontmatterEnd, firstSectionStart) — frontmatter and any
+        // sections are preserved verbatim around the spliced-in merged bullets.
+        var merged = _sectionUpsert.MergeBullets(existing.Preamble, bullets);
+        var newFile = SplicePreamble(existing, merged);
+        await _vaultStore.WriteAtomicAsync(path, newFile);
+        await BumpUpdatedAsync(path);
+        _logger.LogInformation("Remember edited freeform vault file (Edit band)");
+        return new RememberOutcome(UpsertBand.Edit, path, []);
+    }
+
+    // Replace the preamble byte-range. The preamble runs from the end of the frontmatter block to the
+    // start of the first section heading line (or EOF when there are no sections), so frontmatter and
+    // any sibling sections are preserved verbatim.
+    private static string SplicePreamble(VaultDocument doc, string newPreamble)
+    {
+        int preambleEnd;
+        if (doc.Sections.Count > 0)
+        {
+            // First section's heading line starts just before its BodyStart.
+            preambleEnd = HeadingLineStart(doc.RawText, doc.Sections[0].BodyStart);
+        }
+        else
+        {
+            preambleEnd = doc.RawText.Length;
+        }
+
+        var preambleStart = preambleEnd - doc.Preamble.Length;
+        return doc.RawText[..preambleStart] + newPreamble + doc.RawText[preambleEnd..];
+    }
+
+    // Given a section's BodyStart (the byte just after the heading line's '\n' terminator), return the
+    // index of the first byte of that heading line. BodyStart-1 is the heading line's own terminator;
+    // we walk back ONE MORE '\n' (the terminator of the line before the heading) and step past it, or
+    // to 0 when the heading is the file's first line.
+    private static int HeadingLineStart(string raw, int bodyStart)
+    {
+        // Index of the heading line's terminating '\n' (BodyStart-1), if the body started after one.
+        var headingTerminator = bodyStart - 1;
+        if (headingTerminator < 0 || headingTerminator > raw.Length - 1 || raw[headingTerminator] != '\n')
+        {
+            // No trailing '\n' on the heading line (heading is the file's last line); scan from end.
+            headingTerminator = raw.Length;
+        }
+
+        var lineBefore = raw.LastIndexOf('\n', Math.Max(headingTerminator - 1, 0));
+        return lineBefore < 0 ? 0 : lineBefore + 1;
+    }
+
+    // Create the file (with frontmatter) if missing, else append a new "## subject\n<bullets>\n" section
+    // to the existing RawText. The existing doc (if any) is passed so we only re-read once.
+    private async Task CreateStructuredSectionAsync(
+        string type, string path, VaultDocument? doc, string subject, string bullets)
+    {
+        var body = bullets.EndsWith('\n') ? bullets : bullets + "\n";
+        var section = $"## {subject}\n{body}";
+
+        if (doc is null)
+        {
+            var frontmatter = BuildFrontmatter(type, DisplayTitle(type));
+            await _vaultStore.WriteAtomicAsync(path, frontmatter + section);
+            return;
+        }
+
+        // Append after the existing content; a separating blank line keeps the file readable.
+        var raw = doc.RawText;
+        var separator = raw.EndsWith('\n') ? "\n" : "\n\n";
+        await _vaultStore.WriteAtomicAsync(path, raw + separator + section);
+    }
+
+    /// <summary>
+    /// Build a fresh frontmatter block (spec §2). <c>id</c> is a NEW lowercase-canonical GUID (§2.1
+    /// write rule); <c>created</c>/<c>updated</c> are <see cref="DateTime.UtcNow"/> in the §2.5 format.
+    /// </summary>
+    private static string BuildFrontmatter(string type, string title)
+    {
+        var id = Guid.NewGuid().ToString("D").ToLowerInvariant();
+        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        return "---\n" +
+               "pia: managed\n" +
+               $"id: {id}\n" +
+               $"type: {type}\n" +
+               $"title: {title}\n" +
+               $"created: {now}\n" +
+               $"updated: {now}\n" +
+               "schemaVersion: 1\n" +
+               "---\n";
+    }
+
+    private static string DisplayTitle(string type) => type switch
+    {
+        "personal_profile" => "Profile",
+        "contact_list" => "Contacts",
+        "preference" => "Preferences",
+        _ => type,
+    };
+
+    /// <summary>
+    /// Rewrite ONLY the <c>updated:</c> frontmatter line to now (§2.5), preserving every other byte —
+    /// unknown keys, ordering, body — verbatim. If no <c>updated:</c> line exists the file is left
+    /// untouched (a non-conforming or section-less file is not our concern here).
+    /// </summary>
+    private async Task BumpUpdatedAsync(string path)
+    {
+        var doc = await _vaultStore.ReadAsync(path);
+        if (doc is null)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        var updated = ReplaceFrontmatterLine(doc.RawText, "updated", now);
+        if (updated is not null)
+        {
+            await _vaultStore.WriteAtomicAsync(path, updated);
+        }
+    }
+
+    // Replace the value of a single frontmatter scalar line "key: value" within the leading "---" block,
+    // preserving the line's terminator and all surrounding bytes. Returns null if the key is absent.
+    private static string? ReplaceFrontmatterLine(string raw, string key, string newValue)
+    {
+        // Only operate inside the leading frontmatter block (first line is "---").
+        if (!raw.StartsWith("---\n", StringComparison.Ordinal) &&
+            !raw.StartsWith("---\r\n", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var search = $"\n{key}:";
+        var keyIdx = raw.IndexOf(search, StringComparison.Ordinal);
+        if (keyIdx < 0)
+        {
+            return null;
+        }
+
+        var valueStart = keyIdx + search.Length;
+        var lineEnd = raw.IndexOf('\n', valueStart);
+        if (lineEnd < 0)
+        {
+            lineEnd = raw.Length;
+        }
+
+        // Preserve a trailing '\r' (CRLF files) on the rewritten line.
+        var hasCr = lineEnd > valueStart && raw[lineEnd - 1] == '\r';
+        var newLineContent = $"{search} {newValue}" + (hasCr ? "\r" : string.Empty);
+        return raw[..keyIdx] + newLineContent + raw[lineEnd..];
+    }
+
+    /// <summary>
+    /// Normalize free content into the bullet body format (spec §4). If <paramref name="content"/>
+    /// already consists of <c>- key: value</c> bullet lines, it is used as-is. Otherwise the whole
+    /// content is treated as free prose and returned unchanged (it lands below any existing bullets via
+    /// <see cref="ISectionUpsertService.MergeBullets"/>). NOTE: a model-assisted prose REWRITE — turning
+    /// arbitrary prose into structured bullets — is intentionally DEFERRED; this method does no such
+    /// rewrite today.
+    /// </summary>
+    private static string NormalizeContentToBullets(string content) => content;
+
+    /// <inheritdoc />
+    public async Task ForgetAsync(string reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+
+        var hashIdx = reference.IndexOf('#');
+        if (hashIdx < 0)
+        {
+            // Bare path -> delete the whole file. The watcher/indexer drops its chunks on the change.
+            await _vaultStore.DeleteAsync(reference);
+            _logger.LogInformation("Forget deleted a whole vault file");
+            return;
+        }
+
+        var path = reference[..hashIdx];
+        var heading = reference[(hashIdx + 1)..];
+        var slug = VaultSlug.Slugify(heading);
+
+        var doc = await _vaultStore.ReadAsync(path);
+        if (doc is null)
+        {
+            _logger.LogInformation("Forget target file does not exist; nothing to remove");
+            return;
+        }
+
+        VaultSection? target = null;
+        foreach (var section in doc.Sections)
+        {
+            if (section.Slug == slug)
+            {
+                target = section;
+                break;
+            }
+        }
+
+        if (target is null)
+        {
+            _logger.LogInformation("Forget target section was not found; nothing to remove");
+            return;
+        }
+
+        // Splice out the heading LINE + body, not just the body, so the whole record disappears.
+        var headingLineStart = HeadingLineStart(doc.RawText, target.BodyStart);
+        var newFile = doc.RawText[..headingLineStart] + doc.RawText[target.BodyEnd..];
+        await _vaultStore.WriteAtomicAsync(path, newFile);
+        _logger.LogInformation("Forget removed a single vault section");
     }
 
     private static async Task<IReadOnlyList<(string FilePath, string Heading, string Slug, byte[]? Embedding)>>
