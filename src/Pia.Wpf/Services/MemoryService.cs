@@ -586,6 +586,53 @@ public class MemoryService : IMemoryService
         throw new ArgumentException($"Unknown memory type '{type}' (spec §7).", nameof(type));
     }
 
+    /// <inheritdoc />
+    public async Task<RememberOutcome> ResolveRememberAsync(string type, string subject, string content)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (StructuredPaths.TryGetValue(type, out var structuredPath))
+        {
+            return await ResolveStructuredAsync(structuredPath, subject, content);
+        }
+
+        if (FreeformDirs.TryGetValue(type, out var dir))
+        {
+            // Freeform: one file per item. The file either exists (Edit) or not (Create); no ambiguity.
+            var path = $"{dir}/{VaultSlug.Slugify(subject)}.md";
+            var existing = await _vaultStore.ReadAsync(path);
+            var band = existing is null ? UpsertBand.Create : UpsertBand.Edit;
+            return new RememberOutcome(band, path, []);
+        }
+
+        throw new ArgumentException($"Unknown memory type '{type}' (spec §7).", nameof(type));
+    }
+
+    // Resolution-only structured classification — mirrors RememberStructuredAsync's branching but never
+    // writes. The Edit/Create reference matches what RememberAsync would produce so the preview is exact.
+    private async Task<RememberOutcome> ResolveStructuredAsync(string path, string subject, string content)
+    {
+        var doc = await _vaultStore.ReadAsync(path);
+
+        if (doc is null || doc.Sections.Count == 0)
+        {
+            return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+        }
+
+        var resolution = await _sectionUpsert.ResolveAsync(doc, subject, content);
+        return resolution.Band switch
+        {
+            UpsertBand.Edit => new RememberOutcome(
+                UpsertBand.Edit,
+                $"{path}#{doc.Sections.First(s => s.Slug == resolution.MatchedSlug).Heading}",
+                []),
+            UpsertBand.Ambiguous => new RememberOutcome(UpsertBand.Ambiguous, string.Empty, resolution.Candidates),
+            _ => new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []),
+        };
+    }
+
     // Structured: one shared document, records keyed by ## heading. Resolve -> Edit/Ambiguous/Create.
     private async Task<RememberOutcome> RememberStructuredAsync(
         string type, string path, string subject, string content)

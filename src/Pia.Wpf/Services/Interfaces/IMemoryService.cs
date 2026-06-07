@@ -42,6 +42,16 @@ public interface IMemoryService
     Task<RememberOutcome> RememberAsync(string type, string subject, string content);
 
     /// <summary>
+    /// Resolution-only twin of <see cref="RememberAsync"/>: classifies where the memory WOULD land
+    /// (mapping <paramref name="type"/> to its document/path and running the same section resolution)
+    /// WITHOUT writing anything. Returns the band plus the <c>path#heading</c> (or bare path) reference
+    /// for the <see cref="UpsertBand.Edit"/>/<see cref="UpsertBand.Create"/> bands, or
+    /// <see cref="UpsertBand.Ambiguous"/> with candidate slugs and an empty reference. The confirmation-card
+    /// UX uses this to preview the action; the committing write is the subsequent <see cref="RememberAsync"/>.
+    /// </summary>
+    Task<RememberOutcome> ResolveRememberAsync(string type, string subject, string content);
+
+    /// <summary>
     /// Remove a memory from the vault. A <c>path#heading</c> <paramref name="reference"/> splices out
     /// that one section (heading line + body); a bare path deletes the whole file.
     /// </summary>
