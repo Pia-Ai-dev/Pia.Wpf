@@ -4,6 +4,8 @@ namespace Pia.Services.Interfaces;
 
 public record MemorySummary(Guid Id, string Type, string Label);
 
+public record RecallHit(string FilePath, string Heading, string Snippet, float Score);
+
 public interface IMemoryService
 {
     Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData);
@@ -19,6 +21,7 @@ public interface IMemoryService
     Task<IReadOnlyList<MemoryObject>> FullTextSearchAsync(string query);
     Task<IReadOnlyList<MemoryObject>> VectorSearchAsync(float[] queryEmbedding, int topK = 5, float threshold = 0.3f);
     Task<IReadOnlyList<MemoryObject>> HybridSearchAsync(string query, float[]? queryEmbedding = null, int topK = 10);
+    Task<IReadOnlyList<RecallHit>> RecallAsync(string query, int topK = 10);
     Task UpdateEmbeddingAsync(Guid id, byte[] embedding);
     Task TouchAccessTimeAsync(Guid id);
     Task<int> GetObjectCountAsync();

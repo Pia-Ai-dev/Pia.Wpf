@@ -3,7 +3,9 @@ using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Infrastructure.Vault;
 using Pia.Models;
+using Pia.Models.Vault;
 using Pia.Services.Interfaces;
 using Pia.Services.Search;
 using Pia.Services.Similarity;
@@ -16,18 +18,20 @@ public class MemoryService : IMemoryService
     private readonly ILogger<MemoryService> _logger;
     private readonly IEmbeddingService _embeddingService;
     private readonly SyncDeleteTrackerService _deleteTracker;
+    private readonly IVaultStore _vaultStore;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
     };
 
-    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker)
+    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker, IVaultStore vaultStore)
     {
         _context = context;
         _logger = logger;
         _embeddingService = embeddingService;
         _deleteTracker = deleteTracker;
+        _vaultStore = vaultStore;
     }
 
     public async Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData)
@@ -398,6 +402,204 @@ public class MemoryService : IMemoryService
             .ToList();
 
         return merged.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Whole-vault hybrid recall over the <c>Chunks</c> index (every <c>## Heading</c> section of every
+    /// vault file, regardless of folder). Mirrors the tier weights of <see cref="HybridSearchAsync"/>
+    /// (LIKE 0.6 / FTS 0.7 / fuzzy / vector 0.8) but scopes to chunks rather than the legacy Memories
+    /// table. Hits are merged per (FilePath, Slug) taking the max tier score, ranked descending, and the
+    /// snippet is the first ~200 chars of the section body read back from the vault.
+    /// </summary>
+    public async Task<IReadOnlyList<RecallHit>> RecallAsync(string query, int topK = 10)
+    {
+        // Keyed by (FilePath, Slug) so the same section matched by multiple tiers keeps its best score.
+        var scored = new Dictionary<(string FilePath, string Slug), (string Heading, float Score)>();
+
+        void Merge(string filePath, string heading, string slug, float score)
+        {
+            var key = (filePath, slug);
+            if (scored.TryGetValue(key, out var existing))
+            {
+                scored[key] = (existing.Heading, Math.Max(existing.Score, score));
+            }
+            else
+            {
+                scored[key] = (heading, score);
+            }
+        }
+
+        var connection = _context.GetConnection();
+
+        // Tier 1: LIKE 0.6 over headings.
+        using (var like = connection.CreateCommand())
+        {
+            like.CommandText =
+                "SELECT FilePath, Heading, Slug FROM Chunks WHERE Heading LIKE '%' || @q || '%';";
+            like.Parameters.AddWithValue("@q", query);
+            using var reader = await like.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                Merge(reader.GetString(0), reader.GetString(1), reader.GetString(2), 0.6f);
+            }
+        }
+
+        // Tier 2: FTS 0.7 over the contentless ChunksFts (rowid aligned to Chunks.rowid).
+        var ftsQuery = BuildFtsQuery(query);
+        if (!string.IsNullOrWhiteSpace(ftsQuery))
+        {
+            try
+            {
+                using var fts = connection.CreateCommand();
+                fts.CommandText = """
+                    SELECT c.FilePath, c.Heading, c.Slug
+                    FROM Chunks c
+                    JOIN (SELECT rowid FROM ChunksFts WHERE ChunksFts MATCH @q) f
+                      ON c.rowid = f.rowid;
+                    """;
+                fts.Parameters.AddWithValue("@q", ftsQuery);
+                using var reader = await fts.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    Merge(reader.GetString(0), reader.GetString(1), reader.GetString(2), 0.7f);
+                }
+            }
+            catch (SqliteException ex)
+            {
+                // A malformed MATCH query must degrade gracefully (the other tiers still run).
+                _logger.LogWarning(ex, "Vault FTS recall failed; falling back to other tiers");
+            }
+        }
+
+        // Tier 2.5: fuzzy Jaro-Winkler over chunk headings (same scoring shape as FuzzyLabelSearchAsync).
+        var allChunks = await GetAllChunkHeadingsAsync(connection);
+        var queryTokens = query.ToLowerInvariant()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => t.Length > 3)
+            .ToArray();
+        if (queryTokens.Length > 0)
+        {
+            foreach (var chunk in allChunks)
+            {
+                var headingTokens = chunk.Heading.ToLowerInvariant()
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                float bestScore = 0f;
+                foreach (var qt in queryTokens)
+                {
+                    foreach (var ht in headingTokens)
+                    {
+                        var jwScore = (float)JaroWinkler.Similarity(qt, ht);
+                        if (jwScore > bestScore) bestScore = jwScore;
+
+                        if (ht.Contains(qt) || qt.Contains(ht))
+                        {
+                            if (0.80f > bestScore) bestScore = 0.80f;
+                        }
+                    }
+                }
+
+                if (bestScore >= 0.75f)
+                {
+                    Merge(chunk.FilePath, chunk.Heading, chunk.Slug, 0.5f + (bestScore - 0.75f) * 0.6f);
+                }
+            }
+        }
+
+        // Tier 3: vector 0.8 — embed the query and cosine-compare against each chunk embedding.
+        var queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query);
+        foreach (var chunk in allChunks)
+        {
+            if (chunk.Embedding is null) continue;
+            var chunkVector = _embeddingService.BytesToFloats(chunk.Embedding);
+            if (chunkVector.Length != queryEmbedding.Length) continue;
+            var similarity = VectorSearchHelper.CosineSimilarity(queryEmbedding, chunkVector);
+            if (similarity >= 0.2f)
+            {
+                Merge(chunk.FilePath, chunk.Heading, chunk.Slug, 0.8f);
+            }
+        }
+
+        // Rank by score descending; build snippets lazily, skipping any section that has since vanished.
+        var ranked = scored
+            .Select(kv => (kv.Key.FilePath, kv.Key.Slug, kv.Value.Heading, kv.Value.Score))
+            .OrderByDescending(x => x.Score)
+            .ToList();
+
+        var hits = new List<RecallHit>();
+        foreach (var (filePath, slug, heading, score) in ranked)
+        {
+            var snippet = await BuildSnippetAsync(filePath, slug);
+            if (snippet is null)
+            {
+                // File or section is gone (index lagging the vault); skip rather than emit an empty hit.
+                continue;
+            }
+
+            hits.Add(new RecallHit(filePath, heading, snippet, score));
+            if (hits.Count >= topK) break;
+        }
+
+        return hits.AsReadOnly();
+    }
+
+    private static async Task<IReadOnlyList<(string FilePath, string Heading, string Slug, byte[]? Embedding)>>
+        GetAllChunkHeadingsAsync(SqliteConnection connection)
+    {
+        var chunks = new List<(string, string, string, byte[]?)>();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT FilePath, Heading, Slug, Embedding FROM Chunks;";
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var embedding = reader.IsDBNull(3) ? null : (byte[])reader[3];
+            chunks.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), embedding));
+        }
+
+        return chunks;
+    }
+
+    private async Task<string?> BuildSnippetAsync(string filePath, string slug)
+    {
+        var doc = await _vaultStore.ReadAsync(filePath);
+        if (doc is null) return null;
+
+        VaultSection? section = null;
+        foreach (var candidate in doc.Sections)
+        {
+            if (candidate.Slug == slug)
+            {
+                section = candidate;
+                break;
+            }
+        }
+
+        if (section is null) return null;
+
+        var body = section.Body.Trim();
+        if (body.Length == 0) return null;
+
+        return body.Length > 200 ? body[..200] : body;
+    }
+
+    /// <summary>
+    /// Build a sanitized FTS5 MATCH query: each token is double-quoted (so special characters are
+    /// treated as literal terms) and OR-joined, mirroring <see cref="FullTextSearchAsync"/>.
+    /// </summary>
+    private static string BuildFtsQuery(string query)
+    {
+        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var ftsTerms = new List<string>();
+        foreach (var term in terms)
+        {
+            var escaped = EscapeFtsQuery(term);
+            if (escaped.Length == 0) continue;
+            ftsTerms.Add($"\"{escaped}\"");
+            if (escaped.Length >= 3)
+                ftsTerms.Add($"{escaped}*");
+        }
+
+        return string.Join(" OR ", ftsTerms);
     }
 
     public async Task UpdateEmbeddingAsync(Guid id, byte[] embedding)
