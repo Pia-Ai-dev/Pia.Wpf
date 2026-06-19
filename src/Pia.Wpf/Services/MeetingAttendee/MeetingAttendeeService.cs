@@ -207,11 +207,19 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        // Atomic check-and-set: capture the guard and the Stopping transition under the SAME lock so
+        // two concurrent callers (the background end-watch loop, the user clicking Stop, and dispose)
+        // cannot both pass the guard before either sets Stopping. Only the winner proceeds into
+        // DisposeAllAsync, so each owned resource — including the per-process WASAPI RCWs whose
+        // Marshal.ReleaseComObject would over-release on a double dispose — is torn down exactly once.
+        EventHandler<MeetingAttendeeState>? handler;
         lock (_stateLock)
         {
             if (_state is MeetingAttendeeState.Idle or MeetingAttendeeState.Stopping) return;
+            _state = MeetingAttendeeState.Stopping;
+            handler = StateChanged;
         }
-        TransitionState(MeetingAttendeeState.Stopping);
+        handler?.Invoke(this, MeetingAttendeeState.Stopping);
 
         try
         {

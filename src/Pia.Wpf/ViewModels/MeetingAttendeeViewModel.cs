@@ -23,6 +23,13 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 {
     private readonly IMeetingAttendeeService _service;
 
+    /// <summary>
+    /// Stop command. Constructed manually (not via <c>[RelayCommand]</c>) so <see cref="StopAsync"/>
+    /// can stay public for <see cref="AssistantViewModel"/> to invoke directly, matching
+    /// <see cref="LiveTranscriptionViewModel"/>.
+    /// </summary>
+    public IRelayCommand StopCommand { get; }
+
     /// <summary>The Teams meeting URL the user pastes. Gates <see cref="StartCommand"/>.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
@@ -54,6 +61,10 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     {
         _service = service;
         CounterpartName = _localizationService["MeetingAttendee_Speaker_Placeholder"];
+
+        // Construct StopCommand BEFORE subscribing: OnServiceStateChanged → OnRunningChanged calls
+        // StopCommand.NotifyCanExecuteChanged(), so a state change raised during wiring must not NRE.
+        StopCommand = new AsyncRelayCommand(StopAsync);
 
         _service.StateChanged += OnServiceStateChanged;
 
@@ -107,7 +118,6 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
     // ---- Stop -------------------------------------------------------------------------------------
 
-    [RelayCommand]
     public async Task StopAsync()
     {
         DispatchToUi(() => StatusText = _localizationService["MeetingAttendee_Status_Stopping"]);
@@ -166,7 +176,21 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
     public override void Dispose()
     {
+        // Unsubscribe BEFORE stopping: the backing MeetingAttendeeService is a singleton, so the only
+        // teardown of its active meeting (off-screen Chromium + WASAPI capture + end-watch loop) on the
+        // app-shutdown path (CloseAndDisposeAll → scope dispose → AssistantViewModel.Dispose →
+        // MeetingAttendee.Dispose) is here. With the handler detached, nothing in StopAsync's teardown
+        // can DispatchToUi back onto the thread we block below, so the sync-over-async is safe (StopAsync
+        // uses ConfigureAwait(false) throughout). A meeting left running would otherwise orphan an
+        // invisible chrome.exe tree that survives process exit.
         _service.StateChanged -= OnServiceStateChanged;
+
+        if (_service.State is not (MeetingAttendeeState.Idle or MeetingAttendeeState.Error))
+        {
+            try { _service.StopAsync().GetAwaiter().GetResult(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to stop meeting attendee service on dispose"); }
+        }
+
         base.Dispose();
     }
 }
