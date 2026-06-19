@@ -83,6 +83,11 @@ public class AppSettings
     public string? LastCounterpartName { get; set; }
     public string? MeetingTranscriptFolder { get; set; }
 
+    // Meeting-attendee audio source. Default (false) = endpoint WASAPI loopback (captures the whole
+    // render-device mix, audible). True = per-process WASAPI loopback isolated to the browser's PID
+    // (inaudible) — requires Windows 10 build 20348+ and is currently UNVERIFIED in production.
+    public bool MeetingAttendeeUseProcessLoopback { get; set; } = false;
+
     // Auto-update
     public bool AutoUpdateEnabled { get; set; } = true;
 
