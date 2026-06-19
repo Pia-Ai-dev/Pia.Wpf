@@ -99,4 +99,32 @@ public sealed class TeamsMeetingUrlTests
         Assert.Equal("true", query["directDl"]);
         Assert.Equal("true", query["suppressPrompt"]);
     }
+
+    // ---- IsLikelyTeamsUrl -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("https://teams.microsoft.com/l/meetup-join/abc")]
+    [InlineData("https://teams.live.com/meet/123")]
+    [InlineData("https://emea.teams.microsoft.com/l/meetup-join/abc")] // sub-domain
+    [InlineData("HTTPS://Teams.Microsoft.Com/l/meetup-join/abc")]      // case-insensitive
+    [InlineData("  https://teams.microsoft.com/l/meetup-join/abc  ")]  // trimmed
+    public void IsLikelyTeamsUrl_True_ForTeamsLinks(string url)
+    {
+        Assert.True(TeamsMeetingUrl.IsLikelyTeamsUrl(url));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not-a-url")]
+    [InlineData("ftp://teams.microsoft.com/x")]                         // wrong scheme
+    [InlineData("https://example.com/meeting")]                        // wrong host
+    [InlineData("https://evil.com/?x=teams.microsoft.com")]            // host only in query, not authority
+    [InlineData("https://teams.microsoft.com.evil.com/x")]             // suffix-spoof
+    [InlineData("https://notteams.microsoft.com/x")]                   // not a real sub-domain boundary
+    public void IsLikelyTeamsUrl_False_ForNonTeamsLinks(string? url)
+    {
+        Assert.False(TeamsMeetingUrl.IsLikelyTeamsUrl(url));
+    }
 }

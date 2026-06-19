@@ -126,7 +126,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isLiveTranscriptionVisible;
 
+    [ObservableProperty]
+    private bool _isMeetingAttendeeVisible;
+
     public LiveTranscriptionViewModel LiveTranscription { get; }
+
+    public MeetingAttendeeViewModel MeetingAttendee { get; }
 
     [ObservableProperty]
     private string _suggestionReminder = string.Empty;
@@ -173,6 +178,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand<string> UseSuggestionCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
     public IAsyncRelayCommand ToggleLiveTranscriptionCommand { get; }
+    public IAsyncRelayCommand ToggleMeetingAttendeeCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -190,7 +196,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ILocalizationService localizationService,
         ITokenMapService tokenMapService,
         IAutocompleteService autocompleteService,
-        LiveTranscriptionViewModel liveTranscription)
+        LiveTranscriptionViewModel liveTranscription,
+        MeetingAttendeeViewModel meetingAttendee)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -208,6 +215,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _tokenMapService = tokenMapService;
         _autocompleteService = autocompleteService;
         LiveTranscription = liveTranscription;
+        MeetingAttendee = meetingAttendee;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -220,9 +228,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
         ToggleLiveTranscriptionCommand = new AsyncRelayCommand(ExecuteToggleLiveTranscription);
+        ToggleMeetingAttendeeCommand = new AsyncRelayCommand(ExecuteToggleMeetingAttendee);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         LiveTranscription.CloseRequested += OnLiveTranscriptionCloseRequested;
+        MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
         PropertyChanged += OnPropertyChanged;
     }
 
@@ -258,6 +268,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         // Fire-and-forget: stop the session and hide the overlay.
         _ = ExecuteToggleLiveTranscription();
+    }
+
+    private async Task ExecuteToggleMeetingAttendee()
+    {
+        // Unlike live transcription, the attendee cannot auto-start on reveal: it needs a meeting URL
+        // and consent first, collected by the overlay's own Join command. So the toggle only shows or
+        // hides the overlay; hiding it also stops any in-progress session.
+        if (IsMeetingAttendeeVisible)
+        {
+            await MeetingAttendee.StopCommand.ExecuteAsync(null);
+            IsMeetingAttendeeVisible = false;
+            return;
+        }
+
+        IsMeetingAttendeeVisible = true;
+    }
+
+    private void OnMeetingAttendeeCloseRequested(object? sender, EventArgs e)
+    {
+        // Fire-and-forget: stop the session and hide the overlay.
+        _ = ExecuteToggleMeetingAttendee();
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -1022,6 +1053,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         LiveTranscription.CloseRequested -= OnLiveTranscriptionCloseRequested;
+        MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;
         PropertyChanged -= OnPropertyChanged;
         _streamingCts?.Cancel();
         _streamingCts?.Dispose();

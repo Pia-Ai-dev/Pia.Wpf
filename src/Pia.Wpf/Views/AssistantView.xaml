@@ -412,6 +412,25 @@
             <ui:SymbolIcon Symbol="Headset24" FontSize="16" />
           </ui:Button>
 
+          <!-- Join meeting (attendee) toggle -->
+          <ui:Button Command="{Binding ToggleMeetingAttendeeCommand}"
+                     Width="40"
+                     Height="40"
+                     Margin="0,0,4,0"
+                     ToolTip="{loc:Str MeetingAttendee_ToggleButton_Tooltip}">
+            <ui:Button.Style>
+              <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Appearance" Value="Secondary" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsMeetingAttendeeVisible}" Value="True">
+                    <Setter Property="Appearance" Value="Primary" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:Button.Style>
+            <ui:SymbolIcon Symbol="PersonCall24" FontSize="16" />
+          </ui:Button>
+
           <!-- Send button -->
           <ui:Button Command="{Binding SendMessageCommand}"
                      Width="40"
@@ -523,5 +542,13 @@
                                     Visibility="{Binding DataContext.IsLiveTranscriptionVisible,
                                       RelativeSource={RelativeSource AncestorType=UserControl},
                                       Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+    <!-- Meeting Attendee Overlay -->
+    <local:MeetingAttendeeOverlay Grid.Row="0" Grid.RowSpan="2"
+                                  DataContext="{Binding MeetingAttendee}"
+                                  Panel.ZIndex="12"
+                                  Visibility="{Binding DataContext.IsMeetingAttendeeVisible,
+                                    RelativeSource={RelativeSource AncestorType=UserControl},
+                                    Converter={StaticResource BooleanToVisibilityConverter}}" />
   </Grid>
 </UserControl>

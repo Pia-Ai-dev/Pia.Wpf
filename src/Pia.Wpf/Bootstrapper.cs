@@ -225,6 +225,13 @@ public static class Bootstrapper
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
         services.AddSingleton<ITranscriptionService, TranscriptionService>();
         services.AddSingleton<ILiveMeetingService, Services.LiveTranscription.LiveMeetingService>();
+        // Meeting attendee (automated browser join + STT). The orchestrator constructs its own
+        // IMeetingSession (TeamsMeetingSession) at runtime with the provisioned Chromium path, so
+        // IMeetingSession is intentionally NOT container-registered (it has no parameterless seam) —
+        // see openQuestions. IBrowserProvisioner + IMeetingAttendeeService are singletons like the
+        // live-transcription orchestrator above.
+        services.AddSingleton<Services.MeetingAttendee.IBrowserProvisioner, Services.MeetingAttendee.ChromiumProvisioner>();
+        services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<INotificationService, NotificationService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
@@ -281,6 +288,7 @@ public static class Bootstrapper
         services.AddScoped<HistoryViewModel>();
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<LiveTranscriptionViewModel>();
+        services.AddScoped<MeetingAttendeeViewModel>();
         services.AddScoped<ResearchViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();

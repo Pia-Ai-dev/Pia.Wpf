@@ -16,12 +16,14 @@ public class DependencyInjectionTests
         // AssistantViewModel is flagged transitively because it creates VoiceModeViewModel.
         // LiveTranscriptionViewModel marshals background-thread utterances to the UI via the
         // application Dispatcher — same convention as OutputService/ThemeService.
+        // MeetingAttendeeViewModel follows the same Dispatcher convention as LiveTranscriptionViewModel.
         var result = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .And().DoNotResideInNamespace(ViewModelModelsNamespace)
             .And().DoNotHaveNameMatching("VoiceModeViewModel")
             .And().DoNotHaveNameMatching("AssistantViewModel")
             .And().DoNotHaveNameMatching("LiveTranscriptionViewModel")
+            .And().DoNotHaveNameMatching("MeetingAttendeeViewModel")
             .ShouldNot().HaveDependencyOn("System.Windows")
             .GetResult();
 

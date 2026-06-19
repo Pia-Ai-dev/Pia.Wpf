@@ -11,6 +11,31 @@ namespace Pia.Services.MeetingAttendee;
 /// </summary>
 public static class TeamsMeetingUrl
 {
+    // Hosts we accept as a Teams meeting link. Matched as exact host or sub-domain suffix (never as a
+    // substring) so a hostile URL like "https://evil.com/?x=teams.microsoft.com" is rejected.
+    private static readonly string[] TeamsHosts = ["teams.microsoft.com", "teams.live.com"];
+
+    /// <summary>
+    /// Lightweight, network-free validation that <paramref name="url"/> looks like a Teams meeting
+    /// link: an absolute http/https URL whose host is (or is a sub-domain of) a known Teams host.
+    /// Used by the ViewModel to gate the Join command — it intentionally does not verify the meeting
+    /// exists (that only happens once the browser actually joins).
+    /// </summary>
+    public static bool IsLikelyTeamsUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
+
+        var host = uri.Host;
+        foreach (var teamsHost in TeamsHosts)
+        {
+            if (string.Equals(host, teamsHost, StringComparison.OrdinalIgnoreCase)) return true;
+            if (host.EndsWith("." + teamsHost, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Rewrites the resolved Teams launcher URL so the browser goes straight to the web-join flow
     /// instead of popping the native "open in Teams app?" dialog (which Playwright cannot dismiss
