@@ -27,6 +27,20 @@ public class NamingConventionTests
     {
         var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Buffer", "Engine" };
 
+        // Domain-named service/helper classes that legitimately do not carry one of the suffixes above.
+        // ChromiumProvisioner / TeamsMeetingSession / AudioHopResampler are agent-noun / stateful helpers
+        // named by domain convention rather than the generic suffix list; ChromiumDownloadProgress is a
+        // progress-DTO record mirroring ModelDownloadProgress (which lives under Services.Interfaces and
+        // is therefore already excluded). Keep this list narrow — do not exclude whole namespaces, so
+        // future non-conforming service classes are still caught.
+        var exemptNames = new HashSet<string>
+        {
+            "ChromiumProvisioner",
+            "TeamsMeetingSession",
+            "AudioHopResampler",
+            "ChromiumDownloadProgress",
+        };
+
         var serviceTypes = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ServicesNamespace)
             .And().DoNotResideInNamespace(ServiceInterfacesNamespace)
@@ -36,7 +50,12 @@ public class NamingConventionTests
             .GetTypes();
 
         var violations = serviceTypes
+            // The convention is about service *classes*: enums and Win32 interop structs (value types,
+            // e.g. AUDIOCLIENT_ACTIVATION_PARAMS / WAVEFORMATEX, which must mirror the native API names)
+            // are not services and are excluded.
+            .Where(t => !t.IsValueType)
             .Where(t => !t.IsNestedPrivate && !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
+            .Where(t => !exemptNames.Contains(t.Name))
             .Where(t => !allowedSuffixes.Any(suffix => t.Name.EndsWith(suffix)))
             .Select(t => t.Name)
             .ToList();
