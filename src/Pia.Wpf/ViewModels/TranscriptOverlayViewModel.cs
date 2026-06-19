@@ -1,0 +1,293 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.IO;
+using System.Text;
+using System.Threading.Channels;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
+using Pia.Converters;
+using Pia.Models;
+using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
+
+namespace Pia.ViewModels;
+
+/// <summary>
+/// Shared base for the transcript overlays (<see cref="LiveTranscriptionViewModel"/> and
+/// <see cref="MeetingAttendeeViewModel"/>). Hoists the behaviour the two overlays share verbatim:
+/// the rolling <see cref="TranscriptBubble"/> collection and its merge/trim rules, the background
+/// utterance consumer over <see cref="UtteranceReader"/>, the Markdown export + save flow, and the
+/// dispatcher marshalling. The divergent pieces — the backing service, its state→status mapping, and
+/// the start/stop command wiring (different state enums and gating) — stay in the derived classes.
+///
+/// <para>The few save/export strings that differ between overlays are exposed as abstract hooks
+/// (<see cref="TitleKey"/>, <see cref="SaveDialogTitleKey"/>, <see cref="SaveDialogFilterKey"/>,
+/// <see cref="SaveFileNamePrefix"/>) so <see cref="BuildMarkdown"/> and <see cref="SaveTranscriptAsync"/>
+/// can live here unchanged.</para>
+/// </summary>
+public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDisposable
+{
+    private const int MaxBubbles = 200;
+    private const int TrimBatch = 20;
+    private const int BubbleWindowSeconds = 25;
+
+    protected readonly ISettingsService _settingsService;
+    protected readonly ILocalizationService _localizationService;
+    protected readonly IFileDialogService _fileDialogService;
+    protected readonly ILogger _logger;
+
+    private CancellationTokenSource? _readerCts;
+    private Task? _readerTask;
+
+    protected DateTimeOffset _sessionStart;
+
+    [ObservableProperty]
+    private string _counterpartName = string.Empty;
+
+    [ObservableProperty]
+    private bool _isRunning;
+
+    [ObservableProperty]
+    private string _statusText = string.Empty;
+
+    public ObservableCollection<TranscriptBubble> Bubbles { get; } = [];
+
+    public IRelayCommand CloseCommand { get; }
+    public IRelayCommand SaveTranscriptCommand { get; }
+
+    public event EventHandler? CloseRequested;
+
+    protected TranscriptOverlayViewModel(
+        ISettingsService settingsService,
+        ILocalizationService localizationService,
+        IFileDialogService fileDialogService,
+        ILogger logger)
+    {
+        _settingsService = settingsService;
+        _localizationService = localizationService;
+        _fileDialogService = fileDialogService;
+        _logger = logger;
+
+        CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
+        SaveTranscriptCommand = new AsyncRelayCommand(SaveTranscriptAsync, CanSaveTranscript);
+
+        Bubbles.CollectionChanged += OnBubblesCollectionChanged;
+    }
+
+    /// <summary>The backing service's merged utterance stream that the consumer loop reads.</summary>
+    protected abstract ChannelReader<TranscriptUtterance> UtteranceReader { get; }
+
+    /// <summary>Localization key for the transcript Markdown title.</summary>
+    protected abstract string TitleKey { get; }
+
+    /// <summary>Localization key for the save dialog title.</summary>
+    protected abstract string SaveDialogTitleKey { get; }
+
+    /// <summary>Localization key for the save dialog filter.</summary>
+    protected abstract string SaveDialogFilterKey { get; }
+
+    /// <summary>Default export file name prefix (e.g. <c>transcript</c> or <c>meeting</c>).</summary>
+    protected abstract string SaveFileNamePrefix { get; }
+
+    // ---- Reader plumbing -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Launches the background utterance consumer. Callers start this once the backing service is
+    /// (about to be) producing so no utterance is missed.
+    /// </summary>
+    protected void StartReader()
+    {
+        _readerCts = new CancellationTokenSource();
+        _readerTask = Task.Run(() => ConsumeUtterancesAsync(_readerCts.Token), CancellationToken.None);
+    }
+
+    /// <summary>Cancels and awaits the background consumer, then disposes its CTS.</summary>
+    protected async Task StopReaderAsync()
+    {
+        try { _readerCts?.Cancel(); }
+        catch { /* ignore */ }
+        try { if (_readerTask is not null) await _readerTask.ConfigureAwait(false); }
+        catch { /* ignore */ }
+        _readerCts?.Dispose();
+        _readerCts = null;
+        _readerTask = null;
+    }
+
+    private async Task ConsumeUtterancesAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Transcript consumer started");
+        try
+        {
+            await foreach (var utt in UtteranceReader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                _logger.LogDebug(
+                    "Consumer received utterance from {Speaker} (len={Len})",
+                    utt.Speaker, utt.Text?.Length ?? 0);
+                AddUtterance(utt);
+            }
+        }
+        catch (OperationCanceledException) { /* expected */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Transcript utterance consumer failed");
+        }
+        finally
+        {
+            _logger.LogInformation("Transcript consumer stopped");
+        }
+    }
+
+    // ---- Bubble mapping --------------------------------------------------------------------------
+
+    internal void AddUtterance(TranscriptUtterance utterance)
+    {
+        DispatchToUi(() =>
+        {
+            try
+            {
+                var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, createIfMissing: true);
+                bubble!.Append(utterance.Text, utterance.Timestamp);
+                TrimIfNeeded();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to add utterance to UI collection");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Reuses the most recently appended bubble when it's the same speaker and still inside
+    /// the rolling window. Otherwise creates a fresh bubble (when <paramref name="createIfMissing"/>
+    /// is true) and appends it to <see cref="Bubbles"/>. Using the *last* bubble — instead of
+    /// per-speaker tracking — keeps the conversation in chronological order: an interleaved
+    /// "Them" turn always splits the prior "You" stream into two visual bubbles.
+    /// </summary>
+    internal TranscriptBubble? GetOrCreateBubble(TranscriptSpeaker speaker, DateTimeOffset timestamp, bool createIfMissing)
+    {
+        var last = Bubbles.Count > 0 ? Bubbles[^1] : null;
+        if (last is not null
+            && last.Speaker == speaker
+            && (timestamp - last.StartTimestamp).TotalSeconds < BubbleWindowSeconds)
+        {
+            return last;
+        }
+
+        if (!createIfMissing) return null;
+
+        var bubble = new TranscriptBubble(speaker, timestamp);
+        Bubbles.Add(bubble);
+        return bubble;
+    }
+
+    private void TrimIfNeeded()
+    {
+        if (Bubbles.Count <= MaxBubbles) return;
+        for (int i = 0; i < TrimBatch && Bubbles.Count > MaxBubbles - TrimBatch; i++)
+            Bubbles.RemoveAt(0);
+    }
+
+    // ---- IsRunning → command refresh -------------------------------------------------------------
+
+    partial void OnIsRunningChanged(bool value)
+    {
+        SaveTranscriptCommand.NotifyCanExecuteChanged();
+        OnRunningChanged();
+    }
+
+    /// <summary>
+    /// Hook for derived classes to refresh their own start/stop commands when <see cref="IsRunning"/>
+    /// flips. The source-generated start/stop commands live in the derived class, so the base cannot
+    /// name them. The base already refreshes <see cref="SaveTranscriptCommand"/>.
+    /// </summary>
+    protected virtual void OnRunningChanged() { }
+
+    private void OnBubblesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => SaveTranscriptCommand.NotifyCanExecuteChanged();
+
+    // ---- Save (shared transcript export flow) ----------------------------------------------------
+
+    private bool CanSaveTranscript() => !IsRunning && Bubbles.Count > 0;
+
+    private async Task SaveTranscriptAsync()
+    {
+        if (!CanSaveTranscript()) return;
+
+        string folder;
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+            folder = MeetingTranscriptPaths.ResolveFolder(settings);
+            try { Directory.CreateDirectory(folder); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to ensure transcript folder {Folder}", folder); }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve meeting transcript folder");
+            folder = MeetingTranscriptPaths.DefaultMeetingFolder;
+        }
+
+        var defaultName = $"{SaveFileNamePrefix}-{_sessionStart.LocalDateTime:yyyyMMdd-HHmmss}.md";
+        var path = _fileDialogService.PromptSaveFile(
+            title: _localizationService[SaveDialogTitleKey],
+            filter: _localizationService[SaveDialogFilterKey],
+            defaultFileName: defaultName,
+            initialDirectory: folder);
+        if (string.IsNullOrEmpty(path)) return;
+
+        try
+        {
+            var markdown = BuildMarkdown();
+            await File.WriteAllTextAsync(path, markdown, Encoding.UTF8).ConfigureAwait(false);
+            _logger.LogInformation("Saved transcript to {Path}", path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save transcript to {Path}", path);
+        }
+    }
+
+    internal string BuildMarkdown()
+    {
+        var sb = new StringBuilder();
+        sb.Append("# ").Append(_localizationService[TitleKey])
+          .Append(" — ").Append(_sessionStart.LocalDateTime.ToString("yyyy-MM-dd HH:mm")).AppendLine();
+        sb.AppendLine();
+        foreach (var bubble in Bubbles)
+        {
+            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, CounterpartName);
+            sb.Append("**").Append(label).Append("** _")
+              .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss"));
+            if (bubble.EndTimestamp != bubble.StartTimestamp)
+                sb.Append('–').Append(bubble.EndTimestamp.LocalDateTime.ToString("HH:mm:ss"));
+            sb.Append('_').AppendLine().AppendLine();
+            sb.AppendLine(bubble.Text);
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
+
+    protected void DispatchToUi(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        try
+        {
+            if (dispatcher is null || dispatcher.CheckAccess()) action();
+            else dispatcher.BeginInvoke(action);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Dispatcher invoke failed");
+        }
+    }
+
+    public virtual void Dispose()
+    {
+        Bubbles.CollectionChanged -= OnBubblesCollectionChanged;
+        try { _readerCts?.Cancel(); }
+        catch { /* ignore */ }
+        _readerCts?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+}

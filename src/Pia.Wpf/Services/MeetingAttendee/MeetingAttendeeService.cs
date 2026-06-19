@@ -137,7 +137,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             ?? ((session, usePerProcess) => CreateDefaultAudioSource(session, usePerProcess, loggerFactory));
         _engineServiceFactory = engineServiceFactory;
 
-        _utterances = CreateUtterancesChannel();
+        _utterances = UtteranceChannel.CreateBounded();
     }
 
     public async Task StartAsync(string meetingUrl, CancellationToken cancellationToken = default)
@@ -373,14 +373,6 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         }
         handler?.Invoke(this, newState);
     }
-
-    private static Channel<TranscriptUtterance> CreateUtterancesChannel()
-        => Channel.CreateBounded<TranscriptUtterance>(new BoundedChannelOptions(256)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-            SingleWriter = false,
-        });
 
     public async ValueTask DisposeAsync()
     {

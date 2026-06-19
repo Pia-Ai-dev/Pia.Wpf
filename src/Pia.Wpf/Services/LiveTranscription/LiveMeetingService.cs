@@ -42,7 +42,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         _httpClientFactory = httpClientFactory;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<LiveMeetingService>();
-        _utterances = CreateUtterancesChannel();
+        _utterances = UtteranceChannel.CreateBounded();
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -189,14 +189,6 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         }
         handler?.Invoke(this, newState);
     }
-
-    private static Channel<TranscriptUtterance> CreateUtterancesChannel()
-        => Channel.CreateBounded<TranscriptUtterance>(new BoundedChannelOptions(256)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-            SingleWriter = false,
-        });
 
     public async ValueTask DisposeAsync()
     {
