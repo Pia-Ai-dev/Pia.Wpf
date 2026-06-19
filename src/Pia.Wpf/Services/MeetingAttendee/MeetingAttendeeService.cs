@@ -53,6 +53,12 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     private readonly Channel<TranscriptUtterance> _utterances;
     private readonly object _stateLock = new();
+    // Serializes DisposeAllAsync only (NOT the whole start/stop body — gating the 120s join would just
+    // move the hang to StopAsync). With teardown single-threaded, the read-then-null of each owned field
+    // is atomic between the two callers (StopAsync and StartAsync's catch), so a resource — including the
+    // per-process WASAPI RCWs whose Marshal.ReleaseComObject over-releases on a double dispose — is torn
+    // down exactly once even when Stop races an in-flight Start.
+    private readonly SemaphoreSlim _disposeGate = new(1, 1);
     private MeetingAttendeeState _state = MeetingAttendeeState.Idle;
 
     private IMeetingSession? _session;
@@ -64,6 +70,11 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     // StopAsync can cancel WaitForEndAsync without awaiting (and thus deadlocking) the loop itself.
     private Task? _watchLoop;
     private CancellationTokenSource? _watchCts;
+
+    // Cancels the active StartAsync. Linked to the caller's token so Stop can abort the join even when
+    // the caller passed CancellationToken.None (the VM and tests do). Without this, the long-lived join
+    // (WaitForAdmissionAsync polls up to 120s) would race a concurrent Stop/teardown.
+    private CancellationTokenSource? _startCts;
 
     public MeetingAttendeeState State
     {
@@ -150,6 +161,13 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 throw new InvalidOperationException($"Cannot start while {_state}");
         }
 
+        // Only after the guard passed (a rejected second start must not touch the first start's CTS):
+        // dispose any CTS left over from a prior cycle and link a fresh one to the caller's token, so
+        // StopAsync can abort this start even when the caller passed CancellationToken.None.
+        _startCts?.Dispose();
+        _startCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var startToken = _startCts.Token;
+
         TransitionState(MeetingAttendeeState.ProvisioningBrowser);
 
         try
@@ -158,10 +176,11 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             var displayName = BuildDisplayName(settings.SyncUserDisplayName);
 
             // 1) Browser on disk (idempotent; skips fast when cached).
-            var chromiumPath = await _provisionChromium(null, cancellationToken).ConfigureAwait(false);
+            var chromiumPath = await _provisionChromium(null, startToken).ConfigureAwait(false);
 
             // 2) Models — Silero VAD + the sherpa engine — before we join, mirroring LiveMeetingService.
-            var (sileroPath, engine) = await _createTranscription(cancellationToken).ConfigureAwait(false);
+            var (sileroPath, engine) = await _createTranscription(startToken).ConfigureAwait(false);
+            startToken.ThrowIfCancellationRequested();
             _transcriptionEngine = engine;
 
             // 3) Join. Subscribe to the lobby signal BEFORE joining so InLobby is observable even if it
@@ -171,19 +190,24 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             session.EnteredLobby += OnEnteredLobby;
 
             TransitionState(MeetingAttendeeState.Joining);
-            await session.JoinAsync(meetingUrl, displayName, cancellationToken).ConfigureAwait(false);
+            await session.JoinAsync(meetingUrl, displayName, startToken).ConfigureAwait(false);
 
-            cancellationToken.ThrowIfCancellationRequested();
+            // Re-check after the long-lived join (WaitForAdmissionAsync polls up to 120s): if Stop ran
+            // while we were joining it cancelled startToken and already owns teardown — bail before we
+            // hand the now-disposed source/engine onward or clobber the Idle state Stop set.
+            startToken.ThrowIfCancellationRequested();
 
             // 4) Audio source + transcription engine. Default = endpoint loopback; per-process only when
             //    the AppSettings flag is set AND the browser PID is known.
             var source = ResolveAudioSource(session, settings);
             _audioSource = source;
-            await source.StartAsync(cancellationToken).ConfigureAwait(false);
+            await source.StartAsync(startToken).ConfigureAwait(false);
 
-            _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, cancellationToken)
+            startToken.ThrowIfCancellationRequested();
+            _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, startToken)
                 .ConfigureAwait(false);
 
+            startToken.ThrowIfCancellationRequested();
             TransitionState(MeetingAttendeeState.Attending);
             _logger.LogInformation("Meeting attendee is now attending");
 
@@ -195,6 +219,16 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             _watchCts?.Dispose();
             _watchCts = new CancellationTokenSource();
             _watchLoop = Task.Run(() => WatchForEndAsync(session, _watchCts.Token));
+        }
+        catch (OperationCanceledException) when (startToken.IsCancellationRequested)
+        {
+            // StopAsync (or the caller's token) cancelled this start. Stop already owns teardown and the
+            // Idle transition, so we must NOT run a competing DisposeAllAsync race or clobber Stop's state
+            // with Error. DisposeAllAsync is idempotent under _disposeGate, so we still call it to clean up
+            // any resource Stop had not yet observed, but we leave the state to whoever is stopping.
+            _logger.LogInformation("Meeting attendee start was cancelled");
+            await DisposeAllAsync().ConfigureAwait(false);
+            throw;
         }
         catch (Exception ex)
         {
@@ -223,6 +257,12 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
         try
         {
+            // Cancel an in-flight StartAsync FIRST so its long-lived join (WaitForAdmissionAsync polls up
+            // to 120s) aborts promptly and Start's cancellation-aware catch yields teardown ownership to
+            // us instead of racing its own DisposeAllAsync / clobbering state. The linked CTS gives us a
+            // handle even when Start's caller passed CancellationToken.None.
+            _startCts?.Cancel();
+
             // Cancel the background watch loop so it does not re-enter StopAsync. We do NOT await it
             // here: the loop may itself be the caller, and awaiting would deadlock. DisposeAsync awaits.
             _watchCts?.Cancel();
@@ -290,33 +330,45 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     /// </summary>
     private async Task DisposeAllAsync()
     {
-        if (_engineService is not null)
+        // Single-thread teardown across its two callers (StopAsync and StartAsync's cancellation catch)
+        // so the read-then-null of each owned field is atomic and no resource is disposed twice — the
+        // race that would double-release the per-process WASAPI RCWs. The two callers are on separate,
+        // non-nested stacks, so this non-reentrant gate cannot self-deadlock.
+        await _disposeGate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            try { await _engineService.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Engine service dispose threw"); }
-            _engineService = null;
-        }
+            if (_engineService is not null)
+            {
+                try { await _engineService.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Engine service dispose threw"); }
+                _engineService = null;
+            }
 
-        if (_audioSource is not null)
-        {
-            try { await _audioSource.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Audio source dispose threw"); }
-            _audioSource = null;
-        }
+            if (_audioSource is not null)
+            {
+                try { await _audioSource.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Audio source dispose threw"); }
+                _audioSource = null;
+            }
 
-        if (_session is not null)
-        {
-            _session.EnteredLobby -= OnEnteredLobby;
-            try { await _session.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Meeting session dispose threw"); }
-            _session = null;
-        }
+            if (_session is not null)
+            {
+                _session.EnteredLobby -= OnEnteredLobby;
+                try { await _session.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Meeting session dispose threw"); }
+                _session = null;
+            }
 
-        if (_transcriptionEngine is not null)
+            if (_transcriptionEngine is not null)
+            {
+                try { await _transcriptionEngine.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Transcription engine dispose threw"); }
+                _transcriptionEngine = null;
+            }
+        }
+        finally
         {
-            try { await _transcriptionEngine.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Transcription engine dispose threw"); }
-            _transcriptionEngine = null;
+            _disposeGate.Release();
         }
     }
 
@@ -398,6 +450,12 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         _watchCts?.Dispose();
         _watchCts = null;
         _watchLoop = null;
+
+        // Dispose the start CTS here (not in StopAsync, where a still-running StartAsync may read its
+        // token) and the teardown gate now that no further DisposeAllAsync can run.
+        _startCts?.Dispose();
+        _startCts = null;
+        _disposeGate.Dispose();
 
         _utterances.Writer.TryComplete();
     }
