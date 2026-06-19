@@ -87,7 +87,10 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         });
 
         // Launch the utterance consumer before starting the service so no utterance is missed.
-        StartReader();
+        // StartReaderAsync first tears down any reader left parked by a prior session (e.g. the
+        // service auto-stopped on natural meeting end, which completes the service but not the
+        // channel) so a restart never stacks two readers on the SingleReader channel.
+        await StartReaderAsync().ConfigureAwait(false);
 
         try
         {
@@ -105,7 +108,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     // ---- Stop -------------------------------------------------------------------------------------
 
     [RelayCommand]
-    private async Task StopAsync()
+    public async Task StopAsync()
     {
         DispatchToUi(() => StatusText = _localizationService["MeetingAttendee_Status_Stopping"]);
 

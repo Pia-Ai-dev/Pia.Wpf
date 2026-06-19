@@ -27,6 +27,14 @@ namespace Pia.Services.MeetingAttendee;
 /// </summary>
 public sealed class TeamsMeetingSession : IMeetingSession
 {
+    /// <summary>
+    /// Name of the dedicated <see cref="HttpClient"/> used to resolve the Teams meeting-URL redirect.
+    /// The meeting URL is sensitive (it embeds the meeting context / launch params and effectively
+    /// grants join access), so this client's pipeline has <c>HttpLoggingHandler</c> removed (see
+    /// <c>Bootstrapper.ConfigureServices</c>) to keep the URL out of the support-attachable logs.
+    /// </summary>
+    public const string MeetingRedirectHttpClientName = "meeting-redirect";
+
     // ---- Centralized selectors / page text (ported from join-procedure.ts) ------------------
     private const string ContinueOnWebSelector = "button[data-tid=\"joinOnWeb\"]";
     private const string NameInputSelector = "input[placeholder=\"Type your name\"]";
@@ -205,7 +213,9 @@ public sealed class TeamsMeetingSession : IMeetingSession
         string resolved;
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            // Use the dedicated client whose pipeline has HttpLoggingHandler removed: the meeting URL
+            // is sensitive (it grants join access) and must never reach the support-attachable logs.
+            var client = _httpClientFactory.CreateClient(MeetingRedirectHttpClientName);
             using var response = await client
                 .GetAsync(meetingUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);

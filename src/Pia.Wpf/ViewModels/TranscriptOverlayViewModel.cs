@@ -95,9 +95,17 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     /// <summary>
     /// Launches the background utterance consumer. Callers start this once the backing service is
     /// (about to be) producing so no utterance is missed.
+    ///
+    /// <para>Idempotent by design: it first tears down any existing reader (cancelling its CTS and
+    /// awaiting the loop) before starting a new one. The backing channel is created with
+    /// <c>SingleReader=true</c>, so two concurrent <c>ConsumeUtterancesAsync</c> loops would be a
+    /// contract violation. A reader can be left parked if a session ends without the ViewModel's
+    /// stop path running (e.g. the meeting attendee's auto-stop on natural meeting end completes the
+    /// service but not the channel); restarting must not stack a second reader on top of it.</para>
     /// </summary>
-    protected void StartReader()
+    protected async Task StartReaderAsync()
     {
+        await StopReaderAsync().ConfigureAwait(false);
         _readerCts = new CancellationTokenSource();
         _readerTask = Task.Run(() => ConsumeUtterancesAsync(_readerCts.Token), CancellationToken.None);
     }

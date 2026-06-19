@@ -184,6 +184,21 @@ public static class Bootstrapper
             });
         });
 
+        // Dedicated client for resolving the Teams meeting-URL redirect. The meeting URL is sensitive
+        // (it embeds the meeting context / launch params and effectively grants join access), so it must
+        // never reach the support-attachable logs. ConfigureHttpClientDefaults adds HttpLoggingHandler
+        // to every client (including named ones), so we strip it from this client's pipeline after the
+        // defaults are applied — leaving the URL diagnostics of all other callers untouched.
+        services.AddHttpClient(Services.MeetingAttendee.TeamsMeetingSession.MeetingRedirectHttpClientName)
+            .ConfigureAdditionalHttpMessageHandlers((handlers, _) =>
+            {
+                for (int i = handlers.Count - 1; i >= 0; i--)
+                {
+                    if (handlers[i] is HttpLoggingHandler)
+                        handlers.RemoveAt(i);
+                }
+            });
+
         // WPF-UI Services - Scoped (per-window)
         services.AddScoped<IContentDialogService, ContentDialogService>();
         services.AddScoped<ISnackbarService, SnackbarService>();

@@ -277,7 +277,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // hides the overlay; hiding it also stops any in-progress session.
         if (IsMeetingAttendeeVisible)
         {
-            await MeetingAttendee.StopCommand.ExecuteAsync(null);
+            await MeetingAttendee.StopAsync();
             IsMeetingAttendeeVisible = false;
             return;
         }
@@ -1054,6 +1054,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         LiveTranscription.CloseRequested -= OnLiveTranscriptionCloseRequested;
         MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;
+        // These scoped child overlays are never disposed elsewhere; disposing them here unsubscribes
+        // their StateChanged handlers from the long-lived singleton services and cancels their reader
+        // CTS, so a closed window scope doesn't leak handlers/readers onto the singletons.
+        LiveTranscription.Dispose();
+        MeetingAttendee.Dispose();
         PropertyChanged -= OnPropertyChanged;
         _streamingCts?.Cancel();
         _streamingCts?.Dispose();

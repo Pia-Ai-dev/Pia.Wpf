@@ -58,7 +58,7 @@ public partial class LiveTranscriptionViewModel : TranscriptOverlayViewModel
         await _service.StartAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("LiveTranscription ViewModel: service started, launching consumer");
 
-        StartReader();
+        await StartReaderAsync().ConfigureAwait(false);
     }
 
     public async Task StopAsync()
