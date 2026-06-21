@@ -35,8 +35,11 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// <summary>
     /// Name of the dedicated <see cref="HttpClient"/> used to resolve the Teams meeting-URL redirect.
     /// The meeting URL is sensitive (it embeds the meeting context / launch params and effectively
-    /// grants join access), so this client's pipeline has <c>HttpLoggingHandler</c> removed (see
-    /// <c>Bootstrapper.ConfigureServices</c>) to keep the URL out of the support-attachable logs.
+    /// grants join access). The URL is kept out of support-attachable logs by the app-wide
+    /// <c>SafeUrl</c> sanitisation in <c>HttpLoggingHandler</c>: in Release builds every URL is
+    /// reduced to <c>{scheme}://host-NNN</c> (host-only, path and query stripped), so the meeting
+    /// join-secret never reaches logs at any level. In Debug builds the full URL appears in
+    /// Debug-level output only, which is not included in support attachments.
     /// </summary>
     public const string MeetingRedirectHttpClientName = "meeting-redirect";
 
