@@ -28,6 +28,7 @@
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_DescribeHint}"
                  Opacity="0.7"
                  FontSize="12"
+                 TextWrapping="Wrap"
                  Margin="0,0,0,8" />
       <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
                TextWrapping="Wrap"
@@ -74,6 +75,7 @@
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPromptHint}"
                  Opacity="0.7"
                  FontSize="12"
+                 TextWrapping="Wrap"
                  Margin="0,0,0,8" />
       <TextBox Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}"
                TextWrapping="Wrap"
@@ -90,6 +92,7 @@
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_GuardrailsHint}"
                  Opacity="0.7"
                  FontSize="12"
+                 TextWrapping="Wrap"
                  Margin="0,0,0,8" />
       <TextBox Text="{Binding Guardrails, UpdateSourceTrigger=PropertyChanged}"
                TextWrapping="Wrap"
@@ -105,6 +108,7 @@
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_OutputFormatHint}"
                  Opacity="0.7"
                  FontSize="12"
+                 TextWrapping="Wrap"
                  Margin="0,0,0,8" />
       <TextBox Text="{Binding OutputFormat, UpdateSourceTrigger=PropertyChanged}"
                TextWrapping="Wrap"
@@ -142,6 +146,7 @@
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_ExpertiseHint}"
                  Opacity="0.7"
                  FontSize="12"
+                 TextWrapping="Wrap"
                  Margin="0,0,0,8" />
       <ui:TextBox Text="{Binding Expertise, UpdateSourceTrigger=PropertyChanged}"
                   Margin="0,0,0,16" />

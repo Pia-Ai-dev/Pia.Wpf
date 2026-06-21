@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.AI;
@@ -137,6 +138,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
     public IAsyncRelayCommand<string> HandleImageAttachedCommand { get; }
+    public IAsyncRelayCommand<BitmapSource> HandleImagePastedCommand { get; }
     public IRelayCommand RemoveAttachmentCommand { get; }
 
     public AssistantViewModel(
@@ -200,6 +202,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
         HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
         HandleImageAttachedCommand = new AsyncRelayCommand<string>(ExecuteHandleImageAttached);
+        HandleImagePastedCommand = new AsyncRelayCommand<BitmapSource>(ExecuteHandleImagePasted);
         RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
@@ -984,7 +987,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task ExecuteHandleImageAttached(string? filePath)
     {
         if (string.IsNullOrEmpty(filePath)) return;
+        await PrepareImageAttachmentAsync(() => ImageAttachmentProcessor.TryPrepare(filePath, _logger));
+    }
 
+    private async Task ExecuteHandleImagePasted(BitmapSource? source)
+    {
+        if (source is null) return;
+        if (IsStreaming) return;
+
+        // Freeze so the bitmap can be encoded on the background thread below without a
+        // cross-thread access exception (Clipboard.GetImage runs on the UI thread).
+        if (source.CanFreeze && !source.IsFrozen) source.Freeze();
+
+        await PrepareImageAttachmentAsync(() => ImageAttachmentProcessor.TryPrepare(source, _logger));
+    }
+
+    private async Task PrepareImageAttachmentAsync(Func<ImageAttachment?> prepare)
+    {
         var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
         if (provider?.ProviderType != AiProviderType.PiaCloud)
         {
@@ -995,7 +1014,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         }
 
-        var attachment = await Task.Run(() => ImageAttachmentProcessor.TryPrepare(filePath, _logger));
+        var attachment = await Task.Run(prepare);
         if (attachment is null)
         {
             _snackbarService.Show(
