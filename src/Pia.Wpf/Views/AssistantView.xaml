@@ -326,6 +326,24 @@
                          Click="AttachFileButton_Click">
                 <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
               </ui:Button>
+
+              <!-- Join meeting (attendee) toggle -->
+              <ui:Button Command="{Binding ToggleMeetingAttendeeCommand}"
+                         Padding="6,4"
+                         Margin="2,0"
+                         ToolTip="{loc:Str MeetingAttendee_ToggleButton_Tooltip}">
+                <ui:Button.Style>
+                  <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                    <Setter Property="Appearance" Value="Transparent" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsMeetingAttendeeVisible}" Value="True">
+                        <Setter Property="Appearance" Value="Primary" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:Button.Style>
+                <ui:SymbolIcon Symbol="PersonCall24" FontSize="16" />
+              </ui:Button>
             </StackPanel>
 
             <!-- Send button -->
@@ -436,6 +454,14 @@
                             Visibility="{Binding DataContext.IsVoiceModeActive,
                               RelativeSource={RelativeSource AncestorType=UserControl},
                               Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+    <!-- Meeting Attendee Overlay (Join meeting + transcribe) -->
+    <local:MeetingAttendeeOverlay Grid.Row="0" Grid.RowSpan="3"
+                                  DataContext="{Binding MeetingAttendee}"
+                                  Panel.ZIndex="11"
+                                  Visibility="{Binding DataContext.IsMeetingAttendeeVisible,
+                                    RelativeSource={RelativeSource AncestorType=UserControl},
+                                    Converter={StaticResource BooleanToVisibilityConverter}}" />
 
     <!-- Drag-over overlay (visible while a file is being dragged onto the view) -->
     <Border IsHitTestVisible="False"

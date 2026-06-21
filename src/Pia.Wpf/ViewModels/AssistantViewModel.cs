@@ -223,6 +223,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isVoiceModeActive;
 
+    public MeetingAttendeeViewModel MeetingAttendee { get; }
+
+    [ObservableProperty]
+    private bool _isMeetingAttendeeVisible;
+
     [ObservableProperty]
     private string _suggestionReminder = string.Empty;
 
@@ -272,6 +277,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
     public IAsyncRelayCommand<string> HandleImageAttachedCommand { get; }
     public IRelayCommand RemoveAttachmentCommand { get; }
+    public IAsyncRelayCommand ToggleMeetingAttendeeCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -291,7 +297,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAutocompleteService autocompleteService,
         INavigationService navigationService,
         ISuggestionService suggestionService,
-        IAssistantChatService chatService)
+        IAssistantChatService chatService,
+        MeetingAttendeeViewModel meetingAttendee)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -311,6 +318,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _navigationService = navigationService;
         _suggestionService = suggestionService;
         _chatService = chatService;
+        MeetingAttendee = meetingAttendee;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -327,9 +335,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
         HandleImageAttachedCommand = new AsyncRelayCommand<string>(ExecuteHandleImageAttached);
         RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
+        ToggleMeetingAttendeeCommand = new AsyncRelayCommand(ExecuteToggleMeetingAttendee);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         PropertyChanged += OnPropertyChanged;
+        MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
 
         ChatTitleChip = new ChatTitleChipViewModel(
             _chatService,
@@ -351,6 +361,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             EnterVoiceModeCommand.NotifyCanExecuteChanged();
         }
+    }
+
+    private async Task ExecuteToggleMeetingAttendee()
+    {
+        // Unlike voice mode, the attendee cannot auto-start on reveal: it needs a meeting URL and
+        // consent first, collected by the overlay's own Join command. So the toggle only shows or
+        // hides the overlay; hiding it also stops any in-progress session.
+        if (IsMeetingAttendeeVisible)
+        {
+            await MeetingAttendee.StopAsync();
+            IsMeetingAttendeeVisible = false;
+            return;
+        }
+
+        IsMeetingAttendeeVisible = true;
+    }
+
+    private void OnMeetingAttendeeCloseRequested(object? sender, EventArgs e)
+    {
+        // The overlay's close (X) button raises CloseRequested; stop the session and hide the overlay.
+        _ = ExecuteToggleMeetingAttendee();
     }
 
     private void ExecuteUseSuggestion(string? suggestion)
@@ -1672,6 +1703,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _disposed = true;
         VoiceMode?.Dispose();
         VoiceMode = null;
+        MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;
+        MeetingAttendee.Dispose();
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         PropertyChanged -= OnPropertyChanged;
