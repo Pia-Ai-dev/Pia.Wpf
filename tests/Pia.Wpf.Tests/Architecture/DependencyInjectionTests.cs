@@ -14,11 +14,17 @@ public class DependencyInjectionTests
     {
         // VoiceModeViewModel is a transient UI helper requiring Dispatcher — not DI-registered.
         // AssistantViewModel is flagged transitively because it creates VoiceModeViewModel.
+        // TranscriptOverlayViewModel is the shared base of the transcript overlay VMs; it owns the
+        // background-thread→UI Dispatcher marshalling for them — same convention as the helpers above.
+        // MeetingAttendeeViewModel inherits that base, so the dependency is reported against it
+        // transitively as well.
         var result = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .And().DoNotResideInNamespace(ViewModelModelsNamespace)
             .And().DoNotHaveNameMatching("VoiceModeViewModel")
             .And().DoNotHaveNameMatching("AssistantViewModel")
+            .And().DoNotHaveNameMatching("TranscriptOverlayViewModel")
+            .And().DoNotHaveNameMatching("MeetingAttendeeViewModel")
             .ShouldNot().HaveDependencyOn("System.Windows")
             .GetResult();
 

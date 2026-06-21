@@ -89,6 +89,15 @@ public class AppSettings
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
 
+    // Meeting attendee / live transcription settings
+    public string? LastCounterpartName { get; set; }
+    public string? MeetingTranscriptFolder { get; set; }
+
+    // Meeting-attendee audio source. Default (false) = endpoint WASAPI loopback (captures the whole
+    // render-device mix, audible). True = per-process WASAPI loopback isolated to the browser's PID
+    // (inaudible) — requires Windows 10 build 20348+ and is currently UNVERIFIED in production.
+    public bool MeetingAttendeeUseProcessLoopback { get; set; } = false;
+
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 

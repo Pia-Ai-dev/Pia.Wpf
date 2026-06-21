@@ -200,6 +200,7 @@ public static class Bootstrapper
         // UI abstractions that keep System.Windows out of ViewModels
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ICollectionViewService, CollectionViewService>();
+        services.AddSingleton<IFileDialogService, FileDialogService>();
 
         // AI provider handlers (one per AiProviderType) + registry
         services.AddSingleton<IAiProviderHandler, OpenAiProviderHandler>();
@@ -262,6 +263,12 @@ public static class Bootstrapper
         services.AddSingleton<IWindowManagerService, WindowManagerService>();
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
         services.AddSingleton<ITranscriptionService, TranscriptionService>();
+
+        // Meeting attendee (automated browser join + STT). The orchestrator constructs its own
+        // IMeetingSession (TeamsMeetingSession) at runtime with the provisioned Chromium path, so
+        // IMeetingSession is intentionally NOT container-registered (no parameterless seam).
+        services.AddSingleton<Services.MeetingAttendee.IBrowserProvisioner, Services.MeetingAttendee.ChromiumProvisioner>();
+        services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
         services.AddSingleton<INotificationService, NotificationService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
@@ -322,6 +329,7 @@ public static class Bootstrapper
         services.AddScoped<SettingsViewModel>();
         services.AddScoped<HistoryViewModel>();
         services.AddScoped<AssistantViewModel>();
+        services.AddScoped<MeetingAttendeeViewModel>();
         services.AddScoped<ResearchViewModel>();
         services.AddScoped<ResearchHistoryViewModel>();
         services.AddScoped<AssistantHistoryViewModel>();

@@ -14,6 +14,7 @@ public static class ArchitectureTestBase
     public const string ServiceInterfacesNamespace = "Pia.Services.Interfaces";
     public const string ServiceExceptionsNamespace = "Pia.Services.Exceptions";
     public const string E2EENamespace = "Pia.Services.E2EE";
+    public const string MeetingAttendeeNamespace = "Pia.Services.MeetingAttendee";
     public const string InfrastructureNamespace = "Pia.Infrastructure";
     public const string ModelsNamespace = "Pia.Models";
     public const string NavigationNamespace = "Pia.Navigation";

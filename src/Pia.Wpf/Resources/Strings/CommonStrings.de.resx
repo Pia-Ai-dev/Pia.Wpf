@@ -57,4 +57,23 @@
   <data name="Common_End" xml:space="preserve"><value>Beenden</value></data>
   <data name="Common_Finish" xml:space="preserve"><value>Fertig</value></data>
   <data name="Common_Dismiss" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="MeetingAttendee_Title" xml:space="preserve"><value>Meeting-Teilnehmer</value></data>
+  <data name="MeetingAttendee_ToggleButton_Tooltip" xml:space="preserve"><value>An Meeting teilnehmen und transkribieren</value></data>
+  <data name="MeetingAttendee_Close" xml:space="preserve"><value>Schließen</value></data>
+  <data name="MeetingAttendee_Join" xml:space="preserve"><value>Meeting beitreten</value></data>
+  <data name="MeetingAttendee_Stop" xml:space="preserve"><value>Meeting verlassen</value></data>
+  <data name="MeetingAttendee_Save" xml:space="preserve"><value>Speichern…</value></data>
+  <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Teams-Meeting-Link</value></data>
+  <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
+  <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>Ich bestätige, dass ich einen Assistenten an diesem Meeting teilnehmen und es transkribieren lassen darf.</value></data>
+  <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>Meeting</value></data>
+  <data name="MeetingAttendee_SaveDialog_Title" xml:space="preserve"><value>Meeting-Transkript speichern</value></data>
+  <data name="MeetingAttendee_SaveDialog_Filter" xml:space="preserve"><value>Markdown-Datei (*.md)|*.md|Alle Dateien (*.*)|*.*</value></data>
+  <data name="MeetingAttendee_Status_Idle" xml:space="preserve"><value>Inaktiv</value></data>
+  <data name="MeetingAttendee_Status_Provisioning" xml:space="preserve"><value>Browser wird vorbereitet…</value></data>
+  <data name="MeetingAttendee_Status_Joining" xml:space="preserve"><value>Meeting wird beigetreten…</value></data>
+  <data name="MeetingAttendee_Status_InLobby" xml:space="preserve"><value>Warten in der Lobby…</value></data>
+  <data name="MeetingAttendee_Status_Attending" xml:space="preserve"><value>Nimmt teil – transkribiert…</value></data>
+  <data name="MeetingAttendee_Status_Stopping" xml:space="preserve"><value>Wird verlassen…</value></data>
+  <data name="MeetingAttendee_Status_Error" xml:space="preserve"><value>Fehler</value></data>
 </root>

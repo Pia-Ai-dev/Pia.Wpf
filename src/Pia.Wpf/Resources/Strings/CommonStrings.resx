@@ -57,4 +57,23 @@
   <data name="Common_End" xml:space="preserve"><value>End</value></data>
   <data name="Common_Finish" xml:space="preserve"><value>Finish</value></data>
   <data name="Common_Dismiss" xml:space="preserve"><value>Dismiss</value></data>
+  <data name="MeetingAttendee_Title" xml:space="preserve"><value>Meeting attendee</value></data>
+  <data name="MeetingAttendee_ToggleButton_Tooltip" xml:space="preserve"><value>Join a meeting and transcribe</value></data>
+  <data name="MeetingAttendee_Close" xml:space="preserve"><value>Close</value></data>
+  <data name="MeetingAttendee_Join" xml:space="preserve"><value>Join meeting</value></data>
+  <data name="MeetingAttendee_Stop" xml:space="preserve"><value>Leave meeting</value></data>
+  <data name="MeetingAttendee_Save" xml:space="preserve"><value>Save…</value></data>
+  <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Teams meeting link</value></data>
+  <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
+  <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>I confirm I'm allowed to have an assistant join and transcribe this meeting.</value></data>
+  <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>meeting</value></data>
+  <data name="MeetingAttendee_SaveDialog_Title" xml:space="preserve"><value>Save meeting transcript</value></data>
+  <data name="MeetingAttendee_SaveDialog_Filter" xml:space="preserve"><value>Markdown file (*.md)|*.md|All files (*.*)|*.*</value></data>
+  <data name="MeetingAttendee_Status_Idle" xml:space="preserve"><value>Idle</value></data>
+  <data name="MeetingAttendee_Status_Provisioning" xml:space="preserve"><value>Preparing browser…</value></data>
+  <data name="MeetingAttendee_Status_Joining" xml:space="preserve"><value>Joining meeting…</value></data>
+  <data name="MeetingAttendee_Status_InLobby" xml:space="preserve"><value>Waiting in the lobby…</value></data>
+  <data name="MeetingAttendee_Status_Attending" xml:space="preserve"><value>Attending — transcribing…</value></data>
+  <data name="MeetingAttendee_Status_Stopping" xml:space="preserve"><value>Leaving…</value></data>
+  <data name="MeetingAttendee_Status_Error" xml:space="preserve"><value>Error</value></data>
 </root>

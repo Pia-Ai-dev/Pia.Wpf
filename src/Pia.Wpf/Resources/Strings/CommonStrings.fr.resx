@@ -57,4 +57,23 @@
   <data name="Common_End" xml:space="preserve"><value>Fin</value></data>
   <data name="Common_Finish" xml:space="preserve"><value>Terminer</value></data>
   <data name="Common_Dismiss" xml:space="preserve"><value>Ignorer</value></data>
+  <data name="MeetingAttendee_Title" xml:space="preserve"><value>Participant à la réunion</value></data>
+  <data name="MeetingAttendee_ToggleButton_Tooltip" xml:space="preserve"><value>Rejoindre une réunion et transcrire</value></data>
+  <data name="MeetingAttendee_Close" xml:space="preserve"><value>Fermer</value></data>
+  <data name="MeetingAttendee_Join" xml:space="preserve"><value>Rejoindre la réunion</value></data>
+  <data name="MeetingAttendee_Stop" xml:space="preserve"><value>Quitter la réunion</value></data>
+  <data name="MeetingAttendee_Save" xml:space="preserve"><value>Enregistrer…</value></data>
+  <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Lien de la réunion Teams</value></data>
+  <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
+  <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>Je confirme être autorisé à faire participer un assistant à cette réunion et à la transcrire.</value></data>
+  <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>réunion</value></data>
+  <data name="MeetingAttendee_SaveDialog_Title" xml:space="preserve"><value>Enregistrer la transcription de la réunion</value></data>
+  <data name="MeetingAttendee_SaveDialog_Filter" xml:space="preserve"><value>Fichier Markdown (*.md)|*.md|Tous les fichiers (*.*)|*.*</value></data>
+  <data name="MeetingAttendee_Status_Idle" xml:space="preserve"><value>Inactif</value></data>
+  <data name="MeetingAttendee_Status_Provisioning" xml:space="preserve"><value>Préparation du navigateur…</value></data>
+  <data name="MeetingAttendee_Status_Joining" xml:space="preserve"><value>Connexion à la réunion…</value></data>
+  <data name="MeetingAttendee_Status_InLobby" xml:space="preserve"><value>En attente dans le hall…</value></data>
+  <data name="MeetingAttendee_Status_Attending" xml:space="preserve"><value>Participation — transcription…</value></data>
+  <data name="MeetingAttendee_Status_Stopping" xml:space="preserve"><value>Sortie en cours…</value></data>
+  <data name="MeetingAttendee_Status_Error" xml:space="preserve"><value>Erreur</value></data>
 </root>
