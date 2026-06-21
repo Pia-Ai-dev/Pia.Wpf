@@ -246,6 +246,25 @@
   <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Scheduled briefing failed</value></data>
   <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>'{0}' could not run — see history for details</value></data>
 
+  <!-- Background assistant chats: per-chat state + notifications -->
+  <data name="ChatState_Idle" xml:space="preserve"><value>Idle</value></data>
+  <data name="ChatState_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="ChatState_WaitingForTool" xml:space="preserve"><value>Waiting for confirmation</value></data>
+  <data name="ChatState_Completed" xml:space="preserve"><value>Done</value></data>
+  <data name="ChatState_Error" xml:space="preserve"><value>Error</value></data>
+  <data name="ChatState_Group_Idle" xml:space="preserve"><value>Idle</value></data>
+  <data name="ChatState_Group_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="ChatState_Group_WaitingForTool" xml:space="preserve"><value>Waiting for confirmation</value></data>
+  <data name="ChatState_Group_Completed" xml:space="preserve"><value>Completed</value></data>
+  <data name="ChatState_Group_Error" xml:space="preserve"><value>Errored</value></data>
+  <data name="AssistantHistory_GroupBy_Date" xml:space="preserve"><value>By date</value></data>
+  <data name="AssistantHistory_GroupBy_State" xml:space="preserve"><value>By state</value></data>
+  <data name="Notification_BackgroundChat_Title" xml:space="preserve"><value>Background chat update</value></data>
+  <data name="Notification_BackgroundChat_WaitingForTool" xml:space="preserve"><value>'{0}' needs your confirmation</value></data>
+  <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>'{0}' finished</value></data>
+  <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>'{0}' ran into an error</value></data>
+  <data name="Notification_OpenChat" xml:space="preserve"><value>Open chat</value></data>
+
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII Keyword Added</value></data>
   <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>"{0}" added as {1}</value></data>

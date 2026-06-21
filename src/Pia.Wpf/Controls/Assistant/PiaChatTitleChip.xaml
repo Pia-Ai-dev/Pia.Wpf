@@ -27,6 +27,28 @@
                    TextTrimming="CharacterEllipsis"
                    MaxWidth="240"
                    VerticalAlignment="Center" />
+
+        <!-- Live state badge — hidden when Idle. -->
+        <Border CornerRadius="9"
+                Padding="6,1"
+                Margin="8,0,0,0"
+                VerticalAlignment="Center"
+                Background="{Binding ActiveState, Converter={StaticResource ChatStateToBrushBg}}"
+                Visibility="{Binding ActiveState, Converter={StaticResource ChatStateIsBadgeVisibleConverter}}">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="{Binding ActiveState, Converter={StaticResource ChatStateToGlyphConverter}}"
+                           FontSize="11"
+                           VerticalAlignment="Center"
+                           Foreground="{Binding ActiveState, Converter={StaticResource ChatStateToBrushFg}}" />
+            <TextBlock Text="{Binding ActiveState, Converter={StaticResource ChatStateToLabelConverter}}"
+                       FontSize="10"
+                       FontWeight="SemiBold"
+                       Margin="4,0,0,0"
+                       VerticalAlignment="Center"
+                       Foreground="{Binding ActiveState, Converter={StaticResource ChatStateToBrushFg}}" />
+          </StackPanel>
+        </Border>
+
         <ui:SymbolIcon Symbol="ChevronDown20"
                        FontSize="12"
                        Margin="6,0,0,0"

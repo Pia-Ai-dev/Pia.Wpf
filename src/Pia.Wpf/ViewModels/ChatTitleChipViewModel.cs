@@ -24,6 +24,8 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private readonly Func<Guid, Task> _resumeChat;
     private readonly Action _newChat;
     private readonly Action _showAllChats;
+    private readonly Func<Guid, ChatState> _resolveState;
+    private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _quickSwitcherCts;
     private List<SyncAssistantChat> _quickSwitcherCandidates = [];
@@ -31,6 +33,10 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _currentTitle = string.Empty;
+
+    /// <summary>Live state of the active chat — drives the badge pill on the chip.</summary>
+    [ObservableProperty]
+    private ChatState _activeState = ChatState.Idle;
 
     [ObservableProperty]
     private bool _isFlyoutOpen;
@@ -64,7 +70,8 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         ILogger<ChatTitleChipViewModel> logger,
         Func<Guid, Task> resumeChat,
         Action newChat,
-        Action showAllChats)
+        Action showAllChats,
+        Func<Guid, ChatState> resolveState)
     {
         _chatService = chatService;
         _localizationService = localizationService;
@@ -72,6 +79,12 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         _resumeChat = resumeChat;
         _newChat = newChat;
         _showAllChats = showAllChats;
+        _resolveState = resolveState;
+        // Captured on the UI thread (this VM is constructed there) so off-thread
+        // ChatsChanged (e.g. the retention BackgroundService raising it from a
+        // thread-pool thread) can be marshalled back before touching bound collections.
+        _syncContext = SynchronizationContext.Current
+            ?? throw new InvalidOperationException("ChatTitleChipViewModel must be created on the UI thread");
 
         CurrentTitle = _localizationService["AssistantChat_TitlePlaceholder_NewChat"];
 
@@ -92,6 +105,16 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
             ? _localizationService["AssistantChat_TitlePlaceholder_NewChat"]
             : title;
 
+    public void SetState(ChatState state) => ActiveState = state;
+
+    /// <summary>Refresh a quick-switcher match's live state in place (called on SessionStateChanged).</summary>
+    public void RefreshMatchState(Guid chatId, ChatState state)
+    {
+        var match = Matches.FirstOrDefault(m => m.Id == chatId);
+        if (match is not null)
+            match.State = state;
+    }
+
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(IsFlyoutOpen) && IsFlyoutOpen)
@@ -104,8 +127,13 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
-        if (IsFlyoutOpen)
-            LoadRecentChatsAsync().SafeFireAndForget(_logger);
+        // ChatsChanged can fire off the UI thread (retention BackgroundService). Marshal
+        // before reloading — LoadRecentChatsAsync mutates the bound Groups collection.
+        _syncContext.Post(_ =>
+        {
+            if (IsFlyoutOpen)
+                LoadRecentChatsAsync().SafeFireAndForget(_logger);
+        }, null);
     }
 
     private void DebounceReload()
@@ -273,6 +301,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
                 Id = chat.Id,
                 Title = ResolveTitle(chat),
                 Snippet = snippet ?? string.Empty,
+                State = _resolveState(chat.Id),
             });
         }
 
@@ -375,4 +404,8 @@ public sealed partial class QuickSwitcherMatchViewModel : ObservableObject
 
     [ObservableProperty]
     private string _snippet = string.Empty;
+
+    /// <summary>Live state of this chat (or Idle if not currently live).</summary>
+    [ObservableProperty]
+    private ChatState _state = ChatState.Idle;
 }

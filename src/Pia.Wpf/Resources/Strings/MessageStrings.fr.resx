@@ -237,6 +237,25 @@
   <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Échec du briefing planifié</value></data>
   <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>« {0} » n'a pas pu s'exécuter — voir l'historique pour plus de détails</value></data>
 
+  <!-- Background assistant chats: per-chat state + notifications -->
+  <data name="ChatState_Idle" xml:space="preserve"><value>Inactif</value></data>
+  <data name="ChatState_Running" xml:space="preserve"><value>En cours</value></data>
+  <data name="ChatState_WaitingForTool" xml:space="preserve"><value>En attente de confirmation</value></data>
+  <data name="ChatState_Completed" xml:space="preserve"><value>Terminé</value></data>
+  <data name="ChatState_Error" xml:space="preserve"><value>Erreur</value></data>
+  <data name="ChatState_Group_Idle" xml:space="preserve"><value>Inactif</value></data>
+  <data name="ChatState_Group_Running" xml:space="preserve"><value>En cours</value></data>
+  <data name="ChatState_Group_WaitingForTool" xml:space="preserve"><value>En attente de confirmation</value></data>
+  <data name="ChatState_Group_Completed" xml:space="preserve"><value>Terminés</value></data>
+  <data name="ChatState_Group_Error" xml:space="preserve"><value>En erreur</value></data>
+  <data name="AssistantHistory_GroupBy_Date" xml:space="preserve"><value>Par date</value></data>
+  <data name="AssistantHistory_GroupBy_State" xml:space="preserve"><value>Par état</value></data>
+  <data name="Notification_BackgroundChat_Title" xml:space="preserve"><value>Mise à jour d'un chat en arrière-plan</value></data>
+  <data name="Notification_BackgroundChat_WaitingForTool" xml:space="preserve"><value>« {0} » nécessite votre confirmation</value></data>
+  <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>« {0} » est terminé</value></data>
+  <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>« {0} » a rencontré une erreur</value></data>
+  <data name="Notification_OpenChat" xml:space="preserve"><value>Ouvrir le chat</value></data>
+
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>Mot-clé PII ajouté</value></data>
   <data name="Msg_PiiKeyword_Added" xml:space="preserve"><value>« {0} » ajouté comme {1}</value></data>

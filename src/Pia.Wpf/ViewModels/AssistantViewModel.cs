@@ -17,6 +17,7 @@ using Pia.Services;
 using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
@@ -42,18 +43,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ISuggestionService _suggestionService;
     private readonly IAssistantChatService _chatService;
     private readonly IAssistantPromptComposer _promptComposer;
-    private readonly IChatTitleService _chatTitleService;
-    private readonly IActionCardBuilder _actionCardBuilder;
-    private CancellationTokenSource? _streamingCts;
+    private readonly IChatSessionManager _chatSessionManager;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
-    private bool _autoTitleEnabled;
 
-    private Guid? _currentChatId;
-    private DateTime _currentChatCreatedAt;
-    private Guid? _currentChatProviderId;
-    private bool _autoTitleApplied;
+    /// <summary>The session whose events this VM is currently subscribed to.</summary>
+    private ChatSession? _subscribedSession;
 
     public ChatTitleChipViewModel ChatTitleChip { get; }
 
@@ -120,7 +116,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     public IAutocompleteService AutocompleteService => _autocompleteService;
 
-    public ObservableCollection<AssistantMessage> Messages { get; } = new();
+    /// <summary>Points at the active session's message list; re-pointed on active-session swap.</summary>
+    [ObservableProperty]
+    private ObservableCollection<AssistantMessage> _messages = new();
+
+    /// <summary>Proxied from the active session's <see cref="ChatState"/> (drives the chip badge).</summary>
+    [ObservableProperty]
+    private ChatState _activeState = ChatState.Idle;
 
     public ObservableCollection<Persona> AvailablePersonas { get; } = new();
 
@@ -162,8 +164,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ISuggestionService suggestionService,
         IAssistantChatService chatService,
         IAssistantPromptComposer promptComposer,
-        IChatTitleService chatTitleService,
-        IActionCardBuilder actionCardBuilder)
+        IChatSessionManager chatSessionManager)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -185,8 +186,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _suggestionService = suggestionService;
         _chatService = chatService;
         _promptComposer = promptComposer;
-        _chatTitleService = chatTitleService;
-        _actionCardBuilder = actionCardBuilder;
+        _chatSessionManager = chatSessionManager;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -215,7 +215,139 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _loggerFactory.CreateLogger<ChatTitleChipViewModel>(),
             ResumeChatAsync,
             NewChat,
-            NavigateToAssistantHistory);
+            NavigateToAssistantHistory,
+            _chatSessionManager.GetState);
+
+        _chatSessionManager.ActiveChanged += OnActiveSessionChanged;
+        _chatSessionManager.SessionTitleChanged += OnSessionTitleChanged;
+        _chatSessionManager.SessionStateChanged += OnManagerSessionStateChanged;
+
+        // Always mirror a live session so send/cancel never null-ref on a fresh
+        // window. GetOrCreateActiveForNewChat raises ActiveChanged → AttachToActiveSession.
+        _chatSessionManager.GetOrCreateActiveForNewChat();
+    }
+
+    private void OnActiveSessionChanged(object? sender, ChatSession? session)
+    {
+        if (session is not null)
+            AttachToActiveSession(session);
+    }
+
+    /// <summary>Re-points Messages + proxies and moves the session-event subscriptions to <paramref name="session"/>.</summary>
+    private void AttachToActiveSession(ChatSession session)
+    {
+        if (_subscribedSession is { } prev)
+        {
+            prev.StateChanged -= OnActiveSessionStateChanged;
+            prev.TurnCompleted -= OnActiveSessionTurnCompleted;
+            prev.ToolSucceeded -= OnActiveSessionToolSucceeded;
+            prev.RunFailed -= OnActiveSessionRunFailed;
+        }
+
+        _subscribedSession = session;
+        session.StateChanged += OnActiveSessionStateChanged;
+        session.TurnCompleted += OnActiveSessionTurnCompleted;
+        session.ToolSucceeded += OnActiveSessionToolSucceeded;
+        session.RunFailed += OnActiveSessionRunFailed;
+
+        Messages = session.Messages;            // re-points the ItemsControl (OnMessagesChanged swaps CollectionChanged)
+        HasMessages = session.Messages.Count > 0;
+        IsStreaming = session.IsStreaming;
+        ActiveState = session.State;
+        ChatTitleChip.SetTitle(session.Title);
+    }
+
+    partial void OnMessagesChanged(ObservableCollection<AssistantMessage>? oldValue, ObservableCollection<AssistantMessage> newValue)
+    {
+        if (oldValue is not null)
+            oldValue.CollectionChanged -= OnMessagesCollectionChanged;
+        newValue.CollectionChanged += OnMessagesCollectionChanged;
+    }
+
+    private void OnMessagesCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        HasMessages = Messages.Count > 0;
+    }
+
+    private void OnActiveSessionStateChanged(object? sender, ChatStateChangedEventArgs e)
+    {
+        ActiveState = e.NewState;
+        IsStreaming = _subscribedSession?.IsStreaming ?? false;
+    }
+
+    // Mirror the active state onto the chip badge (single sink — both the attach
+    // path and live transitions set ActiveState, so this stays in sync).
+    partial void OnActiveStateChanged(ChatState value) => ChatTitleChip.SetState(value);
+
+    // Sync-void fire-and-forget: followups + TTS for the active session only.
+    private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
+    {
+        if (sender is ChatSession session)
+            RunActiveTurnSideEffectsAsync(session, e.Succeeded).SafeFireAndForget(_logger);
+    }
+
+    private void OnActiveSessionToolSucceeded(object? sender, ToolSucceededEventArgs e)
+    {
+        _snackbarService.Show(e.SuccessTitle, e.Description,
+            Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+    }
+
+    private void OnActiveSessionRunFailed(object? sender, RunFailedEventArgs e)
+    {
+        var (appearance, seconds) = e.Kind switch
+        {
+            RunFailureKind.Timeout => (Wpf.Ui.Controls.ControlAppearance.Danger, 6),
+            RunFailureKind.Truncated => (Wpf.Ui.Controls.ControlAppearance.Caution, 6),
+            RunFailureKind.VisionRejected => (Wpf.Ui.Controls.ControlAppearance.Caution, 5),
+            RunFailureKind.Empty => (Wpf.Ui.Controls.ControlAppearance.Caution, 2),
+            _ => (Wpf.Ui.Controls.ControlAppearance.Danger, 4),
+        };
+
+        _snackbarService.Show(e.Title, e.Message, appearance, null, TimeSpan.FromSeconds(seconds));
+
+        // Vision rejection restores the composer (active VM only — the message pair
+        // was already dropped session-locally).
+        if (e.Kind == RunFailureKind.VisionRejected && e.RestoreInputText is not null)
+            InputText = e.RestoreInputText;
+    }
+
+    private void OnSessionTitleChanged(object? sender, SessionTitleChangedEventArgs e)
+    {
+        // Only the active session's title may update the chip.
+        if (e.IsActive)
+            ChatTitleChip.SetTitle(e.Title);
+    }
+
+    // Keep the quick-switcher badge for this chat live as its state changes.
+    private void OnManagerSessionStateChanged(object? sender, SessionStateChangedEventArgs e)
+    {
+        if (e.ChatId is { } chatId)
+            ChatTitleChip.RefreshMatchState(chatId, e.NewState);
+    }
+
+    private async Task RunActiveTurnSideEffectsAsync(ChatSession session, bool succeeded)
+    {
+        var assistantMessage = session.Messages.LastOrDefault(m => !m.IsUser);
+        if (assistantMessage is null || string.IsNullOrEmpty(assistantMessage.Content)) return;
+        if (assistantMessage.Content.StartsWith("Error:", StringComparison.Ordinal)) return;
+
+        // Follow-ups only on a clean turn (matches today: GenerateFollowupsAsync was
+        // the last line of try, skipped on any exception / empty content).
+        if (succeeded)
+        {
+            var userMessage = session.Messages.LastOrDefault(m => m.IsUser);
+            if (session.ProviderId is { } providerId && userMessage is not null)
+            {
+                var provider = await _providerService.GetProviderAsync(providerId);
+                if (provider is not null)
+                    await GenerateFollowupsAsync(provider, userMessage.Content, assistantMessage, CancellationToken.None);
+            }
+        }
+
+        // TTS mirrors today's finally gate: non-empty, non-"Error:" content — runs even
+        // on a cancelled turn that produced partial visible text.
+        if (IsTtsEnabled)
+            await SpeakMessageAsync(assistantMessage);
     }
 
     private void OnPersonasChanged(object? sender, EventArgs e) =>
@@ -289,310 +421,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         var userText = InputText.Trim();
         InputText = string.Empty;
-
-        // Parse @-commands — keep full text for display (highlighted by view),
-        // but strip commands from what the AI sees as the user message
-        var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
-
-        var userMessage = new AssistantMessage(ChatRole.User, userText)
-        {
-            Attachment = PendingAttachment
-        };
+        var attachment = PendingAttachment;
         PendingAttachment = null;
-        Messages.Add(userMessage);
-        HasMessages = true;
 
-        var assistantMessage = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
-        Messages.Add(assistantMessage);
+        var session = _chatSessionManager.ActiveSession
+            ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
-        _streamingCts = new CancellationTokenSource();
-        IsStreaming = true;
-
-        try
-        {
-            // Resolve the active persona once for this turn (never null).
-            var settings = await _settingsService.GetSettingsAsync();
-            var persona = await _personaService.ResolveActiveAsync(WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
-            assistantMessage.Persona = PersonaAttribution.From(persona);
-
-            // Provider override (contract §6): the persona's PreferredProviderId wins when it resolves
-            // to a usable provider; otherwise fall back to the Assistant-mode default.
-            var provider = persona.PreferredProviderId.HasValue
-                ? await _providerService.GetProviderAsync(persona.PreferredProviderId.Value)
-                : null;
-            provider ??= await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
-            if (provider is null)
-            {
-                assistantMessage.Content = _localizationService["Msg_Assistant_NoProviderInline"];
-                assistantMessage.IsStreaming = false;
-                IsStreaming = false;
-                _snackbarService.Show(_localizationService["Msg_Error"], _localizationService["Msg_Assistant_NoProviderConfigured"], Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
-                return;
-            }
-
-            // Reasoning-effort override (contract §6): apply on a shallow copy so the stored provider
-            // is never mutated.
-            if (persona.ReasoningEffort.HasValue)
-            {
-                provider = provider.Clone();
-                provider.ReasoningEffort = persona.ReasoningEffort.Value;
-            }
-
-            _currentChatProviderId = provider.Id;
-
-            _logger.LogInformation("SendMessage: resolved persona {PersonaId} (ToolScope {ToolScope})", persona.Id, persona.ToolScope);
-
-            // Resolve the system prompt + tool set for this turn (gating, @-command hints,
-            // privacy-token/web-search sections) — see AssistantPromptComposer.
-            var turnSetup = _promptComposer.PrepareTurn(persona, provider, atCommands, _tokenizationEnabled);
-            var supportsTools = turnSetup.SupportsTools;
-            var webSearchActive = turnSetup.WebSearchActive;
-            var fullSystemPrompt = turnSetup.SystemPrompt;
-            var tools = turnSetup.Tools;
-
-            _logger.LogInformation("SendMessage: provider={ProviderName}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
-                provider.Name, supportsTools, tools?.Count ?? 0, atCommands.Count);
-
-            if (tools is { Count: > 0 })
-                _logger.LogDebug("Tools being sent to AI: [{ToolNames}]",
-                    string.Join(", ", tools.Select(t => t.Name)));
-
-            var chatMessages = new List<ChatMessage>
-            {
-                new(ChatRole.System, fullSystemPrompt)
-            };
-
-            foreach (var msg in Messages)
-            {
-                if (msg == assistantMessage)
-                    continue;
-
-                // Strip @-commands from the latest user message sent to the AI
-                // (the hint is already in the system prompt)
-                if (msg == userMessage && atCommands.Count > 0)
-                    chatMessages.Add(new ChatMessage(ChatRole.User,
-                        Pia.Services.AtCommandParser.StripCommands(msg.Content)));
-                else
-                    chatMessages.Add(msg.ToChatMessage());
-            }
-
-            // Use tool-aware completion with think-tag parsing
-            var rawBuffer = new StringBuilder();
-
-            await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
-                chatMessages, provider, tools,
-                supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage) : null,
-                nameof(WindowMode.Assistant),
-                _streamingCts.Token))
-            {
-                switch (item)
-                {
-                    case TextDelta td:
-                        rawBuffer.Append(td.Text);
-                        var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
-
-                        assistantMessage.Content = visible;
-                        if (!string.IsNullOrEmpty(thinking))
-                            assistantMessage.ThinkingContent = thinking;
-                        break;
-
-                    case Finished finished:
-                        ApplyStats(assistantMessage, finished, provider);
-                        break;
-                }
-            }
-
-            if (webSearchActive)
-                ApplyWebCitations(assistantMessage);
-
-            await GenerateFollowupsAsync(provider, userMessage.Content, assistantMessage, _streamingCts.Token);
-        }
-        catch (Pia.Services.Exceptions.LlmTimeoutException ex)
-        {
-            _logger.LogError(ex, "AI response timed out (provider={ProviderName}, seconds={Seconds})", ex.ProviderName, ex.TimeoutSeconds);
-            var localizedMessage = _localizationService.Format("Msg_Assistant_ResponseTimedOut", ex.ProviderName, ex.TimeoutSeconds);
-            if (string.IsNullOrEmpty(assistantMessage.Content))
-            {
-                assistantMessage.Content = localizedMessage;
-            }
-            _snackbarService.Show(_localizationService["Msg_Error"], localizedMessage, Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(6));
-        }
-        catch (Pia.Services.Exceptions.LlmTruncatedException ex)
-        {
-            _logger.LogWarning(ex, "AI response truncated by token cap (provider={ProviderName}, partialChars={PartialChars})", ex.ProviderName, ex.PartialLength);
-            var localizedMessage = _localizationService.Format("Msg_Assistant_ResponseTruncated", ex.ProviderName);
-            // Preserve any partial visible text so the user sees how far the model got;
-            // append the hint underneath. If we have no text yet, show the hint alone.
-            assistantMessage.Content = string.IsNullOrEmpty(assistantMessage.Content)
-                ? localizedMessage
-                : assistantMessage.Content + "\n\n" + localizedMessage;
-            _snackbarService.Show(_localizationService["Msg_Warning"], localizedMessage, Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
-        }
-        catch (OperationCanceledException)
-        {
-            _snackbarService.Show(_localizationService["Msg_Cancelled"], _localizationService["Msg_Assistant_ResponseCancelled"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
-        }
-        catch (Exception ex) when (ex.Message.Contains("EnableVision is false", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning("Provider rejected image attachment (vision disabled)");
-            var localized = _localizationService["Msg_Assistant_ProviderNoVision"];
-            assistantMessage.Content = localized;
-            Messages.Remove(assistantMessage);
-            Messages.Remove(userMessage);
-            HasMessages = Messages.Count > 0;
-            InputText = userMessage.Content;
-            _snackbarService.Show(
-                _localizationService["Msg_Warning"], localized,
-                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(5));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get AI response");
-            if (string.IsNullOrEmpty(assistantMessage.Content))
-            {
-                assistantMessage.Content = $"Error: {ex.Message}";
-            }
-            _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
-        }
-        finally
-        {
-            if (string.IsNullOrEmpty(assistantMessage.Content))
-            {
-                _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
-                assistantMessage.Content = _localizationService["Msg_Assistant_EmptyResponse"];
-                _snackbarService.Show(
-                    _localizationService["Msg_Warning"],
-                    _localizationService["Msg_Assistant_EmptyResponse"],
-                    Wpf.Ui.Controls.ControlAppearance.Caution,
-                    null,
-                    TimeSpan.FromSeconds(2));
-            }
-
-            assistantMessage.IsStreaming = false;
-            IsStreaming = false;
-            _streamingCts?.Dispose();
-            _streamingCts = null;
-
-            // Final full-pass de-tokenization as safety net
-            if (_tokenizationEnabled && !string.IsNullOrEmpty(assistantMessage.Content))
-            {
-                assistantMessage.Content = _tokenMapService.Detokenize(assistantMessage.Content);
-            }
-
-            if (IsTtsEnabled && !string.IsNullOrEmpty(assistantMessage.Content)
-                && !assistantMessage.Content.StartsWith("Error:"))
-            {
-                _ = SpeakMessageAsync(assistantMessage);
-            }
-
-            await PersistCurrentChatAsync();
-        }
-    }
-
-    private async Task PersistCurrentChatAsync()
-    {
-        if (Messages.Count == 0) return;
-
-        var nowUtc = DateTime.UtcNow;
-
-        if (_currentChatId is null)
-        {
-            _currentChatId = Guid.NewGuid();
-            _currentChatCreatedAt = nowUtc;
-        }
-
-        var chat = new SyncAssistantChat
-        {
-            Id = _currentChatId.Value,
-            SchemaVersion = 1,
-            Title = DeriveChatTitle(),
-            CreatedAt = _currentChatCreatedAt,
-            UpdatedAt = nowUtc,
-            LastAccessedAt = nowUtc,
-            WindowMode = WindowMode.Assistant.ToString(),
-            ProviderId = _currentChatProviderId,
-            Messages = [.. Messages.Select(AssistantMessageMapper.ToDto)],
-        };
-
-        try
-        {
-            await _chatService.SaveAsync(chat);
-            ChatTitleChip.SetTitle(chat.Title);
-            _logger.LogInformation("Persisted assistant chat {ChatId} ({MessageCount} messages)",
-                chat.Id, chat.Messages.Count);
-            _logger.SensitiveDebug("Chat {ChatId} title: {Title}", chat.Id, chat.Title);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to persist assistant chat {ChatId}", chat.Id);
-        }
-
-        TryStartAutoTitle(chat);
-    }
-
-    // Fire-and-forget: replaces the dumb fallback title with a model-generated
-    // one once the first assistant reply is in. Guarded so it runs at most
-    // once per chat session — the second SaveAsync inside RenameChatAsync would
-    // otherwise loop us back through here.
-    private void TryStartAutoTitle(SyncAssistantChat chat)
-    {
-        if (!_autoTitleEnabled || _autoTitleApplied) return;
-
-        var userCount = chat.Messages.Count(m => m.Role == "user");
-        var assistantReply = chat.Messages.FirstOrDefault(m => m.Role == "assistant"
-            && !string.IsNullOrWhiteSpace(m.Content));
-        if (userCount != 1 || assistantReply is null) return;
-
-        var firstUser = chat.Messages.FirstOrDefault(m => m.Role == "user");
-        if (firstUser is null || string.IsNullOrWhiteSpace(firstUser.Content)) return;
-
-        _autoTitleApplied = true;
-        _logger.LogInformation("Auto-title generation starting for chat {ChatId}", chat.Id);
-        _ = RenameChatAsync(chat.Id, firstUser.Content, assistantReply.Content);
-    }
-
-    private async Task RenameChatAsync(Guid chatId, string firstUserContent, string firstAssistantContent)
-    {
-        try
-        {
-            var title = await _chatTitleService.GenerateAsync(firstUserContent, firstAssistantContent);
-            if (string.IsNullOrEmpty(title))
-                return; // ChatTitleService logged the reason (no provider / empty model output)
-
-            var existing = await _chatService.GetAsync(chatId);
-            if (existing is null)
-            {
-                _logger.LogWarning("Auto-title: chat {ChatId} disappeared before rename", chatId);
-                return;
-            }
-
-            existing.Title = title;
-            existing.UpdatedAt = DateTime.UtcNow;
-            await _chatService.SaveAsync(existing);
-
-            await App.Current.Dispatcher.InvokeAsync(() =>
-            {
-                if (_disposed || _currentChatId != chatId) return;
-                ChatTitleChip.SetTitle(title);
-            });
-
-            _logger.LogInformation("Auto-title applied for chat {ChatId}", chatId);
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Auto-title generation failed for chat {ChatId}", chatId);
-        }
-    }
-
-    private string? DeriveChatTitle()
-    {
-        var firstUser = Messages.FirstOrDefault(m => m.IsUser);
-        if (firstUser is null || string.IsNullOrWhiteSpace(firstUser.Content)) return null;
-
-        var collapsed = TextFormatting.CollapseWhitespace(firstUser.Content);
-        const int max = 40;
-        return collapsed.Length <= max ? collapsed : collapsed[..max].TrimEnd() + "…";
+        // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
+        // returns once the turn is fire-and-forgotten (Step 4-compatible).
+        await _chatSessionManager.StartTurnAsync(session, userText, attachment);
     }
 
     private async Task ExecuteToggleRecording()
@@ -607,178 +444,34 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
-    private async Task<object?> HandleToolCallWithStatus(FunctionCallContent toolCall, AssistantMessage message)
-    {
-        message.StatusText = _actionCardBuilder.ResolveStatusText(toolCall.Name);
-
-        var result = await HandleToolCall(toolCall, message);
-        message.StatusText = _localizationService["Msg_Assistant_StatusThinking"];
-        return result;
-    }
-
-    private async Task<object?> HandleToolCall(FunctionCallContent toolCall, AssistantMessage message)
-    {
-        _logger.LogInformation("Handling tool call: {ToolName}", toolCall.Name);
-        _logger.LogDebug("Tool call {ToolName} with {ArgCount} arguments", toolCall.Name, toolCall.Arguments?.Count ?? 0);
-#if DEBUG
-        Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
-#endif
-
-        // Route through plugin service
-        var routeResult = await _pluginService.RouteToolCallAsync(toolCall);
-        if (routeResult is null)
-        {
-            _logger.LogWarning("No handler found for tool {ToolName}", toolCall.Name);
-            return "Unknown tool.";
-        }
-
-        var (result, pendingAction) = routeResult.Value;
-        _logger.LogDebug("Plugin route returned: hasResult={HasResult}, hasPending={HasPending}",
-            result is not null, pendingAction is not null);
-
-        if (result is string resultStr)
-        {
-            _logger.SensitiveDebug("Tool {ToolName} result ({Length} chars): {Preview}",
-                toolCall.Name,
-                resultStr.Length,
-                resultStr.Length > 500 ? resultStr[..500] + "..." : resultStr);
-        }
-
-        if (result is not null)
-            return result;
-
-        // For write operations, show inline action card
-        if (pendingAction is not null)
-        {
-            var card = _actionCardBuilder.Build(pendingAction, _tokenizationEnabled);
-            await App.Current.Dispatcher.InvokeAsync(() => message.ActionCards.Add(card));
-
-            bool confirmed;
-            try
-            {
-                confirmed = await card.WaitForUserDecisionAsync();
-            }
-            catch (TaskCanceledException)
-            {
-                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
-                confirmed = false;
-            }
-
-            if (confirmed)
-            {
-                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
-                var actionResult = await pendingAction.Execute();
-                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
-
-                var snackbarTitle = _actionCardBuilder.ResolveSuccessTitle(pendingAction.PluginName);
-                _snackbarService.Show(snackbarTitle,
-                    DetokenizeForDisplay(pendingAction.Description),
-                    Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-
-                // Re-scan for new PII after memory write
-                if (_tokenizationEnabled && pendingAction.PluginName == "memory")
-                {
-                    try { await _tokenMapService.InitializeAsync(); }
-                    catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after memory write"); }
-                }
-
-                return actionResult;
-            }
-            else
-            {
-                _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
-                return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
-            }
-        }
-
-        return "Tool call handled.";
-    }
-
-    private string DetokenizeForDisplay(string text) =>
-        _tokenizationEnabled ? _tokenMapService.Detokenize(text) : text;
-
     private void ExecuteCancelStreaming()
     {
-        _streamingCts?.Cancel();
-        CancelPendingActionCards(Messages.LastOrDefault());
+        _chatSessionManager.ActiveSession?.Cancel();
     }
 
     private void ExecuteClearConversation()
     {
-        _streamingCts?.Cancel();
         _ttsService.Stop();
-        foreach (var msg in Messages)
-            CancelPendingActionCards(msg);
-        Messages.Clear();
+
+        // Clear = abandon the CURRENT conversation: cancel its in-flight turn +
+        // pending action cards (parity with today's _streamingCts.Cancel() +
+        // CancelPendingActionCards). No-op when nothing is running. Other live
+        // sessions are untouched (the manager owns their lifetime).
+        _chatSessionManager.ActiveSession?.Cancel();
+
+        // The new session is created with its OWN freshly-initialized token map, so
+        // the new chat starts with a clean PII namespace automatically — no global
+        // Clear() (which would poison a still-running background chat's map).
+        _chatSessionManager.GetOrCreateActiveForNewChat();
         InputText = string.Empty;
-        HasMessages = false;
-
-        _currentChatId = null;
-        _currentChatCreatedAt = default;
-        _currentChatProviderId = null;
-        _autoTitleApplied = false;
-        ChatTitleChip.SetTitle(null);
-
-        if (_tokenizationEnabled)
-        {
-            _tokenMapService.Clear();
-            _ = Task.Run(async () =>
-            {
-                try { await _tokenMapService.InitializeAsync(); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to re-initialize token map after clear"); }
-            });
-        }
     }
 
     private void NewChat() => ExecuteClearConversation();
 
     private async Task ResumeChatAsync(Guid chatId)
     {
-        _streamingCts?.Cancel();
         _ttsService.Stop();
-
-        SyncAssistantChat? chat;
-        try
-        {
-            chat = await _chatService.GetAsync(chatId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load chat {ChatId}", chatId);
-            return;
-        }
-
-        if (chat is null)
-        {
-            _logger.LogWarning("Chat {ChatId} not found during resume", chatId);
-            return;
-        }
-
-        foreach (var msg in Messages)
-            CancelPendingActionCards(msg);
-        Messages.Clear();
-
-        foreach (var dto in chat.Messages)
-            Messages.Add(AssistantMessageMapper.FromDto(dto));
-
-        HasMessages = Messages.Count > 0;
-        _currentChatId = chat.Id;
-        _currentChatCreatedAt = chat.CreatedAt;
-        _currentChatProviderId = chat.ProviderId;
-        _autoTitleApplied = true;
-        ChatTitleChip.SetTitle(chat.Title);
-
-        _logger.LogInformation("Resumed chat {ChatId} ({MessageCount} messages)", chat.Id, chat.Messages.Count);
-        _logger.SensitiveDebug("Resumed chat {ChatId} title: {Title}", chat.Id, chat.Title);
-
-        try
-        {
-            await _chatService.TouchLastAccessedAsync(chat.Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to touch LastAccessedAt for {ChatId}", chat.Id);
-        }
+        await _chatSessionManager.ActivateAsync(chatId);
     }
 
     private void NavigateToAssistantHistory()
@@ -883,21 +576,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         SuggestionMemory = _localizationService[SuggestionMemoryKeys[RandomNumberGenerator.GetInt32(SuggestionMemoryKeys.Length)]];
     }
 
-    public async void OnNavigatedTo(object? parameter)
+    public void OnNavigatedTo(object? parameter)
     {
         RandomizeSuggestions();
 
-        if (parameter is Guid chatId && chatId != Guid.Empty)
-        {
-            await ResumeChatAsync(chatId);
-        }
-        else if (parameter is string text && !string.IsNullOrWhiteSpace(text))
+        // Non-Guid synchronous setup (string / selection params). Guid-activation
+        // is awaited in OnNavigatedToAsync so its exceptions are observed.
+        if (parameter is string text && !string.IsNullOrWhiteSpace(text))
         {
             InputText = text;
         }
         else if (parameter is CapturedSelectionPayload selection)
         {
             ApplyCapturedSelection(selection.Text);
+        }
+    }
+
+    public async Task OnNavigatedToAsync(object? parameter)
+    {
+        if (parameter is Guid chatId && chatId != Guid.Empty)
+        {
+            await ResumeChatAsync(chatId);
         }
 
         try
@@ -907,8 +606,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var settings = await _settingsService.GetSettingsAsync();
             IsTtsEnabled = settings.TtsEnabled;
             _suggestionsEnabled = settings.AssistantSuggestionsEnabled;
-            _autoTitleEnabled = settings.ChatAutoTitleEnabled;
-            _logger.LogInformation("Assistant settings loaded: autoTitleEnabled={AutoTitleEnabled}", _autoTitleEnabled);
 
             // Initialize TTS so HasVoiceLoaded becomes true for voice mode button
             if (!_ttsService.HasVoiceLoaded)
@@ -1393,8 +1090,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         _personaService.PersonasChanged -= OnPersonasChanged;
         PropertyChanged -= OnPropertyChanged;
-        _streamingCts?.Cancel();
-        _streamingCts?.Dispose();
+
+        // Unsubscribe only — the manager owns session lifetime and tears them down
+        // (cancelling each Cts + pending action cards) when the window scope disposes.
+        // This is what lets Assistant → History → Assistant not kill a running turn.
+        _chatSessionManager.ActiveChanged -= OnActiveSessionChanged;
+        _chatSessionManager.SessionTitleChanged -= OnSessionTitleChanged;
+        _chatSessionManager.SessionStateChanged -= OnManagerSessionStateChanged;
+        if (_subscribedSession is { } session)
+        {
+            session.StateChanged -= OnActiveSessionStateChanged;
+            session.TurnCompleted -= OnActiveSessionTurnCompleted;
+            session.ToolSucceeded -= OnActiveSessionToolSucceeded;
+            session.RunFailed -= OnActiveSessionRunFailed;
+        }
+        Messages.CollectionChanged -= OnMessagesCollectionChanged;
+
         ChatTitleChip.Dispose();
 
         GC.SuppressFinalize(this);

@@ -240,6 +240,7 @@ public static class Bootstrapper
         services.AddSingleton<IScheduledJobService, ScheduledJobService>();
         services.AddSingleton<IScheduledResearchProviderResolver, ScheduledResearchProviderResolver>();
         services.AddSingleton<IScheduledJobNotificationSurface, ScheduledJobNotificationSurface>();
+        services.AddSingleton<IBackgroundChatNotifier, BackgroundChatNotificationSurface>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
         services.AddSingleton<IScheduledJobToolHandler, ScheduledJobToolHandler>();
         services.AddSingleton<IResearchHistoryToolHandler, ResearchHistoryToolHandler>();
@@ -279,6 +280,13 @@ public static class Bootstrapper
         // Privacy / PII tokenization
         services.AddSingleton<IPiiDetector, StructuredPiiDetector>();
         services.AddScoped<ITokenMapService, TokenMapService>();
+        // Per-session token-map factory: each ChatSession owns its own map so
+        // concurrent background turns never share a PII namespace. All three
+        // TokenMapService dependencies are singletons, so a fresh instance is safe.
+        services.AddSingleton<Func<ITokenMapService>>(sp => () => new TokenMapService(
+            sp.GetRequiredService<IPiiDetector>(),
+            sp.GetRequiredService<IMemoryService>(),
+            sp.GetRequiredService<ISettingsService>()));
 
         // E2EE services
         services.AddSingleton<ICryptoService, CryptoService>();
@@ -315,6 +323,9 @@ public static class Bootstrapper
         services.AddSingleton<IAutostartService, AutostartService>();
 
         // Services - Scoped (per-window)
+        // Chat-session manager: scoped per assistant window because it injects scoped
+        // IActionCardBuilder + ITokenMapService (a singleton would be a captive dependency).
+        services.AddScoped<ViewModels.Models.IChatSessionManager, ViewModels.Models.ChatSessionManager>();
         services.AddScoped<Navigation.INavigationService, Navigation.NavigationService>();
         services.AddScoped<IDialogService, DialogService>();
         services.AddScoped<ITextOptimizationService, TextOptimizationService>();

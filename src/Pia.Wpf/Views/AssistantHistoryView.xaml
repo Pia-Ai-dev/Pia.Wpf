@@ -28,6 +28,7 @@
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
       <TextBlock Grid.Column="0"
@@ -37,7 +38,19 @@
                  Foreground="{DynamicResource TextDefaultBrush}"
                  VerticalAlignment="Center"/>
 
-      <ui:Button Grid.Column="1"
+      <!-- Group-by toggle: date (default) vs. live state -->
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,12,0" VerticalAlignment="Center">
+        <RadioButton Content="{loc:Str AssistantHistory_GroupBy_Date}"
+                     GroupName="HistoryGroupMode"
+                     IsChecked="{Binding GroupMode, Converter={StaticResource ChatGroupModeToBoolConverter}, ConverterParameter=Date}"
+                     Style="{StaticResource PiaSegmentedButton}"/>
+        <RadioButton Content="{loc:Str AssistantHistory_GroupBy_State}"
+                     GroupName="HistoryGroupMode"
+                     IsChecked="{Binding GroupMode, Converter={StaticResource ChatGroupModeToBoolConverter}, ConverterParameter=State}"
+                     Style="{StaticResource PiaSegmentedButton}"/>
+      </StackPanel>
+
+      <ui:Button Grid.Column="2"
                  Appearance="Secondary"
                  Command="{Binding RefreshCommand}"
                  ToolTip="{loc:Str History_Refresh}">
@@ -52,7 +65,7 @@
         </StackPanel>
       </ui:Button>
 
-      <ui:Button Grid.Column="2"
+      <ui:Button Grid.Column="3"
                  Appearance="Secondary"
                  Margin="8,0,0,0"
                  Command="{Binding DeleteAllChatsCommand}"

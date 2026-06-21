@@ -40,6 +40,11 @@ public class TokenizingAiClientService : IAiClientService
 
     private ITokenMapService? TryGetTokenMapService()
     {
+        // Prefer the running turn's own map (per-session isolation — prevents
+        // cross-chat PII namespace collisions once background turns interleave).
+        // Falls back to the lazily-created scope map for all non-turn callers
+        // (Optimize, voice one-shots) — unchanged behavior there.
+        if (TokenMapAmbient.Current is { } ambient) return ambient;
         if (_tokenMapService is not null) return _tokenMapService;
         _scope = _scopeFactory.CreateScope();
         _tokenMapService = _scope.ServiceProvider.GetService<ITokenMapService>();

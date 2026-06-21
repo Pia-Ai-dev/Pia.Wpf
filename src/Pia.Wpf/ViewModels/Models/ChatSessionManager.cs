@@ -1,0 +1,482 @@
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Pia.Helpers;
+using Pia.Logging;
+using Pia.Models;
+using Pia.Services.Interfaces;
+using Pia.Shared.Models;
+
+namespace Pia.ViewModels.Models;
+
+/// <summary>
+/// Scoped-per-window owner of the live <see cref="ChatSession"/> set. It prepares
+/// turns (persona/provider/prompt resolution), runs them on the UI thread,
+/// persists finished turns, drives auto-title, and re-raises per-session state /
+/// title changes for the active view model and history.
+///
+/// Lives in <c>Pia.ViewModels.Models</c> (alongside <see cref="ChatSession"/>) so
+/// it can reference the session type without violating the
+/// Services-must-not-depend-on-ViewModels layer rule, while still depending only
+/// on service interfaces.
+/// </summary>
+public sealed class ChatSessionManager : IChatSessionManager, IDisposable
+{
+    private readonly ILogger<ChatSessionManager> _logger;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly IAssistantChatService _chatService;
+    private readonly ISettingsService _settingsService;
+    private readonly IPersonaService _personaService;
+    private readonly IProviderService _providerService;
+    private readonly IAssistantPromptComposer _promptComposer;
+    private readonly IChatTitleService _chatTitleService;
+    private readonly IActionCardBuilder _actionCardBuilder;
+    private readonly IPluginService _pluginService;
+    private readonly IAiClientService _aiClientService;
+    private readonly ILocalizationService _localizationService;
+    private readonly Func<ITokenMapService> _tokenMapFactory;
+    private readonly IBackgroundChatNotifier _backgroundChatNotifier;
+    private readonly SynchronizationContext _syncContext;
+
+    private readonly Dictionary<Guid, ChatSession> _sessions = new();
+    private readonly HashSet<ChatSession> _allSessions = new();
+    private bool _disposed;
+
+    public ChatSession? ActiveSession { get; private set; }
+
+    public IReadOnlyCollection<ChatSession> LiveSessions => _allSessions;
+
+    public event EventHandler<ChatSession?>? ActiveChanged;
+    public event EventHandler<SessionStateChangedEventArgs>? SessionStateChanged;
+    public event EventHandler<SessionTitleChangedEventArgs>? SessionTitleChanged;
+
+    public ChatSessionManager(
+        ILogger<ChatSessionManager> logger,
+        ILoggerFactory loggerFactory,
+        IAssistantChatService chatService,
+        ISettingsService settingsService,
+        IPersonaService personaService,
+        IProviderService providerService,
+        IAssistantPromptComposer promptComposer,
+        IChatTitleService chatTitleService,
+        IActionCardBuilder actionCardBuilder,
+        IPluginService pluginService,
+        IAiClientService aiClientService,
+        ILocalizationService localizationService,
+        Func<ITokenMapService> tokenMapFactory,
+        IBackgroundChatNotifier backgroundChatNotifier)
+    {
+        _logger = logger;
+        _loggerFactory = loggerFactory;
+        _chatService = chatService;
+        _settingsService = settingsService;
+        _personaService = personaService;
+        _providerService = providerService;
+        _promptComposer = promptComposer;
+        _chatTitleService = chatTitleService;
+        _actionCardBuilder = actionCardBuilder;
+        _pluginService = pluginService;
+        _aiClientService = aiClientService;
+        _localizationService = localizationService;
+        _tokenMapFactory = tokenMapFactory;
+        _backgroundChatNotifier = backgroundChatNotifier;
+        _syncContext = SynchronizationContext.Current
+            ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
+    }
+
+    private ChatSession CreateSession()
+    {
+        // Each session owns its OWN token map (per-session PII namespace) so two
+        // background turns never collide once turns run concurrently. The decorator
+        // reaches the running turn's map via TokenMapAmbient (set in RunTurnAsync).
+        var tokenMap = _tokenMapFactory();
+        var session = new ChatSession(
+            tokenMap,
+            _aiClientService,
+            _pluginService,
+            _actionCardBuilder,
+            _localizationService,
+            _loggerFactory.CreateLogger<ChatSession>(),
+            IsSessionActive);
+
+        // Pre-load the map's PII keywords/memory so the first turn tokenizes correctly.
+        InitializeTokenMapAsync(tokenMap).SafeFireAndForget(_logger);
+
+        session.StateChanged += OnSessionStateChanged;
+        // The manager persists every session's finished turns (covers active and,
+        // in Step 4, background turns). The active VM separately subscribes
+        // TurnCompleted for followups/TTS.
+        session.TurnCompleted += OnSessionTurnCompleted;
+        _allSessions.Add(session);
+        return session;
+    }
+
+    private async Task InitializeTokenMapAsync(ITokenMapService tokenMap)
+    {
+        try { await tokenMap.InitializeAsync(); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to initialize a session token map"); }
+    }
+
+    /// <summary>Synchronous is-active probe handed to each session for its terminal-state decision.</summary>
+    private bool IsSessionActive(ChatSession session) => ReferenceEquals(session, ActiveSession);
+
+    private void OnSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
+    {
+        // Persist on every terminal state (matches today's finally-persist, which
+        // saved error turns too). Follow-up/TTS gating lives in the active VM.
+        if (sender is ChatSession session)
+            PersistAsync(session).SafeFireAndForget(_logger);
+    }
+
+    private void OnSessionStateChanged(object? sender, ChatStateChangedEventArgs e)
+    {
+        if (sender is not ChatSession session) return;
+        var isActive = ReferenceEquals(session, ActiveSession);
+        SessionStateChanged?.Invoke(this, new SessionStateChangedEventArgs
+        {
+            ChatId = session.Id,
+            OldState = e.OldState,
+            NewState = e.NewState,
+            IsActive = isActive,
+        });
+
+        // Single notifier-routing point: a background (non-active) session that
+        // reaches a surface-worthy state pings the user with a link to the chat.
+        // Running/Idle never notify (SetState already de-dupes unchanged values).
+        if (!isActive && session.Id is { } chatId
+            && e.NewState is ChatState.WaitingForTool or ChatState.Completed or ChatState.Error)
+        {
+            var displayTitle = string.IsNullOrWhiteSpace(session.Title)
+                ? _localizationService["AssistantChat_TitlePlaceholder_NewChat"]
+                : session.Title!;
+            _backgroundChatNotifier.NotifyStateChange(chatId, displayTitle, e.NewState);
+        }
+    }
+
+    public ChatSession GetOrCreateActiveForNewChat()
+    {
+        var session = CreateSession();
+        SetActive(session);
+        return session;
+    }
+
+    public ChatSession? TryGetLive(Guid chatId) =>
+        _sessions.TryGetValue(chatId, out var session) ? session : null;
+
+    public ChatState GetState(Guid chatId) =>
+        _sessions.TryGetValue(chatId, out var session) ? session.State : ChatState.Idle;
+
+    public void SetActive(ChatSession session)
+    {
+        if (ReferenceEquals(session, ActiveSession)) return;
+        ActiveSession = session;
+
+        // Clear Completed → Idle on activation: the result is now "read".
+        if (session.State == ChatState.Completed)
+            session.SetState(ChatState.Idle);
+
+        ActiveChanged?.Invoke(this, session);
+    }
+
+    public async Task<ChatSession?> ActivateAsync(Guid chatId)
+    {
+        // Live-attach: if this chat is already running in the background, swap to it
+        // WITHOUT cancelling or reloading. Its Messages already hold any pending
+        // action card, so activating reveals it for free. This is the headline:
+        // switching chats no longer kills the in-flight turn.
+        if (TryGetLive(chatId) is { } live)
+        {
+            SetActive(live);
+            return live;
+        }
+
+        // No live session — hydrate from the store (a previously persisted chat).
+        SyncAssistantChat? chat;
+        try
+        {
+            chat = await _chatService.GetAsync(chatId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load chat {ChatId}", chatId);
+            return null;
+        }
+
+        if (chat is null)
+        {
+            _logger.LogWarning("Chat {ChatId} not found during resume", chatId);
+            return null;
+        }
+
+        var session = CreateSession();
+        foreach (var dto in chat.Messages)
+            session.Messages.Add(AssistantMessageMapper.FromDto(dto));
+
+        session.SetIdentity(chat.Id, chat.CreatedAt, chat.ProviderId, chat.Title, autoTitleApplied: true);
+        _sessions[chat.Id] = session;
+        SetActive(session);
+
+        _logger.LogInformation("Resumed chat {ChatId} ({MessageCount} messages)", chat.Id, chat.Messages.Count);
+        _logger.SensitiveDebug("Resumed chat {ChatId} title: {Title}", chat.Id, chat.Title);
+
+        try
+        {
+            await _chatService.TouchLastAccessedAsync(chat.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to touch LastAccessedAt for {ChatId}", chat.Id);
+        }
+
+        return session;
+    }
+
+    public async Task StartTurnAsync(ChatSession session, string userText, ImageAttachment? attachment)
+    {
+        var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
+
+        var userMessage = new AssistantMessage(ChatRole.User, userText)
+        {
+            Attachment = attachment,
+        };
+        session.Messages.Add(userMessage);
+
+        var assistantMessage = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
+        session.Messages.Add(assistantMessage);
+
+        // Assign the Id synchronously at first-turn start (before any state change is
+        // raised) and key the session into _sessions now. A first-turn chat backgrounded
+        // mid-turn would otherwise have Id == null at its terminal/WaitingForTool
+        // transition, so the notifier-routing gate in OnSessionStateChanged would drop
+        // the background notification permanently (PersistAsync, the only other Id
+        // assignment, runs at end-of-turn and raises no new state transition). Keying it
+        // in now also makes a first-turn chat resumable/live-attachable while it streams.
+        // PersistAsync's own `Id is null` assignment then no-ops and its
+        // `_sessions[chatId] = session` is idempotent.
+        if (session.Id is null)
+        {
+            session.SetIdentity(Guid.NewGuid(), session.CreatedAt, session.ProviderId, session.Title, session.AutoTitleApplied);
+            _sessions[session.Id.Value] = session;
+        }
+
+        // Flip to Running synchronously (before any await) so the proxied IsStreaming
+        // disables the send button and closes the voice-mode gate immediately —
+        // preserving today's synchronous IsStreaming=true at send time.
+        session.SetState(ChatState.Running);
+
+        ChatTurnRequest request;
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            var tokenizationEnabled = settings.Privacy.TokenizationEnabled;
+
+            var persona = await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+            assistantMessage.Persona = PersonaAttribution.From(persona);
+
+            var provider = persona.PreferredProviderId.HasValue
+                ? await _providerService.GetProviderAsync(persona.PreferredProviderId.Value)
+                : null;
+            provider ??= await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+            if (provider is null)
+            {
+                assistantMessage.Content = _localizationService["Msg_Assistant_NoProviderInline"];
+                assistantMessage.IsStreaming = false;
+                session.SetState(ChatState.Error);
+                session.RaiseRunFailed(new RunFailedEventArgs
+                {
+                    Kind = RunFailureKind.Generic,
+                    Title = _localizationService["Msg_Error"],
+                    Message = _localizationService["Msg_Assistant_NoProviderConfigured"],
+                });
+                return;
+            }
+
+            if (persona.ReasoningEffort.HasValue)
+            {
+                provider = provider.Clone();
+                provider.ReasoningEffort = persona.ReasoningEffort.Value;
+            }
+
+            session.SetProviderId(provider.Id);
+            _logger.LogInformation("SendMessage: resolved persona {PersonaId} (ToolScope {ToolScope})", persona.Id, persona.ToolScope);
+
+            var turnSetup = _promptComposer.PrepareTurn(persona, provider, atCommands, tokenizationEnabled);
+            // Provider name is a user-named item (CLAUDE.md) — keep it out of the
+            // release-surviving log; surface IDs/counts at Info, the name only in DEBUG.
+            _logger.LogInformation("SendMessage: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
+                provider.Id, turnSetup.SupportsTools, turnSetup.Tools?.Count ?? 0, atCommands.Count);
+            _logger.SensitiveDebug("SendMessage provider name: {ProviderName}", provider.Name);
+
+            if (turnSetup.Tools is { Count: > 0 } toolList)
+                _logger.LogDebug("Tools being sent to AI: [{ToolNames}]", string.Join(", ", toolList.Select(t => t.Name)));
+
+            request = new ChatTurnRequest
+            {
+                UserMessage = userMessage,
+                AssistantMessage = assistantMessage,
+                Provider = provider,
+                TurnSetup = turnSetup,
+                AtCommands = atCommands,
+                TokenizationEnabled = tokenizationEnabled,
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Turn setup (settings/persona/provider/prompt) threw before RunTurnAsync
+            // was dispatched. RunTurnAsync's try/finally — the only place that settles
+            // terminal state and creates/disposes the Cts — never runs, so without this
+            // guard the session would stay wedged in Running (IsStreaming stuck true,
+            // send disabled, Cancel a no-op on the null Cts). Mirror the no-provider
+            // branch: settle to Error and surface a handled RunFailed so the active VM
+            // restores the composer and the session can be used again.
+            _logger.LogError(ex, "Failed to set up AI turn");
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+                assistantMessage.Content = _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message);
+            assistantMessage.IsStreaming = false;
+            session.SetState(ChatState.Error);
+            session.RaiseRunFailed(new RunFailedEventArgs
+            {
+                Kind = RunFailureKind.Generic,
+                Title = _localizationService["Msg_Error"],
+                Message = _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message),
+            });
+            return;
+        }
+
+        // UI-affine fire-and-forget: starts on the UI thread; continuations resume
+        // on the captured UI SynchronizationContext (no Task.Run).
+        session.RunTurnAsync(request, CancellationToken.None).SafeFireAndForget(_logger);
+    }
+
+    public async Task PersistAsync(ChatSession session)
+    {
+        if (session.Messages.Count == 0) return;
+
+        var nowUtc = DateTime.UtcNow;
+
+        if (session.Id is null)
+            session.SetIdentity(Guid.NewGuid(), nowUtc, session.ProviderId, session.Title, session.AutoTitleApplied);
+
+        var chatId = session.Id!.Value;
+        _sessions[chatId] = session;
+
+        var chat = new SyncAssistantChat
+        {
+            Id = chatId,
+            SchemaVersion = 1,
+            Title = DeriveChatTitle(session),
+            CreatedAt = session.CreatedAt,
+            UpdatedAt = nowUtc,
+            LastAccessedAt = nowUtc,
+            WindowMode = WindowMode.Assistant.ToString(),
+            ProviderId = session.ProviderId,
+            Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto)],
+        };
+
+        try
+        {
+            await _chatService.SaveAsync(chat);
+            session.SetTitle(chat.Title);
+            RaiseTitleChanged(session, chat.Title);
+            _logger.LogInformation("Persisted assistant chat {ChatId} ({MessageCount} messages)",
+                chat.Id, chat.Messages.Count);
+            _logger.SensitiveDebug("Chat {ChatId} title: {Title}", chat.Id, chat.Title);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist assistant chat {ChatId}", chat.Id);
+        }
+
+        await TryStartAutoTitleAsync(session, chat);
+    }
+
+    private async Task TryStartAutoTitleAsync(ChatSession session, SyncAssistantChat chat)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!settings.ChatAutoTitleEnabled || session.AutoTitleApplied) return;
+
+        var userCount = chat.Messages.Count(m => m.Role == "user");
+        var assistantReply = chat.Messages.FirstOrDefault(m => m.Role == "assistant"
+            && !string.IsNullOrWhiteSpace(m.Content));
+        if (userCount != 1 || assistantReply is null) return;
+
+        var firstUser = chat.Messages.FirstOrDefault(m => m.Role == "user");
+        if (firstUser is null || string.IsNullOrWhiteSpace(firstUser.Content)) return;
+
+        session.AutoTitleApplied = true;
+        _logger.LogInformation("Auto-title generation starting for chat {ChatId}", chat.Id);
+        RenameChatAsync(session, chat.Id, firstUser.Content, assistantReply.Content).SafeFireAndForget(_logger);
+    }
+
+    private async Task RenameChatAsync(ChatSession session, Guid chatId, string firstUserContent, string firstAssistantContent)
+    {
+        try
+        {
+            var title = await _chatTitleService.GenerateAsync(firstUserContent, firstAssistantContent);
+            if (string.IsNullOrEmpty(title))
+                return;
+
+            var existing = await _chatService.GetAsync(chatId);
+            if (existing is null)
+            {
+                _logger.LogWarning("Auto-title: chat {ChatId} disappeared before rename", chatId);
+                return;
+            }
+
+            existing.Title = title;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await _chatService.SaveAsync(existing);
+
+            session.SetTitle(title);
+            // Forward to the chip only when this session is active (is-active gate
+            // replaces the old _currentChatId guard).
+            RaiseTitleChanged(session, title);
+
+            _logger.LogInformation("Auto-title applied for chat {ChatId}", chatId);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Auto-title generation failed for chat {ChatId}", chatId);
+        }
+    }
+
+    private void RaiseTitleChanged(ChatSession session, string? title)
+    {
+        var isActive = ReferenceEquals(session, ActiveSession);
+        SessionTitleChanged?.Invoke(this, new SessionTitleChangedEventArgs
+        {
+            Session = session,
+            Title = title,
+            IsActive = isActive,
+        });
+    }
+
+    private static string? DeriveChatTitle(ChatSession session)
+    {
+        var firstUser = session.Messages.FirstOrDefault(m => m.IsUser);
+        if (firstUser is null || string.IsNullOrWhiteSpace(firstUser.Content)) return null;
+
+        var collapsed = TextFormatting.CollapseWhitespace(firstUser.Content);
+        const int max = 40;
+        return collapsed.Length <= max ? collapsed : collapsed[..max].TrimEnd() + "…";
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        // The manager owns session teardown — cancel every session's Cts + pending
+        // action cards (a WaitingForTool session at shutdown is otherwise an
+        // abandoned TaskCompletionSource).
+        foreach (var session in _allSessions)
+        {
+            session.StateChanged -= OnSessionStateChanged;
+            session.TurnCompleted -= OnSessionTurnCompleted;
+            session.Dispose();
+        }
+        _allSessions.Clear();
+        _sessions.Clear();
+    }
+}

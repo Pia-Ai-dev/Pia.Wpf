@@ -2,8 +2,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using Pia.Helpers;
-using Pia.Shared.Models;
 using Pia.ViewModels;
+using Pia.ViewModels.Models;
 
 namespace Pia.Controls.AssistantHistory;
 
@@ -58,8 +58,8 @@ public partial class PiaAssistantChatGroupCard : UserControl
     private void ItemList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_vm is null) return;
-        if (ItemList.SelectedItem is SyncAssistantChat chat)
-            _vm.SelectedChat = chat;
+        if (ItemList.SelectedItem is AssistantChatRowViewModel row)
+            _vm.SelectedChat = row;
     }
 
     private void ToggleHeader_Click(object sender, RoutedEventArgs e)

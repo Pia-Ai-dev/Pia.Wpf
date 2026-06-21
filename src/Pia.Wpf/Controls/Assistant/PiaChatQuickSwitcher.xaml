@@ -87,10 +87,18 @@
             <ListBox.ItemTemplate>
               <DataTemplate DataType="{x:Type vm:QuickSwitcherMatchViewModel}">
                 <StackPanel>
-                  <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Title}"
-                             FontSize="13"
-                             FontWeight="SemiBold"
-                             TextTrimming="CharacterEllipsis" />
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="{Binding State, Converter={StaticResource ChatStateToGlyphConverter}}"
+                                   FontSize="12"
+                                   Margin="0,0,6,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{Binding State, Converter={StaticResource ChatStateToBrushFg}}"
+                                   Visibility="{Binding State, Converter={StaticResource ChatStateIsBadgeVisibleConverter}}" />
+                    <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Title}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
                   <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Snippet}"
                              FontSize="11"
                              Margin="0,2,0,0"

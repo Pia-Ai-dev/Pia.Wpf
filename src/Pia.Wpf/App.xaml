@@ -58,6 +58,12 @@
       <converters:ReminderStatusToLabelConverter x:Key="ReminderStatusToLabelConverter" />
       <converters:NextFireAtToShortStringConverter x:Key="NextFireAtToShortStringConverter" />
       <converters:HexToBrushConverter x:Key="HexToBrushConverter" />
+      <converters:ChatStateToBrushConverter x:Key="ChatStateToBrushBg" Kind="Background" />
+      <converters:ChatStateToBrushConverter x:Key="ChatStateToBrushFg" Kind="Foreground" />
+      <converters:ChatStateToGlyphConverter x:Key="ChatStateToGlyphConverter" />
+      <converters:ChatStateToLabelConverter x:Key="ChatStateToLabelConverter" />
+      <converters:ChatStateIsBadgeVisibleConverter x:Key="ChatStateIsBadgeVisibleConverter" />
+      <converters:ChatGroupModeToBoolConverter x:Key="ChatGroupModeToBoolConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">
