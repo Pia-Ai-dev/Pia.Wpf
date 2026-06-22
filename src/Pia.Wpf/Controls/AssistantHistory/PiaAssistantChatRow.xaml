@@ -1,7 +1,6 @@
 <UserControl x:Class="Pia.Controls.AssistantHistory.PiaAssistantChatRow"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory">
   <Border x:Name="Root"
           CornerRadius="8"
@@ -22,36 +21,8 @@
       </Style>
     </Border.Style>
 
-    <Grid>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-
-      <ah:PiaAssistantChatRowContent Grid.Column="0"/>
-
-      <!-- Live state badge (history-only wrapper carries AssistantChatRowViewModel
-           with an observable State; hidden when Idle). -->
-      <Border Grid.Column="1"
-              CornerRadius="9"
-              Padding="6,2"
-              Margin="8,0,0,0"
-              VerticalAlignment="Center"
-              Background="{Binding State, Converter={StaticResource ChatStateToBrushBg}}"
-              Visibility="{Binding State, Converter={StaticResource ChatStateIsBadgeVisibleConverter}}">
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="{Binding State, Converter={StaticResource ChatStateToGlyphConverter}}"
-                         FontSize="11"
-                         VerticalAlignment="Center"
-                         Foreground="{Binding State, Converter={StaticResource ChatStateToBrushFg}}"/>
-          <TextBlock Text="{Binding State, Converter={StaticResource ChatStateToLabelConverter}}"
-                     FontSize="10"
-                     FontWeight="SemiBold"
-                     Margin="4,0,0,0"
-                     VerticalAlignment="Center"
-                     Foreground="{Binding State, Converter={StaticResource ChatStateToBrushFg}}"/>
-        </StackPanel>
-      </Border>
-    </Grid>
+    <!-- Full row body (time | title | state badge | date) lives in the shared content
+         control; the badge's live State binds via the row VM's inherited DataContext. -->
+    <ah:PiaAssistantChatRowContent/>
   </Border>
 </UserControl>

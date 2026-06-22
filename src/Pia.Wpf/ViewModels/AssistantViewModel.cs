@@ -449,15 +449,35 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatSessionManager.ActiveSession?.Cancel();
     }
 
+    /// <summary>
+    /// "Clear conversation" (destructive): abandon the CURRENT conversation by cancelling
+    /// its in-flight turn + pending action cards, then open a fresh chat. No-op cancel when
+    /// nothing is running. The dedicated Stop button (<see cref="ExecuteCancelStreaming"/>)
+    /// is the other place a turn is intentionally cancelled. Contrast <see cref="NewChat"/>,
+    /// which is additive and leaves the running turn alive in the background.
+    /// </summary>
     private void ExecuteClearConversation()
     {
-        _ttsService.Stop();
-
-        // Clear = abandon the CURRENT conversation: cancel its in-flight turn +
-        // pending action cards (parity with today's _streamingCts.Cancel() +
-        // CancelPendingActionCards). No-op when nothing is running. Other live
-        // sessions are untouched (the manager owns their lifetime).
+        // Destructive: cancel this conversation's in-flight turn + pending cards. Other
+        // live sessions are untouched (the manager owns their lifetime).
         _chatSessionManager.ActiveSession?.Cancel();
+        StartFreshChat();
+    }
+
+    /// <summary>
+    /// "New chat" (additive): open a fresh chat WITHOUT cancelling the current turn — the
+    /// running turn keeps streaming in the background and notifies on completion (the
+    /// background-chats contract: opening or switching a chat never kills an in-flight
+    /// turn). Cancelling here would abort the in-flight HTTP request — surfacing a
+    /// SocketException in the support log — and discard the background result.
+    /// </summary>
+    private void NewChat() => StartFreshChat();
+
+    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the
+    /// additive "New chat" and the destructive "Clear conversation" entry points.</summary>
+    private void StartFreshChat()
+    {
+        _ttsService.Stop();
 
         // The new session is created with its OWN freshly-initialized token map, so
         // the new chat starts with a clean PII namespace automatically — no global
@@ -465,8 +485,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatSessionManager.GetOrCreateActiveForNewChat();
         InputText = string.Empty;
     }
-
-    private void NewChat() => ExecuteClearConversation();
 
     private async Task ResumeChatAsync(Guid chatId)
     {

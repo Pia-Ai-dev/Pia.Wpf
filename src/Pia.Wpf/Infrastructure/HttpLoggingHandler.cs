@@ -27,6 +27,19 @@ public class HttpLoggingHandler : DelegatingHandler
         {
             response = await base.SendAsync(request, cancellationToken);
         }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            // A cancelled request — the user stopped the turn, cleared the chat, or the
+            // app is shutting down — is normal, not a transport failure. Mid-stream
+            // cancellation often surfaces as an IOException/SocketException ("operation
+            // aborted") rather than OperationCanceledException; either way, log it gently
+            // (no error level, no alarming stack) so it doesn't read as a fault in the
+            // support log. Rethrow unchanged so the caller's cancellation handling runs.
+            _logger.LogDebug("HTTP {Method} {Url} cancelled after {ElapsedMs}ms",
+                method, url, stopwatch.ElapsedMilliseconds);
+            throw;
+        }
         catch (Exception ex)
         {
             stopwatch.Stop();

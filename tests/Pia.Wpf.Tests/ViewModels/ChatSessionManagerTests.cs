@@ -278,6 +278,35 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task StartTurnAsync_FirstTurn_WithProvider_PersistsImmediately()
+    {
+        // Point 3: a brand-new chat must enter history on the first message — not only
+        // after the turn finishes. With provider resolution succeeding, StartTurnAsync
+        // persists the first turn (user + streaming placeholder) before dispatching the run.
+        var sut = CreateSut();
+
+        var session = sut.GetOrCreateActiveForNewChat(); // first turn, Id still null
+        _chatService.ClearReceivedCalls();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful" };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, false, false));
+
+        await sut.StartTurnAsync(session, "hello", null);
+
+        Assert.NotNull(session.Id);
+        // SaveAsync runs synchronously (mocked) inside the first-turn persist, before
+        // RunTurnAsync streams — so the chat is already in history. The snapshot holds the
+        // user message + the (still streaming) assistant placeholder = 2 messages.
+        await _chatService.Received().SaveAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Id == session.Id && c.Messages.Count == 2),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StartTurnAsync_SetupThrows_BackgroundSession_FailsGracefully()
     {
         var sut = CreateSut();

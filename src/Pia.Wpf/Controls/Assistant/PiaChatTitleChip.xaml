@@ -69,8 +69,8 @@
               BorderThickness="1"
               CornerRadius="{StaticResource LargeRadius}"
               Padding="6"
-              MinWidth="320"
-              MaxWidth="380"
+              MinWidth="360"
+              MaxWidth="420"
               MaxHeight="460">
         <Border.Effect>
           <DropShadowEffect Color="#0F1729" BlurRadius="18" Opacity="0.16" ShadowDepth="4" />
@@ -79,25 +79,11 @@
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
 
-          <!-- Group-by toggle: date (default) vs. snapshot state -->
-          <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="2,2,2,4"
-                      HorizontalAlignment="Left">
-            <RadioButton Content="{loc:Str AssistantHistory_GroupBy_Date}"
-                         GroupName="ChipFlyoutGroupMode"
-                         IsChecked="{Binding GroupMode, Converter={StaticResource ChatGroupModeToBoolConverter}, ConverterParameter=Date}"
-                         Style="{StaticResource PiaSegmentedButton}" />
-            <RadioButton Content="{loc:Str AssistantHistory_GroupBy_State}"
-                         GroupName="ChipFlyoutGroupMode"
-                         IsChecked="{Binding GroupMode, Converter={StaticResource ChatGroupModeToBoolConverter}, ConverterParameter=State}"
-                         Style="{StaticResource PiaSegmentedButton}" />
-          </StackPanel>
-
-          <ui:TextBox Grid.Row="1"
+          <ui:TextBox Grid.Row="0"
                       x:Name="SearchBox"
                       Margin="2"
                       Icon="{ui:SymbolIcon Symbol=Search24}"
@@ -108,7 +94,7 @@
           <!-- New chat: the primary action, lifted out of the row list with an
                accent-soft fill that flips to solid accent on hover (same vocabulary
                as PiaSegmentedButton's selected state). -->
-          <Button Grid.Row="2"
+          <Button Grid.Row="1"
                   Margin="2,6,2,2"
                   Cursor="Hand"
                   HorizontalContentAlignment="Stretch"
@@ -145,7 +131,7 @@
             </Button.Template>
           </Button>
 
-          <ScrollViewer Grid.Row="3"
+          <ScrollViewer Grid.Row="2"
                         Margin="0,4,0,0"
                         VerticalScrollBarVisibility="Auto"
                         HorizontalScrollBarVisibility="Disabled">
@@ -173,6 +159,8 @@
                                     Padding="10,7"
                                     Command="{Binding DataContext.ResumeChatCommand, ElementName=ChipRoot}"
                                     CommandParameter="{Binding Id}">
+                              <!-- time | title | state badge | date; badge State is a
+                                   snapshot read once at flyout build. -->
                               <ah:PiaAssistantChatRowContent/>
                             </Button>
                           </DataTemplate>
@@ -185,7 +173,7 @@
             </StackPanel>
           </ScrollViewer>
 
-          <Border Grid.Row="4" Margin="0,6,0,0"
+          <Border Grid.Row="3" Margin="0,6,0,0"
                   BorderBrush="{DynamicResource BorderBrush_}"
                   BorderThickness="0,1,0,0">
             <Button Style="{StaticResource UnstyledButton}"

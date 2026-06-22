@@ -4,13 +4,6 @@ using Pia.Shared.Models;
 
 namespace Pia.ViewModels.Models;
 
-/// <summary>How the assistant history list is grouped.</summary>
-public enum ChatGroupMode
-{
-    Date,
-    State,
-}
-
 /// <summary>
 /// A per-row wrapper over the immutable <see cref="SyncAssistantChat"/> DTO so a
 /// history/quick-switcher row can carry a live, observable <see cref="ChatState"/>
@@ -37,3 +30,7 @@ public sealed partial class AssistantChatRowViewModel : ObservableObject
         _state = seed;
     }
 }
+
+/// <summary>An option in the history live-state filter: a <see cref="ChatState"/>, or
+/// null for "All states".</summary>
+public sealed record ChatStateFilterOption(ChatState? State, string DisplayName);

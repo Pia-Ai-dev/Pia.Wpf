@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
@@ -95,6 +96,71 @@ public class HttpLoggingHandlerTests
         Assert.Single(_logger.Entries);
         Assert.Equal(LogLevel.Error, _logger.Entries[0].Level);
         Assert.Same(expectedEx, _logger.Entries[0].Exception);
+    }
+
+    [Fact]
+    public async Task SendAsync_CancelledRequest_OperationCanceled_LogsAtDebugAndRethrows()
+    {
+        var handler = new HttpLoggingHandler(_logger)
+        {
+            InnerHandler = new ThrowingHandler(new OperationCanceledException()),
+        };
+        var invoker = CreateInvoker(handler);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => invoker.SendAsync(CreateRequest(), cts.Token));
+
+        // A cancelled request is normal — logged gently at Debug, not Error.
+        Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Debug, _logger.Entries[0].Level);
+        Assert.Contains("cancelled", _logger.Entries[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SendAsync_CancelledRequest_SocketAbort_LogsAtDebugNotError()
+    {
+        // The exact shape the user hit: mid-stream cancellation surfaces as an
+        // IOException wrapping a SocketException ("operation aborted"), with the token
+        // cancelled. It must NOT be logged as a transport failure.
+        var abort = new IOException(
+            "Unable to read data from the transport connection",
+            new System.Net.Sockets.SocketException(995));
+        var handler = new HttpLoggingHandler(_logger)
+        {
+            InnerHandler = new ThrowingHandler(abort),
+        };
+        var invoker = CreateInvoker(handler);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var ex = await Assert.ThrowsAsync<IOException>(
+            () => invoker.SendAsync(CreateRequest(), cts.Token));
+        Assert.Same(abort, ex);
+
+        Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Debug, _logger.Entries[0].Level);
+        Assert.NotEqual(LogLevel.Error, _logger.Entries[0].Level);
+    }
+
+    [Fact]
+    public async Task SendAsync_ExceptionWithoutCancellation_StillLogsAtErrorLevel()
+    {
+        // A genuine transport failure (token NOT cancelled) must still log at Error.
+        var abort = new IOException("Unable to read data from the transport connection",
+            new System.Net.Sockets.SocketException(995));
+        var handler = new HttpLoggingHandler(_logger)
+        {
+            InnerHandler = new ThrowingHandler(abort),
+        };
+        var invoker = CreateInvoker(handler);
+
+        await Assert.ThrowsAsync<IOException>(
+            () => invoker.SendAsync(CreateRequest(), CancellationToken.None));
+
+        Assert.Single(_logger.Entries);
+        Assert.Equal(LogLevel.Error, _logger.Entries[0].Level);
     }
 
     [Fact]

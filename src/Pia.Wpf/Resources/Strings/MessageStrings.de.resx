@@ -249,8 +249,7 @@
   <data name="ChatState_Group_WaitingForTool" xml:space="preserve"><value>Wartet auf Bestätigung</value></data>
   <data name="ChatState_Group_Completed" xml:space="preserve"><value>Abgeschlossen</value></data>
   <data name="ChatState_Group_Error" xml:space="preserve"><value>Fehlgeschlagen</value></data>
-  <data name="AssistantHistory_GroupBy_Date" xml:space="preserve"><value>Nach Datum</value></data>
-  <data name="AssistantHistory_GroupBy_State" xml:space="preserve"><value>Nach Status</value></data>
+  <data name="AssistantHistory_StateFilter_All" xml:space="preserve"><value>Alle Status</value></data>
   <data name="Notification_BackgroundChat_Title" xml:space="preserve"><value>Hintergrund-Chat-Update</value></data>
   <data name="Notification_BackgroundChat_WaitingForTool" xml:space="preserve"><value>„{0}" benötigt Ihre Bestätigung</value></data>
   <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>„{0}" ist fertig</value></data>

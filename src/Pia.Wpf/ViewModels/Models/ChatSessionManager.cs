@@ -296,6 +296,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     public async Task StartTurnAsync(ChatSession session, string userText, ImageAttachment? attachment)
     {
+        // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
+        // so this marks the first turn (never persisted) vs. a resumed/continuing chat
+        // (already in history). Drives the persist-on-first-message below.
+        var isFirstTurn = session.Id is null;
+
         var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
 
         var userMessage = new AssistantMessage(ChatRole.User, userText)
@@ -414,6 +419,16 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             await FinalizeFailedSetupAsync(session);
             return;
         }
+
+        // Persist on the first message so the chat appears in history/flyout immediately —
+        // not only once the turn completes. Placed AFTER provider resolution (the
+        // no-provider and setup-failure paths returned above via FinalizeFailedSetupAsync),
+        // so an unconfigured user still accrues no junk history. PersistAsync snapshots
+        // Messages synchronously before RunTurnAsync streams into the assistant placeholder,
+        // so there is no concurrent mutation; auto-title still no-ops here (no assistant
+        // reply yet). Subsequent turns are already in history, so only the first needs this.
+        if (isFirstTurn)
+            PersistAsync(session).SafeFireAndForget(_logger);
 
         // UI-affine fire-and-forget: starts on the UI thread; continuations resume
         // on the captured UI SynchronizationContext (no Task.Run).

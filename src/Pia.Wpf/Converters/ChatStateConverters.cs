@@ -4,7 +4,6 @@ using System.Windows.Data;
 using System.Windows.Media;
 using Pia.Localization;
 using Pia.Models;
-using Pia.ViewModels.Models;
 using Wpf.Ui.Controls;
 
 namespace Pia.Converters;
@@ -96,25 +95,4 @@ public class ChatStateIsBadgeVisibleConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
-}
-
-/// <summary>
-/// Two-way RadioButton binding for the <see cref="ChatGroupMode"/> toggle: checked
-/// when the bound enum value matches the <c>ConverterParameter</c> name.
-/// </summary>
-public class ChatGroupModeToBoolConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)
-    {
-        if (value is not ChatGroupMode mode || parameter is not string target)
-            return false;
-        return string.Equals(mode.ToString(), target, StringComparison.Ordinal);
-    }
-
-    public object ConvertBack(object? value, Type targetType, object parameter, CultureInfo culture)
-    {
-        if (value is true && parameter is string target && Enum.TryParse<ChatGroupMode>(target, out var mode))
-            return mode;
-        return Binding.DoNothing;
-    }
 }

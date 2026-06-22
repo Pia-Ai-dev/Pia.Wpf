@@ -257,8 +257,7 @@
   <data name="ChatState_Group_WaitingForTool" xml:space="preserve"><value>Waiting for confirmation</value></data>
   <data name="ChatState_Group_Completed" xml:space="preserve"><value>Completed</value></data>
   <data name="ChatState_Group_Error" xml:space="preserve"><value>Errored</value></data>
-  <data name="AssistantHistory_GroupBy_Date" xml:space="preserve"><value>By date</value></data>
-  <data name="AssistantHistory_GroupBy_State" xml:space="preserve"><value>By state</value></data>
+  <data name="AssistantHistory_StateFilter_All" xml:space="preserve"><value>All states</value></data>
   <data name="Notification_BackgroundChat_Title" xml:space="preserve"><value>Background chat update</value></data>
   <data name="Notification_BackgroundChat_WaitingForTool" xml:space="preserve"><value>'{0}' needs your confirmation</value></data>
   <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>'{0}' finished</value></data>

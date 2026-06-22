@@ -63,7 +63,6 @@
       <converters:ChatStateToGlyphConverter x:Key="ChatStateToGlyphConverter" />
       <converters:ChatStateToLabelConverter x:Key="ChatStateToLabelConverter" />
       <converters:ChatStateIsBadgeVisibleConverter x:Key="ChatStateIsBadgeVisibleConverter" />
-      <converters:ChatGroupModeToBoolConverter x:Key="ChatGroupModeToBoolConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

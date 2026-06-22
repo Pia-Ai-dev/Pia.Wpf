@@ -42,9 +42,16 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     [ObservableProperty]
     private ObservableCollection<AssistantChatGroupViewModel> _chatGroups = new();
 
-    /// <summary>Whether the list groups by date (default) or by live chat state.</summary>
+    /// <summary>Selected option in the live-state filter (null State = "All states").</summary>
     [ObservableProperty]
-    private ChatGroupMode _groupMode = ChatGroupMode.Date;
+    private ChatStateFilterOption? _selectedStateOption;
+
+    /// <summary>Count of chats currently visible after the state filter (drives the status bar).</summary>
+    [ObservableProperty]
+    private int _visibleCount;
+
+    /// <summary>"All states" + one option per live <see cref="ChatState"/> (action-needed first).</summary>
+    public IReadOnlyList<ChatStateFilterOption> StateFilterOptions { get; }
 
     [ObservableProperty]
     private string _searchQuery = string.Empty;
@@ -97,6 +104,9 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         _snackbarService = snackbarService;
         _chatSessionManager = chatSessionManager;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
+
+        StateFilterOptions = BuildStateFilterOptions(localizationService);
+        _selectedStateOption = StateFilterOptions[0];
 
         DeleteChatCommand = new AsyncRelayCommand(ExecuteDeleteChatAsync, CanExecuteWithSelection);
         DeleteAllChatsCommand = new AsyncRelayCommand(ExecuteDeleteAllChatsAsync);
@@ -195,22 +205,29 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             .Where(g => g.GroupKey is not null)
             .ToDictionary(g => g.GroupKey!, g => g.IsExpanded);
 
-        var groups = GroupMode == ChatGroupMode.State
-            ? BuildStateGroups(existingState)
-            : BuildDateGroups(existingState);
+        // Live-status filter (client-side): GetState returns Idle for any persisted-but-
+        // not-live chat, so this meaningfully isolates the live set (Running/Waiting/Error/
+        // Completed); a null State means "All states".
+        var stateFilter = SelectedStateOption?.State;
+        var filtered = stateFilter is { } s
+            ? Chats.Where(c => c.State == s).ToList()
+            : Chats.ToList();
+        VisibleCount = filtered.Count;
 
         ChatGroups.Clear();
-        foreach (var group in groups)
+        foreach (var group in BuildDateGroups(filtered, existingState))
             ChatGroups.Add(group);
     }
 
-    private List<AssistantChatGroupViewModel> BuildDateGroups(IReadOnlyDictionary<string, bool> existingState)
+    private List<AssistantChatGroupViewModel> BuildDateGroups(
+        IReadOnlyList<AssistantChatRowViewModel> chats,
+        IReadOnlyDictionary<string, bool> existingState)
     {
         var today = DateTime.Today;
         var startOfWeek = today.AddDays(-(int)today.DayOfWeek);
         var startOfMonth = new DateTime(today.Year, today.Month, 1);
 
-        return Chats
+        return chats
             .GroupBy(c => Classify(c.UpdatedAt.ToLocalTime(), today, startOfWeek, startOfMonth))
             .OrderBy(g => (int)g.Key)
             .Select(g =>
@@ -233,32 +250,20 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             .ToList();
     }
 
-    private List<AssistantChatGroupViewModel> BuildStateGroups(IReadOnlyDictionary<string, bool> existingState)
+    private static IReadOnlyList<ChatStateFilterOption> BuildStateFilterOptions(ILocalizationService loc)
     {
-        // Action-needed first; persisted-but-not-live chats map to Idle (GetState
-        // returns Idle when no live session exists).
-        return Chats
-            .GroupBy(c => c.State)
-            .OrderBy(g => ChatStateGrouping.StateGroupOrder(g.Key))
-            .Select(g =>
-            {
-                var items = g.OrderByDescending(c => c.UpdatedAt).ToList();
-                var key = $"state:{(int)g.Key}";
-                var isExpanded = existingState.TryGetValue(key, out var prev) ? prev : true;
-                return new AssistantChatGroupViewModel
-                {
-                    GroupKey = key,
-                    StateBucket = g.Key,
-                    DisplayName = _localizationService[ChatStateGrouping.StateGroupResourceKey(g.Key)],
-                    Items = new ObservableCollection<AssistantChatRowViewModel>(items),
-                    ItemCount = items.Count,
-                    IsExpanded = isExpanded,
-                };
-            })
-            .ToList();
+        var options = new List<ChatStateFilterOption>
+        {
+            new(null, loc["AssistantHistory_StateFilter_All"]),
+        };
+        // Action-needed first, mirroring the badge/grouping order via the shared comparer.
+        options.AddRange(Enum.GetValues<ChatState>()
+            .OrderBy(ChatStateGrouping.StateGroupOrder)
+            .Select(state => new ChatStateFilterOption(state, loc[$"ChatState_{state}"])));
+        return options;
     }
 
-    partial void OnGroupModeChanged(ChatGroupMode value) => RebuildGroups();
+    partial void OnSelectedStateOptionChanged(ChatStateFilterOption? value) => RebuildGroups();
 
     private void OnSessionStateChanged(object? sender, SessionStateChangedEventArgs e)
     {
@@ -268,8 +273,9 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             var row = Chats.FirstOrDefault(r => r.Id == chatId);
             if (row is null) return;
             row.State = e.NewState;
-            // In state mode a live transition re-buckets the row.
-            if (GroupMode == ChatGroupMode.State)
+            // A live transition changes which rows pass an active state filter, so
+            // re-apply it. Date grouping itself is unaffected by state.
+            if (SelectedStateOption?.State is not null)
                 RebuildGroups();
         }, null);
     }
@@ -300,6 +306,10 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         FilterEndDate = null;
         SelectedProviderId = null;
         SearchQuery = string.Empty;
+        // Reset to "All states" (index 0). Assigning the same instance is a no-op; a real
+        // change fires OnSelectedStateOptionChanged → RebuildGroups, which LoadChatsAsync
+        // also runs, so the list is rebuilt exactly once either way.
+        SelectedStateOption = StateFilterOptions[0];
         await LoadChatsAsync();
     }
 
@@ -552,10 +562,6 @@ public partial class AssistantChatGroupViewModel : ObservableObject
 
     [ObservableProperty]
     private HistoryDateBucket _bucket;
-
-    /// <summary>Set on state-grouped groups; null on date-grouped groups.</summary>
-    [ObservableProperty]
-    private ChatState? _stateBucket;
 
     [ObservableProperty]
     private string _displayName = string.Empty;

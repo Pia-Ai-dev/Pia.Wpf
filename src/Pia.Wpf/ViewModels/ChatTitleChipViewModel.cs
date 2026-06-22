@@ -42,11 +42,6 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isFlyoutOpen;
 
-    /// <summary>Flyout grouping: by date (default) or by snapshot state. SNAPSHOT —
-    /// state is read once per (re)build via _resolveState; no live updates while open.</summary>
-    [ObservableProperty]
-    private ChatGroupMode _groupMode = ChatGroupMode.Date;
-
     [ObservableProperty]
     private string _searchQuery = string.Empty;
 
@@ -173,12 +168,8 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
 
     private void RebuildGroups()
     {
-        var groups = GroupMode == ChatGroupMode.State
-            ? BuildStateGroups(_lastFlyoutChats)
-            : BuildDateGroups(_lastFlyoutChats);
-
         Groups.Clear();
-        foreach (var group in groups)
+        foreach (var group in BuildDateGroups(_lastFlyoutChats))
             Groups.Add(group);
     }
 
@@ -192,34 +183,14 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
             .Select(g => new ChatChipGroupViewModel
             {
                 DisplayName = _localizationService[BucketResourceKey(g.Key)],
+                // State is a SNAPSHOT read once here via _resolveState (Idle when not live);
+                // the flyout row badge reflects it without per-item live notification.
                 Items = g.OrderByDescending(c => c.UpdatedAt)
-                         .Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt))
+                         .Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt, _resolveState(c.Id)))
                          .ToList(),
             })
             .ToList();
     }
-
-    private List<ChatChipGroupViewModel> BuildStateGroups(IReadOnlyList<SyncAssistantChat> chats)
-    {
-        // SNAPSHOT: _resolveState is read once here. Persisted-but-not-live chats
-        // resolve to Idle (GetState returns Idle when no live session exists).
-        // ChatChipItemViewModel stays a record — no per-item state notification.
-        // Ordering + keys come from the shared ChatStateGrouping so the flyout and the
-        // history view bucket identically. No new ChatState values, no new converters.
-        return chats
-            .GroupBy(c => _resolveState(c.Id))
-            .OrderBy(g => ChatStateGrouping.StateGroupOrder(g.Key))
-            .Select(g => new ChatChipGroupViewModel
-            {
-                DisplayName = _localizationService[ChatStateGrouping.StateGroupResourceKey(g.Key)],
-                Items = g.OrderByDescending(c => c.UpdatedAt)
-                         .Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt))
-                         .ToList(),
-            })
-            .ToList();
-    }
-
-    partial void OnGroupModeChanged(ChatGroupMode value) => RebuildGroups();
 
     private static HistoryDateBucket ClassifyForFlyout(DateTime localDate, DateTime today, DateTime yesterday)
     {

@@ -4,7 +4,6 @@ using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels;
-using Pia.ViewModels.Models;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -50,67 +49,7 @@ public class ChatTitleChipFlyoutGroupingTests
     }
 
     [Fact]
-    public void StateMode_OrdersBuckets_ActionNeededFirst()
-    {
-        var now = DateTime.UtcNow;
-        var chats = new List<SyncAssistantChat>
-        {
-            Chat("idle", now, ChatState.Idle),
-            Chat("completed", now, ChatState.Completed),
-            Chat("error", now, ChatState.Error),
-            Chat("running", now, ChatState.Running),
-            Chat("waiting", now, ChatState.WaitingForTool),
-        };
-        var sut = CreateSut(chats);
-
-        sut.IsFlyoutOpen = true;
-        sut.GroupMode = ChatGroupMode.State;
-
-        var keys = sut.Groups.Select(g => g.DisplayName).ToArray();
-        Assert.Equal(
-            new[]
-            {
-                "ChatState_Group_WaitingForTool",
-                "ChatState_Group_Running",
-                "ChatState_Group_Error",
-                "ChatState_Group_Completed",
-                "ChatState_Group_Idle",
-            },
-            keys);
-    }
-
-    [Fact]
-    public void StateMode_PersistedNotLive_ResolvesToIdle()
-    {
-        var now = DateTime.UtcNow;
-        // No state registered for this chat -> _resolveState returns Idle.
-        var chats = new List<SyncAssistantChat> { Chat("persisted", now) };
-        var sut = CreateSut(chats);
-
-        sut.IsFlyoutOpen = true;
-        sut.GroupMode = ChatGroupMode.State;
-
-        var group = Assert.Single(sut.Groups);
-        Assert.Equal("ChatState_Group_Idle", group.DisplayName);
-    }
-
-    [Fact]
-    public void StateMode_WithinBucket_SortsByUpdatedAtDesc()
-    {
-        var older = Chat("older", DateTime.UtcNow.AddHours(-2), ChatState.Running);
-        var newer = Chat("newer", DateTime.UtcNow, ChatState.Running);
-        var sut = CreateSut(new List<SyncAssistantChat> { older, newer });
-
-        sut.IsFlyoutOpen = true;
-        sut.GroupMode = ChatGroupMode.State;
-
-        var group = Assert.Single(sut.Groups);
-        Assert.Equal(newer.Id, group.Items[0].Id);
-        Assert.Equal(older.Id, group.Items[1].Id);
-    }
-
-    [Fact]
-    public void DateMode_IsDefault_AndGroupsByDate()
+    public void Flyout_GroupsByDate_TodayThenOlder()
     {
         var chats = new List<SyncAssistantChat>
         {
@@ -119,8 +58,6 @@ public class ChatTitleChipFlyoutGroupingTests
         };
         var sut = CreateSut(chats);
 
-        Assert.Equal(ChatGroupMode.Date, sut.GroupMode);
-
         sut.IsFlyoutOpen = true;
 
         var keys = sut.Groups.Select(g => g.DisplayName).ToArray();
@@ -128,24 +65,43 @@ public class ChatTitleChipFlyoutGroupingTests
     }
 
     [Fact]
-    public void ToggleBackToDate_RebuildsFromSnapshot_NoRefetch()
+    public void Flyout_WithinDateBucket_SortsByUpdatedAtDesc()
     {
-        var chats = new List<SyncAssistantChat>
-        {
-            Chat("today", DateTime.UtcNow, ChatState.Running),
-            Chat("older", DateTime.UtcNow.AddDays(-10), ChatState.Idle),
-        };
-        var sut = CreateSut(chats);
+        var older = Chat("older", DateTime.UtcNow.AddHours(-2));
+        var newer = Chat("newer", DateTime.UtcNow);
+        var sut = CreateSut(new List<SyncAssistantChat> { older, newer });
 
         sut.IsFlyoutOpen = true;
-        sut.GroupMode = ChatGroupMode.State;
-        sut.GroupMode = ChatGroupMode.Date;
 
-        var keys = sut.Groups.Select(g => g.DisplayName).ToArray();
-        Assert.Equal(new[] { "History_Group_Today", "History_Group_Older" }, keys);
+        var group = Assert.Single(sut.Groups);
+        Assert.Equal(newer.Id, group.Items[0].Id);
+        Assert.Equal(older.Id, group.Items[1].Id);
+    }
 
-        // Only LoadRecentChatsAsync hits SearchAsync; toggling re-groups from the snapshot.
-        // ReceivedWithAnyArgs ignores the argument; the token is passed only to satisfy xUnit1051.
-        _chatService.ReceivedWithAnyArgs(1).SearchAsync(ct: TestContext.Current.CancellationToken);
+    [Fact]
+    public void Flyout_Item_SeedsSnapshotStateFromResolver()
+    {
+        // The inline flyout-row badge reads ChatChipItemViewModel.State, seeded once at
+        // build time via the resolveState delegate.
+        var chat = Chat("running", DateTime.UtcNow, ChatState.Running);
+        var sut = CreateSut(new List<SyncAssistantChat> { chat });
+
+        sut.IsFlyoutOpen = true;
+
+        var item = Assert.Single(Assert.Single(sut.Groups).Items);
+        Assert.Equal(ChatState.Running, item.State);
+    }
+
+    [Fact]
+    public void Flyout_Item_State_DefaultsToIdle_WhenNotLive()
+    {
+        // No live state registered -> the resolver returns Idle (badge stays hidden).
+        var chat = Chat("persisted", DateTime.UtcNow);
+        var sut = CreateSut(new List<SyncAssistantChat> { chat });
+
+        sut.IsFlyoutOpen = true;
+
+        var item = Assert.Single(Assert.Single(sut.Groups).Items);
+        Assert.Equal(ChatState.Idle, item.State);
     }
 }
