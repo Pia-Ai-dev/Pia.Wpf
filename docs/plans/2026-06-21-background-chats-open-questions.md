@@ -25,11 +25,15 @@ recommendation** (A2, B4) — recorded here as *decided*, not as recommended.
 | **B3** | Keep current: a background failure never touches the foreground input box. | matches |
 | **B4** | **Accept the machine de/fr translations** for the 18 new keys (no human-review gate). | **against** (rec was human review) |
 
-`C1`–`C3` need no decision (deferred bug / by-design deferrals / cosmetics);
-see also the new **C4** reaper known-limitation below. New tree state: WPF build
+**`C1` and `C4` are now also implemented this session** (single-owner CTS for the
+setup-window cancel; non-active-scoped persist for the reaped-setup-failure toast —
+see their IMPLEMENTED notes below). `C2` (by-design deferrals) and `C3` (cosmetic
+cleanup) remain open and need no decision. New tree state: WPF build
 **0 warnings / 0 errors** (one pre-existing CS8629 nullability warning in
-`StartTurnAsync` was cleaned up incidentally); the 3 new reaper unit tests bring
-`ChatSessionManagerTests` to 14 (feature suites: 14 + 5 + 4 = 23, all green).
+`StartTurnAsync` was cleaned up incidentally); feature suites grew to
+`ChatSessionManagerTests` 18 + `ChatSessionStateMachineTests` 6 +
+`TokenMapIsolationTests` 4 = 28; full unit suite **508 / 508** green (excludes the
+env-dependent `Integration.Providers.*`).
 
 ## What shipped (first shot)
 
@@ -230,6 +234,20 @@ single-owner CTS surgery (create the CTS before the setup awaits and have
 153 unconditionally reassigns `Cts`, which would orphan a pre-created one).
 Below the bar for the first shot; fix when revisiting cancellation.
 
+> **✅ IMPLEMENTED (2026-06-22):** single-owner CTS surgery done. New
+> `ChatSession.BeginTurn()` creates the per-turn CTS up front; the manager calls it
+> **before** the setup awaits, and `RunTurnAsync` reuses it (`Cts ??=`, falling back
+> to create-link only for direct/test callers). The setup APIs take no
+> `CancellationToken` (verified), so the awaits themselves can't be interrupted —
+> instead `RunTurnAsync` calls `token.ThrowIfCancellationRequested()` at the top of
+> its `try`, routing a setup-window cancel into the existing
+> `OperationCanceledException` catch → settles **Idle** with the Cancelled snackbar,
+> **without** ever calling the AI client. The empty-response branch in the `finally`
+> is guarded with `!token.IsCancellationRequested` so a cancelled turn no longer
+> double-reports an "empty response" over the Cancelled snackbar. Setup-failure paths
+> release the pre-created CTS via `DisposeCts()`. Test:
+> `ChatSessionStateMachineTests.Cancel_DuringSetupWindow_AbortsTurn_NoAiCall_NoEmptyResponse`.
+
 ### C2. Deferred by design
 - `Queued` state + a real per-session turn queue (v1 runs one turn per session;
   `CanExecuteSendMessage` blocks re-send while `Running`).
@@ -264,6 +282,21 @@ ages out of an 8-session window) and acceptable to defer; the clean fix is to
 persist on the setup-failure paths so the re-hydration safety-net applies
 universally.
 
+> **✅ IMPLEMENTED (2026-06-22):** both setup-failure paths now call
+> `FinalizeFailedSetupAsync(session)`, which releases the per-turn CTS (`DisposeCts`,
+> shared with C1) and persists the errored chat **only when the session is non-active**
+> (`!IsSessionActive`). The notifier gate already only fires for non-active sessions, so
+> that is the *only* case where a dead toast link could occur — scoping the persist there
+> fixes it precisely while leaving the common **foreground** no-provider case unpersisted
+> (no junk history for an unconfigured user, exactly as before). LLM auto-title is
+> suppressed for the errored chat (`AutoTitleApplied = true`); `DeriveChatTitle` still
+> derives a title from the user message. `FinalizeFailedSetupAsync` also wraps the
+> awaited persist in try/catch (it runs synchronously under the send command, unlike
+> the normal fire-and-forget persist, so it must not rethrow on a failure path). Tests:
+> `StartTurnAsync_NoProvider_BackgroundSession_PersistsForRecovery`,
+> `StartTurnAsync_NoProvider_ActiveSession_DoesNotPersist`, and
+> `StartTurnAsync_SetupThrows_BackgroundSession_FailsGracefully`.
+
 ---
 
 ## How to resume
@@ -277,5 +310,7 @@ universally.
 4. The remaining open *work* is verification, not decisions: the **headline
    smoke-test** (step 2) and the **B1** token-map multi-turn test in the running
    app — both need a live UI and are manual (winwright is not used here).
-5. `C1` (lost cancel in the setup-await window) and `C4` (reaped setup-failure
-   Error → dead toast link) are the deferred follow-ups worth a later pass.
+5. ✅ `C1` (lost cancel in the setup-await window) and `C4` (reaped setup-failure
+   Error → dead toast link) are now both **implemented** (see their IMPLEMENTED
+   notes above). `C2` (by-design deferrals) and `C3` (cosmetic cleanup) remain the
+   only open follow-ups.

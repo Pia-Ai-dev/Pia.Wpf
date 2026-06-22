@@ -323,6 +323,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             _sessions[newId] = session;
         }
 
+        // Create the per-turn CTS BEFORE the setup-await window so a Cancel during setup
+        // lands on a live CTS instead of being silently lost (open-question C1).
+        // RunTurnAsync reuses this CTS; the setup-failure paths release it via DisposeCts.
+        session.BeginTurn();
+
         // Flip to Running synchronously (before any await) so the proxied IsStreaming
         // disables the send button and closes the voice-mode gate immediately —
         // preserving today's synchronous IsStreaming=true at send time.
@@ -353,6 +358,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                     Title = _localizationService["Msg_Error"],
                     Message = _localizationService["Msg_Assistant_NoProviderConfigured"],
                 });
+                await FinalizeFailedSetupAsync(session);
                 return;
             }
 
@@ -405,12 +411,49 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 Title = _localizationService["Msg_Error"],
                 Message = _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message),
             });
+            await FinalizeFailedSetupAsync(session);
             return;
         }
 
         // UI-affine fire-and-forget: starts on the UI thread; continuations resume
         // on the captured UI SynchronizationContext (no Task.Run).
         session.RunTurnAsync(request, CancellationToken.None).SafeFireAndForget(_logger);
+    }
+
+    /// <summary>
+    /// Settles a turn that failed during setup (no provider / setup exception) before
+    /// <see cref="ChatSession.RunTurnAsync"/> ever ran. Releases the per-turn CTS created
+    /// by <see cref="ChatSession.BeginTurn"/> (open-question C1) and — only for a session
+    /// that is no longer the active one — persists the errored chat so a background Error
+    /// toast re-hydrates from the store after a reap instead of dead-linking
+    /// (open-question C4). A foreground failure (the common no-provider case) is left
+    /// unpersisted, exactly as before, so an unconfigured user accrues no junk history.
+    /// </summary>
+    private async Task FinalizeFailedSetupAsync(ChatSession session)
+    {
+        session.DisposeCts();
+
+        if (IsSessionActive(session))
+            return;
+
+        // No LLM auto-title for an errored, possibly provider-less chat; DeriveChatTitle
+        // still derives a title from the user message inside PersistAsync.
+        session.AutoTitleApplied = true;
+
+        // This runs on a failure path whose whole job is to fail gracefully, yet
+        // PersistAsync re-enters fallible services (SaveAsync, plus a settings re-read in
+        // TryStartAutoTitleAsync). Unlike the normal completion path — where PersistAsync
+        // runs fire-and-forget (SafeFireAndForget swallows/logs) — here it is awaited by
+        // StartTurnAsync → the send command, so a throw would surface at the command.
+        // Swallow + log to match the fire-and-forget contract.
+        try
+        {
+            await PersistAsync(session);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist errored setup turn for {ChatId}", session.Id);
+        }
     }
 
     public async Task PersistAsync(ChatSession session)

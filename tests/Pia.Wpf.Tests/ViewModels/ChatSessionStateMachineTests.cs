@@ -148,6 +148,34 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public async Task Cancel_DuringSetupWindow_AbortsTurn_NoAiCall_NoEmptyResponse()
+    {
+        // Mirrors a Cancel click while the manager resolves settings/persona/provider:
+        // BeginTurn() has created the per-turn CTS, the user cancels, then the run starts.
+        // The cancel must be honored (C1) and must NOT also report an empty response.
+        var session = CreateSession();
+        var request = BuildRequest(session);
+        var failures = new List<RunFailureKind>();
+        session.RunFailed += (_, e) => failures.Add(e.Kind);
+
+        session.BeginTurn(); // CTS now live (as StartTurnAsync does before its setup awaits)
+        session.Cancel();    // the cancel lands on the live CTS instead of being lost
+
+        await session.RunTurnAsync(request, CancellationToken.None);
+
+        Assert.Equal(ChatState.Idle, session.State); // cancelled → Idle, not Error
+        Assert.False(session.IsStreaming);
+        // The AI client is never called because the token was already cancelled at entry.
+        _ai.DidNotReceive().GetChatCompletionWithToolsAsync(
+            Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // No empty-response double-report over the Cancelled snackbar, and the bubble is
+        // not overwritten with empty-response text.
+        Assert.DoesNotContain(RunFailureKind.Empty, failures);
+        Assert.NotEqual("Msg_Assistant_EmptyResponse", session.Messages.Last(m => !m.IsUser).Content);
+    }
+
+    [Fact]
     public async Task ActionCard_TransitionsThroughWaitingForTool()
     {
         var pending = new PluginToolCall(

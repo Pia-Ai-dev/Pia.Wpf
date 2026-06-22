@@ -126,6 +126,28 @@ public sealed class ChatSession : IDisposable
         StateChanged?.Invoke(this, new ChatStateChangedEventArgs { OldState = old, NewState = next });
     }
 
+    /// <summary>
+    /// Creates the per-turn <see cref="CancellationTokenSource"/> up front — before the
+    /// manager resolves settings/persona/provider — so a Cancel click during that
+    /// setup-await window lands on a live CTS instead of being silently lost
+    /// (open-question C1). <see cref="RunTurnAsync"/> reuses this CTS rather than
+    /// recreating it. Only ever called when no turn is in flight (send/regenerate are
+    /// <c>!IsStreaming</c>-gated), so the defensive dispose cannot clobber a running turn.
+    /// </summary>
+    internal CancellationToken BeginTurn()
+    {
+        Cts?.Dispose();
+        Cts = new CancellationTokenSource();
+        return Cts.Token;
+    }
+
+    /// <summary>Releases the per-turn CTS when a turn is abandoned before <see cref="RunTurnAsync"/> runs (setup failure).</summary>
+    internal void DisposeCts()
+    {
+        Cts?.Dispose();
+        Cts = null;
+    }
+
     /// <summary>Cancels the in-flight turn and any pending action cards. Never disposes the Cts (the turn's finally does).</summary>
     public void Cancel()
     {
@@ -159,7 +181,10 @@ public sealed class ChatSession : IDisposable
         var atCommands = request.AtCommands;
         var tokenizationEnabled = request.TokenizationEnabled;
 
-        Cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
+        // Reuse the CTS created by BeginTurn() (so a cancel during the manager's
+        // setup-await window is honored — open-question C1). Fall back to creating one
+        // for direct callers (e.g. unit tests) that invoke RunTurnAsync without BeginTurn.
+        Cts ??= CancellationTokenSource.CreateLinkedTokenSource(externalToken);
         var token = Cts.Token;
 
         // Flip to Running synchronously (before the first await) so IsStreaming is
@@ -179,6 +204,11 @@ public sealed class ChatSession : IDisposable
         var succeeded = false;
         try
         {
+            // Honor a cancel that fired during the setup-await window (C1): bail before
+            // calling the AI client, routing into the OperationCanceledException catch
+            // below so the turn settles to Idle with the cancelled snackbar.
+            token.ThrowIfCancellationRequested();
+
             var supportsTools = turnSetup.SupportsTools;
             var webSearchActive = turnSetup.WebSearchActive;
             var fullSystemPrompt = turnSetup.SystemPrompt;
@@ -309,8 +339,11 @@ public sealed class ChatSession : IDisposable
         finally
         {
             var emptyResponse = false;
-            // If the message pair was removed (vision rejection), don't fabricate empty-response text.
-            if (Messages.Contains(assistantMessage) && string.IsNullOrEmpty(assistantMessage.Content))
+            // Don't fabricate empty-response text when the message pair was removed
+            // (vision rejection) or the turn was cancelled (C1) — a cancelled turn must
+            // not also report "empty" and raise a second snackbar over the Cancelled one.
+            if (Messages.Contains(assistantMessage) && string.IsNullOrEmpty(assistantMessage.Content)
+                && !token.IsCancellationRequested)
             {
                 _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
                 assistantMessage.Content = _localizationService["Msg_Assistant_EmptyResponse"];

@@ -199,6 +199,9 @@ public class ChatSessionManagerTests
         // Regression: a brand-new chat backgrounded mid-first-turn must still notify.
         // Before the fix the session Id was null until the end-of-turn persist, so the
         // notifier-routing gate (session.Id is { } chatId) silently dropped the toast.
+        // (Under C4 the failed background turn is now also persisted by
+        // FinalizeFailedSetupAsync — but the notifier still fires first, on SetState(Error),
+        // before that persist runs.)
         var sut = CreateSut();
 
         var background = sut.GetOrCreateActiveForNewChat(); // first turn, Id still null
@@ -229,6 +232,70 @@ public class ChatSessionManagerTests
         sut.SetActive(session); // activating an unread-completed chat marks it read
 
         Assert.Equal(ChatState.Idle, session.State);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_NoProvider_BackgroundSession_PersistsForRecovery()
+    {
+        var sut = CreateSut();
+
+        var background = sut.GetOrCreateActiveForNewChat();
+        sut.GetOrCreateActiveForNewChat(); // switch active away → background is non-active
+        _chatService.ClearReceivedCalls();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful" };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        // No provider mocked → no-provider Error path.
+
+        await sut.StartTurnAsync(background, "hi", null);
+
+        Assert.Equal(ChatState.Error, background.State);
+        Assert.NotNull(background.Id);
+        // C4: a backgrounded setup failure is persisted so its Error toast re-hydrates
+        // from the store after a reap instead of dead-linking.
+        await _chatService.Received(1).SaveAsync(Arg.Is<SyncAssistantChat>(c => c.Id == background.Id), Arg.Any<CancellationToken>());
+        // LLM auto-title (which needs a provider) is suppressed for the errored chat.
+        await _titleService.DidNotReceive().GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_NoProvider_ActiveSession_DoesNotPersist()
+    {
+        var sut = CreateSut();
+
+        var active = sut.GetOrCreateActiveForNewChat(); // stays the active session
+        _chatService.ClearReceivedCalls();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful" };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+
+        await sut.StartTurnAsync(active, "hi", null);
+
+        Assert.Equal(ChatState.Error, active.State);
+        // C4 scope: a FOREGROUND no-provider failure is NOT persisted — no junk history
+        // entries for an unconfigured user, and the toast never fires for the active chat.
+        await _chatService.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_SetupThrows_BackgroundSession_FailsGracefully()
+    {
+        var sut = CreateSut();
+
+        var background = sut.GetOrCreateActiveForNewChat();
+        sut.GetOrCreateActiveForNewChat(); // background is non-active
+        _chatService.ClearReceivedCalls();
+
+        // Settings resolution throws — both at setup AND again on the persist-path re-read
+        // (TryStartAutoTitleAsync), exercising the failure path's own fallibility.
+        // StartTurnAsync must settle to Error and NOT rethrow at the send command.
+        _settings.GetSettingsAsync().Returns<AppSettings>(_ => throw new InvalidOperationException("settings boom"));
+
+        await sut.StartTurnAsync(background, "hi", null); // a rethrow here fails the test
+
+        Assert.Equal(ChatState.Error, background.State);
+        // The persist was attempted (SaveAsync) before the auto-title re-read threw and was swallowed.
+        await _chatService.Received(1).SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
