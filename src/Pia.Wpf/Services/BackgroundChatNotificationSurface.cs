@@ -1,19 +1,26 @@
+using System.Globalization;
 using System.Windows;
+using System.Windows.Media;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
+using Pia.Converters;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Wpf.Ui.Controls;
 
 namespace Pia.Services;
 
 /// <summary>
 /// Singleton notification surface for background (non-active) assistant chats.
-/// Shows a Windows toast (with a clickable "open chat" button) and an in-app
-/// toast when a backgrounded chat reaches WaitingForTool / Completed / Error.
-/// Clicking the toast activates that chat inside the single assistant window via
-/// <see cref="IWindowManagerService.ShowAssistantChat"/> — never a second window,
-/// never <c>BringMainWindowForward</c> (which could foreground a different mode).
-/// Modeled on <see cref="ScheduledJobNotificationSurface"/>.
+/// When a backgrounded chat reaches WaitingForTool / Completed / Error it surfaces
+/// the update one of two ways: a quiet in-app snackbar when the assistant window is
+/// the foreground window (the user is already looking at Pia), otherwise a Windows
+/// toast (with a clickable "open chat" button) so the update still reaches them while
+/// they work elsewhere. Either way, opening activates that chat inside the single
+/// assistant window via <see cref="IWindowManagerService.ShowAssistantChat"/> — never
+/// a second window, never <c>BringMainWindowForward</c> (which could foreground a
+/// different mode). Modeled on <see cref="ScheduledJobNotificationSurface"/>.
 /// </summary>
 public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
 {
@@ -21,19 +28,22 @@ public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
     private const string OpenChatAction = "openChat";
     private const string ChatIdKey = "chatId";
 
-    private readonly INotificationService _notificationService;
+    // Reuse the canonical chat-state visual language (glyph + accent) so the snackbar
+    // matches the inline chat-state badge instead of inventing a second mapping.
+    private static readonly ChatStateToGlyphConverter GlyphConverter = new();
+    private static readonly ChatStateToBrushConverter FgBrushConverter =
+        new() { Kind = ChatStateToBrushConverter.ChatStateBrushKind.Foreground };
+
     private readonly IWindowManagerService _windowManager;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<BackgroundChatNotificationSurface> _logger;
     private bool _toastCallbackRegistered;
 
     public BackgroundChatNotificationSurface(
-        INotificationService notificationService,
         IWindowManagerService windowManager,
         ILocalizationService localizationService,
         ILogger<BackgroundChatNotificationSurface> logger)
     {
-        _notificationService = notificationService;
         _windowManager = windowManager;
         _localizationService = localizationService;
         _logger = logger;
@@ -55,6 +65,54 @@ public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
 
         var body = _localizationService.Format(bodyKey, displayTitle);
 
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            ShowToastNotification(chatId, body);
+            return;
+        }
+
+        dispatcher.InvokeAsync(() =>
+        {
+            // When the assistant window is the foreground window the user is already
+            // looking at Pia, so a quiet in-app snackbar is enough — and avoids pushing
+            // a duplicate into Action Center. Otherwise fall back to the OS toast so the
+            // update still reaches them while they're working elsewhere.
+            if (_windowManager.IsInForeground(WindowMode.Assistant)
+                && TryFindForegroundSnackbarPresenter() is { } presenter)
+            {
+                try
+                {
+                    var icon = (SymbolRegular)GlyphConverter.Convert(
+                        state, typeof(SymbolRegular), null!, CultureInfo.InvariantCulture);
+                    var iconBrush = FgBrushConverter.Convert(
+                        state, typeof(Brush), null!, CultureInfo.InvariantCulture) as Brush;
+
+                    SnackbarActionHelper.ShowSubtleWithAction(
+                        presenter,
+                        _localizationService["Notification_BackgroundChat_Title"],
+                        body,
+                        _localizationService["Notification_OpenChat"],
+                        () => _windowManager.ShowAssistantChat(chatId),
+                        icon,
+                        iconBrush,
+                        ResolveTimeout(state));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to show in-app background-chat snackbar for {ChatId}; falling back to toast",
+                        chatId);
+                }
+            }
+
+            ShowToastNotification(chatId, body);
+        });
+    }
+
+    private void ShowToastNotification(Guid chatId, string body)
+    {
         try
         {
             new ToastContentBuilder()
@@ -70,15 +128,34 @@ public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
         {
             _logger.LogWarning(ex, "Failed to show background-chat toast for {ChatId}", chatId);
         }
+    }
 
-        try
+    private static TimeSpan ResolveTimeout(ChatState state) => state switch
+    {
+        // Action-needed states linger longer than a plain completion.
+        ChatState.WaitingForTool => TimeSpan.FromSeconds(12),
+        ChatState.Error => TimeSpan.FromSeconds(10),
+        _ => TimeSpan.FromSeconds(6),
+    };
+
+    /// <summary>
+    /// Finds the <c>RootSnackbarPresenter</c> on the currently active window. Each
+    /// window owns its own presenter (scoped <c>ISnackbarService</c>); the
+    /// <see cref="IWindowManagerService.IsInForeground"/> gate at the call site means
+    /// the active window here is the assistant window. Mirrors <c>FindDialogHost</c>
+    /// in <see cref="ScheduledJobNotificationSurface"/>.
+    /// </summary>
+    private static SnackbarPresenter? TryFindForegroundSnackbarPresenter()
+    {
+        if (Application.Current is null) return null;
+
+        foreach (Window w in Application.Current.Windows)
         {
-            Application.Current?.Dispatcher.Invoke(() => _notificationService.ShowToast(body));
+            if (w.IsActive && w.FindName("RootSnackbarPresenter") is SnackbarPresenter presenter)
+                return presenter;
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to show in-app background-chat toast for {ChatId}", chatId);
-        }
+
+        return null;
     }
 
     private static bool TryResolveBodyKey(ChatState state, out string bodyKey)
