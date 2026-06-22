@@ -27,8 +27,9 @@ recommendation** (A2, B4) — recorded here as *decided*, not as recommended.
 
 **`C1` and `C4` are now also implemented this session** (single-owner CTS for the
 setup-window cancel; non-active-scoped persist for the reaped-setup-failure toast —
-see their IMPLEMENTED notes below). `C2` (by-design deferrals) and `C3` (cosmetic
-cleanup) remain open and need no decision. New tree state: WPF build
+see their IMPLEMENTED notes below). **`C3` (cosmetic cleanup) is also done** — two
+dead private methods removed and a dedicated `DangerSoftBrush` token added. Only
+`C2` (by-design deferrals) remains open, and it needs no decision. New tree state: WPF build
 **0 warnings / 0 errors** (one pre-existing CS8629 nullability warning in
 `StartTurnAsync` was cleaned up incidentally); feature suites grew to
 `ChatSessionManagerTests` 18 + `ChatSessionStateMachineTests` 6 +
@@ -258,14 +259,28 @@ Below the bar for the first shot; fix when revisiting cancellation.
 - Highlighting *which* message awaits confirmation (needs an additive flag on
   `AssistantMessage`).
 
-### C3. Cosmetic / cleanup
+### C3. Cosmetic / cleanup — ✅ IMPLEMENTED (2026-06-22)
 - Several injected fields on `AssistantViewModel` are now used only by the voice
   path after the extraction (e.g. `_aiClientService`, `_pluginService`,
   `_tokenMapService`, `_promptComposer`). They compile and pass tests but are
   dead-ish weight — clean them in a `simplify` pass.
+  > **Audit result:** **no injected field is actually removable** — every one has a
+  > live usage (voice streaming/tool-routing for `_aiClientService`/`_pluginService`/
+  > `_promptComposer`; memory re-init for `_tokenMapService`; plus clipboard,
+  > followups, chip, autocomplete-property for the others). Removing them would break
+  > the voice path or live commands, and migrating voice onto `ChatSession`/the manager
+  > is an architecture change (voice was deliberately kept separate), **not** cosmetic.
+  > What *was* genuinely dead and **removed**: two private methods left over from the
+  > run-loop extraction — `AssistantViewModel.ApplyWebCitations` and `ApplyStats`
+  > (zero call sites; `ChatSession` owns the live copies).
 - `Error` indicator reuses `WarnSoftBrush` fill + `PiaDangerBrush` foreground
   (no dedicated `DangerSoftBrush` token exists in the theme dictionaries). Add a
   proper error-soft token if a distinct look is wanted.
+  > **Done:** added a dedicated `DangerSoftColor`/`DangerSoftBrush` to **both**
+  > `PiaTokens.Dark.xaml` (`#1FEF6E8A`, the status-soft `#1F`+RGB pattern) and
+  > `PiaTokens.Light.xaml` (`#FFFFE4E6`, the palette's existing rose tint), and pointed
+  > `ChatStateToBrushConverter`'s `Error` case at it. Error now reads as a distinct
+  > red-soft pill instead of sharing `WaitingForTool`'s amber fill.
 
 ### C4. Reaped setup-failure Error sessions — dead toast link  *(reaper edge, deferred)*
 The two setup-failure paths in `ChatSessionManager.StartTurnAsync` (no provider
@@ -312,5 +327,5 @@ universally.
    app — both need a live UI and are manual (winwright is not used here).
 5. ✅ `C1` (lost cancel in the setup-await window) and `C4` (reaped setup-failure
    Error → dead toast link) are now both **implemented** (see their IMPLEMENTED
-   notes above). `C2` (by-design deferrals) and `C3` (cosmetic cleanup) remain the
-   only open follow-ups.
+   notes above). `C3` (cosmetic cleanup) is **implemented** too. Only `C2`
+   (by-design deferrals) remains open, and the two manual smoke-tests (steps 2 & 4).

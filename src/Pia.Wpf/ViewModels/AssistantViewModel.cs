@@ -1005,38 +1005,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             picks.Count, assistantMessage.HasSuggestions);
     }
 
-    private void ApplyWebCitations(AssistantMessage message)
-    {
-        if (string.IsNullOrEmpty(message.Content)) return;
-
-        var (cleaned, sources) = WebCitationExtractor.Extract(message.Content);
-        if (sources.Count == 0) return;
-
-        message.Content = cleaned;
-        foreach (var s in sources)
-            message.Sources.Add(s);
-
-        _logger.LogInformation("Extracted {Count} web source(s) from assistant message", sources.Count);
-    }
-
-    private void ApplyStats(AssistantMessage message, Finished finished, AiProvider provider)
-    {
-        if (finished.Usage is not { } usage)
-        {
-            _logger.LogDebug("Stream finished without usage details (providerType={ProviderType})", provider.ProviderType);
-            return;
-        }
-
-        var totalTokens = (int)((usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
-        if (totalTokens <= 0)
-        {
-            _logger.LogDebug("Stream finished with zero tokens (providerType={ProviderType})", provider.ProviderType);
-            return;
-        }
-
-        message.Stats = new AnswerStats(totalTokens, finished.Model);
-    }
-
     private async Task<object?> HandleVoiceModeToolCall(FunctionCallContent toolCall)
     {
         _logger.LogInformation("Voice mode tool call: {ToolName}", toolCall.Name);

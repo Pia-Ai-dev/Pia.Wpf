@@ -29,14 +29,15 @@ public class ChatStateToBrushConverter : IValueConverter
     {
         if (value is not ChatState state) return DependencyProperty.UnsetValue;
 
-        // Token names verified against PiaTokens.Dark.xaml. There is no DangerSoftBrush,
-        // so Error reuses WarnSoftBrush (fill) + PiaDangerBrush (foreground).
+        // Token names verified against PiaTokens.{Dark,Light}.xaml. Error has its own
+        // soft fill (DangerSoftBrush) so it reads as a distinct error rather than sharing
+        // WaitingForTool's amber WarnSoftBrush.
         var (bgKey, fgKey) = state switch
         {
             ChatState.Running        => ("PiaAccentSoftBrush", "PiaAccentBrush"),
             ChatState.WaitingForTool => ("WarnSoftBrush",       "WarnBrush"),
             ChatState.Completed      => ("SuccessSoftBrush",    "PiaSuccessBrush"),
-            ChatState.Error          => ("WarnSoftBrush",       "PiaDangerBrush"),
+            ChatState.Error          => ("DangerSoftBrush",     "PiaDangerBrush"),
             _                        => ("SurfaceMutedBrush",   "TextMutedBrush"),
         };
 
