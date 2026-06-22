@@ -239,7 +239,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         // returns Idle when no live session exists).
         return Chats
             .GroupBy(c => c.State)
-            .OrderBy(g => StateGroupOrder(g.Key))
+            .OrderBy(g => ChatStateGrouping.StateGroupOrder(g.Key))
             .Select(g =>
             {
                 var items = g.OrderByDescending(c => c.UpdatedAt).ToList();
@@ -249,7 +249,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
                 {
                     GroupKey = key,
                     StateBucket = g.Key,
-                    DisplayName = _localizationService[StateGroupResourceKey(g.Key)],
+                    DisplayName = _localizationService[ChatStateGrouping.StateGroupResourceKey(g.Key)],
                     Items = new ObservableCollection<AssistantChatRowViewModel>(items),
                     ItemCount = items.Count,
                     IsExpanded = isExpanded,
@@ -257,25 +257,6 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             })
             .ToList();
     }
-
-    private static int StateGroupOrder(ChatState state) => state switch
-    {
-        ChatState.WaitingForTool => 0,
-        ChatState.Running => 1,
-        ChatState.Error => 2,
-        ChatState.Completed => 3,
-        ChatState.Idle => 4,
-        _ => 5,
-    };
-
-    private static string StateGroupResourceKey(ChatState state) => state switch
-    {
-        ChatState.Running => "ChatState_Group_Running",
-        ChatState.WaitingForTool => "ChatState_Group_WaitingForTool",
-        ChatState.Completed => "ChatState_Group_Completed",
-        ChatState.Error => "ChatState_Group_Error",
-        _ => "ChatState_Group_Idle",
-    };
 
     partial void OnGroupModeChanged(ChatGroupMode value) => RebuildGroups();
 

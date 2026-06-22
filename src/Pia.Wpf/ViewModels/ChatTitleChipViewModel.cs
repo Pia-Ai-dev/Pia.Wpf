@@ -29,6 +29,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _quickSwitcherCts;
     private List<SyncAssistantChat> _quickSwitcherCandidates = [];
+    private List<SyncAssistantChat> _lastFlyoutChats = [];
     private bool _disposed;
 
     [ObservableProperty]
@@ -40,6 +41,11 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isFlyoutOpen;
+
+    /// <summary>Flyout grouping: by date (default) or by snapshot state. SNAPSHOT —
+    /// state is read once per (re)build via _resolveState; no live updates while open.</summary>
+    [ObservableProperty]
+    private ChatGroupMode _groupMode = ChatGroupMode.Date;
 
     [ObservableProperty]
     private string _searchQuery = string.Empty;
@@ -156,7 +162,8 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
             _logger.LogInformation("Loaded {Count} recent chats for flyout (hasQuery={HasQuery})",
                 chats.Count, !string.IsNullOrWhiteSpace(SearchQuery));
 
-            RebuildGroups(chats);
+            _lastFlyoutChats = [.. chats];
+            RebuildGroups();
         }
         catch (Exception ex)
         {
@@ -164,25 +171,55 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void RebuildGroups(IReadOnlyList<SyncAssistantChat> chats)
+    private void RebuildGroups()
     {
-        var today = DateTime.Today;
-        var yesterday = today.AddDays(-1);
-
-        var groups = chats
-            .GroupBy(c => ClassifyForFlyout(c.UpdatedAt.ToLocalTime().Date, today, yesterday))
-            .OrderBy(g => (int)g.Key)
-            .Select(g => new ChatChipGroupViewModel
-            {
-                DisplayName = _localizationService[BucketResourceKey(g.Key)],
-                Items = g.Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt)).ToList(),
-            })
-            .ToList();
+        var groups = GroupMode == ChatGroupMode.State
+            ? BuildStateGroups(_lastFlyoutChats)
+            : BuildDateGroups(_lastFlyoutChats);
 
         Groups.Clear();
         foreach (var group in groups)
             Groups.Add(group);
     }
+
+    private List<ChatChipGroupViewModel> BuildDateGroups(IReadOnlyList<SyncAssistantChat> chats)
+    {
+        var today = DateTime.Today;
+        var yesterday = today.AddDays(-1);
+        return chats
+            .GroupBy(c => ClassifyForFlyout(c.UpdatedAt.ToLocalTime().Date, today, yesterday))
+            .OrderBy(g => (int)g.Key)
+            .Select(g => new ChatChipGroupViewModel
+            {
+                DisplayName = _localizationService[BucketResourceKey(g.Key)],
+                Items = g.OrderByDescending(c => c.UpdatedAt)
+                         .Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt))
+                         .ToList(),
+            })
+            .ToList();
+    }
+
+    private List<ChatChipGroupViewModel> BuildStateGroups(IReadOnlyList<SyncAssistantChat> chats)
+    {
+        // SNAPSHOT: _resolveState is read once here. Persisted-but-not-live chats
+        // resolve to Idle (GetState returns Idle when no live session exists).
+        // ChatChipItemViewModel stays a record — no per-item state notification.
+        // Ordering + keys come from the shared ChatStateGrouping so the flyout and the
+        // history view bucket identically. No new ChatState values, no new converters.
+        return chats
+            .GroupBy(c => _resolveState(c.Id))
+            .OrderBy(g => ChatStateGrouping.StateGroupOrder(g.Key))
+            .Select(g => new ChatChipGroupViewModel
+            {
+                DisplayName = _localizationService[ChatStateGrouping.StateGroupResourceKey(g.Key)],
+                Items = g.OrderByDescending(c => c.UpdatedAt)
+                         .Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt))
+                         .ToList(),
+            })
+            .ToList();
+    }
+
+    partial void OnGroupModeChanged(ChatGroupMode value) => RebuildGroups();
 
     private static HistoryDateBucket ClassifyForFlyout(DateTime localDate, DateTime today, DateTime yesterday)
     {
