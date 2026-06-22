@@ -230,4 +230,105 @@ public class ChatSessionManagerTests
 
         Assert.Equal(ChatState.Idle, session.State);
     }
+
+    [Fact]
+    public void Reaper_OverCap_DropsOldestIdle_KeepsRecentAndActive()
+    {
+        var sut = CreateSut();
+
+        var created = new List<ChatSession>();
+        for (var i = 0; i < 12; i++)
+            created.Add(sut.GetOrCreateActiveForNewChat());
+
+        // All Idle; each creation activated the newest and reaped the oldest non-active
+        // Idle one, holding the live set at the cap.
+        Assert.Equal(8, sut.LiveSessions.Count);
+        Assert.Same(created[^1], sut.ActiveSession);
+        Assert.Contains(created[^1], sut.LiveSessions);   // active survives
+        Assert.DoesNotContain(created[0], sut.LiveSessions); // oldest reaped
+    }
+
+    [Fact]
+    public async Task Reaper_NeverDropsUnreadCompletedSession()
+    {
+        var sut = CreateSut();
+
+        var unread = sut.GetOrCreateActiveForNewChat();
+        unread.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "hi"));
+        await sut.PersistAsync(unread);
+        var unreadId = unread.Id!.Value;
+
+        // Switch away → background, then mark it Completed (an unread background result).
+        sut.GetOrCreateActiveForNewChat();
+        unread.SetState(ChatState.Completed);
+
+        // Churn well past the cap so `unread` is the oldest by activation order.
+        for (var i = 0; i < 12; i++)
+            sut.GetOrCreateActiveForNewChat();
+
+        // Completed = unread result → never reaped, even as the oldest session.
+        Assert.Same(unread, sut.TryGetLive(unreadId));
+        Assert.Equal(ChatState.Completed, unread.State);
+    }
+
+    [Fact]
+    public void Reaper_NeverDropsInFlightSession()
+    {
+        var sut = CreateSut();
+
+        // A backgrounded session mid-turn — reaping it would dispose its Cts in-stream
+        // and break background continuation, so the reaper must always exclude it.
+        var inFlight = sut.GetOrCreateActiveForNewChat();
+        inFlight.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "long turn"));
+        sut.GetOrCreateActiveForNewChat(); // switch away → background
+        inFlight.SetState(ChatState.Running);
+
+        // Churn well past the cap; the oldest session here is the in-flight one.
+        for (var i = 0; i < 12; i++)
+            sut.GetOrCreateActiveForNewChat();
+
+        Assert.Contains(inFlight, sut.LiveSessions);
+        Assert.Equal(ChatState.Running, inFlight.State);
+    }
+
+    [Fact]
+    public async Task Reaper_ReapedIdleSession_RehydratesFromStoreOnActivate()
+    {
+        var sut = CreateSut();
+
+        // A persisted, then-backgrounded Idle session that will be pushed out of the window.
+        var victim = sut.GetOrCreateActiveForNewChat();
+        victim.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "remember"));
+        await sut.PersistAsync(victim);
+        var victimId = victim.Id!.Value;
+
+        // The store still holds it, so a resume after reaping must re-hydrate.
+        var stored = new SyncAssistantChat
+        {
+            Id = victimId,
+            SchemaVersion = 1,
+            Title = "victim",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            LastAccessedAt = DateTime.UtcNow,
+            WindowMode = WindowMode.Assistant.ToString(),
+            Messages =
+            [
+                new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "user", Content = "remember", Timestamp = DateTime.UtcNow },
+            ],
+        };
+        _chatService.GetAsync(victimId).Returns(stored);
+
+        // Churn past the cap so the Idle victim is reaped.
+        for (var i = 0; i < 12; i++)
+            sut.GetOrCreateActiveForNewChat();
+
+        Assert.Null(sut.TryGetLive(victimId)); // dropped from memory
+
+        var rehydrated = await sut.ActivateAsync(victimId); // re-loads from the store
+
+        Assert.NotNull(rehydrated);
+        Assert.Equal(victimId, rehydrated!.Id);
+        Assert.Single(rehydrated.Messages);
+    }
 }

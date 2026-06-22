@@ -402,9 +402,19 @@ active **and** its state is `Idle` or `Error` after a `TurnCompleted` and the
 user has activated a different chat — i.e. we keep finished background sessions
 around until acknowledged (`Completed` cleared to `Idle` on activate), then a
 small reaper drops non-active `Idle`/`Error` sessions older than N (default keep
-last 8 live sessions; flag as openQuestion). v1 mustHave keeps it simple: never
-auto-evict; the manager holds every session created this app-run (memory cost is
-bounded by user behavior). Reaper is shouldHave.
+last 8 live sessions; flag as openQuestion).
+
+> **✅ IMPLEMENTED (2026-06-22, open-question A7 resolved):** the reaper ships. It
+> runs at the end of `ChatSessionManager.SetActive` (the sole session-accumulation
+> point) with `MaxRetainedSessions = 8`: keep the 8 most-recently-active sessions
+> (LRU via a per-session `LastActivatedSequence` stamp), reap only non-active
+> `Idle`/`Error` ones beyond the window. In-flight (`Running`/`WaitingForTool`) and
+> unread `Completed` sessions are **never** dropped (soft cap). Retired sessions
+> are unsubscribed + disposed; their finished turns are already persisted, so a
+> later `ActivateAsync` re-hydrates from the store (no data loss). This supersedes
+> the original "v1 never auto-evicts; reaper is shouldHave" framing. See the
+> open-questions doc's Resolved table and A7, and the reaper unit tests in
+> `ChatSessionManagerTests`.
 
 ### Token-map isolation (Decision 4 dependency — the concurrent-turns PII gate)
 

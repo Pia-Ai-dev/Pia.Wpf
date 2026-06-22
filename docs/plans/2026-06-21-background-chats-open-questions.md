@@ -5,6 +5,32 @@ decision, chosen default, and known limitation from the *first shot* of the
 "background-running assistant chats" feature. You should be able to act on this
 without any prior conversation context.
 
+## ✅ Resolved (2026-06-22 session)
+
+All open product/UX questions (A) and code-default confirmations (B) were worked
+through with the product owner. **Two decisions went *against* the original
+recommendation** (A2, B4) — recorded here as *decided*, not as recommended.
+
+| # | Decision | vs. recommendation |
+|---|---|---|
+| **A1** | Keep the default: notify background `Error` + `WaitingForTool` + `Completed`; `Running`/`Idle` suppressed. | matches |
+| **A2** | **Keep current (a): group-by-state shows _all_ chats, action-needed first.** The large `Idle` bucket is accepted; revisit "live-only + collapsed Saved" later only if it feels empty. | **against** (rec was (b)) |
+| **A3** | Keep current: Clear/New cancels the active in-flight turn; other live sessions keep running. | matches |
+| **A4** | Keep current: a user-cancelled turn maps to `Idle` (no distinct `Cancelled` state). | matches |
+| **A5** | Keep current: `Completed` clears to `Idle` only on true activation, not on history-preview. | matches |
+| **A6** | Keep current: background turns suppress follow-up suggestions and TTS. | matches |
+| **A7** | **Add the reaper — IMPLEMENTED in this change.** Keep the ~8 most-recently-active sessions; reap non-active `Idle`/`Error` ones beyond the window. | matches (now built) |
+| **B1** | Keep the `AsyncLocal` token-map isolation. ⚠️ **Still owes the manual multi-turn smoke-test in the running app.** | matches |
+| **B2** | Accept the `Pia.ViewModels.Models` placement (the `Pia.Services` plan variant is not buildable against NetArchTest). | matches |
+| **B3** | Keep current: a background failure never touches the foreground input box. | matches |
+| **B4** | **Accept the machine de/fr translations** for the 18 new keys (no human-review gate). | **against** (rec was human review) |
+
+`C1`–`C3` need no decision (deferred bug / by-design deferrals / cosmetics);
+see also the new **C4** reaper known-limitation below. New tree state: WPF build
+**0 warnings / 0 errors** (one pre-existing CS8629 nullability warning in
+`StartTurnAsync` was cleaned up incidentally); the 3 new reaper unit tests bring
+`ChatSessionManagerTests` to 14 (feature suites: 14 + 5 + 4 = 23, all green).
+
 ## What shipped (first shot)
 
 Feature: assistant chats keep **running in the background** when the user
@@ -120,6 +146,23 @@ pending action card.
   older non-active Idle/Error ones; (c) time-based eviction of non-active
   sessions older than N minutes.
 - **Recommendation:** add (b) with N≈8 before this is considered shippable.
+- **✅ DECISION (2026-06-22) — IMPLEMENTED:** option (b), `MaxRetainedSessions = 8`.
+  The reaper runs at the end of `ChatSessionManager.SetActive` (the sole
+  session-accumulation point — both `GetOrCreateActiveForNewChat` and
+  `ActivateAsync` route through it; a long-lived single chat never grows the set).
+  It keeps the 8 most-recently-active sessions (LRU via a per-session
+  `LastActivatedSequence` stamp, bumped in `SetActive`) and retires only
+  **non-active `Idle`/`Error`** sessions beyond the window. In-flight
+  (`Running`/`WaitingForTool`) and **unread `Completed`** sessions are never reaped,
+  so the live count is a *soft* cap that can briefly exceed 8. The
+  previously-active session is protected by its second-highest stamp (holds for any
+  N ≥ 2 — see the in-code note). Retired sessions are unsubscribed + disposed and
+  removed from both `_sessions`/`_allSessions`; their finished turns are already
+  persisted, so a later `ActivateAsync` re-hydrates from the store (no data loss).
+  Reaping logs id/state/count only (CLAUDE.md privacy). Covered by
+  `ChatSessionManagerTests`: `Reaper_OverCap_DropsOldestIdle_KeepsRecentAndActive`,
+  `Reaper_NeverDropsUnreadCompletedSession`,
+  `Reaper_ReapedIdleSession_RehydratesFromStoreOnActivate`.
 
 ---
 
@@ -206,6 +249,21 @@ Below the bar for the first shot; fix when revisiting cancellation.
   (no dedicated `DangerSoftBrush` token exists in the theme dictionaries). Add a
   proper error-soft token if a distinct look is wanted.
 
+### C4. Reaped setup-failure Error sessions — dead toast link  *(reaper edge, deferred)*
+The two setup-failure paths in `ChatSessionManager.StartTurnAsync` (no provider
+configured; setup exception) set `Error` and fire the background notifier but
+`return` **before** `RunTurnAsync`, so they never raise `TurnCompleted` and are
+therefore **never persisted** — yet the session is keyed in `_sessions` with
+content. If the A7 reaper later drops such a session (it is a non-active `Error`),
+a click on its earlier Error toast resolves `ActivateAsync` → `TryGetLive` null →
+store `GetAsync` null → **returns `null`**: a dead toast link, **not** a crash.
+The caller (`AssistantViewModel.ResumeChatAsync:474`) ignores the return value,
+and `ActivateAsync_MissingChat_ReturnsNull` is already a tested contract, so the
+null is tolerated. Narrow case (a backgrounded first-turn setup failure that then
+ages out of an 8-session window) and acceptable to defer; the clean fix is to
+persist on the setup-failure paths so the re-hydration safety-net applies
+universally.
+
 ---
 
 ## How to resume
@@ -214,9 +272,10 @@ Below the bar for the first shot; fix when revisiting cancellation.
    four pinned decisions.
 2. Do the manual smoke-test above before building further — it's the only
    unverified part of the headline.
-3. Work the **A** questions with product/UX; **A2** (group-by-state scope) and
-   **A7** (reaper) are the two most worth resolving before calling this
-   shippable.
-4. Confirm the **B** defaults (especially **B1** token-map under a real
-   multi-turn test).
-5. `C1` is the one deferred bug worth a follow-up.
+3. ✅ All **A**/**B** decisions are resolved (see **Resolved** at top); **A7**'s
+   reaper is implemented + unit-tested. No product decisions remain open.
+4. The remaining open *work* is verification, not decisions: the **headline
+   smoke-test** (step 2) and the **B1** token-map multi-turn test in the running
+   app — both need a live UI and are manual (winwright is not used here).
+5. `C1` (lost cancel in the setup-await window) and `C4` (reaped setup-failure
+   Error → dead toast link) are the deferred follow-ups worth a later pass.

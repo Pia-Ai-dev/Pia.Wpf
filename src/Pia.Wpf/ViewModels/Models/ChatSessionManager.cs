@@ -39,7 +39,17 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     private readonly Dictionary<Guid, ChatSession> _sessions = new();
     private readonly HashSet<ChatSession> _allSessions = new();
+    private long _activationCounter;
     private bool _disposed;
+
+    /// <summary>
+    /// Soft cap on retained live sessions (open-question A7). The reaper keeps the
+    /// <see cref="MaxRetainedSessions"/> most-recently-active sessions; among the older
+    /// remainder it retires only those safe to drop (non-active, Idle/Error). In-flight
+    /// (Running/WaitingForTool) and unread Completed sessions are never reaped, so the
+    /// live count can briefly exceed this cap.
+    /// </summary>
+    private const int MaxRetainedSessions = 8;
 
     public ChatSession? ActiveSession { get; private set; }
 
@@ -169,12 +179,66 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     {
         if (ReferenceEquals(session, ActiveSession)) return;
         ActiveSession = session;
+        session.LastActivatedSequence = ++_activationCounter;
 
         // Clear Completed → Idle on activation: the result is now "read".
         if (session.State == ChatState.Completed)
             session.SetState(ChatState.Idle);
 
         ActiveChanged?.Invoke(this, session);
+
+        // Switching active is the only point at which sessions accumulate (both
+        // GetOrCreateActiveForNewChat and ActivateAsync route through SetActive), so it
+        // is the natural reaper hook. A long-lived single chat running many turns adds
+        // no new session and so never grows the live set.
+        ReapStaleSessions();
+    }
+
+    /// <summary>
+    /// Drops background sessions that are safe to forget once the live set exceeds
+    /// <see cref="MaxRetainedSessions"/>. Their finished turns are already persisted
+    /// (see <see cref="OnSessionTurnCompleted"/>), so a later <see cref="ActivateAsync"/>
+    /// re-hydrates them from the store — reaping only frees memory, it never loses a
+    /// recoverable turn.
+    /// </summary>
+    internal void ReapStaleSessions()
+    {
+        if (_allSessions.Count <= MaxRetainedSessions) return;
+
+        // Keep the N most-recently-active sessions; among the older remainder retire
+        // only the non-active Idle/Error ones. In-flight (Running/WaitingForTool) and
+        // unread Completed sessions are never dropped, which is why the live count can
+        // exceed the cap. The previously-active session is protected because it holds
+        // the second-highest stamp and so stays inside the keep-window for any N >= 2
+        // (do not lower MaxRetainedSessions to 1 without revisiting this).
+        var stale = _allSessions
+            .OrderByDescending(s => s.LastActivatedSequence)
+            .Skip(MaxRetainedSessions)
+            .Where(s => !ReferenceEquals(s, ActiveSession)
+                        && s.State is ChatState.Idle or ChatState.Error)
+            .ToList();
+
+        foreach (var session in stale)
+            RetireSession(session);
+    }
+
+    private void RetireSession(ChatSession session)
+    {
+        session.StateChanged -= OnSessionStateChanged;
+        session.TurnCompleted -= OnSessionTurnCompleted;
+        _allSessions.Remove(session);
+        if (session.Id is { } id
+            && _sessions.TryGetValue(id, out var keyed)
+            && ReferenceEquals(keyed, session))
+        {
+            _sessions.Remove(id);
+        }
+
+        // Id + enum + count only — never the title/content (CLAUDE.md privacy logging).
+        _logger.LogInformation("Reaped background chat session {ChatId} (state {State}); {Count} live sessions remain",
+            session.Id, session.State, _allSessions.Count);
+
+        session.Dispose();
     }
 
     public async Task<ChatSession?> ActivateAsync(Guid chatId)
@@ -254,8 +318,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // `_sessions[chatId] = session` is idempotent.
         if (session.Id is null)
         {
-            session.SetIdentity(Guid.NewGuid(), session.CreatedAt, session.ProviderId, session.Title, session.AutoTitleApplied);
-            _sessions[session.Id.Value] = session;
+            var newId = Guid.NewGuid();
+            session.SetIdentity(newId, session.CreatedAt, session.ProviderId, session.Title, session.AutoTitleApplied);
+            _sessions[newId] = session;
         }
 
         // Flip to Running synchronously (before any await) so the proxied IsStreaming

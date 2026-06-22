@@ -56,6 +56,15 @@ public sealed class ChatSession : IDisposable
     internal CancellationTokenSource? Cts { get; private set; }
     internal bool AutoTitleApplied { get; set; }
 
+    /// <summary>
+    /// Manager-owned LRU stamp — higher means more recently made active. The reaper
+    /// (<see cref="ChatSessionManager.ReapStaleSessions"/>) orders sessions by this to
+    /// keep the most-recently-active ones. Set only by
+    /// <see cref="ChatSessionManager.SetActive"/>; not part of any persisted or public
+    /// contract.
+    /// </summary>
+    internal long LastActivatedSequence { get; set; }
+
     private bool _disposed;
 
     /// <summary>Raised on every real state transition (no-op on unchanged value).</summary>
