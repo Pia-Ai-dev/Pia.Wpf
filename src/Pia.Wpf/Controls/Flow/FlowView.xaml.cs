@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media.Animation;
 using Pia.Models.Flow;
 using Pia.ViewModels.Flow;
@@ -15,10 +16,28 @@ namespace Pia.Controls.Flow;
 public partial class FlowView : UserControl
 {
     private FlowViewModel? _viewModel;
+    private readonly Storyboard? _peekWhisper;
+    private readonly Storyboard? _peekAssertive;
+    private Storyboard? _activePeek;
 
     public FlowView()
     {
         InitializeComponent();
+
+        // Both peek storyboards drive the same PeekHost element, so a new arrival stops the in-flight one
+        // before starting its own; clearing the rendered card is hung off their (one-shot) Completed.
+        _peekWhisper = Resources["PeekWhisper"] as Storyboard;
+        _peekAssertive = Resources["PeekAssertive"] as Storyboard;
+        if (_peekWhisper is not null)
+            _peekWhisper.Completed += OnPeekCompleted;
+        if (_peekAssertive is not null)
+            _peekAssertive.Completed += OnPeekCompleted;
+
+        // Hovering the card freezes its retract so the now-clickable action/dismiss don't slide away
+        // mid-reach; leaving resumes it (mirrors how a hovered toast holds).
+        PeekHost.MouseEnter += OnPeekMouseEnter;
+        PeekHost.MouseLeave += OnPeekMouseLeave;
+
         DataContextChanged += OnDataContextChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -57,14 +76,39 @@ public partial class FlowView : UserControl
         if (window is null || !window.IsActive)
             return;
 
-        PeekTitle.Text = item.Title;
-        PeekBody.Text = item.Body;
+        // When the rail is open the item already shows as a card in the list; an extra peek would just
+        // double it over the rail. Peek only while collapsed — that is exactly what this surface is for.
+        if (_viewModel?.IsOpen == true)
+            return;
 
-        var peekKey = item.Severity is FlowSeverity.Info or FlowSeverity.Success ? "PeekWhisper" : "PeekAssertive";
-        if (Resources[peekKey] is Storyboard peek)
-            peek.Begin(Peek);
+        // Stop the in-flight peek (the only storyboard that can be running, and definitely begun
+        // controllable) before re-targeting PeekHost, then render the arrival as its real rail card at
+        // the docked position so a collapsed-rail arrival looks identical to the opened rail.
+        _activePeek?.Stop(PeekHost);
+        PeekItems.ItemsSource = new[] { item };
+
+        // Make the card interactive (hand cursor + clickable action/dismiss, like the rail) only while
+        // it is on screen; OnPeekCompleted turns this back off so the faded-out card can't eat clicks.
+        // Only the card paints a background, so the host's empty regions still pass clicks through.
+        PeekHost.IsHitTestVisible = true;
+
+        _activePeek = item.Severity is FlowSeverity.Info or FlowSeverity.Success ? _peekWhisper : _peekAssertive;
+        _activePeek?.Begin(PeekHost, isControllable: true);
 
         if (Resources["BadgePulse"] is Storyboard pulse)
             pulse.Begin(Badge);
     }
+
+    // Once the peek retracts: stop catching clicks (the held-at-zero-opacity card is still present until
+    // cleared) and drop the rendered card so the superseded item doesn't linger in the visual tree.
+    private void OnPeekCompleted(object? sender, EventArgs e)
+    {
+        _activePeek = null;
+        PeekHost.IsHitTestVisible = false;
+        PeekItems.ItemsSource = null;
+    }
+
+    private void OnPeekMouseEnter(object sender, MouseEventArgs e) => _activePeek?.Pause(PeekHost);
+
+    private void OnPeekMouseLeave(object sender, MouseEventArgs e) => _activePeek?.Resume(PeekHost);
 }

@@ -13,26 +13,44 @@
     <converters:FlowRelativeTimeConverter x:Key="FlowRelativeTimeConverter" />
     <converters:FlowSourceToSymbolConverter x:Key="FlowSourceToSymbolConverter" />
 
-    <!-- Arrival peek: a compact card emerges from the right edge, lingers, then retracts. -->
+    <!-- Arrival peek: the arriving card slides in from the right edge to its docked rail position,
+         lingers, then retracts — mirroring the rail's own open animation (X 360→0, CubicEase) so a
+         collapsed-rail arrival reads exactly like the card it becomes once the rail is opened. -->
     <Storyboard x:Key="PeekWhisper">
       <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.22" />
-      <ThicknessAnimationUsingKeyFrames Storyboard.TargetProperty="Margin">
-        <SplineThicknessKeyFrame KeyTime="0:0:0" Value="0,0,-24,0" />
-        <SplineThicknessKeyFrame KeyTime="0:0:0.22" Value="0,0,12,0" />
-        <SplineThicknessKeyFrame KeyTime="0:0:2.6" Value="0,0,12,0" />
-        <SplineThicknessKeyFrame KeyTime="0:0:2.9" Value="0,0,-24,0" />
-      </ThicknessAnimationUsingKeyFrames>
+      <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)">
+        <LinearDoubleKeyFrame KeyTime="0:0:0" Value="360" />
+        <EasingDoubleKeyFrame KeyTime="0:0:0.28" Value="0">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseOut" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+        <LinearDoubleKeyFrame KeyTime="0:0:2.6" Value="0" />
+        <EasingDoubleKeyFrame KeyTime="0:0:2.9" Value="360">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseIn" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+      </DoubleAnimationUsingKeyFrames>
       <DoubleAnimation Storyboard.TargetProperty="Opacity" BeginTime="0:0:2.6" From="1" To="0" Duration="0:0:0.3" />
     </Storyboard>
 
     <Storyboard x:Key="PeekAssertive">
       <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.22" />
-      <ThicknessAnimationUsingKeyFrames Storyboard.TargetProperty="Margin">
-        <SplineThicknessKeyFrame KeyTime="0:0:0" Value="0,0,-24,0" />
-        <SplineThicknessKeyFrame KeyTime="0:0:0.22" Value="0,0,12,0" />
-        <SplineThicknessKeyFrame KeyTime="0:0:5.0" Value="0,0,12,0" />
-        <SplineThicknessKeyFrame KeyTime="0:0:5.3" Value="0,0,-24,0" />
-      </ThicknessAnimationUsingKeyFrames>
+      <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)">
+        <LinearDoubleKeyFrame KeyTime="0:0:0" Value="360" />
+        <EasingDoubleKeyFrame KeyTime="0:0:0.28" Value="0">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseOut" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+        <LinearDoubleKeyFrame KeyTime="0:0:5.0" Value="0" />
+        <EasingDoubleKeyFrame KeyTime="0:0:5.3" Value="360">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseIn" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+      </DoubleAnimationUsingKeyFrames>
       <DoubleAnimation Storyboard.TargetProperty="Opacity" BeginTime="0:0:5.0" From="1" To="0" Duration="0:0:0.3" />
     </Storyboard>
 
@@ -190,6 +208,56 @@
         </DataTrigger>
       </DataTemplate.Triggers>
     </DataTemplate>
+
+    <!-- Rail header (title + clear-all / pin / collapse). Shared so the collapsed-rail arrival peek
+         can reserve the exact header height with a hidden clone and land its card at the first-card slot. -->
+    <DataTemplate x:Key="FlowHeaderTemplate">
+      <Grid Margin="0,0,0,10">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Grid.Column="0"
+                   VerticalAlignment="Center"
+                   FontSize="15"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   Text="{loc:Str Flow_Header}" />
+        <ui:Button Grid.Column="1"
+                   Padding="6"
+                   Cursor="Hand"
+                   Appearance="Transparent"
+                   BorderThickness="0"
+                   Command="{Binding ClearAllCommand}"
+                   ToolTip="{loc:Str Flow_ClearAll}"
+                   Visibility="{Binding IsEmpty, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+          <ui:SymbolIcon FontSize="16" Symbol="Broom24" />
+        </ui:Button>
+        <ToggleButton Grid.Column="2"
+                      Margin="2,0,0,0"
+                      Padding="6"
+                      Cursor="Hand"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      IsChecked="{Binding IsPinned, Mode=TwoWay}"
+                      ToolTip="{loc:Str Flow_Pin}">
+          <ui:SymbolIcon FontSize="16" Symbol="Pin24" />
+        </ToggleButton>
+        <ui:Button Grid.Column="3"
+                   Margin="2,0,0,0"
+                   Padding="6"
+                   Cursor="Hand"
+                   Appearance="Transparent"
+                   BorderThickness="0"
+                   Command="{Binding CollapseCommand}"
+                   ToolTip="{loc:Str Flow_Unpin}"
+                   Visibility="{Binding IsOverlayMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ui:SymbolIcon FontSize="16" Symbol="ChevronRight24" />
+        </ui:Button>
+      </Grid>
+    </DataTemplate>
   </UserControl.Resources>
 
   <!-- Root grid: no Background so empty areas pass clicks through to the content behind. -->
@@ -248,52 +316,11 @@
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,10">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <TextBlock Grid.Column="0"
-                     VerticalAlignment="Center"
-                     FontSize="15"
-                     FontWeight="SemiBold"
-                     Foreground="{DynamicResource TextDefaultBrush}"
-                     Text="{loc:Str Flow_Header}" />
-          <ui:Button Grid.Column="1"
-                     Padding="6"
-                     Cursor="Hand"
-                     Appearance="Transparent"
-                     BorderThickness="0"
-                     Command="{Binding ClearAllCommand}"
-                     ToolTip="{loc:Str Flow_ClearAll}"
-                     Visibility="{Binding IsEmpty, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-            <ui:SymbolIcon FontSize="16" Symbol="Broom24" />
-          </ui:Button>
-          <ToggleButton Grid.Column="2"
-                        Margin="2,0,0,0"
-                        Padding="6"
-                        Cursor="Hand"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        IsChecked="{Binding IsPinned, Mode=TwoWay}"
-                        ToolTip="{loc:Str Flow_Pin}">
-            <ui:SymbolIcon FontSize="16" Symbol="Pin24" />
-          </ToggleButton>
-          <ui:Button Grid.Column="3"
-                     Margin="2,0,0,0"
-                     Padding="6"
-                     Cursor="Hand"
-                     Appearance="Transparent"
-                     BorderThickness="0"
-                     Command="{Binding CollapseCommand}"
-                     ToolTip="{loc:Str Flow_Unpin}"
-                     Visibility="{Binding IsOverlayMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <ui:SymbolIcon FontSize="16" Symbol="ChevronRight24" />
-          </ui:Button>
-        </Grid>
+        <!-- Header (shared FlowHeaderTemplate; the arrival peek reuses it as a hidden spacer) -->
+        <ContentControl Grid.Row="0"
+                        HorizontalContentAlignment="Stretch"
+                        Content="{Binding}"
+                        ContentTemplate="{StaticResource FlowHeaderTemplate}" />
 
         <!-- Items + empty state -->
         <Grid Grid.Row="1">
@@ -367,35 +394,37 @@
       </StackPanel>
     </Border>
 
-    <!-- Arrival peek -->
-    <Border x:Name="Peek"
+    <!-- Arrival peek — the arriving item rendered as its real rail card, positioned exactly where the
+         rail's first card sits. This Border mirrors the Rail's box (same Width, Margin and 1px border
+         inset, same inner padding); a hidden FlowHeaderTemplate clone reserves the header height so the
+         card lands at the first-card slot with no magic numbers. It paints no background/border/shadow
+         of its own, so only the (self-contained) card shows. Hit-test-disabled and played only while
+         the rail is collapsed (see OnItemArrived); the card slides in from the right like the rail does. -->
+    <Border x:Name="PeekHost"
             Panel.ZIndex="3"
-            MaxWidth="300"
-            Margin="0,0,-24,0"
-            Padding="12,10,12,10"
+            Width="340"
+            Margin="0,44,0,12"
             HorizontalAlignment="Right"
-            VerticalAlignment="Top"
-            Background="{DynamicResource SurfaceBrush}"
-            BorderBrush="{DynamicResource BorderBrush_}"
-            BorderThickness="1"
-            CornerRadius="10"
+            BorderThickness="1,1,0,1"
             IsHitTestVisible="False"
             Opacity="0">
-      <Border.Effect>
-        <DropShadowEffect BlurRadius="20" Direction="180" Opacity="0.3" ShadowDepth="0" Color="#202020" />
-      </Border.Effect>
-      <StackPanel>
-        <TextBlock x:Name="PeekTitle"
-                   FontSize="13"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextDefaultBrush}"
-                   TextTrimming="CharacterEllipsis" />
-        <TextBlock x:Name="PeekBody"
-                   Margin="0,2,0,0"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextMutedBrush}"
-                   TextTrimming="CharacterEllipsis" />
-      </StackPanel>
+      <Border.RenderTransform>
+        <TranslateTransform X="360" />
+      </Border.RenderTransform>
+      <Grid Margin="14,12,14,12">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ContentControl Grid.Row="0"
+                        HorizontalContentAlignment="Stretch"
+                        Content="{Binding}"
+                        ContentTemplate="{StaticResource FlowHeaderTemplate}"
+                        Visibility="Hidden" />
+        <ItemsControl x:Name="PeekItems"
+                      Grid.Row="1"
+                      ItemTemplate="{StaticResource FlowItemCardTemplate}" />
+      </Grid>
     </Border>
   </Grid>
 </UserControl>
