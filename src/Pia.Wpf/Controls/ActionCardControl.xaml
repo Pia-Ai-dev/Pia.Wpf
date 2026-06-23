@@ -6,11 +6,7 @@
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:cards="clr-namespace:Pia.Controls.Cards"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
-             xmlns:converters="clr-namespace:Pia.Converters"
              xmlns:models="clr-namespace:Pia.Models">
-  <UserControl.Resources>
-    <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
-  </UserControl.Resources>
   <Border x:Name="CardBorder"
           Padding="12,10"
           Margin="0,4,0,0">

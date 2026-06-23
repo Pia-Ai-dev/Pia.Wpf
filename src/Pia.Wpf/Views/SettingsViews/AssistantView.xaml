@@ -7,8 +7,6 @@
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
-    <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-    <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
   </UserControl.Resources>
   <Grid>
     <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
