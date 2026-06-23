@@ -5,7 +5,12 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:cards="clr-namespace:Pia.Controls.Cards"
+             xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:converters="clr-namespace:Pia.Converters"
              xmlns:models="clr-namespace:Pia.Models">
+  <UserControl.Resources>
+    <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+  </UserControl.Resources>
   <Border x:Name="CardBorder"
           Padding="12,10"
           Margin="0,4,0,0">
@@ -241,6 +246,11 @@
                   <Setter Property="Symbol" Value="Checkmark24" />
                   <Setter Property="Foreground" Value="#0F7B0F" />
                 </DataTrigger>
+                <!-- Auto-approved (standing grant): a distinct shield-checkmark, accent-coloured. -->
+                <DataTrigger Binding="{Binding IsAutoApproved}" Value="True">
+                  <Setter Property="Symbol" Value="ShieldCheckmark24" />
+                  <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+                </DataTrigger>
               </Style.Triggers>
             </Style>
           </ui:SymbolIcon.Style>
@@ -248,7 +258,17 @@
         <TextBlock Text="{Binding ResolvedStatusText}"
                    FontSize="12"
                    FontStyle="Italic"
+                   VerticalAlignment="Center"
                    Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        <!-- Manage affordance: deep-links to the tool-permissions revocation surface.
+             Bound to the hosting message's ManageToolPermissionsCommand; only shown for
+             auto-approved (standing-grant) cards. -->
+        <ui:HyperlinkButton Content="{loc:Str ActionCard_Manage}"
+                            FontSize="12"
+                            Padding="6,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
       </StackPanel>
     </Grid>
   </Border>

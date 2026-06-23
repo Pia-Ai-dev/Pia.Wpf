@@ -668,6 +668,14 @@
   <data name="ActionCard_AllowOnce" xml:space="preserve"><value>Einmal zulassen</value></data>
   <data name="ActionCard_AlwaysAllow" xml:space="preserve"><value>Immer zulassen</value></data>
   <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Automatisch genehmigt · {0} immer zulassen</value></data>
+  <data name="ActionCard_Manage" xml:space="preserve"><value>Verwalten</value></data>
+  <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool-Zugriff</value></data>
+  <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Immer erlaubte Tools</value></data>
+  <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools, denen Sie die dauerhafte Erlaubnis erteilt haben, ohne Bestätigung ausgeführt zu werden. Widerrufen Sie eine Erlaubnis, um beim nächsten Aufruf erneut gefragt zu werden.</value></data>
+  <data name="ToolPermissions_Empty" xml:space="preserve"><value>Keine Tools sind immer erlaubt. Wenn Sie bei einem Tool „Immer zulassen“ wählen, erscheint es hier.</value></data>
+  <data name="ToolPermissions_Revoke" xml:space="preserve"><value>Widerrufen</value></data>
+  <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin:</value></data>
+  <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Erteilt:</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>

@@ -668,6 +668,14 @@
   <data name="ActionCard_AllowOnce" xml:space="preserve"><value>Autoriser une fois</value></data>
   <data name="ActionCard_AlwaysAllow" xml:space="preserve"><value>Toujours autoriser</value></data>
   <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Approuvé automatiquement · {0} toujours autorisé</value></data>
+  <data name="ActionCard_Manage" xml:space="preserve"><value>Gérer</value></data>
+  <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Accès aux outils</value></data>
+  <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Outils toujours autorisés</value></data>
+  <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Outils auxquels vous avez accordé une autorisation permanente de s'exécuter sans confirmation. Révoquez une autorisation pour être à nouveau invité lors du prochain appel.</value></data>
+  <data name="ToolPermissions_Empty" xml:space="preserve"><value>Aucun outil n'est toujours autorisé. Lorsque vous choisissez « Toujours autoriser » pour un outil, il apparaît ici.</value></data>
+  <data name="ToolPermissions_Revoke" xml:space="preserve"><value>Révoquer</value></data>
+  <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin :</value></data>
+  <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Accordé :</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Nouvelle valeur :</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Mémoire</value></data>
