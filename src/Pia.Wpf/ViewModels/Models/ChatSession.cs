@@ -201,6 +201,13 @@ public sealed class ChatSession : IDisposable
         var previousAmbient = TokenMapAmbient.Current;
         TokenMapAmbient.Current = TokenMap;
 
+        // Likewise expose THIS session's Id as the ambient task id so tool handlers
+        // (FilesToolHandler) can key per-task state for the in-flight turn with zero
+        // parameter plumbing. Id is Guid? — null on direct test callers that skip the
+        // manager's SetIdentity. Restored in the same finally as the token map.
+        var previousTask = TaskAmbient.Current;
+        TaskAmbient.Current = Id;
+
         var succeeded = false;
         try
         {
@@ -359,6 +366,7 @@ public sealed class ChatSession : IDisposable
             // Restore the previous ambient map before the terminal decision (must be
             // restored on the same logical async flow — done synchronously here).
             TokenMapAmbient.Current = previousAmbient;
+            TaskAmbient.Current = previousTask;
 
             Cts?.Dispose();
             Cts = null;

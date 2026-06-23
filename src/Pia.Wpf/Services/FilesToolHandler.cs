@@ -25,12 +25,14 @@ public class FilesToolHandler : IFilesToolHandler
     private const int MaxListEntries = 500;
 
     private readonly ISettingsService _settingsService;
+    private readonly IFileStalenessStore _stalenessStore;
     private readonly ILogger<FilesToolHandler> _logger;
     private volatile string? _currentFolder;
 
-    public FilesToolHandler(ISettingsService settingsService, ILogger<FilesToolHandler> logger)
+    public FilesToolHandler(ISettingsService settingsService, IFileStalenessStore stalenessStore, ILogger<FilesToolHandler> logger)
     {
         _settingsService = settingsService;
+        _stalenessStore = stalenessStore;
         _logger = logger;
 
         // Settings are already loaded and cached by the time any handler is constructed
@@ -65,7 +67,15 @@ public class FilesToolHandler : IFilesToolHandler
             _currentFolder = null;
             return;
         }
-        try { _currentFolder = Path.GetFullPath(folder); }
+        try
+        {
+            var full = Path.GetFullPath(folder);
+            // Canonicalize so a junction/symlink in the configured root path itself is not a
+            // sandbox hole. Canonicalize requires an existing handle; preserve the prior
+            // behavior (IsAvailable stays true for a not-yet-created folder — the per-call
+            // Directory.Exists guard handles the missing case) by only canonicalizing when it exists.
+            _currentFolder = Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
+        }
         catch { _currentFolder = null; }
     }
 
@@ -158,9 +168,11 @@ public class FilesToolHandler : IFilesToolHandler
         var rels = new List<string>();
         foreach (var full in entries)
         {
-            // Final safety net: discard anything that, after resolution, isn't inside root.
-            // (Defends against unusual reparse-point / symlink configurations.)
-            if (!full.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase)) continue;
+            // Canonicalizing safety net: discard anything that, after junction/symlink
+            // resolution, isn't inside root. (Supersedes the old lexical StartsWith net.)
+            if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out _)) continue;
+            // Display path is derived from the (already lexically-under-root) enumerated path,
+            // not the junction-resolved one.
             rels.Add(full.Substring(rootWithSep.Length));
             if (rels.Count >= MaxListEntries) break;
         }
@@ -177,7 +189,7 @@ public class FilesToolHandler : IFilesToolHandler
     private object HandleReadFile(string root, IDictionary<string, object?> args)
     {
         var requested = GetStringArg(args, "path");
-        if (!SafeFolderPath.TryResolveInside(root, requested, out var safePath))
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
         {
             _logger.LogWarning("read_file rejected path outside sandbox");
             _logger.SensitiveDebug("read_file rejected path: {Path}", requested);
@@ -209,7 +221,7 @@ public class FilesToolHandler : IFilesToolHandler
         var requested = GetStringArg(args, "path");
         var content = GetStringArg(args, "content");
 
-        if (!SafeFolderPath.TryResolveInside(root, requested, out var safePath))
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
             return new FilesToolCall("write_file", "Invalid path", null, null,
                 () => Task.FromResult<object?>("Error: Path is outside the assistant files folder."));
 
@@ -232,7 +244,7 @@ public class FilesToolHandler : IFilesToolHandler
             {
                 // Re-validate inside the deferred execution path — the sandbox
                 // root might have changed between preparation and confirmation.
-                if (!SafeFolderPath.TryResolveInside(root, requested, out var finalPath))
+                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var finalPath))
                     return Task.FromResult<object?>("Error: Path is outside the assistant files folder.");
 
                 try
@@ -260,7 +272,7 @@ public class FilesToolHandler : IFilesToolHandler
     {
         var requested = GetStringArg(args, "path");
 
-        if (!SafeFolderPath.TryResolveInside(root, requested, out var safePath))
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
             return new FilesToolCall("delete_file", "Invalid path", null, null,
                 () => Task.FromResult<object?>("Error: Path is outside the assistant files folder."));
 
@@ -277,7 +289,7 @@ public class FilesToolHandler : IFilesToolHandler
             TargetPath: rel,
             Execute: () =>
             {
-                if (!SafeFolderPath.TryResolveInside(root, requested, out var finalPath))
+                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var finalPath))
                     return Task.FromResult<object?>("Error: Path is outside the assistant files folder.");
 
                 try

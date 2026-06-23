@@ -97,7 +97,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     {
         // Each session owns its OWN token map (per-session PII namespace) so two
         // background turns never collide once turns run concurrently. The decorator
-        // reaches the running turn's map via TokenMapAmbient (set in RunTurnAsync).
+        // reaches the running turn's map via TokenMapAmbient (set in RunTurnAsync);
+        // tool handlers reach the running turn's Id via TaskAmbient (set the same way).
         var tokenMap = _tokenMapFactory();
         var session = new ChatSession(
             tokenMap,

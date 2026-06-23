@@ -247,6 +247,7 @@ public static class Bootstrapper
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<IFileStalenessStore, FileStalenessStore>();
         services.AddSingleton<IFilesToolHandler, FilesToolHandler>();
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
