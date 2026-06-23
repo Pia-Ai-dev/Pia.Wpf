@@ -171,19 +171,41 @@ public class FilesToolHandler : IFilesToolHandler
     {
         var pattern = GetOptionalStringArg(args, "pattern");
 
-        IEnumerable<string> entries;
+        List<string> rels;
         try
         {
-            entries = Directory.EnumerateFiles(
+            rels = CollectRelativeFiles(
                 root,
                 string.IsNullOrWhiteSpace(pattern) ? "*" : pattern!,
-                SearchOption.AllDirectories);
+                MaxListEntries);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to enumerate files in sandbox");
             return $"Error: Could not list files ({ex.Message}).";
         }
+
+        if (rels.Count == 0) return "No files found in the assistant files folder.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {rels.Count} file(s) (relative paths):");
+        foreach (var r in rels) sb.AppendLine($"  {r}");
+        if (rels.Count == MaxListEntries) sb.AppendLine($"  ... (truncated at {MaxListEntries})");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Shared sandbox file enumeration for <c>list_files</c> and the <c>@Files</c> picker.
+    /// Walks <paramref name="root"/> recursively and applies the identical filtering both
+    /// consumers must agree on: canonical-containment (discard anything that resolves outside
+    /// root via junction/symlink) and the sensitive-path blocklist. Returns sandbox-relative
+    /// paths (native separators, derived from the enumerated path) capped at <paramref name="max"/>.
+    /// Throws on enumeration failure (e.g. an invalid glob pattern) — callers translate that into
+    /// their own error surface.
+    /// </summary>
+    private static List<string> CollectRelativeFiles(string root, string searchPattern, int max)
+    {
+        var entries = Directory.EnumerateFiles(root, searchPattern, SearchOption.AllDirectories);
 
         var rels = new List<string>();
         foreach (var full in entries)
@@ -197,17 +219,50 @@ public class FilesToolHandler : IFilesToolHandler
             // Display path is derived from the (already lexically-under-root) enumerated path,
             // not the junction-resolved one.
             rels.Add(SafeRelative(root, full));
-            if (rels.Count >= MaxListEntries) break;
+            if (rels.Count >= max) break;
+        }
+        return rels;
+    }
+
+    public IReadOnlyList<string> ListRelativeFiles(string? filter, int max)
+    {
+        if (max <= 0) return [];
+
+        var root = _currentFolder;
+        if (root is null || !Directory.Exists(root)) return [];
+
+        List<string> all;
+        try
+        {
+            // Collect the full (capped) listing first, then filter — capping before the
+            // substring filter would only ever search the first N enumerated files.
+            all = CollectRelativeFiles(root, "*", MaxListEntries);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate files for @Files autocomplete");
+            return [];
         }
 
-        if (rels.Count == 0) return "No files found in the assistant files folder.";
+        IEnumerable<string> query = all.Select(NormalizeSeparators);
+        if (!string.IsNullOrWhiteSpace(filter))
+            query = query.Where(r => r.Contains(filter, StringComparison.OrdinalIgnoreCase));
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"Found {rels.Count} file(s) (relative paths):");
-        foreach (var r in rels) sb.AppendLine($"  {r}");
-        if (rels.Count == MaxListEntries) sb.AppendLine($"  ... (truncated at {MaxListEntries})");
-        return sb.ToString();
+        return query
+            .OrderBy(r => r, StringComparer.OrdinalIgnoreCase)
+            .Take(max)
+            .ToArray();
     }
+
+    /// <summary>
+    /// Normalizes a sandbox-relative path to forward slashes. The file tools resolve a
+    /// path via <see cref="Path.GetFullPath(string, string)"/>, which accepts <c>/</c> on
+    /// Windows, so a forward-slash path stays inside the sandbox while avoiding the
+    /// backslash-escape corruption that occurs when the model copies a path into a JSON
+    /// tool argument (e.g. <c>notes\there.md</c> → a stray <c>\t</c>).
+    /// </summary>
+    private static string NormalizeSeparators(string relativePath)
+        => relativePath.Replace('\\', '/');
 
     private static readonly HashSet<string> SearchIgnoredDirs = new(StringComparer.OrdinalIgnoreCase)
     {

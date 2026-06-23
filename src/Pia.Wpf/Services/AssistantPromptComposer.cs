@@ -166,7 +166,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             """;
     }
 
-    private static (string CategoryLabel, string QueryTool, IReadOnlyList<string> ToolNames) GetAtCommandToolMapping(Pia.Models.AtCommandDomain domain) => domain switch
+    internal static (string CategoryLabel, string QueryTool, IReadOnlyList<string> ToolNames) GetAtCommandToolMapping(Pia.Models.AtCommandDomain domain) => domain switch
     {
         Pia.Models.AtCommandDomain.Memory => (
             "memory entry",
@@ -184,6 +184,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             "scheduled research job",
             "query_scheduled_research",
             (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"]),
+        Pia.Models.AtCommandDomain.Files => (
+            "file",
+            "read_file",
+            (IReadOnlyList<string>)["list_files", "read_file", "write_file", "delete_file", "search_files"]),
         _ => throw new ArgumentOutOfRangeException(nameof(domain), domain,
             $"No tool mapping registered for at-command domain {domain}. Add a row to GetAtCommandToolMapping.")
     };
@@ -199,7 +203,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         return allowed;
     }
 
-    private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
+    internal static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
     {
         if (commands.Count == 0) return string.Empty;
 
@@ -213,6 +217,17 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         {
             var (categoryLabel, queryTool, toolNames) = GetAtCommandToolMapping(cmd.Domain);
             var toolFamily = $"{categoryLabel} tools ({string.Join(", ", toolNames)})";
+
+            // Files are addressed by their relative path directly — there is no ID-resolution
+            // step, so the generic "call {queryTool} first to obtain its ID" wording is wrong.
+            if (cmd.Domain == Pia.Models.AtCommandDomain.Files)
+            {
+                if (cmd.ItemTitle is not null)
+                    sb.AppendLine($"- The user's request targets the file at relative path \"{cmd.ItemTitle}\". Operate on that exact path directly with the {toolFamily} — no lookup step is needed (read_file before editing, then write_file).");
+                else
+                    sb.AppendLine($"- The user's request is about files in the assistant files folder — use the {toolFamily}.");
+                continue;
+            }
 
             if (cmd.ItemTitle is not null)
                 sb.AppendLine($"- The user's request targets a {categoryLabel} titled \"{cmd.ItemTitle}\". Call {queryTool} first to obtain its ID, then perform the action described in the rest of the user's message (e.g. delete, update, complete). Available {toolFamily}.");

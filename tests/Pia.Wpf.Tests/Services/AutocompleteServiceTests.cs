@@ -12,8 +12,10 @@ public class AutocompleteServiceTests
     private readonly ITodoService _todo = Substitute.For<ITodoService>();
     private readonly IReminderService _reminder = Substitute.For<IReminderService>();
     private readonly IScheduledJobService _scheduledJobs = Substitute.For<IScheduledJobService>();
+    // Default IsAvailable == false keeps the Files domain out of the existing tier-1 tests.
+    private readonly IFilesToolHandler _files = Substitute.For<IFilesToolHandler>();
 
-    private AutocompleteService CreateService() => new(_memory, _todo, _reminder, _scheduledJobs);
+    private AutocompleteService CreateService() => new(_memory, _todo, _reminder, _scheduledJobs, _files);
 
     [Fact]
     public async Task Tier1_FilterRes_ReturnsResearchOnly()
@@ -81,5 +83,79 @@ public class AutocompleteServiceTests
         var results = await service.GetSuggestionsAsync(AtCommandDomain.Research, filter: null);
 
         Assert.Empty(results);
+    }
+
+    // --- Files domain ---
+
+    [Fact]
+    public async Task Tier1_FilesUnavailable_ExcludesFiles()
+    {
+        // Default substitute: IsAvailable == false.
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(domain: null, filter: null);
+
+        Assert.DoesNotContain(results, s => s.Domain == AtCommandDomain.Files);
+    }
+
+    [Fact]
+    public async Task Tier1_FilesAvailable_IncludesFiles()
+    {
+        _files.IsAvailable.Returns(true);
+
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(domain: null, filter: null);
+
+        Assert.Contains(results, s => s.Domain == AtCommandDomain.Files && s.DisplayText == "Files" && s.IsTier1);
+    }
+
+    [Fact]
+    public async Task Tier1_FilterFil_ReturnsFilesOnly_WhenAvailable()
+    {
+        _files.IsAvailable.Returns(true);
+
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(domain: null, filter: "Fil");
+
+        Assert.Single(results);
+        Assert.Equal("Files", results[0].DisplayText);
+        Assert.Equal(AtCommandDomain.Files, results[0].Domain);
+        Assert.True(results[0].IsTier1);
+    }
+
+    [Fact]
+    public async Task Tier2_Files_ReturnsRelativePathsFromHandler()
+    {
+        _files.ListRelativeFiles(null, Arg.Any<int>())
+            .Returns(new[] { "notes/todo.md", "src/app/main.cs" });
+
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(AtCommandDomain.Files, filter: null);
+
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, s => s.DisplayText == "notes/todo.md");
+        Assert.Contains(results, s => s.DisplayText == "src/app/main.cs");
+        Assert.All(results, s => Assert.Equal(AtCommandDomain.Files, s.Domain));
+        Assert.All(results, s => Assert.False(s.IsTier1));
+        // Files carry the path in DisplayText, not a Guid ItemId.
+        Assert.All(results, s => Assert.Null(s.ItemId));
+    }
+
+    [Fact]
+    public async Task Tier2_Files_PassesFilterToHandler()
+    {
+        _files.ListRelativeFiles("main", Arg.Any<int>())
+            .Returns(new[] { "src/app/main.cs" });
+
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(AtCommandDomain.Files, filter: "main");
+
+        Assert.Single(results);
+        Assert.Equal("src/app/main.cs", results[0].DisplayText);
+        _files.Received(1).ListRelativeFiles("main", Arg.Any<int>());
     }
 }

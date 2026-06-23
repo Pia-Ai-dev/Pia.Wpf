@@ -70,6 +70,19 @@ public class FilesToolHandlerReadTests : IDisposable
     }
 
     [Fact]
+    public async Task Read_ForwardSlashRelativePath_ResolvesInsideSandbox()
+    {
+        // The @Files picker hands the model forward-slash paths (e.g. "notes/todo.md").
+        // Path.GetFullPath accepts '/' on Windows, so the file tools must resolve them.
+        Directory.CreateDirectory(Path.Combine(_root, "notes"));
+        File.WriteAllText(Path.Combine(_root, "notes", "todo.md"), "buy milk\n");
+
+        var result = (string)(await ReadAsync("notes/todo.md"))!;
+
+        Assert.Contains("1|buy milk", result);
+    }
+
+    [Fact]
     public async Task Read_StripsCarriageReturns_FromContent()
     {
         WriteFile("crlf.txt", "one\r\ntwo\r\nthree\r\n");

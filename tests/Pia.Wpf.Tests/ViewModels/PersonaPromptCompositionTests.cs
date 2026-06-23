@@ -111,4 +111,72 @@ public class PersonaPromptCompositionTests
     {
         Assert.Equal(expected, AssistantPromptComposer.ShouldUseTools(providerSupportsTools, scope));
     }
+
+    // --- @-command tool mapping + hints ---
+
+    [Fact]
+    public void GetAtCommandToolMapping_EveryEnumValue_HasNonEmptyMapping()
+    {
+        // Safety net mirroring AtCommandParser's keyword round-trip: a new AtCommandDomain
+        // without a mapping row would otherwise throw at runtime on the first @-command.
+        foreach (AtCommandDomain domain in Enum.GetValues<AtCommandDomain>())
+        {
+            var (categoryLabel, queryTool, toolNames) = AssistantPromptComposer.GetAtCommandToolMapping(domain);
+            Assert.False(string.IsNullOrWhiteSpace(categoryLabel));
+            Assert.False(string.IsNullOrWhiteSpace(queryTool));
+            Assert.NotEmpty(toolNames);
+        }
+    }
+
+    [Fact]
+    public void GetAtCommandToolMapping_Files_MapsToFileTools()
+    {
+        var (_, _, toolNames) = AssistantPromptComposer.GetAtCommandToolMapping(AtCommandDomain.Files);
+
+        Assert.Contains("read_file", toolNames);
+        Assert.Contains("write_file", toolNames);
+        Assert.Contains("search_files", toolNames);
+        Assert.Contains("list_files", toolNames);
+        Assert.Contains("delete_file", toolNames);
+    }
+
+    [Fact]
+    public void BuildAtCommandHint_FilesWithPath_UsesPathDirectlyNoIdLookup()
+    {
+        var hint = AssistantPromptComposer.BuildAtCommandHint(
+        [
+            new AtCommand { Domain = AtCommandDomain.Files, ItemTitle = "notes/todo.md" }
+        ]);
+
+        Assert.Contains("notes/todo.md", hint);
+        Assert.Contains("read_file", hint);
+        // Files are addressed by path — the generic ID-lookup wording must not appear.
+        Assert.DoesNotContain("obtain its ID", hint);
+        Assert.DoesNotContain("titled", hint);
+    }
+
+    [Fact]
+    public void BuildAtCommandHint_FilesBare_PointsAtFileTools()
+    {
+        var hint = AssistantPromptComposer.BuildAtCommandHint(
+        [
+            new AtCommand { Domain = AtCommandDomain.Files }
+        ]);
+
+        Assert.Contains("files in the assistant files folder", hint);
+        Assert.Contains("read_file", hint);
+    }
+
+    [Fact]
+    public void BuildAtCommandHint_NonFileDomain_KeepsIdLookupWording()
+    {
+        // Regression guard: the file-specific branch must not alter the other domains' hint.
+        var hint = AssistantPromptComposer.BuildAtCommandHint(
+        [
+            new AtCommand { Domain = AtCommandDomain.Todo, ItemTitle = "Groceries" }
+        ]);
+
+        Assert.Contains("obtain its ID", hint);
+        Assert.Contains("Groceries", hint);
+    }
 }

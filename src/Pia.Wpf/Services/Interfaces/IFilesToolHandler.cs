@@ -18,6 +18,17 @@ public interface IFilesToolHandler
     /// suppresses both tool registration and the system-prompt addition.
     /// </summary>
     bool IsAvailable { get; }
+
+    /// <summary>
+    /// Enumerates files in the sandbox folder for the <c>@Files</c> autocomplete picker,
+    /// applying the same containment + sensitive-path filtering as <c>list_files</c> so the
+    /// picker and the tools agree on which files exist. Returns sandbox-relative paths using
+    /// forward slashes (so the model can copy them into a tool argument without backslash
+    /// escape corruption), optionally filtered by a case-insensitive substring, capped at
+    /// <paramref name="max"/>. Returns empty when no folder is configured.
+    /// </summary>
+    IReadOnlyList<string> ListRelativeFiles(string? filter, int max);
+
     IList<AITool> GetTools();
     Task<(object? Result, FilesToolCall? PendingAction)> HandleToolCallAsync(
         FunctionCallContent toolCall,
