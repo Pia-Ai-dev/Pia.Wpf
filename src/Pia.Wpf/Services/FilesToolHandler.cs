@@ -144,8 +144,8 @@ public class FilesToolHandler : IFilesToolHandler
         {
             "list_files" => (HandleListFiles(root, args), null),
             "read_file"  => (await HandleReadFileAsync(root, args, cancellationToken), null),
-            "write_file" => ((object?)null, PrepareWriteFile(root, args)),
-            "delete_file" => ((object?)null, PrepareDeleteFile(root, args)),
+            "write_file" => PrepareWriteFile(root, args),
+            "delete_file" => PrepareDeleteFile(root, args),
             "search_files" => (HandleSearchFiles(root, args), null),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (FilesToolCall?)null)
         };
@@ -678,34 +678,40 @@ public class FilesToolHandler : IFilesToolHandler
         return Encoding.UTF8.GetString(bytes);
     }
 
-    private FilesToolCall PrepareWriteFile(string root, IDictionary<string, object?> args)
+    /// <summary>
+    /// Prepares a write. Prepare-time hard failures (bad args, echo, path-outside, blocked path,
+    /// oversized) are deterministic rejections with nothing to approve, so they return an immediate
+    /// <c>(Result, null)</c> — no action card. Only a viable write returns a <c>(null, pending)</c>
+    /// action card carrying the diff for the user to approve.
+    /// </summary>
+    private (object? Result, FilesToolCall? Pending) PrepareWriteFile(string root, IDictionary<string, object?> args)
     {
         var requested = GetStringArg(args, "path");
 
         // ARG HARDENING: distinguish a missing 'content' key from a present-but-empty one.
         // GetStringArg returns "" for a missing key, which would silently write an empty file.
         if (!TryGetRequiredStringArg(args, "content", out var content, out var argError))
-            return WriteError(argError);
+            return WriteFailure(argError);
 
         // INTERNAL-CONTENT GUARD: reject a read_file echo accidentally fed back as content.
         if (LooksLikeReadFileEcho(content))
-            return WriteError(
+            return WriteFailure(
                 "Error: 'content' looks like read_file output (line-number-prefixed lines, e.g. '12|foo'). " +
                 "Pass the raw file contents only, without line-number prefixes or the total_lines header.");
 
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
-            return WriteError("Error: Path is outside the assistant files folder.");
+            return WriteFailure("Error: Path is outside the assistant files folder.");
 
         // SENSITIVE-PATH BLOCKLIST (after §0.3 resolution).
         if (SensitivePathGuard.IsBlocked(safePath, out var blockReason))
         {
             _logger.LogWarning("write_file rejected: sensitive path");
             _logger.SensitiveDebug("write_file blocked path: {Path}", safePath);
-            return WriteError($"Error: Refusing to write here — {blockReason}.");
+            return WriteFailure($"Error: Refusing to write here — {blockReason}.");
         }
 
         if (content.Length > MaxWriteChars)
-            return WriteError($"Error: Content is too large ({content.Length} chars, max {MaxWriteChars}).");
+            return WriteFailure($"Error: Content is too large ({content.Length} chars, max {MaxWriteChars}).");
 
         var exists = File.Exists(safePath);
         var rel = SafeRelative(root, safePath);
@@ -734,18 +740,21 @@ public class FilesToolHandler : IFilesToolHandler
         // after the approval await, where ambient flow is not guaranteed).
         var taskId = TaskAmbient.Current ?? Guid.Empty;
 
-        return new FilesToolCall(
+        return (null, new FilesToolCall(
             ToolName: "write_file",
             Description: desc,
             Details: $"{content.Length} character(s) will be written.",
             TargetPath: rel,
             Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, previewMtime, taskId),
-            DiffPreview: diff);
+            DiffPreview: diff));
     }
 
-    private static FilesToolCall WriteError(string message)
-        => new("write_file", "Invalid write", null, null,
-            () => Task.FromResult<object?>(WriteResult.Failed(message)));
+    /// <summary>
+    /// A prepare-time write rejection delivered as an immediate structured result (no action card).
+    /// Mirrors the shape the model already sees for an execute-time failure so the contract is stable.
+    /// </summary>
+    private static (object? Result, FilesToolCall? Pending) WriteFailure(string message)
+        => (WriteResult.Failed(message), null);
 
     private Task<object?> ExecuteWriteAsync(
         string root, string requested, string rel, string content, string? oldContent,
@@ -916,13 +925,18 @@ public class FilesToolHandler : IFilesToolHandler
             => new(false, null, 0, 0, null, null, error, false);
     }
 
-    private FilesToolCall PrepareDeleteFile(string root, IDictionary<string, object?> args)
+    /// <summary>
+    /// Prepares a delete. Prepare-time hard failures (path-outside, blocked path, file-not-found)
+    /// are deterministic rejections with nothing to approve, so they return an immediate
+    /// <c>(Result, null)</c> — no action card. Only a viable delete returns a <c>(null, pending)</c>
+    /// confirmation card.
+    /// </summary>
+    private (object? Result, FilesToolCall? Pending) PrepareDeleteFile(string root, IDictionary<string, object?> args)
     {
         var requested = GetStringArg(args, "path");
 
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
-            return new FilesToolCall("delete_file", "Invalid path", null, null,
-                () => Task.FromResult<object?>("Error: Path is outside the assistant files folder."));
+            return ("Error: Path is outside the assistant files folder.", null);
 
         // SENSITIVE-PATH BLOCKLIST (after §0.3 resolution) — symmetric with write_file.
         // delete is irreversible, so the same protected roots that can't be written can't be deleted.
@@ -930,17 +944,15 @@ public class FilesToolHandler : IFilesToolHandler
         {
             _logger.LogWarning("delete_file rejected: sensitive path");
             _logger.SensitiveDebug("delete_file blocked path: {Path}", safePath);
-            return new FilesToolCall("delete_file", "Invalid path", null, null,
-                () => Task.FromResult<object?>($"Error: Refusing to delete here — {prepBlockReason}."));
+            return ($"Error: Refusing to delete here — {prepBlockReason}.", null);
         }
 
         if (!File.Exists(safePath))
-            return new FilesToolCall("delete_file", "File not found", null, null,
-                () => Task.FromResult<object?>($"Error: File '{requested}' not found."));
+            return ($"Error: File '{requested}' not found.", null);
 
         var rel = SafeRelative(root, safePath);
 
-        return new FilesToolCall(
+        return (null, new FilesToolCall(
             ToolName: "delete_file",
             Description: $"Delete file '{rel}'",
             Details: "This permanently removes the file.",
@@ -966,7 +978,7 @@ public class FilesToolHandler : IFilesToolHandler
                     _logger.LogError(ex, "delete_file failed");
                     return Task.FromResult<object?>($"Error: Could not delete file ({ex.Message}).");
                 }
-            });
+            }));
     }
 
     private static string SafeRelative(string root, string fullPath)

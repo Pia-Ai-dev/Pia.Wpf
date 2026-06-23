@@ -8,10 +8,18 @@ namespace Pia.Infrastructure;
 /// and true system / credential directories. Load-bearing now that the path resolver accepts
 /// in-base absolute paths. Kept deliberately tight to avoid false positives — this is a denylist
 /// of well-known dangerous roots, not a general allowlist.
+/// <para>
+/// One island is carved back out of the otherwise-blocked <c>%LOCALAPPDATA%\Pia</c>: the agent's
+/// default scratch workdir (<see cref="AssistantWorkspace.DefaultWorkdir"/>) lives there and IS
+/// the sandbox, so blocking it would dead-end every file tool out of the box. The carve-out is
+/// the exact workdir subtree only — Pia's DB/config/logs siblings stay blocked, and widening the
+/// sandbox to <c>%LOCALAPPDATA%\Pia</c> itself still can't reach them.
+/// </para>
 /// </summary>
 public static class SensitivePathGuard
 {
     private static readonly string[] BlockedRoots = BuildBlockedRoots();
+    private static readonly string[] AllowedExceptions = BuildAllowedExceptions();
 
     /// <summary>
     /// True when <paramref name="resolvedPath"/> (already §0.3-resolved + canonicalized) is inside a
@@ -25,6 +33,17 @@ public static class SensitivePathGuard
         string full;
         try { full = Path.GetFullPath(resolvedPath); }
         catch { return false; }
+
+        // Carve-outs win over the denylist: an allowed island (the workdir) sits inside a blocked
+        // root, so it must be checked first or the StartsWith below would re-block it.
+        foreach (var allowed in AllowedExceptions)
+        {
+            if (string.IsNullOrEmpty(allowed)) continue;
+            var allowedWithSep = SafeFolderPath.WithTrailingSeparator(allowed);
+            if (full.StartsWith(allowedWithSep, StringComparison.OrdinalIgnoreCase) ||
+                full.Equals(allowed, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
 
         foreach (var root in BlockedRoots)
         {
@@ -70,6 +89,18 @@ public static class SensitivePathGuard
             .Where(r => r is not null)
             .Select(r => r!)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Islands carved out of an otherwise-blocked root. Canonicalized through the SAME
+    /// <see cref="SafeCanonical"/> path as <see cref="BuildBlockedRoots"/> so the prefix match in
+    /// <see cref="IsBlocked"/> (which compares against the resolver's already-canonicalized path)
+    /// lines up. Currently just the agent's default scratch workdir under <c>%LOCALAPPDATA%\Pia</c>.
+    /// </summary>
+    private static string[] BuildAllowedExceptions()
+    {
+        var canonical = SafeCanonical(AssistantWorkspace.DefaultWorkdir);
+        return canonical is null ? [] : [canonical];
     }
 
     private static string SafeCombine(string a, string b)

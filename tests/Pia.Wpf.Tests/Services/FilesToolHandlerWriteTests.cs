@@ -37,9 +37,23 @@ public class FilesToolHandlerWriteTests : IDisposable
         var args = new Dictionary<string, object?> { ["path"] = path };
         if (includeContent) args["content"] = content;
         var call = new FunctionCallContent("c1", "write_file", args);
-        var (_, pending) = await _handler.HandleToolCallAsync(call);
+        var (result, pending) = await _handler.HandleToolCallAsync(call);
+        Assert.Null(result);
         Assert.NotNull(pending);
         return pending!;
+    }
+
+    // Prepare-time hard failures (bad args, echo, blocked/outside path) skip the action card and
+    // return the structured WriteResult directly — no user approval for a write that cannot succeed.
+    private async Task<object?> WriteRejection(string path, object? content, bool includeContent = true)
+    {
+        var args = new Dictionary<string, object?> { ["path"] = path };
+        if (includeContent) args["content"] = content;
+        var call = new FunctionCallContent("c1", "write_file", args);
+        var (result, pending) = await _handler.HandleToolCallAsync(call);
+        Assert.Null(pending);
+        Assert.NotNull(result);
+        return result;
     }
 
     private static T Prop<T>(object obj, string name)
@@ -106,8 +120,7 @@ public class FilesToolHandlerWriteTests : IDisposable
     [Fact]
     public async Task Write_MissingContent_ReturnsError_NoFileWritten()
     {
-        var pending = await PrepareWrite("nope.txt", null, includeContent: false);
-        var result = await pending.Execute();
+        var result = await WriteRejection("nope.txt", null, includeContent: false);
 
         Assert.False(Prop<bool>(result!, "success"));
         Assert.Contains("missing", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
@@ -117,8 +130,7 @@ public class FilesToolHandlerWriteTests : IDisposable
     [Fact]
     public async Task Write_NullContent_ReturnsError_NoFileWritten()
     {
-        var pending = await PrepareWrite("nullc.txt", null, includeContent: true);
-        var result = await pending.Execute();
+        var result = await WriteRejection("nullc.txt", null, includeContent: true);
 
         Assert.False(Prop<bool>(result!, "success"));
         Assert.False(File.Exists(Path.Combine(_root, "nullc.txt")));
@@ -141,8 +153,7 @@ public class FilesToolHandlerWriteTests : IDisposable
     public async Task Write_ReadFileEcho_IsRejected()
     {
         var echo = "total_lines=3\n1|first line\n2|second line\n3|third line";
-        var pending = await PrepareWrite("echo.txt", echo);
-        var result = await pending.Execute();
+        var result = await WriteRejection("echo.txt", echo);
 
         Assert.False(Prop<bool>(result!, "success"));
         Assert.Contains("read_file", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
@@ -362,10 +373,9 @@ public class FilesToolHandlerWriteTests : IDisposable
 
         var call = new FunctionCallContent("d1", "delete_file",
             new Dictionary<string, object?> { ["path"] = target });
-        var (_, pending) = await handler.HandleToolCallAsync(call);
-        Assert.NotNull(pending);
-
-        var result = await pending!.Execute();
+        // A blocked delete is a deterministic rejection — immediate result, no confirmation card.
+        var (result, pending) = await handler.HandleToolCallAsync(call);
+        Assert.Null(pending);
         Assert.Contains("Refusing to delete", (string)result!);
     }
 
@@ -382,5 +392,37 @@ public class FilesToolHandlerWriteTests : IDisposable
             new Dictionary<string, object?> { ["path"] = target });
         var (result, _) = await handler.HandleToolCallAsync(call);
         Assert.Contains("Refusing to read", (string)result!);
+    }
+
+    // End-to-end carve-out: drives the workdir exception through the REAL §0.3 resolver (which
+    // canonicalizes), not a pre-canonicalized unit input. With sandbox = %LOCALAPPDATA% (which
+    // contains both the blocked Pia data root and its carved-out workdir island), a write targeting
+    // the workdir must be ACCEPTED (viable write card, not a sensitive-path rejection) while a write
+    // to a Pia data sibling is still refused. Stops at prepare — never executes — so no real file is
+    // written into the user's workdir.
+    [Fact]
+    public async Task Write_IntoWorkdir_IsAllowed_ThroughRealResolver()
+    {
+        var localAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA")!;
+        Assert.False(string.IsNullOrEmpty(localAppData));
+
+        // Ensure the workdir exists so the resolver and the guard's exception canonicalize identically.
+        Directory.CreateDirectory(Pia.Infrastructure.AssistantWorkspace.DefaultWorkdir);
+
+        var handler = BroadSandboxHandler(localAppData);
+        var workdirTarget = Path.Combine("Pia", "workdir", "carveout-" + Guid.NewGuid().ToString("N") + ".ps1");
+        var siblingTarget = Path.Combine("Pia", "carveout-sibling-" + Guid.NewGuid().ToString("N") + ".ps1");
+
+        var allowed = new FunctionCallContent("w1", "write_file",
+            new Dictionary<string, object?> { ["path"] = workdirTarget, ["content"] = "Write-Output 'hi'" });
+        var (allowedResult, allowedPending) = await handler.HandleToolCallAsync(allowed);
+        Assert.Null(allowedResult);          // not a sensitive-path rejection
+        Assert.NotNull(allowedPending);      // a viable write awaiting approval
+
+        var blocked = new FunctionCallContent("w2", "write_file",
+            new Dictionary<string, object?> { ["path"] = siblingTarget, ["content"] = "Write-Output 'hi'" });
+        var (blockedResult, blockedPending) = await handler.HandleToolCallAsync(blocked);
+        Assert.Null(blockedPending);
+        Assert.Contains("Refusing to write", Prop<string?>(blockedResult!, "error")!);
     }
 }

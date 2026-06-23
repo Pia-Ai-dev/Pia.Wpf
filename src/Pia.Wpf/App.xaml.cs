@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
@@ -115,9 +115,9 @@ public partial class App : Application
         // Once the user clears the path the empty value sticks — we only seed it when it's missing.
         if (string.IsNullOrWhiteSpace(settings.AssistantFilesFolder))
         {
-            var defaultFolder = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Pia", "workdir");
+            // Shared with SensitivePathGuard's carve-out — both must use the same value or the
+            // guard re-blocks the whole workdir (see AssistantWorkspace).
+            var defaultFolder = Pia.Infrastructure.AssistantWorkspace.DefaultWorkdir;
             try
             {
                 System.IO.Directory.CreateDirectory(defaultFolder);
