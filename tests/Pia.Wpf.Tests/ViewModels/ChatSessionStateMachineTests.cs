@@ -22,6 +22,7 @@ public class ChatSessionStateMachineTests
     private readonly IActionCardBuilder _cards = Substitute.For<IActionCardBuilder>();
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
     private readonly ITokenMapService _tokenMap = Substitute.For<ITokenMapService>();
+    private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
 
     public ChatSessionStateMachineTests()
     {
@@ -33,11 +34,11 @@ public class ChatSessionStateMachineTests
     // isActive => true: a standalone session (no manager) is treated as foreground,
     // so a successful turn settles to Idle (matches today's single-active behavior).
     private ChatSession CreateSession() => new(
-        _tokenMap, _ai, _plugins, _cards, _loc, NullLogger.Instance, _ => true);
+        _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
 
     // isActive => false: a backgrounded session — a successful turn settles to Completed.
     private ChatSession CreateBackgroundSession() => new(
-        _tokenMap, _ai, _plugins, _cards, _loc, NullLogger.Instance, _ => false);
+        _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => false);
 
     private static ChatTurnRequest BuildRequest(ChatSession session, string userText = "hi")
     {
@@ -243,6 +244,276 @@ public class ChatSessionStateMachineTests
         // WaitingForTool then back to Running before the terminal Idle.
         var waitIdx = states.IndexOf(ChatState.WaitingForTool);
         Assert.Contains(ChatState.Running, states.Skip(waitIdx + 1));
+    }
+
+    [Fact]
+    public async Task AlwaysAllow_OnEligibleTool_PersistsGrant_AndExecutes()
+    {
+        var executed = false;
+        var pending = new PluginToolCall(
+            ToolName: "create_todo",
+            PluginId: BuiltInPluginDefaults.TodoPluginId,
+            PluginName: "todo",
+            Description: "Create a todo",
+            Details: null,
+            Execute: () => { executed = true; return Task.FromResult<object?>("done"); });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+
+        // Eligible, but NOT already granted → user is prompted; they click "Always allow".
+        _permissions.IsAutoApproveEligible("create_todo").Returns(true);
+        _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(false);
+
+        var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+
+        var session = CreateSession();
+        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
+
+        await WaitUntilAsync(() => card.IsPending);
+        card.AlwaysAllowCommand.Execute(null);
+
+        await run;
+
+        await _permissions.Received().GrantAsync(BuiltInPluginDefaults.TodoPluginId, "create_todo");
+        Assert.True(executed);
+    }
+
+    [Fact]
+    public async Task AllowOnce_Executes_ButDoesNotGrant()
+    {
+        var executed = false;
+        var pending = new PluginToolCall(
+            ToolName: "create_todo",
+            PluginId: BuiltInPluginDefaults.TodoPluginId,
+            PluginName: "todo",
+            Description: "Create a todo",
+            Details: null,
+            Execute: () => { executed = true; return Task.FromResult<object?>("done"); });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+        _permissions.IsAutoApproveEligible("create_todo").Returns(true);
+        _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(false);
+
+        var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+
+        var session = CreateSession();
+        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
+
+        await WaitUntilAsync(() => card.IsPending);
+        card.AllowOnceCommand.Execute(null);
+
+        await run;
+
+        Assert.True(executed);
+        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task Decline_ReturnsDeclineString_AndDoesNotExecute()
+    {
+        var executed = false;
+        object? toolResult = null;
+        var pending = new PluginToolCall(
+            ToolName: "create_todo",
+            PluginId: BuiltInPluginDefaults.TodoPluginId,
+            PluginName: "todo",
+            Description: "Create a todo",
+            Details: null,
+            Execute: () => { executed = true; return Task.FromResult<object?>("done"); });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+        _permissions.IsAutoApproveEligible("create_todo").Returns(true);
+        _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(false);
+
+        var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCallCapture(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), r => toolResult = r));
+
+        var session = CreateSession();
+        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
+
+        await WaitUntilAsync(() => card.IsPending);
+        card.DeclineCommand.Execute(null);
+
+        await run;
+
+        Assert.False(executed);
+        Assert.Equal(
+            "User declined the create_todo operation. Do not retry. Ask the user what they would like to do instead.",
+            toolResult);
+    }
+
+    [Fact]
+    public async Task GrantedEligibleTool_AutoApproves_WithoutWaiting_CardAddedBeforeExecute()
+    {
+        // The Execute lambda asserts the ordering AT THE MOMENT it runs: the auto-approved
+        // card must already be in message.ActionCards and already resolved. A post-call
+        // assert would pass vacuously, so the proof lives inside Execute.
+        AssistantMessage? owningMessage = null;
+        var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
+        card.State = ActionCardState.Accepted; // mock returns the pre-resolved bypass card
+
+        var sawCardResolvedDuringExecute = false;
+        var sawWaitingForToolBeforeExecute = false;
+
+        var pending = new PluginToolCall(
+            ToolName: "create_todo",
+            PluginId: BuiltInPluginDefaults.TodoPluginId,
+            PluginName: "todo",
+            Description: "Create a todo",
+            Details: null,
+            Execute: () =>
+            {
+                sawCardResolvedDuringExecute =
+                    owningMessage is not null
+                    && owningMessage.ActionCards.Contains(card)
+                    && card.State == ActionCardState.Accepted;
+                return Task.FromResult<object?>("done");
+            });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+
+        // Eligible AND already granted → bypass: no prompt, no WaitingForTool.
+        _permissions.IsAutoApproveEligible("create_todo").Returns(true);
+        _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(true);
+
+        // Only the autoApproved:true build path returns the resolved card.
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), true).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+
+        var session = CreateSession();
+        var request = ToolRequest(session);
+        owningMessage = request.AssistantMessage;
+        var states = new List<ChatState>();
+        session.StateChanged += (_, e) =>
+        {
+            states.Add(e.NewState);
+            if (e.NewState == ChatState.WaitingForTool)
+                sawWaitingForToolBeforeExecute = true;
+        };
+
+        await session.RunTurnAsync(request, CancellationToken.None);
+
+        Assert.True(sawCardResolvedDuringExecute, "card must be added and resolved before Execute runs");
+        Assert.False(sawWaitingForToolBeforeExecute, "a granted bypass must not enter WaitingForTool");
+        Assert.DoesNotContain(ChatState.WaitingForTool, states);
+        Assert.Contains(card, owningMessage!.ActionCards);
+    }
+
+    [Fact]
+    public async Task ForgedGrant_OnIneligibleTool_StillPrompts_AndDoesNotGrant()
+    {
+        var executed = false;
+        var pending = new PluginToolCall(
+            ToolName: "write_file",
+            PluginId: BuiltInPluginDefaults.FilesPluginId,
+            PluginName: "files",
+            Description: "Write a file",
+            Details: null,
+            Execute: () => { executed = true; return Task.FromResult<object?>("done"); });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+
+        // Forged/stale grant: IsGranted is true, but the tool is NOT eligible. The gate
+        // must re-check eligibility and refuse to auto-bypass.
+        _permissions.IsAutoApproveEligible("write_file").Returns(false);
+        _permissions.IsGranted(BuiltInPluginDefaults.FilesPluginId, "write_file").Returns(true);
+
+        var card = NewCard("write_file", BuiltInPluginDefaults.FilesPluginId);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+
+        var session = CreateSession();
+        var states = new List<ChatState>();
+        session.StateChanged += (_, e) => states.Add(e.NewState);
+
+        var request = ToolRequest(session);
+        var run = session.RunTurnAsync(request, CancellationToken.None);
+
+        // The forged grant must NOT have auto-bypassed: the user is prompted.
+        await WaitUntilAsync(() => card.IsPending);
+        Assert.Equal(ChatState.WaitingForTool, session.State);
+        Assert.Contains(ChatState.WaitingForTool, states);
+
+        // Even clicking "Always allow" on an ineligible tool degrades to AllowOnce (no grant).
+        card.AlwaysAllowCommand.Execute(null);
+        await run;
+
+        Assert.True(executed); // degraded to AllowOnce: executed once
+        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+    }
+
+    private static ActionCardInfo NewCard(string toolName, Guid pluginId) => new()
+    {
+        Title = toolName,
+        Summary = toolName,
+        Category = ActionCardCategory.Todo,
+        ToolName = toolName,
+        PluginId = pluginId,
+    };
+
+    private ChatTurnRequest ToolRequest(ChatSession session)
+    {
+        var request = BuildRequest(session);
+        return new ChatTurnRequest
+        {
+            UserMessage = request.UserMessage,
+            AssistantMessage = request.AssistantMessage,
+            Provider = request.Provider,
+            TurnSetup = new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false),
+            AtCommands = [],
+            TokenizationEnabled = false,
+        };
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> StreamWithToolCallCapture(
+        Func<FunctionCallContent, Task<object?>>? handler, Action<object?> capture)
+    {
+        if (handler is not null)
+        {
+            var call = new FunctionCallContent("call-1", "create_todo", new Dictionary<string, object?>());
+            capture(await handler(call));
+        }
+        yield return new TextDelta("Done.");
+        await Task.Yield();
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> StreamWithToolCall(

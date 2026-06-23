@@ -29,6 +29,7 @@ public sealed class ChatSession : IDisposable
     private readonly IAiClientService _aiClientService;
     private readonly IPluginService _pluginService;
     private readonly IActionCardBuilder _actionCardBuilder;
+    private readonly IToolPermissionService _permissions;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger _logger;
 
@@ -84,6 +85,7 @@ public sealed class ChatSession : IDisposable
         IAiClientService aiClientService,
         IPluginService pluginService,
         IActionCardBuilder actionCardBuilder,
+        IToolPermissionService permissions,
         ILocalizationService localizationService,
         ILogger logger,
         Func<ChatSession, bool> isActive)
@@ -92,6 +94,7 @@ public sealed class ChatSession : IDisposable
         _aiClientService = aiClientService;
         _pluginService = pluginService;
         _actionCardBuilder = actionCardBuilder;
+        _permissions = permissions;
         _localizationService = localizationService;
         _logger = logger;
         _isActive = isActive;
@@ -434,37 +437,18 @@ public sealed class ChatSession : IDisposable
         // For write operations, show inline action card.
         if (pendingAction is not null)
         {
-            var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled);
-            // UI-affine loop: the continuation already runs on the UI thread.
-            message.ActionCards.Add(card);
+            var pluginId = pendingAction.PluginId;
+            var tool = pendingAction.ToolName;
+            // Eligibility comes from the SERVICE, never the card — the gate re-checks it so a
+            // forged/stale grant on an ineligible tool (e.g. write_file) cannot auto-bypass.
+            var eligible = _permissions.IsAutoApproveEligible(tool);
 
-            bool confirmed;
-            SetState(ChatState.WaitingForTool);
-            try
+            // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
+            // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.
+            async Task<object?> ExecuteAndReport()
             {
-                // Chunk 3: the gate now yields a ToolDecision. The grant/bypass branching
-                // (AlwaysAllow → persist a grant; eligibility-gated auto-approve) lands in Chunk 4;
-                // for now AllowOnce and AlwaysAllow both confirm, Decline does not.
-                var decision = await card.WaitForUserDecisionAsync();
-                confirmed = decision != ToolDecision.Decline;
-            }
-            catch (TaskCanceledException)
-            {
-                _logger.LogInformation("Tool action cancelled for {ToolName}", pendingAction.ToolName);
-                confirmed = false;
-            }
-            finally
-            {
-                // Back to Running for the next tool/segment (the turn is still in flight).
-                if (State == ChatState.WaitingForTool)
-                    SetState(ChatState.Running);
-            }
-
-            if (confirmed)
-            {
-                _logger.LogInformation("User accepted {ToolName} action", pendingAction.ToolName);
                 var actionResult = await pendingAction.Execute();
-                _logger.LogInformation("Executed {ToolName} action successfully", pendingAction.ToolName);
+                _logger.LogInformation("Executed {ToolName} action successfully", tool);
 
                 var snackbarTitle = _actionCardBuilder.ResolveSuccessTitle(pendingAction.PluginName);
                 ToolSucceeded?.Invoke(this, new ToolSucceededEventArgs
@@ -483,8 +467,60 @@ public sealed class ChatSession : IDisposable
                 return actionResult;
             }
 
-            _logger.LogInformation("User declined {ToolName} action", pendingAction.ToolName);
-            return $"User declined the {pendingAction.ToolName} operation. Do not retry. Ask the user what they would like to do instead.";
+            // Bypass: an eligible tool the user has already granted auto-executes. Render a
+            // resolved auto-approved card FIRST (audit trace, never silent) and log only the
+            // non-sensitive tool name + plugin id — never the arguments (CLAUDE.md privacy).
+            if (eligible && _permissions.IsGranted(pluginId, tool))
+            {
+                var autoCard = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, autoApproved: true);
+                // UI-affine loop: the continuation already runs on the UI thread.
+                message.ActionCards.Add(autoCard);
+                _logger.LogInformation("Auto-approved {ToolName} via standing grant (plugin {PluginId})", tool, pluginId);
+                return await ExecuteAndReport();
+            }
+
+            var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled);
+            message.ActionCards.Add(card);
+
+            ToolDecision decision;
+            SetState(ChatState.WaitingForTool);
+            try
+            {
+                decision = await card.WaitForUserDecisionAsync();
+            }
+            catch (TaskCanceledException)
+            {
+                _logger.LogInformation("Tool action cancelled for {ToolName}", tool);
+                decision = ToolDecision.Decline;
+            }
+            finally
+            {
+                // Back to Running for the next tool/segment (the turn is still in flight).
+                if (State == ChatState.WaitingForTool)
+                    SetState(ChatState.Running);
+            }
+
+            switch (decision)
+            {
+                case ToolDecision.AllowOnce:
+                    _logger.LogInformation("User allowed {ToolName} action once", tool);
+                    return await ExecuteAndReport();
+
+                case ToolDecision.AlwaysAllow:
+                    // Defensive: never grant an ineligible tool even if its card somehow
+                    // surfaced the option — AlwaysAllow on an ineligible tool degrades to
+                    // AllowOnce (execute once, persist no grant).
+                    if (eligible)
+                    {
+                        await _permissions.GrantAsync(pluginId, tool);
+                        _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
+                    }
+                    return await ExecuteAndReport();
+
+                default:
+                    _logger.LogInformation("User declined {ToolName} action", tool);
+                    return $"User declined the {tool} operation. Do not retry. Ask the user what they would like to do instead.";
+            }
         }
 
         return "Tool call handled.";

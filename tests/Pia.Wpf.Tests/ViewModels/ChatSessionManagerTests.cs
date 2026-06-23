@@ -24,6 +24,7 @@ public class ChatSessionManagerTests
     private readonly ITokenMapService _tokenMap = Substitute.For<ITokenMapService>();
     private readonly IBackgroundChatNotifier _notifier = Substitute.For<IBackgroundChatNotifier>();
     private readonly Pia.Services.Flow.IFlowService _flow = Substitute.For<Pia.Services.Flow.IFlowService>();
+    private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
 
     public ChatSessionManagerTests()
     {
@@ -41,7 +42,7 @@ public class ChatSessionManagerTests
             NullLogger<ChatSessionManager>.Instance,
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
-            _titleService, _cards, _plugins, _ai, _loc,
+            _titleService, _cards, _plugins, _ai, _permissions, _loc,
             () => _tokenMap, _notifier, _flow);
     }
 

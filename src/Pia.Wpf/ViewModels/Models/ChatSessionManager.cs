@@ -33,6 +33,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IActionCardBuilder _actionCardBuilder;
     private readonly IPluginService _pluginService;
     private readonly IAiClientService _aiClientService;
+    private readonly IToolPermissionService _permissionService;
     private readonly ILocalizationService _localizationService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly IBackgroundChatNotifier _backgroundChatNotifier;
@@ -73,6 +74,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IActionCardBuilder actionCardBuilder,
         IPluginService pluginService,
         IAiClientService aiClientService,
+        IToolPermissionService permissionService,
         ILocalizationService localizationService,
         Func<ITokenMapService> tokenMapFactory,
         IBackgroundChatNotifier backgroundChatNotifier,
@@ -89,6 +91,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _actionCardBuilder = actionCardBuilder;
         _pluginService = pluginService;
         _aiClientService = aiClientService;
+        _permissionService = permissionService;
         _localizationService = localizationService;
         _tokenMapFactory = tokenMapFactory;
         _backgroundChatNotifier = backgroundChatNotifier;
@@ -108,6 +111,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             _aiClientService,
             _pluginService,
             _actionCardBuilder,
+            _permissionService,
             _localizationService,
             _loggerFactory.CreateLogger<ChatSession>(),
             IsSessionActive);

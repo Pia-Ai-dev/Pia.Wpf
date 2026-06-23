@@ -79,50 +79,60 @@ public partial class ActionCardInfo : ObservableObject
     /// [Decline (Default), Allow once (Primary), Always allow (Default)]; ineligible → pair
     /// [Decline (Default), Allow once (Danger when destructive, else Primary)].
     /// </summary>
-    public IReadOnlyList<DecisionButton> Decisions =>
-        IsAutoApprovable
-        ?
-        [
-            new DecisionButton
+    public IReadOnlyList<DecisionButton> Decisions
+    {
+        get
+        {
+            var decline = new DecisionButton
             {
                 Label = DeclineLabel,
                 Emphasis = DecisionEmphasis.Default,
                 Command = DeclineCommand,
-            },
-            new DecisionButton
+            };
+
+            // Eligible → triad: Allow once stays Primary (Always allow is offered as the
+            // standing-grant option). Ineligible → pair: Allow once carries the destructive
+            // styling. The button set keys off IsAutoApprovable, never IsDestructive (design §8).
+            if (IsAutoApprovable)
             {
-                Label = AllowOnceLabel,
-                Emphasis = DecisionEmphasis.Primary,
-                Command = AllowOnceCommand,
-            },
-            new DecisionButton
-            {
-                Label = AlwaysAllowLabel,
-                Emphasis = DecisionEmphasis.Default,
-                Command = AlwaysAllowCommand,
-            },
-        ]
-        :
-        [
-            new DecisionButton
-            {
-                Label = DeclineLabel,
-                Emphasis = DecisionEmphasis.Default,
-                Command = DeclineCommand,
-            },
-            new DecisionButton
-            {
-                Label = AllowOnceLabel,
-                Emphasis = IsDestructive ? DecisionEmphasis.Danger : DecisionEmphasis.Primary,
-                Command = AllowOnceCommand,
-            },
-        ];
+                return
+                [
+                    decline,
+                    new DecisionButton
+                    {
+                        Label = AllowOnceLabel,
+                        Emphasis = DecisionEmphasis.Primary,
+                        Command = AllowOnceCommand,
+                    },
+                    new DecisionButton
+                    {
+                        Label = AlwaysAllowLabel,
+                        Emphasis = DecisionEmphasis.Default,
+                        Command = AlwaysAllowCommand,
+                    },
+                ];
+            }
+
+            return
+            [
+                decline,
+                new DecisionButton
+                {
+                    Label = AllowOnceLabel,
+                    Emphasis = IsDestructive ? DecisionEmphasis.Danger : DecisionEmphasis.Primary,
+                    Command = AllowOnceCommand,
+                },
+            ];
+        }
+    }
 
     public string ResolvedStatusText
     {
         get
         {
-            if (IsAutoApproved) return AutoApprovedStatusText;
+            if (IsAutoApproved)
+                return AutoApprovedStatusText;
+
             return State == ActionCardState.Accepted ? AcceptedStatusText : DeclinedStatusText;
         }
     }
