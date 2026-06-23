@@ -142,6 +142,9 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
                  - NO → Continue to step 3.
               3. Does the request involve STORING, RECALLING, or UPDATING personal information?
                  - YES → Use Memory tools (remember: query first, then create/update). NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+                 - NO → Continue to step 4.
+              4. Does the request involve reading, searching, or editing CODE or FILES in the configured folder?
+                 - YES → Use the file tools: search_files to locate files or text, read_file to inspect content (request a windowed slice with offset/limit for large files), and write_file to apply edits (the user approves a diff before any change is written).
                  - NO → Respond conversationally without tools.
 
               """;
