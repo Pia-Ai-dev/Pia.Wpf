@@ -779,6 +779,7 @@
   <data name="Flow_Action_OpenBriefing" xml:space="preserve"><value>Briefing öffnen</value></data>
   <data name="Flow_Action_OpenTodo" xml:space="preserve"><value>Aufgabe öffnen</value></data>
   <data name="Flow_Action_Snooze" xml:space="preserve"><value>Schlummern</value></data>
+  <data name="Flow_Action_Done" xml:space="preserve"><value>Fertig</value></data>
   <data name="Flow_Action_Dismiss" xml:space="preserve"><value>Verwerfen</value></data>
   <data name="Flow_BgChat_WaitingForTool" xml:space="preserve"><value>Wartet auf deine Bestätigung</value></data>
   <data name="Flow_BgChat_Completed" xml:space="preserve"><value>Fertig – zum Ansehen tippen</value></data>
