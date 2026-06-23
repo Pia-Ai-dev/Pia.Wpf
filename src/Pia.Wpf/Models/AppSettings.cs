@@ -94,6 +94,12 @@ public class AppSettings
     /// </summary>
     public List<string>? AllowedSyncProviders { get; set; }
 
+    /// <summary>
+    /// Standing per-tool "always allow" grants. Keyed by (PluginId, ToolName).
+    /// Persisted globally as camelCase JSON, mirroring <see cref="AllowedSyncProviders"/>.
+    /// </summary>
+    public List<ToolGrant> AlwaysAllowedTools { get; set; } = new();
+
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";

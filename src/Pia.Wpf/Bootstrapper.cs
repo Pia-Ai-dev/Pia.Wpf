@@ -256,6 +256,7 @@ public static class Bootstrapper
         services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
+        services.AddSingleton<IToolPermissionService, ToolPermissionService>();
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
