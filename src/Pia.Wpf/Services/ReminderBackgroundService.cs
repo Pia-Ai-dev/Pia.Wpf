@@ -1,9 +1,10 @@
-﻿using System.Windows;
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Models.Flow;
+using Pia.Services.Flow;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -11,7 +12,7 @@ namespace Pia.Services;
 public class ReminderBackgroundService : BackgroundService
 {
     private readonly IReminderService _reminderService;
-    private readonly INotificationService _notificationService;
+    private readonly IFlowService _flowService;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<ReminderBackgroundService> _logger;
     private static readonly TimeSpan _checkInterval = TimeSpan.FromSeconds(30);
@@ -20,12 +21,12 @@ public class ReminderBackgroundService : BackgroundService
 
     public ReminderBackgroundService(
         IReminderService reminderService,
-        INotificationService notificationService,
+        IFlowService flowService,
         ILocalizationService localizationService,
         ILogger<ReminderBackgroundService> logger)
     {
         _reminderService = reminderService;
-        _notificationService = notificationService;
+        _flowService = flowService;
         _localizationService = localizationService;
         _logger = logger;
     }
@@ -64,7 +65,7 @@ public class ReminderBackgroundService : BackgroundService
             try
             {
                 ShowWindowsToast(reminder);
-                ShowInAppToast(reminder);
+                PublishFlowItem(reminder);
                 await _reminderService.DismissAsync(reminder.Id);
             }
             catch (Exception ex)
@@ -97,18 +98,26 @@ public class ReminderBackgroundService : BackgroundService
         }
     }
 
-    private void ShowInAppToast(Reminder reminder)
+    private void PublishFlowItem(Reminder reminder)
     {
+        // Reminder text is shown (allowed) but never logged. The item persists in the rail until the
+        // user snoozes or dismisses it; the underlying reminder is already DismissAsync'd by the fire loop.
         try
         {
-            Application.Current?.Dispatcher.Invoke(() =>
+            _flowService.Publish(new FlowItemDraft
             {
-                _notificationService.ShowToast(_localizationService.Format("Notification_ReminderInApp", reminder.Description));
+                Severity = FlowSeverity.ActionRequired,
+                Source = FlowSource.Reminder,
+                Title = reminder.Description,
+                DedupKey = reminder.Id.ToString(),
+                Lifetime = FlowLifetime.Persistent,
+                Action = new ReminderSnoozeAction(reminder.Id, _localizationService["Flow_Action_Snooze"]),
+                RequestDurable = true,
             });
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to show in-app toast for reminder {Id}", reminder.Id);
+            _logger.LogWarning(ex, "Failed to publish Flow item for reminder {Id}", reminder.Id);
         }
     }
 

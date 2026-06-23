@@ -194,7 +194,9 @@ public static class Bootstrapper
 
         // WPF-UI Services - Scoped (per-window)
         services.AddScoped<IContentDialogService, ContentDialogService>();
-        services.AddScoped<ISnackbarService, SnackbarService>();
+        // Snackbars are funneled into Flow instead of the WPF-UI slide-in (design §7). FlowSnackbarService
+        // implements the WPF-UI ISnackbarService so all ~85 producer call sites are captured untouched.
+        services.AddScoped<ISnackbarService, Services.Flow.FlowSnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
 
         // UI abstractions that keep System.Windows out of ViewModels
@@ -272,7 +274,12 @@ public static class Bootstrapper
         services.AddSingleton<IWindowManagerService, WindowManagerService>();
         services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
         services.AddSingleton<ITranscriptionService, TranscriptionService>();
-        services.AddSingleton<INotificationService, NotificationService>();
+        // In-app toasts are re-implemented over Flow (design §7), retiring the hand-rolled Border toast.
+        services.AddSingleton<INotificationService, Services.Flow.FlowNotificationService>();
+
+        // Flow — the persistent attention store (singleton) + its durable SQLite store.
+        services.AddSingleton<Services.Flow.IFlowPersistenceStore, Services.Flow.FlowPersistenceStore>();
+        services.AddSingleton<Services.Flow.IFlowService, Services.Flow.FlowService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
         services.AddSingleton<ITtsService, TtsService>();
@@ -315,6 +322,7 @@ public static class Bootstrapper
         services.AddSingleton<ReminderBackgroundService>();
         services.AddSingleton<ScheduledJobBackgroundService>();
         services.AddSingleton<AssistantChatRetentionService>();
+        services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
@@ -351,6 +359,7 @@ public static class Bootstrapper
         services.AddScoped<DeviceManagementViewModel>();
         services.AddScoped<E2EEOnboardingViewModel>();
         services.AddScoped<E2EESetupStepViewModel>();
+        services.AddScoped<ViewModels.Flow.FlowViewModel>();
 
         // First Run Wizard
         services.AddTransient<FirstRunWizardViewModel>();

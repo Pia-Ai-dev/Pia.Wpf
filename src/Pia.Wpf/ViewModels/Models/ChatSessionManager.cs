@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Flow;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
@@ -35,6 +36,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly IBackgroundChatNotifier _backgroundChatNotifier;
+    private readonly IFlowService _flowService;
     private readonly SynchronizationContext _syncContext;
 
     private readonly Dictionary<Guid, ChatSession> _sessions = new();
@@ -73,7 +75,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IAiClientService aiClientService,
         ILocalizationService localizationService,
         Func<ITokenMapService> tokenMapFactory,
-        IBackgroundChatNotifier backgroundChatNotifier)
+        IBackgroundChatNotifier backgroundChatNotifier,
+        IFlowService flowService)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -89,6 +92,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _localizationService = localizationService;
         _tokenMapFactory = tokenMapFactory;
         _backgroundChatNotifier = backgroundChatNotifier;
+        _flowService = flowService;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
     }
@@ -184,6 +188,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Clear Completed → Idle on activation: the result is now "read".
         if (session.State == ChatState.Completed)
             session.SetState(ChatState.Idle);
+
+        // Opening/activating the chat resolves its background-chat Flow alert (design §6 auto-retract).
+        // This covers every open path — toast click, Flow link, and in-window navigation — and is a
+        // no-op when no alert is live for this chat.
+        if (session.Id is { } chatId)
+            _flowService.Retract(chatId.ToString());
 
         ActiveChanged?.Invoke(this, session);
 

@@ -2,6 +2,8 @@ using System.Windows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
 using Pia.Models;
+using Pia.Models.Flow;
+using Pia.Services.Flow;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -18,22 +20,22 @@ namespace Pia.Services;
 public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
 {
     private const string ActionKey = "action";
-    private const string OpenChatAction = "openChat";
+    private const string OpenChatActionArg = "openChat";
     private const string ChatIdKey = "chatId";
 
-    private readonly INotificationService _notificationService;
+    private readonly IFlowService _flowService;
     private readonly IWindowManagerService _windowManager;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<BackgroundChatNotificationSurface> _logger;
     private bool _toastCallbackRegistered;
 
     public BackgroundChatNotificationSurface(
-        INotificationService notificationService,
+        IFlowService flowService,
         IWindowManagerService windowManager,
         ILocalizationService localizationService,
         ILogger<BackgroundChatNotificationSurface> logger)
     {
-        _notificationService = notificationService;
+        _flowService = flowService;
         _windowManager = windowManager;
         _localizationService = localizationService;
         _logger = logger;
@@ -53,6 +55,10 @@ public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
         // id + enum only — never the title (CLAUDE.md). The title is shown, not logged.
         _logger.LogInformation("Background chat {ChatId} notify state {State}", chatId, state);
 
+        // Publish to Flow first (the canonical in-app surface that replaces the retired Border toast)
+        // so a throw in the Windows-toast path can never lose the item.
+        PublishFlowItem(chatId, displayTitle, state);
+
         var body = _localizationService.Format(bodyKey, displayTitle);
 
         try
@@ -62,7 +68,7 @@ public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
                 .AddText(body)
                 .AddButton(new ToastButton()
                     .SetContent(_localizationService["Notification_OpenChat"])
-                    .AddArgument(ActionKey, OpenChatAction)
+                    .AddArgument(ActionKey, OpenChatActionArg)
                     .AddArgument(ChatIdKey, chatId.ToString()))
                 .Show();
         }
@@ -70,15 +76,29 @@ public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
         {
             _logger.LogWarning(ex, "Failed to show background-chat toast for {ChatId}", chatId);
         }
+    }
 
-        try
+    private void PublishFlowItem(Guid chatId, string displayTitle, ChatState state)
+    {
+        var flowBodyKey = state switch
         {
-            Application.Current?.Dispatcher.Invoke(() => _notificationService.ShowToast(body));
-        }
-        catch (Exception ex)
+            ChatState.WaitingForTool => "Flow_BgChat_WaitingForTool",
+            ChatState.Completed => "Flow_BgChat_Completed",
+            ChatState.Error => "Flow_BgChat_Error",
+            _ => string.Empty,
+        };
+
+        _flowService.Publish(new FlowItemDraft
         {
-            _logger.LogWarning(ex, "Failed to show in-app background-chat toast for {ChatId}", chatId);
-        }
+            Severity = FlowSeverityMapper.FromChatState(state),
+            Source = FlowSource.BackgroundChat,
+            Title = displayTitle,
+            Body = _localizationService[flowBodyKey],
+            DedupKey = chatId.ToString(),
+            Lifetime = FlowLifetime.Persistent,
+            Action = new OpenChatAction(chatId, _localizationService["Flow_Action_OpenChat"]),
+            RequestDurable = true,
+        });
     }
 
     private static bool TryResolveBodyKey(ChatState state, out string bodyKey)
@@ -113,7 +133,7 @@ public sealed class BackgroundChatNotificationSurface : IBackgroundChatNotifier
         try
         {
             var args = ToastArguments.Parse(e.Argument);
-            if (!args.TryGetValue(ActionKey, out var action) || action != OpenChatAction)
+            if (!args.TryGetValue(ActionKey, out var action) || action != OpenChatActionArg)
                 return;
 
             args.TryGetValue(ChatIdKey, out var chatIdStr);

@@ -769,4 +769,21 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>J'ai sauvegardé mon code de récupération en lieu sûr</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Impossible d'activer le chiffrement</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Configuration du chiffrement…</value></data>
+  <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
+  <data name="Flow_EmptyState" xml:space="preserve"><value>Vous êtes à jour.</value></data>
+  <data name="Flow_ClearAll" xml:space="preserve"><value>Tout effacer</value></data>
+  <data name="Flow_Pin" xml:space="preserve"><value>Épingler</value></data>
+  <data name="Flow_Unpin" xml:space="preserve"><value>Détacher</value></data>
+  <data name="Flow_Dismiss_Tooltip" xml:space="preserve"><value>Ignorer</value></data>
+  <data name="Flow_Action_OpenChat" xml:space="preserve"><value>Ouvrir le chat</value></data>
+  <data name="Flow_Action_OpenBriefing" xml:space="preserve"><value>Ouvrir le briefing</value></data>
+  <data name="Flow_Action_OpenTodo" xml:space="preserve"><value>Ouvrir la tâche</value></data>
+  <data name="Flow_Action_Snooze" xml:space="preserve"><value>Reporter</value></data>
+  <data name="Flow_Action_Dismiss" xml:space="preserve"><value>Ignorer</value></data>
+  <data name="Flow_BgChat_WaitingForTool" xml:space="preserve"><value>En attente de votre confirmation</value></data>
+  <data name="Flow_BgChat_Completed" xml:space="preserve"><value>Terminé — appuyez pour consulter</value></data>
+  <data name="Flow_BgChat_Error" xml:space="preserve"><value>Terminé avec une erreur</value></data>
+  <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing prêt</value></data>
+  <data name="Flow_Job_Failure" xml:space="preserve"><value>Échec de l'exécution</value></data>
+  <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>À échéance sous 24 h</value></data>
 </root>

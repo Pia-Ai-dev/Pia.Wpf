@@ -769,4 +769,21 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>Ich habe meinen Wiederherstellungscode sicher gespeichert</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Verschlüsselung konnte nicht aktiviert werden</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Verschlüsselung wird eingerichtet…</value></data>
+  <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
+  <data name="Flow_EmptyState" xml:space="preserve"><value>Alles erledigt.</value></data>
+  <data name="Flow_ClearAll" xml:space="preserve"><value>Alle löschen</value></data>
+  <data name="Flow_Pin" xml:space="preserve"><value>Anheften</value></data>
+  <data name="Flow_Unpin" xml:space="preserve"><value>Lösen</value></data>
+  <data name="Flow_Dismiss_Tooltip" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="Flow_Action_OpenChat" xml:space="preserve"><value>Chat öffnen</value></data>
+  <data name="Flow_Action_OpenBriefing" xml:space="preserve"><value>Briefing öffnen</value></data>
+  <data name="Flow_Action_OpenTodo" xml:space="preserve"><value>Aufgabe öffnen</value></data>
+  <data name="Flow_Action_Snooze" xml:space="preserve"><value>Schlummern</value></data>
+  <data name="Flow_Action_Dismiss" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="Flow_BgChat_WaitingForTool" xml:space="preserve"><value>Wartet auf deine Bestätigung</value></data>
+  <data name="Flow_BgChat_Completed" xml:space="preserve"><value>Fertig – zum Ansehen tippen</value></data>
+  <data name="Flow_BgChat_Error" xml:space="preserve"><value>Mit Fehler beendet</value></data>
+  <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing bereit</value></data>
+  <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
+  <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
 </root>

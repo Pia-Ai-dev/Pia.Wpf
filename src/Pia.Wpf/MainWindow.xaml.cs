@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Pia.Navigation;
 using Pia.ViewModels;
 using Pia.Services.Interfaces;
@@ -34,6 +35,9 @@ public partial class MainWindow : FluentWindow
         contentDialogService.SetDialogHost(RootContentDialogPresenter);
         snackbarService.SetSnackbarPresenter(RootSnackbarPresenter);
         dialogOverlayService.SetOverlayHost(RootDialogOverlayHost);
+
+        // Flow rail: per-window VM resolved from this window's scope (mirrors the singleton store).
+        RootFlowView.DataContext = serviceProvider.GetRequiredService<ViewModels.Flow.FlowViewModel>();
 
         Loaded += OnLoaded;
     }
