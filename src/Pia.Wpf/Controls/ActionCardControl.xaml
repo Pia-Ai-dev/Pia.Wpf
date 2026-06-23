@@ -165,7 +165,7 @@
                              TextWrapping="Wrap">
                     <TextBlock.Style>
                       <Style TargetType="TextBlock">
-                        <Setter Property="Text" Value="{Binding Text}" />
+                        <Setter Property="Text" Value="{Binding Display}" />
                         <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
                         <Style.Triggers>
                           <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Added}">

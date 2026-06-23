@@ -10,6 +10,14 @@ namespace Pia.Infrastructure;
 /// Sandboxes file access to a configured root directory. Every user-supplied
 /// relative path must be resolved through <see cref="TryResolveInside"/> before
 /// being passed to the filesystem.
+/// <para>
+/// Containment assumption: the file toolset (read/write/delete/list/search) exposes no
+/// capability to create reparse points (junctions/symlinks) inside the sandbox, and creating
+/// one requires Windows privilege the agent does not have through these tools. The residual
+/// dangling-reparse-leaf and write-time directory-swap TOCTOU windows therefore rest on this
+/// assumption; if a future tool can plant reparse points, re-canonicalize the target's parent
+/// immediately before the write.
+/// </para>
 /// </summary>
 public static class SafeFolderPath
 {
@@ -128,10 +136,10 @@ public static class SafeFolderPath
         try { full = Path.GetFullPath(Path.Combine(fullRoot, candidate)); }
         catch { return false; }
 
-        // Comparison must include the trailing separator so "/rootEvil" is not
-        // accepted as being inside "/root".
+        // Comparison must include the trailing separator so "/rootEvil" is not accepted as
+        // being inside "/root", and so the root itself (which resolves to the un-separated form
+        // "C:\root") is rejected: it cannot start with the separator-terminated "C:\root\".
         if (!full.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase)) return false;
-        if (full.Length == fullRoot.Length - 1) return false; // resolved to root itself
 
         resolved = full;
         return true;

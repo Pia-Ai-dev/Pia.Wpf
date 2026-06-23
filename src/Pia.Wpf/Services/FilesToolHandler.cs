@@ -72,7 +72,13 @@ public class FilesToolHandler : IFilesToolHandler
     public bool IsAvailable => _currentFolder is not null;
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
-        => UpdateFolder(settings.AssistantFilesFolder);
+    {
+        // The sandbox folder can be re-pointed (or cleared) at runtime. Evict the staleness
+        // store so a read recorded under the old root can't satisfy a staleness check for a
+        // re-pointed path, and so entries don't accumulate across the session lifetime (§0.2).
+        _stalenessStore.Clear();
+        UpdateFolder(settings.AssistantFilesFolder);
+    }
 
     private void UpdateFolder(string? folder)
     {
@@ -184,7 +190,10 @@ public class FilesToolHandler : IFilesToolHandler
         {
             // Canonicalizing safety net: discard anything that, after junction/symlink
             // resolution, isn't inside root. (Supersedes the old lexical StartsWith net.)
-            if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out _)) continue;
+            if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out var canon)) continue;
+            // Don't list protected system/app-data files even inside a broad sandbox (symmetric
+            // with read/search/write/delete — the blocklist applies regardless of sandbox scope).
+            if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
             // Display path is derived from the (already lexically-under-root) enumerated path,
             // not the junction-resolved one.
             rels.Add(SafeRelative(root, full));
@@ -267,7 +276,6 @@ public class FilesToolHandler : IFilesToolHandler
         if (pattern.Contains('\n') || pattern.Contains("\\n", StringComparison.Ordinal))
             diagnostics.Add("Warning: the pattern contains a newline; search matches one line at a time, so multiline patterns will not match.");
 
-        var rootWithSep = SafeFolderPath.WithTrailingSeparator(searchRoot);
         var canonRootWithSep = SafeFolderPath.WithTrailingSeparator(root);
 
         // Collected results. For content mode each entry is one matching line; for files/count
@@ -310,19 +318,25 @@ public class FilesToolHandler : IFilesToolHandler
                     // discarding anything that (after junction/symlink resolution) escapes the base.
                     if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out var canon)) continue;
                     if (!canon.StartsWith(canonRootWithSep, StringComparison.OrdinalIgnoreCase)) continue;
+                    // Don't surface contents of protected system/app-data files even inside a broad sandbox.
+                    if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
 
                     string[] lines;
                     try
                     {
+                        // Per-file size guard mirroring read_file (:536): skip oversized files instead of
+                        // loading them whole into memory (a multi-GB file in a cloned repo would otherwise
+                        // allocate the entire file and could OOM the process).
+                        if (new FileInfo(full).Length > MaxReadFileBytes) continue;
                         var bytes = File.ReadAllBytes(full);
                         if (LooksBinary(bytes)) continue; // skip binaries
                         lines = DecodeText(bytes).Split('\n');
                     }
                     catch { continue; }
 
-                    var rel = full.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase)
-                        ? full.Substring(rootWithSep.Length)
-                        : full;
+                    // Emit a SANDBOX-ROOT-relative path (the same form list_files/read_file accept) so a
+                    // scoped search hit is round-trippable: read_file(<emitted path>) resolves to the hit.
+                    var rel = SafeRelative(root, full);
 
                     int fileMatchCount = 0;
                     for (int i = 0; i < lines.Length; i++)
@@ -491,6 +505,16 @@ public class FilesToolHandler : IFilesToolHandler
             _logger.LogWarning("read_file rejected path outside sandbox");
             _logger.SensitiveDebug("read_file rejected path: {Path}", requested);
             return "Error: Path is outside the assistant files folder.";
+        }
+
+        // SENSITIVE-PATH BLOCKLIST: even read-only access to Pia's own DB/config or system/credential
+        // dirs is an exfiltration vector when the sandbox is configured broadly, so block the same
+        // protected roots write_file/delete_file reject (independent of how the sandbox is scoped).
+        if (SensitivePathGuard.IsBlocked(safePath, out var blockReason))
+        {
+            _logger.LogWarning("read_file rejected: sensitive path");
+            _logger.SensitiveDebug("read_file blocked path: {Path}", safePath);
+            return $"Error: Refusing to read here — {blockReason}.";
         }
 
         if (!File.Exists(safePath)) return $"Error: File '{requested}' not found.";
@@ -869,6 +893,16 @@ public class FilesToolHandler : IFilesToolHandler
             return new FilesToolCall("delete_file", "Invalid path", null, null,
                 () => Task.FromResult<object?>("Error: Path is outside the assistant files folder."));
 
+        // SENSITIVE-PATH BLOCKLIST (after §0.3 resolution) — symmetric with write_file.
+        // delete is irreversible, so the same protected roots that can't be written can't be deleted.
+        if (SensitivePathGuard.IsBlocked(safePath, out var prepBlockReason))
+        {
+            _logger.LogWarning("delete_file rejected: sensitive path");
+            _logger.SensitiveDebug("delete_file blocked path: {Path}", safePath);
+            return new FilesToolCall("delete_file", "Invalid path", null, null,
+                () => Task.FromResult<object?>($"Error: Refusing to delete here — {prepBlockReason}."));
+        }
+
         if (!File.Exists(safePath))
             return new FilesToolCall("delete_file", "File not found", null, null,
                 () => Task.FromResult<object?>($"Error: File '{requested}' not found."));
@@ -882,8 +916,12 @@ public class FilesToolHandler : IFilesToolHandler
             TargetPath: rel,
             Execute: () =>
             {
+                // Re-validate inside the deferred execution path (the sandbox root might have changed
+                // between preparation and confirmation) and re-check the blocklist for the same reason.
                 if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var finalPath))
                     return Task.FromResult<object?>("Error: Path is outside the assistant files folder.");
+                if (SensitivePathGuard.IsBlocked(finalPath, out var blockReason))
+                    return Task.FromResult<object?>($"Error: Refusing to delete here — {blockReason}.");
 
                 try
                 {

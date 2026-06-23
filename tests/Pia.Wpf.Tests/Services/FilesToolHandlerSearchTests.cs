@@ -200,6 +200,23 @@ public class FilesToolHandlerSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_SkipsFileOverSizeCap()
+    {
+        // A small file that matches, plus an oversized (>1 MB raw-byte ceiling) file whose content
+        // also matches. The big file must be skipped by the per-file size guard, never loaded whole.
+        Write("small.txt", "BIGMATCH here");
+        var bigPath = Path.Combine(_root, "huge.txt");
+        // 1.5 MB of a repeated matching token — over MaxReadFileBytes (1 MB).
+        File.WriteAllText(bigPath, string.Concat(Enumerable.Repeat("BIGMATCH\n", 200_000)));
+        Assert.True(new FileInfo(bigPath).Length > 1024 * 1024);
+
+        var result = await SearchAsync("BIGMATCH", mode: "files");
+
+        Assert.Contains("small.txt", result);
+        Assert.DoesNotContain("huge.txt", result);
+    }
+
+    [Fact]
     public async Task Search_ScopedToSubdirectory()
     {
         Write("sub/only.txt", "SCOPED hit");
@@ -207,8 +224,30 @@ public class FilesToolHandlerSearchTests : IDisposable
 
         var result = await SearchAsync("SCOPED", path: "sub", mode: "files");
 
-        Assert.Contains("only.txt", result);
+        // The emitted path must be SANDBOX-ROOT-relative ("sub/only.txt"), not subdir-relative
+        // ("only.txt") — only the root-relative form round-trips back through read_file.
+        var expected = "sub" + Path.DirectorySeparatorChar + "only.txt";
+        Assert.Contains(expected, result);
         Assert.DoesNotContain("other.txt", result);
         Assert.Contains("matches=1", result);
+    }
+
+    [Fact]
+    public async Task Search_ScopedHit_IsRoundTrippableThroughReadFile()
+    {
+        Write("sub/only.txt", "SCOPED hit");
+
+        var search = await SearchAsync("SCOPED", path: "sub", mode: "files");
+
+        // Extract the emitted relative path and feed it straight into read_file. The contract is
+        // that a scoped search hit is consumable by the other file tools without re-derivation.
+        var rel = "sub" + Path.DirectorySeparatorChar + "only.txt";
+        Assert.Contains(rel, search);
+
+        var read = new FunctionCallContent("c2", "read_file", new Dictionary<string, object?> { ["path"] = rel });
+        var (readResult, _) = await _handler.HandleToolCallAsync(read);
+        var readText = (string)readResult!;
+        Assert.Contains("SCOPED hit", readText);
+        Assert.DoesNotContain("not found", readText);
     }
 }

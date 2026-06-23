@@ -285,4 +285,49 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.Empty(temps);
         Assert.Equal("after", File.ReadAllText(Path.Combine(_root, "atomic.txt")).Replace("\r\n", "\n"));
     }
+
+    // ---- sensitive-path blocklist applies to delete_file and read_file (broad-sandbox case) ----
+
+    // Builds a handler whose sandbox is configured broadly enough to CONTAIN a blocked root,
+    // so the blocklist (not mere containment) is what must reject the operation.
+    private static FilesToolHandler BroadSandboxHandler(string broadRoot)
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = broadRoot });
+        return new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
+    }
+
+    [Fact]
+    public async Task Delete_BlockedPath_IsRefused_NoFileTouched()
+    {
+        var localAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA")!;
+        Assert.False(string.IsNullOrEmpty(localAppData));
+
+        // Sandbox = %LOCALAPPDATA% (broad). The blocklist must still refuse Pia's own data dir.
+        var handler = BroadSandboxHandler(localAppData);
+        var target = Path.Combine("Pia", "delete-guard-" + Guid.NewGuid().ToString("N") + ".txt");
+
+        var call = new FunctionCallContent("d1", "delete_file",
+            new Dictionary<string, object?> { ["path"] = target });
+        var (_, pending) = await handler.HandleToolCallAsync(call);
+        Assert.NotNull(pending);
+
+        var result = await pending!.Execute();
+        Assert.Contains("Refusing to delete", (string)result!);
+    }
+
+    [Fact]
+    public async Task Read_BlockedPath_IsRefused()
+    {
+        var localAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA")!;
+        Assert.False(string.IsNullOrEmpty(localAppData));
+
+        var handler = BroadSandboxHandler(localAppData);
+        var target = Path.Combine("Pia", "history.db");
+
+        var call = new FunctionCallContent("r1", "read_file",
+            new Dictionary<string, object?> { ["path"] = target });
+        var (result, _) = await handler.HandleToolCallAsync(call);
+        Assert.Contains("Refusing to read", (string)result!);
+    }
 }

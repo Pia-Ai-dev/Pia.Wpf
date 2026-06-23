@@ -25,4 +25,12 @@ public interface IFileStalenessStore
     /// the model is expected to have based an edit on.
     /// </summary>
     bool CheckStaleness(Guid taskId, string resolvedPath, DateTime currentMtimeUtc);
+
+    /// <summary>
+    /// Drops all recorded reads. Invoked when the sandbox folder changes at runtime
+    /// (§0.2 lifecycle): a read recorded under an old root must not satisfy a staleness
+    /// check for a re-pointed path, and the store should not grow unbounded across a
+    /// long-running session that re-points the folder.
+    /// </summary>
+    void Clear();
 }

@@ -70,6 +70,21 @@ public class FileStalenessStoreTests
     }
 
     [Fact]
+    public void Clear_DropsAllRecords()
+    {
+        var store = NewStore();
+        var taskId = Guid.NewGuid();
+        var path = @"C:\sandbox\file.txt";
+        store.RecordRead(taskId, path, T0);
+
+        store.Clear();
+
+        // After eviction (e.g. the sandbox folder was re-pointed) the prior read is forgotten:
+        // an unknown key is treated as not-stale even though the mtime now differs.
+        Assert.False(store.CheckStaleness(taskId, path, T0.AddSeconds(1)));
+    }
+
+    [Fact]
     public void Key_PathComparison_IsCaseInsensitive()
     {
         var store = NewStore();

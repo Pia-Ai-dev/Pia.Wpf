@@ -48,9 +48,14 @@ public class FilesPluginPromptScaffoldingTests
     {
         var config = FilesSystemPromptAddition();
 
-        // The relative-path / no-traversal guardrail must survive the enrichment.
+        // The containment guardrail must survive the enrichment. Per locked decision #2 the
+        // resolver now ACCEPTS in-base absolute paths, so the prompt must NOT forbid absolutes
+        // outright (that under-describes capability) — it must instead say paths stay inside the
+        // folder, with '..' escape and out-of-folder absolutes rejected.
         Assert.Contains("RELATIVE", config);
         Assert.Contains("'..'", config);
         Assert.Contains("Settings > Assistant", config);
+        Assert.Contains("inside the configured folder", config);
+        Assert.DoesNotContain("must not contain absolute paths", config);
     }
 }

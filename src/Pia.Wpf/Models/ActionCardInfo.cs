@@ -30,7 +30,22 @@ public enum DiffLineKind
 }
 
 /// <summary>One rendered line of a write-file old→new diff (LCS-based).</summary>
-public record DiffLine(DiffLineKind Kind, string Text);
+public record DiffLine(DiffLineKind Kind, string Text)
+{
+    /// <summary>
+    /// A unified-diff gutter marker so the add/remove distinction survives the loss of color
+    /// (high-contrast themes, red-green colorblindness): '+' added, '-' removed, ' ' context.
+    /// </summary>
+    public string Gutter => Kind switch
+    {
+        DiffLineKind.Added => "+",
+        DiffLineKind.Removed => "-",
+        _ => " "
+    };
+
+    /// <summary>The gutter marker followed by the line text, for the diff card's monospace rows.</summary>
+    public string Display => $"{Gutter} {Text}";
+}
 
 public partial class ActionCardInfo : ObservableObject
 {

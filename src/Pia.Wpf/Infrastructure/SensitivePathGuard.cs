@@ -66,7 +66,7 @@ public static class SensitivePathGuard
 
         return roots
             .Where(r => !string.IsNullOrEmpty(r))
-            .Select(r => SafeFull(r!))
+            .Select(r => SafeCanonical(r!))
             .Where(r => r is not null)
             .Select(r => r!)
             .ToArray();
@@ -78,9 +78,18 @@ public static class SensitivePathGuard
         catch { return a; }
     }
 
-    private static string? SafeFull(string p)
+    private static string? SafeCanonical(string p)
     {
-        try { return Path.GetFullPath(p); }
+        try
+        {
+            var full = Path.GetFullPath(p);
+            // Canonicalize the SAME way IsBlocked's incoming path is canonicalized (the resolver
+            // junction/symlink-resolves it). Otherwise a reparse point on the way to a blocked root
+            // would diverge the resolved candidate from the lexical blocked-root prefix and miss the
+            // StartsWith. Only existing roots can be canonicalized; a non-existent root (e.g. no
+            // ~/.ssh) stays lexical, which is still correct (nothing resolves through a missing dir).
+            return Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
+        }
         catch { return null; }
     }
 }

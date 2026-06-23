@@ -29,6 +29,8 @@ public class FileStalenessStore : IFileStalenessStore
         return recorded != currentMtimeUtc;
     }
 
+    public void Clear() => _reads.Clear();
+
     private readonly record struct StalenessKey
     {
         private readonly Guid _taskId;
