@@ -111,7 +111,8 @@ public class ReminderBackgroundService : BackgroundService
                 Title = reminder.Description,
                 DedupKey = reminder.Id.ToString(),
                 Lifetime = FlowLifetime.Persistent,
-                Action = new ReminderSnoozeAction(reminder.Id, _localizationService["Flow_Action_Snooze"]),
+                // Reminder cards carry decisions (Snooze/Done) only; the nav Action stays null and the
+                // decisions are re-derived on load from Source == Reminder + DedupKey (design §5).
                 RequestDurable = true,
             });
         }

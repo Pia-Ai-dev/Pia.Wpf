@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Pia.Controls.Cards;
 
 namespace Pia.Models;
 
@@ -47,6 +48,32 @@ public partial class ActionCardInfo : ObservableObject
 
     public string AcceptedStatusText { get; init; } = string.Empty;
     public string DeclinedStatusText { get; init; } = string.Empty;
+
+    // The decision-bar labels are passed in (a Model cannot inject ILocalizationService — LayerDependencyTests).
+    // ActionCardBuilder.Build sets these from ActionCard_Decline / ActionCard_Accept.
+    public string DeclineLabel { get; init; } = string.Empty;
+    public string AcceptLabel { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The footer rendered as a shared <see cref="CardDecisionBar"/> (design §6): a binary Decline/Accept
+    /// pair bound to the existing <see cref="DeclineCommand"/>/<see cref="AcceptCommand"/>. Accept renders
+    /// as <see cref="DecisionEmphasis.Danger"/> for destructive actions, otherwise <see cref="DecisionEmphasis.Primary"/>.
+    /// </summary>
+    public IReadOnlyList<DecisionButton> Decisions =>
+    [
+        new DecisionButton
+        {
+            Label = DeclineLabel,
+            Emphasis = DecisionEmphasis.Default,
+            Command = DeclineCommand,
+        },
+        new DecisionButton
+        {
+            Label = AcceptLabel,
+            Emphasis = IsDestructive ? DecisionEmphasis.Danger : DecisionEmphasis.Primary,
+            Command = AcceptCommand,
+        },
+    ];
 
     public string ResolvedStatusText => State == ActionCardState.Accepted
         ? AcceptedStatusText

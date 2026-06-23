@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
+             xmlns:cards="clr-namespace:Pia.Controls.Cards"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
@@ -167,8 +168,15 @@
                        FontWeight="SemiBold"
                        Foreground="{DynamicResource PiaAccentBrush}"
                        Visibility="{Binding Action, Converter={StaticResource NullToVisibilityConverter}}"
-                       Command="{Binding DataContext.ExecuteItemActionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                       CommandParameter="{Binding}" />
+                       Command="{Binding ExecuteActionCommand}" />
+
+            <!-- Decision buttons (Snooze/Done for reminders); replace the single nav link when present.
+                 Visible only when the item carries decisions (design §5). -->
+            <cards:CardDecisionBar x:Name="DecisionBar"
+                                   Margin="0,6,0,0"
+                                   HorizontalAlignment="Left"
+                                   ItemsSource="{Binding Decisions}"
+                                   Visibility="{Binding HasDecisions, Converter={StaticResource BooleanToVisibilityConverter}}" />
           </StackPanel>
 
           <!-- Hover-revealed dismiss -->
@@ -182,8 +190,7 @@
                      BorderThickness="0"
                      Opacity="0"
                      ToolTip="{loc:Str Flow_Dismiss_Tooltip}"
-                     Command="{Binding DataContext.DismissItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                     CommandParameter="{Binding}">
+                     Command="{Binding DismissCommand}">
             <ui:SymbolIcon FontSize="14" Symbol="Dismiss24" />
           </ui:Button>
         </Grid>
@@ -193,6 +200,11 @@
         <Trigger SourceName="Card" Property="IsMouseOver" Value="True">
           <Setter TargetName="DismissButton" Property="Opacity" Value="1" />
         </Trigger>
+        <!-- Cards with decisions resolve via their buttons; hide the local-clear ✕ to remove the
+             "Done" vs ✕ ambiguity (design §2/§5). -->
+        <DataTrigger Binding="{Binding HasDecisions}" Value="True">
+          <Setter TargetName="DismissButton" Property="Visibility" Value="Collapsed" />
+        </DataTrigger>
         <DataTrigger Binding="{Binding Body}" Value="">
           <Setter TargetName="BodyText" Property="Visibility" Value="Collapsed" />
         </DataTrigger>

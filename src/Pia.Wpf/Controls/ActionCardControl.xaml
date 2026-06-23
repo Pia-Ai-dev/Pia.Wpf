@@ -4,6 +4,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
+             xmlns:cards="clr-namespace:Pia.Controls.Cards"
              xmlns:models="clr-namespace:Pia.Models">
   <Border x:Name="CardBorder"
           Padding="12,10"
@@ -210,32 +211,10 @@
           </StackPanel>
         </StackPanel>
 
-        <!-- Accept/Decline buttons -->
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,8,0,0">
-          <ui:Button Content="{loc:Str ActionCard_Decline}"
-                     Appearance="Secondary"
-                     FontSize="12"
-                     Padding="12,4"
-                     Margin="0,0,6,0"
-                     Command="{Binding DeclineCommand}" />
-          <ui:Button Content="{loc:Str ActionCard_Accept}"
-                     FontSize="12"
-                     Padding="12,4"
-                     Command="{Binding AcceptCommand}">
-            <ui:Button.Style>
-              <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                <Setter Property="Appearance" Value="Primary" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding IsDestructive}" Value="True">
-                    <Setter Property="Appearance" Value="Caution" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </ui:Button.Style>
-          </ui:Button>
-        </StackPanel>
+        <!-- Accept/Decline buttons (shared CardDecisionBar — design §6) -->
+        <cards:CardDecisionBar ItemsSource="{Binding Decisions}"
+                               HorizontalAlignment="Right"
+                               Margin="0,8,0,0" />
       </StackPanel>
 
       <!-- Resolved state -->

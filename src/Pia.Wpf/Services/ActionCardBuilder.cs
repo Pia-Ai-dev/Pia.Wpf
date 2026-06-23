@@ -60,6 +60,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             Details = details,
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, category)),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, category)),
+            DeclineLabel = _localizationService["ActionCard_Decline"],
+            AcceptLabel = _localizationService["ActionCard_Accept"],
         };
     }
 
