@@ -86,7 +86,7 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.NewValue, pending.Execute));
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.NewValue, pending.Execute));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson));
@@ -107,7 +107,7 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson));
@@ -128,7 +128,7 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson));
@@ -149,7 +149,7 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson));
@@ -170,7 +170,7 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson));
@@ -194,7 +194,7 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson),

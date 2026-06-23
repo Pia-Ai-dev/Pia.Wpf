@@ -25,8 +25,8 @@ public class ActionCardBuilderTests
         return new ActionCardBuilder(localization, tokenMap);
     }
 
-    private static PluginToolCall Call(string toolName, string pluginName, string description, string? details = null) =>
-        new(toolName, pluginName, description, details, () => Task.FromResult<object?>(null));
+    private static PluginToolCall Call(string toolName, string pluginName, string description, string? details = null, Guid pluginId = default) =>
+        new(toolName, pluginId, pluginName, description, details, () => Task.FromResult<object?>(null));
 
     [Fact]
     public void Build_CreateMemory_MapsTitleCategoryAndSummary()

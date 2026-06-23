@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Plugins;
 using Pia.ViewModels.Models;
 using Xunit;
 
@@ -180,6 +181,7 @@ public class ChatSessionStateMachineTests
     {
         var pending = new PluginToolCall(
             ToolName: "create_todo",
+            PluginId: BuiltInPluginDefaults.TodoPluginId,
             PluginName: "todo",
             Description: "Create a todo",
             Details: null,
