@@ -8,6 +8,20 @@ Consolidated open questions, deferred findings, and decisions-to-confirm from th
 
 ---
 
+## Resolutions (2026-06-23, reviewed with the user)
+
+Recorded decisions from the post-implementation review. Items not listed remain open.
+
+- **Q1.1-a (read_file size caps) — CONFIRMED.** 1 MB raw-byte input ceiling + 100K-char/2000-line output caps; the docx/xlsx container-vs-extracted (8 MB vs 1 MB) asymmetry is accepted.
+- **Q-write-a (write-time lint JSON-only) — CONFIRMED.** YAML/TOML/other formats return `lint: null`; no feedback for them this milestone.
+- **QX-a (`FileStalenessStore` naming) — CONFIRMED.** Keep the architecture allow-list extension (`"Store"`); do not rename the class.
+- **Q-write-b (diff-card UX) — PENDING the user's visual check.** Fully implemented (color + `+`/`-` gutter); the user will verify rendering in their themes later.
+- **Q-write-d / Q0.2-a (staleness) — RESOLVED & IMPLEMENTED.** Kept advisory for the read→preview gap (the approval card already shows the true current-disk-vs-new diff, so the human is the backstop) **and added a narrow blocking guard for the post-approval window**: `write_file` captures the previewed file's mtime at prepare time and, at execute time, *blocks* (returns a re-read-and-retry error, no write) if the file changed — or a file appeared where a create was previewed — between preview and apply. "Unknown key = not-stale" is unchanged (writing without a prior read, e.g. creating a new file, stays legal). See the updated **Q-write-d** below.
+
+> Implemented in a follow-up commit after `d902dec`: `FilesToolHandler.PrepareWriteFile`/`ExecuteWriteAsync` + 3 new tests in `FilesToolHandlerWriteTests.cs`. Build green; 640 passing / 18 pre-existing network failures.
+
+---
+
 ## Phase 0.3 — path resolver (`SafeFolderPath`)
 
 ### Q0.3-a — `GetRealPath` does not exist on net10.0-windows; replaced with a P/Invoke
@@ -122,11 +136,11 @@ Consolidated open questions, deferred findings, and decisions-to-confirm from th
 - **Where:** `src/Pia.Wpf/Services/FilesToolHandler.cs` (`WriteResult`)
 - **Recommended default:** Keep `created` and the structured-write/bare-delete split.
 
-### Q-write-d — staleness guard is advisory-only, never blocks (CONFIRM) — DEFERRED
-- **Question:** Confirm the staleness guard only sets a non-blocking `_warning` and never aborts a write (chosen by §2 design). Should it become blocking (fail on staleness unless an override flag is passed)?
-- **Why it matters:** A lost-update overwrite is always possible (an attacker/model can preserve mtime or simply never read first — see Q0.2-a). Reviewer scored this UX/data-integrity, not security. Listed as **deferred**: making it blocking would change the approved write_file contract.
-- **Where:** `src/Pia.Wpf/Services/FilesToolHandler.cs:739-745`
-- **Recommended default:** Keep advisory-only for this milestone; add a blocking mode + override flag only if lost-update protection becomes a goal.
+### Q-write-d — staleness guard — RESOLVED & IMPLEMENTED (advisory + post-approval block)
+- **Decision:** Two-tier guard. (1) **Advisory** for the read→preview gap — the approval card's "old" side is read fresh at prepare time, so the human reviewing the diff already sees any out-of-band change; a non-blocking `_warning` is secondary signal for the model. (2) **Blocking** for the post-approval window — `PrepareWriteFile` captures the previewed file's mtime; `ExecuteWriteAsync` re-samples at apply time and returns a re-read-and-retry error (no write) if the file's mtime changed, or if a file now exists where a *create* was previewed. This closes the one real silent-clobber hole: the user approved a specific diff, and the file is no longer in the state that diff was built from.
+- **Why this shape:** Foreground, human-approved, single-user tool (background/delegated writes are out of scope). Hard-blocking the read→preview gap would add friction to a case the human already sees on the card; the post-approval gap is the genuinely unsafe one. "Unknown key = not-stale" (Q0.2-a) is retained so writing without a prior read (new files, model-known content) stays legal.
+- **Where:** `src/Pia.Wpf/Services/FilesToolHandler.cs` (`PrepareWriteFile` preview-mtime capture; `ExecuteWriteAsync` post-approval block). Tests: `FilesToolHandlerWriteTests.Write_FileChangedSincePreview_IsBlocked_NoClobber`, `Write_CreateBecameOverwrite_IsBlocked_NoClobber`, `Write_UnchangedSincePreview_Succeeds`.
+- **Status:** Done; build green, new tests pass. No longer open.
 
 ### Q-write-e — `LooksLikeReadFileEcho` false-positive on numeric pipe-delimited data — DEFERRED (nit)
 - **Question:** Accept that the internal-content guard can misclassify legitimate 3+-line numeric pipe-delimited data (e.g. `12|widget` / `13|gadget`) as a read_file echo and block the write?
@@ -156,9 +170,11 @@ Consolidated open questions, deferred findings, and decisions-to-confirm from th
 
 ---
 
-## Top questions to resolve first
-1. **Q-write-d / Q0.2-a** — staleness guard is advisory-only and unknown-key defaults to not-stale: accept that lost-update overwrites are always possible, or make the guard blocking?
-2. **Q1.1-a** — confirm the reconciled read_file size caps (1 MB input + 100K-char/2000-line output) and the docx/xlsx container-vs-extracted asymmetry.
-3. **Q-write-a** — confirm write-time lint is JSON-only (YAML/TOML/other get no feedback).
-4. **Q-write-b** — confirm the diff-card approval UX (colors + `+`/`-` gutter) is what you want users to judge changes against.
-5. **QX-a** — `FileStalenessStore` naming: keep the allow-list extension, or rename the class?
+## Status after the 2026-06-23 review
+
+Resolved with the user: **Q-write-d / Q0.2-a** (staleness → advisory + post-approval block, implemented), **Q1.1-a** (read caps confirmed), **Q-write-a** (lint JSON-only confirmed), **QX-a** (keep `Store` allow-list entry). See **Resolutions** at the top.
+
+**Still pending:**
+1. **Q-write-b** — the diff-card approval UX (colors + `+`/`-` gutter): the user will visually verify rendering in their themes.
+
+**Lower-priority / deferred (acknowledged, no action this milestone):** Q0.3-b (per-entry root re-canonicalization in `list_files`), Q1.1-b (UTF-16 rejected by NUL sniff), Q-write-e (echo-guard false-positive on numeric pipe data), QX-b (blocklist roots from env vars vs `GetFolderPath`). Plus the cross-cutting milestone deferrals (patch, terminal/exec, in-app clone, read-dedup, `.ipynb`, `rg`).

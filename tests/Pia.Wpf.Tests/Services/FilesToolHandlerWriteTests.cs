@@ -237,6 +237,59 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.Null(Prop<string?>(result!, "_warning"));
     }
 
+    // ---- post-approval TOCTOU guard: file changed between preview and execute ----
+
+    [Fact]
+    public async Task Write_FileChangedSincePreview_IsBlocked_NoClobber()
+    {
+        var full = Path.Combine(_root, "concurrent.txt");
+        File.WriteAllText(full, "original\n");
+
+        // Preview the write (reads the file + captures the preview mtime).
+        var pending = await PrepareWrite("concurrent.txt", "assistant edit");
+
+        // Out-of-band change AFTER the user previewed the diff but BEFORE the write applies.
+        File.WriteAllText(full, "user edited this in their IDE\n");
+        File.SetLastWriteTimeUtc(full, DateTime.UtcNow.AddMinutes(5));
+
+        var result = await pending.Execute();
+
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("changed on disk", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+        // The out-of-band content was NOT clobbered.
+        Assert.Equal("user edited this in their IDE\n", File.ReadAllText(full));
+    }
+
+    [Fact]
+    public async Task Write_CreateBecameOverwrite_IsBlocked_NoClobber()
+    {
+        // Preview a CREATE (no file exists at preview time).
+        var pending = await PrepareWrite("appears.txt", "assistant new file");
+
+        // A file appears at the path before the approved create executes.
+        var full = Path.Combine(_root, "appears.txt");
+        File.WriteAllText(full, "someone else created this\n");
+
+        var result = await pending.Execute();
+
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("not present when the create was previewed", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("someone else created this\n", File.ReadAllText(full));
+    }
+
+    [Fact]
+    public async Task Write_UnchangedSincePreview_Succeeds()
+    {
+        var full = Path.Combine(_root, "stable.txt");
+        File.WriteAllText(full, "before\n");
+
+        var pending = await PrepareWrite("stable.txt", "after");
+        var result = await pending.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"));
+        Assert.Contains("after", File.ReadAllText(full));
+    }
+
     // ---- diff model populated for create and update ----
 
     [Fact]

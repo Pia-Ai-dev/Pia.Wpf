@@ -713,11 +713,18 @@ public class FilesToolHandler : IFilesToolHandler
 
         // TRUE LINE-LEVEL DIFF: compute old→new at prepare time. For a new file the whole
         // content is "added". Read failures fall back to an empty (all-added) baseline.
+        // Capture the baseline's mtime alongside its content so the post-approval guard in
+        // ExecuteWriteAsync can detect an out-of-band change to the exact bytes the user previewed.
         string? oldContent = null;
+        DateTime? previewMtime = null;
         if (exists)
         {
-            try { oldContent = File.ReadAllText(safePath); }
-            catch { oldContent = null; }
+            try
+            {
+                oldContent = File.ReadAllText(safePath);
+                previewMtime = File.GetLastWriteTimeUtc(safePath);
+            }
+            catch { oldContent = null; previewMtime = null; }
         }
         var diff = LineDiff.Compute(oldContent, content);
 
@@ -732,7 +739,7 @@ public class FilesToolHandler : IFilesToolHandler
             Description: desc,
             Details: $"{content.Length} character(s) will be written.",
             TargetPath: rel,
-            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, taskId),
+            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, previewMtime, taskId),
             DiffPreview: diff);
     }
 
@@ -741,7 +748,8 @@ public class FilesToolHandler : IFilesToolHandler
             () => Task.FromResult<object?>(WriteResult.Failed(message)));
 
     private Task<object?> ExecuteWriteAsync(
-        string root, string requested, string rel, string content, string? oldContent, bool existedAtPrepare, Guid taskId)
+        string root, string requested, string rel, string content, string? oldContent,
+        bool existedAtPrepare, DateTime? previewMtime, Guid taskId)
     {
         // Re-validate inside the deferred execution path — the sandbox root might have changed
         // between preparation and confirmation. Re-check the sensitive blocklist for the same reason.
@@ -758,15 +766,38 @@ public class FilesToolHandler : IFilesToolHandler
 
             var existsNow = File.Exists(finalPath);
 
-            // STALENESS GUARD: sample the target's CURRENT mtime BEFORE writing (so the write
-            // itself can't make it look stale) and compare against the recorded read.
-            string? warning = null;
-            if (existsNow)
+            // POST-APPROVAL TOCTOU GUARD: the user approved a specific diff computed from the
+            // file's state at preview time. If the file changed — or one appeared where the user
+            // approved a *create* — between preview and now, the approved diff no longer matches
+            // disk, so BLOCK and make the model re-read + re-prepare rather than silently clobber
+            // unseen changes. (The benign read→preview gap stays advisory below; the preview the
+            // user saw already reflected current disk.)
+            if (existsNow && !existedAtPrepare)
             {
-                var currentMtime = File.GetLastWriteTimeUtc(finalPath);
-                if (_stalenessStore.CheckStaleness(taskId, finalPath, currentMtime))
-                    warning = "The file changed on disk after it was last read; this write may overwrite unseen changes.";
+                _logger.LogInformation("write_file blocked: a file appeared since the create was previewed");
+                return Task.FromResult<object?>(WriteResult.Failed(
+                    "Error: A file now exists at this path that was not present when the create was previewed. " +
+                    "Re-read the file and submit the write again so it is based on current content."));
             }
+
+            DateTime currentMtime = default;
+            if (existsNow)
+                currentMtime = File.GetLastWriteTimeUtc(finalPath);
+
+            if (existsNow && previewMtime.HasValue && currentMtime != previewMtime.Value)
+            {
+                _logger.LogInformation("write_file blocked: file changed on disk since it was previewed");
+                return Task.FromResult<object?>(WriteResult.Failed(
+                    "Error: The file changed on disk after this edit was previewed, so the approved diff no longer matches. " +
+                    "Re-read the file and submit the write again so it is based on current content."));
+            }
+
+            // STALENESS (ADVISORY): the model may have read this file in an earlier turn. Warn
+            // (don't block) if it changed since that recorded read — the preview above already
+            // reflects current disk, so this is only secondary signal for the model.
+            string? warning = null;
+            if (existsNow && _stalenessStore.CheckStaleness(taskId, finalPath, currentMtime))
+                warning = "The file changed on disk after it was last read; this write may overwrite unseen changes.";
 
             // DELTA-FILTERED LINT (only NEW errors surface).
             var lint = WriteLintHelper.Lint(finalPath, oldContent, content);
