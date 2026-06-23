@@ -69,7 +69,7 @@ public partial class FlowView : UserControl
             _viewModel.ItemArrived -= OnItemArrived;
     }
 
-    private void OnItemArrived(object? sender, FlowItem item)
+    private void OnItemArrived(object? sender, FlowItemViewModel item)
     {
         // Only the foreground window peeks; the peek must never cover the cursor zone of other windows.
         var window = Window.GetWindow(this);

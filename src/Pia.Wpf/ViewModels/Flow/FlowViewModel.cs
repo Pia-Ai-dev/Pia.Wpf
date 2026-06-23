@@ -3,7 +3,6 @@ using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using Pia.Models;
 using Pia.Models.Flow;
 using Pia.Navigation;
 using Pia.Services.Flow;
@@ -25,7 +24,9 @@ public partial class FlowViewModel : ObservableObject, IDisposable
     private readonly IReminderService _reminderService;
     private readonly ISettingsService _settingsService;
     private readonly INavigationService _navigationService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<FlowViewModel> _logger;
+    private readonly ILogger<FlowItemViewModel> _itemLogger;
     private readonly SynchronizationContext? _sync;
     private bool _disposed;
 
@@ -35,28 +36,32 @@ public partial class FlowViewModel : ObservableObject, IDisposable
         IReminderService reminderService,
         ISettingsService settingsService,
         INavigationService navigationService,
-        ILogger<FlowViewModel> logger)
+        ILocalizationService localizationService,
+        ILogger<FlowViewModel> logger,
+        ILogger<FlowItemViewModel> itemLogger)
     {
         _flow = flow;
         _windowManager = windowManager;
         _reminderService = reminderService;
         _settingsService = settingsService;
         _navigationService = navigationService;
+        _localizationService = localizationService;
         _logger = logger;
+        _itemLogger = itemLogger;
         _sync = SynchronizationContext.Current;
 
         _flow.Changed += OnFlowChanged;
         _flow.ItemArrived += OnFlowItemArrived;
 
-        Rebuild();
+        Reconcile();
         _ = LoadPinStateAsync();
     }
 
-    /// <summary>Live items, newest first.</summary>
-    public ObservableCollection<FlowItem> Items { get; } = new();
+    /// <summary>Live item wrappers, newest first (the same instances are reused across reconciles).</summary>
+    public ObservableCollection<FlowItemViewModel> Items { get; } = new();
 
     /// <summary>Raised (on the UI thread) when a new item arrives, so the view can play the arrival peek.</summary>
-    public event EventHandler<FlowItem>? ItemArrived;
+    public event EventHandler<FlowItemViewModel>? ItemArrived;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsOpen))]
@@ -97,82 +102,18 @@ public partial class FlowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ClearAll() => _flow.Clear();
 
-    [RelayCommand]
-    private void DismissItem(FlowItem? item)
+    private void OnFlowChanged(object? sender, EventArgs e) => Post(Reconcile);
+
+    // Reconcile first so the wrapper for the arrived item exists (the store may raise ItemArrived for
+    // an item not yet reflected in our collection), then raise the rail's own wrapper instance so the
+    // peek shares its IsBusy/decision state. Falls back to an ad-hoc wrapper if the item is no longer
+    // in the snapshot by the time we look (e.g. resolved between the two events).
+    private void OnFlowItemArrived(object? sender, FlowItem item) => Post(() =>
     {
-        if (item is not null)
-            _flow.Dismiss(item.Id);
-    }
-
-    [RelayCommand]
-    private async Task ExecuteItemAction(FlowItem? item)
-    {
-        if (item?.Action is null)
-            return;
-
-        try
-        {
-            switch (item.Action)
-            {
-                case OpenChatAction chat:
-                    _windowManager.ShowAssistantChat(chat.ChatId);
-                    RetractByKey(item);
-                    break;
-                case OpenBriefingAction briefing:
-                    // Fall back to the research-history root when there is no entry (design §8).
-                    if (briefing.EntryId == Guid.Empty)
-                        _windowManager.ShowWindow(WindowMode.Research);
-                    else
-                        _windowManager.ShowResearchHistoryWithEntry(briefing.EntryId);
-                    RetractByKey(item);
-                    break;
-                case OpenTodoAction:
-                    NavigateToTodoBoard();
-                    _flow.MarkRead(item.Id); // the deadline auto-retracts when the todo is completed/out of window
-                    break;
-                case ReminderSnoozeAction snooze:
-                    await _reminderService.SnoozeAsync(snooze.ReminderId, TimeSpan.FromMinutes(10));
-                    _flow.Dismiss(item.Id);
-                    break;
-                case ReminderDismissAction dismiss:
-                    await _reminderService.DismissAsync(dismiss.ReminderId);
-                    _flow.Dismiss(item.Id);
-                    break;
-                case InvokeAction invoke:
-                    invoke.Callback();
-                    _flow.Dismiss(item.Id);
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Flow action failed for item {Id}", item.Id);
-        }
-    }
-
-    private void RetractByKey(FlowItem item)
-    {
-        if (item.DedupKey is { } key)
-            _flow.Retract(key);
-        else
-            _flow.Dismiss(item.Id);
-    }
-
-    private void NavigateToTodoBoard()
-    {
-        try
-        {
-            _navigationService.NavigateTo<TodoViewModel>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Flow could not navigate to the todo board");
-        }
-    }
-
-    private void OnFlowChanged(object? sender, EventArgs e) => Post(Rebuild);
-
-    private void OnFlowItemArrived(object? sender, FlowItem item) => Post(() => ItemArrived?.Invoke(this, item));
+        Reconcile();
+        var wrapper = Items.FirstOrDefault(w => w.Item.Id == item.Id) ?? CreateWrapper(item);
+        ItemArrived?.Invoke(this, wrapper);
+    });
 
     private void Post(Action action)
     {
@@ -182,14 +123,55 @@ public partial class FlowViewModel : ObservableObject, IDisposable
             action();
     }
 
-    private void Rebuild()
+    // Id-keyed in-place sync of the snapshot into the wrapper collection (design §5). NEVER clear+re-add:
+    // that would tear down a wrapper mid-decision and lose its in-flight IsBusy/re-entrancy guard. Reuse
+    // each existing wrapper for an unchanged Id (rebinding its FlowItem), insert/move to the snapshot's
+    // newest-first position, and drop wrappers whose Id is gone.
+    private void Reconcile()
     {
         var snapshot = _flow.Snapshot;
-        Items.Clear();
-        foreach (var item in snapshot)
-            Items.Add(item);
+        var byId = Items.ToDictionary(w => w.Item.Id);
+        var live = new HashSet<Guid>(snapshot.Select(s => s.Id));
+
+        // Remove gone wrappers first (back-to-front so indices stay valid).
+        for (var i = Items.Count - 1; i >= 0; i--)
+        {
+            if (!live.Contains(Items[i].Item.Id))
+                Items.RemoveAt(i);
+        }
+
+        // Walk the snapshot in order; reuse-and-move or insert so Items mirrors the newest-first order.
+        for (var i = 0; i < snapshot.Count; i++)
+        {
+            var item = snapshot[i];
+            if (byId.TryGetValue(item.Id, out var wrapper))
+            {
+                wrapper.Bind(item);
+                var current = Items.IndexOf(wrapper);
+                if (current != i)
+                    Items.Move(current, i);
+            }
+            else
+            {
+                Items.Insert(i, CreateWrapper(item));
+            }
+        }
+
         LiveCount = snapshot.Count(i => i.Lifetime.IsPersistent);
         IsEmpty = snapshot.Count == 0;
+    }
+
+    private FlowItemViewModel CreateWrapper(FlowItem item)
+    {
+        var wrapper = new FlowItemViewModel(
+            _flow,
+            _reminderService,
+            _windowManager,
+            _navigationService,
+            _localizationService,
+            _itemLogger);
+        wrapper.Bind(item);
+        return wrapper;
     }
 
     private async Task LoadPinStateAsync()
