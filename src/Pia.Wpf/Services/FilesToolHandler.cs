@@ -179,9 +179,6 @@ public class FilesToolHandler : IFilesToolHandler
             return $"Error: Could not list files ({ex.Message}).";
         }
 
-        var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar)
-            ? root : root + Path.DirectorySeparatorChar;
-
         var rels = new List<string>();
         foreach (var full in entries)
         {
@@ -190,7 +187,7 @@ public class FilesToolHandler : IFilesToolHandler
             if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out _)) continue;
             // Display path is derived from the (already lexically-under-root) enumerated path,
             // not the junction-resolved one.
-            rels.Add(full.Substring(rootWithSep.Length));
+            rels.Add(SafeRelative(root, full));
             if (rels.Count >= MaxListEntries) break;
         }
 
@@ -270,10 +267,8 @@ public class FilesToolHandler : IFilesToolHandler
         if (pattern.Contains('\n') || pattern.Contains("\\n", StringComparison.Ordinal))
             diagnostics.Add("Warning: the pattern contains a newline; search matches one line at a time, so multiline patterns will not match.");
 
-        var rootWithSep = searchRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? searchRoot : searchRoot + Path.DirectorySeparatorChar;
-        var canonRootWithSep = root.EndsWith(Path.DirectorySeparatorChar)
-            ? root : root + Path.DirectorySeparatorChar;
+        var rootWithSep = SafeFolderPath.WithTrailingSeparator(searchRoot);
+        var canonRootWithSep = SafeFolderPath.WithTrailingSeparator(root);
 
         // Collected results. For content mode each entry is one matching line; for files/count
         // mode each entry is one file (with an optional count).
@@ -465,7 +460,7 @@ public class FilesToolHandler : IFilesToolHandler
         var leaf = Path.GetFileName(requestedPath.Replace('/', Path.DirectorySeparatorChar).TrimEnd(Path.DirectorySeparatorChar));
         if (string.IsNullOrEmpty(leaf)) return [];
 
-        var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        var rootWithSep = SafeFolderPath.WithTrailingSeparator(root);
         var hits = new List<string>();
         try
         {
@@ -540,7 +535,7 @@ public class FilesToolHandler : IFilesToolHandler
                 var info = new FileInfo(safePath);
                 if (info.Length > MaxReadFileBytes)
                     return $"Error: File is too large to read ({info.Length} bytes, max {MaxReadFileBytes} bytes). " +
-                           "Narrow the read with offset/limit is not possible for files over the raw-byte ceiling.";
+                           "offset/limit cannot help here — the whole file exceeds the raw-byte ceiling.";
 
                 var bytes = await File.ReadAllBytesAsync(safePath, cancellationToken);
                 if (LooksBinary(bytes))
@@ -847,8 +842,7 @@ public class FilesToolHandler : IFilesToolHandler
     /// Structured write_file return. <c>FilesToolCall.Execute</c> is <c>Func&lt;Task&lt;object?&gt;&gt;</c>
     /// and the tool loop hands the object straight to <c>FunctionResultContent</c>, which JSON-serializes
     /// it for the provider — so an object return is wire-compatible. snake_case names match the prompt
-    /// contract; null fields are omitted by the serializer's default behavior is not relied upon, callers
-    /// read them by name.
+    /// contract; callers read fields by name and do not rely on null-field omission.
     /// </summary>
     private sealed record WriteResult(
         bool success,
@@ -908,8 +902,7 @@ public class FilesToolHandler : IFilesToolHandler
 
     private static string SafeRelative(string root, string fullPath)
     {
-        var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar)
-            ? root : root + Path.DirectorySeparatorChar;
+        var rootWithSep = SafeFolderPath.WithTrailingSeparator(root);
         return fullPath.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase)
             ? fullPath.Substring(rootWithSep.Length)
             : fullPath;

@@ -29,7 +29,7 @@ public static class SensitivePathGuard
         foreach (var root in BlockedRoots)
         {
             if (string.IsNullOrEmpty(root)) continue;
-            var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+            var rootWithSep = SafeFolderPath.WithTrailingSeparator(root);
             if (full.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase) ||
                 full.Equals(root, StringComparison.OrdinalIgnoreCase))
             {

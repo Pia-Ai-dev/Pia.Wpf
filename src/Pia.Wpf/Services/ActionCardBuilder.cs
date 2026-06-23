@@ -47,11 +47,15 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         // ParseKeyValueText path used for every other plugin. The card renders DiffLines instead.
         var isFilesDiff = category == ActionCardCategory.Files && pendingAction.DiffPreview is { Count: > 0 };
 
-        var details = !isFilesDiff && pendingAction.Details is not null
-            ? pendingAction.PluginName == "memory"
-                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.Details), detokenize))
-                : new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details), detokenize))
-            : new ObservableCollection<ActionCardDetail>();
+        var details = new ObservableCollection<ActionCardDetail>();
+        if (!isFilesDiff && pendingAction.Details is not null)
+        {
+            // Memory carries structured JSON detail; every other plugin uses key/value text.
+            var parsed = pendingAction.PluginName == "memory"
+                ? JsonHelper.ParseToDetails(pendingAction.Details)
+                : JsonHelper.ParseKeyValueText(pendingAction.Details);
+            details = new ObservableCollection<ActionCardDetail>(DetokenizeDetails(parsed, detokenize));
+        }
 
         var diffLines = isFilesDiff
             ? new ObservableCollection<DiffLine>(

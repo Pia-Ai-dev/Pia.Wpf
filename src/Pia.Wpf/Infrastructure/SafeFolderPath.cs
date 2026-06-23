@@ -121,11 +121,8 @@ public static class SafeFolderPath
         resolved = string.Empty;
 
         string fullRoot;
-        try { fullRoot = Path.GetFullPath(sandboxRoot); }
+        try { fullRoot = WithTrailingSeparator(Path.GetFullPath(sandboxRoot)); }
         catch { return false; }
-
-        if (!fullRoot.EndsWith(Path.DirectorySeparatorChar))
-            fullRoot += Path.DirectorySeparatorChar;
 
         string full;
         try { full = Path.GetFullPath(Path.Combine(fullRoot, candidate)); }
@@ -139,6 +136,13 @@ public static class SafeFolderPath
         resolved = full;
         return true;
     }
+
+    /// <summary>
+    /// Appends a trailing directory separator if absent, so prefix-containment comparisons
+    /// (<c>StartsWith</c>) cannot accept a sibling like <c>/rootEvil</c> as being inside <c>/root</c>.
+    /// </summary>
+    internal static string WithTrailingSeparator(string path)
+        => path.EndsWith(Path.DirectorySeparatorChar) ? path : path + Path.DirectorySeparatorChar;
 
     /// <summary>
     /// Canonicalizes an <b>existing</b> file or directory path, resolving every reparse point
