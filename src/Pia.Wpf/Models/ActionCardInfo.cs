@@ -21,6 +21,17 @@ public enum ActionCardCategory
 
 public record ActionCardDetail(string Label, string Value);
 
+/// <summary>How a single line in a write-file preview diff changed.</summary>
+public enum DiffLineKind
+{
+    Context,
+    Added,
+    Removed
+}
+
+/// <summary>One rendered line of a write-file old→new diff (LCS-based).</summary>
+public record DiffLine(DiffLineKind Kind, string Text);
+
 public partial class ActionCardInfo : ObservableObject
 {
     public required string Title { get; init; }
@@ -33,8 +44,15 @@ public partial class ActionCardInfo : ObservableObject
     public ObservableCollection<ActionCardDetail> Details { get; init; } = [];
     public ObservableCollection<ActionCardDetail> OldValueDetails { get; init; } = [];
 
+    /// <summary>
+    /// Line-level old→new diff for write_file cards. Populated only for the files category;
+    /// when present the card renders this colour-coded block instead of the Label/Value rows.
+    /// </summary>
+    public ObservableCollection<DiffLine> DiffLines { get; init; } = [];
+
     public bool HasDetails => Details.Count > 0;
     public bool HasOldValueDetails => OldValueDetails.Count > 0;
+    public bool HasDiff => DiffLines.Count > 0;
 
     [ObservableProperty]
     private ActionCardState _state = ActionCardState.Pending;

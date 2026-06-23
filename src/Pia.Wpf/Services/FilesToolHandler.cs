@@ -662,53 +662,209 @@ public class FilesToolHandler : IFilesToolHandler
     private FilesToolCall PrepareWriteFile(string root, IDictionary<string, object?> args)
     {
         var requested = GetStringArg(args, "path");
-        var content = GetStringArg(args, "content");
+
+        // ARG HARDENING: distinguish a missing 'content' key from a present-but-empty one.
+        // GetStringArg returns "" for a missing key, which would silently write an empty file.
+        if (!TryGetRequiredStringArg(args, "content", out var content, out var argError))
+            return WriteError(argError);
+
+        // INTERNAL-CONTENT GUARD: reject a read_file echo accidentally fed back as content.
+        if (LooksLikeReadFileEcho(content))
+            return WriteError(
+                "Error: 'content' looks like read_file output (line-number-prefixed lines, e.g. '12|foo'). " +
+                "Pass the raw file contents only, without line-number prefixes or the total_lines header.");
 
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
-            return new FilesToolCall("write_file", "Invalid path", null, null,
-                () => Task.FromResult<object?>("Error: Path is outside the assistant files folder."));
+            return WriteError("Error: Path is outside the assistant files folder.");
+
+        // SENSITIVE-PATH BLOCKLIST (after §0.3 resolution).
+        if (SensitivePathGuard.IsBlocked(safePath, out var blockReason))
+        {
+            _logger.LogWarning("write_file rejected: sensitive path");
+            _logger.SensitiveDebug("write_file blocked path: {Path}", safePath);
+            return WriteError($"Error: Refusing to write here — {blockReason}.");
+        }
 
         if (content.Length > MaxWriteChars)
-            return new FilesToolCall("write_file", "Content too large", null, null,
-                () => Task.FromResult<object?>($"Error: Content is too large ({content.Length} chars, max {MaxWriteChars})."));
+            return WriteError($"Error: Content is too large ({content.Length} chars, max {MaxWriteChars}).");
 
         var exists = File.Exists(safePath);
         var rel = SafeRelative(root, safePath);
-        var desc = exists
-            ? $"Update file '{rel}'"
-            : $"Create file '{rel}'";
+        var desc = exists ? $"Update file '{rel}'" : $"Create file '{rel}'";
+
+        // TRUE LINE-LEVEL DIFF: compute old→new at prepare time. For a new file the whole
+        // content is "added". Read failures fall back to an empty (all-added) baseline.
+        string? oldContent = null;
+        if (exists)
+        {
+            try { oldContent = File.ReadAllText(safePath); }
+            catch { oldContent = null; }
+        }
+        var diff = LineDiff.Compute(oldContent, content);
+
+        // STALENESS GUARD: capture the staleness key (session Id) and baseline at PREPARE time;
+        // the recorded read may have happened in an earlier turn, but the ambient carries the
+        // stable session Id. Don't read TaskAmbient.Current inside the deferred closure (it runs
+        // after the approval await, where ambient flow is not guaranteed).
+        var taskId = TaskAmbient.Current ?? Guid.Empty;
 
         return new FilesToolCall(
             ToolName: "write_file",
             Description: desc,
             Details: $"{content.Length} character(s) will be written.",
             TargetPath: rel,
-            Execute: () =>
+            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, taskId),
+            DiffPreview: diff);
+    }
+
+    private static FilesToolCall WriteError(string message)
+        => new("write_file", "Invalid write", null, null,
+            () => Task.FromResult<object?>(WriteResult.Failed(message)));
+
+    private Task<object?> ExecuteWriteAsync(
+        string root, string requested, string rel, string content, string? oldContent, bool existedAtPrepare, Guid taskId)
+    {
+        // Re-validate inside the deferred execution path — the sandbox root might have changed
+        // between preparation and confirmation. Re-check the sensitive blocklist for the same reason.
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var finalPath))
+            return Task.FromResult<object?>(WriteResult.Failed("Error: Path is outside the assistant files folder."));
+        if (SensitivePathGuard.IsBlocked(finalPath, out var blockReason))
+            return Task.FromResult<object?>(WriteResult.Failed($"Error: Refusing to write here — {blockReason}."));
+
+        try
+        {
+            var dir = Path.GetDirectoryName(finalPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            var existsNow = File.Exists(finalPath);
+
+            // STALENESS GUARD: sample the target's CURRENT mtime BEFORE writing (so the write
+            // itself can't make it look stale) and compare against the recorded read.
+            string? warning = null;
+            if (existsNow)
             {
-                // Re-validate inside the deferred execution path — the sandbox
-                // root might have changed between preparation and confirmation.
-                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var finalPath))
-                    return Task.FromResult<object?>("Error: Path is outside the assistant files folder.");
+                var currentMtime = File.GetLastWriteTimeUtc(finalPath);
+                if (_stalenessStore.CheckStaleness(taskId, finalPath, currentMtime))
+                    warning = "The file changed on disk after it was last read; this write may overwrite unseen changes.";
+            }
 
-                try
-                {
-                    var dir = Path.GetDirectoryName(finalPath);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                        Directory.CreateDirectory(dir);
+            // DELTA-FILTERED LINT (only NEW errors surface).
+            var lint = WriteLintHelper.Lint(finalPath, oldContent, content);
 
-                    File.WriteAllText(finalPath, content);
-                    _logger.LogInformation("write_file succeeded ({Bytes} chars)", content.Length);
-                    _logger.SensitiveDebug("write_file path: {Path}", requested);
-                    return Task.FromResult<object?>(exists
-                        ? $"File '{rel}' updated."
-                        : $"File '{rel}' created.");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "write_file failed");
-                    return Task.FromResult<object?>($"Error: Could not write file ({ex.Message}).");
-                }
-            });
+            var write = AtomicTextWriter.Write(finalPath, content);
+            int lineCount = CountLines(content);
+
+            _logger.LogInformation(
+                "write_file succeeded ({Bytes} bytes, {Lines} lines, crlf={Crlf}, bom={Bom})",
+                write.BytesWritten, lineCount, write.UsedCrlf, write.HadBom);
+            _logger.SensitiveDebug("write_file path: {Path}", requested);
+
+            var result = WriteResult.Ok(rel, write.BytesWritten, lineCount, lint, warning, !existsNow);
+            return Task.FromResult<object?>(ClampResult(result));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "write_file failed");
+            return Task.FromResult<object?>(WriteResult.Failed($"Error: Could not write file ({ex.Message})."));
+        }
+    }
+
+    /// <summary>Counts logical lines (LF-delimited, trailing newline not counted as an extra line).</summary>
+    private static int CountLines(string content)
+    {
+        if (content.Length == 0) return 0;
+        int lines = 1;
+        foreach (var c in content)
+            if (c == '\n') lines++;
+        if (content.EndsWith('\n')) lines--; // trailing newline doesn't add a phantom line
+        return lines;
+    }
+
+    /// <summary>
+    /// Honors the 100K-char serialized-result cap. The structural fields are tiny; only lint/_warning
+    /// can grow, so truncate those rather than the whole object when the serialized form is over cap.
+    /// </summary>
+    private static WriteResult ClampResult(WriteResult result)
+    {
+        const int Cap = 100_000;
+        var json = JsonSerializer.Serialize(result);
+        if (json.Length <= Cap) return result;
+
+        return result with
+        {
+            lint = Truncate(result.lint, 2000),
+            _warning = Truncate(result._warning, 2000)
+        };
+    }
+
+    private static string? Truncate(string? s, int max)
+        => s is null || s.Length <= max ? s : s[..max] + "…(truncated)";
+
+    /// <summary>
+    /// INTERNAL-CONTENT GUARD heuristic: returns true when the majority of (non-empty) lines look like
+    /// read_file echo — a line number then a pipe (e.g. <c>12|foo</c>) — or the content leads with the
+    /// <c>total_lines=</c> header read_file emits. Conservative: requires at least a few lines so a tiny
+    /// legitimate file (e.g. a one-line config that happens to start with a digit and a pipe) is not
+    /// falsely rejected.
+    /// </summary>
+    private static bool LooksLikeReadFileEcho(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return false;
+
+        var lines = content.Split('\n');
+        // Strip a trailing-newline empty element.
+        int len = lines.Length;
+        if (len > 0 && lines[len - 1].Length == 0) len--;
+        if (len < 3) return false; // too small to judge confidently
+
+        int nonEmpty = 0, numbered = 0;
+        for (int i = 0; i < len; i++)
+        {
+            var line = lines[i];
+            if (line.EndsWith('\r')) line = line[..^1];
+            if (line.Length == 0) continue;
+            nonEmpty++;
+            if (IsLineNumberPrefixed(line)) numbered++;
+        }
+        if (nonEmpty == 0) return false;
+
+        // A clear read_file echo also carries the header; treat that as a strong signal.
+        bool hasHeader = (lines[0].StartsWith("total_lines=", StringComparison.Ordinal));
+
+        // Majority of non-empty lines are N|… → echo.
+        return numbered * 2 > nonEmpty || (hasHeader && numbered * 3 >= nonEmpty);
+    }
+
+    private static bool IsLineNumberPrefixed(string line)
+    {
+        int i = 0;
+        while (i < line.Length && char.IsDigit(line[i])) i++;
+        return i > 0 && i < line.Length && line[i] == '|';
+    }
+
+    /// <summary>
+    /// Structured write_file return. <c>FilesToolCall.Execute</c> is <c>Func&lt;Task&lt;object?&gt;&gt;</c>
+    /// and the tool loop hands the object straight to <c>FunctionResultContent</c>, which JSON-serializes
+    /// it for the provider — so an object return is wire-compatible. snake_case names match the prompt
+    /// contract; null fields are omitted by the serializer's default behavior is not relied upon, callers
+    /// read them by name.
+    /// </summary>
+    private sealed record WriteResult(
+        bool success,
+        string? resolved_path,
+        long bytes_written,
+        int lines,
+        string? lint,
+        string? _warning,
+        string? error,
+        bool created)
+    {
+        public static WriteResult Ok(string rel, long bytes, int lines, string? lint, string? warning, bool created)
+            => new(true, rel, bytes, lines, lint, warning, null, created);
+
+        public static WriteResult Failed(string error)
+            => new(false, null, 0, 0, null, null, error, false);
     }
 
     private FilesToolCall PrepareDeleteFile(string root, IDictionary<string, object?> args)
@@ -798,6 +954,50 @@ public class FilesToolHandler : IFilesToolHandler
             return value?.ToString() ?? string.Empty;
         }
         return string.Empty;
+    }
+
+    /// <summary>
+    /// Missing-vs-present accessor for required string args. Returns false (with a corrective error)
+    /// when the key is absent or null (so a dropped 'content' never silently writes an empty file) or
+    /// when the value is present but not a JSON string (so an object/array isn't coerced to a file).
+    /// An explicit empty string is valid (intentional truncation to empty).
+    /// </summary>
+    private static bool TryGetRequiredStringArg(
+        IDictionary<string, object?> args, string key, out string value, out string error)
+    {
+        value = string.Empty;
+        error = string.Empty;
+
+        if (!args.TryGetValue(key, out var raw) || raw is null)
+        {
+            error = $"Error: '{key}' is missing. Re-emit the call with the full '{key}' as a JSON string.";
+            return false;
+        }
+
+        if (raw is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Null)
+            {
+                error = $"Error: '{key}' is null. Re-emit the call with the full '{key}' as a JSON string.";
+                return false;
+            }
+            if (element.ValueKind != JsonValueKind.String)
+            {
+                error = $"Error: '{key}' must be a JSON string, not {element.ValueKind.ToString().ToLowerInvariant()}.";
+                return false;
+            }
+            value = element.GetString() ?? string.Empty;
+            return true;
+        }
+
+        if (raw is string s)
+        {
+            value = s;
+            return true;
+        }
+
+        error = $"Error: '{key}' must be a JSON string.";
+        return false;
     }
 
     private static string? GetOptionalStringArg(IDictionary<string, object?> args, string key)

@@ -43,11 +43,21 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             _ => null
         } : null;
 
-        var details = pendingAction.Details is not null
+        // Files write_file carries a true line-level diff preview that bypasses the Label/Value
+        // ParseKeyValueText path used for every other plugin. The card renders DiffLines instead.
+        var isFilesDiff = category == ActionCardCategory.Files && pendingAction.DiffPreview is { Count: > 0 };
+
+        var details = !isFilesDiff && pendingAction.Details is not null
             ? pendingAction.PluginName == "memory"
                 ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.Details), detokenize))
                 : new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details), detokenize))
             : new ObservableCollection<ActionCardDetail>();
+
+        var diffLines = isFilesDiff
+            ? new ObservableCollection<DiffLine>(
+                pendingAction.DiffPreview!.Select(d =>
+                    new DiffLine(d.Kind, detokenize ? _tokenMapService.Detokenize(d.Text) : d.Text)))
+            : new ObservableCollection<DiffLine>();
 
         return new ActionCardInfo
         {
@@ -58,6 +68,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             IsDestructive = isDelete,
             WarningText = warningText,
             Details = details,
+            DiffLines = diffLines,
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, category)),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, category)),
         };

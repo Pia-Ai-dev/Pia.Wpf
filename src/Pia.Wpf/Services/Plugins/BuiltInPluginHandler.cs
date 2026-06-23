@@ -194,7 +194,8 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
-                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute));
+                    pending.ToolName, config.Name, pending.Description, pending.Details, pending.Execute,
+                    pending.DiffPreview));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson),

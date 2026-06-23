@@ -131,6 +131,58 @@
             </TextBlock.Style>
           </TextBlock>
 
+          <!-- Line-level diff (write_file) -->
+          <ItemsControl ItemsSource="{Binding DiffLines}"
+                        Margin="0,0,0,4">
+            <ItemsControl.Style>
+              <Style TargetType="ItemsControl">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding HasDiff}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ItemsControl.Style>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Padding="6,0">
+                  <Border.Style>
+                    <Style TargetType="Border">
+                      <Setter Property="Background" Value="Transparent" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Added}">
+                          <Setter Property="Background" Value="#1A2EA043" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Removed}">
+                          <Setter Property="Background" Value="#1AC42B1C" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Border.Style>
+                  <TextBlock FontFamily="Consolas, Cascadia Code, Courier New, monospace"
+                             FontSize="12"
+                             TextWrapping="Wrap">
+                    <TextBlock.Style>
+                      <Style TargetType="TextBlock">
+                        <Setter Property="Text" Value="{Binding Text}" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Added}">
+                            <Setter Property="Foreground" Value="#2EA043" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Removed}">
+                            <Setter Property="Foreground" Value="#C42B1C" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </TextBlock.Style>
+                  </TextBlock>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
           <!-- Old values (for updates) -->
           <StackPanel>
             <StackPanel.Style>

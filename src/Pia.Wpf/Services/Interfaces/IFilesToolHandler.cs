@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Pia.Models;
 
 namespace Pia.Services.Interfaces;
 
@@ -7,7 +8,8 @@ public record FilesToolCall(
     string Description,
     string? Details,
     string? TargetPath,
-    Func<Task<object?>> Execute);
+    Func<Task<object?>> Execute,
+    IReadOnlyList<DiffLine>? DiffPreview = null);
 
 public interface IFilesToolHandler
 {
