@@ -6,12 +6,21 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              d:DesignHeight="500" d:DesignWidth="380">
 
   <UserControl.Resources>
     <converters:FlowRelativeTimeConverter x:Key="FlowRelativeTimeConverter" />
     <converters:FlowSourceToSymbolConverter x:Key="FlowSourceToSymbolConverter" />
+
+    <!-- Shared rail-box geometry: the collapsed-rail arrival peek (PeekHost) mirrors the Rail's box so a
+         peeked card lands exactly where its real rail card will sit. Keeping one source for these values
+         stops the two boxes from drifting apart when either is tweaked. -->
+    <sys:Double x:Key="FlowRailWidth">340</sys:Double>
+    <Thickness x:Key="FlowRailMargin">0,44,0,12</Thickness>
+    <Thickness x:Key="FlowRailBorderThickness">1,1,0,1</Thickness>
+    <Thickness x:Key="FlowRailContentMargin">14,12,14,12</Thickness>
 
     <!-- Arrival peek: the arriving card slides in from the right edge to its docked rail position,
          lingers, then retracts — mirroring the rail's own open animation (X 360→0, CubicEase) so a
@@ -274,12 +283,12 @@
     <!-- Rail -->
     <Border x:Name="Rail"
             Panel.ZIndex="1"
-            Width="340"
-            Margin="0,44,0,12"
+            Width="{StaticResource FlowRailWidth}"
+            Margin="{StaticResource FlowRailMargin}"
             HorizontalAlignment="Right"
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush_}"
-            BorderThickness="1,1,0,1"
+            BorderThickness="{StaticResource FlowRailBorderThickness}"
             CornerRadius="12,0,0,12"
             Visibility="{Binding IsOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
             RenderTransformOrigin="1,0.5">
@@ -310,7 +319,7 @@
         </Style>
       </Border.Style>
 
-      <Grid Margin="14,12,14,12">
+      <Grid Margin="{StaticResource FlowRailContentMargin}">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
@@ -402,16 +411,16 @@
          the rail is collapsed (see OnItemArrived); the card slides in from the right like the rail does. -->
     <Border x:Name="PeekHost"
             Panel.ZIndex="3"
-            Width="340"
-            Margin="0,44,0,12"
+            Width="{StaticResource FlowRailWidth}"
+            Margin="{StaticResource FlowRailMargin}"
             HorizontalAlignment="Right"
-            BorderThickness="1,1,0,1"
+            BorderThickness="{StaticResource FlowRailBorderThickness}"
             IsHitTestVisible="False"
             Opacity="0">
       <Border.RenderTransform>
         <TranslateTransform X="360" />
       </Border.RenderTransform>
-      <Grid Margin="14,12,14,12">
+      <Grid Margin="{StaticResource FlowRailContentMargin}">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />

@@ -59,9 +59,13 @@ public partial class FlowViewModel : ObservableObject, IDisposable
     public event EventHandler<FlowItem>? ItemArrived;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOpen))]
+    [NotifyPropertyChangedFor(nameof(IsOverlayMode))]
     private bool _isExpanded;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOpen))]
+    [NotifyPropertyChangedFor(nameof(IsOverlayMode))]
     private bool _isPinned;
 
     /// <summary>The rail is shown when expanded (overlay) or pinned (docked).</summary>
@@ -70,22 +74,12 @@ public partial class FlowViewModel : ObservableObject, IDisposable
     /// <summary>Overlay mode = open but not pinned; a scrim catches outside clicks to collapse.</summary>
     public bool IsOverlayMode => IsOpen && !IsPinned;
 
-    partial void OnIsExpandedChanged(bool value) => RaiseOpenStateChanged();
-
-    private int _liveCount;
     /// <summary>The actionable backlog: count of live persistent items (the badge, design §4).</summary>
-    public int LiveCount
-    {
-        get => _liveCount;
-        private set => SetProperty(ref _liveCount, value);
-    }
+    [ObservableProperty]
+    private int _liveCount;
 
+    [ObservableProperty]
     private bool _isEmpty = true;
-    public bool IsEmpty
-    {
-        get => _isEmpty;
-        private set => SetProperty(ref _isEmpty, value);
-    }
 
     [RelayCommand]
     private void ToggleExpand() => IsExpanded = !IsExpanded;
@@ -97,11 +91,8 @@ public partial class FlowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void TogglePin() => IsPinned = !IsPinned;
 
-    partial void OnIsPinnedChanged(bool value)
-    {
-        RaiseOpenStateChanged();
-        _ = SavePinStateAsync(value);
-    }
+    // The generated setter already raises IsOpen/IsOverlayMode (NotifyPropertyChangedFor above); just persist.
+    partial void OnIsPinnedChanged(bool value) => _ = SavePinStateAsync(value);
 
     [RelayCommand]
     private void ClearAll() => _flow.Clear();

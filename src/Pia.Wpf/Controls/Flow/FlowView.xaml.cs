@@ -92,7 +92,9 @@ public partial class FlowView : UserControl
         // Only the card paints a background, so the host's empty regions still pass clicks through.
         PeekHost.IsHitTestVisible = true;
 
-        _activePeek = item.Severity is FlowSeverity.Info or FlowSeverity.Success ? _peekWhisper : _peekAssertive;
+        // Warning and up peek more assertively — follows FlowSeverity's documented ascending ordering,
+        // so a new severity slots in by its rank instead of needing a new case here.
+        _activePeek = item.Severity >= FlowSeverity.Warning ? _peekAssertive : _peekWhisper;
         _activePeek?.Begin(PeekHost, isControllable: true);
 
         if (Resources["BadgePulse"] is Storyboard pulse)
