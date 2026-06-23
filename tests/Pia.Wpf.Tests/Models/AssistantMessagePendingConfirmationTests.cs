@@ -53,7 +53,7 @@ public class AssistantMessagePendingConfirmationTests
         msg.ActionCards.Add(card);
         var raised = CapturePropertyChanges(msg);
 
-        card.AcceptCommand.Execute(null);
+        card.AllowOnceCommand.Execute(null);
 
         Assert.False(msg.HasPendingConfirmation);
         Assert.Contains(nameof(AssistantMessage.HasPendingConfirmation), raised);
@@ -81,10 +81,10 @@ public class AssistantMessagePendingConfirmationTests
         msg.ActionCards.Add(second);
         var raised = CapturePropertyChanges(msg);
 
-        first.AcceptCommand.Execute(null);
+        first.AllowOnceCommand.Execute(null);
         Assert.True(msg.HasPendingConfirmation);
 
-        second.AcceptCommand.Execute(null);
+        second.AllowOnceCommand.Execute(null);
         Assert.False(msg.HasPendingConfirmation);
         Assert.Contains(nameof(AssistantMessage.HasPendingConfirmation), raised);
     }

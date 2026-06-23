@@ -442,7 +442,11 @@ public sealed class ChatSession : IDisposable
             SetState(ChatState.WaitingForTool);
             try
             {
-                confirmed = await card.WaitForUserDecisionAsync();
+                // Chunk 3: the gate now yields a ToolDecision. The grant/bypass branching
+                // (AlwaysAllow → persist a grant; eligibility-gated auto-approve) lands in Chunk 4;
+                // for now AllowOnce and AlwaysAllow both confirm, Decline does not.
+                var decision = await card.WaitForUserDecisionAsync();
+                confirmed = decision != ToolDecision.Decline;
             }
             catch (TaskCanceledException)
             {

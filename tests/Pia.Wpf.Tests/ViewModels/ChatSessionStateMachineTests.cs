@@ -197,7 +197,7 @@ public class ChatSessionStateMachineTests
             Category = ActionCardCategory.Todo,
             ToolName = "create_todo",
         };
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
 
@@ -234,7 +234,7 @@ public class ChatSessionStateMachineTests
         // Spin until the card is pending, then accept it.
         await WaitUntilAsync(() => card.IsPending);
         Assert.Equal(ChatState.WaitingForTool, session.State);
-        card.AcceptCommand.Execute(null);
+        card.AllowOnceCommand.Execute(null);
 
         await run;
 

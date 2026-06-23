@@ -1,4 +1,5 @@
 using NSubstitute;
+using Pia.Controls.Cards;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -15,6 +16,9 @@ namespace Pia.Tests.Services;
 public class ActionCardBuilderTests
 {
     private static ActionCardBuilder CreateBuilder(out ITokenMapService tokenMap)
+        => CreateBuilder(out tokenMap, out _);
+
+    private static ActionCardBuilder CreateBuilder(out ITokenMapService tokenMap, out IToolPermissionService permissions)
     {
         var localization = Substitute.For<ILocalizationService>();
         localization[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
@@ -22,7 +26,13 @@ public class ActionCardBuilderTests
             .Returns(ci => $"{ci.ArgAt<string>(0)}({string.Join(",", ci.ArgAt<object[]>(1))})");
 
         tokenMap = Substitute.For<ITokenMapService>();
-        return new ActionCardBuilder(localization, tokenMap);
+        permissions = Substitute.For<IToolPermissionService>();
+        // Eligibility classification is exercised by ToolPermissionServiceTests; the builder
+        // tests stub just the names they need to verify the triad-vs-pair mapping.
+        permissions.IsAutoApproveEligible("create_todo").Returns(true);
+        permissions.IsAutoApproveEligible("write_file").Returns(false);
+        permissions.IsAutoApproveEligible("delete_file").Returns(false);
+        return new ActionCardBuilder(localization, tokenMap, permissions);
     }
 
     private static PluginToolCall Call(string toolName, string pluginName, string description, string? details = null, Guid pluginId = default) =>
@@ -86,5 +96,56 @@ public class ActionCardBuilderTests
     {
         var builder = CreateBuilder(out _);
         Assert.Equal(expectedKey, builder.ResolveSuccessTitle(pluginName));
+    }
+
+    [Fact]
+    public void Build_EligibleTool_CarriesPluginIdAndIsAutoApprovable_WithTriadDecisions()
+    {
+        var builder = CreateBuilder(out _, out _);
+        var pluginId = Guid.NewGuid();
+
+        var card = builder.Build(Call("create_todo", "todo", "Create a todo", pluginId: pluginId), detokenize: false);
+
+        Assert.Equal(pluginId, card.PluginId);
+        Assert.True(card.IsAutoApprovable);
+        Assert.False(card.IsAutoApproved);
+
+        // Triad: Decline (Default), Allow once (Primary), Always allow (Default).
+        Assert.Equal(3, card.Decisions.Count);
+        Assert.Equal("ActionCard_Decline", card.Decisions[0].Label);
+        Assert.Equal(DecisionEmphasis.Default, card.Decisions[0].Emphasis);
+        Assert.Equal("ActionCard_AllowOnce", card.Decisions[1].Label);
+        Assert.Equal(DecisionEmphasis.Primary, card.Decisions[1].Emphasis);
+        Assert.Equal("ActionCard_AlwaysAllow", card.Decisions[2].Label);
+        Assert.Equal(DecisionEmphasis.Default, card.Decisions[2].Emphasis);
+    }
+
+    [Theory]
+    [InlineData("write_file", "files")]
+    [InlineData("delete_file", "files")]
+    public void Build_IneligibleTool_HasDeclineAndAllowOncePair_NoAlwaysAllow(string toolName, string pluginName)
+    {
+        var builder = CreateBuilder(out _, out _);
+
+        var card = builder.Build(Call(toolName, pluginName, "do the thing"), detokenize: false);
+
+        Assert.False(card.IsAutoApprovable);
+        Assert.Equal(2, card.Decisions.Count);
+        Assert.Equal("ActionCard_Decline", card.Decisions[0].Label);
+        Assert.Equal("ActionCard_AllowOnce", card.Decisions[1].Label);
+        Assert.DoesNotContain(card.Decisions, d => d.Label == "ActionCard_AlwaysAllow");
+    }
+
+    [Fact]
+    public void Build_AutoApproved_ReturnsPreResolvedAcceptedCard()
+    {
+        var builder = CreateBuilder(out _, out _);
+
+        var card = builder.Build(Call("create_todo", "todo", "Create a todo"), detokenize: false, autoApproved: true);
+
+        Assert.Equal(ActionCardState.Accepted, card.State);
+        Assert.True(card.IsAutoApproved);
+        Assert.NotEmpty(card.AutoApprovedStatusText);
+        Assert.Equal(card.AutoApprovedStatusText, card.ResolvedStatusText);
     }
 }

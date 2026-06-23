@@ -665,6 +665,9 @@
   <!-- Action Cards -->
   <data name="ActionCard_Accept" xml:space="preserve"><value>Akzeptieren</value></data>
   <data name="ActionCard_Decline" xml:space="preserve"><value>Ablehnen</value></data>
+  <data name="ActionCard_AllowOnce" xml:space="preserve"><value>Einmal zulassen</value></data>
+  <data name="ActionCard_AlwaysAllow" xml:space="preserve"><value>Immer zulassen</value></data>
+  <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Automatisch genehmigt · {0} immer zulassen</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>
