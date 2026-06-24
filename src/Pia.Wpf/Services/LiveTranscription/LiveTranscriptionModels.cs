@@ -20,13 +20,35 @@ public static class LiveTranscriptionModels
     private const string SherpaReleasesBase =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
 
+    // NOTE: the "recongition" misspelling is part of the actual GitHub release tag — do NOT
+    // "correct" it. The misspelled tag is the one that serves the model (Content-Length
+    // 28,281,164); the correctly-spelled URL 404s.
+    private const string SherpaSpeakerReleasesBase =
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models";
+
     private const string SileroVadFileName = "silero_vad.onnx";
     private const string SileroVadDownloadUrl =
         "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
 
+    private const string SpeakerEmbeddingFileName =
+        "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
+
     public static string ModelsDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Pia", "Models");
+
+    /// <summary>
+    /// Flat path of the speaker-embedding model (mirrors the Silero VAD layout — the model is
+    /// a single <c>.onnx</c>, not a sherpa-onnx bundle, so it is not nested under a sub-directory).
+    /// </summary>
+    public static string SpeakerEmbeddingModelPath { get; } =
+        Path.Combine(ModelsDirectory, SpeakerEmbeddingFileName);
+
+    public static bool IsSpeakerEmbeddingAvailable()
+    {
+        return File.Exists(SpeakerEmbeddingModelPath)
+            && new FileInfo(SpeakerEmbeddingModelPath).Length > 0;
+    }
 
     public static async Task<string> EnsureSileroVadAsync(
         IHttpClientFactory httpClientFactory,
@@ -40,6 +62,38 @@ public static class LiveTranscriptionModels
         logger.LogInformation("Downloading Silero VAD model to {Path}", path);
         var http = httpClientFactory.CreateClient();
         using var resp = await http.GetAsync(SileroVadDownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        resp.EnsureSuccessStatusCode();
+
+        var tmp = path + ".tmp";
+        await using (var dst = File.Create(tmp))
+        await using (var src = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await src.CopyToAsync(dst, cancellationToken).ConfigureAwait(false);
+        }
+        File.Move(tmp, path, overwrite: true);
+        return path;
+    }
+
+    /// <summary>
+    /// Downloads (if missing) the 3D-Speaker CAM++ speaker-embedding model to
+    /// <c>%LOCALAPPDATA%\Pia\Models\</c> and returns its path. Mirrors
+    /// <see cref="EnsureSileroVadAsync"/>: a single <c>.onnx</c> fetched straight to a
+    /// <c>.tmp</c> file and atomically moved into place.
+    /// </summary>
+    public static async Task<string> EnsureSpeakerEmbeddingAsync(
+        IHttpClientFactory httpClientFactory,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(ModelsDirectory);
+        var path = Path.Combine(ModelsDirectory, SpeakerEmbeddingFileName);
+        if (File.Exists(path) && new FileInfo(path).Length > 0) return path;
+
+        var url = $"{SherpaSpeakerReleasesBase}/{SpeakerEmbeddingFileName}";
+        logger.LogInformation("Downloading speaker-embedding model to {Path}", path);
+        var http = httpClientFactory.CreateClient();
+        using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
 
