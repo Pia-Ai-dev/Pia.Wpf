@@ -37,6 +37,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     private readonly Dictionary<string, SpeakerCentroid> _speakers = new();
     private readonly Dictionary<string, string> _displayLabels = new(); // internalId → label
     private int _counter;
+    private bool _disposed;
 
     public SpeakerIdentificationService(string modelPath, float matchThreshold, ILogger logger)
     {
@@ -171,11 +172,26 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     {
         lock (_lock)
         {
-            _speakers.Clear();
-            _displayLabels.Clear();
-            _counter = 0;
+            WipeBiometricStateUnderLock();
             _logger.LogInformation("Speaker identification state reset");
         }
+    }
+
+    /// <summary>
+    /// Actively erase all in-memory biometric state: zero each centroid's float[] vector
+    /// (so the embedding bytes don't linger on the managed heap waiting for GC), then drop
+    /// the centroid store, the display-label map (which may hold user-typed renamed names),
+    /// and reset the speaker counter. Caller must hold <see cref="_lock"/>.
+    /// </summary>
+    private void WipeBiometricStateUnderLock()
+    {
+        foreach (var centroid in _speakers.Values)
+        {
+            Array.Clear(centroid.Centroid);
+        }
+        _speakers.Clear();
+        _displayLabels.Clear();
+        _counter = 0;
     }
 
     private float[] ComputeEmbedding(float[] samples, int sampleRate)
@@ -190,6 +206,13 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     {
         lock (_lock)
         {
+            if (_disposed) return;
+            _disposed = true;
+
+            // Actively erase voice embeddings/centroids and any user-typed labels before the
+            // native extractor goes — so when a meeting ends no biometric data lingers in
+            // managed memory waiting for GC. Idempotent + thread-safe (under _lock).
+            WipeBiometricStateUnderLock();
             _extractor.Dispose();
         }
     }
