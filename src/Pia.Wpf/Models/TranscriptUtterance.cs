@@ -9,4 +9,5 @@ public enum TranscriptSpeaker
 public sealed record TranscriptUtterance(
     TranscriptSpeaker Speaker,
     string Text,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    string? SpeakerLabel = null);

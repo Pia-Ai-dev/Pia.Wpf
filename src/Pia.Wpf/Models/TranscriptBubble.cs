@@ -23,12 +23,29 @@ public sealed partial class TranscriptBubble : ObservableObject
     [ObservableProperty]
     private bool _isListening;
 
-    public TranscriptBubble(TranscriptSpeaker speaker, DateTimeOffset startTimestamp, string text = "")
+    /// <summary>
+    /// Per-speaker identity label ("Speaker 1", "Speaker 2", …) produced by the diarizer,
+    /// or null when undiarized. Mutable so an in-session rename can retroactively relabel
+    /// existing bubbles.
+    /// </summary>
+    [ObservableProperty]
+    private string? _speakerLabel;
+
+    /// <summary>
+    /// View-side palette slot (0..4) assigned by the view model from <see cref="SpeakerLabel"/>.
+    /// Identity (the label) stays decoupled from the view (this color index).
+    /// </summary>
+    [ObservableProperty]
+    private int _colorIndex;
+
+    public TranscriptBubble(TranscriptSpeaker speaker, DateTimeOffset startTimestamp,
+                            string text = "", string? speakerLabel = null)
     {
         Speaker = speaker;
         StartTimestamp = startTimestamp;
         _endTimestamp = startTimestamp;
         _text = text ?? string.Empty;
+        _speakerLabel = speakerLabel;
     }
 
     public void Append(string text, DateTimeOffset endTimestamp)

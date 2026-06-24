@@ -113,6 +113,11 @@ public class AppSettings
     // (inaudible) — requires Windows 10 build 20348+ and is currently UNVERIFIED in production.
     public bool MeetingAttendeeUseProcessLoopback { get; set; } = false;
 
+    // Per-speaker diarization for the meeting attendee. On by default; degrades to single-bubble
+    // behavior if the speaker-embedding model is unavailable. Local-only (no SyncSettings mirror).
+    public bool EnableMeetingDiarization { get; set; } = true;
+    public float SpeakerEmbeddingThreshold { get; set; } = 0.70f;
+
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 

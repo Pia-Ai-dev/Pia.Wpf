@@ -53,4 +53,55 @@ public class TranscriptBubbleTests
 
         Assert.Equal(start.AddSeconds(10), bubble.EndTimestamp);
     }
+
+    [Fact]
+    public void Ctor_FourArg_SetsSpeakerLabel()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var bubble = new TranscriptBubble(TranscriptSpeaker.Them, start, "hi", "Speaker 1");
+
+        Assert.Equal("Speaker 1", bubble.SpeakerLabel);
+        Assert.Equal(0, bubble.ColorIndex);
+    }
+
+    [Fact]
+    public void Ctor_ThreeArg_LeavesSpeakerLabelNull()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var bubble = new TranscriptBubble(TranscriptSpeaker.Them, start, "hi");
+
+        Assert.Null(bubble.SpeakerLabel);
+    }
+
+    [Fact]
+    public void SpeakerLabel_IsObservable_AndMutable()
+    {
+        var bubble = new TranscriptBubble(TranscriptSpeaker.Them, DateTimeOffset.UtcNow);
+        var raised = new List<string?>();
+        bubble.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TranscriptBubble.SpeakerLabel)) raised.Add(bubble.SpeakerLabel);
+        };
+
+        bubble.SpeakerLabel = "Marco";
+
+        Assert.Equal("Marco", bubble.SpeakerLabel);
+        Assert.Equal(new string?[] { "Marco" }, raised);
+    }
+
+    [Fact]
+    public void ColorIndex_IsObservable_AndMutable()
+    {
+        var bubble = new TranscriptBubble(TranscriptSpeaker.Them, DateTimeOffset.UtcNow);
+        var raised = new List<int>();
+        bubble.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TranscriptBubble.ColorIndex)) raised.Add(bubble.ColorIndex);
+        };
+
+        bubble.ColorIndex = 3;
+
+        Assert.Equal(3, bubble.ColorIndex);
+        Assert.Equal(new[] { 3 }, raised);
+    }
 }

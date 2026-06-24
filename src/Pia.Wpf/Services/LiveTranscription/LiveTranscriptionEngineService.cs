@@ -22,6 +22,11 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private readonly ITranscriptionEngine _engine;
     private readonly ChannelWriter<TranscriptUtterance> _sink;
     private readonly ILogger _logger;
+    private readonly ISpeakerIdentificationService? _speakerId;
+
+    // Minimum segment length (1.5 s @ 16 kHz) before we attempt diarization. The
+    // SileroVadDetector emits segments down to 0.5 s; sub-1.5 s embeddings poison centroids.
+    private const int MinDiarizationSamples = 16000 * 3 / 2;
 
     private readonly Channel<float[]> _segmentQueue;
     private Task? _readerLoop;
@@ -35,13 +40,15 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         string sileroVadModelPath,
         ITranscriptionEngine engine,
         ChannelWriter<TranscriptUtterance> sink,
-        ILogger logger)
+        ILogger logger,
+        ISpeakerIdentificationService? speakerId = null)
     {
         _speaker = speaker;
         _source = source;
         _engine = engine;
         _sink = sink;
         _logger = logger;
+        _speakerId = speakerId;
 
         _logger.LogInformation("Engine init: speaker={Speaker}", speaker);
 
@@ -141,6 +148,13 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _logger.LogDebug("Engine start: {Speaker} {Samples} samples", _speaker, samples.Length);
         try
         {
+            string? speakerLabel = null;
+            if (_speakerId is not null && samples.Length >= MinDiarizationSamples)
+            {
+                try { speakerLabel = _speakerId.IdentifyOrRegister(samples, 16000); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
+            }
+
             var text = await _engine.TranscribeAsync(samples, cancellationToken).ConfigureAwait(false);
             sw.Stop();
             if (string.IsNullOrWhiteSpace(text))
@@ -153,7 +167,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 "Engine done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
                 _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
 
-            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now);
+            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* shutdown */ }
