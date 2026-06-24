@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Flow;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
@@ -32,9 +33,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IActionCardBuilder _actionCardBuilder;
     private readonly IPluginService _pluginService;
     private readonly IAiClientService _aiClientService;
+    private readonly IToolPermissionService _permissionService;
     private readonly ILocalizationService _localizationService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly IBackgroundChatNotifier _backgroundChatNotifier;
+    private readonly IFlowService _flowService;
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly SynchronizationContext _syncContext;
 
@@ -78,9 +81,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IActionCardBuilder actionCardBuilder,
         IPluginService pluginService,
         IAiClientService aiClientService,
+        IToolPermissionService permissionService,
         ILocalizationService localizationService,
         Func<ITokenMapService> tokenMapFactory,
         IBackgroundChatNotifier backgroundChatNotifier,
+        IFlowService flowService,
         IFilesToolHandler filesToolHandler)
     {
         _logger = logger;
@@ -94,9 +99,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _actionCardBuilder = actionCardBuilder;
         _pluginService = pluginService;
         _aiClientService = aiClientService;
+        _permissionService = permissionService;
         _localizationService = localizationService;
         _tokenMapFactory = tokenMapFactory;
         _backgroundChatNotifier = backgroundChatNotifier;
+        _flowService = flowService;
         _filesToolHandler = filesToolHandler;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
@@ -114,6 +121,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             _aiClientService,
             _pluginService,
             _actionCardBuilder,
+            _permissionService,
             _localizationService,
             _loggerFactory.CreateLogger<ChatSession>(),
             IsSessionActive);
@@ -194,6 +202,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Clear Completed → Idle on activation: the result is now "read".
         if (session.State == ChatState.Completed)
             session.SetState(ChatState.Idle);
+
+        // Opening/activating the chat resolves its background-chat Flow alert (design §6 auto-retract).
+        // This covers every open path — toast click, Flow link, and in-window navigation — and is a
+        // no-op when no alert is live for this chat.
+        if (session.Id is { } chatId)
+            _flowService.Retract(chatId.ToString());
 
         ActiveChanged?.Invoke(this, session);
 

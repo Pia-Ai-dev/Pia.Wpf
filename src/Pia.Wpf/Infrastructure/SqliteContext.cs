@@ -27,6 +27,13 @@ public class SqliteContext : IDisposable
         _connectionString = $"Data Source={dbPath}";
     }
 
+    /// <summary>
+    /// The connection string for the shared history database. Exposed so components that must write
+    /// from background threads (e.g. Flow persistence) can open their own dedicated connection to the
+    /// same file rather than contend on the single shared <see cref="GetConnection"/> connection.
+    /// </summary>
+    public string ConnectionString => _connectionString;
+
     private static string DefaultDbPath()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

@@ -50,6 +50,7 @@
       <converters:BoolToAngleConverter x:Key="BoolToAngleConverter" />
       <converters:SingleLineConverter x:Key="SingleLineConverter" />
       <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
+      <converters:BoolToReflowMarginConverter x:Key="BoolToReflowMarginConverter" />
       <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushBg" Kind="Background" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushFg" Kind="Foreground" />

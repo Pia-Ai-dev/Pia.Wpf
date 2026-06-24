@@ -665,6 +665,17 @@
   <!-- Action Cards -->
   <data name="ActionCard_Accept" xml:space="preserve"><value>Akzeptieren</value></data>
   <data name="ActionCard_Decline" xml:space="preserve"><value>Ablehnen</value></data>
+  <data name="ActionCard_AllowOnce" xml:space="preserve"><value>Einmal zulassen</value></data>
+  <data name="ActionCard_AlwaysAllow" xml:space="preserve"><value>Immer zulassen</value></data>
+  <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Automatisch genehmigt · {0} immer zulassen</value></data>
+  <data name="ActionCard_Manage" xml:space="preserve"><value>Verwalten</value></data>
+  <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool-Zugriff</value></data>
+  <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Immer erlaubte Tools</value></data>
+  <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools, denen Sie die dauerhafte Erlaubnis erteilt haben, ohne Bestätigung ausgeführt zu werden. Widerrufen Sie eine Erlaubnis, um beim nächsten Aufruf erneut gefragt zu werden.</value></data>
+  <data name="ToolPermissions_Empty" xml:space="preserve"><value>Keine Tools sind immer erlaubt. Wenn Sie bei einem Tool „Immer zulassen“ wählen, erscheint es hier.</value></data>
+  <data name="ToolPermissions_Revoke" xml:space="preserve"><value>Widerrufen</value></data>
+  <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin:</value></data>
+  <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Erteilt:</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>
@@ -769,4 +780,22 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>Ich habe meinen Wiederherstellungscode sicher gespeichert</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Verschlüsselung konnte nicht aktiviert werden</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Verschlüsselung wird eingerichtet…</value></data>
+  <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
+  <data name="Flow_EmptyState" xml:space="preserve"><value>Alles erledigt.</value></data>
+  <data name="Flow_ClearAll" xml:space="preserve"><value>Alle löschen</value></data>
+  <data name="Flow_Pin" xml:space="preserve"><value>Anheften</value></data>
+  <data name="Flow_Unpin" xml:space="preserve"><value>Lösen</value></data>
+  <data name="Flow_Dismiss_Tooltip" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="Flow_Action_OpenChat" xml:space="preserve"><value>Chat öffnen</value></data>
+  <data name="Flow_Action_OpenBriefing" xml:space="preserve"><value>Briefing öffnen</value></data>
+  <data name="Flow_Action_OpenTodo" xml:space="preserve"><value>Aufgabe öffnen</value></data>
+  <data name="Flow_Action_Snooze" xml:space="preserve"><value>Schlummern</value></data>
+  <data name="Flow_Action_Done" xml:space="preserve"><value>Fertig</value></data>
+  <data name="Flow_Action_Dismiss" xml:space="preserve"><value>Verwerfen</value></data>
+  <data name="Flow_BgChat_WaitingForTool" xml:space="preserve"><value>Wartet auf deine Bestätigung</value></data>
+  <data name="Flow_BgChat_Completed" xml:space="preserve"><value>Fertig – zum Ansehen tippen</value></data>
+  <data name="Flow_BgChat_Error" xml:space="preserve"><value>Mit Fehler beendet</value></data>
+  <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing bereit</value></data>
+  <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
+  <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
 </root>

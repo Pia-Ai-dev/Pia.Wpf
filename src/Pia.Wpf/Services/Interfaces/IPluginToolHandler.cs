@@ -6,6 +6,7 @@ namespace Pia.Services.Interfaces;
 
 public record PluginToolCall(
     string ToolName,
+    Guid PluginId,
     string PluginName,
     string Description,
     string? Details,

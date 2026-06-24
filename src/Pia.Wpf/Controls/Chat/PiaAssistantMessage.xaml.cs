@@ -17,6 +17,8 @@ public partial class PiaAssistantMessage : UserControl
         DependencyProperty.Register(nameof(RateCommand), typeof(ICommand), typeof(PiaAssistantMessage));
     public static readonly DependencyProperty SuggestionCommandProperty =
         DependencyProperty.Register(nameof(SuggestionCommand), typeof(ICommand), typeof(PiaAssistantMessage));
+    public static readonly DependencyProperty ManageToolPermissionsCommandProperty =
+        DependencyProperty.Register(nameof(ManageToolPermissionsCommand), typeof(ICommand), typeof(PiaAssistantMessage));
 
     public ICommand? CopyCommand
     {
@@ -46,6 +48,12 @@ public partial class PiaAssistantMessage : UserControl
     {
         get => (ICommand?)GetValue(SuggestionCommandProperty);
         set => SetValue(SuggestionCommandProperty, value);
+    }
+
+    public ICommand? ManageToolPermissionsCommand
+    {
+        get => (ICommand?)GetValue(ManageToolPermissionsCommandProperty);
+        set => SetValue(ManageToolPermissionsCommandProperty, value);
     }
 
     public event EventHandler<PiiKeywordRequest>? AddToPiiRequested;

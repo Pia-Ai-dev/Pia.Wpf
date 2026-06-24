@@ -891,6 +891,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             TimeSpan.FromSeconds(8));
     }
 
+    /// <summary>
+    /// Deep-link from an auto-approved action card's "Manage" affordance to the
+    /// tool-permissions revocation surface: Assistant tab (outer 2) → Tool access
+    /// inner tab (inner 2). SettingsViewModel.OnNavigatedTo maps (2, inner).
+    /// </summary>
+    [RelayCommand]
+    private void NavigateToToolPermissions()
+        => _navigationService.NavigateTo<SettingsViewModel, (int, int)>((2, 2));
+
     private async Task SpeakMessageAsync(AssistantMessage message)
     {
         // Stop any currently speaking message

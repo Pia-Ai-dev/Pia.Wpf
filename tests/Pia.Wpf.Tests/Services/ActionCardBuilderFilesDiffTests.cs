@@ -20,11 +20,12 @@ public class ActionCardBuilderFilesDiffTests
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]!);
 
         tokenMap ??= Substitute.For<ITokenMapService>();
-        return new ActionCardBuilder(loc, tokenMap);
+        var permissions = Substitute.For<IToolPermissionService>();
+        return new ActionCardBuilder(loc, tokenMap, permissions);
     }
 
     private static PluginToolCall FilesWrite(IReadOnlyList<DiffLine>? diff, string? details)
-        => new("write_file", "files", "Update file 'a.txt'", details,
+        => new("write_file", Guid.Empty, "files", "Update file 'a.txt'", details,
             () => Task.FromResult<object?>("ok"), diff);
 
     [Fact]
@@ -69,7 +70,7 @@ public class ActionCardBuilderFilesDiffTests
     {
         // A files action without a diff (e.g. delete_file) still uses the key/value path.
         var card = MakeBuilder().Build(
-            new PluginToolCall("delete_file", "files", "Delete file 'a.txt'", null,
+            new PluginToolCall("delete_file", Guid.Empty, "files", "Delete file 'a.txt'", null,
                 () => Task.FromResult<object?>("ok")),
             detokenize: false);
 

@@ -14,14 +14,19 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 {
     private readonly ILocalizationService _localizationService;
     private readonly ITokenMapService _tokenMapService;
+    private readonly IToolPermissionService _permissions;
 
-    public ActionCardBuilder(ILocalizationService localizationService, ITokenMapService tokenMapService)
+    public ActionCardBuilder(
+        ILocalizationService localizationService,
+        ITokenMapService tokenMapService,
+        IToolPermissionService permissions)
     {
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
+        _permissions = permissions;
     }
 
-    public ActionCardInfo Build(PluginToolCall pendingAction, bool detokenize)
+    public ActionCardInfo Build(PluginToolCall pendingAction, bool detokenize, bool autoApproved = false)
     {
         var category = pendingAction.PluginName switch
         {
@@ -63,19 +68,37 @@ public sealed class ActionCardBuilder : IActionCardBuilder
                     new DiffLine(d.Kind, detokenize ? _tokenMapService.Detokenize(d.Text) : d.Text)))
             : new ObservableCollection<DiffLine>();
 
-        return new ActionCardInfo
+        var title = FormatToolTitle(pendingAction.ToolName, category);
+
+        var card = new ActionCardInfo
         {
-            Title = FormatToolTitle(pendingAction.ToolName, category),
+            Title = title,
             Summary = Detokenize(pendingAction.Description, detokenize),
             Category = category,
             ToolName = pendingAction.ToolName,
+            PluginId = pendingAction.PluginId,
+            IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName),
+            IsAutoApproved = autoApproved,
             IsDestructive = isDelete,
             WarningText = warningText,
             Details = details,
             DiffLines = diffLines,
-            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, category)),
-            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, category)),
+            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", title),
+            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", title),
+            AutoApprovedStatusText = _localizationService.Format("ActionCard_AutoApproved", title),
+            DeclineLabel = _localizationService["ActionCard_Decline"],
+            AllowOnceLabel = _localizationService["ActionCard_AllowOnce"],
+            AlwaysAllowLabel = _localizationService["ActionCard_AlwaysAllow"],
         };
+
+        // [ObservableProperty]-generated State is not init-settable; the auto-approved
+        // bypass card is returned pre-resolved (design §4/§7).
+        if (autoApproved)
+        {
+            card.State = ActionCardState.Accepted;
+        }
+
+        return card;
     }
 
     public string ResolveStatusText(string toolName) => toolName switch

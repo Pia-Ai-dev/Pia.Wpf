@@ -23,6 +23,8 @@ public class ChatSessionManagerTests
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
     private readonly ITokenMapService _tokenMap = Substitute.For<ITokenMapService>();
     private readonly IBackgroundChatNotifier _notifier = Substitute.For<IBackgroundChatNotifier>();
+    private readonly Pia.Services.Flow.IFlowService _flow = Substitute.For<Pia.Services.Flow.IFlowService>();
+    private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
     private readonly IFilesToolHandler _files = Substitute.For<IFilesToolHandler>();
 
     public ChatSessionManagerTests()
@@ -41,8 +43,8 @@ public class ChatSessionManagerTests
             NullLogger<ChatSessionManager>.Instance,
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
-            _titleService, _cards, _plugins, _ai, _loc,
-            () => _tokenMap, _notifier, _files);
+            _titleService, _cards, _plugins, _ai, _permissions, _loc,
+            () => _tokenMap, _notifier, _flow, _files);
     }
 
     [Fact]

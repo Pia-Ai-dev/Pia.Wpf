@@ -112,6 +112,17 @@ public class TodoService : ITodoService
         return await ReadTodoItems(command);
     }
 
+    public async Task<IReadOnlyList<TodoItem>> GetDueWithinAsync(TimeSpan window)
+    {
+        // Load pending todos and filter in C# after DateTime.Parse — a SQL string comparison would
+        // mismatch DueDate (local-midnight, no offset) against the cutoff's format (design §7, §11).
+        var pending = await GetPendingAsync();
+        var cutoff = DateTime.Now.Add(window);
+        return pending
+            .Where(t => t.DueDate.HasValue && t.DueDate.Value <= cutoff)
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<TodoItem>> GetCompletedAsync()
     {
         var connection = _context.GetConnection();
