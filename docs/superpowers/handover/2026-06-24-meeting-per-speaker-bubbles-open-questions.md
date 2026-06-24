@@ -181,3 +181,171 @@ local branch and `origin/feature/meeting_transscription`). (§6 risk #12 — now
 6. **Validate the runtime UI** the tests could not: per-speaker colors render and stay stable, the wrap
    fix actually wraps long lines, auto-scroll stays pinned at the bottom but does not yank a user who has
    scrolled up, and the rename pencil/right-click retroactively relabels live bubbles.
+
+---
+
+## Follow-ups implemented (2026-06-24)
+
+Three of the deferred follow-ups from the original handover were implemented on `feature/meeting_attendee`
+after the handover above was written (which captured state at HEAD `6c109d2`). They are **code-only
+changes**: build is clean and the non-network suite is green (Gate B below), but — as with the original
+migration — **no live meeting and no audio path were exercised by this workflow.** Read
+[The central caveat](#the-central-caveat-read-before-shipping) — it is **unchanged** (restated at the end
+of this section).
+
+**HEAD after these follow-ups:** `94e8423`.
+
+| Commit | Follow-up | What landed |
+|--------|-----------|-------------|
+| `58c8d56` | **#2 — wipe biometric embeddings at meeting end** | `SpeakerIdentificationService` now **actively erases** the in-memory voice embeddings on dispose, instead of leaving them to GC. |
+| `80b11dd` | **#4a — diarization settings UI** | The `EnableMeetingDiarization` toggle and the `SpeakerEmbeddingThreshold` slider are now exposed in the General → **Speech** settings tab. |
+| `8eb9ee5` | **#4b — download-progress dialog** | A progress dialog now shows during the first diarized meeting while the ~27 MB speaker-embedding model downloads; degrade-to-null is preserved on failure. |
+| `94e8423` | **#4b — follow-up fix** | Extracted the `SpeakerModelDownloadUi` helper out of the `Pia.ViewModels` namespace into `Pia.ViewModels.Models` so the `MvvmPatternTests` NetArchTest passes (the helper is plumbing, not an `ObservableObject` view model). No behaviour change. |
+
+### #2 — Biometric embeddings explicitly wiped on dispose (`58c8d56`)
+
+- **File:** `src/Pia.Wpf/Services/LiveTranscription/SpeakerIdentificationService.cs`.
+- **What changed:** dispose previously only called `_extractor.Dispose()` and left `_speakers`
+  (the centroid `float[]` vectors) and `_displayLabels` to garbage collection. Now a private
+  `WipeBiometricStateUnderLock()` (called under `_lock` by **both** `Reset()` and `Dispose()`)
+  `Array.Clear`s **each** `SpeakerCentroid.Centroid` `float[]` to zero **before** clearing the two
+  dictionaries and resetting the counter — i.e. **scrub-the-bytes**, not just drop references. A
+  `_disposed` guard makes `Dispose()` idempotent (prevents a double native
+  `SpeakerEmbeddingExtractor.Dispose()` on any shutdown path that disposes twice).
+- **This upgrades the PRIVACY section's previous wording.** That section said embeddings were
+  "discarded at meeting end (fresh service per meeting)" and "never persisted" — true, but they were
+  *left to GC*. They are now **actively zeroed**. The earlier "discarded / left to GC" framing in
+  [PRIVACY follow-up](#privacy-follow-up-deferred--do-not-lose-this) is superseded by this active erasure
+  for the in-memory centroids.
+- **When it runs:** dispose is invoked at every teardown path — natural end (`WatchForEndAsync` →
+  `StopAsync` → `DisposeAllAsync` → `_speakerId.Dispose()`, after the engine drain), user-clicked stop,
+  and app shutdown all route through `StopAsync`. The `Reset()` path (which now also scrubs) remains
+  effectively dead-call-site code, but sharing the wipe method means it is correct if ever wired up.
+- **No automated test** (sanctioned skip): constructing the real service requires a native ONNX model
+  (its ctor calls `new SpeakerEmbeddingExtractor(config)` and reads `_extractor.Dim`); there is no
+  model-gating test helper to mirror, and a pure test would either leak the private `SpeakerCentroid`
+  type or test a trivial `Array.Clear` wrapper. Correctness is guaranteed structurally by the single
+  shared `WipeBiometricStateUnderLock` used by both paths.
+
+### #4a — Diarization enable toggle + `SpeakerEmbeddingThreshold` in settings (`80b11dd`)
+
+- **Files:** `ViewModels/GeneralSettingsViewModel.cs`, `Views/SettingsViews/GeneralView.xaml`,
+  `Resources/Strings/ViewStrings.resx` (+ `.de.resx`, `.fr.resx`),
+  `tests/Pia.Wpf.Tests/ViewModels/GeneralSettingsViewModelTests.cs` (new).
+- **What shipped:** in the General → **Speech** tab, a CheckBox for `EnableMeetingDiarization`
+  (default **true**, mirrors the existing `AutoCaptureSelectedText` toggle) and, gated on that toggle
+  (`StackPanel IsEnabled="{Binding EnableMeetingDiarization}"`), a Slider for `SpeakerEmbeddingThreshold`
+  (range **0.50–0.95**, default **0.70**, **0.05** tick grid with snap, mirrors the
+  `ChatHistoryRetentionDays` slider) plus an F2 display string. The change handlers persist via
+  `SaveSettingsAsync` guarded by `_isLoading`; the VM also subscribes to `ILocalizationService.LanguageChanged`
+  to re-raise the display on language switch. All user strings are localized in en/de/fr (real
+  translations). Three new unit tests verify load/persist of both properties; all green.
+- **Copy direction verified** against `SpeakerIdentificationService` (`bestSim >= _matchThreshold` ⇒ same
+  speaker, cosine similarity): higher threshold ⇒ voices split more readily / fewer merged; lower ⇒ more
+  grouped.
+- **Scope note (unchanged from the original handover):** these settings only affect the **next** meeting —
+  `MeetingAttendeeService` reads settings and builds the diarizer fresh per `StartAsync`, so there is no
+  live re-bind. This addresses next-step #2's "decide whether a settings UI is warranted" by shipping the
+  UI; the **threshold-tuning question itself remains open** because meaningful tuning still needs
+  real-audio measurement (see central caveat).
+
+### #4b — Download-progress dialog for the speaker-embedding model (`8eb9ee5`, fix `94e8423`)
+
+- **Files:** `Services/Interfaces/ITranscriptionService.cs`,
+  `Services/LiveTranscription/LiveTranscriptionModels.cs`,
+  `Services/MeetingAttendee/IMeetingAttendeeService.cs` + `MeetingAttendeeService.cs`,
+  `ViewModels/MeetingAttendeeViewModel.cs`, the three `ViewStrings` resx files, plus two test stubs
+  updated for the widened signatures; and (in `94e8423`)
+  `ViewModels/Models/SpeakerModelDownloadUi.cs` (extracted helper).
+- **What shipped:** an **additive** optional `IProgress<ModelDownloadProgress>?` threaded from
+  `MeetingAttendeeViewModel.StartAsync` down through the `_createTranscription` seam →
+  `TryCreateSpeakerIdentificationAsync` → `EnsureSpeakerEmbeddingAsync`, which now uses the existing
+  `DownloadWithProgressAsync` helper. The UI reuses the existing `ModelDownloadContentDialog` with a
+  **lazy-show / terminal-dismiss** pattern: the dialog appears only on the first real *Downloading*
+  report (a cached model emits none → no flash; pre-gated on
+  `EnableMeetingDiarization && !IsSpeakerEmbeddingAvailable()`), and a terminal
+  `ModelDownloadProgress(Completed)` report emitted from a **`finally`** dismisses it on success,
+  failure→null, **and** cancellation — so the dialog is never stuck.
+- **Degrade-to-null preserved (unchanged contract):** `TryCreateSpeakerIdentificationAsync` still swallows
+  every exception (including `OperationCanceledException`) and returns null; `Progress<T>.Report` never
+  throws, so reporting cannot make a join fatal. The dialog's **Cancel** is backed by a VM-owned CTS
+  (separate from the start token) and means **"skip diarization, keep joining the meeting"** — it never
+  aborts the meeting join.
+- **A runtime bug was fixed by construction pre-commit:** `CancellationTokenSource.Cancel()` invokes the
+  registered `dialog.Hide()` callback **synchronously** on the caller's thread, and the `Progress<T>`
+  callback runs on a thread-pool thread (past `ConfigureAwait(false)`). Since `ContentDialog` is a
+  `DispatcherObject`, an off-UI-thread `Hide()` would `VerifyAccess`-throw and leave a stuck dialog. The
+  whole progress-handling body (and the dispose backstop) is now routed through the UI dispatcher. Build
+  cannot catch this and runtime is unverified, so it was addressed structurally.
+- **No automated test** for the dialog flow (needs a live WPF dialog host + a real model download); the
+  existing `TryCreateSpeakerIdentificationAsync_*` degrade-to-null tests still pass with the
+  trailing-optional progress param.
+- **`94e8423`** is a pure follow-up refactor: the dialog helper was a private nested class of
+  `MeetingAttendeeViewModel`, so NetArchTest's `ViewModelClasses_MustInherit_ObservableObject` rule
+  failed. It moved unchanged to `Pia.ViewModels.Models.SpeakerModelDownloadUi` (the established home for
+  VM-adjacent non-`ObservableObject` helpers, e.g. `ChatSessionManager`). No behaviour change.
+
+### #3 — null-label SPLIT: deliberately LEFT UNCHANGED
+
+The null-label mid-run **SPLIT** behavior (known limitation #2 / decision #5, pinned by
+`…NullLabelSegmentMidRun_SplitsTheColoredRun`) was **deliberately not touched**. The choice between SPLIT
+and ABSORB depends on whether sub-1.5 s null-label segments visibly chop up a real conversation — an
+observation that **only a real meeting can provide**. Flipping it now would be a guess; the regression
+test still pins today's SPLIT so any future flip remains a deliberate, tested diff. (Original next-step #3
+stays open.)
+
+### Build + test status (Gate B) for these follow-ups
+
+- **Build:** `dotnet build` (full solution incl. tests) → **0 errors**. All warnings are pre-existing and
+  unrelated to the changed files (e.g. `NU1903` SQLitePCLRaw advisory, `MVVMTK0034` in `FlowViewModel`,
+  `xUnit1051` in unrelated test files).
+- **Tests (Gate B):** `dotnet test --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"` →
+  **`Bestanden!` (Passed!)** — total **923**, failed **0**, succeeded **923**, skipped **0**. The +3 over
+  the original handover's 920 are the new `GeneralSettingsViewModelTests`. The ~18 known live-network
+  provider tests remain excluded by the filter.
+
+### The central caveat is UNCHANGED
+
+> **Speaker-label STABILITY on the real mixed downstream loopback stream remains UNVALIDATED.**
+
+None of these three follow-ups exercised a live meeting or any real audio path — they are code, build, and
+unit-test verified only. The one empirical fact the feature hinges on (does one physical voice keep a
+stable label, or fragment into many `"Speaker N"` bubbles on the real mixed loopback stream?) is **still
+not validated**. "The migration achieves its goal" **still cannot be claimed.** Original
+[next steps](#concrete-next-steps-for-the-human) #1 (run a real multi-speaker meeting), #3 (decide
+null-absorb vs split), and the runtime-UI validation (#6) remain open; #2 (settings UI) and the
+biometric-wipe portion of the PRIVACY follow-up are now addressed in code (real-audio threshold tuning
+still pending), and a **first-class biometric-consent surface and any persistent cross-meeting speaker
+memory remain explicitly OUT / deferred.**
+
+### Residual open items (new-code review findings, all low / optional)
+
+A code review of these three follow-ups surfaced only low-severity, non-blocking items (none is a
+functional regression):
+
+1. **No *Downloading* report when the server omits `Content-Length`** (`LiveTranscriptionModels.cs`): the
+   dialog only lazy-shows on a percentage report, which is gated on `totalBytes > 0`. The real GitHub
+   release URL serves `Content-Length` (≈28.3 MB), so the dialog shows in practice; latent only if the
+   CDN/headers change. Optional hardening: emit an indeterminate report on the first chunk when length is
+   unknown.
+2. **`ApplyPhase` has no case for the new `Completed` phase** (`ModelDownloadContentDialog.xaml.cs`, file
+   unchanged but the `Completed` enum + the path routing it to the dialog are new): the terminal
+   `Completed` report can momentarily collapse both panels to a title-only body before `Hide()` wins the
+   race. Optional fix: add a no-op `Completed` case, or filter `Completed` out of the dialog's progress
+   subscription in `SpeakerModelDownloadUi`.
+3. **`DisposeAsync` can hang at app-shutdown** (`SpeakerModelDownloadUi.cs`): if a speaker dialog is still
+   open and the dispatcher has begun shutting down, the queued cancel may never run and the dispose await
+   never completes. Narrow window — on the normal path the terminal `Completed` has already cancelled the
+   CTS so the block is a no-op. Optional: time-box the dismissal wait or check
+   `Dispatcher.HasShutdownStarted`.
+4. **Threshold not snapped to the 0.05 grid on load** (`GeneralSettingsViewModel.cs`): `InitializeAsync`
+   clamps to range but not to the tick grid, so an off-grid stored value (only reachable by a manual
+   settings-file edit) triggers a one-time idempotent re-save when the snapping slider renders. Cosmetic.
+   Optional: snap on load the same way the change handler does.
+5. **No integrity/signature verification on the downloaded model** (pre-existing pattern, **not introduced
+   here**): the ~27 MB CAM++ `.onnx` is fetched over HTTPS and handed to the native extractor with no
+   hash check — the same pattern as the Silero/Whisper/Parakeet downloads. Optional supply-chain
+   hardening: pin and verify a known SHA-256 across all model downloads.
+6. **Threshold StackPanel has two consecutive description `TextBlock`s** (`GeneralView.xaml`): the
+   value-display and the helper-description stack with only 6 px between them — denser than other sliders.
+   Cosmetic. Optional: add a top margin to the second block.
