@@ -71,9 +71,15 @@ public partial class MeetingAttendeeOverlay : UserControl
                 Track(bubble);
         }
 
-        // Keep the existing behavior: any add jumps the view to the latest bubble.
+        // Diarization adds a new bubble on every speaker switch, so re-pin to the latest bubble
+        // only when the user was already at the bottom — gauged synchronously here (CollectionChanged
+        // fires before WPF's layout pass grows the extent) so reading up history is never hijacked.
         if (e.Action == NotifyCollectionChangedAction.Add)
-            Dispatcher.BeginInvoke(new Action(() => BubbleScroll.ScrollToEnd()));
+        {
+            bool atBottom = BubbleScroll.VerticalOffset >= BubbleScroll.ScrollableHeight - AtBottomEpsilon;
+            if (atBottom)
+                Dispatcher.BeginInvoke(new Action(() => BubbleScroll.ScrollToEnd()));
+        }
     }
 
     private void Track(TranscriptBubble bubble)

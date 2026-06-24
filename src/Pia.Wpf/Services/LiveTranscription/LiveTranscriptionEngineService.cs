@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Models;
 
 namespace Pia.Services.LiveTranscription;
@@ -163,7 +164,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 return;
             }
 
-            _logger.LogDebug(
+            _logger.SensitiveDebug(
                 "Engine done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
                 _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
 
