@@ -18,10 +18,10 @@ public sealed class SpeakerToDisplayNameConverter : IMultiValueConverter
         var speaker = values[0] is TranscriptSpeaker s ? s : TranscriptSpeaker.You;
         var label = values.Length >= 2 ? values[1] as string : null;
         return Resolve(speaker, label);
+        return string.IsNullOrWhiteSpace(counterpart) ? "them" : counterpart;
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
-        => throw new NotSupportedException();
 
     /// <summary>
     /// Maps a speaker to the same display label the UI shows. Reused by the Markdown
@@ -33,4 +33,5 @@ public sealed class SpeakerToDisplayNameConverter : IMultiValueConverter
         if (!string.IsNullOrWhiteSpace(speakerLabel)) return speakerLabel!;
         return "Speaker";
     }
+        => throw new NotSupportedException();
 }

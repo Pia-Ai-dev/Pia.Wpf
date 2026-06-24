@@ -40,11 +40,21 @@ public class DiRegistrationTests
             .And().AreInterfaces()
             .GetTypes();
 
-        var allInterfaces = serviceInterfaces.Concat(e2eeInterfaces);
+        // The meeting-attendee interfaces live in their own namespace (Pia.Services.MeetingAttendee), so
+        // enumerate them explicitly — otherwise IMeetingAttendeeService / IBrowserProvisioner would pass
+        // this test only by accident of namespace, never actually verifying their DI registration.
+        var meetingAttendeeInterfaces = Types.InAssembly(PiaAssembly)
+            .That().ResideInNamespace(MeetingAttendeeNamespace)
+            .And().AreInterfaces()
+            .GetTypes();
+
+        var allInterfaces = serviceInterfaces.Concat(e2eeInterfaces).Concat(meetingAttendeeInterfaces);
 
         // INativeHotkeyService is created by INativeHotkeyServiceFactory, not registered directly.
         // IPluginToolHandler implementations are created by PluginService based on plugin kind.
-        var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler" };
+        // IMeetingSession is created by MeetingAttendeeService at runtime with the provisioned Chromium
+        // path (it has no parameterless seam), so it is intentionally not container-registered.
+        var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler", "IMeetingSession" };
 
         var unregistered = allInterfaces
             .Where(i => !factoryCreated.Contains(i.Name))
