@@ -37,9 +37,9 @@ public class AssistantChatService : IAssistantChatService
             upsertChat.Transaction = transaction;
             upsertChat.CommandText = """
                 INSERT INTO AssistantChats
-                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, ExtraJson)
+                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson)
                 VALUES
-                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @ExtraJson)
+                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @ExtraJson)
                 ON CONFLICT(Id) DO UPDATE SET
                     SchemaVersion = excluded.SchemaVersion,
                     Title = excluded.Title,
@@ -47,6 +47,7 @@ public class AssistantChatService : IAssistantChatService
                     LastAccessedAt = excluded.LastAccessedAt,
                     WindowMode = excluded.WindowMode,
                     ProviderId = excluded.ProviderId,
+                    WorkingDirectory = excluded.WorkingDirectory,
                     ExtraJson = excluded.ExtraJson
                 """;
             upsertChat.Parameters.AddWithValue("@Id", chat.Id.ToString());
@@ -57,6 +58,7 @@ public class AssistantChatService : IAssistantChatService
             upsertChat.Parameters.AddWithValue("@LastAccessedAt", chat.LastAccessedAt.ToString("O"));
             upsertChat.Parameters.AddWithValue("@WindowMode", chat.WindowMode);
             upsertChat.Parameters.AddWithValue("@ProviderId", (object?)chat.ProviderId?.ToString() ?? DBNull.Value);
+            upsertChat.Parameters.AddWithValue("@WorkingDirectory", (object?)chat.WorkingDirectory ?? DBNull.Value);
             upsertChat.Parameters.AddWithValue("@ExtraJson", (object?)SerializeExtensionData(chat.ExtensionData) ?? DBNull.Value);
             await upsertChat.ExecuteNonQueryAsync(ct);
         }
@@ -110,7 +112,7 @@ public class AssistantChatService : IAssistantChatService
         using (var getChat = connection.CreateCommand())
         {
             getChat.CommandText = """
-                SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, ExtraJson
+                SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson
                 FROM AssistantChats WHERE Id = @Id
                 """;
             getChat.Parameters.AddWithValue("@Id", id.ToString());
@@ -168,7 +170,7 @@ public class AssistantChatService : IAssistantChatService
         var whereClause = conditions.Count > 0 ? $"WHERE {string.Join(" AND ", conditions)}" : "";
 
         command.CommandText = $"""
-            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, ExtraJson
+            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson
             FROM AssistantChats
             {whereClause}
             ORDER BY UpdatedAt DESC
@@ -417,7 +419,8 @@ public class AssistantChatService : IAssistantChatService
             LastAccessedAt = DateTime.Parse(reader.GetString(5)),
             WindowMode = reader.GetString(6),
             ProviderId = reader.IsDBNull(7) ? null : Guid.Parse(reader.GetString(7)),
-            ExtensionData = reader.IsDBNull(8) ? null : DeserializeExtensionData(reader.GetString(8)),
+            WorkingDirectory = reader.IsDBNull(8) ? null : reader.GetString(8),
+            ExtensionData = reader.IsDBNull(9) ? null : DeserializeExtensionData(reader.GetString(9)),
         };
     }
 

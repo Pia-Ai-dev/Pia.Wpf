@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
@@ -22,9 +23,11 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<ChatTitleChipViewModel> _logger;
     private readonly Func<Guid, Task> _resumeChat;
-    private readonly Action _newChat;
+    private readonly Action<string?> _newChat;
     private readonly Action _showAllChats;
     private readonly Func<Guid, ChatState> _resolveState;
+    private readonly Action<string?> _setActiveWorkingDirectory;
+    private readonly Func<string?> _getActiveWorkingDirectory;
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _quickSwitcherCts;
@@ -54,6 +57,28 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int _selectedIndex;
 
+    /// <summary>The active chat's working dir for the pill: backslash form, <c>\</c> at root
+    /// (e.g. <c>\</c> or <c>\src\app</c>). Display-only; navigation uses the picker's
+    /// forward-slash relative path.</summary>
+    [ObservableProperty]
+    private string _workingDirectoryDisplay = "\\";
+
+    /// <summary>True when the active chat is pinned to the sandbox root (drives the home glyph).</summary>
+    [ObservableProperty]
+    private bool _isWorkingDirectoryRoot = true;
+
+    /// <summary>Drives the nested drill-down folder picker popup.</summary>
+    [ObservableProperty]
+    private bool _isPickerOpen;
+
+    /// <summary>False while the active chat is streaming — locks re-pointing the working dir
+    /// mid-turn (the folder selector is disabled and any open picker is dismissed).</summary>
+    [ObservableProperty]
+    private bool _canEditWorkingDirectory = true;
+
+    /// <summary>The embedded drill-down folder picker.</summary>
+    public WorkingDirectoryPickerViewModel WorkingDirectoryPicker { get; }
+
     public ObservableCollection<ChatChipGroupViewModel> Groups { get; } = [];
     public ObservableCollection<QuickSwitcherMatchViewModel> Matches { get; } = [];
 
@@ -70,9 +95,12 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         ILocalizationService localizationService,
         ILogger<ChatTitleChipViewModel> logger,
         Func<Guid, Task> resumeChat,
-        Action newChat,
+        Action<string?> newChat,
         Action showAllChats,
-        Func<Guid, ChatState> resolveState)
+        Func<Guid, ChatState> resolveState,
+        IWorkingDirectoryService workingDirectoryService,
+        Action<string?> setActiveWorkingDirectory,
+        Func<string?> getActiveWorkingDirectory)
     {
         _chatService = chatService;
         _localizationService = localizationService;
@@ -81,6 +109,11 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         _newChat = newChat;
         _showAllChats = showAllChats;
         _resolveState = resolveState;
+        _setActiveWorkingDirectory = setActiveWorkingDirectory;
+        _getActiveWorkingDirectory = getActiveWorkingDirectory;
+
+        WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectoryService);
+        WorkingDirectoryPicker.WorkingDirectoryChosen += OnWorkingDirectoryChosen;
         // Captured on the UI thread (this VM is constructed there) so off-thread
         // ChatsChanged (e.g. the retention BackgroundService raising it from a
         // thread-pool thread) can be marshalled back before touching bound collections.
@@ -118,12 +151,56 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(IsFlyoutOpen) && IsFlyoutOpen)
-            LoadRecentChatsAsync().SafeFireAndForget(_logger);
+        if (e.PropertyName == nameof(IsFlyoutOpen))
+        {
+            if (IsFlyoutOpen)
+                LoadRecentChatsAsync().SafeFireAndForget(_logger);
+            else
+                // Close the drill-down with the flyout so it doesn't auto-pop on the next
+                // open. Covers every close path (resume/show-all and the outside-click
+                // dismiss that flips IsFlyoutOpen via its binding), not just New Chat.
+                IsPickerOpen = false;
+        }
         else if (e.PropertyName == nameof(SearchQuery))
             DebounceReload();
         else if (e.PropertyName == nameof(QuickSwitcherQuery))
             RefreshQuickSwitcherMatches();
+        else if (e.PropertyName == nameof(IsPickerOpen) && IsPickerOpen)
+            // Reflect the active chat's dir before showing the drill-down, then re-list.
+            WorkingDirectoryPicker.InitializeFrom(_getActiveWorkingDirectory());
+    }
+
+    private void OnWorkingDirectoryChosen(object? sender, string relativePath)
+    {
+        // The user entered/jumped to a folder in the picker: re-point the active chat
+        // (the owner persists) and refresh the pill display.
+        _setActiveWorkingDirectory(relativePath);
+        SetWorkingDirectory(relativePath);
+    }
+
+    /// <summary>Reflect the active chat's working dir on the pill (backslash display; <c>\</c> at root).</summary>
+    public void SetWorkingDirectory(string? relativePath)
+    {
+        var normalized = relativePath?.Trim().Replace('\\', '/').Trim('/');
+        if (string.IsNullOrEmpty(normalized))
+        {
+            IsWorkingDirectoryRoot = true;
+            WorkingDirectoryDisplay = "\\";
+        }
+        else
+        {
+            IsWorkingDirectoryRoot = false;
+            WorkingDirectoryDisplay = "\\" + normalized.Replace('/', '\\');
+        }
+    }
+
+    /// <summary>Lock/unlock working-dir editing (called when the active chat starts/stops
+    /// streaming). Locking also dismisses an open picker so no re-point lands mid-turn.</summary>
+    public void SetWorkingDirectoryLocked(bool locked)
+    {
+        CanEditWorkingDirectory = !locked;
+        if (locked)
+            IsPickerOpen = false;
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
@@ -382,7 +459,9 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private void ExecuteNewChat()
     {
         IsFlyoutOpen = false;
-        _newChat();
+        IsPickerOpen = false;
+        // Pin the new chat to the folder currently shown on the pill (the active chat's dir).
+        _newChat(_getActiveWorkingDirectory());
     }
 
     private void ExecuteShowAllChats()
@@ -400,6 +479,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         _quickSwitcherCts?.Cancel();
         _quickSwitcherCts?.Dispose();
         _chatService.ChatsChanged -= OnChatsChanged;
+        WorkingDirectoryPicker.WorkingDirectoryChosen -= OnWorkingDirectoryChosen;
         PropertyChanged -= OnPropertyChanged;
         GC.SuppressFinalize(this);
     }

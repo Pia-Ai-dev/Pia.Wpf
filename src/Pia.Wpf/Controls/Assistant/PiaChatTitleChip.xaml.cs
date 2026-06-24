@@ -19,4 +19,10 @@ public partial class PiaChatTitleChip : UserControl
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
     }
+
+    private void WorkingDirButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (DataContext is ChatTitleChipViewModel vm)
+            vm.IsPickerOpen = !vm.IsPickerOpen;
+    }
 }

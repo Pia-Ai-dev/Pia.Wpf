@@ -37,7 +37,10 @@ public class NamingConventionTests
             .GetTypes();
 
         var violations = serviceTypes
-            .Where(t => !t.IsNestedPrivate && !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
+            // Value types (e.g. the ambient context record struct TaskContext) are data carriers,
+            // not service classes — exclude them. This only ever narrows scrutiny; a misnamed
+            // reference-type service is still caught.
+            .Where(t => !t.IsNestedPrivate && !t.IsValueType && !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
             .Where(t => !allowedSuffixes.Any(suffix => t.Name.EndsWith(suffix)))
             .Select(t => t.Name)
             .ToList();

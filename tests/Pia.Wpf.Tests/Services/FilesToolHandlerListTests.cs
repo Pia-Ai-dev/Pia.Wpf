@@ -125,6 +125,34 @@ public class FilesToolHandlerListTests : IDisposable
     }
 
     [Fact]
+    public void ListRelativeFiles_ScopesToActiveUiWorkingSubpath()
+    {
+        WriteFile(Path.Combine("src", "main.cs"));
+        WriteFile(Path.Combine("docs", "guide.md"));
+
+        // The @Files autocomplete narrows to the active chat's working dir; results are
+        // relative to that subfolder, and siblings outside it are not listed.
+        _handler.ActiveUiWorkingSubpath = "src";
+        var result = _handler.ListRelativeFiles(filter: null, max: 50);
+
+        Assert.Contains("main.cs", result);
+        Assert.DoesNotContain("docs/guide.md", result);
+        Assert.DoesNotContain("src/main.cs", result);
+    }
+
+    [Fact]
+    public void ListRelativeFiles_MissingWorkingSubpath_FallsBackToRoot()
+    {
+        WriteFile("a.txt");
+
+        // A subpath that doesn't exist on disk fails safe to the sandbox root.
+        _handler.ActiveUiWorkingSubpath = "does/not/exist";
+        var result = _handler.ListRelativeFiles(filter: null, max: 50);
+
+        Assert.Contains("a.txt", result);
+    }
+
+    [Fact]
     public void ListRelativeFiles_NoFolderConfigured_ReturnsEmpty()
     {
         var settings = Substitute.For<ISettingsService>();

@@ -29,6 +29,15 @@ public interface IFilesToolHandler
     /// </summary>
     IReadOnlyList<string> ListRelativeFiles(string? filter, int max);
 
+    /// <summary>
+    /// Working subpath of the chat currently shown in the UI, used to scope
+    /// <see cref="ListRelativeFiles"/> (the <c>@Files</c> autocomplete) to the active chat's
+    /// working directory. The autocomplete runs outside any turn, so it cannot read the
+    /// per-turn ambient; the view model sets this on active-chat change / re-point.
+    /// Null/empty = sandbox root.
+    /// </summary>
+    string? ActiveUiWorkingSubpath { get; set; }
+
     IList<AITool> GetTools();
     Task<(object? Result, FilesToolCall? PendingAction)> HandleToolCallAsync(
         FunctionCallContent toolCall,

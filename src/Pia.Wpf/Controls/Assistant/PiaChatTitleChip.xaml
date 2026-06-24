@@ -91,45 +91,230 @@
                       PlaceholderEnabled="True"
                       Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" />
 
-          <!-- New chat: the primary action, lifted out of the row list with an
-               accent-soft fill that flips to solid accent on hover (same vocabulary
-               as PiaSegmentedButton's selected state). -->
-          <Button Grid.Row="1"
+          <!-- Split pill: [ ⌂ \  ▾ | + New Chat ]. One bordered container with a folder
+               selector on the left (drill-down working-dir picker) and the primary
+               "+ New Chat" on the right, separated by a divider. The New-Chat region reuses
+               the accent-soft→accent hover vocabulary from PiaSegmentedButton's selected state. -->
+          <Border Grid.Row="1"
                   Margin="2,6,2,2"
-                  Cursor="Hand"
-                  HorizontalContentAlignment="Stretch"
-                  Command="{Binding NewChatCommand}">
-            <Button.Template>
-              <ControlTemplate TargetType="Button">
-                <Border x:Name="Bd"
-                        CornerRadius="{StaticResource SmallRadius}"
-                        Padding="10,8"
-                        Background="{DynamicResource PiaAccentSoftBrush}">
-                  <StackPanel Orientation="Horizontal">
-                    <ui:SymbolIcon x:Name="Glyph"
-                                   Symbol="Add24"
-                                   FontSize="16"
-                                   Margin="0,0,10,0"
+                  CornerRadius="{StaticResource SmallRadius}"
+                  BorderBrush="{DynamicResource BorderBrush_}"
+                  BorderThickness="1"
+                  Background="Transparent">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+
+              <!-- Folder selector: shows the active chat's working dir; click opens the picker. -->
+              <Button x:Name="WorkingDirButton"
+                      Grid.Column="0"
+                      Style="{StaticResource UnstyledButton}"
+                      Cursor="Hand"
+                      Padding="10,8"
+                      HorizontalContentAlignment="Left"
+                      IsEnabled="{Binding CanEditWorkingDirectory}"
+                      Click="WorkingDirButton_Click"
+                      ToolTip="{loc:Str AssistantChat_WorkingDir_Tooltip}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <ui:SymbolIcon Symbol="Home24"
+                                 FontSize="15"
+                                 Margin="0,0,6,0"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource PiaAccentBrush}"
+                                 Visibility="{Binding IsWorkingDirectoryRoot, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                  <ui:SymbolIcon Symbol="Folder24"
+                                 FontSize="15"
+                                 Margin="0,0,6,0"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                 Visibility="{Binding IsWorkingDirectoryRoot, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                  <!-- Full path in the tooltip: CharacterEllipsis trims the trailing leaf
+                       folder (the pinned dir), so surface the whole path on hover. -->
+                  <TextBlock Text="{Binding WorkingDirectoryDisplay}"
+                             FontSize="12"
+                             TextTrimming="CharacterEllipsis"
+                             MaxWidth="220"
+                             VerticalAlignment="Center"
+                             ToolTip="{Binding WorkingDirectoryDisplay}"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                  <ui:SymbolIcon Symbol="ChevronDown20"
+                                 FontSize="11"
+                                 Margin="6,0,0,0"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+              </Button>
+
+              <!-- Divider -->
+              <Border Grid.Column="1"
+                      Width="1"
+                      Margin="0,6"
+                      Background="{DynamicResource BorderBrush_}" />
+
+              <!-- + New Chat -->
+              <Button Grid.Column="2"
+                      Cursor="Hand"
+                      Command="{Binding NewChatCommand}">
+                <Button.Template>
+                  <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            CornerRadius="{StaticResource SmallRadius}"
+                            Padding="10,8"
+                            Background="{DynamicResource PiaAccentSoftBrush}">
+                      <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon x:Name="Glyph"
+                                       Symbol="Add24"
+                                       FontSize="16"
+                                       Margin="0,0,8,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource PiaAccentBrush}" />
+                        <TextBlock x:Name="Label"
+                                   Text="{loc:Str AssistantChat_Flyout_NewChat}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource PiaAccentBrush}" />
-                    <TextBlock x:Name="Label"
-                               Text="{loc:Str AssistantChat_Flyout_NewChat}"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center"
-                               Foreground="{DynamicResource PiaAccentBrush}" />
+                      </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PiaAccentBrush}" />
+                        <Setter TargetName="Glyph" Property="Foreground" Value="White" />
+                        <Setter TargetName="Label" Property="Foreground" Value="White" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Button.Template>
+              </Button>
+            </Grid>
+          </Border>
+
+          <!-- Drill-down working-directory picker: breadcrumb header (each crumb jumps up)
+               + immediate child folders (entering a row re-points the active chat). Matches
+               the flyout styling (Surface, BorderBrush_, LargeRadius, shadow). -->
+          <Popup x:Name="WorkingDirPopup"
+                 Grid.Row="1"
+                 IsOpen="{Binding IsPickerOpen, Mode=TwoWay}"
+                 PlacementTarget="{Binding ElementName=WorkingDirButton}"
+                 Placement="Bottom"
+                 StaysOpen="False"
+                 AllowsTransparency="True"
+                 PopupAnimation="Fade">
+            <Border Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush_}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource LargeRadius}"
+                    Padding="6"
+                    MinWidth="320"
+                    MaxWidth="380"
+                    MaxHeight="360"
+                    DataContext="{Binding WorkingDirectoryPicker}">
+              <Border.Effect>
+                <DropShadowEffect Color="#0F1729" BlurRadius="18" Opacity="0.16" ShadowDepth="4" />
+              </Border.Effect>
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Breadcrumb header -->
+                <ItemsControl Grid.Row="0"
+                              Margin="4,2,4,6"
+                              ItemsSource="{Binding Crumbs}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vmm:WorkingDirectoryCrumb}">
+                      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource UnstyledButton}"
+                                Cursor="Hand"
+                                Padding="4,2"
+                                Command="{Binding DataContext.JumpToCrumbCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                CommandParameter="{Binding Index}">
+                          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Home24"
+                                           FontSize="13"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource PiaAccentBrush}"
+                                           Visibility="{Binding IsRoot, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding Name}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                       Visibility="{Binding IsRoot, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                          </StackPanel>
+                        </Button>
+                        <ui:SymbolIcon Symbol="ChevronRight20"
+                                       FontSize="11"
+                                       Margin="2,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextMutedBrush}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Immediate child folders + empty state -->
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel>
+                    <TextBlock Margin="10,8"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}"
+                               Text="{loc:Str AssistantChat_WorkingDir_PickerEmpty}" />
+
+                    <ItemsControl ItemsSource="{Binding Entries}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Button Style="{StaticResource UnstyledButton}"
+                                  Margin="0,1"
+                                  Padding="10,7"
+                                  Cursor="Hand"
+                                  Command="{Binding DataContext.EnterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}">
+                            <Grid>
+                              <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                              </Grid.ColumnDefinitions>
+                              <ui:SymbolIcon Grid.Column="0"
+                                             Symbol="Folder24"
+                                             FontSize="15"
+                                             Margin="0,0,10,0"
+                                             VerticalAlignment="Center"
+                                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                              <TextBlock Grid.Column="1"
+                                         Text="{Binding}"
+                                         FontSize="13"
+                                         TextTrimming="CharacterEllipsis"
+                                         VerticalAlignment="Center"
+                                         Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                              <ui:SymbolIcon Grid.Column="2"
+                                             Symbol="ChevronRight20"
+                                             FontSize="12"
+                                             VerticalAlignment="Center"
+                                             Foreground="{DynamicResource TextMutedBrush}" />
+                            </Grid>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                   </StackPanel>
-                </Border>
-                <ControlTemplate.Triggers>
-                  <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PiaAccentBrush}" />
-                    <Setter TargetName="Glyph" Property="Foreground" Value="White" />
-                    <Setter TargetName="Label" Property="Foreground" Value="White" />
-                  </Trigger>
-                </ControlTemplate.Triggers>
-              </ControlTemplate>
-            </Button.Template>
-          </Button>
+                </ScrollViewer>
+              </Grid>
+            </Border>
+          </Popup>
 
           <ScrollViewer Grid.Row="2"
                         Margin="0,4,0,0"

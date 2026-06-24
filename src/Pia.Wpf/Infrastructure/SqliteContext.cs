@@ -217,6 +217,7 @@ public class SqliteContext : IDisposable
                 LastAccessedAt  TEXT NOT NULL,
                 WindowMode      TEXT NOT NULL,
                 ProviderId      TEXT,
+                WorkingDirectory TEXT,
                 ExtraJson       TEXT
             );
 
@@ -549,6 +550,26 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE Personas ADD COLUMN OutputFormat TEXT";
+            addCol.ExecuteNonQuery();
+        }
+
+        // Per-chat working directory (relative to the assistant-files sandbox root), added after
+        // AssistantChats shipped. Fresh tables already include the column via CREATE TABLE above,
+        // so the PRAGMA check short-circuits and no ALTER is issued.
+        var hasWorkingDirectory = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AssistantChats)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                if (r.GetString(1) == "WorkingDirectory") { hasWorkingDirectory = true; break; }
+            }
+        }
+        if (!hasWorkingDirectory)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN WorkingDirectory TEXT";
             addCol.ExecuteNonQuery();
         }
     }

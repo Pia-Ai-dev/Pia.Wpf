@@ -44,6 +44,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAssistantChatService _chatService;
     private readonly IAssistantPromptComposer _promptComposer;
     private readonly IChatSessionManager _chatSessionManager;
+    private readonly IWorkingDirectoryService _workingDirectoryService;
+    private readonly IFilesToolHandler _filesToolHandler;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -164,7 +166,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ISuggestionService suggestionService,
         IAssistantChatService chatService,
         IAssistantPromptComposer promptComposer,
-        IChatSessionManager chatSessionManager)
+        IChatSessionManager chatSessionManager,
+        IWorkingDirectoryService workingDirectoryService,
+        IFilesToolHandler filesToolHandler)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -187,6 +191,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatService = chatService;
         _promptComposer = promptComposer;
         _chatSessionManager = chatSessionManager;
+        _workingDirectoryService = workingDirectoryService;
+        _filesToolHandler = filesToolHandler;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -216,7 +222,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ResumeChatAsync,
             NewChat,
             NavigateToAssistantHistory,
-            _chatSessionManager.GetState);
+            _chatSessionManager.GetState,
+            _workingDirectoryService,
+            SetActiveWorkingDirectory,
+            GetActiveWorkingDirectory);
 
         _chatSessionManager.ActiveChanged += OnActiveSessionChanged;
         _chatSessionManager.SessionTitleChanged += OnSessionTitleChanged;
@@ -255,6 +264,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IsStreaming = session.IsStreaming;
         ActiveState = session.State;
         ChatTitleChip.SetTitle(session.Title);
+        ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
+        // Lock re-pointing if this session is mid-stream (OnIsStreamingChanged only fires on a
+        // value change, so set it explicitly here for the attach where the value is unchanged).
+        ChatTitleChip.SetWorkingDirectoryLocked(session.IsStreaming);
+        // Scope the @Files autocomplete to this chat's dir (it runs outside any turn).
+        _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
     }
 
     partial void OnMessagesChanged(ObservableCollection<AssistantMessage>? oldValue, ObservableCollection<AssistantMessage> newValue)
@@ -278,6 +293,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // Mirror the active state onto the chip badge (single sink — both the attach
     // path and live transitions set ActiveState, so this stays in sync).
     partial void OnActiveStateChanged(ChatState value) => ChatTitleChip.SetState(value);
+
+    // Lock working-dir re-pointing while the active chat streams (mirrors IsStreaming to the chip).
+    partial void OnIsStreamingChanged(bool value) => ChatTitleChip.SetWorkingDirectoryLocked(value);
 
     // Sync-void fire-and-forget: followups + TTS for the active session only.
     private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
@@ -458,10 +476,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// </summary>
     private void ExecuteClearConversation()
     {
+        // Inherit the cleared chat's working dir so clearing keeps you in the same folder
+        // (capture before the swap, since GetOrCreateActiveForNewChat re-points ActiveSession).
+        var inheritedDir = _chatSessionManager.ActiveSession?.WorkingDirectory;
         // Destructive: cancel this conversation's in-flight turn + pending cards. Other
         // live sessions are untouched (the manager owns their lifetime).
         _chatSessionManager.ActiveSession?.Cancel();
-        StartFreshChat();
+        StartFreshChat(inheritedDir);
     }
 
     /// <summary>
@@ -471,18 +492,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// turn). Cancelling here would abort the in-flight HTTP request — surfacing a
     /// SocketException in the support log — and discard the background result.
     /// </summary>
-    private void NewChat() => StartFreshChat();
+    private void NewChat(string? workingDirectory) => StartFreshChat(workingDirectory);
 
     /// <summary>Opens a new, empty active chat and resets the composer. Shared by the
-    /// additive "New chat" and the destructive "Clear conversation" entry points.</summary>
-    private void StartFreshChat()
+    /// additive "New chat" (pinned to the folder shown on the pill) and the destructive
+    /// "Clear conversation" entry point (which inherits the cleared chat's folder).</summary>
+    /// <param name="workingDirectory">Relative working dir to pin (forward slashes;
+    /// null/empty = sandbox root).</param>
+    private void StartFreshChat(string? workingDirectory = null)
     {
         _ttsService.Stop();
 
         // The new session is created with its OWN freshly-initialized token map, so
         // the new chat starts with a clean PII namespace automatically — no global
         // Clear() (which would poison a still-running background chat's map).
-        _chatSessionManager.GetOrCreateActiveForNewChat();
+        // GetOrCreateActiveForNewChat raises ActiveChanged → AttachToActiveSession, which
+        // pushes the new (root) dir to the chip; pin + re-push afterwards so the pill
+        // reflects the folder this chat was started in.
+        var session = _chatSessionManager.GetOrCreateActiveForNewChat();
+        session.SetWorkingDirectory(workingDirectory);
+        ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
+        _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
         InputText = string.Empty;
     }
 
@@ -495,6 +525,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void NavigateToAssistantHistory()
     {
         _navigationService.NavigateTo<AssistantHistoryViewModel>();
+    }
+
+    /// <summary>Reads the active chat's working dir (relative, forward slashes; null = root) for the chip.</summary>
+    private string? GetActiveWorkingDirectory() => _chatSessionManager.ActiveSession?.WorkingDirectory;
+
+    /// <summary>
+    /// Re-points the active chat's working dir from the picker and persists. Unlike
+    /// <see cref="ChatSession.ProviderId"/> (which persists only as a turn side-effect), a
+    /// working-dir change can happen with no turn, so this triggers an explicit persist.
+    /// </summary>
+    private void SetActiveWorkingDirectory(string? relativePath)
+    {
+        var session = _chatSessionManager.ActiveSession;
+        if (session is null) return;
+
+        session.SetWorkingDirectory(relativePath);
+        // Keep the @Files autocomplete scoped to the re-pointed dir immediately.
+        _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
+        // PersistAsync is a no-op for a brand-new empty chat (no row yet); the first turn
+        // will persist with the current dir. For an existing chat this saves the re-point.
+        _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
     }
 
     private static void CancelPendingActionCards(AssistantMessage? message)

@@ -277,6 +277,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             session.Messages.Add(AssistantMessageMapper.FromDto(dto));
 
         session.SetIdentity(chat.Id, chat.CreatedAt, chat.ProviderId, chat.Title, autoTitleApplied: true);
+        session.SetWorkingDirectory(chat.WorkingDirectory);
         _sessions[chat.Id] = session;
         SetActive(session);
 
@@ -494,6 +495,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             LastAccessedAt = nowUtc,
             WindowMode = WindowMode.Assistant.ToString(),
             ProviderId = session.ProviderId,
+            WorkingDirectory = session.WorkingDirectory,
             Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto)],
         };
 

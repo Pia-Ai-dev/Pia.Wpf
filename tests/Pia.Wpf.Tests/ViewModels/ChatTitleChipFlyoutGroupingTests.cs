@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels;
@@ -35,9 +36,12 @@ public class ChatTitleChipFlyoutGroupingTests
             _loc,
             NullLogger<ChatTitleChipViewModel>.Instance,
             _ => Task.CompletedTask,
+            _ => { },
             () => { },
-            () => { },
-            id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle);
+            id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle,
+            Substitute.For<IWorkingDirectoryService>(),
+            _ => { },
+            () => null);
     }
 
     private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null)
@@ -62,6 +66,24 @@ public class ChatTitleChipFlyoutGroupingTests
 
         var keys = sut.Groups.Select(g => g.DisplayName).ToArray();
         Assert.Equal(new[] { "History_Group_Today", "History_Group_Older" }, keys);
+    }
+
+    [Fact]
+    public void SetWorkingDirectoryLocked_DisablesEditing_AndDismissesOpenPicker()
+    {
+        var sut = CreateSut([]);
+        sut.IsPickerOpen = true;
+        Assert.True(sut.CanEditWorkingDirectory);
+
+        // Streaming starts: re-pointing is locked and an open picker is dismissed so no
+        // re-point can land mid-turn.
+        sut.SetWorkingDirectoryLocked(locked: true);
+        Assert.False(sut.CanEditWorkingDirectory);
+        Assert.False(sut.IsPickerOpen);
+
+        // Streaming ends: editing is allowed again.
+        sut.SetWorkingDirectoryLocked(locked: false);
+        Assert.True(sut.CanEditWorkingDirectory);
     }
 
     [Fact]

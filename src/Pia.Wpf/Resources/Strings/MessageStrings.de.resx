@@ -99,6 +99,9 @@
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Neuer Chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Alle Chats anzeigen…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Noch keine Chats.</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Arbeitsordner für diesen Chat</value></data>
+  <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>Alle Dateien</value></data>
+  <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>Keine Unterordner hier.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Chats durchsuchen…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Keine Treffer</value></data>
   <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ zum Navigieren · Enter zum Fortsetzen · Esc zum Schließen</value></data>

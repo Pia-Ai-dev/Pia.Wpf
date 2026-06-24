@@ -42,6 +42,19 @@ public class FilesToolHandler : IFilesToolHandler
     private readonly IFileStalenessStore _stalenessStore;
     private readonly ILogger<FilesToolHandler> _logger;
     private volatile string? _currentFolder;
+    private volatile string? _activeUiWorkingSubpath;
+
+    /// <summary>
+    /// Working subpath of the chat currently shown in the UI, used to scope
+    /// <see cref="ListRelativeFiles"/> (the <c>@Files</c> autocomplete) — which runs OUTSIDE any
+    /// turn, so it cannot read the per-turn <see cref="TaskAmbient"/>. The view model pushes this
+    /// on active-chat change / re-point. Null/empty = sandbox root.
+    /// </summary>
+    public string? ActiveUiWorkingSubpath
+    {
+        get => _activeUiWorkingSubpath;
+        set => _activeUiWorkingSubpath = value;
+    }
 
     public FilesToolHandler(ISettingsService settingsService, IFileStalenessStore stalenessStore, ILogger<FilesToolHandler> logger)
     {
@@ -132,13 +145,18 @@ public class FilesToolHandler : IFilesToolHandler
 #endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        var root = _currentFolder;
-        if (root is null || !Directory.Exists(root))
+        var baseRoot = _currentFolder;
+        if (baseRoot is null || !Directory.Exists(baseRoot))
         {
             return (
                 "Error: No assistant files folder is configured. Ask the user to set one under Settings → Assistant.",
                 null);
         }
+
+        // Narrow the sandbox to the active chat's working directory (if any). The deferred
+        // write closure captures this resolved root at prepare time, so it never reads the
+        // ambient after the approval await.
+        var root = ResolveEffectiveRoot(baseRoot, TaskAmbient.Current?.WorkingSubpath);
 
         return toolCall.Name switch
         {
@@ -149,6 +167,29 @@ public class FilesToolHandler : IFilesToolHandler
             "search_files" => (HandleSearchFiles(root, args), null),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (FilesToolCall?)null)
         };
+    }
+
+    /// <summary>
+    /// Narrows the sandbox to the active chat's working subpath. A null/whitespace subpath
+    /// (the default) resolves to <paramref name="baseRoot"/>. Otherwise the subpath is resolved
+    /// inside the base sandbox and must exist on disk; anything that escapes containment or is
+    /// missing falls back to <paramref name="baseRoot"/> (fail safe — never widen beyond it).
+    /// Containment narrowing is intended: a chat scoped to a subfolder resolves relative paths
+    /// under it and rejects absolute paths elsewhere in the sandbox.
+    /// </summary>
+    internal string ResolveEffectiveRoot(string baseRoot, string? workingSubpath)
+    {
+        if (string.IsNullOrWhiteSpace(workingSubpath))
+            return baseRoot;
+
+        if (SafeFolderPath.TryResolveInsideAllowingAbsolute(baseRoot, workingSubpath, out var eff)
+            && Directory.Exists(eff))
+        {
+            return eff;
+        }
+
+        _logger.SensitiveDebug("Working subpath did not resolve to an existing folder under the sandbox: {Subpath}", workingSubpath);
+        return baseRoot;
     }
 
     public async Task<object?> ExecutePendingActionAsync(FilesToolCall pendingAction)
@@ -228,8 +269,12 @@ public class FilesToolHandler : IFilesToolHandler
     {
         if (max <= 0) return [];
 
-        var root = _currentFolder;
-        if (root is null || !Directory.Exists(root)) return [];
+        var baseRoot = _currentFolder;
+        if (baseRoot is null || !Directory.Exists(baseRoot)) return [];
+
+        // Scope @Files autocomplete to the active chat's working dir. This runs OUTSIDE any
+        // turn, so TaskAmbient is empty; the active subpath is pushed in by the view model.
+        var root = ResolveEffectiveRoot(baseRoot, ActiveUiWorkingSubpath);
 
         List<string> all;
         try
@@ -627,7 +672,7 @@ public class FilesToolHandler : IFilesToolHandler
             var result = FormatWindow(text, offset, limit, windowRequested);
 
             // Record the observed mtime keyed by the canonicalized resolved path (not the model string).
-            _stalenessStore.RecordRead(TaskAmbient.Current ?? Guid.Empty, safePath, File.GetLastWriteTimeUtc(safePath));
+            _stalenessStore.RecordRead(TaskAmbient.Current?.TaskId ?? Guid.Empty, safePath, File.GetLastWriteTimeUtc(safePath));
 
             _logger.LogInformation("read_file succeeded (offset {Offset}, limit {Limit})", offset, limit);
             _logger.SensitiveDebug("read_file path: {Path}", requested);
@@ -793,7 +838,7 @@ public class FilesToolHandler : IFilesToolHandler
         // the recorded read may have happened in an earlier turn, but the ambient carries the
         // stable session Id. Don't read TaskAmbient.Current inside the deferred closure (it runs
         // after the approval await, where ambient flow is not guaranteed).
-        var taskId = TaskAmbient.Current ?? Guid.Empty;
+        var taskId = TaskAmbient.Current?.TaskId ?? Guid.Empty;
 
         return (null, new FilesToolCall(
             ToolName: "write_file",

@@ -249,6 +249,7 @@ public static class Bootstrapper
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
         services.AddSingleton<IFileStalenessStore, FileStalenessStore>();
         services.AddSingleton<IFilesToolHandler, FilesToolHandler>();
+        services.AddSingleton<IWorkingDirectoryService, WorkingDirectoryService>();
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
         services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();

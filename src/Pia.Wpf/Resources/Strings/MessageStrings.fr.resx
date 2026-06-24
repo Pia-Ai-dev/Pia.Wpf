@@ -99,6 +99,9 @@
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Nouveau chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Afficher tous les chats…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Aucun chat pour l'instant.</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Dossier de travail pour ce chat</value></data>
+  <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>Tous les fichiers</value></data>
+  <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>Aucun sous-dossier ici.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Aucun résultat</value></data>
   <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ pour naviguer · Entrée pour reprendre · Échap pour fermer</value></data>

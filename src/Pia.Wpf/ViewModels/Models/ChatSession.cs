@@ -46,6 +46,14 @@ public sealed class ChatSession : IDisposable
     public Guid? Id { get; internal set; }
     public DateTime CreatedAt { get; internal set; }
     public Guid? ProviderId { get; internal set; }
+
+    /// <summary>
+    /// Per-chat working directory, RELATIVE to the assistant-files sandbox root
+    /// (forward slashes); null/empty = sandbox root. Mirrors <see cref="ProviderId"/>
+    /// as a per-chat field; set via <see cref="SetWorkingDirectory"/>.
+    /// </summary>
+    public string? WorkingDirectory { get; internal set; }
+
     public string? Title { get; internal set; }
     public ObservableCollection<AssistantMessage> Messages { get; } = new();
     public ChatState State { get; private set; } = ChatState.Idle;
@@ -111,6 +119,16 @@ public sealed class ChatSession : IDisposable
     internal void SetTitle(string? title) => Title = title;
 
     internal void SetProviderId(Guid? providerId) => ProviderId = providerId;
+
+    /// <summary>
+    /// Sets the per-chat working directory. Trims, treats empty as null (= sandbox root),
+    /// and normalizes separators to forward slashes (the stored/relative convention).
+    /// </summary>
+    internal void SetWorkingDirectory(string? relativePath)
+    {
+        var trimmed = relativePath?.Trim();
+        WorkingDirectory = string.IsNullOrEmpty(trimmed) ? null : trimmed.Replace('\\', '/');
+    }
 
     /// <summary>Surface a pre-turn failure (e.g. no provider configured) as a <see cref="RunFailed"/> event.</summary>
     internal void RaiseRunFailed(RunFailedEventArgs args) => RunFailed?.Invoke(this, args);
@@ -206,7 +224,7 @@ public sealed class ChatSession : IDisposable
         // parameter plumbing. Id is Guid? — null on direct test callers that skip the
         // manager's SetIdentity. Restored in the same finally as the token map.
         var previousTask = TaskAmbient.Current;
-        TaskAmbient.Current = Id;
+        TaskAmbient.Current = new TaskContext(Id, WorkingDirectory);
 
         var succeeded = false;
         try
