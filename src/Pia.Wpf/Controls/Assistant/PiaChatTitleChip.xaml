@@ -115,7 +115,6 @@
                       Cursor="Hand"
                       Padding="10,8"
                       HorizontalContentAlignment="Left"
-                      IsEnabled="{Binding CanEditWorkingDirectory}"
                       Click="WorkingDirButton_Click"
                       ToolTip="{loc:Str AssistantChat_WorkingDir_Tooltip}">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -202,7 +201,8 @@
                  Placement="Bottom"
                  StaysOpen="False"
                  AllowsTransparency="True"
-                 PopupAnimation="Fade">
+                 PopupAnimation="Fade"
+                 Opened="WorkingDirPopup_Opened">
             <Border Background="{DynamicResource SurfaceBrush}"
                     BorderBrush="{DynamicResource BorderBrush_}"
                     BorderThickness="1"
@@ -262,56 +262,87 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <!-- Immediate child folders + empty state -->
-                <ScrollViewer Grid.Row="1"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                  <StackPanel>
-                    <TextBlock Margin="10,8"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextMutedBrush}"
-                               Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}"
-                               Text="{loc:Str AssistantChat_WorkingDir_PickerEmpty}" />
+                <!-- Immediate child folders + empty state. ListBox gives arrow-key navigation
+                     and a selection highlight; the popup's Opened handler moves focus here so
+                     Up/Down stay in the picker instead of falling through to the chat list.
+                     Activation (Enter/Space/click), Backspace (ascend) and Escape are handled
+                     in code-behind. Virtualization off keeps container lookup synchronous. -->
+                <Grid Grid.Row="1">
+                  <TextBlock Margin="10,8"
+                             FontSize="12"
+                             Foreground="{DynamicResource TextMutedBrush}"
+                             Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}"
+                             Text="{loc:Str AssistantChat_WorkingDir_PickerEmpty}" />
 
-                    <ItemsControl ItemsSource="{Binding Entries}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                          <Button Style="{StaticResource UnstyledButton}"
-                                  Margin="0,1"
-                                  Padding="10,7"
-                                  Cursor="Hand"
-                                  Command="{Binding DataContext.EnterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                  CommandParameter="{Binding}">
-                            <Grid>
-                              <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                              </Grid.ColumnDefinitions>
-                              <ui:SymbolIcon Grid.Column="0"
-                                             Symbol="Folder24"
-                                             FontSize="15"
-                                             Margin="0,0,10,0"
-                                             VerticalAlignment="Center"
-                                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                              <TextBlock Grid.Column="1"
-                                         Text="{Binding}"
-                                         FontSize="13"
-                                         TextTrimming="CharacterEllipsis"
+                  <ListBox x:Name="WorkingDirEntries"
+                           ItemsSource="{Binding Entries}"
+                           Background="Transparent"
+                           BorderThickness="0"
+                           Padding="0"
+                           VirtualizingPanel.IsVirtualizing="False"
+                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                           ScrollViewer.VerticalScrollBarVisibility="Auto"
+                           PreviewKeyDown="WorkingDirEntries_PreviewKeyDown"
+                           PreviewMouseLeftButtonUp="WorkingDirEntries_PreviewMouseLeftButtonUp">
+                    <ListBox.ItemContainerStyle>
+                      <Style TargetType="ListBoxItem">
+                        <Setter Property="Margin" Value="0,1" />
+                        <Setter Property="Padding" Value="10,7" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Template">
+                          <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                              <Border x:Name="Bd"
+                                      CornerRadius="9"
+                                      Padding="{TemplateBinding Padding}"
+                                      Background="Transparent">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" />
+                              </Border>
+                              <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                  <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                  <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                </Trigger>
+                              </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                          </Setter.Value>
+                        </Setter>
+                      </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <ui:SymbolIcon Grid.Column="0"
+                                         Symbol="Folder24"
+                                         FontSize="15"
+                                         Margin="0,0,10,0"
                                          VerticalAlignment="Center"
-                                         Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                              <ui:SymbolIcon Grid.Column="2"
-                                             Symbol="ChevronRight20"
-                                             FontSize="12"
-                                             VerticalAlignment="Center"
-                                             Foreground="{DynamicResource TextMutedBrush}" />
-                            </Grid>
-                          </Button>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </ScrollViewer>
+                                         Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                          <TextBlock Grid.Column="1"
+                                     Text="{Binding}"
+                                     FontSize="13"
+                                     TextTrimming="CharacterEllipsis"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                          <ui:SymbolIcon Grid.Column="2"
+                                         Symbol="ChevronRight20"
+                                         FontSize="12"
+                                         VerticalAlignment="Center"
+                                         Foreground="{DynamicResource TextMutedBrush}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </Grid>
               </Grid>
             </Border>
           </Popup>

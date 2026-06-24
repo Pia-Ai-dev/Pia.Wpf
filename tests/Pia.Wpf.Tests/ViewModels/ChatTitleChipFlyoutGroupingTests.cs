@@ -15,6 +15,12 @@ public class ChatTitleChipFlyoutGroupingTests
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
     private readonly Dictionary<Guid, ChatState> _states = new();
 
+    // Captured chip callbacks: the dir the next "+ New Chat" was pinned to, the dir offered to
+    // the active chat re-point, and the (test-controlled) active chat's working dir.
+    private string? _capturedNewChatDir = "<unset>";
+    private string? _capturedSetActiveDir = "<unset>";
+    private string? _activeWorkingDir;
+
     public ChatTitleChipFlyoutGroupingTests()
     {
         // DisplayName == resource key so assertions stay key-based.
@@ -36,12 +42,12 @@ public class ChatTitleChipFlyoutGroupingTests
             _loc,
             NullLogger<ChatTitleChipViewModel>.Instance,
             _ => Task.CompletedTask,
-            _ => { },
+            dir => _capturedNewChatDir = dir,
             () => { },
             id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle,
             Substitute.For<IWorkingDirectoryService>(),
-            _ => { },
-            () => null);
+            dir => _capturedSetActiveDir = dir,
+            () => _activeWorkingDir);
     }
 
     private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null)
@@ -69,21 +75,65 @@ public class ChatTitleChipFlyoutGroupingTests
     }
 
     [Fact]
-    public void SetWorkingDirectoryLocked_DisablesEditing_AndDismissesOpenPicker()
+    public void Picking_Folder_UpdatesPill_AndOffersRepointToActiveChat()
     {
         var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;   // seeds the pending folder from the active chat (root here)
+        sut.IsPickerOpen = true;   // initializes the picker at the pending folder
+
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
+
+        // The chip offers the re-point to its owner (which applies it only to an un-started
+        // chat) and reflects the pick on the pill.
+        Assert.Equal("projects", _capturedSetActiveDir);
+        Assert.Equal("\\projects", sut.WorkingDirectoryDisplay);
+        Assert.False(sut.IsWorkingDirectoryRoot);
+    }
+
+    [Fact]
+    public void NewChat_PinsToPickedFolder_NotActiveChatDir()
+    {
+        // Active chat is at the root; the user picks a different folder for the new chat.
+        _activeWorkingDir = null;
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
         sut.IsPickerOpen = true;
-        Assert.True(sut.CanEditWorkingDirectory);
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
 
-        // Streaming starts: re-pointing is locked and an open picker is dismissed so no
-        // re-point can land mid-turn.
-        sut.SetWorkingDirectoryLocked(locked: true);
-        Assert.False(sut.CanEditWorkingDirectory);
-        Assert.False(sut.IsPickerOpen);
+        sut.NewChatCommand.Execute(null);
 
-        // Streaming ends: editing is allowed again.
-        sut.SetWorkingDirectoryLocked(locked: false);
-        Assert.True(sut.CanEditWorkingDirectory);
+        Assert.Equal("projects", _capturedNewChatDir);
+    }
+
+    [Fact]
+    public void FlyoutOpen_SeedsPillFromActiveChatDir()
+    {
+        _activeWorkingDir = "src/app";
+        var sut = CreateSut([]);
+
+        sut.IsFlyoutOpen = true;
+
+        Assert.Equal("\\src\\app", sut.WorkingDirectoryDisplay);
+        Assert.False(sut.IsWorkingDirectoryRoot);
+    }
+
+    [Fact]
+    public void FlyoutOpen_AtRoot_ResetsPillToHome()
+    {
+        // Put the pill in a non-root state first, so the root assertion can't pass on the
+        // field-initializer defaults — it must come from the flyout-open reseed.
+        _activeWorkingDir = "projects";
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+        Assert.Equal("\\projects", sut.WorkingDirectoryDisplay);
+
+        // Re-opening with a root active chat must reset the pill back to home.
+        sut.IsFlyoutOpen = false;
+        _activeWorkingDir = null;
+        sut.IsFlyoutOpen = true;
+
+        Assert.Equal("\\", sut.WorkingDirectoryDisplay);
+        Assert.True(sut.IsWorkingDirectoryRoot);
     }
 
     [Fact]

@@ -265,9 +265,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ActiveState = session.State;
         ChatTitleChip.SetTitle(session.Title);
         ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
-        // Lock re-pointing if this session is mid-stream (OnIsStreamingChanged only fires on a
-        // value change, so set it explicitly here for the attach where the value is unchanged).
-        ChatTitleChip.SetWorkingDirectoryLocked(session.IsStreaming);
         // Scope the @Files autocomplete to this chat's dir (it runs outside any turn).
         _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
     }
@@ -293,9 +290,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // Mirror the active state onto the chip badge (single sink — both the attach
     // path and live transitions set ActiveState, so this stays in sync).
     partial void OnActiveStateChanged(ChatState value) => ChatTitleChip.SetState(value);
-
-    // Lock working-dir re-pointing while the active chat streams (mirrors IsStreaming to the chip).
-    partial void OnIsStreamingChanged(bool value) => ChatTitleChip.SetWorkingDirectoryLocked(value);
 
     // Sync-void fire-and-forget: followups + TTS for the active session only.
     private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
@@ -531,7 +525,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private string? GetActiveWorkingDirectory() => _chatSessionManager.ActiveSession?.WorkingDirectory;
 
     /// <summary>
-    /// Re-points the active chat's working dir from the picker and persists. Unlike
+    /// Re-points the active chat's working dir from the picker — but ONLY while that chat is
+    /// un-started (no messages yet). Once a chat has begun a turn its folder is fixed; the
+    /// picker then only chooses where the next "+ New Chat" opens. Unlike
     /// <see cref="ChatSession.ProviderId"/> (which persists only as a turn side-effect), a
     /// working-dir change can happen with no turn, so this triggers an explicit persist.
     /// </summary>
@@ -539,6 +535,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         var session = _chatSessionManager.ActiveSession;
         if (session is null) return;
+
+        // A started chat (turn in progress or with history) keeps its folder. The pill still
+        // reflects the pick for the next new chat; we just don't re-point this one.
+        if (session.Messages.Count > 0) return;
 
         session.SetWorkingDirectory(relativePath);
         // Keep the @Files autocomplete scoped to the re-pointed dir immediately.

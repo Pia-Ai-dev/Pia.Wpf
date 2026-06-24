@@ -33,6 +33,9 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _quickSwitcherCts;
     private List<SyncAssistantChat> _quickSwitcherCandidates = [];
     private List<SyncAssistantChat> _lastFlyoutChats = [];
+    /// <summary>Folder the next "+ New Chat" opens in (forward-slash relative; <c>""</c> = root).
+    /// Tracks the picker; re-seeded from the active chat each time the flyout opens.</summary>
+    private string _pendingNewChatDirectory = string.Empty;
     private bool _disposed;
 
     [ObservableProperty]
@@ -57,24 +60,20 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int _selectedIndex;
 
-    /// <summary>The active chat's working dir for the pill: backslash form, <c>\</c> at root
-    /// (e.g. <c>\</c> or <c>\src\app</c>). Display-only; navigation uses the picker's
-    /// forward-slash relative path.</summary>
+    /// <summary>The folder shown on the pill — the one the next "+ New Chat" opens in: backslash
+    /// form, <c>\</c> at root (e.g. <c>\</c> or <c>\src\app</c>). Seeded from the active chat on
+    /// flyout open, then updated as the user drills the picker. Display-only; navigation uses the
+    /// picker's forward-slash relative path.</summary>
     [ObservableProperty]
     private string _workingDirectoryDisplay = "\\";
 
-    /// <summary>True when the active chat is pinned to the sandbox root (drives the home glyph).</summary>
+    /// <summary>True when the pill folder is the sandbox root (drives the home glyph).</summary>
     [ObservableProperty]
     private bool _isWorkingDirectoryRoot = true;
 
     /// <summary>Drives the nested drill-down folder picker popup.</summary>
     [ObservableProperty]
     private bool _isPickerOpen;
-
-    /// <summary>False while the active chat is streaming — locks re-pointing the working dir
-    /// mid-turn (the folder selector is disabled and any open picker is dismissed).</summary>
-    [ObservableProperty]
-    private bool _canEditWorkingDirectory = true;
 
     /// <summary>The embedded drill-down folder picker.</summary>
     public WorkingDirectoryPickerViewModel WorkingDirectoryPicker { get; }
@@ -154,7 +153,12 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         if (e.PropertyName == nameof(IsFlyoutOpen))
         {
             if (IsFlyoutOpen)
+            {
+                // Re-seed the "+ New Chat" folder target to the active chat's folder each time
+                // the flyout opens, so an abandoned pick from a previous open doesn't linger.
+                SetWorkingDirectory(_getActiveWorkingDirectory());
                 LoadRecentChatsAsync().SafeFireAndForget(_logger);
+            }
             else
                 // Close the drill-down with the flyout so it doesn't auto-pop on the next
                 // open. Covers every close path (resume/show-all and the outside-click
@@ -166,41 +170,38 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         else if (e.PropertyName == nameof(QuickSwitcherQuery))
             RefreshQuickSwitcherMatches();
         else if (e.PropertyName == nameof(IsPickerOpen) && IsPickerOpen)
-            // Reflect the active chat's dir before showing the drill-down, then re-list.
-            WorkingDirectoryPicker.InitializeFrom(_getActiveWorkingDirectory());
+            // Open the drill-down at the current pending folder (seeded from the active chat
+            // on flyout open, or wherever the user last drilled in this flyout session).
+            WorkingDirectoryPicker.InitializeFrom(_pendingNewChatDirectory);
     }
 
     private void OnWorkingDirectoryChosen(object? sender, string relativePath)
     {
-        // The user entered/jumped to a folder in the picker: re-point the active chat
-        // (the owner persists) and refresh the pill display.
+        // The user entered/jumped to a folder in the picker. Offer the re-point to the active
+        // chat (the owner applies it ONLY while that chat is un-started — a chat with a turn in
+        // progress or history keeps its folder), record it as the folder the next "+ New Chat"
+        // opens in, and refresh the pill display.
         _setActiveWorkingDirectory(relativePath);
         SetWorkingDirectory(relativePath);
     }
 
-    /// <summary>Reflect the active chat's working dir on the pill (backslash display; <c>\</c> at root).</summary>
+    /// <summary>Reflect the chosen working dir on the pill (backslash display; <c>\</c> at root)
+    /// and record it as the folder the next "+ New Chat" opens in.</summary>
     public void SetWorkingDirectory(string? relativePath)
     {
         var normalized = relativePath?.Trim().Replace('\\', '/').Trim('/');
         if (string.IsNullOrEmpty(normalized))
         {
+            _pendingNewChatDirectory = string.Empty;
             IsWorkingDirectoryRoot = true;
             WorkingDirectoryDisplay = "\\";
         }
         else
         {
+            _pendingNewChatDirectory = normalized;
             IsWorkingDirectoryRoot = false;
             WorkingDirectoryDisplay = "\\" + normalized.Replace('/', '\\');
         }
-    }
-
-    /// <summary>Lock/unlock working-dir editing (called when the active chat starts/stops
-    /// streaming). Locking also dismisses an open picker so no re-point lands mid-turn.</summary>
-    public void SetWorkingDirectoryLocked(bool locked)
-    {
-        CanEditWorkingDirectory = !locked;
-        if (locked)
-            IsPickerOpen = false;
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
@@ -460,8 +461,9 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     {
         IsFlyoutOpen = false;
         IsPickerOpen = false;
-        // Pin the new chat to the folder currently shown on the pill (the active chat's dir).
-        _newChat(_getActiveWorkingDirectory());
+        // Pin the new chat to the folder selected in the picker (shown on the pill). This is
+        // independent of the active chat — picking a folder never re-points a started chat.
+        _newChat(_pendingNewChatDirectory);
     }
 
     private void ExecuteShowAllChats()
