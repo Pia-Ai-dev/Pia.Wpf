@@ -84,4 +84,33 @@
   <data name="Settings_MeetingTranscriptFolder_Browse" xml:space="preserve"><value>Durchsuchen…</value></data>
   <data name="Settings_MeetingTranscriptFolder_Reset" xml:space="preserve"><value>Zurücksetzen</value></data>
   <data name="Settings_MeetingTranscriptFolder_Hint" xml:space="preserve"><value>Hier werden gespeicherte Besprechungstranskripte abgelegt. Standard: %APPDATA%\Pia\assistant\meetings.</value></data>
+  <data name="LiveTrans_Consent_Unknown" xml:space="preserve"><value>Warte auf Ansage</value></data>
+  <data name="LiveTrans_Consent_Prompted" xml:space="preserve"><value>Frage läuft…</value></data>
+  <data name="LiveTrans_Consent_Granted" xml:space="preserve"><value>Aufnahme freigegeben</value></data>
+  <data name="LiveTrans_Consent_Denied" xml:space="preserve"><value>Aufnahme abgelehnt</value></data>
+  <data name="LiveTrans_Consent_Timeout" xml:space="preserve"><value>Keine Antwort – Aufnahme gestoppt</value></data>
+  <data name="LiveTrans_Consent_Ambiguous" xml:space="preserve"><value>Antwort unklar</value></data>
+  <data name="LiveTrans_Consent_Revoked" xml:space="preserve"><value>Widerrufen</value></data>
+  <data name="SecurityMode_Title" xml:space="preserve"><value>Sicherheitsmodus</value></data>
+  <data name="SecurityMode_Description" xml:space="preserve"><value>Wählt das Einwilligungs- und Datenverarbeitungsprofil für Live-Besprechungen.</value></data>
+  <data name="SecurityMode_Strict" xml:space="preserve"><value>Streng — nur lokal · Strategie A · 7 Tage Aufbewahrung</value></data>
+  <data name="SecurityMode_Strict_Description" xml:space="preserve"><value>Keine Cloud, Pause und neue Einwilligung für neue Sprecher, Einwilligungs-Audioausschnitt wird als Nachweis gespeichert.</value></data>
+  <data name="SecurityMode_Standard" xml:space="preserve"><value>Standard — EU-Cloud · Strategie B · 30 Tage Aufbewahrung</value></data>
+  <data name="SecurityMode_Standard_Description" xml:space="preserve"><value>Selektive Aufzeichnung (Strategie B), ausschließlich EU-Cloud.</value></data>
+  <data name="SecurityMode_Permissive" xml:space="preserve"><value>Permissiv — alle Clouds · Strategie B · 90 Tage Aufbewahrung</value></data>
+  <data name="SecurityMode_Permissive_Description" xml:space="preserve"><value>Erhöhte rechtliche Verantwortung beim Aktivieren — bestätigt per Dialog.</value></data>
+  <data name="SecurityMode_Permissive_Confirm_Title" xml:space="preserve"><value>Permissiver Modus</value></data>
+  <data name="SecurityMode_Permissive_Confirm_Body" xml:space="preserve"><value>Sie übernehmen die rechtliche Verantwortung für externe Verarbeitung. Fortfahren?</value></data>
+  <data name="BiometricStore_Title" xml:space="preserve"><value>Gespeicherte Stimmprofile</value></data>
+  <data name="BiometricStore_Description" xml:space="preserve"><value>Stimmen, deren Sprecher der dauerhaften Speicherung zugestimmt haben (max. 12 Monate).</value></data>
+  <data name="BiometricStore_DeleteAll" xml:space="preserve"><value>Alle gespeicherten Stimmen löschen</value></data>
+  <data name="BiometricStore_Empty" xml:space="preserve"><value>Keine gespeicherten Stimmprofile.</value></data>
+  <data name="BiometricStore_GrantedAt_Label" xml:space="preserve"><value>Erteilt:</value></data>
+  <data name="BiometricStore_ExpiresAt_Label" xml:space="preserve"><value>Läuft ab:</value></data>
+  <data name="BiometricStore_Prompt_Label" xml:space="preserve"><value>Prompt:</value></data>
+  <data name="BiometricStore_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="BiometricStore_DeleteEntry_Title" xml:space="preserve"><value>Stimmprofil löschen</value></data>
+  <data name="BiometricStore_DeleteEntry_Body" xml:space="preserve"><value>Soll das gespeicherte Stimmprofil „{0}" wirklich gelöscht werden?</value></data>
+  <data name="BiometricStore_DeleteAll_Title" xml:space="preserve"><value>Alle gespeicherten Stimmen löschen</value></data>
+  <data name="BiometricStore_DeleteAll_Body" xml:space="preserve"><value>Sollen alle gespeicherten Stimmprofile unwiderruflich gelöscht werden?</value></data>
 </root>

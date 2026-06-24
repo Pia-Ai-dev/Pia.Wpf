@@ -32,6 +32,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
     public SecurityModeViewModel SecurityModeVm { get; }
+    public BiometricStoreViewModel BiometricStoreVm { get; }
 
     public AccountSettingsViewModel(
         ILogger<SettingsViewModel> logger,
@@ -47,7 +48,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel,
         ISecurityModeProvider securityModeProvider,
-        ILogger<SecurityModeViewModel> securityModeLogger)
+        ILogger<SecurityModeViewModel> securityModeLogger,
+        BiometricStoreViewModel biometricStoreVm)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -62,7 +64,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         _policyService = policyService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         OnboardingViewModel = onboardingViewModel;
-        SecurityModeVm = new SecurityModeViewModel(securityModeProvider, dialogService, securityModeLogger);
+        SecurityModeVm = new SecurityModeViewModel(securityModeProvider, dialogService, localizationService, securityModeLogger);
+        BiometricStoreVm = biometricStoreVm;
 
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
         {

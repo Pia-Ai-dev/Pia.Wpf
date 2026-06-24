@@ -58,10 +58,15 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     public string IdentifyOrRegister(float[] segmentSamples, int sampleRate)
         => IdentifyOrRegisterWithEmbedding(segmentSamples, sampleRate).Label;
 
+    public event EventHandler<string>? SpeakerRegistered;
+
     public (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate)
     {
         var durationSec = sampleRate > 0 ? segmentSamples.Length / (float)sampleRate : 0f;
         var embedding = ComputeEmbedding(segmentSamples, sampleRate);
+
+        string? newlyRegisteredLabel = null;
+        (string Label, float[] Embedding) result;
 
         lock (_lock)
         {
@@ -90,39 +95,51 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                     "Diarization match: {Label} sim={Sim:F3} w={Weight:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, weight, durationSec, FormatSims(sims));
 
-                return (label, embedding);
+                result = (label, embedding);
             }
-
             // Zone B: borderline — return the best-matching label but DO NOT update the
             // centroid. Keeps an uncertain segment from poisoning the speaker profile while
             // still surfacing a sensible label to the UI.
-            if (bestId is not null && bestSim >= _matchThreshold - BorderlineMargin)
+            else if (bestId is not null && bestSim >= _matchThreshold - BorderlineMargin)
             {
                 var label = _displayLabels[bestId];
                 _logger.LogInformation(
                     "Diarization borderline (no centroid update): {Label} sim={Sim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, _matchThreshold, BorderlineMargin, durationSec, FormatSims(sims));
-                return (label, embedding);
+                result = (label, embedding);
             }
-
             // Zone C: register a brand-new speaker.
-            _counter++;
-            var internalId = $"spk_{_counter}";
-            var newLabel = $"Speaker {_counter}";
-            _speakers[internalId] = new SpeakerCentroid(embedding);
-            _displayLabels[internalId] = newLabel;
+            else
+            {
+                _counter++;
+                var internalId = $"spk_{_counter}";
+                var newLabel = $"Speaker {_counter}";
+                _speakers[internalId] = new SpeakerCentroid(embedding);
+                _displayLabels[internalId] = newLabel;
 
-            _logger.LogInformation(
-                "Diarization new speaker: {Label} bestSim={BestSim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
-                newLabel,
-                bestSim == float.NegativeInfinity ? 0f : bestSim,
-                _matchThreshold,
-                BorderlineMargin,
-                durationSec,
-                FormatSims(sims));
+                _logger.LogInformation(
+                    "Diarization new speaker: {Label} bestSim={BestSim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
+                    newLabel,
+                    bestSim == float.NegativeInfinity ? 0f : bestSim,
+                    _matchThreshold,
+                    BorderlineMargin,
+                    durationSec,
+                    FormatSims(sims));
 
-            return (newLabel, embedding);
+                newlyRegisteredLabel = newLabel;
+                result = (newLabel, embedding);
+            }
         }
+
+        // Raise outside the lock to avoid deadlocks if a subscriber calls back into the
+        // service or another component that takes its own locks (e.g. ConsentStateManager).
+        if (newlyRegisteredLabel is not null)
+        {
+            try { SpeakerRegistered?.Invoke(this, newlyRegisteredLabel); }
+            catch (Exception ex) { _logger.LogError(ex, "SpeakerRegistered subscriber threw for {Label}", newlyRegisteredLabel); }
+        }
+
+        return result;
     }
 
     public bool Rename(string oldLabel, string newLabel)

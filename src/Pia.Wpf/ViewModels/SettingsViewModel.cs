@@ -50,7 +50,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IPolicyService policyService,
         IFileDialogService fileDialogService,
         ISecurityModeProvider securityModeProvider,
-        ILogger<SecurityModeViewModel> securityModeLogger)
+        ILogger<SecurityModeViewModel> securityModeLogger,
+        BiometricStoreViewModel biometricStoreVm)
     {
         _logger = logger;
 
@@ -64,7 +65,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, fileDialogService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, securityModeProvider, securityModeLogger);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, securityModeProvider, securityModeLogger, biometricStoreVm);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }

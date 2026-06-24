@@ -84,4 +84,33 @@
   <data name="Settings_MeetingTranscriptFolder_Browse" xml:space="preserve"><value>Browse…</value></data>
   <data name="Settings_MeetingTranscriptFolder_Reset" xml:space="preserve"><value>Reset</value></data>
   <data name="Settings_MeetingTranscriptFolder_Hint" xml:space="preserve"><value>Where saved meeting transcripts are written. Defaults to %APPDATA%\Pia\assistant\meetings.</value></data>
+  <data name="LiveTrans_Consent_Unknown" xml:space="preserve"><value>Waiting for announcement</value></data>
+  <data name="LiveTrans_Consent_Prompted" xml:space="preserve"><value>Asking…</value></data>
+  <data name="LiveTrans_Consent_Granted" xml:space="preserve"><value>Recording allowed</value></data>
+  <data name="LiveTrans_Consent_Denied" xml:space="preserve"><value>Recording declined</value></data>
+  <data name="LiveTrans_Consent_Timeout" xml:space="preserve"><value>No response — recording stopped</value></data>
+  <data name="LiveTrans_Consent_Ambiguous" xml:space="preserve"><value>Response unclear</value></data>
+  <data name="LiveTrans_Consent_Revoked" xml:space="preserve"><value>Revoked</value></data>
+  <data name="SecurityMode_Title" xml:space="preserve"><value>Security Mode</value></data>
+  <data name="SecurityMode_Description" xml:space="preserve"><value>Selects the consent &amp; data-handling profile for live meetings.</value></data>
+  <data name="SecurityMode_Strict" xml:space="preserve"><value>Strict — local only · Strategy A · 7-day retention</value></data>
+  <data name="SecurityMode_Strict_Description" xml:space="preserve"><value>No cloud, pause-and-re-consent for new speakers, consent audio snippet retained as evidence.</value></data>
+  <data name="SecurityMode_Standard" xml:space="preserve"><value>Standard — EU cloud · Strategy B · 30-day retention</value></data>
+  <data name="SecurityMode_Standard_Description" xml:space="preserve"><value>Selective recording (Strategy B), EU-region cloud only.</value></data>
+  <data name="SecurityMode_Permissive" xml:space="preserve"><value>Permissive — all cloud · Strategy B · 90-day retention</value></data>
+  <data name="SecurityMode_Permissive_Description" xml:space="preserve"><value>Increased legal responsibility when activated — confirmed via dialog.</value></data>
+  <data name="SecurityMode_Permissive_Confirm_Title" xml:space="preserve"><value>Permissive Mode</value></data>
+  <data name="SecurityMode_Permissive_Confirm_Body" xml:space="preserve"><value>You take legal responsibility for external processing. Continue?</value></data>
+  <data name="BiometricStore_Title" xml:space="preserve"><value>Saved voice profiles</value></data>
+  <data name="BiometricStore_Description" xml:space="preserve"><value>Voices whose speakers consented to permanent storage (max 12 months).</value></data>
+  <data name="BiometricStore_DeleteAll" xml:space="preserve"><value>Delete all saved voices</value></data>
+  <data name="BiometricStore_Empty" xml:space="preserve"><value>No saved voice profiles.</value></data>
+  <data name="BiometricStore_GrantedAt_Label" xml:space="preserve"><value>Granted:</value></data>
+  <data name="BiometricStore_ExpiresAt_Label" xml:space="preserve"><value>Expires:</value></data>
+  <data name="BiometricStore_Prompt_Label" xml:space="preserve"><value>Prompt:</value></data>
+  <data name="BiometricStore_Delete" xml:space="preserve"><value>Delete</value></data>
+  <data name="BiometricStore_DeleteEntry_Title" xml:space="preserve"><value>Delete voice profile</value></data>
+  <data name="BiometricStore_DeleteEntry_Body" xml:space="preserve"><value>Are you sure you want to delete the saved voice profile "{0}"?</value></data>
+  <data name="BiometricStore_DeleteAll_Title" xml:space="preserve"><value>Delete all saved voices</value></data>
+  <data name="BiometricStore_DeleteAll_Body" xml:space="preserve"><value>Are you sure you want to permanently delete all saved voice profiles?</value></data>
 </root>

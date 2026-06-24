@@ -253,6 +253,9 @@
             <!-- Security Mode (Phase 3 consent profile selector) -->
             <settingsSections:SecurityModeSection DataContext="{Binding SecurityModeVm}" Margin="0,0,0,24"/>
 
+            <!-- Biometric Consent Store (Phase 5 cross-session opt-in management) -->
+            <settingsSections:BiometricStoreSection DataContext="{Binding BiometricStoreVm}" Margin="0,0,0,24"/>
+
             <!-- Separator -->
             <Border BorderThickness="0,1,0,0"
                     BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"

@@ -529,15 +529,15 @@ public partial class LiveTranscriptionViewModel : ObservableObject, IDisposable
         DispatchToUi(() => ConsentBadge = label);
     }
 
-    private static string MapConsentBadge(ConsentState state) => state switch
+    private string MapConsentBadge(ConsentState state) => state switch
     {
-        ConsentState.Unknown => "Warte auf Ansage",
-        ConsentState.Prompted => "Frage läuft…",
-        ConsentState.Granted => "Aufnahme freigegeben",
-        ConsentState.Denied => "Aufnahme abgelehnt",
-        ConsentState.Timeout => "Keine Antwort – Aufnahme gestoppt",
-        ConsentState.Ambiguous => "Antwort unklar",
-        ConsentState.Revoked => "Widerrufen",
+        ConsentState.Unknown => _localizationService["LiveTrans_Consent_Unknown"],
+        ConsentState.Prompted => _localizationService["LiveTrans_Consent_Prompted"],
+        ConsentState.Granted => _localizationService["LiveTrans_Consent_Granted"],
+        ConsentState.Denied => _localizationService["LiveTrans_Consent_Denied"],
+        ConsentState.Timeout => _localizationService["LiveTrans_Consent_Timeout"],
+        ConsentState.Ambiguous => _localizationService["LiveTrans_Consent_Ambiguous"],
+        ConsentState.Revoked => _localizationService["LiveTrans_Consent_Revoked"],
         _ => string.Empty,
     };
 

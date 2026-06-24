@@ -12,6 +12,7 @@ public partial class BiometricStoreViewModel : ObservableObject
 {
     private readonly IBiometricConsentStore _store;
     private readonly IDialogService _dialogService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<BiometricStoreViewModel> _logger;
 
     public ObservableCollection<BiometricStoreItemViewModel> Entries { get; } = new();
@@ -22,10 +23,12 @@ public partial class BiometricStoreViewModel : ObservableObject
     public BiometricStoreViewModel(
         IBiometricConsentStore store,
         IDialogService dialogService,
+        ILocalizationService localizationService,
         ILogger<BiometricStoreViewModel> logger)
     {
         _store = store;
         _dialogService = dialogService;
+        _localizationService = localizationService;
         _logger = logger;
         _ = RefreshAsync();
     }
@@ -52,8 +55,8 @@ public partial class BiometricStoreViewModel : ObservableObject
     {
         if (item is null) return;
         var ok = await _dialogService.ShowConfirmationDialogAsync(
-            "Stimmprofil löschen",
-            $"Soll das gespeicherte Stimmprofil „{item.DisplayName}\" wirklich gelöscht werden?");
+            _localizationService["BiometricStore_DeleteEntry_Title"],
+            _localizationService.Format("BiometricStore_DeleteEntry_Body", item.DisplayName));
         if (!ok) return;
         try
         {
@@ -68,8 +71,8 @@ public partial class BiometricStoreViewModel : ObservableObject
     public async Task DeleteAllAsync()
     {
         var ok = await _dialogService.ShowConfirmationDialogAsync(
-            "Alle gespeicherten Stimmen löschen",
-            "Sollen alle gespeicherten Stimmprofile unwiderruflich gelöscht werden?");
+            _localizationService["BiometricStore_DeleteAll_Title"],
+            _localizationService["BiometricStore_DeleteAll_Body"]);
         if (!ok) return;
         try
         {

@@ -11,6 +11,7 @@ public partial class SecurityModeViewModel : ObservableObject
 {
     private readonly ISecurityModeProvider _provider;
     private readonly IDialogService _dialogService;
+    private readonly ILocalizationService _localizationService;
     private readonly ILogger<SecurityModeViewModel> _logger;
     private bool _suppressApply;
 
@@ -21,10 +22,12 @@ public partial class SecurityModeViewModel : ObservableObject
     public SecurityModeViewModel(
         ISecurityModeProvider provider,
         IDialogService dialogService,
+        ILocalizationService localizationService,
         ILogger<SecurityModeViewModel> logger)
     {
         _provider = provider;
         _dialogService = dialogService;
+        _localizationService = localizationService;
         _logger = logger;
         SyncFromCurrent();
         _provider.ProfileChanged += (_, _) => SyncFromCurrent();
@@ -52,8 +55,8 @@ public partial class SecurityModeViewModel : ObservableObject
         if (mode == SecurityMode.Permissive)
         {
             var ok = await _dialogService.ShowConfirmationDialogAsync(
-                "Permissive Mode",
-                "Sie übernehmen die rechtliche Verantwortung für externe Verarbeitung. Fortfahren?");
+                _localizationService["SecurityMode_Permissive_Confirm_Title"],
+                _localizationService["SecurityMode_Permissive_Confirm_Body"]);
             if (!ok)
             {
                 SyncFromCurrent();

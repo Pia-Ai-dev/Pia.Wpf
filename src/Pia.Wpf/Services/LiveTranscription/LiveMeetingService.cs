@@ -138,6 +138,12 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
                     speakerModelPath,
                     settings.SpeakerEmbeddingThreshold,
                     _loggerFactory.CreateLogger<SpeakerIdentificationService>());
+                // Subscribe before any audio is captured: the consent flow MUST be triggered
+                // by speaker-registration, not by the utterance pipeline, because the pre-STT
+                // gate drops every segment for a speaker in the Unknown state — without this
+                // hook, ProcessUtteranceAsync would never observe a new loopback speaker and
+                // the consent state would stay Unknown forever, deadlocking the gate.
+                _speakerId.SpeakerRegistered += OnSpeakerRegistered;
             }
 
             TransitionState(LiveMeetingState.Prepared);
@@ -293,19 +299,15 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         }
 
         var label = utt.SpeakerLabel;
+        // Defensive safety net: if an utterance for an unseen speaker reaches us before
+        // SpeakerRegistered fires (shouldn't happen — registration is synchronous within
+        // IdentifyOrRegisterWithEmbedding which runs before we ever emit), still bootstrap
+        // the consent flow so we never silently drop transcript text.
         var firstSeen = false;
         lock (_knownSpeakers) firstSeen = _knownSpeakers.Add(label);
         if (firstSeen)
         {
-            // Strategy A pauses every running engine (in the orchestrator) before the
-            // prompt flow runs; Strategy B is a no-op so the existing Granted speakers
-            // keep producing utterances while the new speaker waits for consent.
-            if (_orchestrator is not null)
-            {
-                try { await _orchestrator.OnNewSpeakerJoinedAsync(label, cancellationToken).ConfigureAwait(false); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Orchestrator OnNewSpeakerJoinedAsync threw for {Label}", label); }
-            }
-            StartConsentFlowAsync(label);
+            await BeginConsentForNewSpeakerAsync(label, cancellationToken).ConfigureAwait(false);
         }
 
         if (utt.Channel == TranscriptChannel.ConsentClassification)
@@ -317,6 +319,37 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         if (_postSttFilter.Evaluate(utt) == PostSttFilterDecision.DropAndAudit) return;
 
         await _utterances.Writer.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void OnSpeakerRegistered(object? sender, string label)
+    {
+        // Fired the moment diarization registers a new label, BEFORE the consent gate has a
+        // chance to drop the speaker's first segment for being in the Unknown state. Without
+        // this hook, the gate would silently drop every utterance, ProcessUtteranceAsync
+        // would never run for the speaker, and the consent flow that transitions
+        // Unknown -> Prompted would never start (chicken-and-egg deadlock).
+        bool firstSeen;
+        lock (_knownSpeakers) firstSeen = _knownSpeakers.Add(label);
+        if (!firstSeen) return;
+
+        _ = Task.Run(async () =>
+        {
+            try { await BeginConsentForNewSpeakerAsync(label, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogError(ex, "Speaker-registered consent bootstrap failed for {Label}", label); }
+        });
+    }
+
+    internal async Task BeginConsentForNewSpeakerAsync(string label, CancellationToken cancellationToken)
+    {
+        // Strategy A pauses every running engine (in the orchestrator) before the prompt
+        // flow runs; Strategy B is a no-op so existing Granted speakers keep producing
+        // utterances while the new speaker waits for consent.
+        if (_orchestrator is not null)
+        {
+            try { await _orchestrator.OnNewSpeakerJoinedAsync(label, cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Orchestrator OnNewSpeakerJoinedAsync threw for {Label}", label); }
+        }
+        StartConsentFlowAsync(label);
     }
 
     private void StartConsentFlowAsync(string label)
@@ -530,6 +563,7 @@ public sealed class LiveMeetingService : ILiveMeetingService, IAsyncDisposable
         }
         if (_speakerId is not null)
         {
+            _speakerId.SpeakerRegistered -= OnSpeakerRegistered;
             try { _speakerId.Dispose(); }
             catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification service dispose threw"); }
             _speakerId = null;

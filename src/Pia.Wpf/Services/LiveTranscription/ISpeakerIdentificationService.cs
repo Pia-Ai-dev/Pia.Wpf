@@ -34,4 +34,12 @@ public interface ISpeakerIdentificationService : IDisposable
     /// with a fresh "Speaker 1" pool.
     /// </summary>
     void Reset();
+
+    /// <summary>
+    /// Raised the first time a new speaker label is registered (Zone C). Fires on the calling
+    /// thread, outside the diarization lock. The consent flow subscribes here so it can prompt
+    /// even when the pre-STT consent gate would otherwise drop every segment for an Unknown
+    /// speaker (which would prevent the utterance pipeline from ever observing the speaker).
+    /// </summary>
+    event EventHandler<string>? SpeakerRegistered;
 }

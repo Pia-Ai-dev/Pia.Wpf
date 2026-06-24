@@ -84,4 +84,33 @@
   <data name="Settings_MeetingTranscriptFolder_Browse" xml:space="preserve"><value>Parcourir…</value></data>
   <data name="Settings_MeetingTranscriptFolder_Reset" xml:space="preserve"><value>Réinitialiser</value></data>
   <data name="Settings_MeetingTranscriptFolder_Hint" xml:space="preserve"><value>Emplacement des transcriptions de réunion enregistrées. Par défaut : %APPDATA%\Pia\assistant\meetings.</value></data>
+  <data name="LiveTrans_Consent_Unknown" xml:space="preserve"><value>En attente de l'annonce</value></data>
+  <data name="LiveTrans_Consent_Prompted" xml:space="preserve"><value>Question en cours…</value></data>
+  <data name="LiveTrans_Consent_Granted" xml:space="preserve"><value>Enregistrement autorisé</value></data>
+  <data name="LiveTrans_Consent_Denied" xml:space="preserve"><value>Enregistrement refusé</value></data>
+  <data name="LiveTrans_Consent_Timeout" xml:space="preserve"><value>Pas de réponse — enregistrement arrêté</value></data>
+  <data name="LiveTrans_Consent_Ambiguous" xml:space="preserve"><value>Réponse ambiguë</value></data>
+  <data name="LiveTrans_Consent_Revoked" xml:space="preserve"><value>Révoqué</value></data>
+  <data name="SecurityMode_Title" xml:space="preserve"><value>Mode de sécurité</value></data>
+  <data name="SecurityMode_Description" xml:space="preserve"><value>Sélectionne le profil de consentement et de traitement des données pour les réunions en direct.</value></data>
+  <data name="SecurityMode_Strict" xml:space="preserve"><value>Strict — local uniquement · Stratégie A · conservation 7 jours</value></data>
+  <data name="SecurityMode_Strict_Description" xml:space="preserve"><value>Pas de cloud, mise en pause et nouveau consentement pour chaque nouvel intervenant, extrait audio de consentement conservé comme preuve.</value></data>
+  <data name="SecurityMode_Standard" xml:space="preserve"><value>Standard — cloud UE · Stratégie B · conservation 30 jours</value></data>
+  <data name="SecurityMode_Standard_Description" xml:space="preserve"><value>Enregistrement sélectif (Stratégie B), cloud en région UE uniquement.</value></data>
+  <data name="SecurityMode_Permissive" xml:space="preserve"><value>Permissif — tous les clouds · Stratégie B · conservation 90 jours</value></data>
+  <data name="SecurityMode_Permissive_Description" xml:space="preserve"><value>Responsabilité juridique accrue lors de l'activation — confirmée par dialogue.</value></data>
+  <data name="SecurityMode_Permissive_Confirm_Title" xml:space="preserve"><value>Mode permissif</value></data>
+  <data name="SecurityMode_Permissive_Confirm_Body" xml:space="preserve"><value>Vous assumez la responsabilité juridique du traitement externe. Continuer ?</value></data>
+  <data name="BiometricStore_Title" xml:space="preserve"><value>Profils vocaux enregistrés</value></data>
+  <data name="BiometricStore_Description" xml:space="preserve"><value>Voix dont les locuteurs ont consenti à un stockage permanent (max. 12 mois).</value></data>
+  <data name="BiometricStore_DeleteAll" xml:space="preserve"><value>Supprimer toutes les voix enregistrées</value></data>
+  <data name="BiometricStore_Empty" xml:space="preserve"><value>Aucun profil vocal enregistré.</value></data>
+  <data name="BiometricStore_GrantedAt_Label" xml:space="preserve"><value>Accordé :</value></data>
+  <data name="BiometricStore_ExpiresAt_Label" xml:space="preserve"><value>Expire :</value></data>
+  <data name="BiometricStore_Prompt_Label" xml:space="preserve"><value>Prompt :</value></data>
+  <data name="BiometricStore_Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="BiometricStore_DeleteEntry_Title" xml:space="preserve"><value>Supprimer le profil vocal</value></data>
+  <data name="BiometricStore_DeleteEntry_Body" xml:space="preserve"><value>Voulez-vous vraiment supprimer le profil vocal enregistré « {0} » ?</value></data>
+  <data name="BiometricStore_DeleteAll_Title" xml:space="preserve"><value>Supprimer toutes les voix enregistrées</value></data>
+  <data name="BiometricStore_DeleteAll_Body" xml:space="preserve"><value>Voulez-vous supprimer définitivement tous les profils vocaux enregistrés ?</value></data>
 </root>
