@@ -9,6 +9,7 @@
                   xmlns:views="clr-namespace:Pia.Views"
                   xmlns:controls="clr-namespace:Pia.Views.Controls"
                   xmlns:piactl="clr-namespace:Pia.Controls"
+                  xmlns:flow="clr-namespace:Pia.Controls.Flow"
                   xmlns:models="clr-namespace:Pia.Models"
                   xmlns:loc="clr-namespace:Pia.Localization"
                   mc:Ignorable="d"
@@ -38,7 +39,8 @@
 
       <views:NavigationSidebarView Grid.Column="0" />
 
-    <Grid Grid.Column="1">
+    <Grid Grid.Column="1"
+          Margin="{Binding DataContext.IsPinned, ElementName=RootFlowView, Converter={StaticResource BoolToReflowMarginConverter}}">
       <Grid.RowDefinitions>
         <RowDefinition Height="36" />
         <RowDefinition Height="Auto" />
@@ -194,6 +196,7 @@
                           VerticalAlignment="Top"
                           Margin="0,36,0,0"
                           Panel.ZIndex="15" />
+    <flow:FlowView x:Name="RootFlowView" Panel.ZIndex="16" />
     <ui:TitleBar x:Name="TitleBar"
                  Title="{Binding WindowTitle}"
                  CloseWindowByDoubleClickOnIcon="True">

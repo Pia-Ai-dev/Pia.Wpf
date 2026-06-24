@@ -30,7 +30,7 @@
           </Grid.RowDefinitions>
 
           <TextBlock Grid.Row="0" Grid.Column="0"
-                     Text="{Binding Title, FallbackValue='—'}"
+                     behaviors:EmojiTextBehavior.Text="{Binding Title, FallbackValue='—'}"
                      FontSize="16"
                      FontWeight="SemiBold"
                      TextWrapping="Wrap"
@@ -124,10 +124,11 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
-                  <ContentControl Grid.Column="0"
-                                  Style="{StaticResource PiaAvatarStyle}"
-                                  Margin="0,2,12,0"
-                                  VerticalAlignment="Top"/>
+                  <chat:PiaPersonaAvatar Grid.Column="0"
+                                         PersonaId="{Binding PersonaGlyphId}"
+                                         Emoji="{Binding PersonaGlyphEmoji}"
+                                         Margin="0,2,12,0"
+                                         VerticalAlignment="Top"/>
                   <chat:PiaAssistantMessage Grid.Column="1"
                                             HorizontalAlignment="Left"
                                             MaxWidth="880"/>

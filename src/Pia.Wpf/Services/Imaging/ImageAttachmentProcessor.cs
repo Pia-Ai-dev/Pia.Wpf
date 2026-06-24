@@ -28,25 +28,7 @@ public static class ImageAttachmentProcessor
                 frame = decoder.Frames[0];
             }
 
-            var resized = ResizeIfNeeded(frame, MaxLongEdge);
-            var bytes = TryEncode(resized);
-            if (bytes is null)
-            {
-                logger.LogInformation("Image too large after re-encoding");
-                return null;
-            }
-
-            var thumb = ResizeIfNeeded(resized, ThumbnailMaxEdge);
-            if (!thumb.IsFrozen && thumb.CanFreeze) thumb.Freeze();
-
-            return new ImageAttachment
-            {
-                JpegBytes = bytes,
-                MimeType = "image/jpeg",
-                Width = resized.PixelWidth,
-                Height = resized.PixelHeight,
-                Thumbnail = thumb,
-            };
+            return Prepare(frame, logger);
         }
         catch (Exception ex)
         {
@@ -54,6 +36,54 @@ public static class ImageAttachmentProcessor
             logger.SensitiveDebug("Image attachment failure for {File}: {Error}", filePath, ex);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Prepares an attachment from an in-memory bitmap (e.g. a clipboard paste), avoiding a
+    /// round-trip through a scratch file.
+    /// </summary>
+    public static ImageAttachment? TryPrepare(BitmapSource source, ILogger logger)
+    {
+        try
+        {
+            logger.SensitiveDebug("Preparing image attachment from clipboard ({Width}x{Height})", source.PixelWidth, source.PixelHeight);
+
+            // Clipboard bitmaps are commonly Bgr32 with a zeroed alpha channel; flattening to
+            // Bgr24 drops that bogus alpha so the JPEG encoder doesn't render it as black.
+            var opaque = new FormatConvertedBitmap(source, PixelFormats.Bgr24, null, 0);
+            if (opaque.CanFreeze) opaque.Freeze();
+
+            return Prepare(opaque, logger);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Failed to prepare clipboard image attachment ({Type})", ex.GetType().Name);
+            logger.SensitiveDebug("Clipboard image attachment failure: {Error}", ex);
+            return null;
+        }
+    }
+
+    private static ImageAttachment? Prepare(BitmapSource frame, ILogger logger)
+    {
+        var resized = ResizeIfNeeded(frame, MaxLongEdge);
+        var bytes = TryEncode(resized);
+        if (bytes is null)
+        {
+            logger.LogInformation("Image too large after re-encoding");
+            return null;
+        }
+
+        var thumb = ResizeIfNeeded(resized, ThumbnailMaxEdge);
+        if (!thumb.IsFrozen && thumb.CanFreeze) thumb.Freeze();
+
+        return new ImageAttachment
+        {
+            JpegBytes = bytes,
+            MimeType = "image/jpeg",
+            Width = resized.PixelWidth,
+            Height = resized.PixelHeight,
+            Thumbnail = thumb,
+        };
     }
 
     private static BitmapSource ResizeIfNeeded(BitmapSource source, int maxEdge)

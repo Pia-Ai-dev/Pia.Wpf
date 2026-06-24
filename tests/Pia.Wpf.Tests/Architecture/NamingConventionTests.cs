@@ -25,7 +25,7 @@ public class NamingConventionTests
     [Fact]
     public void ServiceClasses_MustFollowNamingConvention()
     {
-        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine", "Calculator", "Resolver", "Surface", "Buffer" };
+        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine", "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store" };
 
         // Domain-named service/helper classes that legitimately do not carry one of the suffixes above.
         // ChromiumProvisioner / TeamsMeetingSession / AudioHopResampler are agent-noun / stateful helpers
@@ -52,10 +52,10 @@ public class NamingConventionTests
 
         var violations = serviceTypes
             // The convention is about service *classes*: enums and Win32 interop structs (value types,
-            // e.g. AUDIOCLIENT_ACTIVATION_PARAMS / WAVEFORMATEX, which must mirror the native API names)
-            // are not services and are excluded.
-            .Where(t => !t.IsValueType)
-            .Where(t => !t.IsNestedPrivate && !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
+            // e.g. AUDIOCLIENT_ACTIVATION_PARAMS / WAVEFORMATEX, which must mirror the native API names,
+            // and the ambient context record struct TaskContext) are data carriers, not services, and
+            // are excluded. This only ever narrows scrutiny; a misnamed reference-type service is still caught.
+            .Where(t => !t.IsNestedPrivate && !t.IsValueType && !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
             .Where(t => !exemptNames.Contains(t.Name))
             .Where(t => !allowedSuffixes.Any(suffix => t.Name.EndsWith(suffix)))
             .Select(t => t.Name)

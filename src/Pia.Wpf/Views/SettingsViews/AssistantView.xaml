@@ -3,12 +3,17 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
+             xmlns:local="clr-namespace:Pia.Views.SettingsViews"
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
   </UserControl.Resources>
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+  <Grid>
+    <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
+      <!-- General tab -->
+      <TabItem Header="{loc:Str Settings_InnerTab_General}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="640" HorizontalAlignment="Left">
       <!-- Provider selector for Assistant mode -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}"
@@ -128,6 +133,80 @@
                    Appearance="Caution"
                    HorizontalAlignment="Left"/>
       </StackPanel>
-    </StackPanel>
-  </ScrollViewer>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Personas tab -->
+      <TabItem Header="{loc:Str Settings_Tab_Personas}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <local:PersonasView DataContext="{Binding PersonasVm}"/>
+      </TabItem>
+
+      <!-- Tool access tab (tool-permission revocation surface — design §7) -->
+      <TabItem Header="{loc:Str Settings_Tab_ToolPermissions}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding ToolPermissionsVm}">
+          <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Text="{loc:Str Settings_ToolPermissions_Title}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,0,0,4"/>
+            <TextBlock Text="{loc:Str Settings_ToolPermissions_Description}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       Margin="0,0,0,12"/>
+
+            <!-- Empty state -->
+            <TextBlock Text="{loc:Str ToolPermissions_Empty}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       Visibility="{Binding HasGrants, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+            <!-- Grant list -->
+            <ItemsControl ItemsSource="{Binding Grants}"
+                          Visibility="{Binding HasGrants, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Style="{StaticResource PiaSettingsCardStyle}"
+                          Padding="14,12"
+                          Margin="0,0,0,8">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextDefaultBrush}"
+                                   Text="{Binding ToolName}"/>
+                        <TextBlock FontSize="11"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   Margin="0,2,0,0">
+                          <Run Text="{loc:Str ToolPermissions_Column_Plugin}"/>
+                          <Run Text=" "/>
+                          <Run Text="{Binding PluginName, Mode=OneWay}"/>
+                        </TextBlock>
+                        <TextBlock FontSize="11"
+                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                   Margin="0,2,0,0">
+                          <Run Text="{loc:Str ToolPermissions_Column_GrantedAt}"/>
+                          <Run Text=" "/>
+                          <Run Text="{Binding GrantedAt, StringFormat='{}{0:g}', Mode=OneWay}"/>
+                        </TextBlock>
+                      </StackPanel>
+
+                      <ui:Button Grid.Column="1"
+                                 Content="{loc:Str ToolPermissions_Revoke}"
+                                 Appearance="Secondary"
+                                 Foreground="{DynamicResource PiaDangerBrush}"
+                                 VerticalAlignment="Center"
+                                 Command="{Binding DataContext.RevokeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                 CommandParameter="{Binding}"/>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </Grid>
 </UserControl>

@@ -42,6 +42,7 @@
       <converters:WindowModeToVisibilityConverter x:Key="WindowModeToVisibilityConverter" />
       <converters:VoiceModeStateToVisibilityConverter x:Key="VoiceModeStateToVisibilityConverter" />
       <converters:StringEqualsBoolConverter x:Key="StringEqualsBoolConverter" />
+      <converters:MultiStringEqualsBoolConverter x:Key="MultiStringEqualsBoolConverter" />
       <converters:StringNotNullOrEmptyToBoolConverter x:Key="StringNotNullOrEmptyToBoolConverter" />
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
       <converters:InverseNullToVisibilityConverter x:Key="InverseNullToVisibilityConverter" />
@@ -51,6 +52,7 @@
       <converters:BoolToAngleConverter x:Key="BoolToAngleConverter" />
       <converters:SingleLineConverter x:Key="SingleLineConverter" />
       <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
+      <converters:BoolToReflowMarginConverter x:Key="BoolToReflowMarginConverter" />
       <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushBg" Kind="Background" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushFg" Kind="Foreground" />
@@ -58,6 +60,12 @@
       <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushFg" Kind="Foreground" />
       <converters:ReminderStatusToLabelConverter x:Key="ReminderStatusToLabelConverter" />
       <converters:NextFireAtToShortStringConverter x:Key="NextFireAtToShortStringConverter" />
+      <converters:HexToBrushConverter x:Key="HexToBrushConverter" />
+      <converters:ChatStateToBrushConverter x:Key="ChatStateToBrushBg" Kind="Background" />
+      <converters:ChatStateToBrushConverter x:Key="ChatStateToBrushFg" Kind="Foreground" />
+      <converters:ChatStateToGlyphConverter x:Key="ChatStateToGlyphConverter" />
+      <converters:ChatStateToLabelConverter x:Key="ChatStateToLabelConverter" />
+      <converters:ChatStateIsBadgeVisibleConverter x:Key="ChatStateIsBadgeVisibleConverter" />
 
       <!-- DataTemplate mappings for Views and ViewModels -->
       <DataTemplate DataType="{x:Type viewModels:OptimizeViewModel}">

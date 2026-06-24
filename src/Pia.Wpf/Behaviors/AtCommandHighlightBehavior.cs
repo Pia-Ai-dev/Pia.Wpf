@@ -3,12 +3,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using Pia.Emoji;
 
 namespace Pia.Behaviors;
 
 /// <summary>
 /// Attached behavior for TextBlock that highlights @-commands with a distinct style.
-/// Replaces plain text binding with styled Inlines.
+/// Replaces plain text binding with styled Inlines. Non-command text is run through
+/// <see cref="EmojiInlineBuilder"/> so emoji render in color inline with the message.
 /// </summary>
 public static partial class AtCommandHighlightBehavior
 {
@@ -39,7 +41,7 @@ public static partial class AtCommandHighlightBehavior
 
         if (matches.Count == 0)
         {
-            textBlock.Inlines.Add(new Run(text));
+            AddText(textBlock.Inlines, text);
             return;
         }
 
@@ -49,7 +51,7 @@ public static partial class AtCommandHighlightBehavior
             // Add text before the match
             if (match.Index > lastIndex)
             {
-                textBlock.Inlines.Add(new Run(text[lastIndex..match.Index]));
+                AddText(textBlock.Inlines, text[lastIndex..match.Index]);
             }
 
             // Add the @-command with highlight styling
@@ -83,8 +85,15 @@ public static partial class AtCommandHighlightBehavior
         // Add remaining text after last match
         if (lastIndex < text.Length)
         {
-            textBlock.Inlines.Add(new Run(text[lastIndex..]));
+            AddText(textBlock.Inlines, text[lastIndex..]);
         }
+    }
+
+    /// <summary>Adds a plain-text span as inlines, with any emoji rendered in color.</summary>
+    private static void AddText(InlineCollection target, string text)
+    {
+        foreach (var inline in EmojiInlineBuilder.Build(text))
+            target.Add(inline);
     }
 
     private static Brush GetCommandForeground(FrameworkElement element)

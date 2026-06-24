@@ -44,13 +44,6 @@ public interface IDeviceManagementService
     Task<DeviceListResponse> GetDevicesAsync();
 
     /// <summary>
-    /// Re-key E2EE with a new UMK. Used when re-enabling E2EE on a device that
-    /// was previously bootstrapped. Generates a new UMK, self-wraps, and uploads
-    /// a new recovery-wrapped UMK. Returns the new recovery code.
-    /// </summary>
-    Task<string> ReKeyAsync();
-
-    /// <summary>
     /// Check if E2EE has been initialized for this device.
     /// </summary>
     bool IsInitialized();

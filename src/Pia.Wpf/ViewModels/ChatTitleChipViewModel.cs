@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
@@ -22,15 +23,27 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<ChatTitleChipViewModel> _logger;
     private readonly Func<Guid, Task> _resumeChat;
-    private readonly Action _newChat;
+    private readonly Action<string?> _newChat;
     private readonly Action _showAllChats;
+    private readonly Func<Guid, ChatState> _resolveState;
+    private readonly Action<string?> _setActiveWorkingDirectory;
+    private readonly Func<string?> _getActiveWorkingDirectory;
+    private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _quickSwitcherCts;
     private List<SyncAssistantChat> _quickSwitcherCandidates = [];
+    private List<SyncAssistantChat> _lastFlyoutChats = [];
+    /// <summary>Folder the next "+ New Chat" opens in (forward-slash relative; <c>""</c> = root).
+    /// Tracks the picker; re-seeded from the active chat each time the flyout opens.</summary>
+    private string _pendingNewChatDirectory = string.Empty;
     private bool _disposed;
 
     [ObservableProperty]
     private string _currentTitle = string.Empty;
+
+    /// <summary>Live state of the active chat — drives the badge pill on the chip.</summary>
+    [ObservableProperty]
+    private ChatState _activeState = ChatState.Idle;
 
     [ObservableProperty]
     private bool _isFlyoutOpen;
@@ -46,6 +59,24 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private int _selectedIndex;
+
+    /// <summary>The folder shown on the pill — the one the next "+ New Chat" opens in: backslash
+    /// form, <c>\</c> at root (e.g. <c>\</c> or <c>\src\app</c>). Seeded from the active chat on
+    /// flyout open, then updated as the user drills the picker. Display-only; navigation uses the
+    /// picker's forward-slash relative path.</summary>
+    [ObservableProperty]
+    private string _workingDirectoryDisplay = "\\";
+
+    /// <summary>True when the pill folder is the sandbox root (drives the home glyph).</summary>
+    [ObservableProperty]
+    private bool _isWorkingDirectoryRoot = true;
+
+    /// <summary>Drives the nested drill-down folder picker popup.</summary>
+    [ObservableProperty]
+    private bool _isPickerOpen;
+
+    /// <summary>The embedded drill-down folder picker.</summary>
+    public WorkingDirectoryPickerViewModel WorkingDirectoryPicker { get; }
 
     public ObservableCollection<ChatChipGroupViewModel> Groups { get; } = [];
     public ObservableCollection<QuickSwitcherMatchViewModel> Matches { get; } = [];
@@ -63,8 +94,12 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         ILocalizationService localizationService,
         ILogger<ChatTitleChipViewModel> logger,
         Func<Guid, Task> resumeChat,
-        Action newChat,
-        Action showAllChats)
+        Action<string?> newChat,
+        Action showAllChats,
+        Func<Guid, ChatState> resolveState,
+        IWorkingDirectoryService workingDirectoryService,
+        Action<string?> setActiveWorkingDirectory,
+        Func<string?> getActiveWorkingDirectory)
     {
         _chatService = chatService;
         _localizationService = localizationService;
@@ -72,6 +107,17 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         _resumeChat = resumeChat;
         _newChat = newChat;
         _showAllChats = showAllChats;
+        _resolveState = resolveState;
+        _setActiveWorkingDirectory = setActiveWorkingDirectory;
+        _getActiveWorkingDirectory = getActiveWorkingDirectory;
+
+        WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectoryService);
+        WorkingDirectoryPicker.WorkingDirectoryChosen += OnWorkingDirectoryChosen;
+        // Captured on the UI thread (this VM is constructed there) so off-thread
+        // ChatsChanged (e.g. the retention BackgroundService raising it from a
+        // thread-pool thread) can be marshalled back before touching bound collections.
+        _syncContext = SynchronizationContext.Current
+            ?? throw new InvalidOperationException("ChatTitleChipViewModel must be created on the UI thread");
 
         CurrentTitle = _localizationService["AssistantChat_TitlePlaceholder_NewChat"];
 
@@ -92,20 +138,81 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
             ? _localizationService["AssistantChat_TitlePlaceholder_NewChat"]
             : title;
 
+    public void SetState(ChatState state) => ActiveState = state;
+
+    /// <summary>Refresh a quick-switcher match's live state in place (called on SessionStateChanged).</summary>
+    public void RefreshMatchState(Guid chatId, ChatState state)
+    {
+        var match = Matches.FirstOrDefault(m => m.Id == chatId);
+        if (match is not null)
+            match.State = state;
+    }
+
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(IsFlyoutOpen) && IsFlyoutOpen)
-            LoadRecentChatsAsync().SafeFireAndForget(_logger);
+        if (e.PropertyName == nameof(IsFlyoutOpen))
+        {
+            if (IsFlyoutOpen)
+            {
+                // Re-seed the "+ New Chat" folder target to the active chat's folder each time
+                // the flyout opens, so an abandoned pick from a previous open doesn't linger.
+                SetWorkingDirectory(_getActiveWorkingDirectory());
+                LoadRecentChatsAsync().SafeFireAndForget(_logger);
+            }
+            else
+                // Close the drill-down with the flyout so it doesn't auto-pop on the next
+                // open. Covers every close path (resume/show-all and the outside-click
+                // dismiss that flips IsFlyoutOpen via its binding), not just New Chat.
+                IsPickerOpen = false;
+        }
         else if (e.PropertyName == nameof(SearchQuery))
             DebounceReload();
         else if (e.PropertyName == nameof(QuickSwitcherQuery))
             RefreshQuickSwitcherMatches();
+        else if (e.PropertyName == nameof(IsPickerOpen) && IsPickerOpen)
+            // Open the drill-down at the current pending folder (seeded from the active chat
+            // on flyout open, or wherever the user last drilled in this flyout session).
+            WorkingDirectoryPicker.InitializeFrom(_pendingNewChatDirectory);
+    }
+
+    private void OnWorkingDirectoryChosen(object? sender, string relativePath)
+    {
+        // The user entered/jumped to a folder in the picker. Offer the re-point to the active
+        // chat (the owner applies it ONLY while that chat is un-started — a chat with a turn in
+        // progress or history keeps its folder), record it as the folder the next "+ New Chat"
+        // opens in, and refresh the pill display.
+        _setActiveWorkingDirectory(relativePath);
+        SetWorkingDirectory(relativePath);
+    }
+
+    /// <summary>Reflect the chosen working dir on the pill (backslash display; <c>\</c> at root)
+    /// and record it as the folder the next "+ New Chat" opens in.</summary>
+    public void SetWorkingDirectory(string? relativePath)
+    {
+        var normalized = relativePath?.Trim().Replace('\\', '/').Trim('/');
+        if (string.IsNullOrEmpty(normalized))
+        {
+            _pendingNewChatDirectory = string.Empty;
+            IsWorkingDirectoryRoot = true;
+            WorkingDirectoryDisplay = "\\";
+        }
+        else
+        {
+            _pendingNewChatDirectory = normalized;
+            IsWorkingDirectoryRoot = false;
+            WorkingDirectoryDisplay = "\\" + normalized.Replace('/', '\\');
+        }
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
-        if (IsFlyoutOpen)
-            LoadRecentChatsAsync().SafeFireAndForget(_logger);
+        // ChatsChanged can fire off the UI thread (retention BackgroundService). Marshal
+        // before reloading — LoadRecentChatsAsync mutates the bound Groups collection.
+        _syncContext.Post(_ =>
+        {
+            if (IsFlyoutOpen)
+                LoadRecentChatsAsync().SafeFireAndForget(_logger);
+        }, null);
     }
 
     private void DebounceReload()
@@ -128,7 +235,8 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
             _logger.LogInformation("Loaded {Count} recent chats for flyout (hasQuery={HasQuery})",
                 chats.Count, !string.IsNullOrWhiteSpace(SearchQuery));
 
-            RebuildGroups(chats);
+            _lastFlyoutChats = [.. chats];
+            RebuildGroups();
         }
         catch (Exception ex)
         {
@@ -136,24 +244,30 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void RebuildGroups(IReadOnlyList<SyncAssistantChat> chats)
+    private void RebuildGroups()
+    {
+        Groups.Clear();
+        foreach (var group in BuildDateGroups(_lastFlyoutChats))
+            Groups.Add(group);
+    }
+
+    private List<ChatChipGroupViewModel> BuildDateGroups(IReadOnlyList<SyncAssistantChat> chats)
     {
         var today = DateTime.Today;
         var yesterday = today.AddDays(-1);
-
-        var groups = chats
+        return chats
             .GroupBy(c => ClassifyForFlyout(c.UpdatedAt.ToLocalTime().Date, today, yesterday))
             .OrderBy(g => (int)g.Key)
             .Select(g => new ChatChipGroupViewModel
             {
                 DisplayName = _localizationService[BucketResourceKey(g.Key)],
-                Items = g.Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt)).ToList(),
+                // State is a SNAPSHOT read once here via _resolveState (Idle when not live);
+                // the flyout row badge reflects it without per-item live notification.
+                Items = g.OrderByDescending(c => c.UpdatedAt)
+                         .Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt, _resolveState(c.Id)))
+                         .ToList(),
             })
             .ToList();
-
-        Groups.Clear();
-        foreach (var group in groups)
-            Groups.Add(group);
     }
 
     private static HistoryDateBucket ClassifyForFlyout(DateTime localDate, DateTime today, DateTime yesterday)
@@ -273,6 +387,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
                 Id = chat.Id,
                 Title = ResolveTitle(chat),
                 Snippet = snippet ?? string.Empty,
+                State = _resolveState(chat.Id),
             });
         }
 
@@ -345,7 +460,10 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private void ExecuteNewChat()
     {
         IsFlyoutOpen = false;
-        _newChat();
+        IsPickerOpen = false;
+        // Pin the new chat to the folder selected in the picker (shown on the pill). This is
+        // independent of the active chat — picking a folder never re-points a started chat.
+        _newChat(_pendingNewChatDirectory);
     }
 
     private void ExecuteShowAllChats()
@@ -363,6 +481,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         _quickSwitcherCts?.Cancel();
         _quickSwitcherCts?.Dispose();
         _chatService.ChatsChanged -= OnChatsChanged;
+        WorkingDirectoryPicker.WorkingDirectoryChosen -= OnWorkingDirectoryChosen;
         PropertyChanged -= OnPropertyChanged;
         GC.SuppressFinalize(this);
     }
@@ -375,4 +494,8 @@ public sealed partial class QuickSwitcherMatchViewModel : ObservableObject
 
     [ObservableProperty]
     private string _snippet = string.Empty;
+
+    /// <summary>Live state of this chat (or Idle if not currently live).</summary>
+    [ObservableProperty]
+    private ChatState _state = ChatState.Idle;
 }

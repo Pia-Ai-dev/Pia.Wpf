@@ -339,6 +339,7 @@
   <data name="Plugins_GoToAccount" xml:space="preserve"><value>Go to Account</value></data>
   <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>Disable Built-in Plugin</value></data>
   <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' is a built-in plugin. Disabling it will break default assistant functionality. Are you sure?</value></data>
+  <data name="Settings_InnerTab_General" xml:space="preserve"><value>General</value></data>
   <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Appearance</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Hotkeys</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Speech</value></data>
@@ -537,6 +538,32 @@
   <data name="Dialog_TemplateEdit_Generating" xml:space="preserve"><value>Generating...</value></data>
   <data name="Dialog_TemplateEdit_GeneratedPrompt" xml:space="preserve"><value>Generated Prompt</value></data>
   <data name="Dialog_TemplateEdit_PromptEditHint" xml:space="preserve"><value>You can edit the generated prompt manually</value></data>
+  <data name="Dialog_PersonaEdit_Title" xml:space="preserve"><value>Edit Persona</value></data>
+  <data name="Dialog_PersonaEdit_Describe" xml:space="preserve"><value>Describe this persona</value></data>
+  <data name="Dialog_PersonaEdit_DescribeHint" xml:space="preserve"><value>Briefly describe the persona, then let AI draft the fields below</value></data>
+  <data name="Dialog_PersonaEdit_Draft" xml:space="preserve"><value>Draft with AI</value></data>
+  <data name="Dialog_PersonaEdit_Drafting" xml:space="preserve"><value>Drafting...</value></data>
+  <data name="Dialog_PersonaEdit_Name" xml:space="preserve"><value>Name *</value></data>
+  <data name="Dialog_PersonaEdit_Tagline" xml:space="preserve"><value>Tagline</value></data>
+  <data name="Dialog_PersonaEdit_SystemPrompt" xml:space="preserve"><value>System Prompt *</value></data>
+  <data name="Dialog_PersonaEdit_SystemPromptHint" xml:space="preserve"><value>The identity and voice that replaces the assistant's default personality</value></data>
+  <data name="Dialog_PersonaEdit_Guardrails" xml:space="preserve"><value>Guardrails</value></data>
+  <data name="Dialog_PersonaEdit_GuardrailsHint" xml:space="preserve"><value>Optional constraints appended after the identity (e.g. no regulated advice)</value></data>
+  <data name="Dialog_PersonaEdit_OutputFormat" xml:space="preserve"><value>Output Format</value></data>
+  <data name="Dialog_PersonaEdit_OutputFormatHint" xml:space="preserve"><value>How replies should be formatted (length, prose vs. lists, code). Leave blank for the default.</value></data>
+  <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archetype</value></data>
+  <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Expertise</value></data>
+  <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Comma-separated domain tags</value></data>
+  <data name="Dialog_PersonaEdit_Emoji" xml:space="preserve"><value>Emoji</value></data>
+  <data name="Dialog_PersonaEdit_AccentColor" xml:space="preserve"><value>Accent Colour</value></data>
+  <data name="Dialog_PersonaEdit_ToolScope" xml:space="preserve"><value>Tool Access</value></data>
+  <data name="Dialog_PersonaEdit_Provider" xml:space="preserve"><value>Preferred Provider</value></data>
+  <data name="Dialog_PersonaEdit_ReasoningEffort" xml:space="preserve"><value>Reasoning Effort</value></data>
+  <data name="Settings_Tab_Personas" xml:space="preserve"><value>Personas</value></data>
+  <data name="Personas_Subtitle" xml:space="preserve"><value>Personas shape the assistant's identity, voice, and expertise.</value></data>
+  <data name="Personas_AddPersona" xml:space="preserve"><value>Add Persona</value></data>
+  <data name="Personas_Duplicate" xml:space="preserve"><value>Duplicate</value></data>
+  <data name="Personas_BuiltIn" xml:space="preserve"><value>Built-in</value></data>
   <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Preparing Model</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Downloading Whisper Model...</value></data>
   <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>Downloading {0}...</value></data>
@@ -638,6 +665,17 @@
   <!-- Action Cards -->
   <data name="ActionCard_Accept" xml:space="preserve"><value>Accept</value></data>
   <data name="ActionCard_Decline" xml:space="preserve"><value>Decline</value></data>
+  <data name="ActionCard_AllowOnce" xml:space="preserve"><value>Allow once</value></data>
+  <data name="ActionCard_AlwaysAllow" xml:space="preserve"><value>Always allow</value></data>
+  <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Auto-approved · you always allow {0}</value></data>
+  <data name="ActionCard_Manage" xml:space="preserve"><value>Manage</value></data>
+  <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool access</value></data>
+  <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Always-allowed tools</value></data>
+  <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools you have granted standing approval to run without confirmation. Revoke a grant to be prompted again on the next call.</value></data>
+  <data name="ToolPermissions_Empty" xml:space="preserve"><value>No tools are always allowed. When you choose "Always allow" on a tool, it appears here.</value></data>
+  <data name="ToolPermissions_Revoke" xml:space="preserve"><value>Revoke</value></data>
+  <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin:</value></data>
+  <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Granted:</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Current value:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>New value:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Memory</value></data>
@@ -742,4 +780,22 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>I've saved my recovery code somewhere safe</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Could not enable encryption</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Setting up encryption…</value></data>
+  <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
+  <data name="Flow_EmptyState" xml:space="preserve"><value>You're all caught up.</value></data>
+  <data name="Flow_ClearAll" xml:space="preserve"><value>Clear all</value></data>
+  <data name="Flow_Pin" xml:space="preserve"><value>Pin</value></data>
+  <data name="Flow_Unpin" xml:space="preserve"><value>Unpin</value></data>
+  <data name="Flow_Dismiss_Tooltip" xml:space="preserve"><value>Dismiss</value></data>
+  <data name="Flow_Action_OpenChat" xml:space="preserve"><value>Open chat</value></data>
+  <data name="Flow_Action_OpenBriefing" xml:space="preserve"><value>Open briefing</value></data>
+  <data name="Flow_Action_OpenTodo" xml:space="preserve"><value>Open todo</value></data>
+  <data name="Flow_Action_Snooze" xml:space="preserve"><value>Snooze</value></data>
+  <data name="Flow_Action_Done" xml:space="preserve"><value>Done</value></data>
+  <data name="Flow_Action_Dismiss" xml:space="preserve"><value>Dismiss</value></data>
+  <data name="Flow_BgChat_WaitingForTool" xml:space="preserve"><value>Waiting for your confirmation</value></data>
+  <data name="Flow_BgChat_Completed" xml:space="preserve"><value>Finished — tap to review</value></data>
+  <data name="Flow_BgChat_Error" xml:space="preserve"><value>Ended with an error</value></data>
+  <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing ready</value></data>
+  <data name="Flow_Job_Failure" xml:space="preserve"><value>Run failed</value></data>
+  <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Due within 24h</value></data>
 </root>

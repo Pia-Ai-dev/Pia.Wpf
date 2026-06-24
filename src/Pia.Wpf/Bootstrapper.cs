@@ -194,13 +194,19 @@ public static class Bootstrapper
 
         // WPF-UI Services - Scoped (per-window)
         services.AddScoped<IContentDialogService, ContentDialogService>();
-        services.AddScoped<ISnackbarService, SnackbarService>();
+        // Snackbars are funneled into Flow instead of the WPF-UI slide-in (design §7). FlowSnackbarService
+        // implements the WPF-UI ISnackbarService so all ~85 producer call sites are captured untouched.
+        services.AddScoped<ISnackbarService, Services.Flow.FlowSnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
 
         // UI abstractions that keep System.Windows out of ViewModels
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ICollectionViewService, CollectionViewService>();
         services.AddSingleton<IFileDialogService, FileDialogService>();
+
+        // Color-emoji renderer (OS Direct2D/DirectWrite/WIC). Same instance the static accessor and
+        // XAML controls use, so the bitmap cache is shared.
+        services.AddSingleton(Pia.Emoji.EmojiImageRenderer.Shared);
 
         // AI provider handlers (one per AiProviderType) + registry
         services.AddSingleton<IAiProviderHandler, OpenAiProviderHandler>();
@@ -237,23 +243,32 @@ public static class Bootstrapper
         services.AddSingleton<IScheduledJobService, ScheduledJobService>();
         services.AddSingleton<IScheduledResearchProviderResolver, ScheduledResearchProviderResolver>();
         services.AddSingleton<IScheduledJobNotificationSurface, ScheduledJobNotificationSurface>();
+        services.AddSingleton<IBackgroundChatNotifier, BackgroundChatNotificationSurface>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
         services.AddSingleton<IScheduledJobToolHandler, ScheduledJobToolHandler>();
         services.AddSingleton<IResearchHistoryToolHandler, ResearchHistoryToolHandler>();
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<IFileStalenessStore, FileStalenessStore>();
         services.AddSingleton<IFilesToolHandler, FilesToolHandler>();
+        services.AddSingleton<IWorkingDirectoryService, WorkingDirectoryService>();
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
         services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();
         services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
+        services.AddSingleton<IToolPermissionService, ToolPermissionService>();
         services.AddSingleton<ITemplateService, TemplateService>();
+        services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IResearchHistoryService, ResearchHistoryService>();
         services.AddSingleton<IAssistantChatService, AssistantChatService>();
+        // Assistant turn collaborators (extracted from AssistantViewModel).
+        services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
+        services.AddTransient<IChatTitleService, ChatTitleService>();
+        services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
         services.AddTransient<IResearchExportService, ResearchExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
@@ -269,7 +284,13 @@ public static class Bootstrapper
         // IMeetingSession is intentionally NOT container-registered (no parameterless seam).
         services.AddSingleton<Services.MeetingAttendee.IBrowserProvisioner, Services.MeetingAttendee.ChromiumProvisioner>();
         services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
-        services.AddSingleton<INotificationService, NotificationService>();
+
+        // In-app toasts are re-implemented over Flow (design §7), retiring the hand-rolled Border toast.
+        services.AddSingleton<INotificationService, Services.Flow.FlowNotificationService>();
+
+        // Flow — the persistent attention store (singleton) + its durable SQLite store.
+        services.AddSingleton<Services.Flow.IFlowPersistenceStore, Services.Flow.FlowPersistenceStore>();
+        services.AddSingleton<Services.Flow.IFlowService, Services.Flow.FlowService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
         services.AddSingleton<ITtsService, TtsService>();
@@ -277,6 +298,13 @@ public static class Bootstrapper
         // Privacy / PII tokenization
         services.AddSingleton<IPiiDetector, StructuredPiiDetector>();
         services.AddScoped<ITokenMapService, TokenMapService>();
+        // Per-session token-map factory: each ChatSession owns its own map so
+        // concurrent background turns never share a PII namespace. All three
+        // TokenMapService dependencies are singletons, so a fresh instance is safe.
+        services.AddSingleton<Func<ITokenMapService>>(sp => () => new TokenMapService(
+            sp.GetRequiredService<IPiiDetector>(),
+            sp.GetRequiredService<IMemoryService>(),
+            sp.GetRequiredService<ISettingsService>()));
 
         // E2EE services
         services.AddSingleton<ICryptoService, CryptoService>();
@@ -305,6 +333,7 @@ public static class Bootstrapper
         services.AddSingleton<ReminderBackgroundService>();
         services.AddSingleton<ScheduledJobBackgroundService>();
         services.AddSingleton<AssistantChatRetentionService>();
+        services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
@@ -313,6 +342,9 @@ public static class Bootstrapper
         services.AddSingleton<IAutostartService, AutostartService>();
 
         // Services - Scoped (per-window)
+        // Chat-session manager: scoped per assistant window because it injects scoped
+        // IActionCardBuilder + ITokenMapService (a singleton would be a captive dependency).
+        services.AddScoped<ViewModels.Models.IChatSessionManager, ViewModels.Models.ChatSessionManager>();
         services.AddScoped<Navigation.INavigationService, Navigation.NavigationService>();
         services.AddScoped<IDialogService, DialogService>();
         services.AddScoped<ITextOptimizationService, TextOptimizationService>();
@@ -339,6 +371,7 @@ public static class Bootstrapper
         services.AddScoped<DeviceManagementViewModel>();
         services.AddScoped<E2EEOnboardingViewModel>();
         services.AddScoped<E2EESetupStepViewModel>();
+        services.AddScoped<ViewModels.Flow.FlowViewModel>();
 
         // First Run Wizard
         services.AddTransient<FirstRunWizardViewModel>();

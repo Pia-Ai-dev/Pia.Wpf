@@ -155,6 +155,98 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Equal("server-only value", value.GetString());
     }
 
+    [Fact]
+    public async Task SaveAndGet_RoundTripsPersonaSnapshot()
+    {
+        var chat = MakeChat(title: "Persona test", body: "user question");
+        var personaId = Guid.NewGuid();
+        chat.Messages.Add(new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(),
+            Role = "assistant",
+            Content = "assistant answer",
+            Timestamp = DateTime.UtcNow,
+            Tokens = 10,
+            ModelName = "gpt-5",
+            Persona = new SyncMessagePersona { Id = personaId, Name = "Marketing Writer", Emoji = "✍️" },
+        });
+
+        await _service.SaveAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        var loaded = await _service.GetAsync(chat.Id);
+        Assert.NotNull(loaded);
+        var assistant = loaded!.Messages.Single(m => m.Role == "assistant");
+        Assert.NotNull(assistant.Persona);
+        Assert.Equal(personaId, assistant.Persona!.Id);
+        Assert.Equal("Marketing Writer", assistant.Persona.Name);
+        Assert.Equal("✍️", assistant.Persona.Emoji);
+
+        var user = loaded.Messages.Single(m => m.Role == "user");
+        Assert.Null(user.Persona);
+    }
+
+    [Fact]
+    public async Task SaveAndGet_RoundTripsWorkingDirectory()
+    {
+        var chat = MakeChat(title: "WorkingDir test", body: "x");
+        chat.WorkingDirectory = "projects/app";
+
+        await _service.SaveAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        var loaded = await _service.GetAsync(chat.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal("projects/app", loaded!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task SaveAndGet_NullWorkingDirectory_RoundTripsAsNull()
+    {
+        var chat = MakeChat(title: "Root chat", body: "x");
+        chat.WorkingDirectory = null;
+
+        await _service.SaveAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        var loaded = await _service.GetAsync(chat.Id);
+        Assert.NotNull(loaded);
+        Assert.Null(loaded!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task ReSave_RepointsWorkingDirectory_ViaOnConflictUpdate()
+    {
+        // Guards the headline "re-point mid-chat" feature: re-saving the SAME Id with a changed
+        // WorkingDirectory must persist through the ON CONFLICT(Id) DO UPDATE SET path.
+        var chat = MakeChat(title: "Repoint test", body: "x");
+        chat.WorkingDirectory = "first";
+        await _service.SaveAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        chat.WorkingDirectory = "second/dir";
+        await _service.SaveAsync(chat);
+
+        var loaded = await _service.GetAsync(chat.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal("second/dir", loaded!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ReadsWorkingDirectory()
+    {
+        // The list/Search read path is a separate SELECT feeding MapChat; verify its ordinals
+        // map WorkingDirectory correctly too.
+        var chat = MakeChat(title: "SearchableWorkingDir", body: "body");
+        chat.WorkingDirectory = "via/search";
+        await _service.SaveAsync(chat);
+        _createdIds.Add(chat.Id);
+
+        var hits = await _service.SearchAsync(searchText: "SearchableWorkingDir");
+        var found = Assert.Single(hits, c => c.Id == chat.Id);
+        Assert.Equal("via/search", found.WorkingDirectory);
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;

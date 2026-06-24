@@ -18,7 +18,8 @@ public static partial class AtCommandParser
         (AtCommandDomain.Memory, "Memory"),
         (AtCommandDomain.Todo, "Todo"),
         (AtCommandDomain.Reminder, "Reminder"),
-        (AtCommandDomain.Research, "Research")
+        (AtCommandDomain.Research, "Research"),
+        (AtCommandDomain.Files, "Files")
     ];
 
     private static readonly Dictionary<string, AtCommandDomain> DomainMap =
@@ -214,13 +215,17 @@ public static partial class AtCommandParser
     }
 
     /// <summary>
-    /// Formats a title for insertion into the input text.
-    /// Multi-word titles are wrapped in quotes.
+    /// Formats a title for insertion into the input text. Titles containing anything
+    /// other than word characters (spaces, path separators like <c>/</c> or <c>\</c>,
+    /// dots, hyphens) are wrapped in quotes so they round-trip through the extraction
+    /// regex's quoted branch — the unquoted branch only captures <c>\w*</c> and would
+    /// otherwise truncate a file path such as <c>notes/todo.md</c> at the first slash.
     /// </summary>
     public static string FormatItemTitle(string title)
     {
-        if (title.Contains(' '))
-            return $"\"{title}\"";
-        return title;
+        // A token made entirely of word characters (letters, digits, underscore) is safe
+        // to insert bare; everything else must be quoted.
+        bool needsQuoting = title.Length == 0 || title.Any(c => !char.IsLetterOrDigit(c) && c != '_');
+        return needsQuoting ? $"\"{title}\"" : title;
     }
 }

@@ -63,6 +63,8 @@ public class AppSettings
     public bool StartMinimized { get; set; } = false;
     public bool LaunchAtStartup { get; set; } = true;
     public bool ShowTodoPanelButton { get; set; } = true;
+    /// <summary>Whether the Flow rail is pinned as a docked column (design §4). Persisted across restarts.</summary>
+    public bool FlowPinned { get; set; } = false;
     public Dictionary<Guid, double> TodoColumnWidths { get; set; } = new();
     public bool HasCompletedFirstRunWizard { get; set; } = false;
     public UserOperatingMode? UserOperatingMode { get; set; }
@@ -79,11 +81,24 @@ public class AppSettings
     public bool UseSameProviderForAllModes { get; set; } = true;
 
     /// <summary>
+    /// Per-mode active-persona selection. May reference a built-in persona Guid (identical on every
+    /// device). Absent entries fall back to the UserOperatingMode-mapped Pia built-in (contract §7).
+    /// Synced via <c>SyncSettings.ModePersonaDefaults</c>, mirroring <see cref="ModeProviderDefaults"/>.
+    /// </summary>
+    public Dictionary<WindowMode, Guid> ModePersonaDefaults { get; set; } = new();
+
+    /// <summary>
     /// Allow-list of sync login providers. Null/empty = all providers allowed.
     /// Recognized values: "local", "google", "microsoft", "entraid" (case-insensitive).
     /// Intended to be set via enterprise policy.
     /// </summary>
     public List<string>? AllowedSyncProviders { get; set; }
+
+    /// <summary>
+    /// Standing per-tool "always allow" grants. Keyed by (PluginId, ToolName).
+    /// Persisted globally as camelCase JSON, mirroring <see cref="AllowedSyncProviders"/>.
+    /// </summary>
+    public List<ToolGrant> AlwaysAllowedTools { get; set; } = new();
 
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
@@ -158,6 +173,17 @@ public class AppSettings
             ModeProviderDefaults[mode] = providerId.Value;
         else
             ModeProviderDefaults.Remove(mode);
+    }
+
+    public Guid? GetPersonaForMode(WindowMode mode) =>
+        ModePersonaDefaults.TryGetValue(mode, out var id) ? id : null;
+
+    public void SetPersonaForMode(WindowMode mode, Guid? personaId)
+    {
+        if (personaId.HasValue)
+            ModePersonaDefaults[mode] = personaId.Value;
+        else
+            ModePersonaDefaults.Remove(mode);
     }
 
     public void MigrateFromLegacyDefault()

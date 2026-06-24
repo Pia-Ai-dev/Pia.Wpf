@@ -19,6 +19,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
     public GeneralSettingsViewModel GeneralVm { get; }
     public AccountSettingsViewModel AccountVm { get; }
     public PluginsSettingsViewModel PluginsVm { get; }
+    public PersonaSettingsViewModel PersonasVm { get; }
 
     [ObservableProperty]
     private int _selectedTabIndex;
@@ -47,7 +48,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IPluginService pluginService,
         IPluginIconLoader pluginIconLoader,
         IPolicyService policyService,
-        IAssistantChatService assistantChatService)
+        IPersonaService personaService,
+        IAssistantChatService assistantChatService,
+        IToolPermissionService toolPermissionService)
     {
         _logger = logger;
 
@@ -55,7 +58,10 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService, authService);
 
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, logger, settingsService, assistantChatService, dialogService, localizationService);
+        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService);
+
+        var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, logger, settingsService, assistantChatService, dialogService, localizationService);
 
         ResearchVm = new ResearchSettingsViewModel(ProvidersVm);
 
@@ -75,9 +81,11 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
                 break;
             case ValueTuple<int, int> tabs:
                 // (outer tab, inner tab). Inner tab applies only when the outer tab
-                // hosts its own TabControl — currently just General.
+                // hosts its own TabControl — Assistant (2) and General (4).
                 SelectedTabIndex = tabs.Item1;
-                if (tabs.Item1 == 4)
+                if (tabs.Item1 == 2)
+                    AssistantVm.SelectedInnerTabIndex = tabs.Item2;
+                else if (tabs.Item1 == 4)
                     GeneralVm.SelectedInnerTabIndex = tabs.Item2;
                 break;
         }
@@ -93,6 +101,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
             await GeneralVm.InitializeAsync();
             await AccountVm.InitializeAsync();
             await PluginsVm.InitializeAsync();
+            await PersonasVm.InitializeAsync();
         }
         catch (Exception ex)
         {

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -230,5 +231,67 @@ public class TextOptimizationServiceTests
         Assert.Equal(OpenAiProvider.Name, ex.ProviderName);
         Assert.Equal(42, ex.PartialLength);
         await _historyService.DidNotReceive().AddSessionAsync(Arg.Any<OptimizationSession>());
+    }
+
+    [Fact]
+    public async Task GeneratePersonaDraftAsync_PiaCloud_DraftsAllFieldsViaChatEndpoint()
+    {
+        _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(PiaCloudProvider);
+
+        const string json = """
+            {
+              "name": "Tax Advisor",
+              "tagline": "Clear answers to German tax questions",
+              "systemPrompt": "You are a meticulous German tax advisor.",
+              "guardrails": "Do not give binding legal advice.",
+              "outputFormat": "- Lead with the answer.\n- Cite the relevant paragraph.",
+              "archetype": "analyst",
+              "emoji": "📊",
+              "accentColor": "#2962FF",
+              "expertise": ["taxation", "finance"]
+            }
+            """;
+        _aiClientService.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(),
+                Arg.Any<AiProvider>(),
+                Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(ToStream(new TextDelta(json), new Finished(null, "pia-cloud")));
+
+        var service = CreateService();
+        var draft = await service.GeneratePersonaDraftAsync(
+            "a German tax advisor");
+
+        Assert.Equal("Tax Advisor", draft.Name);
+        Assert.Equal("Clear answers to German tax questions", draft.Tagline);
+        Assert.Equal("You are a meticulous German tax advisor.", draft.SystemPrompt);
+        Assert.Equal("Do not give binding legal advice.", draft.Guardrails);
+        Assert.Equal("- Lead with the answer.\n- Cite the relevant paragraph.", draft.OutputFormat);
+        Assert.Equal("analyst", draft.Archetype);
+        Assert.Equal("📊", draft.Emoji);
+        Assert.Equal("#2962FF", draft.AccentColor);
+        Assert.Equal(["taxation", "finance"], draft.Expertise);
+
+        // The draft now streams through the general chat endpoint (tagged with the Assistant mode),
+        // not the single-string PiaCloud prompt endpoint that only filled the system prompt.
+        _aiClientService.Received(1).GetChatCompletionWithToolsAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            PiaCloudProvider,
+            Arg.Any<IList<AITool>?>(),
+            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(),
+            nameof(WindowMode.Assistant),
+            Arg.Any<CancellationToken>());
+        await _aiClientService.DidNotReceive().GeneratePromptViaPiaCloudAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> ToStream(params ChatStreamItem[] items)
+    {
+        foreach (var item in items)
+            yield return item;
+        await Task.CompletedTask;
     }
 }

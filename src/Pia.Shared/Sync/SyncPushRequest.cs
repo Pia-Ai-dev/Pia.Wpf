@@ -22,6 +22,7 @@ public class SyncPushRequest
     public SyncSettings? Settings { get; set; }
 
     public SyncEntityChanges<SyncTemplate> Templates { get; set; } = new();
+    public SyncEntityChanges<SyncPersona> Personas { get; set; } = new();
     public SyncEntityChanges<SyncProvider> Providers { get; set; } = new();
     public SyncSessionChanges Sessions { get; set; } = new();
     public SyncEntityChanges<SyncMemory> Memories { get; set; } = new();

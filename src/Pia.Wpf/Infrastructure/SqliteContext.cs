@@ -27,6 +27,13 @@ public class SqliteContext : IDisposable
         _connectionString = $"Data Source={dbPath}";
     }
 
+    /// <summary>
+    /// The connection string for the shared history database. Exposed so components that must write
+    /// from background threads (e.g. Flow persistence) can open their own dedicated connection to the
+    /// same file rather than contend on the single shared <see cref="GetConnection"/> connection.
+    /// </summary>
+    public string ConnectionString => _connectionString;
+
     private static string DefaultDbPath()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -187,6 +194,27 @@ public class SqliteContext : IDisposable
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
 
+            CREATE TABLE IF NOT EXISTS Personas (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Tagline TEXT,
+                SystemPrompt TEXT NOT NULL,
+                Guardrails TEXT,
+                Archetype TEXT,
+                Expertise TEXT,
+                Emoji TEXT,
+                AccentColor TEXT,
+                ToolScope INTEGER NOT NULL DEFAULT 2,
+                PreferredProviderId TEXT,
+                ReasoningEffort INTEGER,
+                SchemaVersion INTEGER NOT NULL DEFAULT 1,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL,
+                OutputFormat TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
+
             CREATE TABLE IF NOT EXISTS AssistantChats (
                 Id              TEXT PRIMARY KEY,
                 SchemaVersion   INTEGER NOT NULL DEFAULT 1,
@@ -196,6 +224,7 @@ public class SqliteContext : IDisposable
                 LastAccessedAt  TEXT NOT NULL,
                 WindowMode      TEXT NOT NULL,
                 ProviderId      TEXT,
+                WorkingDirectory TEXT,
                 ExtraJson       TEXT
             );
 
@@ -214,6 +243,9 @@ public class SqliteContext : IDisposable
                 Timestamp       TEXT NOT NULL,
                 Tokens          INTEGER,
                 ModelName       TEXT,
+                PersonaId       TEXT,
+                PersonaName     TEXT,
+                PersonaEmoji    TEXT,
                 FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
             );
 
@@ -433,6 +465,119 @@ public class SqliteContext : IDisposable
                 CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_OwnerDeviceId ON ScheduledJobs(OwnerDeviceId);
                 """;
             idx.ExecuteNonQuery();
+        }
+
+        // Persona attribution snapshot on assistant messages.
+        var hasPersonaId = false;
+        var hasPersonaName = false;
+        var hasPersonaEmoji = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AssistantChatMessages)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                var col = r.GetString(1);
+                if (col == "PersonaId") hasPersonaId = true;
+                else if (col == "PersonaName") hasPersonaName = true;
+                else if (col == "PersonaEmoji") hasPersonaEmoji = true;
+            }
+        }
+        if (!hasPersonaId)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChatMessages ADD COLUMN PersonaId TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasPersonaName)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChatMessages ADD COLUMN PersonaName TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasPersonaEmoji)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChatMessages ADD COLUMN PersonaEmoji TEXT";
+            addCol.ExecuteNonQuery();
+        }
+
+        // Create the Personas table for databases that predate it (only user personas are stored;
+        // built-ins are merged in-memory by PersonaService). EnsureSchema already creates it on
+        // fresh installs via CREATE TABLE IF NOT EXISTS — this is a defensive presence check.
+        var hasPersonasTable = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(Personas)";
+            using var r = p.ExecuteReader();
+            if (r.Read()) hasPersonasTable = true;
+        }
+        if (!hasPersonasTable)
+        {
+            using var createPersonas = _connection.CreateCommand();
+            createPersonas.CommandText = """
+                CREATE TABLE IF NOT EXISTS Personas (
+                    Id TEXT PRIMARY KEY,
+                    Name TEXT NOT NULL,
+                    Tagline TEXT,
+                    SystemPrompt TEXT NOT NULL,
+                    Guardrails TEXT,
+                    Archetype TEXT,
+                    Expertise TEXT,
+                    Emoji TEXT,
+                    AccentColor TEXT,
+                    ToolScope INTEGER NOT NULL DEFAULT 2,
+                    PreferredProviderId TEXT,
+                    ReasoningEffort INTEGER,
+                    SchemaVersion INTEGER NOT NULL DEFAULT 1,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    OutputFormat TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
+                """;
+            createPersonas.ExecuteNonQuery();
+        }
+
+        // Per-persona output-format guidance, added after the Personas table shipped. Runs after the
+        // defensive create above, so the table is guaranteed to exist (fresh tables already include
+        // the column, so the check below short-circuits and no ALTER is issued).
+        var hasOutputFormat = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(Personas)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                if (r.GetString(1) == "OutputFormat") { hasOutputFormat = true; break; }
+            }
+        }
+        if (!hasOutputFormat)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE Personas ADD COLUMN OutputFormat TEXT";
+            addCol.ExecuteNonQuery();
+        }
+
+        // Per-chat working directory (relative to the assistant-files sandbox root), added after
+        // AssistantChats shipped. Fresh tables already include the column via CREATE TABLE above,
+        // so the PRAGMA check short-circuits and no ALTER is issued.
+        var hasWorkingDirectory = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AssistantChats)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                if (r.GetString(1) == "WorkingDirectory") { hasWorkingDirectory = true; break; }
+            }
+        }
+        if (!hasWorkingDirectory)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN WorkingDirectory TEXT";
+            addCol.ExecuteNonQuery();
         }
     }
 

@@ -24,6 +24,12 @@ public class SyncAssistantChat
     public string WindowMode { get; set; } = "Assistant";
     public Guid? ProviderId { get; set; }
 
+    /// <summary>
+    /// Per-chat working directory, RELATIVE to the assistant-files sandbox root
+    /// (forward slashes). Null/empty = sandbox root.
+    /// </summary>
+    public string? WorkingDirectory { get; set; }
+
     public List<SyncAssistantChatMessage> Messages { get; set; } = [];
 
     /// <summary>
@@ -67,6 +73,21 @@ public class SyncAssistantChatMessage
     public int? Tokens { get; set; }
     public string? ModelName { get; set; }
 
+    /// <summary>
+    /// Persona that produced this (assistant) message; null for user messages and for
+    /// messages saved before persona attribution existed. Old clients round-trip this
+    /// via <see cref="ExtensionData"/>.
+    /// </summary>
+    public SyncMessagePersona? Persona { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+/// <summary>Snapshot of the persona that produced an assistant message (see PersonaAttribution client-side).</summary>
+public sealed class SyncMessagePersona
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Emoji { get; set; }
 }

@@ -21,6 +21,8 @@
       </Style>
     </Border.Style>
 
+    <!-- Full row body (time | title | state badge | date) lives in the shared content
+         control; the badge's live State binds via the row VM's inherited DataContext. -->
     <ah:PiaAssistantChatRowContent/>
   </Border>
 </UserControl>

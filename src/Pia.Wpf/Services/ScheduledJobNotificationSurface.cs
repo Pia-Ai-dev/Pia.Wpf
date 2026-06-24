@@ -2,6 +2,8 @@ using System.Windows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Toolkit.Uwp.Notifications;
 using Pia.Models;
+using Pia.Models.Flow;
+using Pia.Services.Flow;
 using Pia.Services.Interfaces;
 using Pia.Views.Dialogs;
 using Wpf.Ui.Controls;
@@ -24,19 +26,19 @@ namespace Pia.Services;
 /// </remarks>
 public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationSurface
 {
-    private readonly INotificationService _notificationService;
+    private readonly IFlowService _flowService;
     private readonly ILocalizationService _localizationService;
     private readonly IWindowManagerService _windowManager;
     private readonly ILogger<ScheduledJobNotificationSurface> _logger;
     private bool _toastCallbackRegistered;
 
     public ScheduledJobNotificationSurface(
-        INotificationService notificationService,
+        IFlowService flowService,
         ILocalizationService localizationService,
         IWindowManagerService windowManager,
         ILogger<ScheduledJobNotificationSurface> logger)
     {
-        _notificationService = notificationService;
+        _flowService = flowService;
         _localizationService = localizationService;
         _windowManager = windowManager;
         _logger = logger;
@@ -51,6 +53,19 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
     public void NotifySuccess(ScheduledJob job, ResearchHistoryEntry entry)
     {
         EnsureToastActivationRegistered();
+
+        // Publish to Flow first (the canonical in-app surface, replacing the retired Border toast).
+        _flowService.Publish(new FlowItemDraft
+        {
+            Severity = FlowSeverity.Success,
+            Source = FlowSource.ScheduledJob,
+            Title = job.Name,
+            Body = _localizationService["Flow_Job_Success"],
+            DedupKey = job.Id.ToString(),
+            Lifetime = FlowLifetime.Persistent,
+            Action = new OpenBriefingAction(entry.Id, _localizationService["Flow_Action_OpenBriefing"]),
+            RequestDurable = true,
+        });
 
         try
         {
@@ -68,24 +83,25 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         {
             _logger.LogWarning(ex, "Failed to show success toast for job {Id}", job.Id);
         }
-
-        try
-        {
-            Application.Current?.Dispatcher.Invoke(() =>
-            {
-                _notificationService.ShowToast(
-                    _localizationService.Format("Notification_ScheduledResearchInApp", job.Name));
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to show in-app toast for job {Id}", job.Id);
-        }
     }
 
     public void NotifyFailure(ScheduledJob job, Guid resultEntryId, string reason)
     {
         EnsureToastActivationRegistered();
+
+        // Publish to Flow first. The failure reason can carry content, so it is never logged or stored;
+        // a generic localized body is used (the deep-link opens the persisted failed entry for detail).
+        _flowService.Publish(new FlowItemDraft
+        {
+            Severity = FlowSeverity.Error,
+            Source = FlowSource.ScheduledJob,
+            Title = job.Name,
+            Body = _localizationService["Flow_Job_Failure"],
+            DedupKey = job.Id.ToString(),
+            Lifetime = FlowLifetime.Persistent,
+            Action = new OpenBriefingAction(resultEntryId, _localizationService["Flow_Action_OpenBriefing"]),
+            RequestDurable = true,
+        });
 
         try
         {

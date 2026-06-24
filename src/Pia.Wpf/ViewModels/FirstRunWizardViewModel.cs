@@ -727,6 +727,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
             settings.HasCompletedFirstRunWizard = true;
             settings.UserOperatingMode = OperatingMode;
             settings.DefaultTemplateId ??= Shared.BuiltInTemplates.ClarityAndGrammarId;
+            settings.SetPersonaForMode(WindowMode.Assistant, OperatingMode == UserOperatingMode.Business
+                ? Shared.BuiltInPersonas.PiaBusinessId
+                : Shared.BuiltInPersonas.PiaPersonalId);
             await _settingsService.SaveSettingsAsync(settings);
 
             WizardCompleted?.Invoke();

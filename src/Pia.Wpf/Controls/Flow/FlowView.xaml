@@ -1,0 +1,462 @@
+<UserControl x:Class="Pia.Controls.Flow.FlowView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:converters="clr-namespace:Pia.Converters"
+             xmlns:cards="clr-namespace:Pia.Controls.Cards"
+             xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             mc:Ignorable="d"
+             d:DesignHeight="500" d:DesignWidth="380">
+
+  <UserControl.Resources>
+    <converters:FlowRelativeTimeConverter x:Key="FlowRelativeTimeConverter" />
+    <converters:FlowSourceToSymbolConverter x:Key="FlowSourceToSymbolConverter" />
+
+    <!-- Shared rail-box geometry: the collapsed-rail arrival peek (PeekHost) mirrors the Rail's box so a
+         peeked card lands exactly where its real rail card will sit. Keeping one source for these values
+         stops the two boxes from drifting apart when either is tweaked. -->
+    <sys:Double x:Key="FlowRailWidth">340</sys:Double>
+    <Thickness x:Key="FlowRailMargin">0,44,0,12</Thickness>
+    <Thickness x:Key="FlowRailBorderThickness">1,1,0,1</Thickness>
+    <Thickness x:Key="FlowRailContentMargin">14,12,14,12</Thickness>
+
+    <!-- Arrival peek: the arriving card slides in from the right edge to its docked rail position,
+         lingers, then retracts — mirroring the rail's own open animation (X 360→0, CubicEase) so a
+         collapsed-rail arrival reads exactly like the card it becomes once the rail is opened. -->
+    <Storyboard x:Key="PeekWhisper">
+      <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.22" />
+      <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)">
+        <LinearDoubleKeyFrame KeyTime="0:0:0" Value="360" />
+        <EasingDoubleKeyFrame KeyTime="0:0:0.28" Value="0">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseOut" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+        <LinearDoubleKeyFrame KeyTime="0:0:2.6" Value="0" />
+        <EasingDoubleKeyFrame KeyTime="0:0:2.9" Value="360">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseIn" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+      </DoubleAnimationUsingKeyFrames>
+      <DoubleAnimation Storyboard.TargetProperty="Opacity" BeginTime="0:0:2.6" From="1" To="0" Duration="0:0:0.3" />
+    </Storyboard>
+
+    <Storyboard x:Key="PeekAssertive">
+      <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.22" />
+      <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)">
+        <LinearDoubleKeyFrame KeyTime="0:0:0" Value="360" />
+        <EasingDoubleKeyFrame KeyTime="0:0:0.28" Value="0">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseOut" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+        <LinearDoubleKeyFrame KeyTime="0:0:5.0" Value="0" />
+        <EasingDoubleKeyFrame KeyTime="0:0:5.3" Value="360">
+          <EasingDoubleKeyFrame.EasingFunction>
+            <CubicEase EasingMode="EaseIn" />
+          </EasingDoubleKeyFrame.EasingFunction>
+        </EasingDoubleKeyFrame>
+      </DoubleAnimationUsingKeyFrames>
+      <DoubleAnimation Storyboard.TargetProperty="Opacity" BeginTime="0:0:5.0" From="1" To="0" Duration="0:0:0.3" />
+    </Storyboard>
+
+    <!-- Arrival pulse: three gentle beats over ~1.5s to draw the eye to the collapsed badge.
+         Each beat scales the pill and flashes a translucent white glaze over it. Animating the
+         glaze's Opacity (a plain double) sidesteps the can't-animate-a-DynamicResource-brush-colour
+         limitation, and a white glaze visibly lightens the accent in both themes. -->
+    <Storyboard x:Key="BadgePulse">
+      <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)">
+        <SplineDoubleKeyFrame KeyTime="0:0:0" Value="1" />
+        <SplineDoubleKeyFrame KeyTime="0:0:0.25" Value="1.3" />
+        <SplineDoubleKeyFrame KeyTime="0:0:0.5" Value="1" />
+        <SplineDoubleKeyFrame KeyTime="0:0:0.75" Value="1.3" />
+        <SplineDoubleKeyFrame KeyTime="0:0:1.0" Value="1" />
+        <SplineDoubleKeyFrame KeyTime="0:0:1.25" Value="1.3" />
+        <SplineDoubleKeyFrame KeyTime="0:0:1.5" Value="1" />
+      </DoubleAnimationUsingKeyFrames>
+      <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)">
+        <SplineDoubleKeyFrame KeyTime="0:0:0" Value="1" />
+        <SplineDoubleKeyFrame KeyTime="0:0:0.25" Value="1.3" />
+        <SplineDoubleKeyFrame KeyTime="0:0:0.5" Value="1" />
+        <SplineDoubleKeyFrame KeyTime="0:0:0.75" Value="1.3" />
+        <SplineDoubleKeyFrame KeyTime="0:0:1.0" Value="1" />
+        <SplineDoubleKeyFrame KeyTime="0:0:1.25" Value="1.3" />
+        <SplineDoubleKeyFrame KeyTime="0:0:1.5" Value="1" />
+      </DoubleAnimationUsingKeyFrames>
+      <DoubleAnimation Storyboard.TargetName="BadgeGlow"
+                       Storyboard.TargetProperty="Opacity"
+                       To="0.45"
+                       Duration="0:0:0.25"
+                       AutoReverse="True"
+                       RepeatBehavior="3x"
+                       FillBehavior="Stop" />
+    </Storyboard>
+
+    <!-- Calm/minimal attention card (design §4): thin severity stripe, monochrome glyph, title,
+         one-line body, relative time, accent action link, hover-revealed dismiss. -->
+    <DataTemplate x:Key="FlowItemCardTemplate">
+      <Border x:Name="Card"
+              Margin="0,0,0,8"
+              Padding="0"
+              Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource BorderBrush_}"
+              BorderThickness="1"
+              CornerRadius="8">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="3" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <!-- Severity stripe -->
+          <Border x:Name="Stripe"
+                  Grid.Column="0"
+                  CornerRadius="8,0,0,8"
+                  Background="{DynamicResource TextSubtleBrush}" />
+
+          <!-- Source glyph -->
+          <ui:SymbolIcon x:Name="Glyph"
+                         Grid.Column="1"
+                         Margin="12,12,0,0"
+                         VerticalAlignment="Top"
+                         FontSize="16"
+                         Foreground="{DynamicResource TextMutedBrush}"
+                         Symbol="{Binding Source, Converter={StaticResource FlowSourceToSymbolConverter}}" />
+
+          <!-- Title / body / action -->
+          <StackPanel Grid.Column="2" Margin="10,10,8,10">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock x:Name="TitleText"
+                         Grid.Column="0"
+                         FontSize="13"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextDefaultBrush}"
+                         Text="{Binding Title}"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="1"
+                         Margin="8,0,0,0"
+                         VerticalAlignment="Top"
+                         FontSize="11"
+                         Foreground="{DynamicResource TextSubtleBrush}"
+                         Text="{Binding CreatedAt, Converter={StaticResource FlowRelativeTimeConverter}}" />
+            </Grid>
+            <!-- Chat-state chip (background-chat cards only): the shared PiaChatStateBadge, fed a
+                 ChatState derived from severity. It binds {Binding State} and self-collapses for every
+                 other source; when present it stands in for the prose body (BodyText trigger below). -->
+            <ah:PiaChatStateBadge Margin="0,4,0,0"
+                                  HorizontalAlignment="Left" />
+
+            <TextBlock x:Name="BodyText"
+                       Margin="0,2,0,0"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       Text="{Binding Body}"
+                       TextTrimming="CharacterEllipsis" />
+            <ui:Button x:Name="ActionLink"
+                       Margin="0,6,0,0"
+                       Padding="0"
+                       HorizontalAlignment="Left"
+                       Cursor="Hand"
+                       Appearance="Transparent"
+                       BorderThickness="0"
+                       Content="{Binding Action.Label}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource PiaAccentBrush}"
+                       Visibility="{Binding Action, Converter={StaticResource NullToVisibilityConverter}}"
+                       Command="{Binding ExecuteActionCommand}" />
+
+            <!-- Decision buttons (Snooze/Done for reminders); replace the single nav link when present.
+                 Visible only when the item carries decisions (design §5). -->
+            <cards:CardDecisionBar x:Name="DecisionBar"
+                                   Margin="0,6,0,0"
+                                   HorizontalAlignment="Left"
+                                   ItemsSource="{Binding Decisions}"
+                                   Visibility="{Binding HasDecisions, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          </StackPanel>
+
+          <!-- Hover-revealed dismiss -->
+          <ui:Button x:Name="DismissButton"
+                     Grid.Column="3"
+                     Margin="0,6,6,0"
+                     Padding="4"
+                     VerticalAlignment="Top"
+                     Cursor="Hand"
+                     Appearance="Transparent"
+                     BorderThickness="0"
+                     Opacity="0"
+                     ToolTip="{loc:Str Flow_Dismiss_Tooltip}"
+                     Command="{Binding DismissCommand}">
+            <ui:SymbolIcon FontSize="14" Symbol="Dismiss24" />
+          </ui:Button>
+        </Grid>
+      </Border>
+
+      <DataTemplate.Triggers>
+        <Trigger SourceName="Card" Property="IsMouseOver" Value="True">
+          <Setter TargetName="DismissButton" Property="Opacity" Value="1" />
+        </Trigger>
+        <!-- Cards with decisions resolve via their buttons; hide the local-clear ✕ to remove the
+             "Done" vs ✕ ambiguity (design §2/§5). -->
+        <DataTrigger Binding="{Binding HasDecisions}" Value="True">
+          <Setter TargetName="DismissButton" Property="Visibility" Value="Collapsed" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Body}" Value="">
+          <Setter TargetName="BodyText" Property="Visibility" Value="Collapsed" />
+        </DataTrigger>
+        <!-- A chat-state chip stands in for the prose body (chip available → skip the body line). -->
+        <DataTrigger Binding="{Binding HasChatState}" Value="True">
+          <Setter TargetName="BodyText" Property="Visibility" Value="Collapsed" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding IsRead}" Value="True">
+          <Setter TargetName="TitleText" Property="FontWeight" Value="Normal" />
+          <Setter TargetName="Card" Property="Opacity" Value="0.75" />
+        </DataTrigger>
+        <!-- Severity stripe + glyph tint (calm color, reward via motion) -->
+        <DataTrigger Binding="{Binding Severity}" Value="Success">
+          <Setter TargetName="Stripe" Property="Background" Value="{DynamicResource PiaSuccessBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Severity}" Value="Warning">
+          <Setter TargetName="Stripe" Property="Background" Value="{DynamicResource WarnBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Severity}" Value="Error">
+          <Setter TargetName="Stripe" Property="Background" Value="{DynamicResource PiaDangerBrush}" />
+          <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource PiaDangerBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Severity}" Value="ActionRequired">
+          <Setter TargetName="Stripe" Property="Background" Value="{DynamicResource PiaAccentBrush}" />
+          <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+        </DataTrigger>
+      </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <!-- Rail header (title + clear-all / pin / collapse). Shared so the collapsed-rail arrival peek
+         can reserve the exact header height with a hidden clone and land its card at the first-card slot. -->
+    <DataTemplate x:Key="FlowHeaderTemplate">
+      <Grid Margin="0,0,0,10">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Grid.Column="0"
+                   VerticalAlignment="Center"
+                   FontSize="15"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   Text="{loc:Str Flow_Header}" />
+        <ui:Button Grid.Column="1"
+                   Padding="6"
+                   Cursor="Hand"
+                   Appearance="Transparent"
+                   BorderThickness="0"
+                   Command="{Binding ClearAllCommand}"
+                   ToolTip="{loc:Str Flow_ClearAll}"
+                   Visibility="{Binding IsEmpty, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+          <ui:SymbolIcon FontSize="16" Symbol="Broom24" />
+        </ui:Button>
+        <ToggleButton Grid.Column="2"
+                      Margin="2,0,0,0"
+                      Padding="6"
+                      Cursor="Hand"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      IsChecked="{Binding IsPinned, Mode=TwoWay}"
+                      ToolTip="{loc:Str Flow_Pin}">
+          <ui:SymbolIcon FontSize="16" Symbol="Pin24" />
+        </ToggleButton>
+        <ui:Button Grid.Column="3"
+                   Margin="2,0,0,0"
+                   Padding="6"
+                   Cursor="Hand"
+                   Appearance="Transparent"
+                   BorderThickness="0"
+                   Command="{Binding CollapseCommand}"
+                   ToolTip="{loc:Str Flow_Unpin}"
+                   Visibility="{Binding IsOverlayMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ui:SymbolIcon FontSize="16" Symbol="ChevronRight24" />
+        </ui:Button>
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <!-- Root grid: no Background so empty areas pass clicks through to the content behind. -->
+  <Grid>
+    <!-- Scrim: catches outside clicks to collapse when in overlay (unpinned) mode. -->
+    <Border Background="Transparent"
+            Panel.ZIndex="0"
+            Visibility="{Binding IsOverlayMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <Border.InputBindings>
+        <MouseBinding MouseAction="LeftClick" Command="{Binding CollapseCommand}" />
+      </Border.InputBindings>
+    </Border>
+
+    <!-- Rail -->
+    <Border x:Name="Rail"
+            Panel.ZIndex="1"
+            Width="{StaticResource FlowRailWidth}"
+            Margin="{StaticResource FlowRailMargin}"
+            HorizontalAlignment="Right"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush_}"
+            BorderThickness="{StaticResource FlowRailBorderThickness}"
+            CornerRadius="12,0,0,12"
+            Visibility="{Binding IsOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
+            RenderTransformOrigin="1,0.5">
+      <Border.RenderTransform>
+        <TranslateTransform x:Name="RailTransform" X="0" />
+      </Border.RenderTransform>
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="24" Direction="180" Opacity="0.25" ShadowDepth="0" Color="#202020" />
+      </Border.Effect>
+      <Border.Style>
+        <Style TargetType="Border">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding IsOpen}" Value="True">
+              <DataTrigger.EnterActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                     From="360" To="0" Duration="0:0:0.28">
+                      <DoubleAnimation.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                      </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                  </Storyboard>
+                </BeginStoryboard>
+              </DataTrigger.EnterActions>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+
+      <Grid Margin="{StaticResource FlowRailContentMargin}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header (shared FlowHeaderTemplate; the arrival peek reuses it as a hidden spacer) -->
+        <ContentControl Grid.Row="0"
+                        HorizontalContentAlignment="Stretch"
+                        Content="{Binding}"
+                        ContentTemplate="{StaticResource FlowHeaderTemplate}" />
+
+        <!-- Items + empty state -->
+        <Grid Grid.Row="1">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Items}"
+                          ItemTemplate="{StaticResource FlowItemCardTemplate}" />
+          </ScrollViewer>
+          <TextBlock HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     FontSize="13"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Text="{loc:Str Flow_EmptyState}"
+                     TextWrapping="Wrap"
+                     TextAlignment="Center"
+                     Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}" />
+        </Grid>
+      </Grid>
+    </Border>
+
+    <!-- Peeking edge handle (primary entry point) -->
+    <Border x:Name="Handle"
+            Panel.ZIndex="2"
+            Width="30"
+            Padding="0,12,0,12"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Center"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush_}"
+            BorderThickness="1,1,0,1"
+            CornerRadius="8,0,0,8"
+            Cursor="Hand"
+            Visibility="{Binding IsOpen, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="14" Direction="180" Opacity="0.18" ShadowDepth="0" Color="#202020" />
+      </Border.Effect>
+      <Border.InputBindings>
+        <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleExpandCommand}" />
+      </Border.InputBindings>
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+        <ui:SymbolIcon FontSize="18" Foreground="{DynamicResource TextMutedBrush}" Symbol="Alert24" />
+        <!-- Count badge -->
+        <Grid x:Name="Badge"
+              Margin="0,6,0,0"
+              HorizontalAlignment="Center"
+              RenderTransformOrigin="0.5,0.5"
+              Visibility="{Binding LiveCount, Converter={StaticResource IntToVisibilityConverter}}">
+          <Grid.RenderTransform>
+            <ScaleTransform ScaleX="1" ScaleY="1" />
+          </Grid.RenderTransform>
+          <!-- Resting pill (theme accent). -->
+          <Border MinWidth="18"
+                  Height="18"
+                  Background="{DynamicResource PiaAccentBrush}"
+                  CornerRadius="9" />
+          <!-- Translucent white glaze; BadgePulse fades it in on each beat to lighten the pill. -->
+          <Border x:Name="BadgeGlow"
+                  MinWidth="18"
+                  Height="18"
+                  Background="White"
+                  CornerRadius="9"
+                  Opacity="0" />
+          <TextBlock Margin="4,0,4,0"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     FontSize="11"
+                     FontWeight="SemiBold"
+                     Foreground="White"
+                     Text="{Binding LiveCount}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <!-- Arrival peek — the arriving item rendered as its real rail card, positioned exactly where the
+         rail's first card sits. This Border mirrors the Rail's box (same Width, Margin and 1px border
+         inset, same inner padding); a hidden FlowHeaderTemplate clone reserves the header height so the
+         card lands at the first-card slot with no magic numbers. It paints no background/border/shadow
+         of its own, so only the (self-contained) card shows. Hit-test-disabled and played only while
+         the rail is collapsed (see OnItemArrived); the card slides in from the right like the rail does. -->
+    <Border x:Name="PeekHost"
+            Panel.ZIndex="3"
+            Width="{StaticResource FlowRailWidth}"
+            Margin="{StaticResource FlowRailMargin}"
+            HorizontalAlignment="Right"
+            BorderThickness="{StaticResource FlowRailBorderThickness}"
+            IsHitTestVisible="False"
+            Opacity="0">
+      <Border.RenderTransform>
+        <TranslateTransform X="360" />
+      </Border.RenderTransform>
+      <Grid Margin="{StaticResource FlowRailContentMargin}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ContentControl Grid.Row="0"
+                        HorizontalContentAlignment="Stretch"
+                        Content="{Binding}"
+                        ContentTemplate="{StaticResource FlowHeaderTemplate}"
+                        Visibility="Hidden" />
+        <ItemsControl x:Name="PeekItems"
+                      Grid.Row="1"
+                      ItemTemplate="{StaticResource FlowItemCardTemplate}" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

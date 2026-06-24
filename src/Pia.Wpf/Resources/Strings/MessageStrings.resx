@@ -100,6 +100,9 @@
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>New chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Show all chats…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>No chats yet.</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Working folder for this chat</value></data>
+  <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>All files</value></data>
+  <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>No subfolders here.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Search chats…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>No matches</value></data>
   <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ to navigate · Enter to resume · Esc to close</value></data>
@@ -190,6 +193,10 @@
   <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Template added successfully.</value></data>
   <data name="Msg_Settings_TemplateDeleted" xml:space="preserve"><value>Template deleted successfully.</value></data>
   <data name="Msg_Settings_TemplateUpdated" xml:space="preserve"><value>Template updated successfully.</value></data>
+  <data name="Msg_Settings_PersonaAdded" xml:space="preserve"><value>Persona added successfully.</value></data>
+  <data name="Msg_Settings_PersonaDeleted" xml:space="preserve"><value>Persona deleted successfully.</value></data>
+  <data name="Msg_Settings_PersonaUpdated" xml:space="preserve"><value>Persona updated successfully.</value></data>
+  <data name="Msg_Settings_CannotDeleteBuiltInPersona" xml:space="preserve"><value>Built-in personas cannot be deleted.</value></data>
   <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Voice Changed</value></data>
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Voice download failed: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Voice {0} downloaded successfully.</value></data>
@@ -241,6 +248,24 @@
   <data name="Notification_ScheduledResearchInApp" xml:space="preserve"><value>Scheduled briefing '{0}' is ready</value></data>
   <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Scheduled briefing failed</value></data>
   <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>'{0}' could not run — see history for details</value></data>
+
+  <!-- Background assistant chats: per-chat state + notifications -->
+  <data name="ChatState_Idle" xml:space="preserve"><value>Idle</value></data>
+  <data name="ChatState_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="ChatState_WaitingForTool" xml:space="preserve"><value>Waiting for confirmation</value></data>
+  <data name="ChatState_Completed" xml:space="preserve"><value>Done</value></data>
+  <data name="ChatState_Error" xml:space="preserve"><value>Error</value></data>
+  <data name="ChatState_Group_Idle" xml:space="preserve"><value>Idle</value></data>
+  <data name="ChatState_Group_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="ChatState_Group_WaitingForTool" xml:space="preserve"><value>Waiting for confirmation</value></data>
+  <data name="ChatState_Group_Completed" xml:space="preserve"><value>Completed</value></data>
+  <data name="ChatState_Group_Error" xml:space="preserve"><value>Errored</value></data>
+  <data name="AssistantHistory_StateFilter_All" xml:space="preserve"><value>All states</value></data>
+  <data name="Notification_BackgroundChat_Title" xml:space="preserve"><value>Background chat update</value></data>
+  <data name="Notification_BackgroundChat_WaitingForTool" xml:space="preserve"><value>'{0}' needs your confirmation</value></data>
+  <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>'{0}' finished</value></data>
+  <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>'{0}' ran into an error</value></data>
+  <data name="Notification_OpenChat" xml:space="preserve"><value>Open chat</value></data>
 
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII Keyword Added</value></data>

@@ -73,6 +73,7 @@
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
       <Border Grid.Column="0"
@@ -128,7 +129,17 @@
         </ComboBox.ItemTemplate>
       </ComboBox>
 
-      <ui:Button Grid.Column="4"
+      <!-- Live-state filter: distinguishes the in-memory live set; persisted-but-not-live
+           chats read as Idle. Client-side (SelectedStateOption drives RebuildGroups). -->
+      <ComboBox Grid.Column="4"
+                ItemsSource="{Binding StateFilterOptions}"
+                DisplayMemberPath="DisplayName"
+                SelectedItem="{Binding SelectedStateOption, Mode=TwoWay}"
+                Width="160"
+                Margin="10,0,0,0"
+                VerticalAlignment="Center"/>
+
+      <ui:Button Grid.Column="5"
                  Command="{Binding ClearFilterCommand}"
                  Appearance="Secondary"
                  Width="36"
@@ -143,7 +154,7 @@
 
     <Grid Grid.Row="2" Margin="24,0,24,14">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="420"/>
+        <ColumnDefinition Width="480"/>
         <ColumnDefinition Width="14"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
@@ -234,7 +245,7 @@
       <TextBlock VerticalAlignment="Center"
                  FontSize="12"
                  Foreground="{DynamicResource TextMutedBrush}">
-        <Run Text="{Binding Chats.Count, Mode=OneWay}"/>
+        <Run Text="{Binding VisibleCount, Mode=OneWay}"/>
         <Run Text=" chats"/>
       </TextBlock>
     </Border>

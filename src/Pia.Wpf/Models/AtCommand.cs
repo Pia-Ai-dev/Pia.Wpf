@@ -5,7 +5,8 @@ public enum AtCommandDomain
     Memory,
     Todo,
     Reminder,
-    Research
+    Research,
+    Files
 }
 
 public class AtCommand

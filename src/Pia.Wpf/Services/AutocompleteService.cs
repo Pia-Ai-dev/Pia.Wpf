@@ -6,7 +6,11 @@ namespace Pia.Services;
 
 public class AutocompleteService : IAutocompleteService
 {
-    private static readonly AutocompleteSuggestion[] Tier1Suggestions =
+    // Always-available domains. The Files domain is appended dynamically (see
+    // GetTier1Suggestions) only when a sandbox folder is configured, because tagging
+    // @Files restricts the turn's toolset to the file tools — which the plugin host
+    // doesn't register when no folder is set, leaving an empty toolset.
+    private static readonly AutocompleteSuggestion[] BaseTier1Suggestions =
     [
         new() { DisplayText = "Memory", Icon = SymbolRegular.BrainCircuit24, Domain = AtCommandDomain.Memory, IsTier1 = true },
         new() { DisplayText = "Todo", Icon = SymbolRegular.TaskListSquareLtr24, Domain = AtCommandDomain.Todo, IsTier1 = true },
@@ -14,23 +18,29 @@ public class AutocompleteService : IAutocompleteService
         new() { DisplayText = "Research", Icon = SymbolRegular.Search24, Domain = AtCommandDomain.Research, IsTier1 = true }
     ];
 
+    private static readonly AutocompleteSuggestion FilesTier1Suggestion =
+        new() { DisplayText = "Files", Icon = SymbolRegular.Folder24, Domain = AtCommandDomain.Files, IsTier1 = true };
+
     private const int MaxResults = 8;
 
     private readonly IMemoryService _memoryService;
     private readonly ITodoService _todoService;
     private readonly IReminderService _reminderService;
     private readonly IScheduledJobService _scheduledJobService;
+    private readonly IFilesToolHandler _filesToolHandler;
 
     public AutocompleteService(
         IMemoryService memoryService,
         ITodoService todoService,
         IReminderService reminderService,
-        IScheduledJobService scheduledJobService)
+        IScheduledJobService scheduledJobService,
+        IFilesToolHandler filesToolHandler)
     {
         _memoryService = memoryService;
         _todoService = todoService;
         _reminderService = reminderService;
         _scheduledJobService = scheduledJobService;
+        _filesToolHandler = filesToolHandler;
     }
 
     public async Task<IReadOnlyList<AutocompleteSuggestion>> GetSuggestionsAsync(
@@ -42,14 +52,16 @@ public class AutocompleteService : IAutocompleteService
         return await GetTier2SuggestionsAsync(domain.Value, filter);
     }
 
-    private static IReadOnlyList<AutocompleteSuggestion> GetTier1Suggestions(string? filter)
+    private IReadOnlyList<AutocompleteSuggestion> GetTier1Suggestions(string? filter)
     {
-        if (string.IsNullOrEmpty(filter))
-            return Tier1Suggestions;
+        IEnumerable<AutocompleteSuggestion> tier1 = BaseTier1Suggestions;
+        if (_filesToolHandler.IsAvailable)
+            tier1 = tier1.Append(FilesTier1Suggestion);
 
-        return Tier1Suggestions
-            .Where(s => s.DisplayText.StartsWith(filter, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        if (!string.IsNullOrEmpty(filter))
+            tier1 = tier1.Where(s => s.DisplayText.StartsWith(filter, StringComparison.OrdinalIgnoreCase));
+
+        return tier1.ToArray();
     }
 
     private async Task<IReadOnlyList<AutocompleteSuggestion>> GetTier2SuggestionsAsync(
@@ -61,6 +73,7 @@ public class AutocompleteService : IAutocompleteService
             AtCommandDomain.Todo => await GetTodoSuggestionsAsync(filter),
             AtCommandDomain.Reminder => await GetReminderSuggestionsAsync(filter),
             AtCommandDomain.Research => await GetResearchSuggestionsAsync(filter),
+            AtCommandDomain.Files => GetFileSuggestions(filter),
             _ => []
         };
     }
@@ -132,6 +145,22 @@ public class AutocompleteService : IAutocompleteService
                 Icon = SymbolRegular.Search24,
                 Domain = AtCommandDomain.Research,
                 ItemId = j.Id,
+                IsTier1 = false
+            })
+            .ToArray();
+    }
+
+    // Files differ from the other domains: a file is keyed by its sandbox-relative path
+    // (carried in DisplayText, not a Guid ItemId), and the handler owns the folder
+    // resolution + containment/blocklist filtering. The path enumeration is synchronous.
+    private IReadOnlyList<AutocompleteSuggestion> GetFileSuggestions(string? filter)
+    {
+        return _filesToolHandler.ListRelativeFiles(filter, MaxResults)
+            .Select(path => new AutocompleteSuggestion
+            {
+                DisplayText = path,
+                Icon = SymbolRegular.DocumentText24,
+                Domain = AtCommandDomain.Files,
                 IsTier1 = false
             })
             .ToArray();

@@ -6,6 +6,7 @@ using System.Windows.Media;
 using Markdig;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using Pia.Emoji;
 using MdBlock = Markdig.Syntax.Block;
 using MdInline = Markdig.Syntax.Inlines.Inline;
 using MdTable = Markdig.Extensions.Tables.Table;
@@ -282,7 +283,7 @@ internal static class PiaMarkdownRenderer
         switch (inline)
         {
             case LiteralInline literal:
-                return new Run(literal.Content.ToString());
+                return RenderLiteral(literal.Content.ToString());
             case CodeInline codeInline:
                 return RenderCodeSpan(codeInline);
             case EmphasisInline emphasis:
@@ -306,6 +307,23 @@ internal static class PiaMarkdownRenderer
                 }
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Renders literal text, splitting emoji into color inline images. Plain text (the common case)
+    /// stays a single <see cref="Run"/>; text containing emoji becomes a <see cref="Span"/> of text
+    /// runs interleaved with <c>InlineUIContainer</c> emoji.
+    /// </summary>
+    private static WpfInline RenderLiteral(string text)
+    {
+        var inlines = EmojiInlineBuilder.Build(text).ToList();
+        if (inlines.Count == 1 && inlines[0] is Run run)
+            return run;
+
+        var span = new Span();
+        foreach (var inline in inlines)
+            span.Inlines.Add(inline);
+        return span;
     }
 
     private static Run RenderCodeSpan(CodeInline code)

@@ -99,6 +99,9 @@
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Neuer Chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Alle Chats anzeigen…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Noch keine Chats.</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Arbeitsordner für diesen Chat</value></data>
+  <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>Alle Dateien</value></data>
+  <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>Keine Unterordner hier.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Chats durchsuchen…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Keine Treffer</value></data>
   <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ zum Navigieren · Enter zum Fortsetzen · Esc zum Schließen</value></data>
@@ -186,6 +189,10 @@
   <data name="Msg_Settings_TemplateAdded" xml:space="preserve"><value>Vorlage erfolgreich hinzugefügt.</value></data>
   <data name="Msg_Settings_TemplateDeleted" xml:space="preserve"><value>Vorlage erfolgreich gelöscht.</value></data>
   <data name="Msg_Settings_TemplateUpdated" xml:space="preserve"><value>Vorlage erfolgreich aktualisiert.</value></data>
+  <data name="Msg_Settings_PersonaAdded" xml:space="preserve"><value>Persona erfolgreich hinzugefügt.</value></data>
+  <data name="Msg_Settings_PersonaDeleted" xml:space="preserve"><value>Persona erfolgreich gelöscht.</value></data>
+  <data name="Msg_Settings_PersonaUpdated" xml:space="preserve"><value>Persona erfolgreich aktualisiert.</value></data>
+  <data name="Msg_Settings_CannotDeleteBuiltInPersona" xml:space="preserve"><value>Integrierte Personas können nicht gelöscht werden.</value></data>
   <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Stimme geändert</value></data>
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Stimmen-Download fehlgeschlagen: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Stimme {0} erfolgreich heruntergeladen.</value></data>
@@ -233,6 +240,24 @@
   <data name="Notification_ScheduledResearchInApp" xml:space="preserve"><value>Geplantes Briefing „{0}" ist bereit</value></data>
   <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Geplantes Briefing fehlgeschlagen</value></data>
   <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>„{0}" konnte nicht ausgeführt werden — siehe Verlauf für Details</value></data>
+
+  <!-- Background assistant chats: per-chat state + notifications -->
+  <data name="ChatState_Idle" xml:space="preserve"><value>Inaktiv</value></data>
+  <data name="ChatState_Running" xml:space="preserve"><value>Läuft</value></data>
+  <data name="ChatState_WaitingForTool" xml:space="preserve"><value>Wartet auf Bestätigung</value></data>
+  <data name="ChatState_Completed" xml:space="preserve"><value>Fertig</value></data>
+  <data name="ChatState_Error" xml:space="preserve"><value>Fehler</value></data>
+  <data name="ChatState_Group_Idle" xml:space="preserve"><value>Inaktiv</value></data>
+  <data name="ChatState_Group_Running" xml:space="preserve"><value>Läuft</value></data>
+  <data name="ChatState_Group_WaitingForTool" xml:space="preserve"><value>Wartet auf Bestätigung</value></data>
+  <data name="ChatState_Group_Completed" xml:space="preserve"><value>Abgeschlossen</value></data>
+  <data name="ChatState_Group_Error" xml:space="preserve"><value>Fehlgeschlagen</value></data>
+  <data name="AssistantHistory_StateFilter_All" xml:space="preserve"><value>Alle Status</value></data>
+  <data name="Notification_BackgroundChat_Title" xml:space="preserve"><value>Hintergrund-Chat-Update</value></data>
+  <data name="Notification_BackgroundChat_WaitingForTool" xml:space="preserve"><value>„{0}" benötigt Ihre Bestätigung</value></data>
+  <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>„{0}" ist fertig</value></data>
+  <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>„{0}" ist auf einen Fehler gestoßen</value></data>
+  <data name="Notification_OpenChat" xml:space="preserve"><value>Chat öffnen</value></data>
 
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII-Schlüsselwort hinzugefügt</value></data>

@@ -29,4 +29,11 @@ public class AiProvider
     public string? MistralAgentId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Shallow copy — used to apply a per-turn override (e.g. a persona's reasoning effort) without
+    /// mutating the stored provider. All fields are value types or immutable strings, so a shallow
+    /// copy is safe.
+    /// </summary>
+    public AiProvider Clone() => (AiProvider)MemberwiseClone();
 }
