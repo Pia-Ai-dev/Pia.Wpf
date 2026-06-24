@@ -12,7 +12,7 @@ public class SpeakerToDisplayNameConverterTests
     {
         var sut = new SpeakerToDisplayNameConverter();
         var result = sut.Convert(
-            new object[] { TranscriptSpeaker.You, "Alex" },
+            new object[] { TranscriptSpeaker.You, null!, "Alex" },
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
@@ -24,7 +24,7 @@ public class SpeakerToDisplayNameConverterTests
     {
         var sut = new SpeakerToDisplayNameConverter();
         var result = sut.Convert(
-            new object[] { TranscriptSpeaker.Them, "Alex" },
+            new object[] { TranscriptSpeaker.Them, null!, "Alex" },
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
@@ -36,16 +36,40 @@ public class SpeakerToDisplayNameConverterTests
     {
         var sut = new SpeakerToDisplayNameConverter();
         var resultNull = sut.Convert(
-            new object[] { TranscriptSpeaker.Them, null! },
+            new object[] { TranscriptSpeaker.Them, null!, null! },
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
         var resultEmpty = sut.Convert(
-            new object[] { TranscriptSpeaker.Them, "  " },
+            new object[] { TranscriptSpeaker.Them, null!, "  " },
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
         Assert.Equal("them", resultNull);
         Assert.Equal("them", resultEmpty);
+    }
+
+    [Fact]
+    public void Them_SpeakerLabel_Wins()
+    {
+        var sut = new SpeakerToDisplayNameConverter();
+        var result = sut.Convert(
+            new object[] { TranscriptSpeaker.Them, "Speaker 2", null! },
+            typeof(string),
+            null,
+            CultureInfo.InvariantCulture);
+        Assert.Equal("Speaker 2", result);
+    }
+
+    [Fact]
+    public void Them_SpeakerLabel_TakesPrecedenceOverCounterpart()
+    {
+        var sut = new SpeakerToDisplayNameConverter();
+        var result = sut.Convert(
+            new object[] { TranscriptSpeaker.Them, "Speaker 2", "Alex" },
+            typeof(string),
+            null,
+            CultureInfo.InvariantCulture);
+        Assert.Equal("Speaker 2", result);
     }
 }

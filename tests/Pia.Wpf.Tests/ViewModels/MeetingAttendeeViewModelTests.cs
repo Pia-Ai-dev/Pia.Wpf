@@ -154,6 +154,74 @@ public class MeetingAttendeeViewModelTests
         Assert.Equal(2, vm.Bubbles.Count);
     }
 
+    [Fact]
+    public void Utterances_DifferentSpeakerLabelWithinWindow_SplitIntoTwoBubbles()
+    {
+        // HEADLINE — the migration's core correctness gate. Two distinct diarizer labels inside the
+        // 25s window must NOT merge into one bubble (they did under the old Speaker-only merge key).
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 1"));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hi there", t0.AddSeconds(3), "Speaker 2"));
+
+        Assert.Equal(2, vm.Bubbles.Count);
+        Assert.Equal("Speaker 1", vm.Bubbles[0].SpeakerLabel);
+        Assert.Equal("Speaker 2", vm.Bubbles[1].SpeakerLabel);
+        // Distinct labels get distinct palette slots.
+        Assert.NotEqual(vm.Bubbles[0].ColorIndex, vm.Bubbles[1].ColorIndex);
+    }
+
+    [Fact]
+    public void Utterances_SameSpeakerLabelWithinWindow_Merge()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 1"));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "world", t0.AddSeconds(3), "Speaker 1"));
+
+        Assert.Single(vm.Bubbles);
+        Assert.Equal("hello world", vm.Bubbles[0].Text);
+    }
+
+    [Fact]
+    public void Utterances_NullLabelSegmentMidRun_SplitsTheColoredRun()
+    {
+        // Fragmentation-shape regression (risk #4): a sub-threshold null-label segment arriving mid-run
+        // splits the colored speaker's run — null only merges with null. Pins the shipped SPLIT
+        // behavior so a future "absorb-null" change is a deliberate, tested diff.
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "alpha", t0, "Speaker 1"));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "uh", t0.AddSeconds(1), null));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "beta", t0.AddSeconds(2), "Speaker 1"));
+
+        Assert.Equal(3, vm.Bubbles.Count);
+        Assert.Equal("Speaker 1", vm.Bubbles[0].SpeakerLabel);
+        Assert.Null(vm.Bubbles[1].SpeakerLabel);
+        Assert.Equal("Speaker 1", vm.Bubbles[2].SpeakerLabel);
+        // The null-label bubble lands in slot 0; the two "Speaker 1" bubbles keep its assigned slot.
+        Assert.Equal(0, vm.Bubbles[1].ColorIndex);
+        Assert.Equal(vm.Bubbles[0].ColorIndex, vm.Bubbles[2].ColorIndex);
+    }
+
+    [Fact]
+    public void Utterances_NullLabelSameSpeaker_StillMerge()
+    {
+        // Existing null-label merge behavior must hold: two null-label Them utterances in-window merge.
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, null));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "world", t0.AddSeconds(5), null));
+
+        Assert.Single(vm.Bubbles);
+        Assert.Equal("hello world", vm.Bubbles[0].Text);
+        Assert.Equal(0, vm.Bubbles[0].ColorIndex);
+    }
+
     // ---- Save gating + markdown ------------------------------------------------------------------
 
     [Fact]
@@ -197,6 +265,21 @@ public class MeetingAttendeeViewModelTests
 
         Assert.Contains("# MeetingAttendee_Title", md);
         Assert.Contains("agenda item one", md);
+    }
+
+    [Fact]
+    public void BuildMarkdown_DistinctSpeakerLabels_RenderDistinctHeadings()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "first point", t0, "Speaker 1"));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "second point", t0.AddSeconds(3), "Speaker 2"));
+
+        var md = vm.BuildMarkdown();
+
+        Assert.Contains("**Speaker 1**", md);
+        Assert.Contains("**Speaker 2**", md);
     }
 
     // ---- helpers ----------------------------------------------------------------------------------

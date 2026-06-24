@@ -115,6 +115,7 @@
                     <TextBlock.Text>
                       <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                         <Binding Path="Speaker" />
+                        <Binding Path="SpeakerLabel" />
                         <Binding Path="DataContext.CounterpartName"
                                  RelativeSource="{RelativeSource AncestorType=UserControl}" />
                       </MultiBinding>
@@ -164,6 +165,7 @@
                     <TextBlock.Text>
                       <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                         <Binding Path="Speaker" />
+                        <Binding Path="SpeakerLabel" />
                         <Binding Path="DataContext.CounterpartName"
                                  RelativeSource="{RelativeSource AncestorType=UserControl}" />
                       </MultiBinding>
@@ -174,8 +176,29 @@
                              Foreground="{DynamicResource TextPlaceholderColorBrush}" />
                 </StackPanel>
                 <Border Padding="12,8"
-                        CornerRadius="12,12,12,0"
-                        Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                        CornerRadius="12,12,12,0">
+                  <!-- Per-speaker coloring: the Background MUST live in the Style (default Setter +
+                       ColorIndex DataTriggers). A local-value Background attribute would override the
+                       Style triggers and silently force every "Them" bubble to one color. -->
+                  <Border.Style>
+                    <Style TargetType="Border">
+                      <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground1Brush}" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="1">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground2Brush}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="2">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground3Brush}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="3">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground4Brush}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ColorIndex}" Value="4">
+                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground5Brush}" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Border.Style>
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*" />

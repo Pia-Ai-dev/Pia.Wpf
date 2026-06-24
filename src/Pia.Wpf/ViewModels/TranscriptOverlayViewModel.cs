@@ -31,6 +31,10 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     private const int MaxBubbles = 200;
     private const int TrimBatch = 20;
     private const int BubbleWindowSeconds = 25;
+    private const int SpeakerColorPaletteSize = 5;
+
+    private readonly Dictionary<string, int> _speakerColorIndex = new(StringComparer.Ordinal);
+    private int _nextSpeakerColorIndex;
 
     protected readonly ISettingsService _settingsService;
     protected readonly ILocalizationService _localizationService;
@@ -154,7 +158,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         {
             try
             {
-                var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, createIfMissing: true);
+                var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, utterance.SpeakerLabel, createIfMissing: true);
                 bubble!.Append(utterance.Text, utterance.Timestamp);
                 TrimIfNeeded();
             }
@@ -166,27 +170,52 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     }
 
     /// <summary>
-    /// Reuses the most recently appended bubble when it's the same speaker and still inside
-    /// the rolling window. Otherwise creates a fresh bubble (when <paramref name="createIfMissing"/>
-    /// is true) and appends it to <see cref="Bubbles"/>. Using the *last* bubble — instead of
-    /// per-speaker tracking — keeps the conversation in chronological order: an interleaved
-    /// "Them" turn always splits the prior "You" stream into two visual bubbles.
+    /// Reuses the most recently appended bubble when it's the same speaker, the same per-speaker
+    /// label, and still inside the rolling window. Otherwise creates a fresh bubble (when
+    /// <paramref name="createIfMissing"/> is true) and appends it to <see cref="Bubbles"/>. Using the
+    /// *last* bubble — instead of per-speaker tracking — keeps the conversation in chronological
+    /// order: an interleaved "Them" turn always splits the prior "You" stream into two visual bubbles.
+    ///
+    /// <para>The label is part of the merge key (ordinal equality): two distinct
+    /// <paramref name="speakerLabel"/>s in the same window produce two separate, separately-colored
+    /// bubbles. A null label (undiarized / sub-threshold segment) only merges with another null
+    /// label, so a null segment mid-run deterministically splits a colored run.</para>
     /// </summary>
-    internal TranscriptBubble? GetOrCreateBubble(TranscriptSpeaker speaker, DateTimeOffset timestamp, bool createIfMissing)
+    internal TranscriptBubble? GetOrCreateBubble(
+        TranscriptSpeaker speaker, DateTimeOffset timestamp, string? speakerLabel, bool createIfMissing)
     {
         var last = Bubbles.Count > 0 ? Bubbles[^1] : null;
-        if (last is not null
+        bool sameWindow = last is not null
             && last.Speaker == speaker
-            && (timestamp - last.StartTimestamp).TotalSeconds < BubbleWindowSeconds)
-        {
+            && (timestamp - last.StartTimestamp).TotalSeconds < BubbleWindowSeconds;
+
+        if (sameWindow && string.Equals(last!.SpeakerLabel, speakerLabel, StringComparison.Ordinal))
             return last;
-        }
 
         if (!createIfMissing) return null;
 
-        var bubble = new TranscriptBubble(speaker, timestamp);
+        var bubble = new TranscriptBubble(speaker, timestamp, speakerLabel: speakerLabel)
+        {
+            ColorIndex = GetOrAssignSpeakerColorIndex(speakerLabel),
+        };
         Bubbles.Add(bubble);
         return bubble;
+    }
+
+    /// <summary>
+    /// Returns a stable palette slot (0..<see cref="SpeakerColorPaletteSize"/>-1) for a speaker label.
+    /// Undiarized (null/blank) labels map to slot 0. Distinct labels get successive slots, wrapping
+    /// mod the palette size — with 6+ stable speakers the 6th reuses slot 0's hue (cosmetic only;
+    /// identity is carried by the label, so bubbles still split correctly).
+    /// </summary>
+    private int GetOrAssignSpeakerColorIndex(string? speakerLabel)
+    {
+        if (string.IsNullOrWhiteSpace(speakerLabel)) return 0;          // undiarized → slot 0
+        if (_speakerColorIndex.TryGetValue(speakerLabel, out var idx)) return idx;
+        idx = _nextSpeakerColorIndex % SpeakerColorPaletteSize;
+        _speakerColorIndex[speakerLabel] = idx;
+        _nextSpeakerColorIndex++;
+        return idx;
     }
 
     private void TrimIfNeeded()
@@ -264,7 +293,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         sb.AppendLine();
         foreach (var bubble in Bubbles)
         {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, CounterpartName);
+            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.SpeakerLabel, CounterpartName);
             sb.Append("**").Append(label).Append("** _")
               .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss"));
             if (bubble.EndTimestamp != bubble.StartTimestamp)

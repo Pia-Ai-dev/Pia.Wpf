@@ -58,4 +58,11 @@
   <SolidColorBrush x:Key="CodeBlockPunctuationBrush" Color="#FF808080" />
   <SolidColorBrush x:Key="CodeBlockNameBrush" Color="#FF9CDCFE" />
 
+  <!-- Per-speaker bubble palette (dark) — slot 0 is the default "Them" background -->
+  <SolidColorBrush x:Key="SpeakerBubbleBackground1Brush" Color="#FF333842" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground2Brush" Color="#FF323D33" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground3Brush" Color="#FF433A30" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground4Brush" Color="#FF3A3340" />
+  <SolidColorBrush x:Key="SpeakerBubbleBackground5Brush" Color="#FF402F2F" />
+
 </ResourceDictionary>
