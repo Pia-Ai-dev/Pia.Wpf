@@ -60,6 +60,18 @@ public sealed class ChromiumProvisionerTests : IDisposable
     }
 
     [Fact]
+    public void ResolveChromiumExecutable_FindsFullHeadedBuild_WithWin64PlatformFolder()
+    {
+        // Current Playwright builds lay the headed Chromium out under "chrome-win64" (x64) rather
+        // than the older "chrome-win". Regression guard for the install-succeeds-but-not-found bug.
+        var exe = CreateBuild("chromium-1217", "chrome-win64", "chrome.exe");
+
+        var resolved = ChromiumProvisioner.ResolveChromiumExecutable(_root);
+
+        Assert.Equal(exe, resolved);
+    }
+
+    [Fact]
     public void ResolveChromiumExecutable_IgnoresHeadlessShell_AndReturnsNull_WhenOnlyShellPresent()
     {
         // The headless-shell folder uses an underscore and ships headless_shell.exe, not chrome.exe.

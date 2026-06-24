@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
+using Pia.Logging;
 
 // Microsoft.Playwright 1.59 marks LocatorIsVisibleOptions.Timeout [Obsolete] (CS0612) but ships no
 // replacement on the options object; the per-probe timeout is load-bearing for the lobby/admission
@@ -49,6 +50,8 @@ public sealed class TeamsMeetingSession : IMeetingSession
     private const string JoinNowSelector = "button:has-text(\"Join now\")";
     private const string HangupButtonSelector = "button[id=\"hangup-button\"]";
     private const string LobbyText = "Someone will let you in shortly";
+    /// <summary>Fluent UI (Northstar) modal backdrop that can layer over the prejoin screen.</summary>
+    private const string DialogOverlaySelector = ".ui-dialog__overlay";
 
     // ---- Timeouts (ms) ----------------------------------------------------------------------
     private const float ContinueOnWebTimeoutMs = 30_000;
@@ -59,6 +62,10 @@ public sealed class TeamsMeetingSession : IMeetingSession
     private const int PollIntervalMs = 2_000;
     /// <summary>Per-iteration probe timeout when polling the hangup control.</summary>
     private const float ProbeTimeoutMs = 1_000;
+    /// <summary>Timeout for the real "Join now" click before falling back to a synthetic click.</summary>
+    private const float JoinNowClickTimeoutMs = 10_000;
+    /// <summary>How long we wait for a dismissed prejoin dialog overlay to detach.</summary>
+    private const float DialogDismissTimeoutMs = 2_000;
 
     private readonly ILogger<TeamsMeetingSession> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -131,7 +138,12 @@ public sealed class TeamsMeetingSession : IMeetingSession
             new PageWaitForSelectorOptions { Timeout = NameInputTimeoutMs }).ConfigureAwait(false);
         await page.FillAsync(NameInputSelector, displayName).ConfigureAwait(false);
         await page.WaitForSelectorAsync(JoinNowSelector).ConfigureAwait(false);
-        await page.ClickAsync(JoinNowSelector).ConfigureAwait(false);
+
+        // The new Teams web prejoin can layer a modal over the screen that swallows the click on
+        // "Join now". Best-effort dismiss it, then click — falling back to a synthetic DOM click if
+        // an overlay still intercepts the real pointer event.
+        await DismissBlockingDialogAsync(page).ConfigureAwait(false);
+        await ClickJoinNowAsync(page).ConfigureAwait(false);
         _logger.LogDebug("Clicked 'Join now'; awaiting admission");
 
         // Step 3: wait for admission. The bot may sit in the lobby ("Someone will let you in
@@ -383,6 +395,86 @@ public sealed class TeamsMeetingSession : IMeetingSession
             {
                 proc.Dispose();
             }
+        }
+    }
+
+    /// <summary>
+    /// Best-effort dismissal of the Fluent UI (Northstar) modal that the new Teams web prejoin can
+    /// layer over the screen — a <c>.ui-dialog__overlay</c> scrim that intercepts pointer events and
+    /// makes a real click on "Join now" time out (51+ retries over 30s in the field).
+    ///
+    /// We do not have a positive identification of the dialog: the browser is launched far
+    /// off-screen (so the audio render session is real but nothing is visible), which means it
+    /// cannot be observed interactively. So this captures the dialog's text to the DEBUG-only log —
+    /// a single re-run then reveals whether it is a consent gate, a permissions modal, or a promo —
+    /// and attempts an Escape dismiss (most Northstar dialogs close on Escape). The DispatchEvent
+    /// fallback in <see cref="ClickJoinNowAsync"/> covers overlays that survive Escape.
+    /// </summary>
+    private async Task DismissBlockingDialogAsync(IPage page)
+    {
+        try
+        {
+            var overlay = page.Locator(DialogOverlaySelector).First;
+            if (!await overlay.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs })
+                    .ConfigureAwait(false))
+            {
+                return;
+            }
+
+            // The dialog text can embed the meeting subject (sensitive), so it is logged only in
+            // DEBUG builds — SensitiveDebug and its argument evaluation are erased from release IL.
+            try
+            {
+                var dialogText = await page.GetByRole(AriaRole.Dialog).First
+                    .InnerTextAsync(new LocatorInnerTextOptions { Timeout = ProbeTimeoutMs })
+                    .ConfigureAwait(false);
+                _logger.SensitiveDebug(
+                    "Prejoin dialog overlay is blocking 'Join now': {DialogText}", dialogText);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Prejoin dialog overlay present but its text could not be read");
+            }
+
+            await page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
+            try
+            {
+                await overlay.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Hidden,
+                    Timeout = DialogDismissTimeoutMs,
+                }).ConfigureAwait(false);
+                _logger.LogDebug("Dismissed prejoin dialog overlay with Escape");
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogDebug("Prejoin dialog overlay survived Escape; will dispatch click directly");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Prejoin dialog dismissal probe failed; continuing to click");
+        }
+    }
+
+    /// <summary>
+    /// Clicks "Join now", falling back to a synthetic DOM click if a stray overlay still intercepts
+    /// the real pointer event. A normal click (and <c>Force = true</c>) routes a mouse event through
+    /// the button's page coordinates, so an intercepting overlay swallows it; <c>DispatchEvent</c>
+    /// dispatches the click straight to the button element and skips hit-testing.
+    /// </summary>
+    private async Task ClickJoinNowAsync(IPage page)
+    {
+        var joinNow = page.Locator(JoinNowSelector).First;
+        try
+        {
+            await joinNow.ClickAsync(new LocatorClickOptions { Timeout = JoinNowClickTimeoutMs })
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogDebug(ex, "Real click on 'Join now' was intercepted; dispatching a synthetic click");
+            await joinNow.DispatchEventAsync("click").ConfigureAwait(false);
         }
     }
 

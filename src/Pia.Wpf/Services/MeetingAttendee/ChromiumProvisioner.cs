@@ -96,9 +96,10 @@ public sealed class ChromiumProvisioner : IBrowserProvisioner
     /// Pure resolver: scans <paramref name="browsersRoot"/> for a cached full Chromium build and
     /// returns the path to its <c>chrome.exe</c>, or <c>null</c> if none is present.
     ///
-    /// Playwright lays browsers out as <c>&lt;root&gt;\chromium-&lt;revision&gt;\chrome-win\chrome.exe</c>,
-    /// where the revision varies by Playwright version — so the check must scan rather than assume a
-    /// fixed path. It deliberately matches only the full headed build:
+    /// Playwright lays browsers out as <c>&lt;root&gt;\chromium-&lt;revision&gt;\&lt;platform&gt;\chrome.exe</c>,
+    /// where the revision varies by Playwright version and the platform folder is <c>chrome-win64</c>
+    /// on current builds (older builds used <c>chrome-win</c>) — so the check must scan rather than
+    /// assume a fixed path. It deliberately matches only the full headed build:
     /// <list type="bullet">
     /// <item>the <c>chromium-*</c> folder (hyphen) that ships <c>chrome.exe</c>, NOT</item>
     /// <item>the <c>chromium_headless_shell-*</c> folder (underscore) that ships <c>headless_shell.exe</c>.</item>
@@ -125,10 +126,16 @@ public sealed class ChromiumProvisioner : IBrowserProvisioner
                 continue;
             }
 
-            var exe = Path.Combine(dir, "chrome-win", "chrome.exe");
-            if (File.Exists(exe))
+            // The platform subfolder is "chrome-win64" on current Playwright builds and "chrome-win"
+            // on older ones; probe both rather than hardcoding a single name that breaks across
+            // Playwright version bumps.
+            foreach (var platformDir in new[] { "chrome-win64", "chrome-win" })
             {
-                return exe;
+                var exe = Path.Combine(dir, platformDir, "chrome.exe");
+                if (File.Exists(exe))
+                {
+                    return exe;
+                }
             }
         }
 
