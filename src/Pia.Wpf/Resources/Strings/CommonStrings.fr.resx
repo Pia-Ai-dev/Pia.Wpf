@@ -76,4 +76,7 @@
   <data name="MeetingAttendee_Status_Attending" xml:space="preserve"><value>Participation — transcription…</value></data>
   <data name="MeetingAttendee_Status_Stopping" xml:space="preserve"><value>Sortie en cours…</value></data>
   <data name="MeetingAttendee_Status_Error" xml:space="preserve"><value>Erreur</value></data>
+  <data name="MeetingAttendee_RenameSpeaker_Title" xml:space="preserve"><value>Renommer l'intervenant</value></data>
+  <data name="MeetingAttendee_RenameSpeaker_Prompt" xml:space="preserve"><value>Saisissez un nom pour «&#160;{0}&#160;» :</value></data>
+  <data name="MeetingAttendee_RenameSpeaker_MenuItem" xml:space="preserve"><value>Renommer l'intervenant…</value></data>
 </root>

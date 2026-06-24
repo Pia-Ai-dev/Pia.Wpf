@@ -310,6 +310,14 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         }
     }
 
+    /// <summary>
+    /// Renames a diarized speaker label on the live diarizer (in-memory, current meeting only). A no-op
+    /// when <see cref="_speakerId"/> is null (diarization off, or degraded-to-null on model failure) — it
+    /// must not throw. Thread-safe against a concurrent in-flight identify: the rename takes the same
+    /// <c>_lock</c> the speaker-identification service holds.
+    /// </summary>
+    public void RenameSpeaker(string oldLabel, string newLabel) => _speakerId?.Rename(oldLabel, newLabel);
+
     private async Task WatchForEndAsync(IMeetingSession session, CancellationToken token)
     {
         try

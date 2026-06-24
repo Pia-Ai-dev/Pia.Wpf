@@ -67,4 +67,12 @@ public interface IMeetingAttendeeService
     /// stopping.
     /// </summary>
     Task StopAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Renames a diarized speaker label (e.g. <c>"Speaker 2"</c> → <c>"Marco"</c>) on the live diarizer
+    /// for the current meeting only. In-session, in-memory, and discarded at meeting end (fresh service
+    /// per meeting). A no-op when diarization is off (no underlying speaker-identification service); must
+    /// not throw.
+    /// </summary>
+    void RenameSpeaker(string oldLabel, string newLabel);
 }

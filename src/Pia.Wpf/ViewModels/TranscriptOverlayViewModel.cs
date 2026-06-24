@@ -225,6 +225,32 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
             Bubbles.RemoveAt(0);
     }
 
+    /// <summary>
+    /// Applies an in-session speaker-label rename to the base-VM state: carries the renamed label's
+    /// palette slot over (so the speaker keeps its bubble color and future utterances under the new
+    /// label hit the same entry) and retroactively relabels every existing bubble that carried the old
+    /// label. The diarizer-side rename (so future segments arrive already labelled) is the subclass's
+    /// responsibility — it calls its service before this helper. Eventually-consistent: a segment in
+    /// flight when the rename runs can land a stray old-label bubble; it self-corrects on the next
+    /// utterance.
+    /// </summary>
+    protected void RelabelSpeaker(string oldLabel, string newLabel)
+    {
+        // Carry the color slot over to the new label so the speaker keeps the same bubble color and any
+        // future utterances under the renamed label still hit the same palette entry.
+        if (_speakerColorIndex.Remove(oldLabel, out var carried))
+            _speakerColorIndex[newLabel] = carried;
+
+        DispatchToUi(() =>
+        {
+            foreach (var bubble in Bubbles)
+            {
+                if (bubble.SpeakerLabel == oldLabel)
+                    bubble.SpeakerLabel = newLabel;
+            }
+        });
+    }
+
     // ---- IsRunning → command refresh -------------------------------------------------------------
 
     partial void OnIsRunningChanged(bool value)

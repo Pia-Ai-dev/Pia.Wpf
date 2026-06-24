@@ -222,6 +222,101 @@ public class MeetingAttendeeViewModelTests
         Assert.Equal(0, vm.Bubbles[0].ColorIndex);
     }
 
+    // ---- Rename speaker (in-session) -------------------------------------------------------------
+
+    [Fact]
+    public async Task Rename_RelabelsExistingInWindowBubbles_AndCallsService()
+    {
+        var (vm, service, dialog) = CreateSutWithDialog();
+        var t0 = DateTimeOffset.Now;
+        dialog.ShowInputDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns("Marco");
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 2"));
+
+        await vm.RenameSpeakerLabelCommand.ExecuteAsync("Speaker 2");
+
+        Assert.Equal(("Speaker 2", "Marco"), service.LastRename);
+        Assert.Equal("Marco", vm.Bubbles[0].SpeakerLabel);
+    }
+
+    [Fact]
+    public async Task Rename_CarriesPaletteSlotOver_ToNewLabel()
+    {
+        // Black-box carry-over check: relabeling alone does NOT change ColorIndex (it's set at creation),
+        // so asserting the existing bubble's index proves nothing. Instead, after the rename add a NEW
+        // utterance under the new label (beyond the 25s window → fresh bubble) and assert it reuses the
+        // renamed speaker's slot. Without the _speakerColorIndex re-key, "Marco" grabs the next free slot.
+        // Two distinct speakers up front ensure the renamed one isn't slot 0 (so a no-carry path differs).
+        var (vm, _, dialog) = CreateSutWithDialog();
+        var t0 = DateTimeOffset.Now;
+        dialog.ShowInputDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns("Marco");
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "one", t0, "Speaker 1"));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "two", t0.AddSeconds(3), "Speaker 2"));
+        var renamedSlot = vm.Bubbles[1].ColorIndex;   // "Speaker 2"'s slot
+
+        await vm.RenameSpeakerLabelCommand.ExecuteAsync("Speaker 2");
+
+        // Fresh bubble (beyond window) under the new label must reuse the carried slot.
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "three", t0.AddSeconds(40), "Marco"));
+
+        var newBubble = vm.Bubbles[^1];
+        Assert.Equal("Marco", newBubble.SpeakerLabel);
+        Assert.Equal(renamedSlot, newBubble.ColorIndex);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Rename_CannotExecute_OnNullOrBlankLabel(string? oldLabel)
+    {
+        var (vm, _) = CreateSut();
+
+        Assert.False(vm.RenameSpeakerLabelCommand.CanExecute(oldLabel));
+    }
+
+    [Fact]
+    public void Rename_CanExecute_OnNonBlankLabel()
+    {
+        var (vm, _) = CreateSut();
+
+        Assert.True(vm.RenameSpeakerLabelCommand.CanExecute("Speaker 2"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Rename_NoOp_WhenDialogReturnsNullOrBlank(string? dialogResult)
+    {
+        var (vm, service, dialog) = CreateSutWithDialog();
+        var t0 = DateTimeOffset.Now;
+        dialog.ShowInputDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(dialogResult);
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 2"));
+
+        await vm.RenameSpeakerLabelCommand.ExecuteAsync("Speaker 2");
+
+        Assert.Equal(0, service.RenameCount);
+        Assert.Equal("Speaker 2", vm.Bubbles[0].SpeakerLabel);
+    }
+
+    [Fact]
+    public async Task Rename_NoOp_WhenNameUnchanged()
+    {
+        var (vm, service, dialog) = CreateSutWithDialog();
+        var t0 = DateTimeOffset.Now;
+        dialog.ShowInputDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns("Speaker 2");
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 2"));
+
+        await vm.RenameSpeakerLabelCommand.ExecuteAsync("Speaker 2");
+
+        Assert.Equal(0, service.RenameCount);
+        Assert.Equal("Speaker 2", vm.Bubbles[0].SpeakerLabel);
+    }
+
     // ---- Save gating + markdown ------------------------------------------------------------------
 
     [Fact]
@@ -286,6 +381,12 @@ public class MeetingAttendeeViewModelTests
 
     private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service) CreateSut()
     {
+        var (vm, service, _) = CreateSutWithDialog();
+        return (vm, service);
+    }
+
+    private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service, IDialogService dialog) CreateSutWithDialog()
+    {
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
 
@@ -294,13 +395,14 @@ public class MeetingAttendeeViewModelTests
         loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
 
         var files = Substitute.For<IFileDialogService>();
+        var dialog = Substitute.For<IDialogService>();
         var service = new FakeMeetingAttendeeService();
 
         var vm = new MeetingAttendeeViewModel(
-            service, settingsService, loc, files,
+            service, settingsService, loc, files, dialog,
             NullLogger<MeetingAttendeeViewModel>.Instance);
 
-        return (vm, service);
+        return (vm, service, dialog);
     }
 
     internal sealed class FakeMeetingAttendeeService : IMeetingAttendeeService
@@ -320,6 +422,9 @@ public class MeetingAttendeeViewModelTests
         public string? LastStartUrl { get; private set; }
         public int StartCount { get; private set; }
 
+        public (string Old, string New)? LastRename { get; private set; }
+        public int RenameCount { get; private set; }
+
         public Task StartAsync(string meetingUrl, CancellationToken cancellationToken = default)
         {
             LastStartUrl = meetingUrl;
@@ -334,6 +439,12 @@ public class MeetingAttendeeViewModelTests
             State = MeetingAttendeeState.Idle;
             StateChanged?.Invoke(this, State);
             return Task.CompletedTask;
+        }
+
+        public void RenameSpeaker(string oldLabel, string newLabel)
+        {
+            LastRename = (oldLabel, newLabel);
+            RenameCount++;
         }
 
         public void RaiseState(MeetingAttendeeState state)

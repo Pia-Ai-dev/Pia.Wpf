@@ -159,20 +159,42 @@
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Left"
                             Margin="4,0,0,2">
-                  <TextBlock FontSize="11"
-                             Margin="0,0,8,0"
-                             Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                    <TextBlock.Text>
-                      <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
-                        <Binding Path="Speaker" />
-                        <Binding Path="SpeakerLabel" />
-                        <Binding Path="DataContext.CounterpartName"
-                                 RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                      </MultiBinding>
-                    </TextBlock.Text>
-                  </TextBlock>
+                  <!-- Click-to-rename the diarized speaker: transparent button wrapping the speaker
+                       name + an edit pencil. The MultiBinding stays the Unit-5-widened 3-value one
+                       (Speaker, SpeakerLabel, CounterpartName). CommandParameter is the raw SpeakerLabel
+                       so the command receives the diarizer label (e.g. "Speaker 2"), not the rendered
+                       display name. -->
+                  <ui:Button Padding="4,2"
+                             Margin="-4,-2,4,-2"
+                             Appearance="Transparent"
+                             BorderThickness="0"
+                             Cursor="Hand"
+                             ToolTip="{loc:Str MeetingAttendee_RenameSpeaker_MenuItem}"
+                             Command="{Binding DataContext.RenameSpeakerLabelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                             CommandParameter="{Binding SpeakerLabel}">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBlock FontSize="11"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                        <TextBlock.Text>
+                          <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                            <Binding Path="Speaker" />
+                            <Binding Path="SpeakerLabel" />
+                            <Binding Path="DataContext.CounterpartName"
+                                     RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                          </MultiBinding>
+                        </TextBlock.Text>
+                      </TextBlock>
+                      <ui:SymbolIcon Symbol="Edit24"
+                                     FontSize="11"
+                                     Margin="4,0,0,0"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                    </StackPanel>
+                  </ui:Button>
                   <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
                              FontSize="11"
+                             VerticalAlignment="Center"
                              Foreground="{DynamicResource TextPlaceholderColorBrush}" />
                 </StackPanel>
                 <Border Padding="12,8"
@@ -199,6 +221,22 @@
                       </Style.Triggers>
                     </Style>
                   </Border.Style>
+                  <!-- Right-click variant of the rename affordance. The bubble's DataContext is the
+                       TranscriptBubble, so the command (on the UserControl's DataContext) is reached via
+                       the Border.Tag bridge; the parameter is the bubble's own SpeakerLabel. Coexists
+                       with the ColorIndex Border.Style above. -->
+                  <Border.ContextMenu>
+                    <ContextMenu>
+                      <MenuItem Header="{loc:Str MeetingAttendee_RenameSpeaker_MenuItem}"
+                                Command="{Binding PlacementTarget.Tag.RenameSpeakerLabelCommand,
+                                           RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
+                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    </ContextMenu>
+                  </Border.ContextMenu>
+                  <Border.Tag>
+                    <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                  </Border.Tag>
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*" />

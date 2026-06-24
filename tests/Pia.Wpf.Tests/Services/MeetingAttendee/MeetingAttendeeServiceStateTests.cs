@@ -332,6 +332,19 @@ public sealed class MeetingAttendeeServiceStateTests
         Assert.Equal(expected, MeetingAttendeeService.BuildDisplayName(input));
     }
 
+    [Fact]
+    public void RenameSpeaker_IsSafeNoOp_WhenSpeakerIdNull()
+    {
+        // Before StartAsync (and after a degrade-to-null), _speakerId is null: RenameSpeaker must be a
+        // silent no-op, never throw. The freshly-built Fixture service has not started, so _speakerId
+        // is null.
+        var fixture = new Fixture();
+
+        var ex = Record.Exception(() => fixture.Service.RenameSpeaker("Speaker 2", "Marco"));
+
+        Assert.Null(ex);
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static async Task WaitForStateAsync(IMeetingAttendeeService service, MeetingAttendeeState target)

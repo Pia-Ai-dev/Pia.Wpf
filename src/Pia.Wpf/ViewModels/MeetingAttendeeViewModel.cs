@@ -22,6 +22,7 @@ namespace Pia.ViewModels;
 public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 {
     private readonly IMeetingAttendeeService _service;
+    private readonly IDialogService _dialogService;
 
     /// <summary>
     /// Stop command. Constructed manually (not via <c>[RelayCommand]</c>) so <see cref="StopAsync"/>
@@ -56,10 +57,12 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         ISettingsService settingsService,
         ILocalizationService localizationService,
         IFileDialogService fileDialogService,
+        IDialogService dialogService,
         ILogger<MeetingAttendeeViewModel> logger)
         : base(settingsService, localizationService, fileDialogService, logger)
     {
         _service = service;
+        _dialogService = dialogService;
         CounterpartName = _localizationService["MeetingAttendee_Speaker_Placeholder"];
 
         // Construct StopCommand BEFORE subscribing: OnServiceStateChanged → OnRunningChanged calls
@@ -144,6 +147,30 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             _logger.LogWarning(ex, "Failed to persist last counterpart name");
         }
     }
+
+    // ---- Rename speaker (in-session only) --------------------------------------------------------
+
+    /// <summary>
+    /// Renames a diarized speaker label for the current meeting only: prompts for a new name, retargets
+    /// the live diarizer label map via <see cref="IMeetingAttendeeService.RenameSpeaker"/>, then re-keys
+    /// the palette slot and retroactively relabels existing bubbles via the base
+    /// <see cref="TranscriptOverlayViewModel.RelabelSpeaker"/>. No persistence — discarded at meeting end.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRenameSpeakerLabel))]
+    private async Task RenameSpeakerLabelAsync(string? oldLabel)
+    {
+        if (string.IsNullOrWhiteSpace(oldLabel)) return;
+
+        var title = _localizationService["MeetingAttendee_RenameSpeaker_Title"];
+        var prompt = string.Format(_localizationService["MeetingAttendee_RenameSpeaker_Prompt"], oldLabel);
+        var newLabel = await _dialogService.ShowInputDialogAsync(title, prompt).ConfigureAwait(true);
+        if (string.IsNullOrWhiteSpace(newLabel) || newLabel == oldLabel) return;
+
+        _service.RenameSpeaker(oldLabel, newLabel);
+        RelabelSpeaker(oldLabel, newLabel);   // base helper: palette re-key + bubble walk
+    }
+
+    private static bool CanRenameSpeakerLabel(string? oldLabel) => !string.IsNullOrWhiteSpace(oldLabel);
 
     // ---- State → status --------------------------------------------------------------------------
 
