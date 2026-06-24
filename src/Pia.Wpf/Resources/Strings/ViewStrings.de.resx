@@ -385,6 +385,12 @@
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Anwendung startet beim Start versteckt im Infobereich</value></data>
   <data name="Settings_AutoCaptureSelectedText" xml:space="preserve"><value>Markierten Text per Hotkey automatisch übernehmen</value></data>
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>Beim Drücken eines Pia-Hotkeys wird der im aktiven Programm markierte Text automatisch kopiert und in die Eingabe übernommen. Die Zwischenablage wird anschließend wiederhergestellt.</value></data>
+  <data name="Settings_Diarization_Section" xml:space="preserve"><value>Sprechertrennung (Besprechungen)</value></data>
+  <data name="Settings_Diarization_Enable" xml:space="preserve"><value>Einzelne Sprecher in Besprechungen erkennen</value></data>
+  <data name="Settings_Diarization_Enable_Description" xml:space="preserve"><value>Wenn Pia an einer Besprechung teilnimmt, wird das Transkript in separate Sprechblasen pro Sprecher gruppiert. Erfordert einen einmaligen Download eines kleinen Spracherkennungsmodells. Änderungen wirken sich auf die nächste Besprechung aus, der Sie beitreten.</value></data>
+  <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Empfindlichkeit der Sprecherzuordnung</value></data>
+  <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Legt fest, wie ähnlich zwei Stimmen klingen müssen, um als derselbe Sprecher zu gelten. Höhere Werte trennen Sprecher eher (weniger zusammengeführte Stimmen); niedrigere Werte fassen mehr Stimmen zusammen.</value></data>
+  <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Zuordnungsschwelle: {0}</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Folgevorschläge anzeigen</value></data>

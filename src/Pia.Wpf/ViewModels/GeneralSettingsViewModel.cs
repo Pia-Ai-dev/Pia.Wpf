@@ -46,6 +46,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _policyService = policyService;
 
         _uiLanguage = _localizationService.CurrentLanguage;
+        _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(SpeakerEmbeddingThresholdDisplay));
     }
 
     // Enterprise policy enforcement
@@ -97,6 +98,17 @@ public partial class GeneralSettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private TargetSpeechLanguage _targetSpeechLanguage;
+
+    // Meeting per-speaker diarization
+    [ObservableProperty]
+    private bool _enableMeetingDiarization = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeakerEmbeddingThresholdDisplay))]
+    private float _speakerEmbeddingThreshold = 0.70f;
+
+    public string SpeakerEmbeddingThresholdDisplay =>
+        _localizationService.Format("Settings_Diarization_ThresholdDisplay", SpeakerEmbeddingThreshold.ToString("F2"));
 
     public bool IsWhisperSelected => SttBackend == SttBackend.Whisper;
     public bool IsParakeetSelected => SttBackend == SttBackend.Parakeet;
@@ -164,6 +176,25 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnEnableMeetingDiarizationChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnSpeakerEmbeddingThresholdChanged(float value)
+    {
+        if (_isLoading) return;
+        // Slider.Value is double; clamp to the supported range and round to the 0.05 grid so the
+        // float round-trip stays on a stable value and SpeakerEmbeddingThresholdDisplay reads cleanly.
+        var clamped = (float)Math.Round(Math.Clamp(value, 0.50f, 0.95f) / 0.05f) * 0.05f;
+        if (Math.Abs(clamped - value) > 0.0001f)
+        {
+            SpeakerEmbeddingThreshold = clamped;
+            return;
+        }
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -176,6 +207,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
+        EnableMeetingDiarization = settings.EnableMeetingDiarization;
+        SpeakerEmbeddingThreshold = (float)Math.Clamp(settings.SpeakerEmbeddingThreshold, 0.50f, 0.95f);
 
         _optimizeHotkey = settings.OptimizeHotkey;
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
@@ -446,6 +479,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         settings.SttBackend = SttBackend;
         settings.WhisperModel = WhisperModel;
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
+        settings.EnableMeetingDiarization = EnableMeetingDiarization;
+        settings.SpeakerEmbeddingThreshold = SpeakerEmbeddingThreshold;
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
         settings.ResearchHotkey = _researchHotkey;

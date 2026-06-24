@@ -331,6 +331,36 @@
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
             </StackPanel>
 
+            <!-- Per-speaker diarization (meetings) -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Diarization_Section}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <CheckBox Content="{loc:Str Settings_Diarization_Enable}"
+                        IsChecked="{Binding EnableMeetingDiarization}"
+                        Margin="0,4,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_Enable_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,0,20"
+                        IsEnabled="{Binding EnableMeetingDiarization}">
+              <TextBlock Text="{loc:Str Settings_Diarization_Threshold_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left"
+                      Width="400"
+                      Minimum="0.50"
+                      Maximum="0.95"
+                      TickFrequency="0.05"
+                      IsSnapToTickEnabled="True"
+                      Value="{Binding SpeakerEmbeddingThreshold, Mode=TwoWay}"
+                      VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding SpeakerEmbeddingThresholdDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_Threshold_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+            </StackPanel>
+
             <Border BorderThickness="0,1,0,0"
                     BorderBrush="{DynamicResource BorderBrush_}"
                     Margin="0,4,0,20"/>

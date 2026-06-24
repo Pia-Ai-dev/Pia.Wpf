@@ -385,6 +385,12 @@
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Application will start hidden in system tray on launch</value></data>
   <data name="Settings_AutoCaptureSelectedText" xml:space="preserve"><value>Auto-paste selected text on hotkey</value></data>
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>When you press a Pia hotkey, automatically copy the text selected in the active app and paste it into the input. The clipboard is restored afterwards.</value></data>
+  <data name="Settings_Diarization_Section" xml:space="preserve"><value>Speaker separation (meetings)</value></data>
+  <data name="Settings_Diarization_Enable" xml:space="preserve"><value>Identify individual speakers in meetings</value></data>
+  <data name="Settings_Diarization_Enable_Description" xml:space="preserve"><value>When Pia attends a meeting, group the transcript into separate bubbles per speaker. Requires a one-time download of a small speaker-recognition model. Changes apply to the next meeting you join.</value></data>
+  <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Speaker matching sensitivity</value></data>
+  <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Tunes how similar two voices must sound to be treated as the same speaker. Higher values split speakers more readily (fewer voices merged); lower values group more voices together.</value></data>
+  <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Match threshold: {0}</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Show todo panel button</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Show the todo panel toggle button in Optimize, Assistant, and Research views</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Show follow-up suggestions</value></data>
