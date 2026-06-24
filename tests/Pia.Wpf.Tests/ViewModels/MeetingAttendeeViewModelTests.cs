@@ -425,7 +425,10 @@ public class MeetingAttendeeViewModelTests
         public (string Old, string New)? LastRename { get; private set; }
         public int RenameCount { get; private set; }
 
-        public Task StartAsync(string meetingUrl, CancellationToken cancellationToken = default)
+        public Task StartAsync(
+            string meetingUrl,
+            CancellationToken cancellationToken = default,
+            IProgress<ModelDownloadProgress>? speakerModelProgress = null)
         {
             LastStartUrl = meetingUrl;
             StartCount++;

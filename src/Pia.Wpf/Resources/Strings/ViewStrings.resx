@@ -373,6 +373,7 @@
   <data name="Settings_DownloadModel" xml:space="preserve"><value>Download Model</value></data>
   <data name="Settings_DownloadParakeetModel" xml:space="preserve"><value>Download Parakeet model</value></data>
   <data name="Settings_Parakeet_DisplayName" xml:space="preserve"><value>Parakeet TDT v3 (multilingual)</value></data>
+  <data name="Settings_SpeakerModel_DisplayName" xml:space="preserve"><value>Speaker recognition model</value></data>
   <data name="Settings_Parakeet_Description" xml:space="preserve"><value>NVIDIA NeMo Parakeet transducer model. Supports multiple European languages with automatic detection. Roughly 340 MB on disk.</value></data>
   <data name="Settings_SpeechToTextLanguage" xml:space="preserve"><value>Speech-to-Text Language</value></data>
   <data name="Settings_SpeechToTextLanguage_Description" xml:space="preserve"><value>Language preset for speech-to-text transcription</value></data>

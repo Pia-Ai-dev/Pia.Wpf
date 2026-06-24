@@ -76,12 +76,16 @@ public static class LiveTranscriptionModels
     /// Downloads (if missing) the 3D-Speaker CAM++ speaker-embedding model to
     /// <c>%LOCALAPPDATA%\Pia\Models\</c> and returns its path. Mirrors
     /// <see cref="EnsureSileroVadAsync"/>: a single <c>.onnx</c> fetched straight to a
-    /// <c>.tmp</c> file and atomically moved into place.
+    /// <c>.tmp</c> file and atomically moved into place. The optional <paramref name="progress"/>
+    /// receives per-chunk <see cref="ModelDownloadProgress"/> in the <see cref="ModelDownloadPhase.Downloading"/>
+    /// phase (no extract phase — the model is a single <c>.onnx</c>); a cached model returns early
+    /// with no report at all.
     /// </summary>
     public static async Task<string> EnsureSpeakerEmbeddingAsync(
         IHttpClientFactory httpClientFactory,
         ILogger logger,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<ModelDownloadProgress>? progress = null)
     {
         Directory.CreateDirectory(ModelsDirectory);
         var path = SpeakerEmbeddingModelPath;
@@ -89,17 +93,10 @@ public static class LiveTranscriptionModels
 
         var url = $"{SherpaSpeakerReleasesBase}/{SpeakerEmbeddingFileName}";
         logger.LogInformation("Downloading speaker-embedding model to {Path}", path);
-        var http = httpClientFactory.CreateClient();
-        using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
 
         var tmp = path + ".tmp";
-        await using (var dst = File.Create(tmp))
-        await using (var src = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        {
-            await src.CopyToAsync(dst, cancellationToken).ConfigureAwait(false);
-        }
+        await DownloadWithProgressAsync(url, tmp, httpClientFactory, progress, cancellationToken)
+            .ConfigureAwait(false);
         File.Move(tmp, path, overwrite: true);
         return path;
     }

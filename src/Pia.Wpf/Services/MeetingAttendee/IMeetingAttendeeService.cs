@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Pia.Models;
+using Pia.Services.Interfaces;
 
 namespace Pia.Services.MeetingAttendee;
 
@@ -60,7 +61,18 @@ public interface IMeetingAttendeeService
     /// (<see cref="MeetingAttendeeState.Attending"/>); the meeting then runs in the background until it
     /// ends or <see cref="StopAsync"/> is called.
     /// </summary>
-    Task StartAsync(string meetingUrl, CancellationToken cancellationToken = default);
+    /// <param name="speakerModelProgress">
+    /// Optional sink for the OPTIONAL speaker-embedding model download (per-speaker diarization). Receives
+    /// <see cref="ModelDownloadPhase.Downloading"/> ticks while the model downloads and a terminal
+    /// <see cref="ModelDownloadPhase.Completed"/> report on success, failure, or cancellation. A cached
+    /// model (or disabled diarization) reports nothing until the terminal signal, so the UI can lazily
+    /// show a dialog only when a download actually starts. Never affects whether the meeting is joined —
+    /// a speaker-model failure degrades to single-bubble behavior.
+    /// </param>
+    Task StartAsync(
+        string meetingUrl,
+        CancellationToken cancellationToken = default,
+        IProgress<ModelDownloadProgress>? speakerModelProgress = null);
 
     /// <summary>
     /// Leaves the meeting and tears down capture + browser. Idempotent: a no-op when already idle or

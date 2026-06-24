@@ -106,9 +106,21 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         // channel) so a restart never stacks two readers on the SingleReader channel.
         await StartReaderAsync().ConfigureAwait(false);
 
+        // Speaker-model download progress dialog. ONLY surfaced when diarization is enabled AND the model
+        // is not already on disk — otherwise the speaker model emits no Downloading report and we never
+        // show anything. The dialog is dismissed by a terminal Completed report from the service (which
+        // fires on success, failure→null, AND cancellation), so it can never be left stuck and the meeting
+        // join is never blocked on it. We deliberately do NOT tie its lifetime to StartAsync completing —
+        // StartAsync also covers the up-to-120s join, which must not hold the dialog open.
+        var showSpeakerProgress = settings.EnableMeetingDiarization
+            && !Services.LiveTranscription.LiveTranscriptionModels.IsSpeakerEmbeddingAvailable();
+        var speakerDownload = showSpeakerProgress
+            ? new SpeakerModelDownloadUi(_dialogService, _localizationService, DispatchToUi)
+            : null;
+
         try
         {
-            await _service.StartAsync(MeetingUrl, cancellationToken).ConfigureAwait(false);
+            await _service.StartAsync(MeetingUrl, cancellationToken, speakerDownload?.Progress).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -116,6 +128,103 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             // failure via status and stop the reader. Don't log the URL.
             _logger.LogError(ex, "Failed to start meeting attendee");
             await StopReaderAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            // Backstop: the primary dismissal is the service's terminal Completed report (before the join),
+            // but if the start faulted before the speaker step or no terminal report arrived, ensure the
+            // dialog is closed and disposed. No-op when it was never shown.
+            if (speakerDownload is not null) await speakerDownload.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Owns the lazy-show / terminal-dismiss lifecycle of the speaker-embedding model download dialog,
+    /// driven entirely by the <see cref="IProgress{T}"/> reports the service emits while ensuring the
+    /// (optional) speaker model. The dialog is shown on the FIRST <see cref="ModelDownloadPhase.Downloading"/>
+    /// report (so a cached model never flashes it) and dismissed on the terminal
+    /// <see cref="ModelDownloadPhase.Completed"/> report (which the service emits on success, failure, and
+    /// cancellation alike — never a stuck dialog). The dialog's own cancel maps to a VM-owned CTS that is
+    /// NEVER the meeting-start token, so dismissing it cannot abort the meeting join — at worst the
+    /// already-degrade-to-null speaker download continues harmlessly in the background.
+    /// </summary>
+    private sealed class SpeakerModelDownloadUi : IAsyncDisposable
+    {
+        private readonly IDialogService _dialogService;
+        private readonly ILocalizationService _localizationService;
+        private readonly Action<Action> _dispatchToUi;
+        private readonly CancellationTokenSource _dialogCloseCts = new();
+        private Task? _dialogTask;
+        private bool _shown;
+
+        public Progress<ModelDownloadProgress> Progress { get; }
+
+        public SpeakerModelDownloadUi(
+            IDialogService dialogService,
+            ILocalizationService localizationService,
+            Action<Action> dispatchToUi)
+        {
+            _dialogService = dialogService;
+            _localizationService = localizationService;
+            _dispatchToUi = dispatchToUi;
+            // The service may report from any thread, so route the WPF dialog show/dismiss through the
+            // UI dispatcher explicitly rather than relying on where this Progress was constructed.
+            Progress = new Progress<ModelDownloadProgress>(OnProgress);
+        }
+
+        private void OnProgress(ModelDownloadProgress report)
+        {
+            // This Progress is constructed off the UI thread (StartAsync is past ConfigureAwait(false)), so
+            // OnProgress runs on thread-pool threads — and the reports can even arrive concurrently/out of
+            // order. Route the WHOLE body through the UI dispatcher: (1) _dialogCloseCts.Cancel() invokes the
+            // dialog's Hide() callback SYNCHRONOUSLY on the calling thread and ContentDialog is a
+            // DispatcherObject, so the dismiss MUST run on the UI thread; (2) serializing on the UI thread
+            // makes the show-once guard race-free.
+            _dispatchToUi(() =>
+            {
+                if (report.Phase == ModelDownloadPhase.Completed)
+                {
+                    // Terminal: dismiss. The dialog watches _dialogCloseCts and hides on cancel.
+                    if (!_dialogCloseCts.IsCancellationRequested) _dialogCloseCts.Cancel();
+                    return;
+                }
+
+                // First real download tick → lazily show the dialog. A cached model never reaches here.
+                if (_shown) return;
+                _shown = true;
+                // Load-bearing re-check: thread-pool reordering can deliver a late Downloading after the
+                // terminal Completed already cancelled — skip the orphan show so no dialog is left open.
+                if (_dialogCloseCts.IsCancellationRequested) return;
+                var modelName = _localizationService["Settings_SpeakerModel_DisplayName"];
+                _dialogTask = _dialogService.ShowModelDownloadDialogAsync(modelName, Progress, _dialogCloseCts.Token);
+            });
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            // Backstop dismissal. In practice the terminal Completed report has already cancelled this CTS
+            // before StartAsync returns (the speaker step is awaited pre-join and its finally always runs),
+            // so the dialog is already hidden and _dialogTask completed. We only ever need to act when a
+            // dialog is still pending. Cancel() fires the dialog's Hide() callback SYNCHRONOUSLY on the
+            // calling thread, and we are off the UI thread here — so dispatch it (same hazard as OnProgress)
+            // and AWAIT that dispatch, so the CTS is not disposed out from under the queued callback.
+            var dialogTask = _dialogTask;
+            if (dialogTask is not null && !_dialogCloseCts.IsCancellationRequested)
+            {
+                var dismissed = new TaskCompletionSource();
+                _dispatchToUi(() =>
+                {
+                    try { if (!_dialogCloseCts.IsCancellationRequested) _dialogCloseCts.Cancel(); }
+                    finally { dismissed.TrySetResult(); }
+                });
+                await dismissed.Task.ConfigureAwait(false);
+            }
+
+            if (dialogTask is not null)
+            {
+                try { await dialogTask.ConfigureAwait(false); } catch { /* dialog already hidden */ }
+            }
+            _dialogCloseCts.Dispose();
         }
     }
 

@@ -41,7 +41,11 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     // ---- Injected seams ---------------------------------------------------------------------------
     private readonly Func<IProgress<ChromiumDownloadProgress>?, CancellationToken, Task<string>> _provisionChromium;
-    private readonly Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> _createTranscription;
+    // Takes an optional IProgress<ModelDownloadProgress> threaded down to the speaker-embedding model
+    // download so the VM can surface a progress dialog — mirrors the _provisionChromium IProgress seam
+    // above. Silero VAD + the sherpa engine remain silent (no progress); only the OPTIONAL speaker model
+    // reports, and only when it actually downloads.
+    private readonly Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> _createTranscription;
     private readonly Func<string, IMeetingSession> _sessionFactory;
     // (session, usePerProcessLoopback) → source. usePerProcess is already resolved against the
     // settings flag + PID availability by the orchestrator, so the factory just builds the right one.
@@ -102,7 +106,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             settingsService,
             loggerFactory,
             provisionChromium: (progress, ct) => browserProvisioner.EnsureChromiumAsync(progress, ct),
-            createTranscription: async ct =>
+            createTranscription: async (speakerProgress, ct) =>
             {
                 var settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
                 var log = loggerFactory.CreateLogger<MeetingAttendeeService>();
@@ -113,9 +117,10 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 var engine = await TranscriptionEngineFactory
                     .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
                 // Diarization is an OPTIONAL enhancement: a missing/corrupt/404 speaker model degrades to
-                // null inside the helper (single-bubble behavior) and must NEVER fail meeting join.
+                // null inside the helper (single-bubble behavior) and must NEVER fail meeting join. The
+                // progress is threaded ONLY here (the optional speaker model), surfacing the download dialog.
                 var speakerId = await TryCreateSpeakerIdentificationAsync(
-                    httpClientFactory, loggerFactory, settings, log, ct).ConfigureAwait(false);
+                    httpClientFactory, loggerFactory, settings, log, ct, speakerProgress).ConfigureAwait(false);
                 return (sileroPath, engine, speakerId);
             },
             sessionFactory: chromiumPath => new TeamsMeetingSession(
@@ -147,7 +152,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         ISettingsService settingsService,
         ILoggerFactory loggerFactory,
         Func<IProgress<ChromiumDownloadProgress>?, CancellationToken, Task<string>> provisionChromium,
-        Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> createTranscription,
+        Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> createTranscription,
         Func<string, IMeetingSession> sessionFactory,
         Func<IMeetingSession, bool, IAudioCaptureSource>? audioSourceFactory,
         Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory)
@@ -165,7 +170,10 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         _utterances = UtteranceChannel.CreateBounded();
     }
 
-    public async Task StartAsync(string meetingUrl, CancellationToken cancellationToken = default)
+    public async Task StartAsync(
+        string meetingUrl,
+        CancellationToken cancellationToken = default,
+        IProgress<ModelDownloadProgress>? speakerModelProgress = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(meetingUrl);
 
@@ -195,7 +203,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             // 2) Models — Silero VAD + the sherpa engine — before we join, mirroring LiveMeetingService.
             //    The speaker-ID service degrades to null INSIDE the closure, so this await cannot throw on a
             //    speaker-model failure — StartAsync still reaches Attending; only a Silero/engine failure is fatal.
-            var (sileroPath, engine, speakerId) = await _createTranscription(startToken).ConfigureAwait(false);
+            var (sileroPath, engine, speakerId) = await _createTranscription(speakerModelProgress, startToken).ConfigureAwait(false);
             startToken.ThrowIfCancellationRequested();
             _transcriptionEngine = engine;
             _speakerId = speakerId;
@@ -455,14 +463,15 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         ILoggerFactory loggerFactory,
         AppSettings settings,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ModelDownloadProgress>? progress = null)
     {
         if (!settings.EnableMeetingDiarization) return null;
 
         try
         {
             var speakerModelPath = await LiveTranscriptionModels
-                .EnsureSpeakerEmbeddingAsync(httpClientFactory, logger, cancellationToken).ConfigureAwait(false);
+                .EnsureSpeakerEmbeddingAsync(httpClientFactory, logger, cancellationToken, progress).ConfigureAwait(false);
             return new SpeakerIdentificationService(
                 speakerModelPath,
                 settings.SpeakerEmbeddingThreshold,
@@ -474,6 +483,14 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             // download, or a native extractor construction failure must NOT regress meeting join.
             logger.LogWarning(ex, "Speaker diarization unavailable; continuing without per-speaker bubbles.");
             return null;
+        }
+        finally
+        {
+            // Terminal dismissal signal: emit on success, failure→null, AND cancellation so the
+            // progress dialog is NEVER left stuck. Distinguishable from a mid-download tick (the VM
+            // dismisses only on Completed), and a cached model — which produced no Downloading report —
+            // emits only this, so the dialog never flashed. Progress<T>.Report never throws.
+            progress?.Report(new ModelDownloadProgress(100, 0, ModelDownloadPhase.Completed));
         }
     }
 

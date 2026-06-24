@@ -426,7 +426,7 @@ public sealed class MeetingAttendeeServiceStateTests
                 // Degraded shape: a null SpeakerId is the production degrade-to-null result; the orchestrator
                 // must treat it as a normal, non-fatal path. A bare null gives the tuple no inferable type,
                 // so the element type is annotated explicitly.
-                createTranscription: _ => Task.FromResult<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>(
+                createTranscription: (_, _) => Task.FromResult<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>(
                     ("silero.onnx", transcriptionEngine, null)),
                 sessionFactory: _ =>
                 {

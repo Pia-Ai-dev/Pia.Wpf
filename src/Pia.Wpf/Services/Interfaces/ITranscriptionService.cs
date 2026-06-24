@@ -17,4 +17,11 @@ public enum ModelDownloadPhase
 {
     Downloading,
     Extracting,
+
+    /// <summary>
+    /// Terminal marker: the download finished (success, failure, or cancellation) and any progress
+    /// dialog should be dismissed. Distinguishable from a mid-download tick so a cached model (which
+    /// emits only <see cref="Completed"/>, no <see cref="Downloading"/>) never flashes the dialog.
+    /// </summary>
+    Completed,
 }
