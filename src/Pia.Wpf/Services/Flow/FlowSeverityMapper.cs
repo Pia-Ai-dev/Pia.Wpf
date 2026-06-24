@@ -26,4 +26,18 @@ public static class FlowSeverityMapper
         ChatState.Error => FlowSeverity.Error,
         _ => FlowSeverity.Info,
     };
+
+    /// <summary>
+    /// Inverse of <see cref="FromChatState"/> over the surface-worthy states — recovers the originating
+    /// <see cref="ChatState"/> from a background-chat item's persisted severity (background chats only ever
+    /// publish WaitingForTool/Completed/Error). Null for any severity no surface-worthy state maps to. Kept
+    /// beside <see cref="FromChatState"/> so the bijection stays a single source of truth.
+    /// </summary>
+    public static ChatState? ToChatState(FlowSeverity severity) => severity switch
+    {
+        FlowSeverity.ActionRequired => ChatState.WaitingForTool,
+        FlowSeverity.Success => ChatState.Completed,
+        FlowSeverity.Error => ChatState.Error,
+        _ => null,
+    };
 }

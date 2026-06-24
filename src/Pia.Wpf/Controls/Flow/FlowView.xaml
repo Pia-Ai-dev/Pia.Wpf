@@ -6,6 +6,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
              xmlns:cards="clr-namespace:Pia.Controls.Cards"
+             xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
@@ -150,6 +151,12 @@
                          Foreground="{DynamicResource TextSubtleBrush}"
                          Text="{Binding CreatedAt, Converter={StaticResource FlowRelativeTimeConverter}}" />
             </Grid>
+            <!-- Chat-state chip (background-chat cards only): the shared PiaChatStateBadge, fed a
+                 ChatState derived from severity. It binds {Binding State} and self-collapses for every
+                 other source; when present it stands in for the prose body (BodyText trigger below). -->
+            <ah:PiaChatStateBadge Margin="0,4,0,0"
+                                  HorizontalAlignment="Left" />
+
             <TextBlock x:Name="BodyText"
                        Margin="0,2,0,0"
                        FontSize="12"
@@ -206,6 +213,10 @@
           <Setter TargetName="DismissButton" Property="Visibility" Value="Collapsed" />
         </DataTrigger>
         <DataTrigger Binding="{Binding Body}" Value="">
+          <Setter TargetName="BodyText" Property="Visibility" Value="Collapsed" />
+        </DataTrigger>
+        <!-- A chat-state chip stands in for the prose body (chip available → skip the body line). -->
+        <DataTrigger Binding="{Binding HasChatState}" Value="True">
           <Setter TargetName="BodyText" Property="Visibility" Value="Collapsed" />
         </DataTrigger>
         <DataTrigger Binding="{Binding IsRead}" Value="True">

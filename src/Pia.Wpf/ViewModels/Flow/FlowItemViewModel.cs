@@ -60,6 +60,19 @@ public partial class FlowItemViewModel : ObservableObject
     /// <summary>The navigation deep-link (rendered as the accent text-link); null for decision-only cards.</summary>
     public FlowAction? Action => _item.Action;
 
+    /// <summary>
+    /// The originating chat state for background-chat cards — feeds the shared <c>PiaChatStateBadge</c>
+    /// pill. Re-derived (never stored) from the persisted <see cref="FlowSeverity"/> via
+    /// <see cref="FlowSeverityMapper.ToChatState"/>; null for every other source so the badge
+    /// self-collapses. Survives reload because severity is persisted.
+    /// </summary>
+    public ChatState? State => _item.Source == FlowSource.BackgroundChat
+        ? FlowSeverityMapper.ToChatState(_item.Severity)
+        : null;
+
+    /// <summary>True when the card shows a chat-state chip; the chip then replaces the prose body.</summary>
+    public bool HasChatState => State is not null;
+
     /// <summary>Decision buttons derived from the item's source (design §5); empty for non-reminder sources.</summary>
     public IReadOnlyList<DecisionButton> Decisions => _decisions ??= BuildDecisions();
 
@@ -82,6 +95,8 @@ public partial class FlowItemViewModel : ObservableObject
         OnPropertyChanged(nameof(CreatedAt));
         OnPropertyChanged(nameof(IsRead));
         OnPropertyChanged(nameof(Action));
+        OnPropertyChanged(nameof(State));
+        OnPropertyChanged(nameof(HasChatState));
         OnPropertyChanged(nameof(Decisions));
         OnPropertyChanged(nameof(HasDecisions));
     }

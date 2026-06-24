@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Pia.Controls.Cards;
+using Pia.Models;
 using Pia.Models.Flow;
 using Pia.Navigation;
 using Pia.Services.Flow;
@@ -65,6 +66,53 @@ public class FlowItemViewModelTests
             DedupKey = Guid.NewGuid().ToString(),
             Lifetime = FlowLifetime.Persistent,
         };
+
+    private static FlowItem BgChatItem(FlowSeverity severity)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = DateTimeOffset.UtcNow,
+            Severity = severity,
+            Source = FlowSource.BackgroundChat,
+            Title = "research summary",
+            Body = "Waiting for your confirmation",
+            DedupKey = Guid.NewGuid().ToString(),
+            Lifetime = FlowLifetime.Persistent,
+        };
+
+    [Theory]
+    [InlineData(FlowSeverity.ActionRequired, ChatState.WaitingForTool)]
+    [InlineData(FlowSeverity.Success, ChatState.Completed)]
+    [InlineData(FlowSeverity.Error, ChatState.Error)]
+    public void Bind_BackgroundChatItem_DerivesChatStateFromSeverity(FlowSeverity severity, ChatState expected)
+    {
+        var vm = Create(out _, out _, out _);
+        vm.Bind(BgChatItem(severity));
+
+        Assert.True(vm.HasChatState);
+        Assert.Equal(expected, vm.State);
+    }
+
+    [Fact]
+    public void Bind_BackgroundChatItem_WithNonSurfaceSeverity_HasNoChatState()
+    {
+        var vm = Create(out _, out _, out _);
+        vm.Bind(BgChatItem(FlowSeverity.Info));
+
+        Assert.False(vm.HasChatState);
+        Assert.Null(vm.State);
+    }
+
+    [Fact]
+    public void Bind_NonChatSource_HasNoChatState_EvenWhenActionRequired()
+    {
+        var vm = Create(out _, out _, out _);
+        // A reminder is ActionRequired too, but only the BackgroundChat source carries a chat state.
+        vm.Bind(ReminderItem(Guid.NewGuid()));
+
+        Assert.False(vm.HasChatState);
+        Assert.Null(vm.State);
+    }
 
     [Fact]
     public void Bind_ReminderItem_DerivesSnoozeAndDoneDecisions()
