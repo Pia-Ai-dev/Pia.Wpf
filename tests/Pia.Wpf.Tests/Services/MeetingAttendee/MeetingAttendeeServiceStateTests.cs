@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -239,6 +240,69 @@ public sealed class MeetingAttendeeServiceStateTests
         await fx.Service.DisposeAsync();
     }
 
+    // ---- degrade-to-null (BLOCKING-ISSUE #1 guard) ----------------------------------------------
+
+    [Fact]
+    public async Task StartAsync_WhenSpeakerIdNull_ReachesAttendingNotError()
+    {
+        // Seam-level guard: the production createTranscription closure degrades a failed speaker-model
+        // setup to a null SpeakerId. The default fixture returns exactly that degraded 3-tuple
+        // ("silero.onnx", engine, null), so a null SpeakerId must drive StartAsync to Attending (single-
+        // bubble behavior) — NOT into the :233 catch that disposes and transitions to Error.
+        var fx = new Fixture();
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MeetingAttendeeState.Attending, fx.Service.State);
+        Assert.True(fx.EngineBuilt);
+        Assert.DoesNotContain(MeetingAttendeeState.Error, fx.Observed);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TryCreateSpeakerIdentificationAsync_WhenEnsureThrows_ReturnsNull_NotThrows()
+    {
+        // Closure-level guard for the actual try/catch: when EnableMeetingDiarization is true but the
+        // ensure path throws (here: CreateClient throws before any HTTP), the helper must DEGRADE to null,
+        // not propagate. EnsureSpeakerEmbeddingAsync short-circuits if the ~27 MB model already exists on
+        // disk (it would then construct a real service and CreateClient is never reached) — skip in that
+        // case so the test deterministically exercises the catch only when the download is actually attempted.
+        if (LiveTranscriptionModels.IsSpeakerEmbeddingAvailable())
+            Assert.Skip("Speaker-embedding model is cached on disk; the ensure path short-circuits before the throw.");
+
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient(Arg.Any<string>())
+            .Returns(_ => throw new InvalidOperationException("no network"));
+
+        var result = await MeetingAttendeeService.TryCreateSpeakerIdentificationAsync(
+            httpClientFactory,
+            NullLoggerFactory.Instance,
+            new AppSettings { EnableMeetingDiarization = true },
+            NullLogger.Instance,
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task TryCreateSpeakerIdentificationAsync_WhenDiarizationDisabled_ReturnsNull_NoDownload()
+    {
+        // The gate lives inside the helper: with diarization off, it returns null without touching the
+        // IHttpClientFactory at all (no download attempt).
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+
+        var result = await MeetingAttendeeService.TryCreateSpeakerIdentificationAsync(
+            httpClientFactory,
+            NullLoggerFactory.Instance,
+            new AppSettings { EnableMeetingDiarization = false },
+            NullLogger.Instance,
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        httpClientFactory.DidNotReceive().CreateClient(Arg.Any<string>());
+    }
+
     // ---- per-process decision (pure) ------------------------------------------------------------
 
     [Fact]
@@ -346,7 +410,11 @@ public sealed class MeetingAttendeeServiceStateTests
                     if (ProvisionThrows) throw new InvalidOperationException("provision failed");
                     return Task.FromResult(@"C:\fake\chrome.exe");
                 },
-                createTranscription: _ => Task.FromResult(("silero.onnx", transcriptionEngine)),
+                // Degraded shape: a null SpeakerId is the production degrade-to-null result; the orchestrator
+                // must treat it as a normal, non-fatal path. A bare null gives the tuple no inferable type,
+                // so the element type is annotated explicitly.
+                createTranscription: _ => Task.FromResult<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>(
+                    ("silero.onnx", transcriptionEngine, null)),
                 sessionFactory: _ =>
                 {
                     SessionFactoryRan = true;
@@ -357,7 +425,7 @@ public sealed class MeetingAttendeeServiceStateTests
                     AudioSourceFactoryRan = true;
                     return AudioSource;
                 },
-                engineServiceFactory: (_, _, _, _, _) =>
+                engineServiceFactory: (_, _, _, _, _, _) =>
                 {
                     EngineBuilt = true;
                     return Task.FromResult<IAsyncDisposable>(new RecordingDisposable(order, "engine"));

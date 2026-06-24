@@ -41,7 +41,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     // ---- Injected seams ---------------------------------------------------------------------------
     private readonly Func<IProgress<ChromiumDownloadProgress>?, CancellationToken, Task<string>> _provisionChromium;
-    private readonly Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine)>> _createTranscription;
+    private readonly Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> _createTranscription;
     private readonly Func<string, IMeetingSession> _sessionFactory;
     // (session, usePerProcessLoopback) → source. usePerProcess is already resolved against the
     // settings flag + PID availability by the orchestrator, so the factory just builds the right one.
@@ -49,7 +49,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     // Builds AND starts the transcription engine service, returning it as IAsyncDisposable (the only
     // surface the orchestrator needs). Folding start into the factory keeps the engine service a clean
     // seam — tests substitute an observable IAsyncDisposable instead of spinning real reader loops.
-    private readonly Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, CancellationToken, Task<IAsyncDisposable>> _engineServiceFactory;
+    private readonly Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> _engineServiceFactory;
 
     private readonly Channel<TranscriptUtterance> _utterances;
     private readonly object _stateLock = new();
@@ -65,6 +65,13 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     private IAudioCaptureSource? _audioSource;
     private IAsyncDisposable? _engineService;
     private ITranscriptionEngine? _transcriptionEngine;
+
+    // Per-session speaker diarization. Owned by this orchestrator (constructed fresh per start so
+    // "Speaker N" numbering resets per meeting). Null when diarization is disabled or the speaker
+    // model failed to download/construct — that degrade-to-null path keeps meeting join non-fatal.
+    // Wraps native ONNX resources, so it is disposed strictly AFTER the engine service drains its
+    // segment loop (see DisposeAllAsync); disposing it earlier would crash an in-flight identify.
+    private ISpeakerIdentificationService? _speakerId;
 
     // The background loop that awaits the meeting's natural end then stops us. Owns its own CTS so
     // StopAsync can cancel WaitForEndAsync without awaiting (and thus deadlocking) the loop itself.
@@ -99,18 +106,24 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             {
                 var settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
                 var log = loggerFactory.CreateLogger<MeetingAttendeeService>();
+                // Silero VAD + the sherpa engine are REQUIRED for transcription: build them outside any
+                // speaker try/catch so a failure here still propagates fatally (StartAsync → Error), as today.
                 var sileroPath = await LiveTranscriptionModels
                     .EnsureSileroVadAsync(httpClientFactory, log, ct).ConfigureAwait(false);
                 var engine = await TranscriptionEngineFactory
                     .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
-                return (sileroPath, engine);
+                // Diarization is an OPTIONAL enhancement: a missing/corrupt/404 speaker model degrades to
+                // null inside the helper (single-bubble behavior) and must NEVER fail meeting join.
+                var speakerId = await TryCreateSpeakerIdentificationAsync(
+                    httpClientFactory, loggerFactory, settings, log, ct).ConfigureAwait(false);
+                return (sileroPath, engine, speakerId);
             },
             sessionFactory: chromiumPath => new TeamsMeetingSession(
                 chromiumPath,
                 httpClientFactory,
                 loggerFactory.CreateLogger<TeamsMeetingSession>()),
             audioSourceFactory: null,
-            engineServiceFactory: async (source, sileroPath, engine, sink, ct) =>
+            engineServiceFactory: async (source, sileroPath, engine, sink, speakerId, ct) =>
             {
                 var svc = new LiveTranscriptionEngineService(
                     TranscriptSpeaker.Them,
@@ -118,7 +131,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                     sileroPath,
                     engine,
                     sink,
-                    loggerFactory.CreateLogger<LiveTranscriptionEngineService>());
+                    loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
+                    speakerId);
                 await svc.StartAsync(ct).ConfigureAwait(false);
                 return svc;
             })
@@ -133,10 +147,10 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         ISettingsService settingsService,
         ILoggerFactory loggerFactory,
         Func<IProgress<ChromiumDownloadProgress>?, CancellationToken, Task<string>> provisionChromium,
-        Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine)>> createTranscription,
+        Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> createTranscription,
         Func<string, IMeetingSession> sessionFactory,
         Func<IMeetingSession, bool, IAudioCaptureSource>? audioSourceFactory,
-        Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory)
+        Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory)
     {
         _settingsService = settingsService;
         _logger = loggerFactory.CreateLogger<MeetingAttendeeService>();
@@ -179,9 +193,12 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             var chromiumPath = await _provisionChromium(null, startToken).ConfigureAwait(false);
 
             // 2) Models — Silero VAD + the sherpa engine — before we join, mirroring LiveMeetingService.
-            var (sileroPath, engine) = await _createTranscription(startToken).ConfigureAwait(false);
+            //    The speaker-ID service degrades to null INSIDE the closure, so this await cannot throw on a
+            //    speaker-model failure — StartAsync still reaches Attending; only a Silero/engine failure is fatal.
+            var (sileroPath, engine, speakerId) = await _createTranscription(startToken).ConfigureAwait(false);
             startToken.ThrowIfCancellationRequested();
             _transcriptionEngine = engine;
+            _speakerId = speakerId;
 
             // 3) Join. Subscribe to the lobby signal BEFORE joining so InLobby is observable even if it
             //    fires during JoinAsync. Admitted-immediately meetings skip InLobby (Joining → Attending).
@@ -204,7 +221,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             await source.StartAsync(startToken).ConfigureAwait(false);
 
             startToken.ThrowIfCancellationRequested();
-            _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, startToken)
+            _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, _speakerId, startToken)
                 .ConfigureAwait(false);
 
             startToken.ThrowIfCancellationRequested();
@@ -365,6 +382,17 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 catch (Exception ex) { _logger.LogWarning(ex, "Transcription engine dispose threw"); }
                 _transcriptionEngine = null;
             }
+
+            // Speaker-ID LAST: it wraps native ONNX resources and must be disposed only after the engine
+            // service above drained its segment loop — disposing it while an IdentifyOrRegister is in flight
+            // would crash natively. Swallow any throw so one failure does not abort the rest of teardown
+            // (an uncaught native throw would propagate into StopAsync's catch and flip state to Error).
+            if (_speakerId is not null)
+            {
+                try { _speakerId.Dispose(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification dispose threw"); }
+                _speakerId = null;
+            }
         }
         finally
         {
@@ -404,6 +432,41 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 pid, loggerFactory.CreateLogger<ProcessLoopbackAudioCaptureService>());
         }
         return new LoopbackAudioCaptureService(loggerFactory.CreateLogger<LoopbackAudioCaptureService>());
+    }
+
+    /// <summary>
+    /// Builds the per-session speaker diarizer, DEGRADING TO null on any failure. Diarization is an
+    /// optional enhancement to an already-working feature, so a missing/corrupt/404 speaker model or a
+    /// native <c>SpeakerEmbeddingExtractor</c> construction failure must never fail meeting join — it
+    /// downgrades to single-bubble behavior. Returns null when diarization is disabled, and null (not a
+    /// throw) on any ensure/construct exception. A fresh service is built per start so "Speaker N"
+    /// numbering resets per meeting. Extracted as an internal static for unit-testing the catch.
+    /// </summary>
+    internal static async Task<ISpeakerIdentificationService?> TryCreateSpeakerIdentificationAsync(
+        IHttpClientFactory httpClientFactory,
+        ILoggerFactory loggerFactory,
+        AppSettings settings,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (!settings.EnableMeetingDiarization) return null;
+
+        try
+        {
+            var speakerModelPath = await LiveTranscriptionModels
+                .EnsureSpeakerEmbeddingAsync(httpClientFactory, logger, cancellationToken).ConfigureAwait(false);
+            return new SpeakerIdentificationService(
+                speakerModelPath,
+                settings.SpeakerEmbeddingThreshold,
+                loggerFactory.CreateLogger<SpeakerIdentificationService>());
+        }
+        catch (Exception ex)
+        {
+            // A CDN hiccup, a 404 (e.g. if the misspelled `recongition` release tag is "fixed"), a corrupt
+            // download, or a native extractor construction failure must NOT regress meeting join.
+            logger.LogWarning(ex, "Speaker diarization unavailable; continuing without per-speaker bubbles.");
+            return null;
+        }
     }
 
     private void OnEnteredLobby(object? sender, EventArgs e)
