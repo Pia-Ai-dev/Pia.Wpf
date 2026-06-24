@@ -44,8 +44,10 @@ public sealed class SileroVadDetector : IDisposable
 
     private readonly ILogger _logger;
 
-    // Capacity must accommodate the largest expected single Process() call. Loopback emits
-    // ~50 ms hops at 16 kHz = 800 samples; mic emits the same. Plus one in-flight window.
+    // Holds only the sub-window remainder between Process() calls. Process() writes in chunks
+    // bounded by available room and drains complete windows after each chunk, so the buffer
+    // never needs to fit a whole Process() call — capacity only has to be >= one window. The
+    // generous sizing leaves headroom for the in-flight window plus accumulated remainder.
     private readonly FloatRingBuffer _pendingChunk = new(capacity: WindowSize * 8);
 
     // Preroll ring (oldest → newest) of recently-seen non-speech windows.
@@ -89,13 +91,23 @@ public sealed class SileroVadDetector : IDisposable
     /// </summary>
     public void Process(ReadOnlySpan<float> samples)
     {
-        _pendingChunk.Write(samples);
-
+        // Write in chunks bounded by available room, draining complete windows after each
+        // chunk. This decouples the ring-buffer capacity from the size of a single Process()
+        // call: after every inner drain Count < WindowSize, so room stays positive and a chunk
+        // of any size makes progress. Window order is preserved.
         var window = new float[WindowSize];
-        while (_pendingChunk.TryRead(window))
+        while (!samples.IsEmpty)
         {
-            ProcessWindow(window);
-            window = new float[WindowSize]; // fresh array per window — segments capture them
+            var room = _pendingChunk.Capacity - _pendingChunk.Count;
+            var take = Math.Min(room, samples.Length);
+            _pendingChunk.Write(samples.Slice(0, take));
+            samples = samples.Slice(take);
+
+            while (_pendingChunk.TryRead(window))
+            {
+                ProcessWindow(window);
+                window = new float[WindowSize]; // fresh array per window — segments capture them
+            }
         }
     }
 
