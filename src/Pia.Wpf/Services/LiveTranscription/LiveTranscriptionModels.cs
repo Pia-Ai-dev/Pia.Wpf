@@ -44,11 +44,8 @@ public static class LiveTranscriptionModels
     public static string SpeakerEmbeddingModelPath { get; } =
         Path.Combine(ModelsDirectory, SpeakerEmbeddingFileName);
 
-    public static bool IsSpeakerEmbeddingAvailable()
-    {
-        return File.Exists(SpeakerEmbeddingModelPath)
-            && new FileInfo(SpeakerEmbeddingModelPath).Length > 0;
-    }
+    public static bool IsSpeakerEmbeddingAvailable() =>
+        File.Exists(SpeakerEmbeddingModelPath) && new FileInfo(SpeakerEmbeddingModelPath).Length > 0;
 
     public static async Task<string> EnsureSileroVadAsync(
         IHttpClientFactory httpClientFactory,
@@ -87,7 +84,7 @@ public static class LiveTranscriptionModels
         CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(ModelsDirectory);
-        var path = Path.Combine(ModelsDirectory, SpeakerEmbeddingFileName);
+        var path = SpeakerEmbeddingModelPath;
         if (File.Exists(path) && new FileInfo(path).Length > 0) return path;
 
         var url = $"{SherpaSpeakerReleasesBase}/{SpeakerEmbeddingFileName}";

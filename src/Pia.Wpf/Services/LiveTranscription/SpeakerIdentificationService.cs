@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using SherpaOnnx;
 
 namespace Pia.Services.LiveTranscription;
@@ -91,7 +92,8 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 matched.Update(embedding, weight);
                 var label = _displayLabels[bestId];
 
-                _logger.LogInformation(
+                // Label/sims can carry a user-typed name once the speaker is renamed → sensitive.
+                _logger.SensitiveInformation(
                     "Diarization match: {Label} sim={Sim:F3} w={Weight:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, weight, durationSec, FormatSims(sims));
 
@@ -103,7 +105,8 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
             else if (bestId is not null && bestSim >= _matchThreshold - BorderlineMargin)
             {
                 var label = _displayLabels[bestId];
-                _logger.LogInformation(
+                // Label/sims can carry a user-typed name once the speaker is renamed → sensitive.
+                _logger.SensitiveInformation(
                     "Diarization borderline (no centroid update): {Label} sim={Sim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, _matchThreshold, BorderlineMargin, durationSec, FormatSims(sims));
                 result = (label, embedding);
@@ -117,7 +120,9 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 _speakers[internalId] = new SpeakerCentroid(embedding);
                 _displayLabels[internalId] = newLabel;
 
-                _logger.LogInformation(
+                // {Label} is the auto-assigned "Speaker N", but {Sims} carries other labels that may
+                // already be user-typed (renamed) → sensitive.
+                _logger.SensitiveInformation(
                     "Diarization new speaker: {Label} bestSim={BestSim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
                     newLabel,
                     bestSim == float.NegativeInfinity ? 0f : bestSim,
@@ -156,7 +161,8 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
             if (internalId is null) return false;
 
             _displayLabels[internalId] = newLabel;
-            _logger.LogInformation("Speaker renamed: '{Old}' → '{New}' (id={Id})", oldLabel, newLabel, internalId);
+            // The new label is a user-typed name → sensitive.
+            _logger.SensitiveInformation("Speaker renamed: '{Old}' → '{New}' (id={Id})", oldLabel, newLabel, internalId);
             return true;
         }
     }
