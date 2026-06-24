@@ -197,6 +197,7 @@ public sealed class ChatSession : IDisposable
         var provider = request.Provider;
         var turnSetup = request.TurnSetup;
         var atCommands = request.AtCommands;
+        var injectedFileContext = request.InjectedFileContext;
         var tokenizationEnabled = request.TokenizationEnabled;
 
         // Reuse the CTS created by BeginTurn() (so a cancel during the manager's
@@ -250,8 +251,21 @@ public sealed class ChatSession : IDisposable
                     continue;
 
                 if (msg == userMessage && atCommands.Count > 0)
-                    chatMessages.Add(new ChatMessage(ChatRole.User,
-                        AtCommandParser.StripCommands(msg.Content)));
+                {
+                    // Strip the @-command tokens, then append any @Files content the manager read at
+                    // setup so the model sees the file inline (not only via a tool it may decline to
+                    // call). Injection is ephemeral — msg.Content (the persisted/displayed text) keeps
+                    // the original @Files token, so history never bloats with file dumps.
+                    var stripped = AtCommandParser.StripCommands(msg.Content);
+                    string visible;
+                    if (string.IsNullOrEmpty(injectedFileContext))
+                        visible = stripped;
+                    else if (string.IsNullOrEmpty(stripped))
+                        visible = injectedFileContext;
+                    else
+                        visible = $"{stripped}\n\n{injectedFileContext}";
+                    chatMessages.Add(new ChatMessage(ChatRole.User, visible));
+                }
                 else
                     chatMessages.Add(msg.ToChatMessage());
             }

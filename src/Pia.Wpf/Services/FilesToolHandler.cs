@@ -626,50 +626,11 @@ public class FilesToolHandler : IFilesToolHandler
 
         try
         {
-            // Route by extension FIRST (structured docs are zip containers full of NUL bytes —
-            // sniffing them as binary would falsely reject them); NUL-sniff only on the text path.
-            var ext = Path.GetExtension(safePath);
-            string text;
+            var (text, readError) = await ReadFileTextAsync(safePath, requested, cancellationToken);
+            if (readError is not null)
+                return readError;
 
-            if (string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase))
-            {
-                var docx = await DroppedFileReader.ReadDocxAsync(safePath, cancellationToken);
-                if (docx.Status == DroppedFileReader.ReadStatus.TooLarge)
-                    return $"Error: File is too large to read (max {MaxReadFileBytes / 1024} KB of extracted text).";
-                if (docx.Status == DroppedFileReader.ReadStatus.Failed)
-                    return $"Error: Could not read file ({docx.Error}).";
-                text = docx.Text ?? string.Empty;
-            }
-            else if (string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(ext, ".xlsm", StringComparison.OrdinalIgnoreCase))
-            {
-                var xlsx = await DroppedFileReader.ReadXlsxAsync(safePath, cancellationToken);
-                if (xlsx.Status == DroppedFileReader.ReadStatus.TooLarge)
-                    return $"Error: File is too large to read (max {MaxReadFileBytes / 1024} KB of extracted text).";
-                if (xlsx.Status == DroppedFileReader.ReadStatus.Failed)
-                    return $"Error: Could not read file ({xlsx.Error}).";
-                text = xlsx.Text ?? string.Empty;
-            }
-            else if (IsImageExtension(ext))
-            {
-                return $"Error: '{requested}' is an unsupported binary file (image); attach the image instead.";
-            }
-            else
-            {
-                var info = new FileInfo(safePath);
-                if (info.Length > MaxReadFileBytes)
-                    return $"Error: File is too large to read ({info.Length} bytes, max {MaxReadFileBytes} bytes). " +
-                           "offset/limit cannot help here — the whole file exceeds the raw-byte ceiling.";
-
-                var bytes = await File.ReadAllBytesAsync(safePath, cancellationToken);
-                if (LooksBinary(bytes))
-                    return $"Error: '{requested}' appears to be a binary file (contains NUL bytes) and cannot be read as text.";
-
-                // Decode honoring a leading BOM (UTF-8/UTF-16); default to UTF-8.
-                text = DecodeText(bytes);
-            }
-
-            var result = FormatWindow(text, offset, limit, windowRequested);
+            var result = FormatWindow(text!, offset, limit, windowRequested);
 
             // Record the observed mtime keyed by the canonicalized resolved path (not the model string).
             _stalenessStore.RecordRead(TaskAmbient.Current?.TaskId ?? Guid.Empty, safePath, File.GetLastWriteTimeUtc(safePath));
@@ -687,6 +648,144 @@ public class FilesToolHandler : IFilesToolHandler
             _logger.LogWarning(ex, "Failed to read file");
             return $"Error: Could not read file ({ex.Message}).";
         }
+    }
+
+    /// <summary>
+    /// Resolves the raw text of a sandbox file, routing by extension FIRST (structured docs are zip
+    /// containers full of NUL bytes — sniffing them as binary would falsely reject them; NUL-sniff
+    /// only on the plain-text path). Returns <c>(text, null)</c> on success or <c>(null, error)</c>
+    /// for an oversized/binary/unsupported file. Shared by <see cref="HandleReadFileAsync"/> (which
+    /// then windows + records staleness) and <see cref="ReadPromptPreviewAsync"/> (which caps for the
+    /// prompt). <paramref name="requested"/> is the model-supplied path, used only in error text.
+    /// </summary>
+    private async Task<(string? Text, string? Error)> ReadFileTextAsync(
+        string safePath, string requested, CancellationToken cancellationToken)
+    {
+        var ext = Path.GetExtension(safePath);
+
+        if (string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase))
+        {
+            var docx = await DroppedFileReader.ReadDocxAsync(safePath, cancellationToken);
+            if (docx.Status == DroppedFileReader.ReadStatus.TooLarge)
+                return (null, $"Error: File is too large to read (max {MaxReadFileBytes / 1024} KB of extracted text).");
+            if (docx.Status == DroppedFileReader.ReadStatus.Failed)
+                return (null, $"Error: Could not read file ({docx.Error}).");
+            return (docx.Text ?? string.Empty, null);
+        }
+
+        if (string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ext, ".xlsm", StringComparison.OrdinalIgnoreCase))
+        {
+            var xlsx = await DroppedFileReader.ReadXlsxAsync(safePath, cancellationToken);
+            if (xlsx.Status == DroppedFileReader.ReadStatus.TooLarge)
+                return (null, $"Error: File is too large to read (max {MaxReadFileBytes / 1024} KB of extracted text).");
+            if (xlsx.Status == DroppedFileReader.ReadStatus.Failed)
+                return (null, $"Error: Could not read file ({xlsx.Error}).");
+            return (xlsx.Text ?? string.Empty, null);
+        }
+
+        if (IsImageExtension(ext))
+            return (null, $"Error: '{requested}' is an unsupported binary file (image); attach the image instead.");
+
+        var info = new FileInfo(safePath);
+        if (info.Length > MaxReadFileBytes)
+            return (null, $"Error: File is too large to read ({info.Length} bytes, max {MaxReadFileBytes} bytes). " +
+                          "offset/limit cannot help here — the whole file exceeds the raw-byte ceiling.");
+
+        var bytes = await File.ReadAllBytesAsync(safePath, cancellationToken);
+        if (LooksBinary(bytes))
+            return (null, $"Error: '{requested}' appears to be a binary file (contains NUL bytes) and cannot be read as text.");
+
+        // Decode honoring a leading BOM (UTF-8/UTF-16); default to UTF-8.
+        return (DecodeText(bytes), null);
+    }
+
+    // @Files prompt-injection cap regime. The line cap is the caller's policy lever; this char
+    // ceiling is the safety net that bounds tokens when a file has very long lines (e.g. minified
+    // code), so a 100-line preview can never blow the context.
+    private const int PromptPreviewMaxChars = 12 * 1024; // ~3K-token safety net
+
+    public async Task<FilePromptPreview> ReadPromptPreviewAsync(
+        string relativePath, string? workingSubpath, int maxLines, CancellationToken cancellationToken = default)
+    {
+        FilePromptPreview Fail(string error) =>
+            new(relativePath, Found: false, Text: null, TotalLines: 0, ShownLines: 0, Truncated: false, Error: error);
+
+        var baseRoot = _currentFolder;
+        if (baseRoot is null || !Directory.Exists(baseRoot))
+            return Fail("No assistant files folder is configured.");
+
+        // Mirror the read_file sandbox narrowing: resolve under the active chat's working dir,
+        // then validate containment, the sensitive-path blocklist, and existence.
+        var root = ResolveEffectiveRoot(baseRoot, workingSubpath);
+
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, relativePath, out var safePath))
+            return Fail("Path is outside the assistant files folder.");
+        if (SensitivePathGuard.IsBlocked(safePath, out var blockReason))
+            return Fail($"Refusing to read here — {blockReason}.");
+        if (!File.Exists(safePath))
+            return Fail("File not found.");
+
+        string? text;
+        string? readError;
+        try
+        {
+            (text, readError) = await ReadFileTextAsync(safePath, relativePath, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read file for @Files prompt preview");
+            return Fail($"Could not read file ({ex.Message}).");
+        }
+
+        if (readError is not null)
+            // ReadFileTextAsync prefixes "Error: "; strip it so the preview's Error reads as a plain reason.
+            return Fail(readError.StartsWith("Error: ", StringComparison.Ordinal) ? readError["Error: ".Length..] : readError);
+
+        var (preview, total, shown, truncated) = CapForPrompt(text!, maxLines, PromptPreviewMaxChars);
+
+        // Deliberately no _stalenessStore.RecordRead here — a preview is partial and runs during turn
+        // setup (TaskAmbient is not yet this session's), so the model must still read_file before editing.
+        _logger.LogInformation("@Files prompt preview ({Shown}/{Total} lines, truncated={Truncated})", shown, total, truncated);
+        _logger.SensitiveDebug("@Files prompt preview path: {Path}", relativePath);
+        return new FilePromptPreview(relativePath, Found: true, preview, total, shown, truncated, Error: null);
+    }
+
+    /// <summary>
+    /// Caps <paramref name="text"/> to the first <paramref name="maxLines"/> lines AND
+    /// <paramref name="maxChars"/> characters (whichever binds first), returning the raw content
+    /// (no line-number prefixes, trailing CR stripped) plus the file's true line count and whether
+    /// anything was withheld. Always emits at least the first line, even if it alone exceeds the
+    /// char budget, so a single huge line is never silently dropped.
+    /// </summary>
+    internal static (string Text, int TotalLines, int ShownLines, bool Truncated) CapForPrompt(
+        string text, int maxLines, int maxChars)
+    {
+        var lines = text.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+            if (lines[i].EndsWith('\r')) lines[i] = lines[i][..^1];
+
+        // A trailing newline yields a spurious empty final element — don't count it as a line.
+        int totalLines = lines.Length;
+        if (totalLines > 0 && lines[^1].Length == 0 && text.EndsWith('\n'))
+            totalLines--;
+
+        var sb = new StringBuilder();
+        int shown = 0;
+        for (int i = 0; i < totalLines && shown < maxLines; i++)
+        {
+            int addition = (shown == 0 ? 0 : 1) + lines[i].Length; // +1 for the joining '\n'
+            if (shown > 0 && sb.Length + addition > maxChars) break;
+            if (shown > 0) sb.Append('\n');
+            sb.Append(lines[i]);
+            shown++;
+        }
+
+        return (sb.ToString(), totalLines, shown, shown < totalLines);
     }
 
     /// <summary>

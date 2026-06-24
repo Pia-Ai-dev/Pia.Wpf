@@ -249,6 +249,115 @@ public class FilesToolHandlerReadTests : IDisposable
         Assert.Contains("a1\tb1", result);
     }
 
+    // ---- @Files prompt-preview injection (ReadPromptPreviewAsync + CapForPrompt) ----
+
+    [Fact]
+    public async Task Preview_ReadsRawContent_NoLineNumberPrefixes()
+    {
+        WriteFile("greet.ps1", "# greet\nWrite-Host \"hi\"\n");
+
+        var preview = await _handler.ReadPromptPreviewAsync("greet.ps1", workingSubpath: null, maxLines: 100);
+
+        Assert.True(preview.Found);
+        Assert.Null(preview.Error);
+        Assert.Equal(2, preview.TotalLines);
+        Assert.Equal(2, preview.ShownLines);
+        Assert.False(preview.Truncated);
+        // Raw, human-readable content — not the read_file "N|content" form.
+        Assert.Equal("# greet\nWrite-Host \"hi\"", preview.Text);
+    }
+
+    [Fact]
+    public async Task Preview_TruncatesToMaxLines_AndFlagsTruncated()
+    {
+        WriteFile("many.txt", string.Join('\n', Enumerable.Range(1, 50).Select(i => "line" + i)));
+
+        var preview = await _handler.ReadPromptPreviewAsync("many.txt", workingSubpath: null, maxLines: 10);
+
+        Assert.True(preview.Found);
+        Assert.Equal(50, preview.TotalLines);
+        Assert.Equal(10, preview.ShownLines);
+        Assert.True(preview.Truncated);
+        Assert.Contains("line10", preview.Text!);
+        Assert.DoesNotContain("line11", preview.Text!);
+    }
+
+    [Fact]
+    public async Task Preview_ForwardSlashPath_ScopedToWorkingSubpath()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "proj", "src"));
+        File.WriteAllText(Path.Combine(_root, "proj", "src", "a.cs"), "class A {}\n");
+
+        // Path is relative to the chat's working dir ("proj"), mirroring read_file's narrowing.
+        var preview = await _handler.ReadPromptPreviewAsync("src/a.cs", workingSubpath: "proj", maxLines: 100);
+
+        Assert.True(preview.Found);
+        Assert.Equal("class A {}", preview.Text);
+    }
+
+    [Fact]
+    public async Task Preview_NotFound_ReturnsFoundFalseWithError()
+    {
+        var preview = await _handler.ReadPromptPreviewAsync("ghost.txt", workingSubpath: null, maxLines: 100);
+
+        Assert.False(preview.Found);
+        Assert.Null(preview.Text);
+        Assert.Contains("not found", preview.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Preview_BinaryFile_ReturnsFoundFalse_PlainReasonNoErrorPrefix()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "blob.bin"), new byte[] { 0x41, 0x00, 0x42 });
+
+        var preview = await _handler.ReadPromptPreviewAsync("blob.bin", workingSubpath: null, maxLines: 100);
+
+        Assert.False(preview.Found);
+        Assert.Contains("binary", preview.Error!, StringComparison.OrdinalIgnoreCase);
+        // The shared reader's "Error: " prefix is stripped so the preview reason reads plainly.
+        Assert.False(preview.Error!.StartsWith("Error: ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Preview_DoesNotRecordStaleness()
+    {
+        var rel = WriteFile("notrack.txt", "a\nb\n");
+        var full = Path.Combine(_root, rel);
+
+        await _handler.ReadPromptPreviewAsync(rel, workingSubpath: null, maxLines: 100);
+
+        // Unlike read_file, a partial preview records no baseline — so an out-of-band change is NOT
+        // flagged stale, and the model's own read_file before an edit still gets an honest signal.
+        Assert.False(_staleness.CheckStaleness(Guid.Empty, full, File.GetLastWriteTimeUtc(full).AddSeconds(5)));
+    }
+
+    [Fact]
+    public void CapForPrompt_CharBudgetBinds_BeforeLineCap()
+    {
+        // 100 lines of 100 chars each; a 1000-char budget admits far fewer than the 100-line cap.
+        var text = string.Join('\n', Enumerable.Range(1, 100).Select(_ => new string('x', 100)));
+
+        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(text, maxLines: 100, maxChars: 1000);
+
+        Assert.Equal(100, total);
+        Assert.True(truncated);
+        Assert.True(shown < 100);
+        Assert.True(capped.Length <= 1000);
+    }
+
+    [Fact]
+    public void CapForPrompt_AlwaysEmitsFirstLine_EvenWhenItAloneExceedsBudget()
+    {
+        var huge = new string('y', 5000);
+
+        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(huge, maxLines: 100, maxChars: 1000);
+
+        Assert.Equal(1, total);
+        Assert.Equal(1, shown);
+        Assert.False(truncated); // the whole single-line file is shown
+        Assert.Equal(huge, capped);
+    }
+
     private static void CreateDocx(string path, string[] paragraphs)
     {
         using var doc = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);

@@ -1,5 +1,6 @@
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Interfaces;
 using Pia.Shared;
 using Xunit;
 
@@ -178,5 +179,79 @@ public class PersonaPromptCompositionTests
 
         Assert.Contains("obtain its ID", hint);
         Assert.Contains("Groceries", hint);
+    }
+
+    // ---- BuildFileContextBlock: @Files content injected into the user turn ----
+
+    [Fact]
+    public void BuildFileContextBlock_Empty_ReturnsEmptyString()
+    {
+        Assert.Equal(string.Empty, AssistantPromptComposer.BuildFileContextBlock([], toolsAvailable: true));
+    }
+
+    [Fact]
+    public void BuildFileContextBlock_FullFile_EmbedsContentAndTotalLines()
+    {
+        var block = AssistantPromptComposer.BuildFileContextBlock(
+        [
+            new FilePromptPreview("test.ps1", Found: true, Text: "Write-Host \"hi\"", TotalLines: 1, ShownLines: 1, Truncated: false, Error: null)
+        ], toolsAvailable: true);
+
+        Assert.Contains("<attached_file path=\"test.ps1\" total_lines=\"1\">", block);
+        Assert.Contains("Write-Host \"hi\"", block);
+        Assert.Contains("</attached_file>", block);
+        // A non-truncated file carries no "read more" note.
+        Assert.DoesNotContain("read_file", block);
+    }
+
+    [Fact]
+    public void BuildFileContextBlock_Truncated_WithTools_PointsAtReadFile()
+    {
+        var block = AssistantPromptComposer.BuildFileContextBlock(
+        [
+            new FilePromptPreview("big.cs", Found: true, Text: "line1\nline2", TotalLines: 4321, ShownLines: 100, Truncated: true, Error: null)
+        ], toolsAvailable: true);
+
+        Assert.Contains("shown_lines=\"100\"", block);
+        Assert.Contains("read_file", block);
+        Assert.Contains("4321", block);
+    }
+
+    [Fact]
+    public void BuildFileContextBlock_Truncated_NoTools_OmitsReadFileAdvice()
+    {
+        // On a no-tools turn, telling the model to call read_file would be wrong.
+        var block = AssistantPromptComposer.BuildFileContextBlock(
+        [
+            new FilePromptPreview("big.cs", Found: true, Text: "line1", TotalLines: 4321, ShownLines: 100, Truncated: true, Error: null)
+        ], toolsAvailable: false);
+
+        Assert.Contains("shown_lines=\"100\"", block);
+        Assert.DoesNotContain("read_file", block);
+    }
+
+    [Fact]
+    public void BuildFileContextBlock_NotFound_RendersSelfClosingErrorBlock()
+    {
+        var block = AssistantPromptComposer.BuildFileContextBlock(
+        [
+            new FilePromptPreview("missing.txt", Found: false, Text: null, TotalLines: 0, ShownLines: 0, Truncated: false, Error: "File not found.")
+        ], toolsAvailable: true);
+
+        Assert.Contains("path=\"missing.txt\"", block);
+        Assert.Contains("error=\"File not found.\"", block);
+        Assert.Contains("list_files or search_files", block);
+        Assert.Contains("/>", block);
+    }
+
+    [Fact]
+    public void BuildFileContextBlock_EscapesAttributeSpecialChars_InPath()
+    {
+        var block = AssistantPromptComposer.BuildFileContextBlock(
+        [
+            new FilePromptPreview("a & b\".txt", Found: false, Text: null, TotalLines: 0, ShownLines: 0, Truncated: false, Error: "x")
+        ], toolsAvailable: false);
+
+        Assert.Contains("a &amp; b&quot;.txt", block);
     }
 }

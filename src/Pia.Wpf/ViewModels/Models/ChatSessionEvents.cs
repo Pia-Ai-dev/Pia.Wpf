@@ -27,6 +27,14 @@ public sealed class ChatTurnRequest
     /// <summary>@-commands parsed from the user input (used to strip commands from the AI-visible user message).</summary>
     public required IReadOnlyList<AtCommand> AtCommands { get; init; }
 
+    /// <summary>
+    /// Pre-rendered <c>@Files</c> file content to inject into the AI-visible user message (appended
+    /// after the command-stripped text). Null/empty = nothing to inject. The manager reads the
+    /// tagged file(s) at turn setup so a model that won't call read_file still sees the content;
+    /// this is ephemeral (current turn only) and is never written to the persisted message.
+    /// </summary>
+    public string? InjectedFileContext { get; init; }
+
     /// <summary>Whether PII tokenization is active for this turn.</summary>
     public required bool TokenizationEnabled { get; init; }
 }

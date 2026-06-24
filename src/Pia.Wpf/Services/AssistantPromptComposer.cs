@@ -237,6 +237,55 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Renders <c>@Files</c> previews for direct injection into the AI-visible user message, so a
+    /// model that won't call <c>read_file</c> on its own still sees the tagged file(s). Each file
+    /// becomes an <c>&lt;attached_file&gt;</c> element (XML-style, to avoid colliding with Markdown
+    /// code fences that may appear in the content). A truncated file's note points the model at
+    /// <c>read_file</c> for the rest — but only when <paramref name="toolsAvailable"/>, since on a
+    /// no-tools turn that advice would be wrong. Returns <see cref="string.Empty"/> when there is
+    /// nothing to inject.
+    /// </summary>
+    public static string BuildFileContextBlock(IReadOnlyList<FilePromptPreview> previews, bool toolsAvailable)
+    {
+        if (previews.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.Append("The user attached the following file(s) with the @Files command. Use them as the primary context for this request.");
+
+        foreach (var p in previews)
+        {
+            sb.Append("\n\n");
+
+            if (!p.Found)
+            {
+                sb.Append($"<attached_file path=\"{EscapeAttr(p.RequestedPath)}\" error=\"{EscapeAttr(p.Error ?? "could not be read")}\"");
+                if (toolsAvailable)
+                    sb.Append(" note=\"Use list_files or search_files to locate it.\"");
+                sb.Append(" />");
+                continue;
+            }
+
+            sb.Append($"<attached_file path=\"{EscapeAttr(p.RequestedPath)}\" total_lines=\"{p.TotalLines}\"");
+            if (p.Truncated)
+            {
+                sb.Append($" shown_lines=\"{p.ShownLines}\"");
+                var note = toolsAvailable
+                    ? $"Showing the first {p.ShownLines} of {p.TotalLines} lines; use read_file with offset/limit to read the rest."
+                    : $"Showing the first {p.ShownLines} of {p.TotalLines} lines.";
+                sb.Append($" note=\"{EscapeAttr(note)}\"");
+            }
+            sb.Append(">\n");
+            sb.Append(p.Text);
+            sb.Append("\n</attached_file>");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeAttr(string value) =>
+        value.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
+
     private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
     {
         var webSearchSection = webSearchActive

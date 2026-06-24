@@ -176,6 +176,48 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public async Task AtFiles_InjectedFileContent_LandsInUserMessage_AndCommandIsStripped()
+    {
+        // The fix for the @Files hallucination: the manager reads the tagged file at setup and
+        // hands it to the session via InjectedFileContext; the session must inline it into the
+        // AI-visible user turn (so a model that won't call read_file still sees the file), while
+        // the persisted/displayed message keeps the original @Files token (ephemeral injection).
+        IList<ChatMessage>? captured = null;
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => { captured = (IList<ChatMessage>)ci[0]; return Stream(new TextDelta("ok")); });
+
+        var session = CreateSession();
+        var user = new AssistantMessage(ChatRole.User, "@Files:\"test.ps1\" what does this script do?");
+        var assistant = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
+        session.Messages.Add(user);
+        session.Messages.Add(assistant);
+
+        var injected = "<attached_file path=\"test.ps1\" total_lines=\"1\">\nWrite-Host \"hi\"\n</attached_file>";
+        var request = new ChatTurnRequest
+        {
+            UserMessage = user,
+            AssistantMessage = assistant,
+            Provider = new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+            TurnSetup = new AssistantTurnSetup("system", null, SupportsTools: true, WebSearchActive: false),
+            AtCommands = [new AtCommand { Domain = AtCommandDomain.Files, ItemTitle = "test.ps1" }],
+            InjectedFileContext = injected,
+            TokenizationEnabled = false,
+        };
+
+        await session.RunTurnAsync(request, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        var text = captured!.Single(m => m.Role == ChatRole.User).Text;
+        Assert.Contains("what does this script do?", text); // the question survived stripping
+        Assert.Contains("Write-Host \"hi\"", text);          // the file content is now present
+        Assert.DoesNotContain("@Files", text);                // the command token was stripped out
+        // Injection is ephemeral: the stored/displayed user message is untouched.
+        Assert.Contains("@Files", user.Content!);
+    }
+
+    [Fact]
     public async Task ActionCard_TransitionsThroughWaitingForTool()
     {
         var pending = new PluginToolCall(

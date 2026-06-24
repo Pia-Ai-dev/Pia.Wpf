@@ -23,6 +23,7 @@ public class ChatSessionManagerTests
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
     private readonly ITokenMapService _tokenMap = Substitute.For<ITokenMapService>();
     private readonly IBackgroundChatNotifier _notifier = Substitute.For<IBackgroundChatNotifier>();
+    private readonly IFilesToolHandler _files = Substitute.For<IFilesToolHandler>();
 
     public ChatSessionManagerTests()
     {
@@ -41,7 +42,7 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _loc,
-            () => _tokenMap, _notifier);
+            () => _tokenMap, _notifier, _files);
     }
 
     [Fact]
@@ -304,6 +305,52 @@ public class ChatSessionManagerTests
         await _chatService.Received().SaveAsync(
             Arg.Is<SyncAssistantChat>(c => c.Id == session.Id && c.Messages.Count == 2),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_AtFilesCommand_ReadsTaggedFileForInjection()
+    {
+        // The manager glue: an @Files-tagged turn reads the file at setup (capped to the per-file
+        // line limit) so its content can be inlined into the user message. The preview read is
+        // awaited inside StartTurnAsync, before the run is dispatched.
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful" };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, false, false));
+
+        _files.IsAvailable.Returns(true);
+        _files.ReadPromptPreviewAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new FilePromptPreview("test.ps1", Found: true, Text: "Write-Host \"hi\"", TotalLines: 1, ShownLines: 1, Truncated: false, Error: null));
+
+        await sut.StartTurnAsync(session, "@Files:\"test.ps1\" what does this do?", null);
+
+        await _files.Received().ReadPromptPreviewAsync("test.ps1", Arg.Any<string?>(), 100, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_NoFilesFolder_SkipsPreviewRead()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful" };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, false, false));
+
+        _files.IsAvailable.Returns(false); // no sandbox configured
+
+        await sut.StartTurnAsync(session, "@Files:\"test.ps1\" what does this do?", null);
+
+        await _files.DidNotReceive().ReadPromptPreviewAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

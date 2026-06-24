@@ -35,7 +35,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly IBackgroundChatNotifier _backgroundChatNotifier;
+    private readonly IFilesToolHandler _filesToolHandler;
     private readonly SynchronizationContext _syncContext;
+
+    /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
+    private const int FilePreviewLines = 100;
+
+    /// <summary>Max distinct <c>@Files</c> files whose content is injected in one turn (others rely on tools).</summary>
+    private const int MaxFilePreviews = 5;
 
     private readonly Dictionary<Guid, ChatSession> _sessions = new();
     private readonly HashSet<ChatSession> _allSessions = new();
@@ -73,7 +80,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IAiClientService aiClientService,
         ILocalizationService localizationService,
         Func<ITokenMapService> tokenMapFactory,
-        IBackgroundChatNotifier backgroundChatNotifier)
+        IBackgroundChatNotifier backgroundChatNotifier,
+        IFilesToolHandler filesToolHandler)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -89,6 +97,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _localizationService = localizationService;
         _tokenMapFactory = tokenMapFactory;
         _backgroundChatNotifier = backgroundChatNotifier;
+        _filesToolHandler = filesToolHandler;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
     }
@@ -388,6 +397,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             if (turnSetup.Tools is { Count: > 0 } toolList)
                 _logger.LogDebug("Tools being sent to AI: [{ToolNames}]", string.Join(", ", toolList.Select(t => t.Name)));
 
+            // @Files content injection: read the tagged file(s) and inline them into the user turn,
+            // so a model that won't call read_file on its own still sees the file (the root cause of
+            // the @Files hallucination). Independent of tool support — most valuable on a no-tools turn.
+            var injectedFileContext = await BuildInjectedFileContextAsync(
+                atCommands, session.WorkingDirectory, turnSetup.SupportsTools);
+
             request = new ChatTurnRequest
             {
                 UserMessage = userMessage,
@@ -395,6 +410,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 Provider = provider,
                 TurnSetup = turnSetup,
                 AtCommands = atCommands,
+                InjectedFileContext = injectedFileContext,
                 TokenizationEnabled = tokenizationEnabled,
             };
         }
@@ -435,6 +451,52 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // UI-affine fire-and-forget: starts on the UI thread; continuations resume
         // on the captured UI SynchronizationContext (no Task.Run).
         session.RunTurnAsync(request, CancellationToken.None).SafeFireAndForget(_logger);
+    }
+
+    /// <summary>
+    /// Reads the content of files tagged with an <c>@Files</c> command (those carrying an explicit
+    /// path) and renders it for direct injection into the AI-visible user message — so a model that
+    /// won't call <c>read_file</c> on its own still sees the file (the root cause of the @Files
+    /// hallucination). Deduplicates by path, caps the number of files at <see cref="MaxFilePreviews"/>
+    /// (the rest fall back to the file tools), and never throws — an unreadable file is rendered as a
+    /// short note via <see cref="FilePromptPreview"/>. Returns null when there is nothing to inject
+    /// (no path-tagged files, or no assistant files folder is configured).
+    /// </summary>
+    private async Task<string?> BuildInjectedFileContextAsync(
+        IReadOnlyList<AtCommand> atCommands, string? workingDirectory, bool supportsTools)
+    {
+        if (!_filesToolHandler.IsAvailable)
+            return null;
+
+        var paths = atCommands
+            .Where(c => c.Domain == AtCommandDomain.Files && !string.IsNullOrWhiteSpace(c.ItemTitle))
+            .Select(c => c.ItemTitle!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (paths.Count == 0)
+            return null;
+
+        var dropped = 0;
+        if (paths.Count > MaxFilePreviews)
+        {
+            dropped = paths.Count - MaxFilePreviews;
+            paths = paths.Take(MaxFilePreviews).ToList();
+        }
+
+        // Reads run un-cancelled (CancellationToken.None): they are bounded (≤FilePreviewLines lines,
+        // ≤1 MB raw) and run inside StartTurnAsync's setup, whose catch deliberately excludes
+        // OperationCanceledException — letting an OCE escape here would wedge the session in Running.
+        var previews = new List<FilePromptPreview>(paths.Count);
+        foreach (var path in paths)
+            previews.Add(await _filesToolHandler.ReadPromptPreviewAsync(path, workingDirectory, FilePreviewLines, CancellationToken.None));
+
+        if (dropped > 0)
+            _logger.LogInformation(
+                "@Files injected {Count} file(s); {Dropped} additional tagged file(s) left to the file tools", previews.Count, dropped);
+
+        var block = Pia.Services.AssistantPromptComposer.BuildFileContextBlock(previews, supportsTools);
+        return string.IsNullOrEmpty(block) ? null : block;
     }
 
     /// <summary>
