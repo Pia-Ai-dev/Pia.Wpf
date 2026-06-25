@@ -208,6 +208,11 @@ public static class LiveTranscriptionModels
         resp.EnsureSuccessStatusCode();
 
         var totalBytes = resp.Content.Headers.ContentLength ?? 0L;
+        // With a known length the percentage branch below fires the first Downloading report. Without one,
+        // it never fires, so the lazy-show dialog (SpeakerModelDownloadUi) is never created and the
+        // download runs invisibly — emit a single indeterminate report up front to open the dialog.
+        if (totalBytes == 0)
+            progress?.Report(new ModelDownloadProgress(0, 0, ModelDownloadPhase.Downloading));
         var buffer = new byte[16 * 1024];
         var bytesRead = 0L;
 

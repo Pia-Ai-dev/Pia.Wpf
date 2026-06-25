@@ -83,15 +83,23 @@ internal sealed class SpeakerModelDownloadUi : IAsyncDisposable
             var dismissed = new TaskCompletionSource();
             _dispatchToUi(() =>
             {
+                // If the time-box below already elapsed and disposed the CTS, a late-running callback
+                // would otherwise throw ObjectDisposedException on the UI thread — swallow it.
                 try { if (!_dialogCloseCts.IsCancellationRequested) _dialogCloseCts.Cancel(); }
+                catch (ObjectDisposedException) { /* DisposeAsync timed out and already disposed the CTS */ }
                 finally { dismissed.TrySetResult(); }
             });
-            await dismissed.Task.ConfigureAwait(false);
+            // Time-box the wait: once the dispatcher has begun shutting down, the queued cancel can be
+            // aborted and never complete the TCS — an unbounded await would then hang app shutdown.
+            await Task.WhenAny(dismissed.Task, Task.Delay(TimeSpan.FromSeconds(1))).ConfigureAwait(false);
         }
 
         if (dialogTask is not null)
         {
-            try { await dialogTask.ConfigureAwait(false); } catch { /* dialog already hidden */ }
+            // Same hazard: ShowModelDownloadDialogAsync only completes once the CTS hides the dialog, so
+            // if the cancel above was aborted at shutdown this would hang. Bound it the same way.
+            try { await Task.WhenAny(dialogTask, Task.Delay(TimeSpan.FromSeconds(1))).ConfigureAwait(false); }
+            catch { /* dialog already hidden */ }
         }
         _dialogCloseCts.Dispose();
     }

@@ -358,7 +358,8 @@
               <TextBlock Text="{Binding SpeakerEmbeddingThresholdDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
               <TextBlock Text="{loc:Str Settings_Diarization_Threshold_Description}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="0,8,0,0"/>
             </StackPanel>
 
             <Border BorderThickness="0,1,0,0"

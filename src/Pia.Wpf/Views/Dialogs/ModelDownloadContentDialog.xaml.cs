@@ -35,6 +35,12 @@ public partial class ModelDownloadContentDialog : ContentDialog
 
     private void ApplyPhase(ModelDownloadPhase phase, int pct, long totalBytes)
     {
+        // Completed is a terminal dismiss marker, not a renderable phase: the dialog is already being
+        // hidden via its cancellation token. Returning early avoids collapsing both panels to a
+        // title-only body in the brief window before Hide() completes.
+        if (phase == ModelDownloadPhase.Completed)
+            return;
+
         if (phase != _currentPhase)
         {
             _currentPhase = phase;
@@ -50,10 +56,13 @@ public partial class ModelDownloadContentDialog : ContentDialog
         {
             case ModelDownloadPhase.Downloading:
                 ModelNameText.Text = string.Format(LocalizationSource.Instance["Dialog_ModelDownload_Downloading"], _modelName);
+                // Unknown length (server omitted Content-Length): spin indeterminately rather than sit
+                // frozen at 0%, matching the Extracting phase's indeterminate spinner.
+                DownloadProgressBar.IsIndeterminate = totalBytes == 0;
                 DownloadProgressBar.Value = pct;
                 ProgressText.Text = totalBytes > 0
                     ? $"{pct}% of {FormatBytes(totalBytes)}"
-                    : $"{pct}%";
+                    : LocalizationSource.Instance["Dialog_ModelDownload_PleaseWait"];
                 break;
 
             case ModelDownloadPhase.Extracting:

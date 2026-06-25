@@ -186,7 +186,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (_isLoading) return;
         // Slider.Value is double; clamp to the supported range and round to the 0.05 grid so the
         // float round-trip stays on a stable value and SpeakerEmbeddingThresholdDisplay reads cleanly.
-        var clamped = (float)Math.Round(Math.Clamp(value, 0.50f, 0.95f) / 0.05f) * 0.05f;
+        var clamped = SnapThreshold(value);
         if (Math.Abs(clamped - value) > 0.0001f)
         {
             SpeakerEmbeddingThreshold = clamped;
@@ -194,6 +194,12 @@ public partial class GeneralSettingsViewModel : ObservableObject
         }
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
+
+    // Clamp to the supported range and round to the 0.05 tick grid. Shared by the change handler and the
+    // initial load so a stored off-grid value lands on-grid up front, instead of the snapping slider
+    // writing it back through the two-way binding and triggering a one-time cosmetic re-save.
+    private static float SnapThreshold(float value) =>
+        (float)Math.Round(Math.Clamp(value, 0.50f, 0.95f) / 0.05f) * 0.05f;
 
     public async Task InitializeAsync()
     {
@@ -208,7 +214,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
         EnableMeetingDiarization = settings.EnableMeetingDiarization;
-        SpeakerEmbeddingThreshold = (float)Math.Clamp(settings.SpeakerEmbeddingThreshold, 0.50f, 0.95f);
+        SpeakerEmbeddingThreshold = SnapThreshold(settings.SpeakerEmbeddingThreshold);
 
         _optimizeHotkey = settings.OptimizeHotkey;
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;

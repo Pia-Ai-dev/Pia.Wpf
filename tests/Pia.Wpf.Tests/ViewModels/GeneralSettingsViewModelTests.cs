@@ -77,6 +77,19 @@ public class GeneralSettingsViewModelTests
     }
 
     [Fact]
+    public async Task Initialize_SnapsOffGridThresholdToTickGrid()
+    {
+        // An off-grid stored value (reachable only via a manual settings-file edit) is snapped to the
+        // 0.05 grid on load, so the snapping slider has nothing to write back through its two-way
+        // binding and no one-time cosmetic re-save fires.
+        var (sut, _, _) = Create(new AppSettings { SpeakerEmbeddingThreshold = 0.73f });
+
+        await sut.InitializeAsync();
+
+        Assert.Equal(0.75f, sut.SpeakerEmbeddingThreshold);
+    }
+
+    [Fact]
     public async Task ChangingThreshold_PersistsRoundedValueToAppSettings()
     {
         var (sut, settings, stored) = Create(new AppSettings { SpeakerEmbeddingThreshold = 0.70f });
