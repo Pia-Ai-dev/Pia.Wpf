@@ -66,6 +66,7 @@
   <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Lien de la réunion Teams</value></data>
   <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
   <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>Je confirme être autorisé à faire participer un assistant à cette réunion et à la transcrire.</value></data>
+  <data name="MeetingAttendee_OpenSettings" xml:space="preserve"><value>Paramètres de la réunion</value></data>
   <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>réunion</value></data>
   <data name="MeetingAttendee_SaveDialog_Title" xml:space="preserve"><value>Enregistrer la transcription de la réunion</value></data>
   <data name="MeetingAttendee_SaveDialog_Filter" xml:space="preserve"><value>Fichier Markdown (*.md)|*.md|Tous les fichiers (*.*)|*.*</value></data>

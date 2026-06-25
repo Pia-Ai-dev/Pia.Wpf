@@ -288,6 +288,24 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         return $"{instruction}{Environment.NewLine}{Environment.NewLine}{BuildMarkdown()}";
     }
 
+    // ---- Open meeting settings -------------------------------------------------------------------
+
+    /// <summary>
+    /// Raised when the user clicks the "Meeting settings" link on the join setup page. The host
+    /// <see cref="AssistantViewModel"/> handles it by deep-linking to the Assistant settings → Meeting
+    /// tab. Lives here (not on the shared base) because only the meeting attendee exposes the link, and
+    /// it keeps the settings tab indices co-located with the other deep-links in the host.
+    /// </summary>
+    public event EventHandler? OpenSettingsRequested;
+
+    /// <summary>
+    /// Raises <see cref="OpenSettingsRequested"/> so the host can navigate to the meeting settings. The
+    /// link is only shown on the join setup page (hidden once a meeting is running via
+    /// <see cref="IsJoinSetupVisible"/>), so this never fires mid-meeting and needs no session teardown.
+    /// </summary>
+    [RelayCommand]
+    private void OpenMeetingSettings() => OpenSettingsRequested?.Invoke(this, EventArgs.Empty);
+
     // ---- Rename speaker (in-session only) --------------------------------------------------------
 
     /// <summary>

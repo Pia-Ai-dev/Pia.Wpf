@@ -225,6 +225,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PropertyChanged += OnPropertyChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
         MeetingAttendee.SummarizeRequested += OnMeetingAttendeeSummarizeRequested;
+        MeetingAttendee.OpenSettingsRequested += OnMeetingAttendeeOpenSettingsRequested;
 
         ChatTitleChip = new ChatTitleChipViewModel(
             _chatService,
@@ -463,6 +464,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PendingAttachment = null;
         InputText = prompt;
         SendMessageCommand.Execute(null);
+    }
+
+    private void OnMeetingAttendeeOpenSettingsRequested(object? sender, EventArgs e)
+    {
+        // "Meeting settings" link on the join setup page: deep-link to the Assistant settings tab
+        // (outer 2) → Meeting inner tab (inner 3) — mirrors NavigateToToolPermissions (2, 2). The
+        // overlay is left visible: it's a child of this page, so navigating swaps it out of the frame,
+        // and returning to the assistant restores the join form. The link is only reachable before a
+        // meeting runs, so there is no live session to stop.
+        _navigationService.NavigateTo<SettingsViewModel, (int, int)>((2, 3));
     }
 
     private void ExecuteUseSuggestion(string? suggestion)
@@ -1185,6 +1196,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         VoiceMode = null;
         MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;
         MeetingAttendee.SummarizeRequested -= OnMeetingAttendeeSummarizeRequested;
+        MeetingAttendee.OpenSettingsRequested -= OnMeetingAttendeeOpenSettingsRequested;
         MeetingAttendee.Dispose();
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;

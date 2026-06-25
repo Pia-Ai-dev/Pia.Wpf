@@ -578,6 +578,20 @@ public class MeetingAttendeeViewModelTests
         Assert.False(fired);
     }
 
+    // ---- Open meeting settings -------------------------------------------------------------------
+
+    [Fact]
+    public void OpenMeetingSettings_RaisesOpenSettingsRequested()
+    {
+        var (vm, _) = CreateSut();
+        var fired = false;
+        vm.OpenSettingsRequested += (_, _) => fired = true;
+
+        vm.OpenMeetingSettingsCommand.Execute(null);
+
+        Assert.True(fired);
+    }
+
     // ---- helpers ----------------------------------------------------------------------------------
 
     private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service) CreateSut()
