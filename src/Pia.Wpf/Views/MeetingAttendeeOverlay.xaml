@@ -35,10 +35,19 @@
           <TextBlock Text="{loc:Str MeetingAttendee_Title}"
                      FontSize="16"
                      FontWeight="SemiBold" />
-          <TextBlock Text="{Binding StatusText}"
-                     FontSize="12"
-                     Margin="0,2,0,0"
-                     Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          <!-- Status row: a busy spinner (shown while joining / leaving) next to the status text. -->
+          <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+            <ui:ProgressRing Width="14"
+                             Height="14"
+                             IsIndeterminate="True"
+                             VerticalAlignment="Center"
+                             Margin="0,0,8,0"
+                             Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <TextBlock Text="{Binding StatusText}"
+                       FontSize="12"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          </StackPanel>
         </StackPanel>
 
         <ui:Button Grid.Column="1"
@@ -53,12 +62,13 @@
       </Grid>
     </Border>
 
-    <!-- Join setup: URL input + consent + Join button (hidden while running) -->
+    <!-- Join setup: URL input + consent + Join button. Hidden while running AND after a meeting has been
+         attended and left (so leaving lands on the transcript alone, not the join form again). -->
     <Border Grid.Row="1"
             BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
             Padding="20,12"
-            Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+            Visibility="{Binding IsJoinSetupVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
       <StackPanel Orientation="Vertical">
         <!-- Requirements: what this feature needs before joining. Always visible so the prerequisites
              (Teams link, host admission, first-run download, local model, background helpers) are clear. -->
@@ -330,6 +340,12 @@
                    Padding="20,10"
                    Appearance="Primary"
                    Content="{loc:Str MeetingAttendee_Save}"
+                   Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+        <ui:Button Command="{Binding SummarizeWithAssistantCommand}"
+                   Margin="8,0,0,0"
+                   Padding="20,10"
+                   Appearance="Secondary"
+                   Content="{loc:Str MeetingAttendee_Summarize}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
       </StackPanel>
     </Border>

@@ -392,6 +392,10 @@
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Speaker matching sensitivity</value></data>
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Tunes how similar two voices must sound to be treated as the same speaker. Higher values split speakers more readily (fewer voices merged); lower values group more voices together.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Match threshold: {0}</value></data>
+  <data name="Settings_MeetingBrowser_Section" xml:space="preserve"><value>Meeting browser</value></data>
+  <data name="Settings_MeetingBrowser_Description" xml:space="preserve"><value>Which browser Pia drives to join meetings. Bundled Chromium is downloaded once and is the most reliable choice. System Chrome and System Edge reuse an installed browser but may be affected by browser updates or enterprise policy; if the chosen browser is unavailable, Pia falls back to bundled Chromium. Use system default detects your default browser and uses it when it is Chrome or Edge, otherwise falls back to bundled.</value></data>
+  <data name="Settings_MeetingBrowser_ShowWindow" xml:space="preserve"><value>Show the meeting browser window</value></data>
+  <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>When off (default), the browser joins hidden and the meeting plays silently. When on, the browser window is shown on screen and the meeting is audible.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Show todo panel button</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Show the todo panel toggle button in Optimize, Assistant, and Research views</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Show follow-up suggestions</value></data>
@@ -702,6 +706,10 @@
   <data name="Enum_PasteToPreviousWindow" xml:space="preserve"><value>Paste to Previous Window</value></data>
   <data name="Enum_SttWhisper" xml:space="preserve"><value>Whisper</value></data>
   <data name="Enum_SttParakeet" xml:space="preserve"><value>Parakeet TDT v3</value></data>
+  <data name="Enum_MeetingBrowser_Bundled" xml:space="preserve"><value>Bundled Chromium (recommended)</value></data>
+  <data name="Enum_MeetingBrowser_Chrome" xml:space="preserve"><value>System Chrome</value></data>
+  <data name="Enum_MeetingBrowser_Edge" xml:space="preserve"><value>System Edge</value></data>
+  <data name="Enum_MeetingBrowser_Default" xml:space="preserve"><value>Use system default browser</value></data>
   <data name="Enum_WhisperTiny" xml:space="preserve"><value>Tiny</value></data>
   <data name="Enum_WhisperBase" xml:space="preserve"><value>Base</value></data>
   <data name="Enum_WhisperSmall" xml:space="preserve"><value>Small</value></data>

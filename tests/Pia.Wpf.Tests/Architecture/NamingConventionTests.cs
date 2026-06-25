@@ -39,6 +39,9 @@ public class NamingConventionTests
             "TeamsMeetingSession",
             "AudioHopResampler",
             "ChromiumDownloadProgress",
+            // BrowserLaunchSpec is a launch-description DTO record (how to launch + how to recognise the
+            // process), not a service — same category as ChromiumDownloadProgress above.
+            "BrowserLaunchSpec",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)

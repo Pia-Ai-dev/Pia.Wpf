@@ -392,6 +392,10 @@
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Sensibilité de correspondance des intervenants</value></data>
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Détermine à quel point deux voix doivent se ressembler pour être considérées comme le même intervenant. Des valeurs plus élevées séparent plus facilement les intervenants (moins de voix fusionnées) ; des valeurs plus faibles regroupent davantage de voix.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Seuil de correspondance : {0}</value></data>
+  <data name="Settings_MeetingBrowser_Section" xml:space="preserve"><value>Navigateur de réunion</value></data>
+  <data name="Settings_MeetingBrowser_Description" xml:space="preserve"><value>Le navigateur que Pia pilote pour rejoindre les réunions. Le Chromium intégré est téléchargé une seule fois et constitue le choix le plus fiable. Chrome système et Edge système réutilisent un navigateur installé, mais peuvent être affectés par les mises à jour du navigateur ou par une stratégie d'entreprise ; si le navigateur choisi n'est pas disponible, Pia revient au Chromium intégré. « Utiliser le navigateur par défaut » détecte votre navigateur par défaut et l'utilise s'il s'agit de Chrome ou Edge, sinon il revient au Chromium intégré.</value></data>
+  <data name="Settings_MeetingBrowser_ShowWindow" xml:space="preserve"><value>Afficher la fenêtre du navigateur de réunion</value></data>
+  <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>Lorsque désactivé (par défaut), le navigateur rejoint la réunion de façon masquée et la réunion est lue en silence. Lorsque activé, la fenêtre du navigateur est affichée à l'écran et la réunion est audible.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Afficher le bouton du panneau des tâches</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Afficher le bouton du panneau des tâches dans les vues Optimiser, Assistant et Recherche</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Afficher les suggestions de suivi</value></data>
@@ -702,6 +706,10 @@
   <data name="Enum_PasteToPreviousWindow" xml:space="preserve"><value>Coller dans la fenêtre précédente</value></data>
   <data name="Enum_SttWhisper" xml:space="preserve"><value>Whisper</value></data>
   <data name="Enum_SttParakeet" xml:space="preserve"><value>Parakeet TDT v3</value></data>
+  <data name="Enum_MeetingBrowser_Bundled" xml:space="preserve"><value>Chromium intégré (recommandé)</value></data>
+  <data name="Enum_MeetingBrowser_Chrome" xml:space="preserve"><value>Chrome système</value></data>
+  <data name="Enum_MeetingBrowser_Edge" xml:space="preserve"><value>Edge système</value></data>
+  <data name="Enum_MeetingBrowser_Default" xml:space="preserve"><value>Utiliser le navigateur par défaut</value></data>
   <data name="Enum_WhisperTiny" xml:space="preserve"><value>Tiny</value></data>
   <data name="Enum_WhisperBase" xml:space="preserve"><value>Base</value></data>
   <data name="Enum_WhisperSmall" xml:space="preserve"><value>Small</value></data>

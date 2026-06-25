@@ -88,4 +88,6 @@
   <data name="MeetingAttendee_Requirements_Model" xml:space="preserve"><value>•  Audio is transcribed locally — a speech-to-text model must be available; optional speaker recognition downloads an extra model when enabled in Settings.</value></data>
   <data name="MeetingAttendee_Requirements_Desktop" xml:space="preserve"><value>•  An interactive Windows desktop with a working audio device.</value></data>
   <data name="MeetingAttendee_Requirements_Background" xml:space="preserve"><value>•  While attending, Pia runs a bundled browser and a Node-based automation helper in the background — both ship with Pia, no separate install needed.</value></data>
+  <data name="MeetingAttendee_Summarize" xml:space="preserve"><value>Summarize with assistant</value></data>
+  <data name="MeetingAttendee_SummaryPrompt" xml:space="preserve"><value>Please summarize the following meeting transcript. Your meeting-attendee feature joined a Microsoft Teams meeting on my behalf as "{0}" and transcribed it locally on {1}. Give a brief overview, the key discussion points, decisions made, and any action items with their owners where mentioned.</value></data>
 </root>

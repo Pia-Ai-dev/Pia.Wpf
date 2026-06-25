@@ -420,6 +420,164 @@ public class MeetingAttendeeViewModelTests
         Assert.Contains("**Speaker 2**", md);
     }
 
+    // ---- Busy indicator (joining / leaving) ------------------------------------------------------
+
+    [Theory]
+    [InlineData(MeetingAttendeeState.Idle, false)]
+    [InlineData(MeetingAttendeeState.ProvisioningBrowser, true)]
+    [InlineData(MeetingAttendeeState.Joining, true)]
+    [InlineData(MeetingAttendeeState.InLobby, true)]
+    [InlineData(MeetingAttendeeState.Attending, false)]   // steady "transcribing" — not busy
+    [InlineData(MeetingAttendeeState.Stopping, true)]
+    [InlineData(MeetingAttendeeState.Error, false)]
+    public void StateChanged_MapsToIsBusy(MeetingAttendeeState state, bool expectedBusy)
+    {
+        var (vm, service) = CreateSut();
+
+        service.RaiseState(state);
+
+        Assert.Equal(expectedBusy, vm.IsBusy);
+    }
+
+    // ---- Join setup visibility (post-meeting form removal) ---------------------------------------
+
+    [Fact]
+    public void IsJoinSetupVisible_TrueInitially()
+    {
+        var (vm, _) = CreateSut();
+
+        Assert.True(vm.IsJoinSetupVisible);
+    }
+
+    [Fact]
+    public void IsJoinSetupVisible_FalseWhileRunning()
+    {
+        var (vm, service) = CreateSut();
+
+        service.RaiseState(MeetingAttendeeState.Joining);
+
+        Assert.False(vm.IsJoinSetupVisible);
+    }
+
+    [Fact]
+    public void IsJoinSetupVisible_FalseAfterAttendedThenLeft()
+    {
+        // Headline for requirement #4: after a meeting has been attended and left, the post-meeting page
+        // shows the transcript alone — the join form must NOT reappear.
+        var (vm, service) = CreateSut();
+
+        service.RaiseState(MeetingAttendeeState.Attending);
+        service.RaiseState(MeetingAttendeeState.Idle);
+
+        Assert.False(vm.IsRunning);
+        Assert.False(vm.IsJoinSetupVisible);
+    }
+
+    [Fact]
+    public void IsJoinSetupVisible_TrueAfterErrorBeforeAttending()
+    {
+        // A join that fails before admission keeps the form available for a retry.
+        var (vm, service) = CreateSut();
+
+        service.RaiseState(MeetingAttendeeState.Joining);
+        service.RaiseState(MeetingAttendeeState.Error);
+
+        Assert.True(vm.IsJoinSetupVisible);
+    }
+
+    [Fact]
+    public async Task PrepareForDisplay_ResetsJoinSetupVisible_AfterPriorMeeting()
+    {
+        var (vm, service, _) = CreateSutFull(new AppSettings());
+        service.RaiseState(MeetingAttendeeState.Attending);
+        service.RaiseState(MeetingAttendeeState.Idle);
+        Assert.False(vm.IsJoinSetupVisible);
+
+        // Re-opening the overlay starts fresh: the join form is shown again.
+        await vm.PrepareForDisplayAsync();
+
+        Assert.True(vm.IsJoinSetupVisible);
+    }
+
+    [Fact]
+    public async Task PrepareForDisplay_ClearsPriorTranscript_OnFreshOpen()
+    {
+        // A re-open after a prior meeting must not render the join form above a stale transcript: the
+        // fresh open discards the previous bubbles, so the form sits alone with Save/Summarize disabled.
+        var (vm, service, _) = CreateSutFull(new AppSettings());
+        service.RaiseState(MeetingAttendeeState.Attending);
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "old meeting", DateTimeOffset.Now));
+        service.RaiseState(MeetingAttendeeState.Idle);
+        Assert.NotEmpty(vm.Bubbles);
+
+        await vm.PrepareForDisplayAsync();
+
+        Assert.Empty(vm.Bubbles);
+        Assert.True(vm.IsJoinSetupVisible);
+        Assert.False(vm.SaveTranscriptCommand.CanExecute(null));
+        Assert.False(vm.SummarizeWithAssistantCommand.CanExecute(null));
+    }
+
+    // ---- Summarize with assistant ----------------------------------------------------------------
+
+    [Fact]
+    public void Summarize_CanExecute_FalseWhenEmpty()
+    {
+        var (vm, _) = CreateSut();
+
+        Assert.False(vm.SummarizeWithAssistantCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Summarize_CanExecute_TrueWhenStoppedAndNonEmpty()
+    {
+        var (vm, _) = CreateSut();
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "x", DateTimeOffset.Now));
+
+        Assert.False(vm.IsRunning);
+        Assert.True(vm.SummarizeWithAssistantCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Summarize_CanExecute_FalseWhileRunning()
+    {
+        var (vm, service) = CreateSut();
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "x", DateTimeOffset.Now));
+
+        service.RaiseState(MeetingAttendeeState.Attending);
+
+        Assert.False(vm.SummarizeWithAssistantCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Summarize_RaisesSummarizeRequested_WithTranscriptInPrompt()
+    {
+        var (vm, _) = CreateSut();
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+
+        string? captured = null;
+        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+
+        vm.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.NotNull(captured);
+        // The prompt embeds the transcript Markdown (title heading + the utterance text).
+        Assert.Contains("agenda item one", captured);
+        Assert.Contains("MeetingAttendee_Title", captured);
+    }
+
+    [Fact]
+    public void Summarize_NoOp_WhenEmpty()
+    {
+        var (vm, _) = CreateSut();
+        var fired = false;
+        vm.SummarizeRequested += (_, _) => fired = true;
+
+        vm.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.False(fired);
+    }
+
     // ---- helpers ----------------------------------------------------------------------------------
 
     private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service) CreateSut()

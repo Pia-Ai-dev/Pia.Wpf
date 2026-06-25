@@ -283,6 +283,7 @@ public static class Bootstrapper
         // IMeetingSession (TeamsMeetingSession) at runtime with the provisioned Chromium path, so
         // IMeetingSession is intentionally NOT container-registered (no parameterless seam).
         services.AddSingleton<Services.MeetingAttendee.IBrowserProvisioner, Services.MeetingAttendee.ChromiumProvisioner>();
+        services.AddSingleton<Services.MeetingAttendee.IDefaultBrowserResolver, Services.MeetingAttendee.DefaultBrowserResolver>();
         services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
 
         // In-app toasts are re-implemented over Flow (design §7), retiring the hand-rolled Border toast.

@@ -362,6 +362,30 @@
                          Margin="0,8,0,0"/>
             </StackPanel>
 
+            <!-- Meeting browser -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_MeetingBrowser_Section}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding MeetingBrowserSelections}"
+                        SelectedItem="{Binding MeetingBrowserSelection}"
+                        Width="400"
+                        HorizontalAlignment="Left">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{loc:Str Settings_MeetingBrowser_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <CheckBox Content="{loc:Str Settings_MeetingBrowser_ShowWindow}"
+                        IsChecked="{Binding MeetingAttendeeShowBrowserWindow}"
+                        Margin="0,8,0,0"/>
+              <TextBlock Text="{loc:Str Settings_MeetingBrowser_ShowWindow_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
             <Border BorderThickness="0,1,0,0"
                     BorderBrush="{DynamicResource BorderBrush_}"
                     Margin="0,4,0,20"/>

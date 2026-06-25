@@ -392,6 +392,10 @@
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Empfindlichkeit der Sprecherzuordnung</value></data>
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Legt fest, wie ähnlich zwei Stimmen klingen müssen, um als derselbe Sprecher zu gelten. Höhere Werte trennen Sprecher eher (weniger zusammengeführte Stimmen); niedrigere Werte fassen mehr Stimmen zusammen.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Zuordnungsschwelle: {0}</value></data>
+  <data name="Settings_MeetingBrowser_Section" xml:space="preserve"><value>Besprechungsbrowser</value></data>
+  <data name="Settings_MeetingBrowser_Description" xml:space="preserve"><value>Welchen Browser Pia für die Teilnahme an Besprechungen verwendet. Das gebündelte Chromium wird einmalig heruntergeladen und ist die zuverlässigste Wahl. System-Chrome und System-Edge nutzen einen installierten Browser, können aber von Browser-Updates oder Unternehmensrichtlinien beeinträchtigt werden; ist der gewählte Browser nicht verfügbar, weicht Pia auf das gebündelte Chromium aus. „Standardbrowser verwenden“ erkennt Ihren Standardbrowser und verwendet ihn, wenn es Chrome oder Edge ist, andernfalls wird das gebündelte Chromium verwendet.</value></data>
+  <data name="Settings_MeetingBrowser_ShowWindow" xml:space="preserve"><value>Besprechungsbrowser-Fenster anzeigen</value></data>
+  <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>Wenn deaktiviert (Standard), tritt der Browser unsichtbar bei und die Besprechung wird stummgeschaltet wiedergegeben. Wenn aktiviert, wird das Browserfenster auf dem Bildschirm angezeigt und die Besprechung ist hörbar.</value></data>
   <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
   <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Folgevorschläge anzeigen</value></data>
@@ -702,6 +706,10 @@
   <data name="Enum_PasteToPreviousWindow" xml:space="preserve"><value>In vorheriges Fenster einfügen</value></data>
   <data name="Enum_SttWhisper" xml:space="preserve"><value>Whisper</value></data>
   <data name="Enum_SttParakeet" xml:space="preserve"><value>Parakeet TDT v3</value></data>
+  <data name="Enum_MeetingBrowser_Bundled" xml:space="preserve"><value>Gebündeltes Chromium (empfohlen)</value></data>
+  <data name="Enum_MeetingBrowser_Chrome" xml:space="preserve"><value>System-Chrome</value></data>
+  <data name="Enum_MeetingBrowser_Edge" xml:space="preserve"><value>System-Edge</value></data>
+  <data name="Enum_MeetingBrowser_Default" xml:space="preserve"><value>Standardbrowser verwenden</value></data>
   <data name="Enum_WhisperTiny" xml:space="preserve"><value>Tiny</value></data>
   <data name="Enum_WhisperBase" xml:space="preserve"><value>Base</value></data>
   <data name="Enum_WhisperSmall" xml:space="preserve"><value>Small</value></data>

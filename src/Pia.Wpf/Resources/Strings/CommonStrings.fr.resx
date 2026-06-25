@@ -88,4 +88,6 @@
   <data name="MeetingAttendee_Requirements_Model" xml:space="preserve"><value>•  L'audio est transcrit localement — un modèle de reconnaissance vocale doit être disponible ; la reconnaissance des intervenants (optionnelle) télécharge un modèle supplémentaire si elle est activée dans les Paramètres.</value></data>
   <data name="MeetingAttendee_Requirements_Desktop" xml:space="preserve"><value>•  Un bureau Windows interactif avec un périphérique audio fonctionnel.</value></data>
   <data name="MeetingAttendee_Requirements_Background" xml:space="preserve"><value>•  Pendant la participation, Pia exécute en arrière-plan un navigateur intégré et un assistant d'automatisation basé sur Node — les deux sont fournis avec Pia, aucune installation séparée n'est nécessaire.</value></data>
+  <data name="MeetingAttendee_Summarize" xml:space="preserve"><value>Résumer avec l'assistant</value></data>
+  <data name="MeetingAttendee_SummaryPrompt" xml:space="preserve"><value>Veuillez résumer la transcription de réunion suivante. Votre fonction de participation aux réunions a rejoint une réunion Microsoft Teams en mon nom en tant que "{0}" et l'a transcrite localement le {1}. Donnez un bref aperçu, les points clés abordés, les décisions prises et les éventuelles actions à mener avec leurs responsables le cas échéant.</value></data>
 </root>

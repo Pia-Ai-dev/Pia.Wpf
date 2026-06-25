@@ -88,4 +88,6 @@
   <data name="MeetingAttendee_Requirements_Model" xml:space="preserve"><value>•  Die Audioaufnahme wird lokal transkribiert – ein Spracherkennungsmodell muss vorhanden sein; die optionale Sprechererkennung lädt bei Aktivierung in den Einstellungen ein zusätzliches Modell herunter.</value></data>
   <data name="MeetingAttendee_Requirements_Desktop" xml:space="preserve"><value>•  Ein interaktiver Windows-Desktop mit einem funktionierenden Audiogerät.</value></data>
   <data name="MeetingAttendee_Requirements_Background" xml:space="preserve"><value>•  Während der Teilnahme führt Pia im Hintergrund einen mitgelieferten Browser und einen Node-basierten Automatisierungshelfer aus – beide sind in Pia enthalten, eine separate Installation ist nicht nötig.</value></data>
+  <data name="MeetingAttendee_Summarize" xml:space="preserve"><value>Mit Assistent zusammenfassen</value></data>
+  <data name="MeetingAttendee_SummaryPrompt" xml:space="preserve"><value>Bitte fasse das folgende Meeting-Transkript zusammen. Deine Meeting-Teilnahme-Funktion ist in meinem Namen als "{0}" einem Microsoft-Teams-Meeting beigetreten und hat es am {1} lokal transkribiert. Gib einen kurzen Überblick, die wichtigsten Diskussionspunkte, getroffene Entscheidungen und etwaige Aufgaben mit den jeweiligen Verantwortlichen, sofern genannt.</value></data>
 </root>

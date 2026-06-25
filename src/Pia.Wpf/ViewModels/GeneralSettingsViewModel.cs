@@ -110,6 +110,13 @@ public partial class GeneralSettingsViewModel : ObservableObject
     public string SpeakerEmbeddingThresholdDisplay =>
         _localizationService.Format("Settings_Diarization_ThresholdDisplay", SpeakerEmbeddingThreshold.ToString("F2"));
 
+    // Meeting browser selection + window visibility
+    [ObservableProperty]
+    private MeetingBrowserSelection _meetingBrowserSelection;
+
+    [ObservableProperty]
+    private bool _meetingAttendeeShowBrowserWindow;
+
     public bool IsWhisperSelected => SttBackend == SttBackend.Whisper;
     public bool IsParakeetSelected => SttBackend == SttBackend.Parakeet;
 
@@ -127,6 +134,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     public IEnumerable<WhisperModelSize> WhisperModels => Enum.GetValues<WhisperModelSize>();
     public IEnumerable<TargetSpeechLanguage> TargetSpeechLanguages => Enum.GetValues<TargetSpeechLanguage>();
     public IEnumerable<TargetLanguage> UiLanguages => Enum.GetValues<TargetLanguage>();
+    public IEnumerable<MeetingBrowserSelection> MeetingBrowserSelections => Enum.GetValues<MeetingBrowserSelection>();
 
     partial void OnUiLanguageChanged(TargetLanguage value)
     {
@@ -181,6 +189,16 @@ public partial class GeneralSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnMeetingBrowserSelectionChanged(MeetingBrowserSelection value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnMeetingAttendeeShowBrowserWindowChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     partial void OnSpeakerEmbeddingThresholdChanged(float value)
     {
         if (_isLoading) return;
@@ -215,6 +233,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
         EnableMeetingDiarization = settings.EnableMeetingDiarization;
         SpeakerEmbeddingThreshold = SnapThreshold(settings.SpeakerEmbeddingThreshold);
+        MeetingBrowserSelection = settings.MeetingBrowserSelection;
+        MeetingAttendeeShowBrowserWindow = settings.MeetingAttendeeShowBrowserWindow;
 
         _optimizeHotkey = settings.OptimizeHotkey;
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
@@ -487,6 +507,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
         settings.EnableMeetingDiarization = EnableMeetingDiarization;
         settings.SpeakerEmbeddingThreshold = SpeakerEmbeddingThreshold;
+        settings.MeetingBrowserSelection = MeetingBrowserSelection;
+        settings.MeetingAttendeeShowBrowserWindow = MeetingAttendeeShowBrowserWindow;
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
         settings.ResearchHotkey = _researchHotkey;

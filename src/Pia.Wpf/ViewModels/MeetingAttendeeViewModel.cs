@@ -55,6 +55,32 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     [ObservableProperty]
     private string _assistantDisplayName = string.Empty;
 
+    /// <summary>
+    /// True during the transitional join/leave phases (provisioning, joining, lobby, stopping) so the
+    /// header can show a busy spinner next to the status text. Deliberately false in the steady
+    /// <see cref="MeetingAttendeeState.Attending"/> state (transcribing is not "busy") and when idle or
+    /// errored.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isBusy;
+
+    /// <summary>
+    /// Set once the assistant has actually been admitted to a meeting this overlay session. Drives
+    /// <see cref="IsJoinSetupVisible"/>: after a meeting has been attended and left, the overlay shows
+    /// the transcript alone rather than re-displaying the join form. A join that fails before admission
+    /// leaves this false, so the form stays available for a retry. Reset on each (re)open by
+    /// <see cref="PrepareForDisplayAsync"/>.
+    /// </summary>
+    private bool _hasAttendedMeeting;
+
+    /// <summary>
+    /// Whether the join setup (requirements + URL + name + consent + Join button) is shown. Visible only
+    /// before the first meeting of this overlay session, and never while a session is running. Computed
+    /// (get-only), so every mutation of its inputs (<see cref="TranscriptOverlayViewModel.IsRunning"/> and
+    /// <see cref="_hasAttendedMeeting"/>) must raise its change notification explicitly.
+    /// </summary>
+    public bool IsJoinSetupVisible => !IsRunning && !_hasAttendedMeeting;
+
     protected override System.Threading.Channels.ChannelReader<TranscriptUtterance> UtteranceReader
         => _service.Utterances;
 
@@ -80,6 +106,11 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         // StopCommand.NotifyCanExecuteChanged(), so a state change raised during wiring must not NRE.
         StopCommand = new AsyncRelayCommand(StopAsync);
 
+        // The Summarize command shares Save's gating (transcript present + not running). The base
+        // refreshes Save on bubble-collection changes; mirror that for this derived command here (the
+        // IsRunning side is handled in the OnRunningChanged override below).
+        Bubbles.CollectionChanged += (_, _) => SummarizeWithAssistantCommand.NotifyCanExecuteChanged();
+
         _service.StateChanged += OnServiceStateChanged;
 
         StatusText = _localizationService["MeetingAttendee_Status_Idle"];
@@ -99,7 +130,17 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         var name = string.IsNullOrWhiteSpace(settings.MeetingAttendeeDisplayName)
             ? MeetingAttendeeService.BuildDisplayName(settings.SyncUserDisplayName)
             : settings.MeetingAttendeeDisplayName;
-        DispatchToUi(() => AssistantDisplayName = name);
+        DispatchToUi(() =>
+        {
+            AssistantDisplayName = name;
+            // Fresh open: show the join form again even if a previous meeting was attended this session,
+            // and discard that meeting's transcript so the form is never rendered above a stale transcript
+            // (Save/Summarize stay disabled until a new meeting produces bubbles). The post-meeting page
+            // keeps the transcript until the overlay is closed; reopening is a deliberate clean slate.
+            _hasAttendedMeeting = false;
+            Bubbles.Clear();
+            OnPropertyChanged(nameof(IsJoinSetupVisible));
+        });
     }
 
     // ---- Start ------------------------------------------------------------------------------------
@@ -203,6 +244,50 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         }
     }
 
+    // ---- Summarize with the assistant ------------------------------------------------------------
+
+    /// <summary>
+    /// Raised when the user clicks "Summarize with assistant" on the post-meeting transcript. Carries a
+    /// ready-to-send prompt (a localized instruction describing the transcript's provenance, followed by
+    /// the transcript Markdown). The host <see cref="AssistantViewModel"/> handles it by hiding the
+    /// overlay and sending the prompt to a fresh chat. Meeting-specific, so it lives here rather than on
+    /// the shared base.
+    /// </summary>
+    public event EventHandler<string>? SummarizeRequested;
+
+    /// <summary>
+    /// Hands a summarization prompt to the host assistant. Shares <see cref="CanSummarize"/> gating with
+    /// the Save command (a transcript exists and the meeting is no longer running).
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSummarize))]
+    private void SummarizeWithAssistant()
+    {
+        if (!CanSummarize()) return;
+        // Do NOT log the prompt or transcript (sensitive user content); only that a summary was requested
+        // — mirrors the URL-omitting StartAsync log line.
+        _logger.LogInformation("MeetingAttendee ViewModel: summary requested");
+        SummarizeRequested?.Invoke(this, BuildSummaryPrompt());
+    }
+
+    private bool CanSummarize() => !IsRunning && Bubbles.Count > 0;
+
+    /// <summary>
+    /// Builds the prompt sent to the assistant: a localized instruction that explains the transcript's
+    /// provenance (a Teams meeting the assistant attended, under which name, and when) followed by the
+    /// transcript Markdown. The transcript is appended in code (not via the format args) so the resource
+    /// template stays free of the large payload; braces in the transcript would be safe regardless, since
+    /// only the format template is parsed.
+    /// </summary>
+    private string BuildSummaryPrompt()
+    {
+        var name = string.IsNullOrWhiteSpace(AssistantDisplayName)
+            ? MeetingAttendeeService.BuildDisplayName(null)
+            : AssistantDisplayName.Trim();
+        var when = _sessionStart.LocalDateTime.ToString("f");
+        var instruction = _localizationService.Format("MeetingAttendee_SummaryPrompt", name, when);
+        return $"{instruction}{Environment.NewLine}{Environment.NewLine}{BuildMarkdown()}";
+    }
+
     // ---- Rename speaker (in-session only) --------------------------------------------------------
 
     /// <summary>
@@ -236,6 +321,19 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             // "Running" spans the whole active lifecycle (provisioning → attending → stopping) so the
             // Stop button shows while busy and Save only shows once idle/errored.
             IsRunning = newState is not (MeetingAttendeeState.Idle or MeetingAttendeeState.Error);
+
+            // Busy spinner: shown next to the status during the transitional join/leave phases — covers
+            // both "joining" and "leaving" — but not the steady Attending state nor idle/error.
+            IsBusy = newState is MeetingAttendeeState.ProvisioningBrowser
+                or MeetingAttendeeState.Joining
+                or MeetingAttendeeState.InLobby
+                or MeetingAttendeeState.Stopping;
+
+            // Once admitted, leaving the meeting must land on the transcript alone (never re-show the join
+            // form). Latched true and only cleared on the next (re)open.
+            if (newState == MeetingAttendeeState.Attending)
+                _hasAttendedMeeting = true;
+
             StatusText = newState switch
             {
                 MeetingAttendeeState.Idle => _localizationService["MeetingAttendee_Status_Idle"],
@@ -247,6 +345,10 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
                 MeetingAttendeeState.Error => _localizationService["MeetingAttendee_Status_Error"],
                 _ => string.Empty,
             };
+
+            // IsJoinSetupVisible is computed from IsRunning + _hasAttendedMeeting; the IsRunning side is
+            // covered by OnRunningChanged, but the _hasAttendedMeeting latch above also needs a nudge.
+            OnPropertyChanged(nameof(IsJoinSetupVisible));
         });
     }
 
@@ -254,6 +356,8 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     {
         StartCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
+        SummarizeWithAssistantCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(IsJoinSetupVisible));
     }
 
     public override void Dispose()

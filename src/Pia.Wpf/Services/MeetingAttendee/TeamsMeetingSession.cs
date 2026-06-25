@@ -3,6 +3,7 @@ using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 using Pia.Logging;
+using Pia.Services.Exceptions;
 
 // Microsoft.Playwright 1.59 marks LocatorIsVisibleOptions.Timeout [Obsolete] (CS0612) but ships no
 // replacement on the options object; the per-probe timeout is load-bearing for the lobby/admission
@@ -69,7 +70,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
 
     private readonly ILogger<TeamsMeetingSession> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _chromiumExecutablePath;
+    private readonly BrowserLaunchSpec _launchSpec;
 
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -84,12 +85,11 @@ public sealed class TeamsMeetingSession : IMeetingSession
     public event EventHandler? EnteredLobby;
 
     public TeamsMeetingSession(
-        string chromiumExecutablePath,
+        BrowserLaunchSpec launchSpec,
         IHttpClientFactory httpClientFactory,
         ILogger<TeamsMeetingSession> logger)
     {
-        _chromiumExecutablePath = chromiumExecutablePath
-            ?? throw new ArgumentNullException(nameof(chromiumExecutablePath));
+        _launchSpec = launchSpec ?? throw new ArgumentNullException(nameof(launchSpec));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger;
     }
@@ -115,6 +115,21 @@ public sealed class TeamsMeetingSession : IMeetingSession
         await LaunchBrowserAsync(cancellationToken).ConfigureAwait(false);
 
         _browserProcessId = ResolveBrowserProcessId(preExistingChromePids);
+
+        // Hidden window ⇒ suppress its taskbar button so no orphan button appears. Best-effort: a miss
+        // is cosmetic (a visible button), never a join failure. The on-screen window keeps its button.
+        if (!_launchSpec.ShowWindow && _browserProcessId is int rootPid)
+        {
+            try
+            {
+                await BrowserWindowChrome.SuppressTaskbarButtonAsync(rootPid, _logger, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Suppressing the meeting browser taskbar button failed; continuing");
+            }
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
         var page = _page ?? throw new InvalidOperationException("Browser page was not created.");
@@ -256,22 +271,52 @@ public sealed class TeamsMeetingSession : IMeetingSession
 
         _playwright = await Microsoft.Playwright.Playwright.CreateAsync().ConfigureAwait(false);
 
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        var args = new List<string>
+        {
+            // Allow media to start playing without a user gesture so meeting audio renders.
+            // NOTE: deliberately NO --mute-audio and NO fake audio output device — muting output
+            // or faking the playback device would kill the very audio we need to capture.
+            "--autoplay-policy=no-user-gesture-required",
+            // Occlusion / background-throttling insurance: a non-visible (off-screen) window can have
+            // its renderer backgrounded/throttled, which can stall the audio render we capture.
+            "--disable-features=CalculateNativeWinOcclusion",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-background-timer-throttling",
+        };
+        if (!_launchSpec.ShowWindow)
+        {
+            // Far off-screen + a real size so the page lays out yet nothing is visible on screen.
+            args.Add("--window-position=-32000,-32000");
+            args.Add("--window-size=1280,720");
+        }
+        // else: no off-screen args — let the window open on-screen and the meeting be audible.
+
+        var options = new BrowserTypeLaunchOptions
         {
             // Headed: required so Chromium creates a real audio render session we can capture.
             Headless = false,
-            ExecutablePath = _chromiumExecutablePath,
-            Args =
-            [
-                // Far off-screen + a real size so the page lays out yet nothing is visible on screen.
-                "--window-position=-32000,-32000",
-                "--window-size=1280,720",
-                // Allow media to start playing without a user gesture so meeting audio renders.
-                "--autoplay-policy=no-user-gesture-required",
-                // NOTE: deliberately NO --mute-audio and NO fake audio output device — muting output
-                // or faking the playback device would kill the very audio we need to capture.
-            ],
-        }).ConfigureAwait(false);
+            Args = args.ToArray(),
+        };
+        // Exactly one of Channel / ExecutablePath is set (mutually exclusive in Playwright): a Channel
+        // drives a system/branded install (Chrome/Edge), an ExecutablePath the bundled / arbitrary build.
+        if (_launchSpec.Channel is not null)
+            options.Channel = _launchSpec.Channel;
+        else
+            options.ExecutablePath = _launchSpec.ExecutablePath;
+
+        try
+        {
+            _browser = await _playwright.Chromium.LaunchAsync(options).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Surface launch failures as a distinct type so the orchestrator can degrade a system
+            // browser (Chrome/Edge channel) — which may be absent or blocked by enterprise policy — to
+            // the always-available bundled Chromium, without retrying genuine join failures.
+            var which = _launchSpec.Channel is not null ? $"channel '{_launchSpec.Channel}'" : "bundled Chromium";
+            throw new BrowserLaunchException($"Failed to launch the meeting browser ({which}).", ex);
+        }
 
         // Microphone/camera are intentionally NOT granted: the bot joins muted with no hanging OS
         // prompt. We do not fake the input device either (deny-by-default is enough for the first
@@ -285,8 +330,8 @@ public sealed class TeamsMeetingSession : IMeetingSession
     }
 
     /// <summary>
-    /// Captures the set of <c>chrome.exe</c> PIDs whose main module is our provisioned executable,
-    /// so a before/after diff around launch can attribute the new browser process tree.
+    /// Captures the set of matching browser PIDs (per the launch spec) before launch, so a
+    /// before/after diff can attribute the freshly-spawned browser process tree.
     /// </summary>
     private string[] SnapshotChromiumPids()
     {
@@ -357,17 +402,19 @@ public sealed class TeamsMeetingSession : IMeetingSession
     }
 
     /// <summary>
-    /// Enumerates running <c>chrome.exe</c> processes whose main-module path equals our provisioned
-    /// Chromium executable, so we never pick up the user's own Chrome. Module access can throw for
-    /// protected/exited processes, so each lookup is guarded; non-matching/inaccessible processes are
-    /// disposed immediately and excluded.
+    /// Enumerates running processes named per the launch spec (<c>chrome</c> or <c>msedge</c>) whose
+    /// main-module path matches the spec's resolved executable, so we never pick up the user's own
+    /// browser of the same name. When the spec has no resolved path (App Paths lookup failed for a
+    /// Channel launch), every same-named process is a candidate and the pre-launch snapshot diff in
+    /// <see cref="ResolveBrowserProcessId"/> narrows it to the newly-spawned tree. Module access can
+    /// throw for protected/exited processes, so each lookup is guarded; excluded processes are disposed.
     /// </summary>
     private IEnumerable<Process> GetMatchingChromiumProcesses()
     {
         Process[] candidates;
         try
         {
-            candidates = Process.GetProcessesByName("chrome");
+            candidates = Process.GetProcessesByName(_launchSpec.ProcessName);
         }
         catch
         {
@@ -386,8 +433,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
                 // Access denied / process exited — cannot confirm it is ours.
             }
 
-            if (modulePath is not null
-                && string.Equals(modulePath, _chromiumExecutablePath, StringComparison.OrdinalIgnoreCase))
+            if (IsLaunchedBrowserProcess(_launchSpec.MatchExecutablePath, modulePath))
             {
                 yield return proc;
             }
@@ -396,6 +442,22 @@ public sealed class TeamsMeetingSession : IMeetingSession
                 proc.Dispose();
             }
         }
+    }
+
+    /// <summary>
+    /// Pure predicate: is a same-named process (already filtered by process name) one we may attribute
+    /// to our launch? When <paramref name="matchExecutablePath"/> is known, require an exact path match
+    /// so the user's own browser of the same name is excluded. When it is null (App Paths resolution
+    /// failed for a Channel launch), we cannot disambiguate by path — accept the process and rely on the
+    /// pre-launch snapshot diff to exclude pre-existing PIDs.
+    /// </summary>
+    internal static bool IsLaunchedBrowserProcess(string? matchExecutablePath, string? modulePath)
+    {
+        if (matchExecutablePath is null)
+            return true;
+        if (modulePath is null)
+            return false;
+        return string.Equals(modulePath, matchExecutablePath, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

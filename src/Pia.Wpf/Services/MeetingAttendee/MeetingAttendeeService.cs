@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 
@@ -38,6 +39,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     private readonly ISettingsService _settingsService;
     private readonly ILogger<MeetingAttendeeService> _logger;
+    private readonly IDefaultBrowserResolver _defaultBrowserResolver;
 
     // ---- Injected seams ---------------------------------------------------------------------------
     private readonly Func<IProgress<ChromiumDownloadProgress>?, CancellationToken, Task<string>> _provisionChromium;
@@ -46,7 +48,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     // above. Silero VAD + the sherpa engine remain silent (no progress); only the OPTIONAL speaker model
     // reports, and only when it actually downloads.
     private readonly Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> _createTranscription;
-    private readonly Func<string, IMeetingSession> _sessionFactory;
+    private readonly Func<BrowserLaunchSpec, IMeetingSession> _sessionFactory;
     // (session, usePerProcessLoopback) → source. usePerProcess is already resolved against the
     // settings flag + PID availability by the orchestrator, so the factory just builds the right one.
     private readonly Func<IMeetingSession, bool, IAudioCaptureSource> _audioSourceFactory;
@@ -101,6 +103,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         ISettingsService settingsService,
         IBrowserProvisioner browserProvisioner,
         IHttpClientFactory httpClientFactory,
+        IDefaultBrowserResolver defaultBrowserResolver,
         ILoggerFactory loggerFactory)
         : this(
             settingsService,
@@ -123,8 +126,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                     httpClientFactory, loggerFactory, settings, log, ct, speakerProgress).ConfigureAwait(false);
                 return (sileroPath, engine, speakerId);
             },
-            sessionFactory: chromiumPath => new TeamsMeetingSession(
-                chromiumPath,
+            sessionFactory: spec => new TeamsMeetingSession(
+                spec,
                 httpClientFactory,
                 loggerFactory.CreateLogger<TeamsMeetingSession>()),
             audioSourceFactory: null,
@@ -140,7 +143,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                     speakerId);
                 await svc.StartAsync(ct).ConfigureAwait(false);
                 return svc;
-            })
+            },
+            defaultBrowserResolver: defaultBrowserResolver)
     {
     }
 
@@ -153,9 +157,10 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         ILoggerFactory loggerFactory,
         Func<IProgress<ChromiumDownloadProgress>?, CancellationToken, Task<string>> provisionChromium,
         Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> createTranscription,
-        Func<string, IMeetingSession> sessionFactory,
+        Func<BrowserLaunchSpec, IMeetingSession> sessionFactory,
         Func<IMeetingSession, bool, IAudioCaptureSource>? audioSourceFactory,
-        Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory)
+        Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory,
+        IDefaultBrowserResolver? defaultBrowserResolver = null)
     {
         _settingsService = settingsService;
         _logger = loggerFactory.CreateLogger<MeetingAttendeeService>();
@@ -166,8 +171,17 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         _audioSourceFactory = audioSourceFactory
             ?? ((session, usePerProcess) => CreateDefaultAudioSource(session, usePerProcess, loggerFactory));
         _engineServiceFactory = engineServiceFactory;
+        // Tests that don't exercise SystemDefault can omit the resolver; default to "always bundled".
+        _defaultBrowserResolver = defaultBrowserResolver ?? new AlwaysBundledBrowserResolver();
 
         _utterances = UtteranceChannel.CreateBounded();
+    }
+
+    /// <summary>Default resolver for the seam ctor: maps SystemDefault to bundled with no registry read.</summary>
+    private sealed class AlwaysBundledBrowserResolver : IDefaultBrowserResolver
+    {
+        public MeetingBrowserSelection ResolveChromiumSelectionOrBundled()
+            => MeetingBrowserSelection.BundledChromium;
     }
 
     public async Task StartAsync(
@@ -201,8 +215,9 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 ? BuildDisplayName(settings.SyncUserDisplayName)
                 : settings.MeetingAttendeeDisplayName.Trim();
 
-            // 1) Browser on disk (idempotent; skips fast when cached).
-            var chromiumPath = await _provisionChromium(null, startToken).ConfigureAwait(false);
+            // 1) Resolve the browser launch spec from settings. For the bundled selection this provisions
+            //    Chromium on disk (idempotent; skips fast when cached); Channel selections skip provisioning.
+            var spec = await ResolveLaunchSpecAsync(settings, startToken).ConfigureAwait(false);
 
             // 2) Models — Silero VAD + the sherpa engine — before we join, mirroring LiveMeetingService.
             //    The speaker-ID service degrades to null INSIDE the closure, so this await cannot throw on a
@@ -214,23 +229,48 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
             // 3) Join. Subscribe to the lobby signal BEFORE joining so InLobby is observable even if it
             //    fires during JoinAsync. Admitted-immediately meetings skip InLobby (Joining → Attending).
-            var session = _sessionFactory(chromiumPath);
-            _session = session;
-            session.EnteredLobby += OnEnteredLobby;
-
+            //    A system browser (Chrome/Edge channel) that fails to LAUNCH degrades once to bundled.
             TransitionState(MeetingAttendeeState.Joining);
-            await session.JoinAsync(meetingUrl, displayName, startToken).ConfigureAwait(false);
+            var session = await JoinWithBrowserFallbackAsync(spec, meetingUrl, displayName, startToken)
+                .ConfigureAwait(false);
 
             // Re-check after the long-lived join (WaitForAdmissionAsync polls up to 120s): if Stop ran
             // while we were joining it cancelled startToken and already owns teardown — bail before we
             // hand the now-disposed source/engine onward or clobber the Idle state Stop set.
             startToken.ThrowIfCancellationRequested();
 
-            // 4) Audio source + transcription engine. Default = endpoint loopback; per-process only when
-            //    the AppSettings flag is set AND the browser PID is known.
-            var source = ResolveAudioSource(session, settings);
+            // 4) Audio source + transcription engine. Default = endpoint loopback (audible); per-process
+            //    (silent) loopback when the window is hidden AND the browser PID is known — with a
+            //    dispose-then-degrade fallback to the audible endpoint loopback if the silent path fails.
+            var usePerProcess = UsePerProcessLoopback(settings, session);
+            var source = _audioSourceFactory(session, usePerProcess);
             _audioSource = source;
-            await source.StartAsync(startToken).ConfigureAwait(false);
+            try
+            {
+                await source.StartAsync(startToken).ConfigureAwait(false);
+                if (usePerProcess)
+                {
+                    _logger.LogInformation(
+                        "Meeting attendee using per-process (silent) loopback for browser PID {Pid}",
+                        session.BrowserProcessId);
+                }
+            }
+            catch (Exception ex) when (usePerProcess && ex is not OperationCanceledException)
+            {
+                // Per-process (silent) capture failed (e.g. Windows < 20348, or a WASAPI activation
+                // failure). Dispose the half-activated source FIRST — it does not self-clean on a
+                // mid-activation throw, so reassigning _audioSource without disposing would leak its
+                // WASAPI RCWs — then degrade to the audible endpoint loopback so the meeting is never
+                // lost to a silent-capture failure (it becomes "hidden but audible").
+                _logger.LogWarning(ex,
+                    "Per-process (silent) loopback failed to start; degrading to audible endpoint loopback");
+                await source.DisposeAsync().ConfigureAwait(false);
+                _audioSource = null;
+
+                source = _audioSourceFactory(session, /* usePerProcess: */ false);
+                _audioSource = source;
+                await source.StartAsync(startToken).ConfigureAwait(false);
+            }
 
             startToken.ThrowIfCancellationRequested();
             _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, _speakerId, startToken)
@@ -320,6 +360,110 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             TransitionState(MeetingAttendeeState.Error);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Resolves the configured <see cref="MeetingBrowserSelection"/> + window-visibility preference into
+    /// a concrete <see cref="BrowserLaunchSpec"/>. Bundled provisions Chromium on disk (the only
+    /// Playwright-guaranteed build); System Chrome/Edge launch via the Playwright channel and resolve a
+    /// match-path from App Paths so the per-process audio + taskbar features can still find the PID;
+    /// SystemDefault resolves the OS default to a Chromium-family selection, falling back to bundled.
+    /// </summary>
+    internal async Task<BrowserLaunchSpec> ResolveLaunchSpecAsync(AppSettings settings, CancellationToken ct)
+    {
+        var show = settings.MeetingAttendeeShowBrowserWindow;
+        var selection = settings.MeetingBrowserSelection;
+
+        // #3: resolve "system default" to a concrete Chromium-family selection, or fall back to bundled
+        // when the OS default is non-Chromium / unknown (the resolver never throws).
+        if (selection == MeetingBrowserSelection.SystemDefault)
+            selection = _defaultBrowserResolver.ResolveChromiumSelectionOrBundled();
+
+        switch (selection)
+        {
+            case MeetingBrowserSelection.SystemChrome:
+                return new BrowserLaunchSpec(null, "chrome", "chrome", ResolveAppPath("chrome.exe"), show);
+            case MeetingBrowserSelection.SystemEdge:
+                return new BrowserLaunchSpec(null, "msedge", "msedge", ResolveAppPath("msedge.exe"), show);
+            case MeetingBrowserSelection.BundledChromium:
+            default:
+                var path = await _provisionChromium(null, ct).ConfigureAwait(false);   // ~150 MB on first run
+                return new BrowserLaunchSpec(path, null, "chrome", path, show);
+        }
+    }
+
+    /// <summary>
+    /// Builds a session for <paramref name="spec"/> and joins. If a system browser (Chrome/Edge channel)
+    /// fails to <b>launch</b> (absent / enterprise-policy block), degrades once to bundled Chromium — the
+    /// only always-available build — rather than failing the join. A non-launch failure (e.g. never
+    /// admitted), or a bundled launch failure, propagates.
+    /// </summary>
+    private async Task<IMeetingSession> JoinWithBrowserFallbackAsync(
+        BrowserLaunchSpec spec, string meetingUrl, string displayName, CancellationToken ct)
+    {
+        try
+        {
+            return await BuildSessionAndJoinAsync(spec, meetingUrl, displayName, ct).ConfigureAwait(false);
+        }
+        catch (BrowserLaunchException ex) when (spec.Channel is not null)
+        {
+            _logger.LogWarning(ex,
+                "System browser channel failed to launch; falling back to bundled Chromium for this meeting");
+
+            // Detach + dispose the failed session before rebuilding so its EnteredLobby handler is removed
+            // and no half-initialised browser is leaked.
+            await DisposeFailedSessionAsync().ConfigureAwait(false);
+
+            var bundledPath = await _provisionChromium(null, ct).ConfigureAwait(false);
+            var bundledSpec = new BrowserLaunchSpec(bundledPath, null, "chrome", bundledPath, spec.ShowWindow);
+            return await BuildSessionAndJoinAsync(bundledSpec, meetingUrl, displayName, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<IMeetingSession> BuildSessionAndJoinAsync(
+        BrowserLaunchSpec spec, string meetingUrl, string displayName, CancellationToken ct)
+    {
+        var session = _sessionFactory(spec);
+        _session = session;
+        session.EnteredLobby += OnEnteredLobby;
+        await session.JoinAsync(meetingUrl, displayName, ct).ConfigureAwait(false);
+        return session;
+    }
+
+    private async Task DisposeFailedSessionAsync()
+    {
+        var failed = _session;
+        if (failed is null) return;
+        _session = null;
+        failed.EnteredLobby -= OnEnteredLobby;
+        try { await failed.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Disposing the failed browser session threw"); }
+    }
+
+    /// <summary>
+    /// Reads the registered executable path for <paramref name="exe"/> from
+    /// <c>SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\&lt;exe&gt;</c> (HKLM first, then HKCU),
+    /// or null if absent/unreadable. This supplies a <see cref="BrowserLaunchSpec.MatchExecutablePath"/>
+    /// for Channel launches so per-process audio + taskbar-hiding can still find the browser PID; a null
+    /// result degrades PID matching to process-name + new-since-launch only.
+    /// </summary>
+    private static string? ResolveAppPath(string exe)
+    {
+        const string subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\";
+        foreach (var root in new[] { Microsoft.Win32.Registry.LocalMachine, Microsoft.Win32.Registry.CurrentUser })
+        {
+            try
+            {
+                using var key = root.OpenSubKey(subKey + exe);
+                if (key?.GetValue(null) is string path && !string.IsNullOrWhiteSpace(path))
+                    return path.Trim('"');
+            }
+            catch
+            {
+                // Registry access denied / malformed — fall through to the next root, then null.
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -420,25 +564,15 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         }
     }
 
-    private IAudioCaptureSource ResolveAudioSource(IMeetingSession session, AppSettings settings)
-    {
-        // Default: endpoint loopback (captures the whole render mix, audible). Per-process loopback —
-        // isolated to the browser PID, inaudible — is opt-in via the flag AND requires a known PID.
-        var usePerProcess = UsePerProcessLoopback(settings, session);
-        if (usePerProcess)
-        {
-            _logger.LogInformation("Meeting attendee using per-process loopback (browser PID known)");
-        }
-        return _audioSourceFactory(session, usePerProcess);
-    }
-
     /// <summary>
-    /// Pure decision: use the per-process loopback source only when opted in via
-    /// <see cref="AppSettings.MeetingAttendeeUseProcessLoopback"/> AND the browser process id is known.
-    /// Otherwise fall back to the default endpoint loopback.
+    /// Pure decision: use the per-process (silent) loopback source only when the browser window is
+    /// hidden (so the user wants the meeting inaudible) AND the browser process id is known (so we have a
+    /// target to isolate). A visible window keeps the audible endpoint loopback. The user-facing contract
+    /// is <i>hidden ⇒ silent</i>, so silence is derived from
+    /// <see cref="AppSettings.MeetingAttendeeShowBrowserWindow"/> rather than a separate toggle.
     /// </summary>
     internal static bool UsePerProcessLoopback(AppSettings settings, IMeetingSession session)
-        => settings.MeetingAttendeeUseProcessLoopback && session.BrowserProcessId is int;
+        => !settings.MeetingAttendeeShowBrowserWindow && session.BrowserProcessId is int;
 
     private static IAudioCaptureSource CreateDefaultAudioSource(
         IMeetingSession session, bool usePerProcess, ILoggerFactory loggerFactory)

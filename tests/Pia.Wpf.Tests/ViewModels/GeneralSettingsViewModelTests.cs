@@ -101,4 +101,43 @@ public class GeneralSettingsViewModelTests
         await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
         Assert.Equal(0.80f, stored.SpeakerEmbeddingThreshold);
     }
+
+    [Fact]
+    public async Task Initialize_LoadsMeetingBrowserSettingsFromAppSettings()
+    {
+        var (sut, _, _) = Create(new AppSettings
+        {
+            MeetingBrowserSelection = MeetingBrowserSelection.SystemEdge,
+            MeetingAttendeeShowBrowserWindow = true,
+        });
+
+        await sut.InitializeAsync();
+
+        Assert.Equal(MeetingBrowserSelection.SystemEdge, sut.MeetingBrowserSelection);
+        Assert.True(sut.MeetingAttendeeShowBrowserWindow);
+    }
+
+    [Fact]
+    public async Task ChangingMeetingBrowserSelection_PersistsToAppSettings()
+    {
+        var (sut, settings, stored) = Create();
+        await sut.InitializeAsync();
+
+        sut.MeetingBrowserSelection = MeetingBrowserSelection.SystemChrome;
+
+        await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
+        Assert.Equal(MeetingBrowserSelection.SystemChrome, stored.MeetingBrowserSelection);
+    }
+
+    [Fact]
+    public async Task TogglingShowBrowserWindow_PersistsToAppSettings()
+    {
+        var (sut, settings, stored) = Create(new AppSettings { MeetingAttendeeShowBrowserWindow = false });
+        await sut.InitializeAsync();
+
+        sut.MeetingAttendeeShowBrowserWindow = true;
+
+        await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
+        Assert.True(stored.MeetingAttendeeShowBrowserWindow);
+    }
 }

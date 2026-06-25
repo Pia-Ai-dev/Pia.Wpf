@@ -19,11 +19,12 @@ namespace Pia.Services.LiveTranscription;
 /// mono and resamples to 16 kHz Float32, yielding the same ~50 ms hops the rest of the pipeline
 /// expects — identical to the endpoint service's chain.</para>
 ///
-/// <para><b>UNVERIFIED / NON-DEFAULT:</b> selected only when
-/// <c>AppSettings.MeetingAttendeeUseProcessLoopback</c> is set. Requires Windows 10 build 20348+
-/// (guarded at <see cref="StartAsync"/>). The interop is correct-by-construction against the
-/// Microsoft ApplicationLoopback sample but cannot be run-verified in this environment (no live
-/// target render stream). See <see cref="ProcessLoopbackInterop"/>.</para>
+/// <para><b>UNVERIFIED / NON-DEFAULT:</b> selected when the meeting browser window is hidden
+/// (<c>!AppSettings.MeetingAttendeeShowBrowserWindow</c>) and the browser PID is known. Requires
+/// Windows 10 build 20348+ (guarded at <see cref="StartAsync"/>); on failure the orchestrator degrades
+/// to the audible endpoint loopback. The interop is correct-by-construction against the Microsoft
+/// ApplicationLoopback sample but cannot be run-verified in this environment (no live target render
+/// stream). See <see cref="ProcessLoopbackInterop"/>.</para>
 /// </summary>
 public sealed class ProcessLoopbackAudioCaptureService : IAudioCaptureSource
 {

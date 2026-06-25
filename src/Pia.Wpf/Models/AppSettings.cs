@@ -111,10 +111,18 @@ public class AppSettings
     public string? MeetingAttendeeDisplayName { get; set; }
     public string? MeetingTranscriptFolder { get; set; }
 
-    // Meeting-attendee audio source. Default (false) = endpoint WASAPI loopback (captures the whole
-    // render-device mix, audible). True = per-process WASAPI loopback isolated to the browser's PID
-    // (inaudible) — requires Windows 10 build 20348+ and is currently UNVERIFIED in production.
-    public bool MeetingAttendeeUseProcessLoopback { get; set; } = false;
+    // Which browser the meeting attendee drives. Bundled Chromium is the only Playwright-guaranteed
+    // build (reliable default); System Chrome/Edge are opt-in convenience (may be affected by browser
+    // updates / enterprise policy); SystemDefault detects the OS default and falls back to bundled when
+    // it is not a Chromium-family browser. Machine-specific, so local-only (no SyncSettings mirror).
+    public MeetingBrowserSelection MeetingBrowserSelection { get; set; } = MeetingBrowserSelection.BundledChromium;
+
+    // Show the attendee's browser window on-screen. Default false = hidden (window parked off-screen and
+    // its taskbar button suppressed) AND the meeting captured silently via per-process loopback. When
+    // true, the window opens normally and the meeting is audible via endpoint loopback. The audio source
+    // is derived from this flag (hidden ⇒ silent) — there is no separate audio-source toggle.
+    // Machine-specific, so local-only (no SyncSettings mirror).
+    public bool MeetingAttendeeShowBrowserWindow { get; set; } = false;
 
     // Per-speaker diarization for the meeting attendee. On by default; degrades to single-bubble
     // behavior if the speaker-embedding model is unavailable. Local-only (no SyncSettings mirror).

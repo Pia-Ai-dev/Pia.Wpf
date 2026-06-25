@@ -224,6 +224,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _personaService.PersonasChanged += OnPersonasChanged;
         PropertyChanged += OnPropertyChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
+        MeetingAttendee.SummarizeRequested += OnMeetingAttendeeSummarizeRequested;
 
         ChatTitleChip = new ChatTitleChipViewModel(
             _chatService,
@@ -446,6 +447,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         // The overlay's close (X) button raises CloseRequested; stop the session and hide the overlay.
         _ = ExecuteToggleMeetingAttendee();
+    }
+
+    private void OnMeetingAttendeeSummarizeRequested(object? sender, string prompt)
+    {
+        // "Summarize with assistant" on the post-meeting transcript: hide the overlay so the chat (where
+        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
+        // the prompt. StartFreshChat clears InputText as its last step, so set the prompt afterwards.
+        // Sync fire-and-forget mirrors OnMeetingAttendeeCloseRequested. Do NOT log the prompt — it carries
+        // the (sensitive) meeting transcript.
+        IsMeetingAttendeeVisible = false;
+        StartFreshChat();
+        // Drop any image left pending in the composer behind the overlay so the summary turn carries only
+        // the prompt (StartFreshChat clears InputText but not PendingAttachment).
+        PendingAttachment = null;
+        InputText = prompt;
+        SendMessageCommand.Execute(null);
     }
 
     private void ExecuteUseSuggestion(string? suggestion)
@@ -1167,6 +1184,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         VoiceMode?.Dispose();
         VoiceMode = null;
         MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;
+        MeetingAttendee.SummarizeRequested -= OnMeetingAttendeeSummarizeRequested;
         MeetingAttendee.Dispose();
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
