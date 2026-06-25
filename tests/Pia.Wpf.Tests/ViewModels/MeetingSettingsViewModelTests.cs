@@ -8,15 +8,18 @@ using Xunit;
 namespace Pia.Tests.ViewModels;
 
 /// <summary>
-/// Covers the meeting-diarization settings added to the General settings VM: the
-/// <see cref="GeneralSettingsViewModel.EnableMeetingDiarization"/> toggle and the
-/// <see cref="GeneralSettingsViewModel.SpeakerEmbeddingThreshold"/> slider load from
-/// <see cref="AppSettings"/> on Initialize and persist back through SaveSettings,
-/// mirroring the existing AutoCaptureSelectedText/Threshold settings round-trip.
+/// Covers the meeting-diarization settings that moved out of the General settings VM into the new
+/// <see cref="MeetingSettingsViewModel"/> (Meeting inner tab of the Assistant settings view): the
+/// <see cref="MeetingSettingsViewModel.EnableMeetingDiarization"/> toggle, the
+/// <see cref="MeetingSettingsViewModel.SpeakerEmbeddingThreshold"/>,
+/// <see cref="MeetingSettingsViewModel.MeetingMaxSpeakers"/> and
+/// <see cref="MeetingSettingsViewModel.MeetingMinSpeechSeconds"/> sliders, plus the meeting-browser
+/// selection. Each loads from <see cref="AppSettings"/> on Initialize and persists back through
+/// SaveSettings, with the off-grid clamp/snap behaviour exercised for the slider knobs.
 /// </summary>
-public class GeneralSettingsViewModelTests
+public class MeetingSettingsViewModelTests
 {
-    private static (GeneralSettingsViewModel sut, ISettingsService settings, AppSettings stored) Create(
+    private static (MeetingSettingsViewModel sut, ISettingsService settings, AppSettings stored) Create(
         AppSettings? initial = null)
     {
         var stored = initial ?? new AppSettings();
@@ -25,28 +28,20 @@ public class GeneralSettingsViewModelTests
         settingsService.GetSettingsAsync().Returns(_ => Task.FromResult(stored));
         settingsService.SaveSettingsAsync(Arg.Any<AppSettings>()).Returns(Task.CompletedTask);
 
-        var ttsService = Substitute.For<ITtsService>();
-        ttsService.GetAvailableVoicesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<TtsVoice>>([]));
-
         var localization = Substitute.For<ILocalizationService>();
         localization.CurrentLanguage.Returns(TargetLanguage.EN);
         localization.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns("display");
+        localization[Arg.Any<string>()].Returns("display");
 
-        var sut = new GeneralSettingsViewModel(
+        var sut = new MeetingSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance,
             settingsService,
-            Substitute.For<ITranscriptionService>(),
-            Substitute.For<IDialogService>(),
-            Substitute.For<ITrayIconService>(),
-            ttsService,
-            Substitute.For<global::Wpf.Ui.ISnackbarService>(),
-            localization,
-            Substitute.For<IAutostartService>(),
-            Substitute.For<IPolicyService>());
+            localization);
 
         return (sut, settingsService, stored);
     }
+
+    // ---- diarization enable ---------------------------------------------------------------------
 
     [Fact]
     public async Task Initialize_LoadsDiarizationSettingsFromAppSettings()
@@ -76,6 +71,8 @@ public class GeneralSettingsViewModelTests
         Assert.False(stored.EnableMeetingDiarization);
     }
 
+    // ---- threshold ------------------------------------------------------------------------------
+
     [Fact]
     public async Task Initialize_SnapsOffGridThresholdToTickGrid()
     {
@@ -90,6 +87,18 @@ public class GeneralSettingsViewModelTests
     }
 
     [Fact]
+    public async Task Initialize_SnapsBelowFloorThresholdUpToMinimum()
+    {
+        // The slider range now extends down to 0.30 (over-segmentation fix). A stored value below the
+        // new floor is clamped up to the minimum on load.
+        var (sut, _, _) = Create(new AppSettings { SpeakerEmbeddingThreshold = 0.20f });
+
+        await sut.InitializeAsync();
+
+        Assert.Equal(0.30f, sut.SpeakerEmbeddingThreshold);
+    }
+
+    [Fact]
     public async Task ChangingThreshold_PersistsRoundedValueToAppSettings()
     {
         var (sut, settings, stored) = Create(new AppSettings { SpeakerEmbeddingThreshold = 0.70f });
@@ -101,6 +110,81 @@ public class GeneralSettingsViewModelTests
         await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
         Assert.Equal(0.80f, stored.SpeakerEmbeddingThreshold);
     }
+
+    // ---- max speakers ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Initialize_LoadsMaxSpeakersFromAppSettings()
+    {
+        var (sut, _, _) = Create(new AppSettings { MeetingMaxSpeakers = 4 });
+
+        await sut.InitializeAsync();
+
+        Assert.Equal(4, sut.MeetingMaxSpeakers);
+    }
+
+    [Fact]
+    public async Task ChangingMaxSpeakers_PersistsToAppSettings()
+    {
+        var (sut, settings, stored) = Create(new AppSettings { MeetingMaxSpeakers = 0 });
+        await sut.InitializeAsync();
+
+        sut.MeetingMaxSpeakers = 6;
+
+        await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
+        Assert.Equal(6, stored.MeetingMaxSpeakers);
+    }
+
+    [Fact]
+    public async Task ChangingMaxSpeakers_ClampsToUpperBound()
+    {
+        var (sut, _, _) = Create();
+        await sut.InitializeAsync();
+
+        // The handler clamps to [0,12], reassigns, and returns; the reassignment settles the property.
+        sut.MeetingMaxSpeakers = 99;
+
+        Assert.Equal(12, sut.MeetingMaxSpeakers);
+    }
+
+    // ---- min speech length ----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Initialize_LoadsMinSpeechSecondsFromAppSettings()
+    {
+        var (sut, _, _) = Create(new AppSettings { MeetingMinSpeechSeconds = 2.5f });
+
+        await sut.InitializeAsync();
+
+        Assert.Equal(2.5f, sut.MeetingMinSpeechSeconds);
+    }
+
+    [Fact]
+    public async Task ChangingMinSpeechSeconds_PersistsToAppSettings()
+    {
+        var (sut, settings, stored) = Create(new AppSettings { MeetingMinSpeechSeconds = 1.5f });
+        await sut.InitializeAsync();
+
+        // A grid-aligned value persists directly (no re-snap loop).
+        sut.MeetingMinSpeechSeconds = 2.0f;
+
+        await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
+        Assert.Equal(2.0f, stored.MeetingMinSpeechSeconds);
+    }
+
+    [Fact]
+    public async Task ChangingMinSpeechSeconds_SnapsOffGridValueToTickGrid()
+    {
+        var (sut, _, _) = Create();
+        await sut.InitializeAsync();
+
+        // The handler snaps to the 0.5 grid, reassigns, and returns; the reassignment settles the property.
+        sut.MeetingMinSpeechSeconds = 1.3f;
+
+        Assert.Equal(1.5f, sut.MeetingMinSpeechSeconds);
+    }
+
+    // ---- meeting browser ------------------------------------------------------------------------
 
     [Fact]
     public async Task Initialize_LoadsMeetingBrowserSettingsFromAppSettings()

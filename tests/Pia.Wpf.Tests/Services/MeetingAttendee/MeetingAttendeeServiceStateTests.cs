@@ -464,7 +464,7 @@ public sealed class MeetingAttendeeServiceStateTests
                 return queue.Dequeue();
             },
             audioSourceFactory: (_, _) => audioSource,
-            engineServiceFactory: (_, _, _, _, _, _) =>
+            engineServiceFactory: (_, _, _, _, _, _, _) =>
                 Task.FromResult<IAsyncDisposable>(new RecordingDisposable(null, "engine")));
 
         await service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
@@ -508,7 +508,7 @@ public sealed class MeetingAttendeeServiceStateTests
             sessionFactory: _ => session,
             // First call (usePerProcess=true) returns the throwing source; the degrade call (false) the endpoint.
             audioSourceFactory: (_, usePerProcess) => usePerProcess ? perProcess : endpoint,
-            engineServiceFactory: (_, _, _, _, _, _) =>
+            engineServiceFactory: (_, _, _, _, _, _, _) =>
                 Task.FromResult<IAsyncDisposable>(new RecordingDisposable(null, "engine")));
 
         await service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
@@ -659,7 +659,7 @@ public sealed class MeetingAttendeeServiceStateTests
                     AudioSourceFactoryRan = true;
                     return AudioSource;
                 },
-                engineServiceFactory: (_, _, _, _, _, _) =>
+                engineServiceFactory: (_, _, _, _, _, _, _) =>
                 {
                     EngineBuilt = true;
                     return Task.FromResult<IAsyncDisposable>(new RecordingDisposable(order, "engine"));

@@ -392,6 +392,14 @@
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Speaker matching sensitivity</value></data>
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Tunes how similar two voices must sound to be treated as the same speaker. Higher values split speakers more readily (fewer voices merged); lower values group more voices together.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Match threshold: {0}</value></data>
+  <data name="Settings_Meeting_Tab" xml:space="preserve"><value>Meeting</value></data>
+  <data name="Settings_Diarization_MaxSpeakers_Label" xml:space="preserve"><value>Limit number of speakers</value></data>
+  <data name="Settings_Diarization_MaxSpeakers_Description" xml:space="preserve"><value>Caps how many distinct speakers Pia creates in one meeting. Set it to the number of participants so one person is not split into several voices. 'No limit' lets Pia detect as many speakers as it hears. Changes apply to the next meeting you join.</value></data>
+  <data name="Settings_Diarization_MaxSpeakersDisplay" xml:space="preserve"><value>Maximum speakers: {0}</value></data>
+  <data name="Settings_Diarization_MaxSpeakers_NoLimit" xml:space="preserve"><value>No limit</value></data>
+  <data name="Settings_Diarization_MinSpeech_Label" xml:space="preserve"><value>Minimum speech length for detection</value></data>
+  <data name="Settings_Diarization_MinSpeech_Description" xml:space="preserve"><value>How much uninterrupted speech is needed before Pia identifies a speaker. Longer values give more reliable matching and fewer accidental extra speakers, but very short remarks may stay unlabeled. Changes apply to the next meeting you join.</value></data>
+  <data name="Settings_Diarization_MinSpeechDisplay" xml:space="preserve"><value>Minimum speech length: {0} s</value></data>
   <data name="Settings_MeetingBrowser_Section" xml:space="preserve"><value>Meeting browser</value></data>
   <data name="Settings_MeetingBrowser_Description" xml:space="preserve"><value>Which browser Pia drives to join meetings. Bundled Chromium is downloaded once and is the most reliable choice. System Chrome and System Edge reuse an installed browser but may be affected by browser updates or enterprise policy; if the chosen browser is unavailable, Pia falls back to bundled Chromium. Use system default detects your default browser and uses it when it is Chrome or Edge, otherwise falls back to bundled.</value></data>
   <data name="Settings_MeetingBrowser_ShowWindow" xml:space="preserve"><value>Show the meeting browser window</value></data>

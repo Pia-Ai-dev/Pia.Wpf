@@ -32,6 +32,9 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     private readonly SpeakerEmbeddingExtractor _extractor;
     private readonly ILogger _logger;
     private readonly float _matchThreshold;
+    // Maximum number of distinct speakers to register in one meeting; 0 = unlimited. When the cap is
+    // reached a new segment is forced onto its best existing match instead of registering a new speaker.
+    private readonly int _maxSpeakers;
 
     private readonly object _lock = new();
     private readonly Dictionary<string, SpeakerCentroid> _speakers = new();
@@ -39,10 +42,11 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     private int _counter;
     private bool _disposed;
 
-    public SpeakerIdentificationService(string modelPath, float matchThreshold, ILogger logger)
+    public SpeakerIdentificationService(string modelPath, float matchThreshold, int maxSpeakers, ILogger logger)
     {
         _logger = logger;
         _matchThreshold = matchThreshold;
+        _maxSpeakers = maxSpeakers;
 
         var config = new SpeakerEmbeddingExtractorConfig();
         config.Model = modelPath;
@@ -53,8 +57,8 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
         _extractor = new SpeakerEmbeddingExtractor(config);
 
         _logger.LogInformation(
-            "Speaker identification active. model='{Model}' dim={Dim} threshold={Threshold:F2}",
-            modelPath, _extractor.Dim, _matchThreshold);
+            "Speaker identification active. model='{Model}' dim={Dim} threshold={Threshold:F2} maxSpeakers={MaxSpeakers}",
+            modelPath, _extractor.Dim, _matchThreshold, _maxSpeakers);
     }
 
     public string IdentifyOrRegister(float[] segmentSamples, int sampleRate)
@@ -110,6 +114,18 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 _logger.SensitiveInformation(
                     "Diarization borderline (no centroid update): {Label} sim={Sim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, _matchThreshold, BorderlineMargin, durationSec, FormatSims(sims));
+                result = (label, embedding);
+            }
+            // Zone C: would normally register a brand-new speaker — UNLESS the speaker cap has been
+            // reached. At the cap we force the segment onto its best existing match (like Zone B: label
+            // it but DO NOT update the centroid), so over-segmentation cannot exceed the user's limit.
+            else if (_maxSpeakers > 0 && _speakers.Count >= _maxSpeakers && bestId is not null)
+            {
+                var label = _displayLabels[bestId];
+                // Label/sims can carry a user-typed name once the speaker is renamed → sensitive.
+                _logger.SensitiveInformation(
+                    "Diarization cap reached ({Count}/{Max}); forcing best match: {Label} sim={Sim:F3} dur={Dur:F2}s sims=[{Sims}]",
+                    _speakers.Count, _maxSpeakers, label, bestSim, durationSec, FormatSims(sims));
                 result = (label, embedding);
             }
             // Zone C: register a brand-new speaker.

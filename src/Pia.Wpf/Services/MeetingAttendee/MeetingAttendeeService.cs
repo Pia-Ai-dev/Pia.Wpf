@@ -55,7 +55,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     // Builds AND starts the transcription engine service, returning it as IAsyncDisposable (the only
     // surface the orchestrator needs). Folding start into the factory keeps the engine service a clean
     // seam — tests substitute an observable IAsyncDisposable instead of spinning real reader loops.
-    private readonly Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> _engineServiceFactory;
+    private readonly Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, int, CancellationToken, Task<IAsyncDisposable>> _engineServiceFactory;
 
     private readonly Channel<TranscriptUtterance> _utterances;
     private readonly object _stateLock = new();
@@ -131,7 +131,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 httpClientFactory,
                 loggerFactory.CreateLogger<TeamsMeetingSession>()),
             audioSourceFactory: null,
-            engineServiceFactory: async (source, sileroPath, engine, sink, speakerId, ct) =>
+            engineServiceFactory: async (source, sileroPath, engine, sink, speakerId, minDiarizationSamples, ct) =>
             {
                 var svc = new LiveTranscriptionEngineService(
                     TranscriptSpeaker.Them,
@@ -140,7 +140,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                     engine,
                     sink,
                     loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
-                    speakerId);
+                    speakerId,
+                    minDiarizationSamples);
                 await svc.StartAsync(ct).ConfigureAwait(false);
                 return svc;
             },
@@ -159,7 +160,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> createTranscription,
         Func<BrowserLaunchSpec, IMeetingSession> sessionFactory,
         Func<IMeetingSession, bool, IAudioCaptureSource>? audioSourceFactory,
-        Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory,
+        Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, int, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory,
         IDefaultBrowserResolver? defaultBrowserResolver = null)
     {
         _settingsService = settingsService;
@@ -273,7 +274,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             }
 
             startToken.ThrowIfCancellationRequested();
-            _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, _speakerId, startToken)
+            var minDiarizationSamples = (int)System.Math.Round(settings.MeetingMinSpeechSeconds * 16000);
+            _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, _speakerId, minDiarizationSamples, startToken)
                 .ConfigureAwait(false);
 
             startToken.ThrowIfCancellationRequested();
@@ -613,6 +615,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             return new SpeakerIdentificationService(
                 speakerModelPath,
                 settings.SpeakerEmbeddingThreshold,
+                settings.MeetingMaxSpeakers,
                 loggerFactory.CreateLogger<SpeakerIdentificationService>());
         }
         catch (Exception ex)

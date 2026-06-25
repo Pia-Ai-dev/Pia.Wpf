@@ -19,8 +19,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
     public ProvidersSettingsViewModel ProvidersVm { get; }
     public PersonaSettingsViewModel PersonasVm { get; }
     public ToolPermissionsSettingsViewModel ToolPermissionsVm { get; }
+    public MeetingSettingsViewModel MeetingVm { get; }
 
-    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access).</summary>
+    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access, 3 = Meeting).</summary>
     [ObservableProperty]
     private int _selectedInnerTabIndex;
 
@@ -28,6 +29,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ProvidersSettingsViewModel providersVm,
         PersonaSettingsViewModel personasVm,
         ToolPermissionsSettingsViewModel toolPermissionsVm,
+        MeetingSettingsViewModel meetingVm,
         ILogger<SettingsViewModel> logger,
         ISettingsService settingsService,
         IAssistantChatService chatService,
@@ -37,6 +39,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ProvidersVm = providersVm;
         PersonasVm = personasVm;
         ToolPermissionsVm = toolPermissionsVm;
+        MeetingVm = meetingVm;
         _logger = logger;
         _settingsService = settingsService;
         _chatService = chatService;
@@ -127,6 +130,8 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ChatHistoryEnabled = settings.ChatHistoryEnabled;
         ChatHistoryRetentionDays = Math.Clamp(settings.ChatHistoryRetentionDays, 1, 365);
         ChatAutoTitleEnabled = settings.ChatAutoTitleEnabled;
+
+        await MeetingVm.InitializeAsync();
 
         _isLoading = false;
     }

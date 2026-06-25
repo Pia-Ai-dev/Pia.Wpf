@@ -207,6 +207,109 @@
           </StackPanel>
         </ScrollViewer>
       </TabItem>
+
+      <!-- Meeting tab -->
+      <TabItem Header="{loc:Str Settings_Meeting_Tab}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding MeetingVm}">
+          <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+            <!-- Per-speaker diarization (meetings) -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Diarization_Section}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <CheckBox Content="{loc:Str Settings_Diarization_Enable}"
+                        IsChecked="{Binding EnableMeetingDiarization}"
+                        Margin="0,4,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_Enable_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
+            <!-- Speaker-matching threshold -->
+            <StackPanel Margin="0,0,0,20"
+                        IsEnabled="{Binding EnableMeetingDiarization}">
+              <TextBlock Text="{loc:Str Settings_Diarization_Threshold_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left"
+                      Width="400"
+                      Minimum="0.30"
+                      Maximum="0.95"
+                      TickFrequency="0.05"
+                      IsSnapToTickEnabled="True"
+                      Value="{Binding SpeakerEmbeddingThreshold, Mode=TwoWay}"
+                      VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding SpeakerEmbeddingThresholdDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_Threshold_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="0,8,0,0"/>
+            </StackPanel>
+
+            <!-- Max speakers cap -->
+            <StackPanel Margin="0,0,0,20"
+                        IsEnabled="{Binding EnableMeetingDiarization}">
+              <TextBlock Text="{loc:Str Settings_Diarization_MaxSpeakers_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left"
+                      Width="400"
+                      Minimum="0"
+                      Maximum="12"
+                      TickFrequency="1"
+                      IsSnapToTickEnabled="True"
+                      Value="{Binding MeetingMaxSpeakers, Mode=TwoWay}"
+                      VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding MeetingMaxSpeakersDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_MaxSpeakers_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="0,8,0,0"/>
+            </StackPanel>
+
+            <!-- Minimum speech length -->
+            <StackPanel Margin="0,0,0,20"
+                        IsEnabled="{Binding EnableMeetingDiarization}">
+              <TextBlock Text="{loc:Str Settings_Diarization_MinSpeech_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left"
+                      Width="400"
+                      Minimum="1.0"
+                      Maximum="4.0"
+                      TickFrequency="0.5"
+                      IsSnapToTickEnabled="True"
+                      Value="{Binding MeetingMinSpeechSeconds, Mode=TwoWay}"
+                      VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding MeetingMinSpeechDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_MinSpeech_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="0,8,0,0"/>
+            </StackPanel>
+
+            <!-- Meeting browser -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_MeetingBrowser_Section}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding MeetingBrowserSelections}"
+                        SelectedItem="{Binding MeetingBrowserSelection}"
+                        Width="400"
+                        HorizontalAlignment="Left">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{loc:Str Settings_MeetingBrowser_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <CheckBox Content="{loc:Str Settings_MeetingBrowser_ShowWindow}"
+                        IsChecked="{Binding MeetingAttendeeShowBrowserWindow}"
+                        Margin="0,8,0,0"/>
+              <TextBlock Text="{loc:Str Settings_MeetingBrowser_ShowWindow_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
   </Grid>
 </UserControl>
