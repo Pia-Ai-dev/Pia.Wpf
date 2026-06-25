@@ -436,6 +436,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         }
 
+        // Pre-fill the editable assistant display name from settings (or the auto-built default) before
+        // the overlay appears, so the join form shows the right value the moment it opens.
+        await MeetingAttendee.PrepareForDisplayAsync();
         IsMeetingAttendeeVisible = true;
     }
 

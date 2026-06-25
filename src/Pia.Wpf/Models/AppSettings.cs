@@ -106,6 +106,9 @@ public class AppSettings
 
     // Meeting attendee / live transcription settings
     public string? LastCounterpartName { get; set; }
+    // The display name the assistant joins meetings under (editable in the join dialog). Blank/null
+    // falls back to the auto-built "{user}'s assistant" (see MeetingAttendeeService.BuildDisplayName).
+    public string? MeetingAttendeeDisplayName { get; set; }
     public string? MeetingTranscriptFolder { get; set; }
 
     // Meeting-attendee audio source. Default (false) = endpoint WASAPI loopback (captures the whole

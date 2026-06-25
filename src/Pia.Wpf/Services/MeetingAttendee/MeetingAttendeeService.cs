@@ -195,7 +195,11 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-            var displayName = BuildDisplayName(settings.SyncUserDisplayName);
+            // Prefer the user-edited name from the join dialog (persisted in settings); fall back to the
+            // auto-built "{user}'s assistant" when it was never set or left blank.
+            var displayName = string.IsNullOrWhiteSpace(settings.MeetingAttendeeDisplayName)
+                ? BuildDisplayName(settings.SyncUserDisplayName)
+                : settings.MeetingAttendeeDisplayName.Trim();
 
             // 1) Browser on disk (idempotent; skips fast when cached).
             var chromiumPath = await _provisionChromium(null, startToken).ConfigureAwait(false);

@@ -106,6 +106,49 @@ public class MeetingAttendeeViewModelTests
         vm.Dispose();
     }
 
+    // ---- Display name (pre-fill + persist) -------------------------------------------------------
+
+    [Fact]
+    public async Task PrepareForDisplay_PrefillsPersistedName_WhenSet()
+    {
+        var (vm, _, _) = CreateSutFull(new AppSettings { MeetingAttendeeDisplayName = "Conference bot" });
+
+        await vm.PrepareForDisplayAsync();
+
+        Assert.Equal("Conference bot", vm.AssistantDisplayName);
+    }
+
+    [Theory]
+    [InlineData("Alex", "Alex's assistant")]
+    [InlineData(null, "Pia's assistant")]
+    public async Task PrepareForDisplay_PrefillsBuiltDefault_WhenNoPersistedName(string? user, string expected)
+    {
+        var (vm, _, _) = CreateSutFull(new AppSettings { SyncUserDisplayName = user });
+
+        await vm.PrepareForDisplayAsync();
+
+        Assert.Equal(expected, vm.AssistantDisplayName);
+    }
+
+    [Theory]
+    [InlineData("  Conference bot  ", "Conference bot")]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    public async Task Start_PersistsTrimmedDisplayName_BlankBecomesNull(string input, string? expected)
+    {
+        var (vm, _, settingsService) = CreateSutFull(new AppSettings());
+        vm.MeetingUrl = ValidUrl;
+        vm.ConsentAcknowledged = true;
+        vm.AssistantDisplayName = input;
+
+        await vm.StartCommand.ExecuteAsync(null);
+
+        await settingsService.Received().SaveSettingsAsync(
+            Arg.Is<AppSettings>(s => s.MeetingAttendeeDisplayName == expected));
+
+        vm.Dispose();
+    }
+
     // ---- State → status + IsRunning --------------------------------------------------------------
 
     [Theory]
@@ -403,6 +446,28 @@ public class MeetingAttendeeViewModelTests
             NullLogger<MeetingAttendeeViewModel>.Instance);
 
         return (vm, service, dialog);
+    }
+
+    // Variant that exposes the settings substitute and lets the caller seed the AppSettings instance,
+    // for display-name pre-fill (PrepareForDisplayAsync) and persist-on-Start assertions.
+    private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service, ISettingsService settingsService)
+        CreateSutFull(AppSettings settings)
+    {
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync().Returns(settings);
+
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
+
+        var files = Substitute.For<IFileDialogService>();
+        var dialog = Substitute.For<IDialogService>();
+        var service = new FakeMeetingAttendeeService();
+
+        var vm = new MeetingAttendeeViewModel(
+            service, settingsService, loc, files, dialog,
+            NullLogger<MeetingAttendeeViewModel>.Instance);
+
+        return (vm, service, settingsService);
     }
 
     internal sealed class FakeMeetingAttendeeService : IMeetingAttendeeService

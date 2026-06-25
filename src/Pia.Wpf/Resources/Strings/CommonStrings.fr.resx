@@ -79,4 +79,13 @@
   <data name="MeetingAttendee_RenameSpeaker_Title" xml:space="preserve"><value>Renommer l'intervenant</value></data>
   <data name="MeetingAttendee_RenameSpeaker_Prompt" xml:space="preserve"><value>Saisissez un nom pour «&#160;{0}&#160;» :</value></data>
   <data name="MeetingAttendee_RenameSpeaker_MenuItem" xml:space="preserve"><value>Renommer l'intervenant…</value></data>
+  <data name="MeetingAttendee_DisplayName_Label" xml:space="preserve"><value>Nom de l'assistant dans la réunion</value></data>
+  <data name="MeetingAttendee_DisplayName_Placeholder" xml:space="preserve"><value>Nom affiché aux participants à la réunion</value></data>
+  <data name="MeetingAttendee_Requirements_Title" xml:space="preserve"><value>Prérequis</value></data>
+  <data name="MeetingAttendee_Requirements_Teams" xml:space="preserve"><value>•  Un lien vers une réunion Microsoft Teams.</value></data>
+  <data name="MeetingAttendee_Requirements_Lobby" xml:space="preserve"><value>•  Un organisateur de la réunion doit admettre l'assistant depuis le hall avant qu'il puisse transcrire.</value></data>
+  <data name="MeetingAttendee_Requirements_FirstRun" xml:space="preserve"><value>•  À la première utilisation, le navigateur d'automatisation est téléchargé une fois (connexion Internet requise) ; les réunions suivantes le réutilisent.</value></data>
+  <data name="MeetingAttendee_Requirements_Model" xml:space="preserve"><value>•  L'audio est transcrit localement — un modèle de reconnaissance vocale doit être disponible ; la reconnaissance des intervenants (optionnelle) télécharge un modèle supplémentaire si elle est activée dans les Paramètres.</value></data>
+  <data name="MeetingAttendee_Requirements_Desktop" xml:space="preserve"><value>•  Un bureau Windows interactif avec un périphérique audio fonctionnel.</value></data>
+  <data name="MeetingAttendee_Requirements_Background" xml:space="preserve"><value>•  Pendant la participation, Pia exécute en arrière-plan un navigateur intégré et un assistant d'automatisation basé sur Node — les deux sont fournis avec Pia, aucune installation séparée n'est nécessaire.</value></data>
 </root>

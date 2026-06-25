@@ -83,6 +83,25 @@ public sealed class MeetingAttendeeServiceStateTests
     }
 
     [Fact]
+    public async Task StartAsync_WhenMeetingAttendeeDisplayNameSet_JoinsWithThatName_Trimmed()
+    {
+        var fx = new Fixture();
+        // An explicit (user-edited, persisted) display name overrides the auto-built "{user}'s assistant"
+        // and is trimmed before use.
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            SyncUserDisplayName = "Alex",
+            MeetingAttendeeDisplayName = "  Conference bot  ",
+        });
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+
+        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Conference bot", Arg.Any<CancellationToken>());
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
     public async Task StartAsync_StartsAudioSourceAndBuildsEngineWithThemSpeaker()
     {
         var fx = new Fixture();

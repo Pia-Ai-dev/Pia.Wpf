@@ -45,6 +45,16 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private bool _consentAcknowledged;
 
+    /// <summary>
+    /// The display name the assistant joins the meeting under. Pre-filled on open by
+    /// <see cref="PrepareForDisplayAsync"/> from the persisted <see cref="AppSettings.MeetingAttendeeDisplayName"/>
+    /// (or the auto-built "{user}'s assistant" default), editable by the user, and persisted again when a
+    /// meeting starts. Does NOT gate <see cref="StartCommand"/>: a blank value falls back to the auto-built
+    /// default in the service, so an empty box never blocks joining.
+    /// </summary>
+    [ObservableProperty]
+    private string _assistantDisplayName = string.Empty;
+
     protected override System.Threading.Channels.ChannelReader<TranscriptUtterance> UtteranceReader
         => _service.Utterances;
 
@@ -75,6 +85,23 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         StatusText = _localizationService["MeetingAttendee_Status_Idle"];
     }
 
+    // ---- Open / pre-fill --------------------------------------------------------------------------
+
+    /// <summary>
+    /// Pre-fills <see cref="AssistantDisplayName"/> when the overlay is shown: the persisted
+    /// <see cref="AppSettings.MeetingAttendeeDisplayName"/> if the user set one, otherwise the auto-built
+    /// "{user}'s assistant" default. Called by <c>AssistantViewModel</c> just before revealing the overlay
+    /// so the default reflects the currently signed-in user.
+    /// </summary>
+    public async Task PrepareForDisplayAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+        var name = string.IsNullOrWhiteSpace(settings.MeetingAttendeeDisplayName)
+            ? MeetingAttendeeService.BuildDisplayName(settings.SyncUserDisplayName)
+            : settings.MeetingAttendeeDisplayName;
+        DispatchToUi(() => AssistantDisplayName = name);
+    }
+
     // ---- Start ------------------------------------------------------------------------------------
 
     private bool CanStart()
@@ -93,6 +120,14 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(settings.LastCounterpartName))
             DispatchToUi(() => CounterpartName = settings.LastCounterpartName!);
+
+        // Persist the (possibly edited) assistant display name BEFORE starting the service: the service
+        // reads it back from settings to name the bot for THIS meeting, and it pre-fills the field next
+        // time. Blank → null so a cleared field falls back to the auto-built default.
+        settings.MeetingAttendeeDisplayName = string.IsNullOrWhiteSpace(AssistantDisplayName)
+            ? null
+            : AssistantDisplayName.Trim();
+        await _settingsService.SaveSettingsAsync(settings).ConfigureAwait(false);
 
         DispatchToUi(() =>
         {
