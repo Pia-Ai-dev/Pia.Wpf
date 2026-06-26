@@ -872,18 +872,14 @@ public class MemoryService : IMemoryService
     {
         ArgumentNullException.ThrowIfNull(reference);
 
-        var hashIdx = reference.IndexOf('#');
-        if (hashIdx < 0)
+        var (path, slug) = VaultReference.Parse(reference);
+        if (slug is null)
         {
             // Bare path -> delete the whole file. The watcher/indexer drops its chunks on the change.
-            await _vaultStore.DeleteAsync(reference);
+            await _vaultStore.DeleteAsync(path);
             _logger.LogInformation("Forget deleted a whole vault file");
             return;
         }
-
-        var path = reference[..hashIdx];
-        var heading = reference[(hashIdx + 1)..];
-        var slug = VaultSlug.Slugify(heading);
 
         var doc = await _vaultStore.ReadAsync(path);
         if (doc is null)
