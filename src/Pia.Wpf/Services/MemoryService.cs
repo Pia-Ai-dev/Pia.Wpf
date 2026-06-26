@@ -949,13 +949,17 @@ public class MemoryService : IMemoryService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<VaultMemoryItem>> ListMemoriesAsync()
+    public async Task<VaultMemorySnapshot> ListMemoriesAsync()
     {
         var docs = await EnumerateRecordDocsAsync();
         var items = new List<VaultMemoryItem>();
+        long bytes = 0;
 
         foreach (var (filePath, doc) in docs)
         {
+            // RawText is the exact on-disk content (UTF-8 without BOM), so its byte count is the file size.
+            bytes += Encoding.UTF8.GetByteCount(doc.RawText);
+
             var type = ResolveItemType(doc, filePath);
             var updated = ParseFrontmatterUpdated(doc);
 
@@ -978,25 +982,7 @@ public class MemoryService : IMemoryService
             }
         }
 
-        return items;
-    }
-
-    /// <inheritdoc />
-    public async Task<(int Count, long Bytes)> GetVaultMemoryStatsAsync()
-    {
-        var docs = await EnumerateRecordDocsAsync();
-        var count = 0;
-        long bytes = 0;
-
-        foreach (var (_, doc) in docs)
-        {
-            // One item per section, or one per freeform (section-less) file — mirror ListMemoriesAsync.
-            count += doc.Sections.Count > 0 ? doc.Sections.Count : 1;
-            // RawText is the exact on-disk content (UTF-8 without BOM), so its byte count is the file size.
-            bytes += Encoding.UTF8.GetByteCount(doc.RawText);
-        }
-
-        return (count, bytes);
+        return new VaultMemorySnapshot(items, bytes);
     }
 
     // Read every genuine record file once. EnumerateAsync is not a real glob (it walks the whole memory/

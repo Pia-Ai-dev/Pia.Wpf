@@ -143,9 +143,11 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         {
             IsLoading = true;
 
+            // One enumeration of the vault yields both the items and the storage size.
+            var snapshot = await _memoryService.ListMemoriesAsync();
             var items = string.IsNullOrWhiteSpace(SearchQuery)
-                ? await _memoryService.ListMemoriesAsync()
-                : await SearchMemoriesAsync(SearchQuery);
+                ? snapshot.Items
+                : ProjectRecallHits(snapshot.Items, await _memoryService.RecallAsync(SearchQuery));
 
             var groups = BuildGroups(items);
 
@@ -163,9 +165,10 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 IsEditing = false;
             }
 
-            var (count, bytes) = await _memoryService.GetVaultMemoryStatsAsync();
-            TotalObjectCount = count;
-            StorageSizeText = FormatBytes(bytes);
+            // Header count is the total of displayable (canonical-typed) memories — independent of the
+            // search filter — so it matches what the unfiltered grouped list shows (no silent divergence).
+            TotalObjectCount = CountDisplayable(snapshot.Items);
+            StorageSizeText = FormatBytes(snapshot.Bytes);
         }
         catch (Exception ex)
         {
@@ -177,18 +180,23 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         }
     }
 
-    // Semantic search over the vault (RecallAsync indexes ## sections), projected back to the full
-    // VaultMemoryItem (real type/body/updated) by reference. Hits whose section has since changed are
-    // dropped. Freeform preamble files are not chunked by the indexer, so they never appear here.
-    private async Task<IReadOnlyList<VaultMemoryItem>> SearchMemoriesAsync(string query)
+    // Project semantic-search hits (RecallAsync indexes ## sections) back to the full VaultMemoryItem
+    // (real type/body/updated) by reference, preserving recall order. Hits whose section has since changed
+    // are dropped. Freeform preamble files are not chunked by the indexer, so they never appear here.
+    private static IReadOnlyList<VaultMemoryItem> ProjectRecallHits(
+        IReadOnlyList<VaultMemoryItem> all, IReadOnlyList<RecallHit> hits)
     {
-        var byReference = (await _memoryService.ListMemoriesAsync())
-            .ToDictionary(i => i.Reference, StringComparer.Ordinal);
+        // Last-wins rather than ToDictionary: a hand-edited file may carry two identical ## headings,
+        // which slug-dedup does not collapse, so two items can share a Reference. A throw here would
+        // crash search; collapsing is harmless (the path#heading scheme already aliases such sections).
+        var byReference = new Dictionary<string, VaultMemoryItem>(StringComparer.Ordinal);
+        foreach (var item in all)
+        {
+            byReference[item.Reference] = item;
+        }
 
-        var hits = await _memoryService.RecallAsync(query);
         var results = new List<VaultMemoryItem>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-
         foreach (var hit in hits)
         {
             var filePath = hit.FilePath.Replace('\\', '/');
@@ -202,12 +210,24 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         return results;
     }
 
+    // The §8 canonical type set (case-insensitive) — the types the Memory view can group and display.
+    private static readonly HashSet<string> DisplayableTypes =
+        new(VaultIndexService.CanonicalGroups.Select(g => g.Type), StringComparer.OrdinalIgnoreCase);
+
+    // Count of memories the view can actually show, so the header total matches the grouped list rather
+    // than counting hand-edited/foreign-typed records the canonical grouping silently drops.
+    private static int CountDisplayable(IReadOnlyList<VaultMemoryItem> items)
+        => items.Count(i => DisplayableTypes.Contains(i.Type));
+
     // Group by the §8 canonical type order with the spec's display names; within a group, items sort
     // alphabetically by title (D3: frontmatter `updated` is document-level, so per-item recency is
     // meaningless). The group timestamp is the newest document `updated` among its items.
     private static List<MemoryGroupViewModel> BuildGroups(IReadOnlyList<VaultMemoryItem> items)
     {
-        var byType = items.GroupBy(i => i.Type).ToDictionary(g => g.Key, g => g.ToList());
+        // Case-insensitive so a case-drifted frontmatter `type` (e.g. "Note") still lands in its group.
+        var byType = items
+            .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
         var groups = new List<MemoryGroupViewModel>();
 
         foreach (var (type, display) in VaultIndexService.CanonicalGroups)
@@ -268,9 +288,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 IsEditing = false;
             }
 
-            var (count, bytes) = await _memoryService.GetVaultMemoryStatsAsync();
-            TotalObjectCount = count;
-            StorageSizeText = FormatBytes(bytes);
+            var snapshot = await _memoryService.ListMemoriesAsync();
+            TotalObjectCount = CountDisplayable(snapshot.Items);
+            StorageSizeText = FormatBytes(snapshot.Bytes);
 
             _snackbarService.Show(_localizationService["Msg_Memory_Deleted"], _localizationService.Format("Msg_Memory_MemoryDeleted", memory.Title),
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));

@@ -16,6 +16,13 @@ public record RecallHit(string FilePath, string Heading, string Snippet, float S
 /// </summary>
 public record RememberOutcome(UpsertBand Band, string Reference, IReadOnlyList<string> Candidates);
 
+/// <summary>
+/// A single-pass view of the vault for the Memory screen: the section/freeform <see cref="Items"/> plus
+/// <see cref="Bytes"/>, the total on-disk size of the record files backing them (the header metric).
+/// Both are produced from one enumeration so the view does not re-walk the vault for the count.
+/// </summary>
+public record VaultMemorySnapshot(IReadOnlyList<VaultMemoryItem> Items, long Bytes);
+
 public interface IMemoryService
 {
     Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData);
@@ -66,18 +73,13 @@ public interface IMemoryService
     Task ForgetAsync(string reference);
 
     /// <summary>
-    /// Enumerate the on-disk vault as view items: one per <c>##</c> section of a structured document and
-    /// one per freeform (preamble-only) file. Scoped to genuine record files (see
+    /// Enumerate the on-disk vault as view items (one per <c>##</c> section of a structured document and
+    /// one per freeform/preamble file) together with the total record-file byte size — both from a single
+    /// enumeration. Scoped to genuine record files (see
     /// <see cref="Pia.Infrastructure.Vault.VaultPaths.IsRecordFile"/>) — housekeeping/scaffolding and the
     /// <c>sources/</c> RAW layer are excluded. Vault-only; the legacy table is not touched.
     /// </summary>
-    Task<IReadOnlyList<VaultMemoryItem>> ListMemoriesAsync();
-
-    /// <summary>
-    /// Header metrics derived from the vault: the number of memory items (sections + freeform files) and
-    /// the total byte size of the record files backing them.
-    /// </summary>
-    Task<(int Count, long Bytes)> GetVaultMemoryStatsAsync();
+    Task<VaultMemorySnapshot> ListMemoriesAsync();
 
     /// <summary>
     /// Replace a vault memory's body with <paramref name="newBody"/> (the manual editor's save). A

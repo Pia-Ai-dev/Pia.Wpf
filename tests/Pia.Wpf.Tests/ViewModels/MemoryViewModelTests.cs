@@ -11,18 +11,17 @@ namespace Pia.Tests.ViewModels;
 
 /// <summary>
 /// The Memory view drives off the vault: <see cref="IMemoryService.ListMemoriesAsync"/> items grouped
-/// by the §8 canonical order (alpha within a group), header metrics from
-/// <see cref="IMemoryService.GetVaultMemoryStatsAsync"/>, and edit/delete routed through the vault verbs
+/// by the §8 canonical order (alpha within a group), header metrics from the same snapshot, and
+/// edit/delete routed through the vault verbs
 /// <see cref="IMemoryService.UpdateSectionAsync"/> / <see cref="IMemoryService.ForgetAsync"/>.
 /// </summary>
 public class MemoryViewModelTests
 {
     private static (MemoryViewModel Vm, IMemoryService Memory, IDialogService Dialog) Create(
-        VaultMemoryItem[] items, int count, long bytes)
+        VaultMemoryItem[] items, long bytes = 0)
     {
         var memory = Substitute.For<IMemoryService>();
-        memory.ListMemoriesAsync().Returns(items);
-        memory.GetVaultMemoryStatsAsync().Returns((count, bytes));
+        memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot(items, bytes));
 
         var dialog = Substitute.For<IDialogService>();
         var vm = new MemoryViewModel(
@@ -49,7 +48,7 @@ public class MemoryViewModelTests
             Item("memory/contacts.md#John", "memory/contacts.md", "contact_list", "John"),
             Item("memory/profile.md#Coffee", "memory/profile.md", "personal_profile", "Coffee"),
         };
-        var (vm, _, _) = Create(items, count: 4, bytes: 200);
+        var (vm, _, _) = Create(items, bytes: 200);
 
         await vm.OnNavigatedToAsync(null);
 
@@ -76,7 +75,7 @@ public class MemoryViewModelTests
     public async Task Delete_forgets_by_reference_and_drops_the_row()
     {
         var item = Item("memory/contacts.md#John Smith", "memory/contacts.md", "contact_list", "John Smith");
-        var (vm, memory, dialog) = Create([item], count: 1, bytes: 50);
+        var (vm, memory, dialog) = Create([item], bytes: 50);
         dialog.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await vm.OnNavigatedToAsync(null);
@@ -92,7 +91,7 @@ public class MemoryViewModelTests
     public async Task Save_updates_the_section_body_by_reference()
     {
         var item = Item("memory/contacts.md#John Smith", "memory/contacts.md", "contact_list", "John Smith", body: "old");
-        var (vm, memory, _) = Create([item], count: 1, bytes: 50);
+        var (vm, memory, _) = Create([item], bytes: 50);
 
         await vm.OnNavigatedToAsync(null);
         await vm.EditMemoryCommand.ExecuteAsync(item);
@@ -112,7 +111,7 @@ public class MemoryViewModelTests
     public async Task Search_projects_recall_hits_back_to_full_items_by_reference()
     {
         var item = Item("memory/contacts.md#John Smith", "memory/contacts.md", "contact_list", "John Smith", body: "real body");
-        var (vm, memory, _) = Create([item], count: 1, bytes: 50);
+        var (vm, memory, _) = Create([item], bytes: 50);
         memory.RecallAsync("john", Arg.Any<int>())
             .Returns([new RecallHit("memory/contacts.md", "John Smith", "snippet…", 0.9f)]);
 
@@ -124,6 +123,26 @@ public class MemoryViewModelTests
         Assert.Equal("John Smith", found.Title);
         // The full vault body is surfaced (re-read by reference), not just the recall snippet.
         Assert.Equal("real body", found.Body);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Search_does_not_crash_on_duplicate_headings()
+    {
+        // A hand-edited file can carry two identical ## headings -> two items with the SAME reference.
+        // The search join must collapse (last-wins) rather than throw.
+        var dup1 = Item("memory/contacts.md#John", "memory/contacts.md", "contact_list", "John", body: "first");
+        var dup2 = Item("memory/contacts.md#John", "memory/contacts.md", "contact_list", "John", body: "second");
+        var (vm, memory, _) = Create([dup1, dup2], bytes: 60);
+        memory.RecallAsync("john", Arg.Any<int>())
+            .Returns([new RecallHit("memory/contacts.md", "John", "snippet", 0.9f)]);
+
+        vm.SearchQuery = "john";
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var group = Assert.Single(vm.MemoryGroups);
+        Assert.Single(group.Items);
 
         vm.Dispose();
     }
