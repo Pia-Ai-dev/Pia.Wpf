@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
@@ -115,9 +115,9 @@ public partial class App : Application
         // Once the user clears the path the empty value sticks — we only seed it when it's missing.
         if (string.IsNullOrWhiteSpace(settings.AssistantFilesFolder))
         {
-            var defaultFolder = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Pia", "workdir");
+            // Shared with SensitivePathGuard's carve-out — both must use the same value or the
+            // guard re-blocks the whole workdir (see AssistantWorkspace).
+            var defaultFolder = Pia.Infrastructure.AssistantWorkspace.DefaultWorkdir;
             try
             {
                 System.IO.Directory.CreateDirectory(defaultFolder);
@@ -154,6 +154,10 @@ public partial class App : Application
         // route correctly when clicked.
         _ = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledJobNotificationSurface>();
 
+        // Load persisted durable Flow items before the pollers run (the todo poller re-validates against them).
+        var flowService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.IFlowService>();
+        await flowService.LoadAsync();
+
         // Start background services
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);
@@ -166,6 +170,9 @@ public partial class App : Application
 
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StartAsync(CancellationToken.None);
+
+        var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
+        await todoDeadlineService.StartAsync(CancellationToken.None);
 
         // Initialize persisted MCP plugins from local database
         var pluginService = Bootstrapper.ServiceProvider.GetRequiredService<IPluginService>();
@@ -291,6 +298,9 @@ public partial class App : Application
 
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StopAsync(CancellationToken.None);
+
+        var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
+        await todoDeadlineService.StopAsync(CancellationToken.None);
 
         var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
         await chatSyncService.StopAsync(CancellationToken.None);

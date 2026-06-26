@@ -142,6 +142,9 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
                  - NO → Continue to step 3.
               3. Does the request involve STORING, RECALLING, or UPDATING personal information?
                  - YES → Use Memory tools. To store/update, call remember(type, subject, content) — it automatically finds-or-creates the right record (you do NOT need to recall first). Use recall to look something up, and forget to remove a record. NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+                 - NO → Continue to step 4.
+              4. Does the request involve reading, searching, or editing CODE or FILES in the configured folder?
+                 - YES → Use the file tools: search_files to locate files or text, read_file to inspect content (request a windowed slice with offset/limit for large files), and write_file to apply edits (the user approves a diff before any change is written).
                  - NO → Respond conversationally without tools.
 
               """;
@@ -163,7 +166,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             """;
     }
 
-    private static (string CategoryLabel, string QueryTool, IReadOnlyList<string> ToolNames) GetAtCommandToolMapping(Pia.Models.AtCommandDomain domain) => domain switch
+    internal static (string CategoryLabel, string QueryTool, IReadOnlyList<string> ToolNames) GetAtCommandToolMapping(Pia.Models.AtCommandDomain domain) => domain switch
     {
         Pia.Models.AtCommandDomain.Memory => (
             "memory entry",
@@ -181,6 +184,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             "scheduled research job",
             "query_scheduled_research",
             (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"]),
+        Pia.Models.AtCommandDomain.Files => (
+            "file",
+            "read_file",
+            (IReadOnlyList<string>)["list_files", "read_file", "write_file", "delete_file", "search_files"]),
         _ => throw new ArgumentOutOfRangeException(nameof(domain), domain,
             $"No tool mapping registered for at-command domain {domain}. Add a row to GetAtCommandToolMapping.")
     };
@@ -196,7 +203,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         return allowed;
     }
 
-    private static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
+    internal static string BuildAtCommandHint(IReadOnlyList<Pia.Models.AtCommand> commands)
     {
         if (commands.Count == 0) return string.Empty;
 
@@ -211,6 +218,17 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             var (categoryLabel, queryTool, toolNames) = GetAtCommandToolMapping(cmd.Domain);
             var toolFamily = $"{categoryLabel} tools ({string.Join(", ", toolNames)})";
 
+            // Files are addressed by their relative path directly — there is no ID-resolution
+            // step, so the generic "call {queryTool} first to obtain its ID" wording is wrong.
+            if (cmd.Domain == Pia.Models.AtCommandDomain.Files)
+            {
+                if (cmd.ItemTitle is not null)
+                    sb.AppendLine($"- The user's request targets the file at relative path \"{cmd.ItemTitle}\". Operate on that exact path directly with the {toolFamily} — no lookup step is needed (read_file before editing, then write_file).");
+                else
+                    sb.AppendLine($"- The user's request is about files in the assistant files folder — use the {toolFamily}.");
+                continue;
+            }
+
             if (cmd.ItemTitle is not null)
                 sb.AppendLine($"- The user's request targets a {categoryLabel} titled \"{cmd.ItemTitle}\". Call {queryTool} first to obtain its ID, then perform the action described in the rest of the user's message (e.g. delete, update, complete). Available {toolFamily}.");
             else
@@ -218,6 +236,55 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         }
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Renders <c>@Files</c> previews for direct injection into the AI-visible user message, so a
+    /// model that won't call <c>read_file</c> on its own still sees the tagged file(s). Each file
+    /// becomes an <c>&lt;attached_file&gt;</c> element (XML-style, to avoid colliding with Markdown
+    /// code fences that may appear in the content). A truncated file's note points the model at
+    /// <c>read_file</c> for the rest — but only when <paramref name="toolsAvailable"/>, since on a
+    /// no-tools turn that advice would be wrong. Returns <see cref="string.Empty"/> when there is
+    /// nothing to inject.
+    /// </summary>
+    public static string BuildFileContextBlock(IReadOnlyList<FilePromptPreview> previews, bool toolsAvailable)
+    {
+        if (previews.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.Append("The user attached the following file(s) with the @Files command. Use them as the primary context for this request.");
+
+        foreach (var p in previews)
+        {
+            sb.Append("\n\n");
+
+            if (!p.Found)
+            {
+                sb.Append($"<attached_file path=\"{EscapeAttr(p.RequestedPath)}\" error=\"{EscapeAttr(p.Error ?? "could not be read")}\"");
+                if (toolsAvailable)
+                    sb.Append(" note=\"Use list_files or search_files to locate it.\"");
+                sb.Append(" />");
+                continue;
+            }
+
+            sb.Append($"<attached_file path=\"{EscapeAttr(p.RequestedPath)}\" total_lines=\"{p.TotalLines}\"");
+            if (p.Truncated)
+            {
+                sb.Append($" shown_lines=\"{p.ShownLines}\"");
+                var note = toolsAvailable
+                    ? $"Showing the first {p.ShownLines} of {p.TotalLines} lines; use read_file with offset/limit to read the rest."
+                    : $"Showing the first {p.ShownLines} of {p.TotalLines} lines.";
+                sb.Append($" note=\"{EscapeAttr(note)}\"");
+            }
+            sb.Append(">\n");
+            sb.Append(p.Text);
+            sb.Append("\n</attached_file>");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeAttr(string value) =>
+        value.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
 
     private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
     {

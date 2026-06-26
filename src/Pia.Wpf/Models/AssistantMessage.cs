@@ -47,6 +47,11 @@ public partial class AssistantMessage : ObservableObject
 
     public bool HasActionCards => ActionCards.Count > 0;
 
+    /// <summary>True while any inline action card is still awaiting a user decision.
+    /// Drives the in-transcript "awaiting confirmation" accent. Computed (no backing
+    /// field) — never persisted (see AssistantMessageMapper).</summary>
+    public bool HasPendingConfirmation => ActionCards.Any(c => c.IsPending);
+
     public bool HasSources => Sources.Count > 0;
 
     public bool HasSuggestions => Suggestions.Count > 0;
@@ -108,7 +113,25 @@ public partial class AssistantMessage : ObservableObject
 
     private void OnActionCardsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        // ActionCards is get-only and only ever .Add'd (see ChatSession.HandleToolCall),
+        // so the per-card detach below covers every reachable mutation. A Reset (Clear())
+        // gives no OldItems and would leak the existing subscriptions — unsupported until
+        // the detach is generalized (e.g. tracking the subscribed set).
+        if (e.OldItems is not null)
+            foreach (ActionCardInfo card in e.OldItems)
+                card.PropertyChanged -= OnActionCardPropertyChanged;
+        if (e.NewItems is not null)
+            foreach (ActionCardInfo card in e.NewItems)
+                card.PropertyChanged += OnActionCardPropertyChanged;
+
         OnPropertyChanged(nameof(HasActionCards));
+        OnPropertyChanged(nameof(HasPendingConfirmation));
+    }
+
+    private void OnActionCardPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ActionCardInfo.IsPending))
+            OnPropertyChanged(nameof(HasPendingConfirmation));
     }
 
     public ChatMessage ToChatMessage()

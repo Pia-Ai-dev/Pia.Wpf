@@ -211,6 +211,7 @@
                     SpeakCommand="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     RegenerateCommand="{Binding DataContext.RegenerateMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SuggestionCommand="{Binding DataContext.UseFollowupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    ManageToolPermissionsCommand="{Binding DataContext.NavigateToToolPermissionsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     AddToPiiRequested="OnAddToPiiRequested" />
               </Grid>
             </Grid>

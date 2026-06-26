@@ -4,6 +4,8 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
+             xmlns:cards="clr-namespace:Pia.Controls.Cards"
+             xmlns:chat="clr-namespace:Pia.Controls.Chat"
              xmlns:models="clr-namespace:Pia.Models">
   <Border x:Name="CardBorder"
           Padding="12,10"
@@ -131,6 +133,58 @@
             </TextBlock.Style>
           </TextBlock>
 
+          <!-- Line-level diff (write_file) -->
+          <ItemsControl ItemsSource="{Binding DiffLines}"
+                        Margin="0,0,0,4">
+            <ItemsControl.Style>
+              <Style TargetType="ItemsControl">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding HasDiff}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ItemsControl.Style>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Padding="6,0">
+                  <Border.Style>
+                    <Style TargetType="Border">
+                      <Setter Property="Background" Value="Transparent" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Added}">
+                          <Setter Property="Background" Value="#1A2EA043" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Removed}">
+                          <Setter Property="Background" Value="#1AC42B1C" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Border.Style>
+                  <TextBlock FontFamily="Consolas, Cascadia Code, Courier New, monospace"
+                             FontSize="12"
+                             TextWrapping="Wrap">
+                    <TextBlock.Style>
+                      <Style TargetType="TextBlock">
+                        <Setter Property="Text" Value="{Binding Display}" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Added}">
+                            <Setter Property="Foreground" Value="#2EA043" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Removed}">
+                            <Setter Property="Foreground" Value="#C42B1C" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </TextBlock.Style>
+                  </TextBlock>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
           <!-- Old values (for updates) -->
           <StackPanel>
             <StackPanel.Style>
@@ -210,32 +264,10 @@
           </StackPanel>
         </StackPanel>
 
-        <!-- Accept/Decline buttons -->
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,8,0,0">
-          <ui:Button Content="{loc:Str ActionCard_Decline}"
-                     Appearance="Secondary"
-                     FontSize="12"
-                     Padding="12,4"
-                     Margin="0,0,6,0"
-                     Command="{Binding DeclineCommand}" />
-          <ui:Button Content="{loc:Str ActionCard_Accept}"
-                     FontSize="12"
-                     Padding="12,4"
-                     Command="{Binding AcceptCommand}">
-            <ui:Button.Style>
-              <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                <Setter Property="Appearance" Value="Primary" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding IsDestructive}" Value="True">
-                    <Setter Property="Appearance" Value="Caution" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </ui:Button.Style>
-          </ui:Button>
-        </StackPanel>
+        <!-- Accept/Decline buttons (shared CardDecisionBar — design §6) -->
+        <cards:CardDecisionBar ItemsSource="{Binding Decisions}"
+                               HorizontalAlignment="Right"
+                               Margin="0,8,0,0" />
       </StackPanel>
 
       <!-- Resolved state -->
@@ -262,6 +294,11 @@
                   <Setter Property="Symbol" Value="Checkmark24" />
                   <Setter Property="Foreground" Value="#0F7B0F" />
                 </DataTrigger>
+                <!-- Auto-approved (standing grant): a distinct shield-checkmark, accent-coloured. -->
+                <DataTrigger Binding="{Binding IsAutoApproved}" Value="True">
+                  <Setter Property="Symbol" Value="ShieldCheckmark24" />
+                  <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+                </DataTrigger>
               </Style.Triggers>
             </Style>
           </ui:SymbolIcon.Style>
@@ -269,7 +306,17 @@
         <TextBlock Text="{Binding ResolvedStatusText}"
                    FontSize="12"
                    FontStyle="Italic"
+                   VerticalAlignment="Center"
                    Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        <!-- Manage affordance: deep-links to the tool-permissions revocation surface.
+             Bound to the hosting message's ManageToolPermissionsCommand; only shown for
+             auto-approved (standing-grant) cards. -->
+        <ui:HyperlinkButton Content="{loc:Str ActionCard_Manage}"
+                            FontSize="12"
+                            Padding="6,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
       </StackPanel>
     </Grid>
   </Border>

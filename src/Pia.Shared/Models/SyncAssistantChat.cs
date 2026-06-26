@@ -24,6 +24,12 @@ public class SyncAssistantChat
     public string WindowMode { get; set; } = "Assistant";
     public Guid? ProviderId { get; set; }
 
+    /// <summary>
+    /// Per-chat working directory, RELATIVE to the assistant-files sandbox root
+    /// (forward slashes). Null/empty = sandbox root.
+    /// </summary>
+    public string? WorkingDirectory { get; set; }
+
     public List<SyncAssistantChatMessage> Messages { get; set; } = [];
 
     /// <summary>

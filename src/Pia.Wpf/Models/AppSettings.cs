@@ -63,6 +63,8 @@ public class AppSettings
     public bool StartMinimized { get; set; } = false;
     public bool LaunchAtStartup { get; set; } = true;
     public bool ShowTodoPanelButton { get; set; } = true;
+    /// <summary>Whether the Flow rail is pinned as a docked column (design §4). Persisted across restarts.</summary>
+    public bool FlowPinned { get; set; } = false;
     public Dictionary<Guid, double> TodoColumnWidths { get; set; } = new();
     public bool HasCompletedFirstRunWizard { get; set; } = false;
     public UserOperatingMode? UserOperatingMode { get; set; }
@@ -91,6 +93,12 @@ public class AppSettings
     /// Intended to be set via enterprise policy.
     /// </summary>
     public List<string>? AllowedSyncProviders { get; set; }
+
+    /// <summary>
+    /// Standing per-tool "always allow" grants. Keyed by (PluginId, ToolName).
+    /// Persisted globally as camelCase JSON, mirroring <see cref="AllowedSyncProviders"/>.
+    /// </summary>
+    public List<ToolGrant> AlwaysAllowedTools { get; set; } = new();
 
     // TTS settings
     public bool TtsEnabled { get; set; } = false;

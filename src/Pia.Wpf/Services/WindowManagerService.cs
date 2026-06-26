@@ -199,6 +199,20 @@ public partial class WindowManagerService : IWindowManagerService
         navigationService.NavigateTo<ResearchHistoryViewModel, Guid>(entryId);
     }
 
+    public void ShowAssistantChat(Guid chatId)
+    {
+        // Reuse the single assistant window (ShowWindow activates/focuses it), then
+        // navigate WITHIN it. Never opens a second window. OnNavigatedToAsync(Guid)
+        // routes to the session manager's ActivateAsync, revealing any pending card.
+        ShowWindow(WindowMode.Assistant);
+
+        if (!_windows.TryGetValue(WindowMode.Assistant, out var managed))
+            return;
+
+        var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
+        navigationService.NavigateTo<AssistantViewModel, Guid>(chatId);
+    }
+
     public void HideWindow(WindowMode mode)
     {
         if (!_windows.TryGetValue(mode, out var managed))

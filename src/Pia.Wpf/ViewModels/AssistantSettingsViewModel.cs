@@ -18,14 +18,16 @@ public partial class AssistantSettingsViewModel : ObservableObject
 
     public ProvidersSettingsViewModel ProvidersVm { get; }
     public PersonaSettingsViewModel PersonasVm { get; }
+    public ToolPermissionsSettingsViewModel ToolPermissionsVm { get; }
 
-    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas).</summary>
+    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access).</summary>
     [ObservableProperty]
     private int _selectedInnerTabIndex;
 
     public AssistantSettingsViewModel(
         ProvidersSettingsViewModel providersVm,
         PersonaSettingsViewModel personasVm,
+        ToolPermissionsSettingsViewModel toolPermissionsVm,
         ILogger<SettingsViewModel> logger,
         ISettingsService settingsService,
         IAssistantChatService chatService,
@@ -34,6 +36,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
     {
         ProvidersVm = providersVm;
         PersonasVm = personasVm;
+        ToolPermissionsVm = toolPermissionsVm;
         _logger = logger;
         _settingsService = settingsService;
         _chatService = chatService;

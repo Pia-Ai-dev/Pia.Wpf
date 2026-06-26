@@ -12,6 +12,7 @@ using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.ViewModels.Models;
 using Wpf.Ui.Controls;
 
 namespace Pia.ViewModels;
@@ -28,6 +29,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     private readonly ILocalizationService _localizationService;
     private readonly INavigationService _navigationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
+    private readonly IChatSessionManager _chatSessionManager;
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
@@ -35,10 +37,21 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     private bool _suppressReload;
 
     [ObservableProperty]
-    private ObservableCollection<SyncAssistantChat> _chats = new();
+    private ObservableCollection<AssistantChatRowViewModel> _chats = new();
 
     [ObservableProperty]
     private ObservableCollection<AssistantChatGroupViewModel> _chatGroups = new();
+
+    /// <summary>Selected option in the live-state filter (null State = "All states").</summary>
+    [ObservableProperty]
+    private ChatStateFilterOption? _selectedStateOption;
+
+    /// <summary>Count of chats currently visible after the state filter (drives the status bar).</summary>
+    [ObservableProperty]
+    private int _visibleCount;
+
+    /// <summary>"All states" + one option per live <see cref="ChatState"/> (action-needed first).</summary>
+    public IReadOnlyList<ChatStateFilterOption> StateFilterOptions { get; }
 
     [ObservableProperty]
     private string _searchQuery = string.Empty;
@@ -56,7 +69,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     private bool _isLoading;
 
     [ObservableProperty]
-    private SyncAssistantChat? _selectedChat;
+    private AssistantChatRowViewModel? _selectedChat;
 
     [ObservableProperty]
     private SyncAssistantChat? _selectedChatDetail;
@@ -79,7 +92,8 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         IDialogService dialogService,
         ILocalizationService localizationService,
         INavigationService navigationService,
-        Wpf.Ui.ISnackbarService snackbarService)
+        Wpf.Ui.ISnackbarService snackbarService,
+        IChatSessionManager chatSessionManager)
     {
         _logger = logger;
         _chatService = chatService;
@@ -88,7 +102,11 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         _localizationService = localizationService;
         _navigationService = navigationService;
         _snackbarService = snackbarService;
+        _chatSessionManager = chatSessionManager;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
+
+        StateFilterOptions = BuildStateFilterOptions(localizationService);
+        _selectedStateOption = StateFilterOptions[0];
 
         DeleteChatCommand = new AsyncRelayCommand(ExecuteDeleteChatAsync, CanExecuteWithSelection);
         DeleteAllChatsCommand = new AsyncRelayCommand(ExecuteDeleteAllChatsAsync);
@@ -99,6 +117,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
 
         PropertyChanged += OnPropertyChanged;
         _chatService.ChatsChanged += OnChatsChanged;
+        _chatSessionManager.SessionStateChanged += OnSessionStateChanged;
     }
 
     public void OnNavigatedTo(object? parameter) { }
@@ -147,9 +166,11 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
                 offset: 0,
                 limit: PageSize);
 
+            var previousSelectedId = SelectedChat?.Id;
+
             Chats.Clear();
             foreach (var chat in chats)
-                Chats.Add(chat);
+                Chats.Add(new AssistantChatRowViewModel(chat, _chatSessionManager.GetState(chat.Id)));
 
             _logger.LogInformation(
                 "AssistantHistory loaded {Count} chats (hasQuery={HasQuery}, providerFilter={HasProvider})",
@@ -160,8 +181,11 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
 
             RebuildGroups();
 
-            if (SelectedChat is not null && !Chats.Contains(SelectedChat))
-                SelectedChat = null;
+            // Re-resolve the selection against the freshly-wrapped rows (the row VM
+            // instances are new each load, so reference equality won't survive).
+            SelectedChat = previousSelectedId is { } id
+                ? Chats.FirstOrDefault(r => r.Id == id)
+                : null;
 
             UpdateCommandStates();
         }
@@ -177,35 +201,83 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
 
     private void RebuildGroups()
     {
-        var existingState = ChatGroups.ToDictionary(g => g.Bucket, g => g.IsExpanded);
+        var existingState = ChatGroups
+            .Where(g => g.GroupKey is not null)
+            .ToDictionary(g => g.GroupKey!, g => g.IsExpanded);
 
+        // Live-status filter (client-side): GetState returns Idle for any persisted-but-
+        // not-live chat, so this meaningfully isolates the live set (Running/Waiting/Error/
+        // Completed); a null State means "All states".
+        var stateFilter = SelectedStateOption?.State;
+        var filtered = stateFilter is { } s
+            ? Chats.Where(c => c.State == s).ToList()
+            : Chats.ToList();
+        VisibleCount = filtered.Count;
+
+        ChatGroups.Clear();
+        foreach (var group in BuildDateGroups(filtered, existingState))
+            ChatGroups.Add(group);
+    }
+
+    private List<AssistantChatGroupViewModel> BuildDateGroups(
+        IReadOnlyList<AssistantChatRowViewModel> chats,
+        IReadOnlyDictionary<string, bool> existingState)
+    {
         var today = DateTime.Today;
         var startOfWeek = today.AddDays(-(int)today.DayOfWeek);
         var startOfMonth = new DateTime(today.Year, today.Month, 1);
 
-        var buckets = Chats
+        return chats
             .GroupBy(c => Classify(c.UpdatedAt.ToLocalTime(), today, startOfWeek, startOfMonth))
             .OrderBy(g => (int)g.Key)
             .Select(g =>
             {
                 var items = g.OrderByDescending(c => c.UpdatedAt).ToList();
-                var isExpanded = existingState.TryGetValue(g.Key, out var prev)
+                var key = $"date:{(int)g.Key}";
+                var isExpanded = existingState.TryGetValue(key, out var prev)
                     ? prev
                     : (g.Key == HistoryDateBucket.Today || g.Key == HistoryDateBucket.Yesterday);
                 return new AssistantChatGroupViewModel
                 {
+                    GroupKey = key,
                     Bucket = g.Key,
                     DisplayName = _localizationService[BucketResourceKey(g.Key)],
-                    Items = new ObservableCollection<SyncAssistantChat>(items),
+                    Items = new ObservableCollection<AssistantChatRowViewModel>(items),
                     ItemCount = items.Count,
                     IsExpanded = isExpanded,
                 };
             })
             .ToList();
+    }
 
-        ChatGroups.Clear();
-        foreach (var group in buckets)
-            ChatGroups.Add(group);
+    private static IReadOnlyList<ChatStateFilterOption> BuildStateFilterOptions(ILocalizationService loc)
+    {
+        var options = new List<ChatStateFilterOption>
+        {
+            new(null, loc["AssistantHistory_StateFilter_All"]),
+        };
+        // Action-needed first, mirroring the badge/grouping order via the shared comparer.
+        options.AddRange(Enum.GetValues<ChatState>()
+            .OrderBy(ChatStateGrouping.StateGroupOrder)
+            .Select(state => new ChatStateFilterOption(state, loc[$"ChatState_{state}"])));
+        return options;
+    }
+
+    partial void OnSelectedStateOptionChanged(ChatStateFilterOption? value) => RebuildGroups();
+
+    private void OnSessionStateChanged(object? sender, SessionStateChangedEventArgs e)
+    {
+        if (e.ChatId is not { } chatId) return;
+        _syncContext.Post(_ =>
+        {
+            var row = Chats.FirstOrDefault(r => r.Id == chatId);
+            if (row is null) return;
+            row.State = e.NewState;
+            // A live transition changes which rows pass an active state filter, so
+            // re-apply it. Date grouping itself is unaffected by state.
+            if (SelectedStateOption?.State is not null)
+                RebuildGroups();
+        }, null);
     }
 
     private static HistoryDateBucket Classify(DateTime updatedLocal, DateTime today, DateTime startOfWeek, DateTime startOfMonth)
@@ -234,6 +306,10 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         FilterEndDate = null;
         SelectedProviderId = null;
         SearchQuery = string.Empty;
+        // Reset to "All states" (index 0). Assigning the same instance is a no-op; a real
+        // change fires OnSelectedStateOptionChanged → RebuildGroups, which LoadChatsAsync
+        // also runs, so the list is rebuilt exactly once either way.
+        SelectedStateOption = StateFilterOptions[0];
         await LoadChatsAsync();
     }
 
@@ -257,18 +333,18 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             _localizationService["Msg_History_ConfirmDeleteMessage"]);
         if (!confirmed) return;
 
-        var chat = SelectedChat;
+        var row = SelectedChat;
         try
         {
-            await _chatService.DeleteAsync(chat.Id);
-            Chats.Remove(chat);
+            await _chatService.DeleteAsync(row.Id);
+            Chats.Remove(row);
             SelectedChat = null;
             RebuildGroups();
-            _logger.LogInformation("Deleted assistant chat {ChatId}", chat.Id);
+            _logger.LogInformation("Deleted assistant chat {ChatId}", row.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete chat {ChatId}", chat.Id);
+            _logger.LogError(ex, "Failed to delete chat {ChatId}", row.Id);
             await _dialogService.ShowMessageDialogAsync(
                 _localizationService["Msg_Error"],
                 _localizationService.Format("Msg_History_DeleteSessionFailed", ex.Message));
@@ -378,7 +454,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     {
         if (SelectedChat is null) return;
 
-        var id = SelectedChat.Id;
+        var id = SelectedChat.Chat.Id;
         try
         {
             await _chatService.TouchLastAccessedAsync(id);
@@ -472,6 +548,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         _debounceCts?.Cancel();
         _debounceCts?.Dispose();
         _chatService.ChatsChanged -= OnChatsChanged;
+        _chatSessionManager.SessionStateChanged -= OnSessionStateChanged;
         PropertyChanged -= OnPropertyChanged;
 
         GC.SuppressFinalize(this);
@@ -480,6 +557,9 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
 
 public partial class AssistantChatGroupViewModel : ObservableObject
 {
+    /// <summary>Stable key used to preserve expand/collapse state across rebuilds (date: or state: prefixed).</summary>
+    public string? GroupKey { get; init; }
+
     [ObservableProperty]
     private HistoryDateBucket _bucket;
 
@@ -487,7 +567,7 @@ public partial class AssistantChatGroupViewModel : ObservableObject
     private string _displayName = string.Empty;
 
     [ObservableProperty]
-    private ObservableCollection<SyncAssistantChat> _items = new();
+    private ObservableCollection<AssistantChatRowViewModel> _items = new();
 
     [ObservableProperty]
     private int _itemCount;

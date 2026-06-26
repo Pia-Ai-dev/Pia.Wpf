@@ -15,6 +15,7 @@ public interface IWindowManagerService
     void ShowWindowWithText(WindowMode mode, string text);
     void ShowWindowWithSelection(WindowMode mode, string capturedText);
     void ShowResearchHistoryWithEntry(Guid entryId);
+    void ShowAssistantChat(Guid chatId);
     void ShowFirstRunWizard();
     void HideWindow(WindowMode mode);
     void HideAllWindows();

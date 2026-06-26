@@ -99,6 +99,9 @@
   <data name="AssistantChat_Flyout_NewChat" xml:space="preserve"><value>Nouveau chat</value></data>
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Afficher tous les chats…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Aucun chat pour l'instant.</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Dossier de travail pour ce chat</value></data>
+  <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>Tous les fichiers</value></data>
+  <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>Aucun sous-dossier ici.</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Rechercher des chats…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>Aucun résultat</value></data>
   <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ pour naviguer · Entrée pour reprendre · Échap pour fermer</value></data>
@@ -236,6 +239,24 @@
   <data name="Notification_ScheduledResearchInApp" xml:space="preserve"><value>Briefing planifié « {0} » est prêt</value></data>
   <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Échec du briefing planifié</value></data>
   <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>« {0} » n'a pas pu s'exécuter — voir l'historique pour plus de détails</value></data>
+
+  <!-- Background assistant chats: per-chat state + notifications -->
+  <data name="ChatState_Idle" xml:space="preserve"><value>Inactif</value></data>
+  <data name="ChatState_Running" xml:space="preserve"><value>En cours</value></data>
+  <data name="ChatState_WaitingForTool" xml:space="preserve"><value>En attente de confirmation</value></data>
+  <data name="ChatState_Completed" xml:space="preserve"><value>Terminé</value></data>
+  <data name="ChatState_Error" xml:space="preserve"><value>Erreur</value></data>
+  <data name="ChatState_Group_Idle" xml:space="preserve"><value>Inactif</value></data>
+  <data name="ChatState_Group_Running" xml:space="preserve"><value>En cours</value></data>
+  <data name="ChatState_Group_WaitingForTool" xml:space="preserve"><value>En attente de confirmation</value></data>
+  <data name="ChatState_Group_Completed" xml:space="preserve"><value>Terminés</value></data>
+  <data name="ChatState_Group_Error" xml:space="preserve"><value>En erreur</value></data>
+  <data name="AssistantHistory_StateFilter_All" xml:space="preserve"><value>Tous les états</value></data>
+  <data name="Notification_BackgroundChat_Title" xml:space="preserve"><value>Mise à jour d'un chat en arrière-plan</value></data>
+  <data name="Notification_BackgroundChat_WaitingForTool" xml:space="preserve"><value>« {0} » nécessite votre confirmation</value></data>
+  <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>« {0} » est terminé</value></data>
+  <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>« {0} » a rencontré une erreur</value></data>
+  <data name="Notification_OpenChat" xml:space="preserve"><value>Ouvrir le chat</value></data>
 
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>Mot-clé PII ajouté</value></data>

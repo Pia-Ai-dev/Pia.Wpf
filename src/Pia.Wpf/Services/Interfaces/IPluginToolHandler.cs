@@ -1,14 +1,17 @@
 using Microsoft.Extensions.AI;
+using Pia.Models;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Interfaces;
 
 public record PluginToolCall(
     string ToolName,
+    Guid PluginId,
     string PluginName,
     string Description,
     string? Details,
-    Func<Task<object?>> Execute);
+    Func<Task<object?>> Execute,
+    IReadOnlyList<DiffLine>? DiffPreview = null);
 
 public interface IPluginToolHandler
 {

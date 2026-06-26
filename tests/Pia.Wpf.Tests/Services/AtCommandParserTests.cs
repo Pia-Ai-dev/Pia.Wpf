@@ -296,6 +296,61 @@ public class AtCommandParserTests
         Assert.Equal("\"Favorite color\"", result);
     }
 
+    [Theory]
+    [InlineData("notes/todo.md")]   // forward-slash path (the @Files picker form)
+    [InlineData("notes\\todo.md")]  // backslash path
+    [InlineData("report.md")]       // single token with a dot
+    [InlineData("follow-up")]       // single token with a hyphen
+    public void FormatItemTitle_NonWordCharacters_AddsQuotes(string title)
+    {
+        // Anything that is not a bare \w+ token must be quoted so the extraction regex's
+        // quoted branch captures it whole — the unquoted branch only matches \w*.
+        var result = AtCommandParser.FormatItemTitle(title);
+        Assert.Equal($"\"{title}\"", result);
+    }
+
+    [Fact]
+    public void FormatItemTitle_FilePath_RoundTripsThroughExtraction()
+    {
+        // The behavior inserts "@Files:" + FormatItemTitle(displayText); extraction must
+        // recover the exact relative path.
+        var inserted = "@Files:" + AtCommandParser.FormatItemTitle("notes/todo.md") + " summarize this";
+
+        var commands = AtCommandParser.ExtractAllCommands(inserted);
+
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Files, commands[0].Domain);
+        Assert.Equal("notes/todo.md", commands[0].ItemTitle);
+    }
+
+    // --- Files domain ---
+
+    [Fact]
+    public void ExtractAllCommands_FilesDomainBare_ReturnsOneNoTitle()
+    {
+        var commands = AtCommandParser.ExtractAllCommands("@Files what is in my folder?");
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Files, commands[0].Domain);
+        Assert.Null(commands[0].ItemTitle);
+    }
+
+    [Fact]
+    public void ExtractAllCommands_FilesQuotedPath_ExtractsPath()
+    {
+        var commands = AtCommandParser.ExtractAllCommands("""@Files:"src/app/main.cs" add logging""");
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Files, commands[0].Domain);
+        Assert.Equal("src/app/main.cs", commands[0].ItemTitle);
+    }
+
+    [Fact]
+    public void ParseTriggerFragment_FilesExactDomain_ReturnsDomainNoFilter()
+    {
+        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Files");
+        Assert.Equal(AtCommandDomain.Files, domain);
+        Assert.Null(filter);
+    }
+
     // --- GetTriggerStartIndex ---
 
     [Fact]

@@ -8,32 +8,56 @@
              x:Name="Root">
   <StackPanel>
 
-    <!-- Markdown body (visible only when content present) -->
+    <!-- Awaiting-confirmation accent: left bar + soft fill while a card is pending.
+         Wraps bubble + cards so it survives an empty-content tool-call message.
+         AssistantBubbleStyle is Background=Transparent, so WarnSoftBrush shows through. -->
     <Border>
       <Border.Style>
-        <Style TargetType="Border" BasedOn="{StaticResource AssistantBubbleStyle}">
+        <Style TargetType="Border">
+          <Setter Property="BorderThickness" Value="0" />
+          <Setter Property="Background" Value="Transparent" />
+          <Setter Property="Padding" Value="0" />
+          <Setter Property="CornerRadius" Value="{StaticResource SmallRadius}" />
           <Style.Triggers>
-            <DataTrigger Binding="{Binding HasContent}" Value="False">
-              <Setter Property="Visibility" Value="Collapsed" />
+            <DataTrigger Binding="{Binding HasPendingConfirmation}" Value="True">
+              <Setter Property="BorderThickness" Value="3,0,0,0" />
+              <Setter Property="BorderBrush" Value="{DynamicResource WarnBrush}" />
+              <Setter Property="Background" Value="{DynamicResource WarnSoftBrush}" />
+              <Setter Property="Padding" Value="8" />
             </DataTrigger>
           </Style.Triggers>
         </Style>
       </Border.Style>
-      <controls:MarkdownMessageControl x:Name="Markdown"
-                                       MarkdownText="{Binding Content}"
-                                       IsStreaming="{Binding IsStreaming}"
-                                       AddToPiiRequested="Markdown_AddToPiiRequested" />
-    </Border>
+      <StackPanel>
 
-    <!-- Inline action cards (existing behavior) -->
-    <ItemsControl ItemsSource="{Binding ActionCards}" Margin="0,6,0,0"
-                  Visibility="{Binding HasActionCards, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <ItemsControl.ItemTemplate>
-        <DataTemplate>
-          <controls:ActionCardControl />
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+        <!-- Markdown body (visible only when content present) -->
+        <Border>
+          <Border.Style>
+            <Style TargetType="Border" BasedOn="{StaticResource AssistantBubbleStyle}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding HasContent}" Value="False">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <controls:MarkdownMessageControl x:Name="Markdown"
+                                           MarkdownText="{Binding Content}"
+                                           IsStreaming="{Binding IsStreaming}"
+                                           AddToPiiRequested="Markdown_AddToPiiRequested" />
+        </Border>
+
+        <!-- Inline action cards (existing behavior) -->
+        <ItemsControl ItemsSource="{Binding ActionCards}" Margin="0,6,0,0"
+                      Visibility="{Binding HasActionCards, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <controls:ActionCardControl />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
 
     <!-- Sources -->
     <ItemsControl ItemsSource="{Binding Sources}" Margin="0,10,0,0"

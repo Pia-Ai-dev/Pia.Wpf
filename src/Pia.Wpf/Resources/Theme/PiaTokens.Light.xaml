@@ -24,6 +24,7 @@
   <Color x:Key="SuccessColor">#FF0F8662</Color>
   <Color x:Key="SuccessSoftColor">#FFE6F4EF</Color>
   <Color x:Key="DangerColor">#FFE11D48</Color>
+  <Color x:Key="DangerSoftColor">#FFFFE4E6</Color>
   <Color x:Key="WarnColor">#FFB45309</Color>
   <Color x:Key="WarnSoftColor">#FFFEF3C7</Color>
 
@@ -71,6 +72,7 @@
   <SolidColorBrush x:Key="PiaSuccessBrush"      Color="{StaticResource SuccessColor}"/>
   <SolidColorBrush x:Key="SuccessSoftBrush"     Color="{StaticResource SuccessSoftColor}"/>
   <SolidColorBrush x:Key="PiaDangerBrush"       Color="{StaticResource DangerColor}"/>
+  <SolidColorBrush x:Key="DangerSoftBrush"      Color="{StaticResource DangerSoftColor}"/>
   <SolidColorBrush x:Key="WarnBrush"            Color="{StaticResource WarnColor}"/>
   <SolidColorBrush x:Key="WarnSoftBrush"        Color="{StaticResource WarnSoftColor}"/>
 

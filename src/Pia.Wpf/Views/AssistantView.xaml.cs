@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using Pia.Behaviors;
 using Pia.Helpers;
 using Pia.Models;
@@ -142,6 +143,19 @@ public partial class AssistantView : UserControl
 
     private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Ctrl+V with an image on the clipboard: attach it instead of pasting nothing useful
+        // into the text box. Checked before the popup early-return so paste works regardless.
+        if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (TryGetClipboardImage(out var image) && ViewModel is not null)
+            {
+                e.Handled = true; // suppress the default (text) paste
+                if (ViewModel.HandleImagePastedCommand.CanExecute(image))
+                    ViewModel.HandleImagePastedCommand.Execute(image);
+                return;
+            }
+        }
+
         // Let the autocomplete popup handle Enter/Escape when it's open
         if (AtCommandPopup.IsOpen)
             return;
@@ -163,6 +177,23 @@ public partial class AssistantView : UserControl
             }
         }
         // Shift+Enter: default behavior (newline) — no handling needed
+    }
+
+    private static bool TryGetClipboardImage(out BitmapSource? image)
+    {
+        image = null;
+        try
+        {
+            if (!Clipboard.ContainsImage()) return false;
+            image = Clipboard.GetImage();
+            return image is not null;
+        }
+        catch
+        {
+            // Clipboard access is best-effort: it can be locked by another process or hold a
+            // malformed image. Fall back to the default text paste rather than throwing.
+            return false;
+        }
     }
 
     private void OnAddToPiiRequested(object? sender, PiiKeywordRequest request)

@@ -32,6 +32,10 @@ public class ColumnsPanel : Panel
         nameof(RowSpacing), typeof(double), typeof(ColumnsPanel),
         new FrameworkPropertyMetadata(8.0, FrameworkPropertyMetadataOptions.AffectsMeasure));
 
+    public static readonly DependencyProperty UniformRowHeightProperty = DependencyProperty.Register(
+        nameof(UniformRowHeight), typeof(bool), typeof(ColumnsPanel),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsMeasure));
+
     /// <summary>Maximum number of columns to ever produce, however wide the panel gets.</summary>
     public int MaxColumns
     {
@@ -58,6 +62,17 @@ public class ColumnsPanel : Panel
     {
         get => (double)GetValue(RowSpacingProperty);
         set => SetValue(RowSpacingProperty, value);
+    }
+
+    /// <summary>
+    /// When <c>true</c>, items are laid out row-major in a true grid and every item in a row is
+    /// stretched to the height of the tallest item in that row, so each row has a uniform height.
+    /// When <c>false</c> (default), items pack into the shortest column (masonry).
+    /// </summary>
+    public bool UniformRowHeight
+    {
+        get => (bool)GetValue(UniformRowHeightProperty);
+        set => SetValue(UniformRowHeightProperty, value);
     }
 
     private int ResolveColumnCount(double availableWidth)
@@ -87,6 +102,9 @@ public class ColumnsPanel : Panel
         var columnWidth = ResolveColumnWidth(availableSize.Width, columns);
         var rowSpacing = Math.Max(0, RowSpacing);
 
+        if (UniformRowHeight)
+            return MeasureUniform(availableSize, columns, columnWidth, rowSpacing);
+
         var columnHeights = new double[columns];
         foreach (UIElement child in InternalChildren)
         {
@@ -114,6 +132,9 @@ public class ColumnsPanel : Panel
         var spacing = Math.Max(0, ColumnSpacing);
         var rowSpacing = Math.Max(0, RowSpacing);
 
+        if (UniformRowHeight)
+            return ArrangeUniform(finalSize, columns, columnWidth, spacing, rowSpacing);
+
         var columnHeights = new double[columns];
         foreach (UIElement child in InternalChildren)
         {
@@ -128,6 +149,72 @@ public class ColumnsPanel : Panel
             child.Arrange(new Rect(left, top, columnWidth, child.DesiredSize.Height));
             columnHeights[target] = top + child.DesiredSize.Height;
         }
+
+        return finalSize;
+    }
+
+    private Size MeasureUniform(Size availableSize, int columns, double columnWidth, double rowSpacing)
+    {
+        var rowHeight = 0.0;
+        var totalHeight = 0.0;
+        var rowCount = 0;
+        var inRow = 0;
+
+        foreach (UIElement child in InternalChildren)
+        {
+            if (child.Visibility == Visibility.Collapsed)
+                continue;
+
+            child.Measure(new Size(columnWidth, double.PositiveInfinity));
+            rowHeight = Math.Max(rowHeight, child.DesiredSize.Height);
+            if (++inRow == columns)
+            {
+                totalHeight += (rowCount++ > 0 ? rowSpacing : 0) + rowHeight;
+                rowHeight = 0;
+                inRow = 0;
+            }
+        }
+        if (inRow > 0)
+            totalHeight += (rowCount > 0 ? rowSpacing : 0) + rowHeight;
+
+        var totalWidth = double.IsInfinity(availableSize.Width)
+            ? columns * columnWidth + (columns - 1) * Math.Max(0, ColumnSpacing)
+            : availableSize.Width;
+        return new Size(totalWidth, totalHeight);
+    }
+
+    private Size ArrangeUniform(Size finalSize, int columns, double columnWidth, double spacing, double rowSpacing)
+    {
+        // Collect the visible children so a row can be arranged once its tallest member is known.
+        var row = new List<UIElement>(columns);
+        var top = 0.0;
+        var firstRow = true;
+
+        void ArrangeRow()
+        {
+            var rowHeight = 0.0;
+            foreach (var item in row)
+                rowHeight = Math.Max(rowHeight, item.DesiredSize.Height);
+            if (!firstRow)
+                top += rowSpacing;
+            for (var col = 0; col < row.Count; col++)
+                row[col].Arrange(new Rect(col * (columnWidth + spacing), top, columnWidth, rowHeight));
+            top += rowHeight;
+            firstRow = false;
+            row.Clear();
+        }
+
+        foreach (UIElement child in InternalChildren)
+        {
+            if (child.Visibility == Visibility.Collapsed)
+                continue;
+
+            row.Add(child);
+            if (row.Count == columns)
+                ArrangeRow();
+        }
+        if (row.Count > 0)
+            ArrangeRow();
 
         return finalSize;
     }

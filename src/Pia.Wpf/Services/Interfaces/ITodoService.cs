@@ -10,6 +10,15 @@ public interface ITodoService
     Task<TodoItem?> GetAsync(Guid id);
     Task<IReadOnlyList<TodoItem>> GetAllAsync();
     Task<IReadOnlyList<TodoItem>> GetPendingAsync();
+
+    /// <summary>
+    /// Pending todos whose <see cref="TodoItem.DueDate"/> falls at or before now + <paramref name="window"/>
+    /// (including overdue). Filtering is done in C# after parsing — never by a SQL string comparison — because
+    /// DueDate is local-midnight with no offset while other timestamps carry one, so a lexicographic <c>&lt;=</c>
+    /// would mismatch formats (design §7, §11).
+    /// </summary>
+    Task<IReadOnlyList<TodoItem>> GetDueWithinAsync(TimeSpan window);
+
     Task<IReadOnlyList<TodoItem>> GetCompletedAsync();
     Task<IReadOnlyList<TodoItem>> GetCompletedTodayAsync();
     Task<int> GetPendingCountAsync();

@@ -14,14 +14,19 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 {
     private readonly ILocalizationService _localizationService;
     private readonly ITokenMapService _tokenMapService;
+    private readonly IToolPermissionService _permissions;
 
-    public ActionCardBuilder(ILocalizationService localizationService, ITokenMapService tokenMapService)
+    public ActionCardBuilder(
+        ILocalizationService localizationService,
+        ITokenMapService tokenMapService,
+        IToolPermissionService permissions)
     {
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
+        _permissions = permissions;
     }
 
-    public ActionCardInfo Build(PluginToolCall pendingAction, bool detokenize)
+    public ActionCardInfo Build(PluginToolCall pendingAction, bool detokenize, bool autoApproved = false)
     {
         var category = pendingAction.PluginName switch
         {
@@ -44,24 +49,57 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             _ => null
         } : null;
 
-        var details = pendingAction.Details is not null
-            ? pendingAction.PluginName == "memory"
-                ? new(DetokenizeDetails(JsonHelper.ParseToDetails(pendingAction.Details), detokenize))
-                : new(DetokenizeDetails(JsonHelper.ParseKeyValueText(pendingAction.Details), detokenize))
-            : new ObservableCollection<ActionCardDetail>();
+        // Files write_file carries a true line-level diff preview that bypasses the Label/Value
+        // ParseKeyValueText path used for every other plugin. The card renders DiffLines instead.
+        var isFilesDiff = category == ActionCardCategory.Files && pendingAction.DiffPreview is { Count: > 0 };
 
-        return new ActionCardInfo
+        var details = new ObservableCollection<ActionCardDetail>();
+        if (!isFilesDiff && pendingAction.Details is not null)
         {
-            Title = FormatToolTitle(pendingAction.ToolName, category),
+            // Memory carries structured JSON detail; every other plugin uses key/value text.
+            var parsed = pendingAction.PluginName == "memory"
+                ? JsonHelper.ParseToDetails(pendingAction.Details)
+                : JsonHelper.ParseKeyValueText(pendingAction.Details);
+            details = new ObservableCollection<ActionCardDetail>(DetokenizeDetails(parsed, detokenize));
+        }
+
+        var diffLines = isFilesDiff
+            ? new ObservableCollection<DiffLine>(
+                pendingAction.DiffPreview!.Select(d =>
+                    new DiffLine(d.Kind, detokenize ? _tokenMapService.Detokenize(d.Text) : d.Text)))
+            : new ObservableCollection<DiffLine>();
+
+        var title = FormatToolTitle(pendingAction.ToolName, category);
+
+        var card = new ActionCardInfo
+        {
+            Title = title,
             Summary = Detokenize(pendingAction.Description, detokenize),
             Category = category,
             ToolName = pendingAction.ToolName,
+            PluginId = pendingAction.PluginId,
+            IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName),
+            IsAutoApproved = autoApproved,
             IsDestructive = isDelete,
             WarningText = warningText,
             Details = details,
-            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", FormatToolTitle(pendingAction.ToolName, category)),
-            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", FormatToolTitle(pendingAction.ToolName, category)),
+            DiffLines = diffLines,
+            AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", title),
+            DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", title),
+            AutoApprovedStatusText = _localizationService.Format("ActionCard_AutoApproved", title),
+            DeclineLabel = _localizationService["ActionCard_Decline"],
+            AllowOnceLabel = _localizationService["ActionCard_AllowOnce"],
+            AlwaysAllowLabel = _localizationService["ActionCard_AlwaysAllow"],
         };
+
+        // [ObservableProperty]-generated State is not init-settable; the auto-approved
+        // bypass card is returned pre-resolved (design §4/§7).
+        if (autoApproved)
+        {
+            card.State = ActionCardState.Accepted;
+        }
+
+        return card;
     }
 
     public string ResolveStatusText(string toolName) => toolName switch
