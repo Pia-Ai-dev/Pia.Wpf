@@ -49,4 +49,15 @@ public interface IMeetingSession : IAsyncDisposable
     /// browser. Safe to call once; further teardown is handled by <see cref="IAsyncDisposable"/>.
     /// </summary>
     Task LeaveAsync();
+
+    /// <summary>
+    /// Best-effort read of the participant names currently shown in the meeting's "People" roster.
+    /// Returns an empty list on any failure (panel not open, selector miss, page navigating, not yet
+    /// admitted) — reading the roster must NEVER fail the meeting. Safe to call repeatedly while
+    /// attending; the orchestrator polls it on a cadence and accumulates the union of names seen.
+    /// Implementations must serialize this against their own page polling (e.g.
+    /// <see cref="WaitForEndAsync"/>), since the underlying browser page does not allow concurrent
+    /// operations.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetAttendeeNamesAsync(CancellationToken cancellationToken = default);
 }

@@ -56,6 +56,16 @@ public interface IMeetingAttendeeService
     ChannelReader<TranscriptUtterance> Utterances { get; }
 
     /// <summary>
+    /// The union of participant names observed in the Teams roster during the current (or most recent)
+    /// meeting, in first-seen order and excluding the attendee's own display name. Accumulated from
+    /// periodic roster snapshots (cadence from <see cref="AppSettings.MeetingAttendeeRosterSnapshotMinutes"/>)
+    /// and surfaced as metadata for the post-meeting summary so the model can attribute the diarized
+    /// "Speaker N" labels to real people. Empty when snapshots are disabled or none were captured;
+    /// reset on each <see cref="StartAsync"/>, retained after stop until the next start.
+    /// </summary>
+    IReadOnlyCollection<string> ObservedAttendees { get; }
+
+    /// <summary>
     /// Provisions the browser, joins <paramref name="meetingUrl"/> as the user's assistant, and starts
     /// capturing + transcribing the meeting audio. Returns once the bot is in the meeting
     /// (<see cref="MeetingAttendeeState.Attending"/>); the meeting then runs in the background until it

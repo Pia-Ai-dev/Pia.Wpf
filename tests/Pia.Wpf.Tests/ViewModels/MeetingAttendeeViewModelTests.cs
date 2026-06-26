@@ -567,6 +567,42 @@ public class MeetingAttendeeViewModelTests
     }
 
     [Fact]
+    public void Summarize_IncludesObservedAttendees_InPrompt()
+    {
+        // The roster the service accumulated is injected into the summary prompt (after a localized
+        // lead-in) so the assistant can attribute the diarized speakers to real names.
+        var (vm, service) = CreateSut();
+        service.ObservedAttendees = new[] { "Marco Altmann", "Jane Doe" };
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+
+        string? captured = null;
+        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+
+        vm.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.NotNull(captured);
+        Assert.Contains("Marco Altmann", captured);
+        Assert.Contains("Jane Doe", captured);
+        // The localized lead-in key is echoed back by the fake localization service.
+        Assert.Contains("MeetingAttendee_SummaryPrompt_Attendees", captured);
+    }
+
+    [Fact]
+    public void Summarize_OmitsAttendeesSection_WhenNoneObserved()
+    {
+        var (vm, _) = CreateSut();
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+
+        string? captured = null;
+        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+
+        vm.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.NotNull(captured);
+        Assert.DoesNotContain("MeetingAttendee_SummaryPrompt_Attendees", captured);
+    }
+
+    [Fact]
     public void Summarize_NoOp_WhenEmpty()
     {
         var (vm, _) = CreateSut();
@@ -655,6 +691,8 @@ public class MeetingAttendeeViewModelTests
         public MeetingAttendeeState State { get; private set; } = MeetingAttendeeState.Idle;
         public event EventHandler<MeetingAttendeeState>? StateChanged;
         public ChannelReader<TranscriptUtterance> Utterances => _channel.Reader;
+
+        public IReadOnlyCollection<string> ObservedAttendees { get; set; } = Array.Empty<string>();
 
         public string? LastStartUrl { get; private set; }
         public int StartCount { get; private set; }

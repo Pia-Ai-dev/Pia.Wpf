@@ -84,6 +84,18 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     private Task? _watchLoop;
     private CancellationTokenSource? _watchCts;
 
+    // The background loop that periodically snapshots the Teams roster and accumulates the union of
+    // names into _attendees (read back by the ViewModel for the summary prompt). Own CTS, cancelled by
+    // StopAsync and awaited by DisposeAsync, mirroring the end-watch loop. Null when roster snapshots
+    // are disabled (interval <= 0) or before a meeting starts.
+    private Task? _rosterLoop;
+    private CancellationTokenSource? _rosterCts;
+
+    // Union of roster names seen this meeting, first-seen order, bot's own name excluded. Guarded by its
+    // own lock (mutated on the roster loop, read on the UI thread via ObservedAttendees). Cleared per start.
+    private readonly object _attendeesLock = new();
+    private readonly List<string> _attendees = new();
+
     // Cancels the active StartAsync. Linked to the caller's token so Stop can abort the join even when
     // the caller passed CancellationToken.None (the VM and tests do). Without this, the long-lived join
     // (WaitForAdmissionAsync polls up to 120s) would race a concurrent Stop/teardown.
@@ -97,6 +109,11 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     public event EventHandler<MeetingAttendeeState>? StateChanged;
 
     public ChannelReader<TranscriptUtterance> Utterances => _utterances.Reader;
+
+    public IReadOnlyCollection<string> ObservedAttendees
+    {
+        get { lock (_attendeesLock) return _attendees.ToArray(); }
+    }
 
     /// <summary>Production constructor (used by DI). Wires default seams over the real dependencies.</summary>
     public MeetingAttendeeService(
@@ -205,6 +222,9 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         _startCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var startToken = _startCts.Token;
 
+        // Fresh roster per meeting: discard any names retained from the previous one.
+        lock (_attendeesLock) _attendees.Clear();
+
         TransitionState(MeetingAttendeeState.ProvisioningBrowser);
 
         try
@@ -290,6 +310,17 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             _watchCts?.Dispose();
             _watchCts = new CancellationTokenSource();
             _watchLoop = Task.Run(() => WatchForEndAsync(session, _watchCts.Token));
+
+            // 6) Background roster snapshots: accumulate the participant names so the post-meeting summary
+            //    can attribute the diarized speakers. Best-effort and entirely separable from transcription —
+            //    disabled when the interval is <= 0. Own CTS (cancelled by StopAsync, awaited by DisposeAsync).
+            if (settings.MeetingAttendeeRosterSnapshotMinutes > 0)
+            {
+                var interval = TimeSpan.FromMinutes(settings.MeetingAttendeeRosterSnapshotMinutes);
+                _rosterCts?.Dispose();
+                _rosterCts = new CancellationTokenSource();
+                _rosterLoop = Task.Run(() => PollRosterAsync(session, displayName, interval, _rosterCts.Token));
+            }
         }
         catch (OperationCanceledException) when (startToken.IsCancellationRequested)
         {
@@ -337,6 +368,10 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             // Cancel the background watch loop so it does not re-enter StopAsync. We do NOT await it
             // here: the loop may itself be the caller, and awaiting would deadlock. DisposeAsync awaits.
             _watchCts?.Cancel();
+
+            // Cancel the roster-snapshot loop too (it never re-enters StopAsync, but cancelling here stops
+            // further page reads promptly before LeaveAsync/teardown closes the browser). DisposeAsync awaits it.
+            _rosterCts?.Cancel();
 
             // Stop capture first so the engine's reader loop drains naturally, then leave the meeting.
             if (_audioSource is not null)
@@ -475,6 +510,92 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     /// <c>_lock</c> the speaker-identification service holds.
     /// </summary>
     public void RenameSpeaker(string oldLabel, string newLabel) => _speakerId?.Rename(oldLabel, newLabel);
+
+    /// <summary>
+    /// Periodically snapshots the meeting roster (an immediate first snapshot, then every
+    /// <paramref name="interval"/>) and folds each into <see cref="_attendees"/>. Best-effort: a failed
+    /// snapshot is logged at Debug and the loop continues; cancellation ends it cleanly. Never throws into
+    /// the caller, so it cannot affect the meeting.
+    /// </summary>
+    private async Task PollRosterAsync(
+        IMeetingSession session, string botDisplayName, TimeSpan interval, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                var names = await session.GetAttendeeNamesAsync(token).ConfigureAwait(false);
+                if (names is { Count: > 0 })
+                    AccumulateAttendees(names, botDisplayName);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Don't log the names (sensitive); only that a snapshot failed.
+                _logger.LogDebug(ex, "Roster snapshot failed; will retry on the next interval");
+            }
+
+            try
+            {
+                await Task.Delay(interval, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Folds a snapshot of names into the accumulated union: trims, drops blanks, excludes the attendee's
+    /// own display name, and de-duplicates case-insensitively while preserving first-seen order.
+    /// </summary>
+    private void AccumulateAttendees(IReadOnlyList<string> names, string botDisplayName)
+    {
+        lock (_attendeesLock)
+        {
+            foreach (var raw in names)
+            {
+                var name = CleanAttendeeName(raw);
+                if (string.IsNullOrEmpty(name)) continue;
+                if (string.Equals(name, botDisplayName, StringComparison.OrdinalIgnoreCase)) continue;
+                if (_attendees.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase))) continue;
+                _attendees.Add(name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Normalizes a raw roster string to a bare display name. Teams renders self/status suffixes the
+    /// row extractor cannot always strip — "Alex's assistant (You)", "Marco, Organizer", "Jane (Guest)".
+    /// Takes the first line, then drops a trailing parenthetical and everything from the first comma, so
+    /// the bot's own row collapses back to its plain display name (and is then excluded by equality) and
+    /// real names don't carry trailing status text. Pure + internal so it can be unit-tested without a DOM.
+    /// </summary>
+    internal static string CleanAttendeeName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+
+        var name = raw.Trim();
+
+        // First line only (a row's text node can stack "Name\nMuted\nOrganizer").
+        var newline = name.IndexOfAny(['\r', '\n']);
+        if (newline >= 0) name = name[..newline];
+
+        // Everything from the first comma is status/role ("Marco, Organizer, Muted").
+        var comma = name.IndexOf(',');
+        if (comma >= 0) name = name[..comma];
+        name = name.Trim();
+
+        // A trailing parenthetical is a status marker ("(You)", "(Guest)", "(External)").
+        var paren = name.LastIndexOf('(');
+        if (paren >= 0 && name.EndsWith(')')) name = name[..paren];
+
+        return name.Trim();
+    }
 
     private async Task WatchForEndAsync(IMeetingSession session, CancellationToken token)
     {
@@ -676,9 +797,21 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             catch (Exception ex) { _logger.LogWarning(ex, "End-watch loop fault on dispose"); }
         }
 
+        // Same for the roster-snapshot loop: StopAsync (called above) cancelled its CTS, so awaiting it
+        // here is safe — it never re-enters StopAsync.
+        var rosterLoop = _rosterLoop;
+        if (rosterLoop is not null)
+        {
+            try { await rosterLoop.ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Roster-snapshot loop fault on dispose"); }
+        }
+
         _watchCts?.Dispose();
         _watchCts = null;
         _watchLoop = null;
+        _rosterCts?.Dispose();
+        _rosterCts = null;
+        _rosterLoop = null;
 
         // Dispose the start CTS here (not in StopAsync, where a still-running StartAsync may read its
         // token) and the teardown gate now that no further DisposeAllAsync can run.

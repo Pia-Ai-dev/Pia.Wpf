@@ -155,6 +155,122 @@ public sealed class MeetingAttendeeServiceStateTests
         await fx.Service.DisposeAsync();
     }
 
+    // ---- roster snapshots -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task RosterSnapshots_AccumulateObservedAttendees_ExcludingBotName()
+    {
+        var fx = new Fixture();
+        // Bot joins as "Alex's assistant"; roster also lists it, which must be filtered out.
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            SyncUserDisplayName = "Alex",
+            MeetingAttendeeRosterSnapshotMinutes = 1,
+        });
+        fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(
+                new[] { "Marco Altmann", "Jane Doe", "Alex's assistant" }));
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+
+        // The first snapshot fires immediately on the background roster loop; wait for it to land.
+        await WaitForAttendeesAsync(fx.Service, 2);
+
+        var attendees = fx.Service.ObservedAttendees;
+        Assert.Contains("Marco Altmann", attendees);
+        Assert.Contains("Jane Doe", attendees);
+        Assert.DoesNotContain("Alex's assistant", attendees);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RosterSnapshots_Disabled_WhenIntervalNotPositive()
+    {
+        var fx = new Fixture();
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings { MeetingAttendeeRosterSnapshotMinutes = 0 });
+        fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(new[] { "Marco Altmann" }));
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+        // Give any (erroneously-started) loop a chance to run before asserting it didn't.
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.Empty(fx.Service.ObservedAttendees);
+        await fx.Session.DidNotReceive().GetAttendeeNamesAsync(Arg.Any<CancellationToken>());
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ObservedAttendees_RetainedAfterStop_ResetOnNextStart()
+    {
+        var fx = new Fixture();
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings { MeetingAttendeeRosterSnapshotMinutes = 1 });
+        fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(new[] { "Marco Altmann" }));
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+        await WaitForAttendeesAsync(fx.Service, 1);
+        await fx.Service.StopAsync(TestContext.Current.CancellationToken);
+        // Retained after stop, until the next start (the post-meeting summary still needs it).
+        Assert.Contains("Marco Altmann", fx.Service.ObservedAttendees);
+
+        // A new meeting with a different roster: the start clears the prior names (synchronously, before
+        // the first new snapshot), so the old name must be gone once the new one lands.
+        fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(new[] { "Sven K." }));
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+        await WaitForAttendeesAsync(fx.Service, 1);
+
+        Assert.Contains("Sven K.", fx.Service.ObservedAttendees);
+        Assert.DoesNotContain("Marco Altmann", fx.Service.ObservedAttendees);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData("Marco Altmann", "Marco Altmann")]
+    [InlineData("  Marco Altmann  ", "Marco Altmann")]
+    [InlineData("Marco, Organizer", "Marco")]
+    [InlineData("Marco\nMuted\nOrganizer", "Marco")]
+    [InlineData("Jane (Guest)", "Jane")]
+    [InlineData("Alex's assistant (You)", "Alex's assistant")]
+    [InlineData("Marco, Organizer, Muted", "Marco")]
+    [InlineData(null, "")]
+    [InlineData("   ", "")]
+    public void CleanAttendeeName_StripsStatusSuffixes(string? raw, string expected)
+    {
+        Assert.Equal(expected, MeetingAttendeeService.CleanAttendeeName(raw));
+    }
+
+    [Fact]
+    public async Task RosterSnapshots_ExcludeBot_EvenWithSelfSuffix()
+    {
+        // Teams renders the self row as "<name> (You)"; after cleaning it collapses to the bot's plain
+        // display name and must be excluded just like an exact match.
+        var fx = new Fixture();
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            SyncUserDisplayName = "Alex",
+            MeetingAttendeeRosterSnapshotMinutes = 1,
+        });
+        fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(
+                new[] { "Alex's assistant (You)", "Marco, Organizer" }));
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+        await WaitForAttendeesAsync(fx.Service, 1);
+
+        var attendees = fx.Service.ObservedAttendees;
+        Assert.Contains("Marco", attendees);
+        Assert.DoesNotContain("Alex's assistant", attendees);
+        Assert.DoesNotContain("Alex's assistant (You)", attendees);
+
+        await fx.Service.DisposeAsync();
+    }
+
     // ---- error path -----------------------------------------------------------------------------
 
     [Fact]
@@ -575,6 +691,16 @@ public sealed class MeetingAttendeeServiceStateTests
             await Task.Delay(10);
         }
         Assert.Equal(target, service.State);
+    }
+
+    private static async Task WaitForAttendeesAsync(IMeetingAttendeeService service, int atLeast)
+    {
+        for (var i = 0; i < 200 && service.ObservedAttendees.Count < atLeast; i++)
+        {
+            await Task.Delay(10);
+        }
+        Assert.True(service.ObservedAttendees.Count >= atLeast,
+            $"Expected at least {atLeast} observed attendees, saw {service.ObservedAttendees.Count}.");
     }
 
     /// <summary>

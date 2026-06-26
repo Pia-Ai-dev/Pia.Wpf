@@ -133,6 +133,12 @@ public class AppSettings
     // Local-only (no SyncSettings mirror).
     public float MeetingMinSpeechSeconds { get; set; } = 1.5f;
 
+    // How often (minutes) the meeting attendee snapshots the Teams participant roster while attending.
+    // The accumulated union of names is handed to the "Summarize with assistant" prompt as metadata so
+    // the model can attribute the diarized "Speaker N" labels to real people. 0 (or negative) disables
+    // roster snapshots entirely. Best-effort: a roster miss never affects the meeting. Local-only.
+    public int MeetingAttendeeRosterSnapshotMinutes { get; set; } = 2;
+
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 

@@ -91,4 +91,5 @@
   <data name="MeetingAttendee_Requirements_Background" xml:space="preserve"><value>•  Während der Teilnahme führt Pia im Hintergrund einen mitgelieferten Browser und einen Node-basierten Automatisierungshelfer aus – beide sind in Pia enthalten, eine separate Installation ist nicht nötig.</value></data>
   <data name="MeetingAttendee_Summarize" xml:space="preserve"><value>Mit Assistent zusammenfassen</value></data>
   <data name="MeetingAttendee_SummaryPrompt" xml:space="preserve"><value>Bitte fasse das folgende Meeting-Transkript zusammen. Deine Meeting-Teilnahme-Funktion ist in meinem Namen als "{0}" einem Microsoft-Teams-Meeting beigetreten und hat es am {1} lokal transkribiert. Gib einen kurzen Überblick, die wichtigsten Diskussionspunkte, getroffene Entscheidungen und etwaige Aufgaben mit den jeweiligen Verantwortlichen, sofern genannt.</value></data>
+  <data name="MeetingAttendee_SummaryPrompt_Attendees" xml:space="preserve"><value>Im Meeting gesehene Teilnehmer (nutze diese Namen, um die Sprecher zuzuordnen, die im Transkript als „Speaker 1“, „Speaker 2“ usw. erscheinen):</value></data>
 </root>

@@ -53,6 +53,75 @@ public sealed class TeamsMeetingSession : IMeetingSession
     private const string LobbyText = "Someone will let you in shortly";
     /// <summary>Fluent UI (Northstar) modal backdrop that can layer over the prejoin screen.</summary>
     private const string DialogOverlaySelector = ".ui-dialog__overlay";
+    /// <summary>
+    /// Button inside the "Are you sure you don't want audio or video?" (get-user-media) modal the Teams
+    /// web prejoin shows when the bot grants no mic/camera permission. Clicking it dismisses the modal
+    /// and lets the join proceed. Verified against the live DOM (2026-06-26): the modal does NOT close on
+    /// Escape, which is why the prior Escape-only dismissal left the <see cref="DialogOverlaySelector"/>
+    /// scrim intercepting the "Join now" click. <c>data-focus-target</c> is stable across the localized
+    /// button label.
+    /// </summary>
+    private const string GumContinueSelector = "button[data-focus-target=\"gum-continue\"]";
+
+    // ---- Roster (participant list) ----------------------------------------------------------------
+    /// <summary>
+    /// Candidate selectors for the toggle that opens the "People" roster panel. Joined with commas so
+    /// Playwright matches the first that exists; the Teams web client has renamed this control across
+    /// versions (legacy <c>#roster-button</c>, newer aria-labelled buttons). UNVERIFIED in this
+    /// environment — refined from the DEBUG roster-DOM sample logged on the first read.
+    /// </summary>
+    private const string RosterButtonSelector =
+        "#roster-button, button[data-tid=\"roster-button\"], " +
+        "button[aria-label*=\"People\" i], button[aria-label*=\"participant\" i]";
+    /// <summary>
+    /// Selector matching a single roster row; used only to detect that the panel is populated. The
+    /// verified person-row marker is <c>[data-tid^="attendeesInMeeting-..."]</c>; <c>[role="treeitem"]</c>
+    /// is kept as a looser fallback (it also matches the "In this meeting (N)" section-header row, so it
+    /// is used only for the populated-check, never for name extraction).
+    /// </summary>
+    private const string RosterItemSelector = "[data-tid^=\"attendeesInMeeting-\"], [role=\"treeitem\"]";
+
+    /// <summary>
+    /// In-page extractor for the visible roster names. Tries a few row selectors in priority order and,
+    /// per row, prefers an explicit title node, then the row's aria-label, then its text — taking the
+    /// first line so trailing status text ("Muted", role) is dropped. Returns a (possibly empty) string
+    /// array. Kept resilient to selector drift because the live DOM cannot be observed here.
+    /// </summary>
+    private const string RosterNamesScript = """
+        () => {
+          // Verified against the live Teams web roster (2026-06-26): each person row in the People panel
+          // is a [data-tid="attendeesInMeeting-<display name>"] element whose aria-label is
+          // "<name>, <role?>, <mute state>", so the name is the first comma-separated segment. The older
+          // roster-list-item / roster-list-title / participantStatesText selectors no longer exist.
+          let rows = Array.from(document.querySelectorAll('[data-tid^="attendeesInMeeting-"]'));
+          // Fallback when the panel is not open: the on-stage video tiles carry the display name as the
+          // data-tid of a node inside a [role="menuitem"]; filter out the non-name helper tids.
+          if (!rows.length) {
+            rows = Array.from(document.querySelectorAll('[role="menuitem"] [data-tid]'))
+              .filter(e => {
+                const t = e.getAttribute('data-tid') || '';
+                return t && !/^(participant-avatar|voice-level|ai-interpreter)/.test(t);
+              });
+          }
+          const names = [];
+          for (const r of rows) {
+            let name = '';
+            const aria = r.getAttribute('aria-label');
+            if (aria) name = aria.split(',')[0].trim();
+            if (!name) name = (r.getAttribute('data-tid') || '').replace(/^attendeesInMeeting-/, '').trim();
+            if (name) names.push(name);
+          }
+          return names;
+        }
+        """;
+
+    /// <summary>In-page capture of the roster region's markup, logged once (DEBUG) to refine the selectors.</summary>
+    private const string RosterDomScript = """
+        () => {
+          const panel = document.querySelector('[data-tid^="calling-roster"], [role="tree"], [data-tid="roster-list"]');
+          return panel ? panel.outerHTML : (document.body ? document.body.innerHTML.slice(0, 4000) : '');
+        }
+        """;
 
     // ---- Timeouts (ms) ----------------------------------------------------------------------
     private const float ContinueOnWebTimeoutMs = 30_000;
@@ -67,6 +136,15 @@ public sealed class TeamsMeetingSession : IMeetingSession
     private const float JoinNowClickTimeoutMs = 10_000;
     /// <summary>How long we wait for a dismissed prejoin dialog overlay to detach.</summary>
     private const float DialogDismissTimeoutMs = 2_000;
+    /// <summary>How long we wait for the roster panel to populate after clicking the People button.</summary>
+    private const float RosterOpenTimeoutMs = 5_000;
+    /// <summary>
+    /// How long we wait for the hangup control to detach after clicking it, confirming the call is
+    /// actually tearing down before we close the browser (so leaving never depends on an RTC timeout).
+    /// </summary>
+    private const float LeaveConfirmTimeoutMs = 5_000;
+    /// <summary>Per-step budget for closing the Playwright context/browser before killing the process tree.</summary>
+    private const int BrowserCloseTimeoutMs = 5_000;
 
     private readonly ILogger<TeamsMeetingSession> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -79,6 +157,16 @@ public sealed class TeamsMeetingSession : IMeetingSession
 
     private int? _browserProcessId;
     private bool _enteredLobbyRaised;
+    private bool _rosterDomLogged;
+
+    // Serializes all page access that can run concurrently once the meeting is live: WaitForEndAsync's
+    // 2 s hangup poll (on the orchestrator's watch loop), LeaveAsync's hangup probe, and
+    // GetAttendeeNamesAsync (on the orchestrator's roster-snapshot loop). Playwright forbids concurrent
+    // operations on one IPage, so without this the roster poll would intermittently collide with the
+    // hangup poll. Acquired per individual page op and released before any Task.Delay, so the long-lived
+    // poll never starves the roster read. Not disposed: its AvailableWaitHandle is never accessed, so it
+    // allocates no unmanaged handle, and skipping Dispose sidesteps a teardown race with an in-flight read.
+    private readonly SemaphoreSlim _pageGate = new(1, 1);
 
     public int? BrowserProcessId => _browserProcessId;
 
@@ -179,6 +267,9 @@ public sealed class TeamsMeetingSession : IMeetingSession
         while (!cancellationToken.IsCancellationRequested)
         {
             bool stillInCall;
+            // Hold the page gate only for the probe itself (released before the delay below) so the
+            // roster-snapshot loop can interleave its own page reads between iterations.
+            await _pageGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 stillInCall = await page.Locator(HangupButtonSelector)
@@ -186,10 +277,18 @@ public sealed class TeamsMeetingSession : IMeetingSession
                     .IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs })
                     .ConfigureAwait(false);
             }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "Hangup probe failed; treating meeting as ended");
                 return;
+            }
+            finally
+            {
+                _pageGate.Release();
             }
 
             if (!stillInCall)
@@ -214,24 +313,136 @@ public sealed class TeamsMeetingSession : IMeetingSession
         var page = _page;
         if (page is not null)
         {
+            // Serialize against the still-running hangup poll / roster snapshot before touching the page.
+            await _pageGate.WaitAsync().ConfigureAwait(false);
             try
             {
                 var hangup = page.Locator(HangupButtonSelector).First;
                 if (await hangup.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs })
                         .ConfigureAwait(false))
                 {
-                    await hangup.ClickAsync().ConfigureAwait(false);
+                    await hangup.ClickAsync(new LocatorClickOptions { Timeout = JoinNowClickTimeoutMs })
+                        .ConfigureAwait(false);
                     _logger.LogDebug("Clicked hangup to leave the meeting");
+
+                    // Clicking hangup leaves the call immediately (verified), so waiting for the control to
+                    // detach confirms the RTC session is being torn down. This keeps the actual "leave"
+                    // from depending on the browser-close path, which on a headed Chromium still in a live
+                    // call can block until an RTC timeout — the slow-leave symptom.
+                    try
+                    {
+                        await hangup.WaitForAsync(new LocatorWaitForOptions
+                        {
+                            State = WaitForSelectorState.Hidden,
+                            Timeout = LeaveConfirmTimeoutMs,
+                        }).ConfigureAwait(false);
+                        _logger.LogDebug("Hangup control detached; meeting left");
+                    }
+                    catch (TimeoutException)
+                    {
+                        _logger.LogDebug("Hangup control still visible after click; proceeding to close the browser");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "Hangup click during leave failed (already gone?)");
             }
+            finally
+            {
+                _pageGate.Release();
+            }
         }
 
         await CloseBrowserAsync().ConfigureAwait(false);
     }
+
+    public async Task<IReadOnlyList<string>> GetAttendeeNamesAsync(CancellationToken cancellationToken = default)
+    {
+        var page = _page;
+        if (page is null) return Array.Empty<string>();
+
+        // One page op at a time (see _pageGate): block until the hangup poll / leave probe releases.
+        await _pageGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureRosterOpenAsync(page).ConfigureAwait(false);
+
+            var names = await page.EvaluateAsync<string[]>(RosterNamesScript).ConfigureAwait(false);
+
+            // First read only: dump the roster region to the DEBUG log so the (unverifiable-here) selectors
+            // can be refined from a real run. Names are user content ⇒ SensitiveDebug (erased from release IL).
+            if (!_rosterDomLogged)
+            {
+                _rosterDomLogged = true;
+                try
+                {
+                    var dom = await page.EvaluateAsync<string?>(RosterDomScript).ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(dom))
+                        _logger.SensitiveDebug("Meeting roster DOM sample: {RosterDom}", Truncate(dom, 2_000));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Roster DOM sample capture failed");
+                }
+            }
+
+            if (names is null || names.Length == 0) return Array.Empty<string>();
+
+            var cleaned = new List<string>(names.Length);
+            foreach (var n in names)
+            {
+                var name = n?.Trim();
+                if (!string.IsNullOrEmpty(name)) cleaned.Add(name);
+            }
+            return cleaned;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Reading the meeting roster failed; returning no attendees for this snapshot");
+            return Array.Empty<string>();
+        }
+        finally
+        {
+            _pageGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Best-effort: if the roster panel is not already populated, click the "People" toggle and wait
+    /// briefly for rows to appear. Swallows every failure — the caller reads whatever is rendered.
+    /// </summary>
+    private async Task EnsureRosterOpenAsync(IPage page)
+    {
+        try
+        {
+            if (await page.Locator(RosterItemSelector).First
+                    .IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs }).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            var button = page.Locator(RosterButtonSelector).First;
+            if (await button.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs })
+                    .ConfigureAwait(false))
+            {
+                await button.ClickAsync(new LocatorClickOptions { Timeout = ProbeTimeoutMs }).ConfigureAwait(false);
+                await page.Locator(RosterItemSelector).First
+                    .WaitForAsync(new LocatorWaitForOptions
+                    {
+                        State = WaitForSelectorState.Visible,
+                        Timeout = RosterOpenTimeoutMs,
+                    }).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Opening the meeting roster panel failed; reading whatever is rendered");
+        }
+    }
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max];
 
     public async ValueTask DisposeAsync()
     {
@@ -498,20 +709,59 @@ public sealed class TeamsMeetingSession : IMeetingSession
                 _logger.LogDebug(ex, "Prejoin dialog overlay present but its text could not be read");
             }
 
-            await page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
-            try
+            // The get-user-media modal ("Are you sure you don't want audio or video?") that appears
+            // because the bot grants no mic/camera does NOT close on Escape — its "Continue without audio
+            // or video" button does. Click that button (a few attempts, as the modal can re-render) and
+            // wait for the overlay to detach; fall back to Escape for any other Northstar dialog that has
+            // no such button. The DispatchEvent fallback in ClickJoinNowAsync covers an overlay that still
+            // survives this.
+            var continueButton = page.Locator(GumContinueSelector).First;
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                await overlay.WaitForAsync(new LocatorWaitForOptions
+                if (!await overlay.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs })
+                        .ConfigureAwait(false))
                 {
-                    State = WaitForSelectorState.Hidden,
-                    Timeout = DialogDismissTimeoutMs,
-                }).ConfigureAwait(false);
-                _logger.LogDebug("Dismissed prejoin dialog overlay with Escape");
+                    _logger.LogDebug("Prejoin dialog overlay dismissed");
+                    return;
+                }
+
+                try
+                {
+                    if (await continueButton.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs })
+                            .ConfigureAwait(false))
+                    {
+                        await continueButton.ClickAsync(new LocatorClickOptions { Timeout = ProbeTimeoutMs })
+                            .ConfigureAwait(false);
+                        _logger.LogDebug("Clicked 'Continue without audio or video' to dismiss the prejoin dialog");
+                    }
+                    else
+                    {
+                        await page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
+                        _logger.LogDebug("Prejoin dialog had no continue button; pressed Escape");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Prejoin dialog dismiss attempt failed; retrying");
+                }
+
+                try
+                {
+                    await overlay.WaitForAsync(new LocatorWaitForOptions
+                    {
+                        State = WaitForSelectorState.Hidden,
+                        Timeout = DialogDismissTimeoutMs,
+                    }).ConfigureAwait(false);
+                    _logger.LogDebug("Prejoin dialog overlay detached");
+                    return;
+                }
+                catch (TimeoutException)
+                {
+                    // Still present — loop and try again.
+                }
             }
-            catch (TimeoutException)
-            {
-                _logger.LogDebug("Prejoin dialog overlay survived Escape; will dispatch click directly");
-            }
+
+            _logger.LogDebug("Prejoin dialog overlay survived dismissal; will dispatch the Join now click directly");
         }
         catch (Exception ex)
         {
@@ -609,28 +859,90 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// </summary>
     private async Task CloseBrowserAsync()
     {
+        var closedCleanly = true;
+
         if (_context is not null)
         {
-            try { await _context.CloseAsync().ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogDebug(ex, "Browser context close threw"); }
+            closedCleanly &= await CloseWithTimeoutAsync(_context.CloseAsync(), "context").ConfigureAwait(false);
             _context = null;
         }
         _page = null;
 
         if (_browser is not null)
         {
-            try { await _browser.CloseAsync().ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogDebug(ex, "Browser close threw"); }
-            try { await _browser.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogDebug(ex, "Browser dispose threw"); }
+            // CloseAsync fully tears the browser down. We deliberately do NOT also call DisposeAsync:
+            // Playwright's IBrowser.DisposeAsync is just `new ValueTask(CloseAsync())`, so on an
+            // already-closed browser (e.g. after a meeting that never fully joined) it re-enters the
+            // close path on a torn-down connection and throws an internal NullReferenceException.
+            closedCleanly &= await CloseWithTimeoutAsync(_browser.CloseAsync(), "browser").ConfigureAwait(false);
             _browser = null;
         }
+
+        // If a close call hung (a headed Chromium that was still in a live call can block teardown), kill
+        // the captured browser process tree so stopping the attendee stays prompt instead of waiting out
+        // an internal timeout.
+        if (!closedCleanly)
+            TryKillBrowserProcessTree();
 
         if (_playwright is not null)
         {
             try { _playwright.Dispose(); }
             catch (Exception ex) { _logger.LogDebug(ex, "Playwright dispose threw"); }
             _playwright = null;
+        }
+    }
+
+    /// <summary>
+    /// Awaits a Playwright close call but gives up after <see cref="BrowserCloseTimeoutMs"/> so a hung
+    /// teardown cannot stall stopping the attendee. Returns true if the close completed (cleanly or by
+    /// throwing), false if it timed out — in which case the caller kills the process tree. A timed-out
+    /// close task is left observed (its exception is swallowed) so it never surfaces as unobserved.
+    /// </summary>
+    private async Task<bool> CloseWithTimeoutAsync(Task closeTask, string what)
+    {
+        var finished = await Task.WhenAny(closeTask, Task.Delay(BrowserCloseTimeoutMs)).ConfigureAwait(false);
+        if (finished == closeTask)
+        {
+            try { await closeTask.ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Browser {What} close threw", what); }
+            return true;
+        }
+
+        _ = closeTask.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+        _logger.LogDebug(
+            "Browser {What} close did not complete within {Ms}ms; killing the process tree", what, BrowserCloseTimeoutMs);
+        return false;
+    }
+
+    /// <summary>
+    /// Last-resort teardown: kills the captured meeting-browser process tree by PID. Used only after a
+    /// Playwright close call times out. The PID is the launch-attributed root (see
+    /// <see cref="ResolveBrowserProcessId"/>), which is a heuristic. We only kill when the launch spec
+    /// resolved a concrete executable path (bundled Chromium, or a system Chrome/Edge whose App Paths
+    /// lookup succeeded): in that case the candidate set is filtered to OUR exe, so the PID cannot be the
+    /// user's own same-named browser. When the path is unknown we skip the kill and accept the rare leaked
+    /// process — the bounded <see cref="CloseWithTimeoutAsync"/> has already made Stop prompt regardless.
+    /// Best-effort: every failure is swallowed.
+    /// </summary>
+    private void TryKillBrowserProcessTree()
+    {
+        if (_launchSpec.MatchExecutablePath is null)
+        {
+            _logger.LogDebug(
+                "Skipping meeting browser process-tree kill: launch executable path is unknown, so the "
+                + "PID cannot be safely attributed to our browser");
+            return;
+        }
+        if (_browserProcessId is not int pid) return;
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            proc.Kill(entireProcessTree: true);
+            _logger.LogDebug("Killed meeting browser process tree (pid {Pid})", pid);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Killing the meeting browser process tree failed");
         }
     }
 }

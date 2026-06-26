@@ -285,7 +285,23 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             : AssistantDisplayName.Trim();
         var when = _sessionStart.LocalDateTime.ToString("f");
         var instruction = _localizationService.Format("MeetingAttendee_SummaryPrompt", name, when);
-        return $"{instruction}{Environment.NewLine}{Environment.NewLine}{BuildMarkdown()}";
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(instruction);
+
+        // Attendee roster (if any was observed) as metadata: a localized lead-in plus a bulleted list of
+        // the names seen in the meeting, so the assistant can map the diarized "Speaker N" labels to people.
+        var attendees = _service.ObservedAttendees;
+        if (attendees.Count > 0)
+        {
+            sb.AppendLine().AppendLine();
+            sb.AppendLine(_localizationService["MeetingAttendee_SummaryPrompt_Attendees"]);
+            foreach (var attendee in attendees)
+                sb.Append("- ").AppendLine(attendee);
+        }
+
+        sb.AppendLine().AppendLine().Append(BuildMarkdown());
+        return sb.ToString();
     }
 
     // ---- Open meeting settings -------------------------------------------------------------------
