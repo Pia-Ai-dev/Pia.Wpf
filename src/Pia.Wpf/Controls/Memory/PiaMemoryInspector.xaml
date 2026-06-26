@@ -31,7 +31,10 @@
                 Visibility="{Binding DataContext.IsEditing,
                                      RelativeSource={RelativeSource AncestorType=views:MemoryView},
                                      Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+          <!-- Horizontal scrolling MUST stay Disabled: the inner RichTextBox, if measured with infinite
+               width, lays out to zero height and renders blank. Disabled constrains its width so the
+               body wraps and the vertical scrollbar engages for long content. -->
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <controls:MarkdownMessageControl MarkdownText="{Binding Body}"/>
           </ScrollViewer>
         </Border>
