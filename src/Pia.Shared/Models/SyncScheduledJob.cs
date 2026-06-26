@@ -23,7 +23,13 @@ public class SyncScheduledJob
     public string? Name { get; set; }
     public string? Query { get; set; }
     public int? Kind { get; set; }
+
+    /// <summary>Dormant: legacy research answer-length. No longer produced by the client; kept for wire-contract stability.</summary>
     public int? AnswerLength { get; set; }
+
+    /// <summary>Write-tool names this job may execute as a background assistant turn (reads always allowed).</summary>
+    public List<string>? GrantedTools { get; set; }
+
     public Guid? ProviderId { get; set; }
     public int? Recurrence { get; set; }
     public TimeOnly? TimeOfDay { get; set; }

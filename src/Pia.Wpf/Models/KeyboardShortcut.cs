@@ -14,9 +14,6 @@ public record KeyboardShortcut(
     public static KeyboardShortcut DefaultCtrlAltO() =>
         new(KeyModifiers.Control | KeyModifiers.Alt, Key.O, 0x4F);
 
-    public static KeyboardShortcut DefaultCtrlAltR() =>
-        new(KeyModifiers.Control | KeyModifiers.Alt, Key.R, 0x52);
-
     public string DisplayText => $"{ModifiersToString(Modifiers)}+{Key}";
 
     private static string ModifiersToString(KeyModifiers modifiers) => modifiers switch

@@ -9,7 +9,14 @@ public class ScheduledJob
     public required string Name { get; set; }
     public required string Query { get; set; }
     public ScheduledJobKind Kind { get; set; } = ScheduledJobKind.Research;
-    public ResearchAnswerLength AnswerLength { get; set; } = ResearchAnswerLength.Balanced;
+
+    /// <summary>
+    /// Write-tool names this job is allowed to execute when it runs as a background assistant
+    /// turn. Reads are always allowed; writes are denied unless listed here (reads default-allow,
+    /// writes default-deny). Synced config — the owner's grant travels with the job.
+    /// </summary>
+    public List<string> GrantedTools { get; set; } = [];
+
     public Guid? ProviderId { get; set; }
     public RecurrenceType Recurrence { get; set; }
     public TimeOnly TimeOfDay { get; set; }

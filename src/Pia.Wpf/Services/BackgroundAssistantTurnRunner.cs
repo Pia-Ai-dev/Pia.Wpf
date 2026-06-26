@@ -1,0 +1,243 @@
+using System.Text;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Pia.Helpers;
+using Pia.Logging;
+using Pia.Models;
+using Pia.Services.Interfaces;
+using Pia.Shared.Models;
+
+namespace Pia.Services;
+
+/// <summary>
+/// Default <see cref="IBackgroundAssistantTurnRunner"/>. Reuses the same AI + plugin
+/// pipeline as an interactive chat turn (<see cref="IAiClientService.GetChatCompletionWithToolsAsync"/>
+/// + <see cref="IPluginService.RouteToolCallAsync"/>) but with no action-card UI: tool
+/// decisions are governed by the request's grant set instead of inline confirmation.
+/// PII tokenization is applied via <see cref="TokenMapAmbient"/> for parity with
+/// interactive turns. Runs entirely off the UI thread.
+/// </summary>
+public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunner
+{
+    private readonly IAiClientService _aiClient;
+    private readonly IPluginService _pluginService;
+    private readonly IAssistantPromptComposer _promptComposer;
+    private readonly IPersonaService _personaService;
+    private readonly IAssistantChatService _chatService;
+    private readonly IChatTitleService _titleService;
+    private readonly ISettingsService _settingsService;
+    private readonly Func<ITokenMapService> _tokenMapFactory;
+    private readonly ILogger<BackgroundAssistantTurnRunner> _logger;
+
+    public BackgroundAssistantTurnRunner(
+        IAiClientService aiClient,
+        IPluginService pluginService,
+        IAssistantPromptComposer promptComposer,
+        IPersonaService personaService,
+        IAssistantChatService chatService,
+        IChatTitleService titleService,
+        ISettingsService settingsService,
+        Func<ITokenMapService> tokenMapFactory,
+        ILogger<BackgroundAssistantTurnRunner> logger)
+    {
+        _aiClient = aiClient;
+        _pluginService = pluginService;
+        _promptComposer = promptComposer;
+        _personaService = personaService;
+        _chatService = chatService;
+        _titleService = titleService;
+        _settingsService = settingsService;
+        _tokenMapFactory = tokenMapFactory;
+        _logger = logger;
+    }
+
+    public async Task<BackgroundTurnResult> RunAsync(BackgroundTurnRequest request, CancellationToken ct)
+    {
+        var chatId = Guid.NewGuid();
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            var tokenizationEnabled = settings.Privacy.TokenizationEnabled;
+
+            var persona = await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+
+            // The job's provider takes precedence over the persona's preferred provider
+            // (the caller already resolved which provider this job runs on); the persona
+            // still contributes the reasoning-effort override, mirroring the interactive path.
+            var provider = request.Provider;
+            if (persona.ReasoningEffort.HasValue)
+            {
+                provider = provider.Clone();
+                provider.ReasoningEffort = persona.ReasoningEffort.Value;
+            }
+
+            var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled);
+            _logger.LogInformation(
+                "Background turn {ChatId}: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, grantedWrites={GrantedWrites}",
+                chatId, provider.Id, turnSetup.SupportsTools, turnSetup.Tools?.Count ?? 0, request.GrantedWriteTools.Count);
+
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, turnSetup.SystemPrompt),
+                new(ChatRole.User, request.Prompt),
+            };
+
+            var grantedWrites = new HashSet<string>(request.GrantedWriteTools, StringComparer.OrdinalIgnoreCase);
+
+            var textBuffer = new StringBuilder();
+            int? tokens = null;
+            string? model = null;
+
+            var tokenMap = _tokenMapFactory();
+            var previousAmbient = TokenMapAmbient.Current;
+            if (tokenizationEnabled)
+            {
+                try { await tokenMap.InitializeAsync(); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to initialize token map for background turn {ChatId}", chatId); }
+                TokenMapAmbient.Current = tokenMap;
+            }
+
+            try
+            {
+                await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
+                    messages, provider,
+                    turnSetup.SupportsTools ? turnSetup.Tools : null,
+                    turnSetup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites) : null,
+                    nameof(WindowMode.Assistant), ct))
+                {
+                    switch (item)
+                    {
+                        case TextDelta td:
+                            textBuffer.Append(td.Text);
+                            break;
+                        case Finished finished:
+                            if (finished.Usage is { } usage)
+                            {
+                                var total = (int)((usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
+                                if (total > 0) tokens = total;
+                            }
+                            model = finished.Model;
+                            break;
+                    }
+                }
+            }
+            finally
+            {
+                // Restore on the same logical async flow before persisting.
+                TokenMapAmbient.Current = previousAmbient;
+            }
+
+            var (visible, thinking) = StreamThinkTagParser.Parse(textBuffer.ToString());
+            if (turnSetup.WebSearchActive)
+            {
+                var (cleaned, _) = WebCitationExtractor.Extract(visible);
+                visible = cleaned;
+            }
+
+            if (string.IsNullOrWhiteSpace(visible))
+            {
+                _logger.LogWarning("Background turn {ChatId} produced empty content", chatId);
+                return new BackgroundTurnResult(chatId, false, "Empty response");
+            }
+
+            var now = DateTime.UtcNow;
+            var chat = new SyncAssistantChat
+            {
+                Id = chatId,
+                SchemaVersion = 1,
+                Title = request.Title,
+                CreatedAt = now,
+                UpdatedAt = now,
+                LastAccessedAt = now,
+                WindowMode = WindowMode.Assistant.ToString(),
+                ProviderId = request.Provider.Id,
+                Messages =
+                [
+                    new SyncAssistantChatMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        Role = "user",
+                        Content = request.Prompt,
+                        Timestamp = now,
+                    },
+                    new SyncAssistantChatMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        Role = "assistant",
+                        Content = visible,
+                        ThinkingContent = string.IsNullOrEmpty(thinking) ? null : thinking,
+                        Timestamp = now,
+                        Tokens = tokens,
+                        ModelName = model,
+                        Persona = new SyncMessagePersona { Id = persona.Id, Name = persona.Name, Emoji = persona.Emoji },
+                    },
+                ],
+            };
+
+            // Title precedence: caller-supplied > LLM-generated > derived-from-prompt.
+            if (string.IsNullOrWhiteSpace(chat.Title))
+            {
+                try { chat.Title = await _titleService.GenerateAsync(request.Prompt, visible, ct); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Auto-title failed for background chat {ChatId}", chatId); }
+            }
+            if (string.IsNullOrWhiteSpace(chat.Title))
+                chat.Title = DeriveTitle(request.Prompt);
+
+            await _chatService.SaveAsync(chat, ct);
+            _logger.LogInformation("Background turn persisted assistant chat {ChatId} ({MessageCount} messages)",
+                chatId, chat.Messages.Count);
+            _logger.SensitiveDebug("Background chat {ChatId} title: {Title}", chatId, chat.Title);
+
+            return new BackgroundTurnResult(chatId, true, null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Background assistant turn {ChatId} failed", chatId);
+            return new BackgroundTurnResult(chatId, false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Headless tool dispatch: reads (tools that return an immediate result) always run;
+    /// writes (tools that return a pending action) run only if explicitly granted to this job.
+    /// </summary>
+    private async Task<object?> HandleToolCallAsync(FunctionCallContent toolCall, HashSet<string> grantedWrites)
+    {
+        var route = await _pluginService.RouteToolCallAsync(toolCall);
+        if (route is null)
+        {
+            _logger.LogWarning("Background turn: no handler for tool {ToolName}", toolCall.Name);
+            return "Unknown tool.";
+        }
+
+        var (result, pending) = route.Value;
+        if (result is not null)
+            return result; // read → always allowed
+
+        if (pending is not null)
+        {
+            if (grantedWrites.Contains(pending.ToolName))
+            {
+                _logger.LogInformation("Background turn executing granted write tool {ToolName}", pending.ToolName);
+                return await pending.Execute();
+            }
+
+            _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
+            return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
+        }
+
+        return "Tool call handled.";
+    }
+
+    private static string DeriveTitle(string prompt)
+    {
+        var collapsed = TextFormatting.CollapseWhitespace(prompt);
+        const int max = 40;
+        return collapsed.Length <= max ? collapsed : collapsed[..max].TrimEnd() + "…";
+    }
+}

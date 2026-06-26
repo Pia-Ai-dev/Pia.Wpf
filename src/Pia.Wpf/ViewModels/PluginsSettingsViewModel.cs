@@ -152,6 +152,6 @@ public partial class PluginsSettingsViewModel : ObservableObject
     [RelayCommand]
     private void GoToAccount()
     {
-        _parent.SelectedTabIndex = 5;
+        _parent.SelectedTabIndex = 4;
     }
 }

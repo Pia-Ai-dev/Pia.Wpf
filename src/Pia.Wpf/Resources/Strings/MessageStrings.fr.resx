@@ -338,7 +338,7 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_ScheduledResearch_Detail_DayOfMonth" xml:space="preserve"><value>Jour du mois</value></data>
   <data name="Tool_ScheduledResearch_Detail_Month" xml:space="preserve"><value>Mois</value></data>
   <data name="Tool_ScheduledResearch_Detail_Date" xml:space="preserve"><value>Date</value></data>
-  <data name="Tool_ScheduledResearch_Detail_AnswerLength" xml:space="preserve"><value>Longueur de la réponse</value></data>
+  <data name="Tool_ScheduledResearch_Detail_GrantedTools" xml:space="preserve"><value>Outils d'écriture autorisés</value></data>
   <data name="Tool_ScheduledResearch_Detail_Provider" xml:space="preserve"><value>Fournisseur</value></data>
   <data name="Tool_ScheduledResearch_Detail_CurrentStatus" xml:space="preserve"><value>Actuel : {0} à {1}
 Les modifications seront appliquées.</value></data>

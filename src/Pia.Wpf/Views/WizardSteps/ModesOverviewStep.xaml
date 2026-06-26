@@ -25,7 +25,7 @@
                  Margin="0,0,0,32" />
 
       <!-- Mode Cards -->
-      <UniformGrid Columns="3" Margin="0,0,0,0">
+      <UniformGrid Columns="2" Margin="0,0,0,0">
 
         <!-- Optimize Card -->
         <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
@@ -115,54 +115,6 @@
             </Border>
 
             <TextBlock Text="{loc:Str Wizard_Modes_AssistantExample}"
-                       TextWrapping="Wrap"
-                       TextAlignment="Center"
-                       FontSize="11"
-                       FontStyle="Italic"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-          </StackPanel>
-        </Border>
-
-        <!-- Research Card -->
-        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
-                CornerRadius="8"
-                Padding="20"
-                Margin="6,0">
-          <StackPanel>
-            <ui:SymbolIcon Symbol="Search24"
-                           FontSize="32"
-                           HorizontalAlignment="Center"
-                           Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"
-                           Margin="0,0,0,12" />
-
-            <TextBlock Text="{loc:Str Wizard_Modes_ResearchTitle}"
-                       FontSize="16"
-                       FontWeight="SemiBold"
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,8" />
-
-            <TextBlock Text="{loc:Str Wizard_Modes_ResearchDesc}"
-                       TextWrapping="Wrap"
-                       TextAlignment="Center"
-                       FontSize="12"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                       Margin="0,0,0,16"
-                       LineHeight="18" />
-
-            <!-- Hotkey Badge -->
-            <Border Background="{DynamicResource SystemAccentColorPrimaryBrush}"
-                    CornerRadius="4"
-                    Padding="10,4"
-                    HorizontalAlignment="Center"
-                    Margin="0,0,0,12">
-              <TextBlock Text="{loc:Str Wizard_Modes_ResearchHotkey}"
-                         FontSize="11"
-                         FontWeight="SemiBold"
-                         Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
-                         HorizontalAlignment="Center" />
-            </Border>
-
-            <TextBlock Text="{loc:Str Wizard_Modes_ResearchExample}"
                        TextWrapping="Wrap"
                        TextAlignment="Center"
                        FontSize="11"

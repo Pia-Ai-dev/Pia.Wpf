@@ -36,9 +36,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string _assistantHotkeyHint = string.Empty;
 
     [ObservableProperty]
-    private string _researchHotkeyHint = string.Empty;
-
-    [ObservableProperty]
     private ObservableObject? _currentView;
 
     [ObservableProperty]
@@ -149,15 +146,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         await RefreshSetupRequiredAsync();
 
-        // If the caller pre-navigated (e.g. ShowResearchHistoryWithEntry) before
-        // Loaded fired, don't clobber their selection with the mode default.
+        // If the caller pre-navigated (e.g. ShowAssistantChat) before Loaded fired,
+        // don't clobber their selection with the mode default.
         if (_navigationService.CurrentViewModel is not null)
             return;
 
         if (Mode == WindowMode.Assistant)
             _navigationService.NavigateTo<AssistantViewModel>();
-        else if (Mode == WindowMode.Research)
-            _navigationService.NavigateTo<ResearchViewModel>();
         else
             _navigationService.NavigateTo<OptimizeViewModel>();
     }
@@ -215,7 +210,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         OptimizeHotkeyHint = settings.OptimizeHotkey.DisplayText;
         AssistantHotkeyHint = settings.AssistantHotkey?.DisplayText ?? string.Empty;
-        ResearchHotkeyHint = settings.ResearchHotkey?.DisplayText ?? string.Empty;
     }
 
     private void OnViewModelChanged(ObservableObject? viewModel)
@@ -230,8 +224,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 : typeName;
 
             IsOnFeatureView = viewModel is OptimizeViewModel
-                or AssistantViewModel
-                or ResearchViewModel;
+                or AssistantViewModel;
         }
     }
 
@@ -265,21 +258,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             {
                 WindowMode.Optimize => "Optimize",
                 WindowMode.Assistant => "Assistant",
-                WindowMode.Research => "Research",
                 _ => null
             },
             "Shortcut2" => Mode switch
             {
                 WindowMode.Optimize => "History",
                 WindowMode.Assistant => "Memory",
-                WindowMode.Research => "ResearchHistory",
                 _ => null
             },
             "Shortcut3" => Mode switch
             {
                 WindowMode.Optimize => "Settings",
                 WindowMode.Assistant => "Reminders",
-                WindowMode.Research => "Settings",
                 _ => null
             },
             "Shortcut4" => Mode switch
@@ -303,12 +293,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 break;
             case "Assistant":
                 _navigationService.NavigateTo<AssistantViewModel>();
-                break;
-            case "Research":
-                _navigationService.NavigateTo<ResearchViewModel>();
-                break;
-            case "ResearchHistory":
-                _navigationService.NavigateTo<ResearchHistoryViewModel>();
                 break;
             case "AssistantHistory":
                 _navigationService.NavigateTo<AssistantHistoryViewModel>();
@@ -389,7 +373,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void OpenE2EEOnboarding()
     {
-        _navigationService.NavigateTo<SettingsViewModel, int>(5);
+        _navigationService.NavigateTo<SettingsViewModel, int>(4);
     }
 
     public void Dispose()

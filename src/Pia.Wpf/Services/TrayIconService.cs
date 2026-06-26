@@ -25,7 +25,6 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     private static readonly TimeSpan HotkeyDebounceInterval = TimeSpan.FromMilliseconds(500);
     private MenuItem? _optimizeMenuItem;
     private MenuItem? _assistantMenuItem;
-    private MenuItem? _researchMenuItem;
     private MenuItem? _exitMenuItem;
 
     public TrayIconService(
@@ -88,15 +87,11 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         _assistantMenuItem = new MenuItem { Header = _localizationService["Tray_OpenAssistant"] };
         _assistantMenuItem.Click += (_, _) => ToggleWindow(WindowMode.Assistant);
 
-        _researchMenuItem = new MenuItem { Header = _localizationService["Tray_OpenResearch"] };
-        _researchMenuItem.Click += (_, _) => ToggleWindow(WindowMode.Research);
-
         _exitMenuItem = new MenuItem { Header = _localizationService["Tray_Exit"] };
         _exitMenuItem.Click += (_, _) => ExitApplication();
 
         contextMenu.Items.Add(_optimizeMenuItem);
         contextMenu.Items.Add(_assistantMenuItem);
-        contextMenu.Items.Add(_researchMenuItem);
         contextMenu.Items.Add(new Separator());
         contextMenu.Items.Add(_exitMenuItem);
 
@@ -167,9 +162,6 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
 
             if (settings.AssistantHotkey != null)
                 RegisterHotkey(WindowMode.Assistant, settings.AssistantHotkey);
-
-            if (settings.ResearchHotkey != null)
-                RegisterHotkey(WindowMode.Research, settings.ResearchHotkey);
 
             if (settings.FastPathHotkey != null)
                 RegisterFastPathHotkey(settings.FastPathHotkey);
@@ -304,7 +296,6 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     {
         UpdateMenuItem(_optimizeMenuItem, WindowMode.Optimize, "Tray_OpenOptimize", "Tray_CloseOptimize");
         UpdateMenuItem(_assistantMenuItem, WindowMode.Assistant, "Tray_OpenAssistant", "Tray_CloseAssistant");
-        UpdateMenuItem(_researchMenuItem, WindowMode.Research, "Tray_OpenResearch", "Tray_CloseResearch");
     }
 
     private void UpdateMenuItem(MenuItem? menuItem, WindowMode mode, string openKey, string closeKey)

@@ -8,137 +8,157 @@
   xmlns:models="clr-namespace:Pia.Models"
   xmlns:controls="clr-namespace:Pia.Views.Controls"
   mc:Ignorable="d"
-  d:DesignHeight="500" d:DesignWidth="600">
+  d:DesignHeight="700" d:DesignWidth="1200">
 
-  <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
+  <!-- Mirrors the Chat-history / Memory page vocabulary: a 22pt title header with a muted
+       sub-line, a single main content region, and a bottom status bar. The overlay sits at a
+       high ZIndex over the live chat, so the root MUST stay opaque (BgCanvasBrush) rather than the
+       Transparent root those navigable pages use. The master/detail split of those pages does not
+       map here (a meeting is a single live session, not a browsable collection), so the content
+       region swaps between the join setup and the live transcript instead. -->
+  <Grid Background="{DynamicResource BgCanvasBrush}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Header: title + status + close -->
-    <Border Grid.Row="0"
-            BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-            Padding="20,12">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
+    <!-- Header: title + live-status sub-line (the page subtitle slot) + close. -->
+    <Grid Grid.Row="0" Margin="24,20,24,14">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
 
-        <StackPanel Grid.Column="0"
-                    Orientation="Vertical"
-                    VerticalAlignment="Center">
-          <TextBlock Text="{loc:Str MeetingAttendee_Title}"
-                     FontSize="16"
-                     FontWeight="SemiBold" />
-          <!-- Status row: a busy spinner (shown while joining / leaving) next to the status text. -->
-          <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-            <ui:ProgressRing Width="14"
-                             Height="14"
-                             IsIndeterminate="True"
-                             VerticalAlignment="Center"
-                             Margin="0,0,8,0"
-                             Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
-            <TextBlock Text="{Binding StatusText}"
-                       FontSize="12"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-          </StackPanel>
-        </StackPanel>
+      <TextBlock Grid.Row="0" Grid.Column="0"
+                 Text="{loc:Str MeetingAttendee_Title}"
+                 Style="{StaticResource PiaSettingsPageTitleStyle}"
+                 VerticalAlignment="Center" />
 
-        <ui:Button Grid.Column="1"
-                   Command="{Binding CloseCommand}"
-                   Width="36"
-                   Height="36"
-                   Padding="0"
-                   Appearance="Secondary"
-                   ToolTip="{loc:Str MeetingAttendee_Close}">
-          <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
-        </ui:Button>
-      </Grid>
-    </Border>
+      <!-- Close is overlay-specific (the navigable pages have none) and is deliberately kept. -->
+      <ui:Button Grid.Row="0" Grid.Column="1"
+                 Command="{Binding CloseCommand}"
+                 Width="36"
+                 Height="36"
+                 Padding="0"
+                 Appearance="Secondary"
+                 VerticalAlignment="Center"
+                 ToolTip="{loc:Str MeetingAttendee_Close}">
+        <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
+      </ui:Button>
 
-    <!-- Join setup: URL input + consent + Join button. Hidden while running AND after a meeting has been
-         attended and left (so leaving lands on the transcript alone, not the join form again). -->
-    <Border Grid.Row="1"
-            BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-            Padding="20,12"
-            Visibility="{Binding IsJoinSetupVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <StackPanel Orientation="Vertical">
-        <!-- Requirements: what this feature needs before joining. Always visible so the prerequisites
-             (Teams link, host admission, first-run download, local model, background helpers) are clear. -->
-        <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
-                CornerRadius="8"
-                Padding="12,10"
-                Margin="0,0,0,14">
-          <StackPanel Orientation="Vertical">
-            <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Title}"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,6" />
-            <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Teams}"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-            <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Lobby}"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Margin="0,3,0,0"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-            <TextBlock Text="{loc:Str MeetingAttendee_Requirements_FirstRun}"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Margin="0,3,0,0"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-            <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Model}"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Margin="0,3,0,0"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-            <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Desktop}"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Margin="0,3,0,0"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-            <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Background}"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Margin="0,3,0,0"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+      <!-- Subtitle slot → live status text with a busy spinner during join / leave transitions. -->
+      <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                  Orientation="Horizontal"
+                  Margin="0,8,0,0">
+        <ui:ProgressRing Width="14"
+                         Height="14"
+                         IsIndeterminate="True"
+                         VerticalAlignment="Center"
+                         Margin="0,0,8,0"
+                         Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
+        <TextBlock Text="{Binding StatusText}"
+                   FontSize="12"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextMutedBrush}" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Main content (join setup). Shown before the first meeting of this overlay session; a centered
+         column of cards rather than a full-bleed strip so it reads as deliberate on a wide overlay. -->
+    <ScrollViewer Grid.Row="1"
+                  VerticalScrollBarVisibility="Auto"
+                  Visibility="{Binding IsJoinSetupVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <StackPanel MaxWidth="560"
+                  Margin="24,4,24,24"
+                  HorizontalAlignment="Center">
+
+        <!-- Requirements: an elevated card with a header stripe + icon chip, listing the
+             prerequisites before joining (Teams link, host admission, first-run download, etc.). -->
+        <Border Style="{StaticResource PiaCardStyle}">
+          <StackPanel>
+            <Border Style="{StaticResource PiaCardHeaderStripeStyle}">
+              <StackPanel Orientation="Horizontal">
+                <Border Style="{StaticResource PiaIconChipStyle}" Margin="0,0,10,0">
+                  <ui:SymbolIcon Symbol="Info24"
+                                 FontSize="13"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource PiaAccentBrush}" />
+                </Border>
+                <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Title}"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextDefaultBrush}" />
+              </StackPanel>
+            </Border>
+            <StackPanel Margin="14,12">
+              <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Teams}"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+              <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Lobby}"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,4,0,0"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+              <TextBlock Text="{loc:Str MeetingAttendee_Requirements_FirstRun}"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,4,0,0"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+              <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Model}"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,4,0,0"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+              <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Desktop}"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,4,0,0"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+              <TextBlock Text="{loc:Str MeetingAttendee_Requirements_Background}"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,4,0,0"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+            </StackPanel>
           </StackPanel>
         </Border>
 
-        <TextBlock Text="{loc:Str MeetingAttendee_Url_Label}"
-                   FontSize="12"
-                   Margin="0,0,0,4"
-                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-        <ui:TextBox Text="{Binding MeetingUrl, UpdateSourceTrigger=PropertyChanged}"
-                    PlaceholderText="{loc:Str MeetingAttendee_Url_Placeholder}"
-                    PlaceholderEnabled="True"
-                    FontSize="13" />
+        <!-- Join form: meeting link, assistant display name, consent. -->
+        <Border Style="{StaticResource PiaSettingsCardStyle}" Margin="0,14,0,0">
+          <StackPanel>
+            <TextBlock Text="{loc:Str MeetingAttendee_Url_Label}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}" />
+            <ui:TextBox Text="{Binding MeetingUrl, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="{loc:Str MeetingAttendee_Url_Placeholder}"
+                        PlaceholderEnabled="True"
+                        FontSize="13" />
 
-        <!-- Editable display name the assistant joins under (pre-filled with "{user}'s assistant"). -->
-        <TextBlock Text="{loc:Str MeetingAttendee_DisplayName_Label}"
-                   FontSize="12"
-                   Margin="0,10,0,4"
-                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-        <ui:TextBox Text="{Binding AssistantDisplayName, UpdateSourceTrigger=PropertyChanged}"
-                    PlaceholderText="{loc:Str MeetingAttendee_DisplayName_Placeholder}"
-                    PlaceholderEnabled="True"
-                    FontSize="13" />
+            <!-- Editable display name the assistant joins under (pre-filled with "{user}'s assistant"). -->
+            <TextBlock Text="{loc:Str MeetingAttendee_DisplayName_Label}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,12,0,6" />
+            <ui:TextBox Text="{Binding AssistantDisplayName, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="{loc:Str MeetingAttendee_DisplayName_Placeholder}"
+                        PlaceholderEnabled="True"
+                        FontSize="13" />
 
-        <CheckBox IsChecked="{Binding ConsentAcknowledged}"
-                  Margin="0,10,0,0"
-                  Content="{loc:Str MeetingAttendee_Consent_Label}" />
-        <!-- Join button + a quick link to the meeting settings (Assistant settings → Meeting tab):
-             diarization, speaker matching, browser choice. The link sits to the right of Join and is
-             only shown here on the join setup page (Row 1), so it cannot be clicked mid-meeting. -->
-        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+            <CheckBox IsChecked="{Binding ConsentAcknowledged}"
+                      Margin="0,14,0,0"
+                      Content="{loc:Str MeetingAttendee_Consent_Label}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Join + a quick link to the meeting settings (Assistant settings -> Meeting tab):
+             diarization, speaker matching, browser choice. Only shown on this join page. -->
+        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
           <ui:Button Command="{Binding StartCommand}"
                      Padding="20,8"
                      Appearance="Primary"
@@ -153,192 +173,214 @@
           </ui:HyperlinkButton>
         </StackPanel>
       </StackPanel>
-    </Border>
+    </ScrollViewer>
 
-    <!-- Bubble list -->
-    <ScrollViewer x:Name="BubbleScroll"
-                  Grid.Row="2"
-                  VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled"
-                  Padding="20,16,20,8">
-      <ItemsControl ItemsSource="{Binding Bubbles}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="{x:Type models:TranscriptBubble}">
-            <Grid Margin="0,0,0,10">
-              <!-- "You" (right-aligned, accent) — unused by the attendee, kept for template parity -->
-              <StackPanel HorizontalAlignment="Right"
-                          MaxWidth="{Binding ActualWidth, ElementName=BubbleScroll, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.65}">
-                <StackPanel.Style>
-                  <Style TargetType="StackPanel">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding Speaker}" Value="{x:Static models:TranscriptSpeaker.You}">
-                        <Setter Property="Visibility" Value="Visible" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </StackPanel.Style>
-                <StackPanel Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            Margin="0,0,4,2">
-                  <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
-                             FontSize="11"
-                             Margin="0,0,8,0"
-                             Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-                  <TextBlock FontSize="11"
-                             Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                    <TextBlock.Text>
-                      <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
-                        <Binding Path="Speaker" />
-                        <Binding Path="SpeakerLabel" />
-                        <Binding Path="DataContext.CounterpartName"
-                                 RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                      </MultiBinding>
-                    </TextBlock.Text>
-                  </TextBlock>
-                </StackPanel>
-                <Border Padding="12,8"
-                        CornerRadius="12,12,0,12"
-                        Background="{DynamicResource AccentFillColorDefaultBrush}">
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               Text="{Binding Text}"
-                               TextWrapping="Wrap"
-                               FontSize="14"
-                               Foreground="White" />
-                    <controls:ListeningIndicator Grid.Column="1"
-                                                 Margin="8,0,0,0"
-                                                 VerticalAlignment="Center"
-                                                 Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                  </Grid>
-                </Border>
-              </StackPanel>
+    <!-- Main content (transcript). Shown once a meeting is starting / running / has been attended.
+         A centered placeholder echoes the live status while no utterances have arrived yet. -->
+    <Grid Grid.Row="1"
+          Visibility="{Binding IsJoinSetupVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+      <StackPanel HorizontalAlignment="Center"
+                  VerticalAlignment="Top"
+                  Margin="0,60,0,0"
+                  Visibility="{Binding Bubbles.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
+        <ui:SymbolIcon Symbol="PersonCall24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,16"
+                       Foreground="{DynamicResource TextSubtleBrush}" />
+        <TextBlock Text="{Binding StatusText}"
+                   FontSize="14"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource TextMutedBrush}" />
+      </StackPanel>
 
-              <!-- "Them" (left-aligned, secondary) — the meeting room -->
-              <StackPanel HorizontalAlignment="Left"
-                          MaxWidth="{Binding ActualWidth, ElementName=BubbleScroll, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.65}">
-                <StackPanel.Style>
-                  <Style TargetType="StackPanel">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding Speaker}" Value="{x:Static models:TranscriptSpeaker.Them}">
-                        <Setter Property="Visibility" Value="Visible" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </StackPanel.Style>
-                <StackPanel Orientation="Horizontal"
-                            HorizontalAlignment="Left"
-                            Margin="4,0,0,2">
-                  <!-- Click-to-rename the diarized speaker: transparent button wrapping the speaker
-                       name + an edit pencil. The MultiBinding stays the Unit-5-widened 3-value one
-                       (Speaker, SpeakerLabel, CounterpartName). CommandParameter is the raw SpeakerLabel
-                       so the command receives the diarizer label (e.g. "Speaker 2"), not the rendered
-                       display name. -->
-                  <ui:Button Padding="4,2"
-                             Margin="-4,-2,4,-2"
-                             Appearance="Transparent"
-                             BorderThickness="0"
-                             Cursor="Hand"
-                             ToolTip="{loc:Str MeetingAttendee_RenameSpeaker_MenuItem}"
-                             Command="{Binding DataContext.RenameSpeakerLabelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                             CommandParameter="{Binding SpeakerLabel}">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                      <TextBlock FontSize="11"
-                                 VerticalAlignment="Center"
-                                 Foreground="{DynamicResource TextPlaceholderColorBrush}">
-                        <TextBlock.Text>
-                          <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
-                            <Binding Path="Speaker" />
-                            <Binding Path="SpeakerLabel" />
-                            <Binding Path="DataContext.CounterpartName"
-                                     RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                          </MultiBinding>
-                        </TextBlock.Text>
-                      </TextBlock>
-                      <ui:SymbolIcon Symbol="Edit24"
-                                     FontSize="11"
-                                     Margin="4,0,0,0"
-                                     VerticalAlignment="Center"
-                                     Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-                    </StackPanel>
-                  </ui:Button>
-                  <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
-                             FontSize="11"
-                             VerticalAlignment="Center"
-                             Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-                </StackPanel>
-                <Border Padding="12,8"
-                        CornerRadius="12,12,12,0">
-                  <!-- Per-speaker coloring: the Background MUST live in the Style (default Setter +
-                       ColorIndex DataTriggers). A local-value Background attribute would override the
-                       Style triggers and silently force every "Them" bubble to one color. -->
-                  <Border.Style>
-                    <Style TargetType="Border">
-                      <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground1Brush}" />
+      <ScrollViewer x:Name="BubbleScroll"
+                    VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled"
+                    Padding="24,8,24,8">
+        <ItemsControl ItemsSource="{Binding Bubbles}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type models:TranscriptBubble}">
+              <Grid Margin="0,0,0,10">
+                <!-- "You" (right-aligned, accent) — unused by the attendee, kept for template parity -->
+                <StackPanel HorizontalAlignment="Right"
+                            MaxWidth="{Binding ActualWidth, ElementName=BubbleScroll, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.65}">
+                  <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                      <Setter Property="Visibility" Value="Collapsed" />
                       <Style.Triggers>
-                        <DataTrigger Binding="{Binding ColorIndex}" Value="1">
-                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground2Brush}" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding ColorIndex}" Value="2">
-                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground3Brush}" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding ColorIndex}" Value="3">
-                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground4Brush}" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding ColorIndex}" Value="4">
-                          <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground5Brush}" />
+                        <DataTrigger Binding="{Binding Speaker}" Value="{x:Static models:TranscriptSpeaker.You}">
+                          <Setter Property="Visibility" Value="Visible" />
                         </DataTrigger>
                       </Style.Triggers>
                     </Style>
-                  </Border.Style>
-                  <!-- Right-click variant of the rename affordance. The bubble's DataContext is the
-                       TranscriptBubble, so the command (on the UserControl's DataContext) is reached via
-                       the Border.Tag bridge; the parameter is the bubble's own SpeakerLabel. Coexists
-                       with the ColorIndex Border.Style above. -->
-                  <Border.ContextMenu>
-                    <ContextMenu>
-                      <MenuItem Header="{loc:Str MeetingAttendee_RenameSpeaker_MenuItem}"
-                                Command="{Binding PlacementTarget.Tag.RenameSpeakerLabelCommand,
-                                           RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
-                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                    </ContextMenu>
-                  </Border.ContextMenu>
-                  <Border.Tag>
-                    <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                  </Border.Tag>
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               Text="{Binding Text}"
-                               TextWrapping="Wrap"
-                               FontSize="14" />
-                    <controls:ListeningIndicator Grid.Column="1"
-                                                 Margin="8,0,0,0"
-                                                 VerticalAlignment="Center"
-                                                 Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                  </Grid>
-                </Border>
-              </StackPanel>
-            </Grid>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </ScrollViewer>
+                  </StackPanel.Style>
+                  <StackPanel Orientation="Horizontal"
+                              HorizontalAlignment="Right"
+                              Margin="0,0,4,2">
+                    <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
+                               FontSize="11"
+                               Margin="0,0,8,0"
+                               Foreground="{DynamicResource TextSubtleBrush}" />
+                    <TextBlock FontSize="11"
+                               Foreground="{DynamicResource TextSubtleBrush}">
+                      <TextBlock.Text>
+                        <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                          <Binding Path="Speaker" />
+                          <Binding Path="SpeakerLabel" />
+                          <Binding Path="DataContext.CounterpartName"
+                                   RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                        </MultiBinding>
+                      </TextBlock.Text>
+                    </TextBlock>
+                  </StackPanel>
+                  <Border Padding="14,10"
+                          CornerRadius="14,14,4,14"
+                          Background="{DynamicResource PiaAccentBrush}">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0"
+                                 Text="{Binding Text}"
+                                 TextWrapping="Wrap"
+                                 FontSize="14"
+                                 Foreground="White" />
+                      <controls:ListeningIndicator Grid.Column="1"
+                                                   Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </Grid>
+                  </Border>
+                </StackPanel>
 
-    <!-- Footer: stop / save buttons -->
-    <Border Grid.Row="3"
+                <!-- "Them" (left-aligned, per-speaker colour) — the meeting room -->
+                <StackPanel HorizontalAlignment="Left"
+                            MaxWidth="{Binding ActualWidth, ElementName=BubbleScroll, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.65}">
+                  <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Speaker}" Value="{x:Static models:TranscriptSpeaker.Them}">
+                          <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </StackPanel.Style>
+                  <StackPanel Orientation="Horizontal"
+                              HorizontalAlignment="Left"
+                              Margin="4,0,0,2">
+                    <!-- Click-to-rename the diarized speaker: transparent button wrapping the speaker
+                         name + an edit pencil. The MultiBinding stays the 3-value one (Speaker,
+                         SpeakerLabel, CounterpartName). CommandParameter is the raw SpeakerLabel so the
+                         command receives the diarizer label (e.g. "Speaker 2"), not the display name. -->
+                    <ui:Button Padding="4,2"
+                               Margin="-4,-2,4,-2"
+                               Appearance="Transparent"
+                               BorderThickness="0"
+                               Cursor="Hand"
+                               ToolTip="{loc:Str MeetingAttendee_RenameSpeaker_MenuItem}"
+                               Command="{Binding DataContext.RenameSpeakerLabelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                               CommandParameter="{Binding SpeakerLabel}">
+                      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock FontSize="11"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSubtleBrush}">
+                          <TextBlock.Text>
+                            <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
+                              <Binding Path="Speaker" />
+                              <Binding Path="SpeakerLabel" />
+                              <Binding Path="DataContext.CounterpartName"
+                                       RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                            </MultiBinding>
+                          </TextBlock.Text>
+                        </TextBlock>
+                        <ui:SymbolIcon Symbol="Edit24"
+                                       FontSize="11"
+                                       Margin="4,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSubtleBrush}" />
+                      </StackPanel>
+                    </ui:Button>
+                    <TextBlock Text="{Binding StartTimestamp, Converter={StaticResource DateTimeOffsetToShortTimeConverter}}"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSubtleBrush}" />
+                  </StackPanel>
+                  <Border Padding="14,10"
+                          CornerRadius="14,14,14,4">
+                    <!-- Per-speaker colouring: the Background MUST live in the Style (default Setter +
+                         ColorIndex DataTriggers). A local-value Background attribute would override the
+                         Style triggers and silently force every "Them" bubble to one colour. -->
+                    <Border.Style>
+                      <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground1Brush}" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding ColorIndex}" Value="1">
+                            <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground2Brush}" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding ColorIndex}" Value="2">
+                            <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground3Brush}" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding ColorIndex}" Value="3">
+                            <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground4Brush}" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding ColorIndex}" Value="4">
+                            <Setter Property="Background" Value="{DynamicResource SpeakerBubbleBackground5Brush}" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Border.Style>
+                    <!-- Right-click variant of the rename affordance. The bubble's DataContext is the
+                         TranscriptBubble, so the command (on the UserControl's DataContext) is reached via
+                         the Border.Tag bridge; the parameter is the bubble's own SpeakerLabel. Coexists
+                         with the ColorIndex Border.Style above. -->
+                    <Border.ContextMenu>
+                      <ContextMenu>
+                        <MenuItem Header="{loc:Str MeetingAttendee_RenameSpeaker_MenuItem}"
+                                  Command="{Binding PlacementTarget.Tag.RenameSpeakerLabelCommand,
+                                             RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
+                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                      </ContextMenu>
+                    </Border.ContextMenu>
+                    <Border.Tag>
+                      <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                    </Border.Tag>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0"
+                                 Text="{Binding Text}"
+                                 TextWrapping="Wrap"
+                                 FontSize="14"
+                                 Foreground="{DynamicResource TextDefaultBrush}" />
+                      <controls:ListeningIndicator Grid.Column="1"
+                                                   Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </Grid>
+                  </Border>
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Grid>
+
+    <!-- Footer: status-bar vocabulary (surface + top divider) housing the session actions. Hidden on
+         the join page (the Join button lives in the form there) so it only shows once a meeting is
+         underway (Stop) or finished (Save / Summarize). -->
+    <Border Grid.Row="2"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush_}"
             BorderThickness="0,1,0,0"
-            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-            Padding="20,12">
+            Padding="24,12"
+            Visibility="{Binding IsJoinSetupVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
       <StackPanel HorizontalAlignment="Center"
                   Orientation="Horizontal">
         <ui:Button Command="{Binding StopCommand}"

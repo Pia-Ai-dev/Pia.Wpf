@@ -191,7 +191,7 @@ public sealed class FlowPersistenceStore : IFlowPersistenceStore, IDisposable
     private static FlowAction? ReconstructAction(FlowActionKind kind, Guid entityId, string label) => kind switch
     {
         FlowActionKind.OpenChat => new OpenChatAction(entityId, label),
-        FlowActionKind.OpenBriefing => new OpenBriefingAction(entityId, label),
+        FlowActionKind.OpenBriefing => null, // Legacy research-history link; research view removed.
         FlowActionKind.OpenTodo => new OpenTodoAction(entityId, label),
         FlowActionKind.ReminderSnooze => new ReminderSnoozeAction(entityId, label),
         FlowActionKind.ReminderDismiss => new ReminderDismissAction(entityId, label),

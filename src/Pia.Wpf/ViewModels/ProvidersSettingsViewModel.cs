@@ -94,9 +94,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     private Guid? _assistantProviderId;
 
     [ObservableProperty]
-    private Guid? _researchProviderId;
-
-    [ObservableProperty]
     private bool _useSameProviderForAllModes = true;
 
     [ObservableProperty]
@@ -130,7 +127,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
             {
                 _isLoading = true;
                 AssistantProviderId = value;
-                ResearchProviderId = value;
                 _isLoading = false;
             }
             SaveProviderSettingsAsync().SafeFireAndForget(_logger);
@@ -138,11 +134,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     }
 
     partial void OnAssistantProviderIdChanged(Guid? value)
-    {
-        if (!_isLoading) SaveProviderSettingsAsync().SafeFireAndForget(_logger);
-    }
-
-    partial void OnResearchProviderIdChanged(Guid? value)
     {
         if (!_isLoading) SaveProviderSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -156,7 +147,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
             {
                 _isLoading = true;
                 AssistantProviderId = OptimizeProviderId;
-                ResearchProviderId = OptimizeProviderId;
                 _isLoading = false;
             }
             SaveProviderSettingsAsync().SafeFireAndForget(_logger);
@@ -182,15 +172,14 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
         OptimizeProviderId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
         AssistantProviderId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
-        ResearchProviderId = ResolveOrDefault(settings, WindowMode.Research, providersList);
 
         IsSyncLoggedIn = _authService.IsLoggedIn;
 
         await RefreshProviderDisplayItemsAsync();
 
         _logger.LogInformation(
-            "Settings page initialized: providers={Count}, modeDefaults Optimize={OptId} Assistant={AsstId} Research={ResId}, useSame={UseSame}",
-            providersList.Count, OptimizeProviderId, AssistantProviderId, ResearchProviderId, UseSameProviderForAllModes);
+            "Settings page initialized: providers={Count}, modeDefaults Optimize={OptId} Assistant={AsstId}, useSame={UseSame}",
+            providersList.Count, OptimizeProviderId, AssistantProviderId, UseSameProviderForAllModes);
 
         _isLoading = false;
     }
@@ -211,7 +200,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void GoToCloudSync() => _parent.SelectedTabIndex = 5; // Account tab
+    private void GoToCloudSync() => _parent.SelectedTabIndex = 4; // Account tab
 
     [RelayCommand]
     private async Task AddProviderAsync()
@@ -255,8 +244,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
             return;
 
         var isUsedByAnyMode = OptimizeProviderId == provider.Id
-            || AssistantProviderId == provider.Id
-            || ResearchProviderId == provider.Id;
+            || AssistantProviderId == provider.Id;
 
         if (isUsedByAnyMode)
         {
@@ -322,8 +310,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         if (provider is null) return false;
         if (provider.ProviderType == AiProviderType.PiaCloud) return false;
         return provider.Id != OptimizeProviderId
-            && provider.Id != AssistantProviderId
-            && provider.Id != ResearchProviderId;
+            && provider.Id != AssistantProviderId;
     }
 
     public async Task RefreshProvidersAsync()
@@ -341,7 +328,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
         OptimizeProviderId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
         AssistantProviderId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
-        ResearchProviderId = ResolveOrDefault(settings, WindowMode.Research, providersList);
         _isLoading = false;
 
         await RefreshProviderDisplayItemsAsync();
@@ -354,8 +340,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         {
             var isActive = await _providerService.IsProviderActiveAsync(provider);
             var isDefault = OptimizeProviderId == provider.Id
-                || AssistantProviderId == provider.Id
-                || ResearchProviderId == provider.Id;
+                || AssistantProviderId == provider.Id;
 
             string? failReason = null;
             if (!isActive && isDefault)
@@ -384,8 +369,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
             settings.SetProviderForMode(WindowMode.Optimize, OptimizeProviderId);
         if (AssistantProviderId.HasValue)
             settings.SetProviderForMode(WindowMode.Assistant, AssistantProviderId);
-        if (ResearchProviderId.HasValue)
-            settings.SetProviderForMode(WindowMode.Research, ResearchProviderId);
         settings.DefaultProviderId = null;
         await _settingsService.SaveSettingsAsync(settings);
     }

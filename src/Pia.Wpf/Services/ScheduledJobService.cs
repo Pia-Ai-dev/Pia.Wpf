@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
@@ -34,7 +35,7 @@ public class ScheduledJobService : IScheduledJobService
 
     public async Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
-        ResearchAnswerLength answerLength = ResearchAnswerLength.Balanced, Guid? providerId = null)
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null)
     {
         var now = DateTime.Now;
         var job = new ScheduledJob
@@ -47,15 +48,14 @@ public class ScheduledJobService : IScheduledJobService
             DayOfMonth = dayOfMonth,
             Month = month,
             SpecificDate = specificDate,
-            AnswerLength = answerLength,
+            GrantedTools = grantedTools?.ToList() ?? [],
             ProviderId = providerId,
             CreatedAt = now,
             UpdatedAt = now,
             OwnerDeviceId = await ResolveLocalDeviceIdAsync()
         };
 
-        job.NextFireAt = _calculator.ComputeNextFireAt(
-            job.Recurrence, job.TimeOfDay, job.SpecificDate, job.DayOfWeek, job.DayOfMonth, job.Month, now);
+        job.NextFireAt = ComputeNextFireAt(job, now);
 
         await InsertAsync(job);
 
@@ -97,7 +97,7 @@ public class ScheduledJobService : IScheduledJobService
     public async Task UpdateAsync(Guid id, string? name = null, string? query = null,
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
-        ResearchAnswerLength? answerLength = null, Guid? providerId = null)
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
 
@@ -108,12 +108,10 @@ public class ScheduledJobService : IScheduledJobService
         if (dayOfWeek is not null) existing.DayOfWeek = dayOfWeek;
         if (dayOfMonth is not null) existing.DayOfMonth = dayOfMonth;
         if (month is not null) existing.Month = month;
-        if (answerLength is not null) existing.AnswerLength = answerLength.Value;
+        if (grantedTools is not null) existing.GrantedTools = grantedTools.ToList();
         if (providerId is not null) existing.ProviderId = providerId;
 
-        existing.NextFireAt = _calculator.ComputeNextFireAt(
-            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
-            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
+        existing.NextFireAt = ComputeNextFireAt(existing, DateTime.Now);
         existing.UpdatedAt = DateTime.Now;
 
         var connection = _context.GetConnection();
@@ -122,7 +120,7 @@ public class ScheduledJobService : IScheduledJobService
             UPDATE ScheduledJobs
             SET Name=@Name, Query=@Query, Recurrence=@Recurrence, TimeOfDay=@TimeOfDay,
                 DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month,
-                AnswerLength=@AnswerLength, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
+                GrantedTools=@GrantedTools, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
                 UpdatedAt=@UpdatedAt
             WHERE Id=@Id
             """;
@@ -134,7 +132,7 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@DayOfWeek", existing.DayOfWeek.HasValue ? (object)(int)existing.DayOfWeek.Value : DBNull.Value);
         command.Parameters.AddWithValue("@DayOfMonth", existing.DayOfMonth.HasValue ? (object)existing.DayOfMonth.Value : DBNull.Value);
         command.Parameters.AddWithValue("@Month", existing.Month.HasValue ? (object)existing.Month.Value : DBNull.Value);
-        command.Parameters.AddWithValue("@AnswerLength", existing.AnswerLength.ToString());
+        command.Parameters.AddWithValue("@GrantedTools", SerializeGrantedTools(existing.GrantedTools));
         command.Parameters.AddWithValue("@ProviderId", existing.ProviderId.HasValue ? (object)existing.ProviderId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@NextFireAt", existing.NextFireAt.ToString("O"));
         command.Parameters.AddWithValue("@UpdatedAt", existing.UpdatedAt.ToString("O"));
@@ -168,9 +166,7 @@ public class ScheduledJobService : IScheduledJobService
     public async Task EnableAsync(Guid id)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        existing.NextFireAt = _calculator.ComputeNextFireAt(
-            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
-            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
+        existing.NextFireAt = ComputeNextFireAt(existing, DateTime.Now);
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -189,9 +185,7 @@ public class ScheduledJobService : IScheduledJobService
     public async Task MarkRunCompleteAsync(Guid id, Guid resultEntryId)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        var nextFire = _calculator.ComputeNextFireAt(
-            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
-            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
+        var nextFire = ComputeNextFireAt(existing, DateTime.Now);
 
         // LastFiredAt / LastResultEntryId / NextFireAt / ConsecutiveFailures are device-local
         // execution state; don't bump UpdatedAt so this doesn't trigger a wasteful re-sync.
@@ -213,9 +207,7 @@ public class ScheduledJobService : IScheduledJobService
     public async Task MarkRunFailedAsync(Guid id, string reason)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        var nextFire = _calculator.ComputeNextFireAt(
-            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
-            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
+        var nextFire = ComputeNextFireAt(existing, DateTime.Now);
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
@@ -249,9 +241,7 @@ public class ScheduledJobService : IScheduledJobService
     public async Task AdvanceMissedRunAsync(Guid id)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        var nextFire = _calculator.ComputeNextFireAt(
-            existing.Recurrence, existing.TimeOfDay, existing.SpecificDate,
-            existing.DayOfWeek, existing.DayOfMonth, existing.Month, DateTime.Now);
+        var nextFire = ComputeNextFireAt(existing, DateTime.Now);
 
         // NextFireAt is local execution state; don't bump UpdatedAt.
         var connection = _context.GetConnection();
@@ -269,9 +259,7 @@ public class ScheduledJobService : IScheduledJobService
         if (existing is null)
         {
             // Imported job hasn't fired locally yet; compute initial NextFireAt from the synced config.
-            job.NextFireAt = _calculator.ComputeNextFireAt(
-                job.Recurrence, job.TimeOfDay, job.SpecificDate,
-                job.DayOfWeek, job.DayOfMonth, job.Month, DateTime.Now);
+            job.NextFireAt = ComputeNextFireAt(job, DateTime.Now);
             await InsertAsync(job);
             _logger.LogInformation("Imported scheduled job {Id} from sync", job.Id);
             return;
@@ -283,7 +271,7 @@ public class ScheduledJobService : IScheduledJobService
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE ScheduledJobs
-            SET Name=@Name, Query=@Query, Kind=@Kind, AnswerLength=@AnswerLength, ProviderId=@ProviderId,
+            SET Name=@Name, Query=@Query, Kind=@Kind, GrantedTools=@GrantedTools, ProviderId=@ProviderId,
                 Recurrence=@Recurrence, TimeOfDay=@TimeOfDay, DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth,
                 Month=@Month, SpecificDate=@SpecificDate, Status=@Status, UpdatedAt=@UpdatedAt,
                 OwnerDeviceId=@OwnerDeviceId
@@ -293,7 +281,7 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@Name", job.Name);
         command.Parameters.AddWithValue("@Query", job.Query);
         command.Parameters.AddWithValue("@Kind", job.Kind.ToString());
-        command.Parameters.AddWithValue("@AnswerLength", job.AnswerLength.ToString());
+        command.Parameters.AddWithValue("@GrantedTools", SerializeGrantedTools(job.GrantedTools));
         command.Parameters.AddWithValue("@ProviderId", job.ProviderId.HasValue ? (object)job.ProviderId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@Recurrence", job.Recurrence.ToString());
         command.Parameters.AddWithValue("@TimeOfDay", job.TimeOfDay.ToString("HH:mm"));
@@ -314,16 +302,21 @@ public class ScheduledJobService : IScheduledJobService
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO ScheduledJobs
-            (Id, Name, Query, Kind, AnswerLength, ProviderId, Recurrence, TimeOfDay,
+            (Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
              DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
              LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId)
-            VALUES (@Id, @Name, @Query, @Kind, @AnswerLength, @ProviderId, @Recurrence, @TimeOfDay,
+            VALUES (@Id, @Name, @Query, @Kind, @GrantedTools, @ProviderId, @Recurrence, @TimeOfDay,
                     @DayOfWeek, @DayOfMonth, @Month, @SpecificDate, @NextFireAt, @Status, @CreatedAt, @UpdatedAt,
                     @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId)
             """;
         AddJobParameters(command, job);
         await command.ExecuteNonQueryAsync();
     }
+
+    private DateTime ComputeNextFireAt(ScheduledJob job, DateTime from) =>
+        _calculator.ComputeNextFireAt(
+            job.Recurrence, job.TimeOfDay, job.SpecificDate,
+            job.DayOfWeek, job.DayOfMonth, job.Month, from);
 
     private async Task<Guid?> ResolveLocalDeviceIdAsync()
     {
@@ -337,7 +330,7 @@ public class ScheduledJobService : IScheduledJobService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT Id, Name, Query, Kind, AnswerLength, ProviderId, Recurrence, TimeOfDay,
+            SELECT Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
                    DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
                    LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId
             FROM ScheduledJobs
@@ -359,7 +352,7 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@Name", job.Name);
         command.Parameters.AddWithValue("@Query", job.Query);
         command.Parameters.AddWithValue("@Kind", job.Kind.ToString());
-        command.Parameters.AddWithValue("@AnswerLength", job.AnswerLength.ToString());
+        command.Parameters.AddWithValue("@GrantedTools", SerializeGrantedTools(job.GrantedTools));
         command.Parameters.AddWithValue("@ProviderId", job.ProviderId.HasValue ? (object)job.ProviderId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@Recurrence", job.Recurrence.ToString());
         command.Parameters.AddWithValue("@TimeOfDay", job.TimeOfDay.ToString("HH:mm"));
@@ -383,7 +376,7 @@ public class ScheduledJobService : IScheduledJobService
         Name = r.GetString(1),
         Query = r.GetString(2),
         Kind = Enum.Parse<ScheduledJobKind>(r.GetString(3)),
-        AnswerLength = Enum.Parse<ResearchAnswerLength>(r.GetString(4)),
+        GrantedTools = DeserializeGrantedTools(r.IsDBNull(4) ? null : r.GetString(4)),
         ProviderId = r.IsDBNull(5) ? null : Guid.Parse(r.GetString(5)),
         Recurrence = Enum.Parse<RecurrenceType>(r.GetString(6)),
         TimeOfDay = TimeOnly.Parse(r.GetString(7)),
@@ -400,4 +393,14 @@ public class ScheduledJobService : IScheduledJobService
         ConsecutiveFailures = r.GetInt32(18),
         OwnerDeviceId = r.IsDBNull(19) ? null : Guid.Parse(r.GetString(19))
     };
+
+    private static string SerializeGrantedTools(IReadOnlyCollection<string> grantedTools) =>
+        JsonSerializer.Serialize(grantedTools);
+
+    private static List<string> DeserializeGrantedTools(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch (JsonException) { return []; }
+    }
 }

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -8,10 +7,11 @@ using Pia.Services.Interfaces;
 namespace Pia.Services;
 
 /// <summary>
-/// Polls <see cref="IScheduledJobService.GetDueJobsAsync"/> every 30 seconds and
-/// executes each due research job. This task implements only the silent-execute
-/// path; the grace-period / missed-run prompt arrives in Task 12 and will wedge
-/// itself between <see cref="RunJobAsync"/> and <see cref="ExecuteResearchAsync"/>.
+/// Polls <see cref="IScheduledJobService.GetDueJobsAsync"/> every 30 seconds and runs each
+/// due job as a headless background assistant turn (<see cref="IBackgroundAssistantTurnRunner"/>),
+/// persisting the result as an assistant chat. Within the grace period a job runs silently;
+/// once it exceeds the grace period the missed-run prompt in <see cref="RunJobAsync"/> asks the
+/// user before running.
 /// </summary>
 public class ScheduledJobBackgroundService : BackgroundService
 {
@@ -20,7 +20,6 @@ public class ScheduledJobBackgroundService : BackgroundService
 
     private readonly IScheduledJobService _jobs;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IResearchHistoryService _history;
     private readonly IScheduledResearchProviderResolver _providers;
     private readonly IScheduledJobNotificationSurface _notifications;
     private readonly ILogger<ScheduledJobBackgroundService> _logger;
@@ -42,14 +41,12 @@ public class ScheduledJobBackgroundService : BackgroundService
     public ScheduledJobBackgroundService(
         IScheduledJobService jobs,
         IServiceScopeFactory scopeFactory,
-        IResearchHistoryService history,
         IScheduledResearchProviderResolver providers,
         IScheduledJobNotificationSurface notifications,
         ILogger<ScheduledJobBackgroundService> logger)
     {
         _jobs = jobs;
         _scopeFactory = scopeFactory;
-        _history = history;
         _providers = providers;
         _notifications = notifications;
         _logger = logger;
@@ -149,44 +146,27 @@ public class ScheduledJobBackgroundService : BackgroundService
             if (provider is null)
             {
                 const string reason = "NoProvider";
-                var failedId = await PersistFailedEntryAsync(job, reason, provider: null);
                 await _jobs.MarkRunFailedAsync(job.Id, reason);
-                _notifications.NotifyFailure(job, failedId, reason);
+                _notifications.NotifyFailure(job, reason);
                 _logger.LogWarning("Scheduled job {Id} failed: no provider available", job.Id);
                 return;
             }
 
-            var session = new ResearchSession(job.Query);
-
-            // Resolve the scoped IResearchService (and any of its scoped transitive deps
-            // such as ITokenMapService) from a fresh per-run scope so they are not
-            // captured for the singleton's lifetime.
+            // Resolve the runner (and its transient AI-client decorator) from a fresh
+            // per-run scope so tokenization state isn't captured across runs.
             using var scope = _scopeFactory.CreateScope();
-            var research = scope.ServiceProvider.GetRequiredService<IResearchService>();
+            var runner = scope.ServiceProvider.GetRequiredService<IBackgroundAssistantTurnRunner>();
 
+            BackgroundTurnResult result;
             try
             {
-                await research.ExecuteResearchAsync(session, provider, job.AnswerLength, ct);
-
-                var entry = new ResearchHistoryEntry
+                result = await runner.RunAsync(new BackgroundTurnRequest
                 {
-                    Id = session.Id,
-                    Query = session.Query,
-                    SynthesizedResult = session.SynthesizedResult,
-                    StepsJson = SerializeSteps(session),
-                    ProviderId = provider.Id,
-                    ProviderName = provider.Name,
-                    Status = session.Status.ToString(),
-                    StepCount = session.Steps.Count,
-                    CreatedAt = session.CreatedAt,
-                    CompletedAt = session.CompletedAt ?? DateTime.Now,
-                    ScheduledJobId = job.Id
-                };
-                await _history.AddEntryAsync(entry);
-                await _jobs.MarkRunCompleteAsync(job.Id, entry.Id);
-                _notifications.NotifySuccess(job, entry);
-
-                _logger.LogInformation("Scheduled job {Id} run completed; entry {EntryId}", job.Id, entry.Id);
+                    Prompt = job.Query,
+                    Provider = provider,
+                    GrantedWriteTools = job.GrantedTools,
+                    Title = job.Name,
+                }, ct);
             }
             catch (OperationCanceledException)
             {
@@ -194,52 +174,30 @@ public class ScheduledJobBackgroundService : BackgroundService
             }
             catch (Exception ex)
             {
-                var failedId = await PersistFailedEntryAsync(job, ex.Message, provider);
                 await _jobs.MarkRunFailedAsync(job.Id, ex.Message);
-                _notifications.NotifyFailure(job, failedId, ex.Message);
-                _logger.LogWarning(ex, "Scheduled job {Id} run failed", job.Id);
+                _notifications.NotifyFailure(job, ex.Message);
+                _logger.LogWarning(ex, "Scheduled job {Id} run threw", job.Id);
+                return;
+            }
+
+            if (result.Succeeded)
+            {
+                // LastResultEntryId now references the produced assistant chat.
+                await _jobs.MarkRunCompleteAsync(job.Id, result.ChatId);
+                _notifications.NotifySuccess(job, result.ChatId, job.Name);
+                _logger.LogInformation("Scheduled job {Id} run completed; chat {ChatId}", job.Id, result.ChatId);
+            }
+            else
+            {
+                var reason = result.Error ?? "Unknown error";
+                await _jobs.MarkRunFailedAsync(job.Id, reason);
+                _notifications.NotifyFailure(job, reason);
+                _logger.LogWarning("Scheduled job {Id} run failed: {Reason}", job.Id, reason);
             }
         }
         finally
         {
             _runLock.Release();
         }
-    }
-
-    private async Task<Guid> PersistFailedEntryAsync(ScheduledJob job, string reason, AiProvider? provider)
-    {
-        var entry = new ResearchHistoryEntry
-        {
-            Query = job.Query,
-            SynthesizedResult = $"Run failed: {reason}",
-            StepsJson = "[]",
-            ProviderId = provider?.Id ?? Guid.Empty,
-            ProviderName = provider?.Name,
-            Status = "Failed",
-            StepCount = 0,
-            CreatedAt = DateTime.Now,
-            CompletedAt = DateTime.Now,
-            ScheduledJobId = job.Id
-        };
-        await _history.AddEntryAsync(entry);
-        return entry.Id;
-    }
-
-    private static string SerializeSteps(ResearchSession session)
-    {
-        if (session.Steps.Count == 0)
-        {
-            return "[]";
-        }
-
-        var dtos = session.Steps.Select(s => new ResearchStepDto
-        {
-            StepNumber = s.StepNumber,
-            Title = s.Title,
-            Content = s.Content,
-            Status = s.Status.ToString()
-        }).ToList();
-
-        return JsonSerializer.Serialize(dtos);
     }
 }

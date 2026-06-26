@@ -10,9 +10,9 @@ namespace Pia.Services;
 /// Note: <see cref="ISettingsService"/> exposes the providers through the
 /// dedicated <see cref="IProviderService"/> rather than directly. We use that
 /// service's <c>GetProviderAsync(id)</c> for the pinned lookup and
-/// <c>GetDefaultProviderForModeAsync(WindowMode.Research)</c> for the fallback,
-/// both of which already honour the <see cref="AppSettings.UseSameProviderForAllModes"/>
-/// flag and the policy-enforced default.
+/// <c>GetDefaultProviderForModeAsync(WindowMode.Assistant)</c> for the fallback
+/// (background runs are now assistant chats), both of which already honour the
+/// <see cref="AppSettings.UseSameProviderForAllModes"/> flag and the policy-enforced default.
 /// </remarks>
 public class ScheduledResearchProviderResolver : IScheduledResearchProviderResolver
 {
@@ -34,6 +34,6 @@ public class ScheduledResearchProviderResolver : IScheduledResearchProviderResol
             }
         }
 
-        return await _providers.GetDefaultProviderForModeAsync(WindowMode.Research);
+        return await _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant);
     }
 }

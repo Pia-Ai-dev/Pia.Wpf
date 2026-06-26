@@ -95,12 +95,12 @@ public class SyncMapperModeDefaultsMergeTests
         var mapper = Make();
         var target = new AppSettings();
 
-        var newRes = Guid.NewGuid();
-        var sync = BaseSync(new Dictionary<int, Guid> { [(int)WindowMode.Research] = newRes });
+        var newAsst = Guid.NewGuid();
+        var sync = BaseSync(new Dictionary<int, Guid> { [(int)WindowMode.Assistant] = newAsst });
 
         mapper.ApplySyncSettings(sync, target);
 
-        Assert.Equal(newRes, target.ModeProviderDefaults[WindowMode.Research]);
+        Assert.Equal(newAsst, target.ModeProviderDefaults[WindowMode.Assistant]);
     }
 
     [Fact]

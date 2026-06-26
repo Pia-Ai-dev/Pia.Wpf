@@ -36,9 +36,6 @@ public class EnumToLocalizedStringConverter : IValueConverter
             MeetingBrowserSelection.SystemChrome    => "Enum_MeetingBrowser_Chrome",
             MeetingBrowserSelection.SystemEdge      => "Enum_MeetingBrowser_Edge",
             MeetingBrowserSelection.SystemDefault   => "Enum_MeetingBrowser_Default",
-            ResearchAnswerLength.Concise => "Research_AnswerLength_Concise",
-            ResearchAnswerLength.Balanced => "Research_AnswerLength_Balanced",
-            ResearchAnswerLength.Detailed => "Research_AnswerLength_Detailed",
             _ => null
         };
 

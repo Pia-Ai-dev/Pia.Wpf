@@ -773,7 +773,7 @@ public class SyncMapper
                 job.Name,
                 job.Query,
                 Kind = (int)job.Kind,
-                AnswerLength = (int)job.AnswerLength,
+                GrantedTools = job.GrantedTools,
                 job.ProviderId,
                 Recurrence = (int)job.Recurrence,
                 job.TimeOfDay,
@@ -791,7 +791,7 @@ public class SyncMapper
             sync.Name = job.Name;
             sync.Query = job.Query;
             sync.Kind = (int)job.Kind;
-            sync.AnswerLength = (int)job.AnswerLength;
+            sync.GrantedTools = job.GrantedTools;
             sync.ProviderId = job.ProviderId;
             sync.Recurrence = (int)job.Recurrence;
             sync.TimeOfDay = job.TimeOfDay;
@@ -821,7 +821,7 @@ public class SyncMapper
                 Name = decrypted.Name ?? "",
                 Query = decrypted.Query ?? "",
                 Kind = (ScheduledJobKind)(decrypted.Kind ?? 0),
-                AnswerLength = (ResearchAnswerLength)(decrypted.AnswerLength ?? 0),
+                GrantedTools = decrypted.GrantedTools ?? [],
                 ProviderId = decrypted.ProviderId,
                 Recurrence = (RecurrenceType)(decrypted.Recurrence ?? 0),
                 TimeOfDay = decrypted.TimeOfDay ?? default,
@@ -842,7 +842,7 @@ public class SyncMapper
             Name = sync.Name ?? "",
             Query = sync.Query ?? "",
             Kind = (ScheduledJobKind)(sync.Kind ?? 0),
-            AnswerLength = (ResearchAnswerLength)(sync.AnswerLength ?? 0),
+            GrantedTools = sync.GrantedTools ?? [],
             ProviderId = sync.ProviderId,
             Recurrence = (RecurrenceType)(sync.Recurrence ?? 0),
             TimeOfDay = sync.TimeOfDay ?? default,
@@ -858,92 +858,9 @@ public class SyncMapper
     }
 
     // --- Research Sessions ---
-
-    public SyncResearchSession ToSyncResearchSession(ResearchHistoryEntry entry, string? userId = null)
-    {
-        var sync = new SyncResearchSession
-        {
-            Id = entry.Id,
-            CreatedAt = ToUtc(entry.CreatedAt),
-            UpdatedAt = ToUtc(entry.UpdatedAt),
-            CompletedAt = ToUtc(entry.CompletedAt)
-        };
-
-        if (IsE2EEActive && userId is not null)
-        {
-            var plainPayload = new
-            {
-                entry.Query,
-                entry.SynthesizedResult,
-                entry.StepsJson,
-                entry.ProviderId,
-                entry.ProviderName,
-                entry.Status,
-                entry.StepCount,
-                entry.ScheduledJobId
-            };
-            (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
-                plainPayload, userId, "research_session", entry.Id.ToString());
-        }
-        else
-        {
-            sync.Query = entry.Query;
-            sync.SynthesizedResult = entry.SynthesizedResult;
-            sync.StepsJson = entry.StepsJson;
-            sync.ProviderId = entry.ProviderId;
-            sync.ProviderName = entry.ProviderName;
-            sync.Status = entry.Status;
-            sync.StepCount = entry.StepCount;
-            sync.ScheduledJobId = entry.ScheduledJobId;
-        }
-
-        return sync;
-    }
-
-    public ResearchHistoryEntry FromSyncResearchSession(SyncResearchSession sync, string? userId = null)
-    {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
-        {
-            var decrypted = _e2ee!.DecryptRecord<SyncResearchSession>(
-                sync.EncryptedPayload, sync.WrappedDek, userId, "research_session", sync.Id.ToString());
-
-            return new ResearchHistoryEntry
-            {
-                Id = sync.Id,
-                Query = decrypted.Query ?? "",
-                SynthesizedResult = decrypted.SynthesizedResult ?? "",
-                StepsJson = decrypted.StepsJson ?? "[]",
-                ProviderId = decrypted.ProviderId ?? Guid.Empty,
-                ProviderName = decrypted.ProviderName,
-                Status = decrypted.Status ?? "Completed",
-                StepCount = decrypted.StepCount ?? 0,
-                ScheduledJobId = decrypted.ScheduledJobId,
-                CreatedAt = sync.CreatedAt,
-                UpdatedAt = sync.UpdatedAt,
-                CompletedAt = sync.CompletedAt ?? sync.CreatedAt
-                // Embedding intentionally null — recomputed locally on first vector-search use.
-            };
-        }
-
-        return new ResearchHistoryEntry
-        {
-            Id = sync.Id,
-            Query = sync.Query ?? "",
-            SynthesizedResult = sync.SynthesizedResult ?? "",
-            StepsJson = sync.StepsJson ?? "[]",
-            ProviderId = sync.ProviderId ?? Guid.Empty,
-            ProviderName = sync.ProviderName,
-            Status = sync.Status ?? "Completed",
-            StepCount = sync.StepCount ?? 0,
-            ScheduledJobId = sync.ScheduledJobId,
-            CreatedAt = sync.CreatedAt,
-            UpdatedAt = sync.UpdatedAt,
-            CompletedAt = sync.CompletedAt ?? sync.CreatedAt
-        };
-    }
+    // Removed with the research view: research results are now persisted as assistant chats
+    // (see IBackgroundAssistantTurnRunner). The SyncResearchSession DTO + push/pull fields are
+    // retained for server wire-contract stability but are no longer produced/consumed by the client.
 
     // --- Assistant Chats ---
 

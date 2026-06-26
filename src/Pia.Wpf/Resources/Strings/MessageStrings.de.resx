@@ -339,7 +339,7 @@
   <data name="Tool_ScheduledResearch_Detail_DayOfMonth" xml:space="preserve"><value>Tag des Monats</value></data>
   <data name="Tool_ScheduledResearch_Detail_Month" xml:space="preserve"><value>Monat</value></data>
   <data name="Tool_ScheduledResearch_Detail_Date" xml:space="preserve"><value>Datum</value></data>
-  <data name="Tool_ScheduledResearch_Detail_AnswerLength" xml:space="preserve"><value>Antwortlänge</value></data>
+  <data name="Tool_ScheduledResearch_Detail_GrantedTools" xml:space="preserve"><value>Erlaubte Schreib-Tools</value></data>
   <data name="Tool_ScheduledResearch_Detail_Provider" xml:space="preserve"><value>Anbieter</value></data>
   <data name="Tool_ScheduledResearch_Detail_CurrentStatus" xml:space="preserve"><value>Aktuell: {0} um {1}
 Änderungen werden angewendet.</value></data>

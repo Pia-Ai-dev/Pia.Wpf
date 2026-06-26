@@ -18,7 +18,6 @@ public class PluginService : IPluginService
     private readonly ITodoToolHandler _todoToolHandler;
     private readonly IReminderToolHandler _reminderToolHandler;
     private readonly IScheduledJobToolHandler _scheduledJobToolHandler;
-    private readonly IResearchHistoryToolHandler _researchHistoryToolHandler;
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
@@ -44,7 +43,6 @@ public class PluginService : IPluginService
         ITodoToolHandler todoToolHandler,
         IReminderToolHandler reminderToolHandler,
         IScheduledJobToolHandler scheduledJobToolHandler,
-        IResearchHistoryToolHandler researchHistoryToolHandler,
         IFilesToolHandler filesToolHandler,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
@@ -55,7 +53,6 @@ public class PluginService : IPluginService
         _todoToolHandler = todoToolHandler;
         _reminderToolHandler = reminderToolHandler;
         _scheduledJobToolHandler = scheduledJobToolHandler;
-        _researchHistoryToolHandler = researchHistoryToolHandler;
         _filesToolHandler = filesToolHandler;
         _settingsService = settingsService;
         _logger = logger;
@@ -82,7 +79,6 @@ public class PluginService : IPluginService
                 "todo" => BuiltInPluginHandler.FromTodoHandler(_todoToolHandler, config),
                 "reminder" => BuiltInPluginHandler.FromReminderHandler(_reminderToolHandler, config),
                 "scheduled-research" => BuiltInPluginHandler.FromScheduledJobHandler(_scheduledJobToolHandler, config),
-                "research-history" => BuiltInPluginHandler.FromResearchHistoryHandler(_researchHistoryToolHandler, config),
                 "files" => BuiltInPluginHandler.FromFilesHandler(_filesToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };

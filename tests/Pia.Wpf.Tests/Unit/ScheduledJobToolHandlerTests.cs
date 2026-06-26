@@ -36,7 +36,7 @@ public class ScheduledJobToolHandlerTests
             ["recurrence"] = "Weekly",
             ["timeOfDay"] = "08:00",
             ["dayOfWeek"] = "Monday",
-            ["answerLength"] = "Detailed"
+            ["grantedTools"] = "create_object, create_todo"
         };
 
         var (result, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args));
@@ -58,7 +58,7 @@ public class ScheduledJobToolHandlerTests
         Assert.Equal(RecurrenceType.Weekly, created.Recurrence);
         Assert.Equal(new TimeOnly(8, 0), created.TimeOfDay);
         Assert.Equal(DayOfWeek.Monday, created.DayOfWeek);
-        Assert.Equal(ResearchAnswerLength.Detailed, created.AnswerLength);
+        Assert.Equal(new[] { "create_object", "create_todo" }, created.GrantedTools);
     }
 
     [Fact]
@@ -108,8 +108,7 @@ public class ScheduledJobToolHandlerTests
             Query = "tesla news",
             Recurrence = RecurrenceType.Daily,
             TimeOfDay = new TimeOnly(8, 0),
-            NextFireAt = DateTime.Now.AddHours(1),
-            AnswerLength = ResearchAnswerLength.Balanced
+            NextFireAt = DateTime.Now.AddHours(1)
         };
         jobs.SeedActive(job);
 
@@ -149,8 +148,8 @@ public class ScheduledJobToolHandlerTests
 
         public Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence,
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
-            DateTime? specificDate = null, ResearchAnswerLength answerLength = ResearchAnswerLength.Balanced,
-            Guid? providerId = null)
+            DateTime? specificDate = null, Guid? providerId = null,
+            IReadOnlyCollection<string>? grantedTools = null)
         {
             var job = new ScheduledJob
             {
@@ -162,7 +161,7 @@ public class ScheduledJobToolHandlerTests
                 DayOfMonth = dayOfMonth,
                 Month = month,
                 SpecificDate = specificDate,
-                AnswerLength = answerLength,
+                GrantedTools = grantedTools?.ToList() ?? [],
                 ProviderId = providerId,
                 NextFireAt = DateTime.Now.AddHours(1)
             };
@@ -185,8 +184,8 @@ public class ScheduledJobToolHandlerTests
 
         public Task UpdateAsync(Guid id, string? name = null, string? query = null,
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
-            int? dayOfMonth = null, int? month = null, ResearchAnswerLength? answerLength = null,
-            Guid? providerId = null)
+            int? dayOfMonth = null, int? month = null, Guid? providerId = null,
+            IReadOnlyCollection<string>? grantedTools = null)
         {
             Updated.Add(id);
             return Task.CompletedTask;

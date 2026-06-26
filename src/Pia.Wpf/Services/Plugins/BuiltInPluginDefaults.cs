@@ -12,6 +12,9 @@ public static class BuiltInPluginDefaults
     public static readonly Guid TodoPluginId = new("10000000-0000-0000-0000-000000000002");
     public static readonly Guid ReminderPluginId = new("10000000-0000-0000-0000-000000000003");
     public static readonly Guid ScheduledResearchPluginId = new("10000000-0000-0000-0000-000000000004");
+    // Retired: the research-history plugin was removed with the research view. The id is kept in
+    // PreloadedPluginIds (but not in Defaults) so any legacy persisted row is skipped, not re-seeded
+    // or treated as an unknown server plugin.
     public static readonly Guid ResearchHistoryPluginId = new("10000000-0000-0000-0000-000000000005");
     public static readonly Guid FilesPluginId = new("10000000-0000-0000-0000-000000000006");
 
@@ -67,18 +70,6 @@ public static class BuiltInPluginDefaults
             IsActive = true,
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones."}""",
-            UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
-        },
-        [ResearchHistoryPluginId] = new SyncPlugin
-        {
-            Id = ResearchHistoryPluginId,
-            Kind = "builtin_tool_pack",
-            Name = "research-history",
-            Description = "Search past research findings.",
-            IsPreloaded = true,
-            IsActive = true,
-            Version = "1.0.0",
-            ConfigJson = """{"handlerId":"research-history","defaultEnabled":true,"systemPromptAddition":"You can search the user's prior research findings. Use search_research_history to find past research and get_research_entry to retrieve a full entry by ID."}""",
             UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
         },
         [FilesPluginId] = new SyncPlugin

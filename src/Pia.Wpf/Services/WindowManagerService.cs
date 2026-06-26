@@ -158,9 +158,6 @@ public partial class WindowManagerService : IWindowManagerService
             case WindowMode.Assistant:
                 navigationService.NavigateTo<AssistantViewModel, string>(text);
                 break;
-            case WindowMode.Research:
-                navigationService.NavigateTo<ResearchViewModel, string>(text);
-                break;
         }
     }
 
@@ -182,21 +179,7 @@ public partial class WindowManagerService : IWindowManagerService
             case WindowMode.Assistant:
                 navigationService.NavigateTo<AssistantViewModel, CapturedSelectionPayload>(payload);
                 break;
-            case WindowMode.Research:
-                navigationService.NavigateTo<ResearchViewModel, CapturedSelectionPayload>(payload);
-                break;
         }
-    }
-
-    public void ShowResearchHistoryWithEntry(Guid entryId)
-    {
-        ShowWindow(WindowMode.Research);
-
-        if (!_windows.TryGetValue(WindowMode.Research, out var managed))
-            return;
-
-        var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
-        navigationService.NavigateTo<ResearchHistoryViewModel, Guid>(entryId);
     }
 
     public void ShowAssistantChat(Guid chatId)

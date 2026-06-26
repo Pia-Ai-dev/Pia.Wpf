@@ -50,7 +50,7 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         EnsureToastActivationRegistered();
     }
 
-    public void NotifySuccess(ScheduledJob job, ResearchHistoryEntry entry)
+    public void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle)
     {
         EnsureToastActivationRegistered();
 
@@ -63,7 +63,7 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
             Body = _localizationService["Flow_Job_Success"],
             DedupKey = job.Id.ToString(),
             Lifetime = FlowLifetime.Persistent,
-            Action = new OpenBriefingAction(entry.Id, _localizationService["Flow_Action_OpenBriefing"]),
+            Action = new OpenChatAction(chatId, _localizationService["Flow_Action_OpenChat"]),
             RequestDurable = true,
         });
 
@@ -73,9 +73,9 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
                 .AddText(_localizationService["Notification_ScheduledResearch"])
                 .AddText(_localizationService.Format("Notification_ScheduledResearch_Body", job.Name))
                 .AddButton(new ToastButton()
-                    .SetContent(_localizationService["Notification_OpenBriefing"])
-                    .AddArgument("action", "openBriefing")
-                    .AddArgument("entryId", entry.Id.ToString())
+                    .SetContent(_localizationService["Notification_OpenChat"])
+                    .AddArgument("action", "openChat")
+                    .AddArgument("chatId", chatId.ToString())
                     .AddArgument("jobId", job.Id.ToString()))
                 .Show();
         }
@@ -85,12 +85,12 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         }
     }
 
-    public void NotifyFailure(ScheduledJob job, Guid resultEntryId, string reason)
+    public void NotifyFailure(ScheduledJob job, string reason)
     {
         EnsureToastActivationRegistered();
 
         // Publish to Flow first. The failure reason can carry content, so it is never logged or stored;
-        // a generic localized body is used (the deep-link opens the persisted failed entry for detail).
+        // a generic localized body is used. No chat was produced, so there is no deep-link action.
         _flowService.Publish(new FlowItemDraft
         {
             Severity = FlowSeverity.Error,
@@ -99,7 +99,6 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
             Body = _localizationService["Flow_Job_Failure"],
             DedupKey = job.Id.ToString(),
             Lifetime = FlowLifetime.Persistent,
-            Action = new OpenBriefingAction(resultEntryId, _localizationService["Flow_Action_OpenBriefing"]),
             RequestDurable = true,
         });
 
@@ -108,11 +107,6 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
             new ToastContentBuilder()
                 .AddText(_localizationService["Notification_ScheduledResearchFailed"])
                 .AddText(_localizationService.Format("Notification_ScheduledResearchFailed_Body", job.Name))
-                .AddButton(new ToastButton()
-                    .SetContent(_localizationService["Notification_OpenBriefing"])
-                    .AddArgument("action", "openBriefing")
-                    .AddArgument("entryId", resultEntryId.ToString())
-                    .AddArgument("jobId", job.Id.ToString()))
                 .Show();
         }
         catch (Exception ex)
@@ -195,6 +189,9 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         return null;
     }
 
+    // (BringMainWindowForward removed: success now opens the assistant chat via
+    // IWindowManagerService.ShowAssistantChat, which foregrounds the assistant window itself.)
+
     private void EnsureToastActivationRegistered()
     {
         if (_toastCallbackRegistered) return;
@@ -217,30 +214,25 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         {
             var args = ToastArguments.Parse(e.Argument);
 
-            if (!args.TryGetValue("action", out var action) || action != "openBriefing")
+            if (!args.TryGetValue("action", out var action) || action != "openChat")
                 return;
 
-            args.TryGetValue("entryId", out var entryIdStr);
+            args.TryGetValue("chatId", out var chatIdStr);
             args.TryGetValue("jobId", out var jobIdStr);
 
             _logger.LogInformation(
-                "Scheduled-job toast activated entryId={EntryId} jobId={JobId}",
-                entryIdStr,
+                "Scheduled-job toast activated chatId={ChatId} jobId={JobId}",
+                chatIdStr,
                 jobIdStr);
 
             Application.Current?.Dispatcher.InvokeAsync(() =>
             {
                 try
                 {
-                    if (Guid.TryParse(entryIdStr, out var entryId) && entryId != Guid.Empty)
-                    {
-                        _windowManager.ShowResearchHistoryWithEntry(entryId);
-                    }
+                    if (Guid.TryParse(chatIdStr, out var chatId) && chatId != Guid.Empty)
+                        _windowManager.ShowAssistantChat(chatId);
                     else
-                    {
-                        _windowManager.ShowWindow(WindowMode.Research);
-                    }
-                    BringMainWindowForward();
+                        _windowManager.ShowWindow(WindowMode.Assistant);
                 }
                 catch (Exception inner)
                 {
@@ -254,11 +246,4 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         }
     }
 
-    private static void BringMainWindowForward()
-    {
-        if (Application.Current?.MainWindow is null) return;
-        if (Application.Current.MainWindow.WindowState == WindowState.Minimized)
-            Application.Current.MainWindow.WindowState = WindowState.Normal;
-        Application.Current.MainWindow.Activate();
-    }
 }

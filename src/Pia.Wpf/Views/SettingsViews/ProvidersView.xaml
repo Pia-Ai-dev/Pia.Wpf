@@ -36,20 +36,12 @@
                   DisplayMemberPath="Name"
                   Margin="0,0,0,8"/>
 
-        <!-- Assistant and Research dropdowns only when "same for all" is unchecked -->
+        <!-- Assistant dropdown only when "same for all" is unchecked -->
         <StackPanel Visibility="{Binding UseSameProviderForAllModes, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
           <TextBlock Text="{loc:Str Providers_Assistant}"
                      Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
           <ComboBox ItemsSource="{Binding Providers}"
                     SelectedValue="{Binding AssistantProviderId}"
-                    SelectedValuePath="Id"
-                    DisplayMemberPath="Name"
-                    Margin="0,0,0,8"/>
-
-          <TextBlock Text="{loc:Str Providers_Research}"
-                     Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-          <ComboBox ItemsSource="{Binding Providers}"
-                    SelectedValue="{Binding ResearchProviderId}"
                     SelectedValuePath="Id"
                     DisplayMemberPath="Name"/>
         </StackPanel>
@@ -175,16 +167,6 @@
                           </MultiBinding>
                         </Border.Visibility>
                         <ui:Badge Content="{loc:Str Providers_Assistant}" Appearance="Info"/>
-                      </Border>
-                      <Border Margin="0,0,4,0">
-                        <Border.Visibility>
-                          <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
-                            <Binding Path="Provider.Id"/>
-                            <Binding Path="DataContext.ResearchProviderId"
-                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                          </MultiBinding>
-                        </Border.Visibility>
-                        <ui:Badge Content="{loc:Str Providers_Research}" Appearance="Info"/>
                       </Border>
                       <ui:Badge Content="{Binding FailReason}"
                                 Visibility="{Binding ShowFailBadge, Converter={StaticResource BooleanToVisibilityConverter}}"

@@ -12,15 +12,15 @@ namespace Pia.Services.Interfaces;
 public interface IScheduledJobNotificationSurface
 {
     /// <summary>
-    /// Notify the user that a scheduled research run completed successfully.
+    /// Notify the user that a scheduled run completed successfully. <paramref name="chatId"/>
+    /// references the produced assistant chat so the UI can open it.
     /// </summary>
-    void NotifySuccess(ScheduledJob job, ResearchHistoryEntry entry);
+    void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle);
 
     /// <summary>
-    /// Notify the user that a scheduled research run failed. <paramref name="resultEntryId"/>
-    /// references the persisted "Failed" entry so the UI can navigate to it.
+    /// Notify the user that a scheduled run failed (no chat was produced).
     /// </summary>
-    void NotifyFailure(ScheduledJob job, Guid resultEntryId, string reason);
+    void NotifyFailure(ScheduledJob job, string reason);
 
     /// <summary>
     /// Ask the user whether to run a missed scheduled job. Returns

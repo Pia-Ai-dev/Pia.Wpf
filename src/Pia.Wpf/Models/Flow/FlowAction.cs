@@ -4,6 +4,8 @@ namespace Pia.Models.Flow;
 public enum FlowActionKind
 {
     OpenChat,
+    // Dormant: legacy research-history briefing link. The research view was removed; the value is
+    // retained only so persisted FlowActionKind ordinals don't shift. Reconstructs to no action.
     OpenBriefing,
     OpenTodo,
     ReminderSnooze,
@@ -32,13 +34,6 @@ public sealed record OpenChatAction(Guid ChatId, string Label) : FlowAction(Labe
 {
     public override FlowActionKind Kind => FlowActionKind.OpenChat;
     public override Guid? EntityId => ChatId;
-}
-
-/// <summary>Open a research-history briefing entry (via IWindowManagerService.ShowResearchHistoryWithEntry).</summary>
-public sealed record OpenBriefingAction(Guid EntryId, string Label) : FlowAction(Label)
-{
-    public override FlowActionKind Kind => FlowActionKind.OpenBriefing;
-    public override Guid? EntityId => EntryId;
 }
 
 /// <summary>Navigate to the todo board, focusing the given todo.</summary>

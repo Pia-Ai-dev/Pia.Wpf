@@ -942,13 +942,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void ShowNoVoiceLoadedSnackbar()
     {
-        // General tab (outer 4) → Speech inner tab (inner 2) hosts the TTS voice selection UI.
+        // General tab (outer 3) → Speech inner tab (inner 2) hosts the TTS voice selection UI.
         SnackbarActionHelper.ShowWithAction(
             _snackbarService,
             _localizationService["Msg_Warning"],
             _localizationService["Msg_Tts_NoVoiceLoaded"],
             _localizationService["Msg_Tts_NoVoiceLoaded_OpenSettings"],
-            () => _navigationService.NavigateTo<SettingsViewModel, (int, int)>((4, 2)),
+            () => _navigationService.NavigateTo<SettingsViewModel, (int, int)>((3, 2)),
             Wpf.Ui.Controls.ControlAppearance.Caution,
             TimeSpan.FromSeconds(8));
     }

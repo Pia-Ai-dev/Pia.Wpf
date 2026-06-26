@@ -34,14 +34,14 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         return
         [
             AIFunctionFactory.Create(CreateScheduledSchema, "create_scheduled_research",
-                $"Create a new scheduled research job that fires on a recurring schedule, runs research, and shows a toast when complete. Current date/time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}). " +
-                "PRECONDITION: before calling, you must have explicit user-given values for name (display name), query (the research topic), and answerLength. If the user does not give a query - but a name - suggest a query." +
+                $"Create a new scheduled research job that fires on a recurring schedule, runs the query as a background assistant turn, saves the result as a new assistant chat, and shows a toast when complete. Current date/time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}). " +
+                "PRECONDITION: before calling, you must have explicit user-given values for name (display name) and query. The query is a self-contained prompt that will be run once at fire time, so craft it well (bake in any desired answer length/format). If the user does not give a query - but a name - suggest a query. " +
                 "If the user's request is ambiguous, do NOT call this tool. Ask a single clarifying question that requests the missing fields, then call once the user has answered. " +
                 "Parse the user's natural language request into structured fields. " +
                 "Examples: 'every weekday at 8am check Tesla stock news' -> create 5 separate Weekly jobs (Mon-Fri) since 'weekday' is not a single recurrence type. " +
                 "'every Monday research crypto trends' -> recurrence=Weekly, dayOfWeek=Monday, timeOfDay=08:00. " +
-                "answerLength can be 'Concise', 'Balanced', or 'Detailed' -> use Concise as default, when the user does not provide input" +
-                "providerName is optional - if omitted, the provider mapped to Research mode at fire time is used."),
+                "The background turn may use read-only tools freely. Write tools are DENIED unless the user explicitly grants them: pass their EXACT tool names in grantedTools (comma-separated). Grantable write tools include: create_object/update_object/append_to_list/delete_object (memory), create_todo/update_todo/complete_todo/delete_todo (todos), write_file/delete_file (files). Only grant writes the user clearly asked for. " +
+                "providerName is optional - if omitted, the provider mapped to Assistant mode at fire time is used."),
 
             AIFunctionFactory.Create(QueryScheduledSchema, "query_scheduled_research",
                 "List the user's scheduled research jobs. Use filter 'active' (default) for current jobs, 'all' for everything including disabled/failed."),
@@ -122,7 +122,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         {
             sb.AppendLine($"\n[ID: {j.Id}] {j.Name}");
             sb.AppendLine($"  Query: {j.Query}");
-            sb.AppendLine($"  Recurrence: {j.Recurrence}, Time: {j.TimeOfDay:HH:mm}, AnswerLength: {j.AnswerLength}");
+            sb.AppendLine($"  Recurrence: {j.Recurrence}, Time: {j.TimeOfDay:HH:mm}");
+            if (j.GrantedTools.Count > 0) sb.AppendLine($"  Granted write tools: {string.Join(", ", j.GrantedTools)}");
             sb.AppendLine($"  Status: {j.Status}, Next fire: {j.NextFireAt:g}");
             if (j.DayOfWeek.HasValue) sb.AppendLine($"  Day of week: {j.DayOfWeek}");
             if (j.DayOfMonth.HasValue) sb.AppendLine($"  Day of month: {j.DayOfMonth}");
@@ -144,7 +145,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         var dayOfMonthStr = GetOptionalStringArg(args, "dayOfMonth");
         var monthStr = GetOptionalStringArg(args, "month");
         var specificDateStr = GetOptionalStringArg(args, "specificDate");
-        var answerLengthStr = GetOptionalStringArg(args, "answerLength");
+        var grantedToolsStr = GetOptionalStringArg(args, "grantedTools");
         var providerName = GetOptionalStringArg(args, "providerName");
 
         var recurrence = Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) ? r : RecurrenceType.Daily;
@@ -153,9 +154,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         int? dayOfMonth = dayOfMonthStr is not null && int.TryParse(dayOfMonthStr, out var dom) ? dom : null;
         int? month = monthStr is not null && int.TryParse(monthStr, out var m) ? m : null;
         DateTime? specificDate = specificDateStr is not null && DateTime.TryParse(specificDateStr, out var sd) ? sd : null;
-        var answerLength = answerLengthStr is not null && Enum.TryParse<ResearchAnswerLength>(answerLengthStr, true, out var al)
-            ? al
-            : ResearchAnswerLength.Balanced;
+        var grantedTools = ParseGrantedTools(grantedToolsStr);
 
         var providerId = await ResolveProviderIdAsync(providerName);
 
@@ -168,7 +167,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         if (dayOfMonth.HasValue) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_DayOfMonth"]}: {dayOfMonth}");
         if (month.HasValue) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Month"]}: {month}");
         if (specificDate.HasValue) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Date"]}: {specificDate:d}");
-        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_AnswerLength"]}: {answerLength}");
+        if (grantedTools.Count > 0) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_GrantedTools"]}: {string.Join(", ", grantedTools)}");
         if (providerId.HasValue && !string.IsNullOrWhiteSpace(providerName))
             detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Provider"]}: {providerName}");
 
@@ -180,7 +179,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             Execute: async () =>
             {
                 var created = await _jobs.CreateAsync(name, query, recurrence, timeOfDay,
-                    dayOfWeek, dayOfMonth, month, specificDate, answerLength, providerId);
+                    dayOfWeek, dayOfMonth, month, specificDate, providerId, grantedTools);
                 return _localizationService.Format("Tool_ScheduledResearch_Exec_Created", created.Id, created.NextFireAt.ToString("g"));
             });
     }
@@ -207,7 +206,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         var dayOfWeekStr = GetOptionalStringArg(args, "dayOfWeek");
         var dayOfMonthStr = GetOptionalStringArg(args, "dayOfMonth");
         var monthStr = GetOptionalStringArg(args, "month");
-        var answerLengthStr = GetOptionalStringArg(args, "answerLength");
+        var grantedToolsStr = GetOptionalStringArg(args, "grantedTools");
         var providerName = GetOptionalStringArg(args, "providerName");
 
         RecurrenceType? recurrence = recurrenceStr is not null && Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) ? r : null;
@@ -215,7 +214,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         DayOfWeek? dayOfWeek = dayOfWeekStr is not null && Enum.TryParse<DayOfWeek>(dayOfWeekStr, true, out var dow) ? dow : null;
         int? dayOfMonth = dayOfMonthStr is not null && int.TryParse(dayOfMonthStr, out var dom) ? dom : null;
         int? month = monthStr is not null && int.TryParse(monthStr, out var m) ? m : null;
-        ResearchAnswerLength? answerLength = answerLengthStr is not null && Enum.TryParse<ResearchAnswerLength>(answerLengthStr, true, out var al) ? al : null;
+        // null = leave existing grants unchanged; empty/whitespace string = clear all grants.
+        IReadOnlyCollection<string>? grantedTools = grantedToolsStr is not null ? ParseGrantedTools(grantedToolsStr) : null;
 
         var providerId = await ResolveProviderIdAsync(providerName);
 
@@ -227,7 +227,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             Execute: async () =>
             {
                 await _jobs.UpdateAsync(id, name, query, recurrence, timeOfDay,
-                    dayOfWeek, dayOfMonth, month, answerLength, providerId);
+                    dayOfWeek, dayOfMonth, month, providerId, grantedTools);
                 return _localizationService.Format("Tool_ScheduledResearch_Exec_Updated", id);
             });
     }
@@ -289,7 +289,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         [Description("Day of month for Monthly/Yearly recurrence (1-31)")] string? dayOfMonth = null,
         [Description("Month for Yearly recurrence (1-12)")] string? month = null,
         [Description("Specific date for Once recurrence in yyyy-MM-dd format")] string? specificDate = null,
-        [Description("Answer length: Concise, Balanced (default), Detailed")] string? answerLength = null,
+        [Description("Comma-separated EXACT write-tool names to allow at fire time (e.g. 'create_object,create_todo,write_file'). Omit for read-only. Only grant writes the user explicitly asked for.")] string? grantedTools = null,
         [Description("Optional substring of an AI provider name to pin")] string? providerName = null) => "";
 
     [Description("List scheduled research jobs")]
@@ -306,12 +306,19 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         [Description("New day of week (optional)")] string? dayOfWeek = null,
         [Description("New day of month (optional)")] string? dayOfMonth = null,
         [Description("New month (optional)")] string? month = null,
-        [Description("New answer length (optional): Concise, Balanced, Detailed")] string? answerLength = null,
+        [Description("New comma-separated write-tool grants (optional). Pass an empty string to revoke all write grants.")] string? grantedTools = null,
         [Description("Substring of new provider name (optional)")] string? providerName = null) => "";
 
     [Description("Delete a scheduled research job")]
     private static string DeleteScheduledSchema(
         [Description("The ID of the scheduled job to delete")] string id) => "";
+
+    private static List<string> ParseGrantedTools(string? csv) =>
+        string.IsNullOrWhiteSpace(csv)
+            ? []
+            : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                 .ToList();
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {

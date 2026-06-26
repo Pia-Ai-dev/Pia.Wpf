@@ -6,7 +6,7 @@ public interface IScheduledJobService
 {
     Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
-        ResearchAnswerLength answerLength = ResearchAnswerLength.Balanced, Guid? providerId = null);
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null);
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();
@@ -17,7 +17,7 @@ public interface IScheduledJobService
     Task UpdateAsync(Guid id, string? name = null, string? query = null,
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
-        ResearchAnswerLength? answerLength = null, Guid? providerId = null);
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null);
 
     Task DeleteAsync(Guid id);
 

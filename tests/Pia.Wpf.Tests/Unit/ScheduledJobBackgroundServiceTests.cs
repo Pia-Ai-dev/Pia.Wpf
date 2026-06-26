@@ -18,101 +18,112 @@ public class ScheduledJobBackgroundServiceTests
         NextFireAt = DateTime.Now.AddSeconds(-1)
     };
 
+    private static AiProvider NewProvider() => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "P",
+        Endpoint = "https://example",
+        TimeoutSeconds = 60
+    };
+
     [Fact]
-    public async Task ExecuteOnceAsync_Success_PersistsEntryAndMarksComplete()
+    public async Task ExecuteOnceAsync_Success_MarksCompleteWithChatIdAndNotifies()
     {
         var jobs = new FakeJobService();
         var due = NewDueJob();
         jobs.SeedDue(due);
 
-        var research = new FakeResearchService { SynthesizedResult = "RESULT" };
-        var history = new FakeResearchHistoryService();
-        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IResearchService>(research));
-        var providers = new FakeProviderResolver(new AiProvider
-        {
-            Id = Guid.NewGuid(),
-            Name = "P",
-            Endpoint = "https://example",
-            TimeoutSeconds = 60
-        });
+        var chatId = Guid.NewGuid();
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(chatId, true, null) };
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner));
+        var providers = new FakeProviderResolver(NewProvider());
         var notifications = new FakeNotificationSurface();
 
         var bg = new ScheduledJobBackgroundService(
-            jobs, scopeFactory, history, providers, notifications,
+            jobs, scopeFactory, providers, notifications,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
-        Assert.Single(history.Added);
-        Assert.Equal(due.Id, history.Added[0].ScheduledJobId);
-        Assert.Equal("RESULT", history.Added[0].SynthesizedResult);
+        Assert.Equal(1, runner.RunCount);
         Assert.Single(jobs.Completed);
         Assert.Equal(due.Id, jobs.Completed[0].JobId);
-        Assert.Equal(history.Added[0].Id, jobs.Completed[0].EntryId);
+        Assert.Equal(chatId, jobs.Completed[0].EntryId);
         Assert.Equal(1, notifications.SuccessCount);
+        Assert.Equal(chatId, notifications.LastSuccessChatId);
         Assert.Equal(0, notifications.FailureCount);
-        Assert.Equal(1, research.ExecuteCount);
     }
 
     [Fact]
-    public async Task ExecuteOnceAsync_ResearchThrows_PersistsFailedEntryAndMarksFailed()
+    public async Task ExecuteOnceAsync_RunnerReturnsFailure_MarksFailedAndNotifies()
     {
         var jobs = new FakeJobService();
         var due = NewDueJob();
         jobs.SeedDue(due);
 
-        var research = new FakeResearchService { ThrowOnExecute = true };
-        var history = new FakeResearchHistoryService();
-        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IResearchService>(research));
-        var providers = new FakeProviderResolver(new AiProvider
-        {
-            Id = Guid.NewGuid(),
-            Name = "P",
-            Endpoint = "https://example",
-            TimeoutSeconds = 60
-        });
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), false, "test failure") };
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner));
+        var providers = new FakeProviderResolver(NewProvider());
         var notifications = new FakeNotificationSurface();
 
         var bg = new ScheduledJobBackgroundService(
-            jobs, scopeFactory, history, providers, notifications,
+            jobs, scopeFactory, providers, notifications,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
-        Assert.Single(history.Added);
-        Assert.Equal("Failed", history.Added[0].Status);
-        Assert.Equal(due.Id, history.Added[0].ScheduledJobId);
         Assert.Single(jobs.Failed);
         Assert.Equal(due.Id, jobs.Failed[0].JobId);
         Assert.Equal("test failure", jobs.Failed[0].Reason);
+        Assert.Empty(jobs.Completed);
         Assert.Equal(0, notifications.SuccessCount);
         Assert.Equal(1, notifications.FailureCount);
     }
 
     [Fact]
-    public async Task ExecuteOnceAsync_NoProvider_PersistsFailedAndDoesNotCallResearch()
+    public async Task ExecuteOnceAsync_RunnerThrows_MarksFailedAndNotifies()
     {
         var jobs = new FakeJobService();
         var due = NewDueJob();
         jobs.SeedDue(due);
 
-        var research = new FakeResearchService();
-        var history = new FakeResearchHistoryService();
-        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IResearchService>(research));
+        var runner = new FakeRunner { ThrowMessage = "boom" };
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner));
+        var providers = new FakeProviderResolver(NewProvider());
+        var notifications = new FakeNotificationSurface();
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, scopeFactory, providers, notifications,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.Single(jobs.Failed);
+        Assert.Equal("boom", jobs.Failed[0].Reason);
+        Assert.Equal(1, notifications.FailureCount);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_NoProvider_MarksFailedAndDoesNotRun()
+    {
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        jobs.SeedDue(due);
+
+        var runner = new FakeRunner();
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner));
         var providers = new FakeProviderResolver(null);
         var notifications = new FakeNotificationSurface();
 
         var bg = new ScheduledJobBackgroundService(
-            jobs, scopeFactory, history, providers, notifications,
+            jobs, scopeFactory, providers, notifications,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
         Assert.Single(jobs.Failed);
         Assert.Equal("NoProvider", jobs.Failed[0].Reason);
-        Assert.Equal(0, research.ExecuteCount);
-        Assert.Single(history.Added);
-        Assert.Equal("Failed", history.Added[0].Status);
+        Assert.Equal(0, runner.RunCount);
         Assert.Equal(1, notifications.FailureCount);
     }
 
@@ -128,16 +139,15 @@ public class ScheduledJobBackgroundServiceTests
         jobs.SeedDue(late);
 
         var notifications = new FakeNotificationSurface { AskAnswer = false };
-        var research = new FakeResearchService();
-        var history = new FakeResearchHistoryService();
-        var providers = new FakeProviderResolver(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://example", TimeoutSeconds = 60 });
+        var runner = new FakeRunner();
+        var providers = new FakeProviderResolver(NewProvider());
 
-        var sp = new FakeServiceProvider().Add<IResearchService>(research);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), history, providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+        var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
-        Assert.Empty(history.Added);
+        Assert.Equal(0, runner.RunCount);
         Assert.Equal(1, notifications.AskCount);
         // Skip should advance NextFireAt without incrementing failure counter.
         Assert.Single(jobs.Advanced);
@@ -157,16 +167,15 @@ public class ScheduledJobBackgroundServiceTests
         jobs.SeedDue(late);
 
         var notifications = new FakeNotificationSurface { AskAnswer = true };
-        var research = new FakeResearchService { SynthesizedResult = "OK" };
-        var history = new FakeResearchHistoryService();
-        var providers = new FakeProviderResolver(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://example", TimeoutSeconds = 60 });
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var providers = new FakeProviderResolver(NewProvider());
 
-        var sp = new FakeServiceProvider().Add<IResearchService>(research);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), history, providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+        var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
-        Assert.Single(history.Added);
+        Assert.Equal(1, runner.RunCount);
         Assert.Single(jobs.Completed);
     }
 
@@ -186,12 +195,11 @@ public class ScheduledJobBackgroundServiceTests
             // Simulate "user closed without answering" — return null.
             AskAnswer = null
         };
-        var research = new FakeResearchService();
-        var history = new FakeResearchHistoryService();
-        var providers = new FakeProviderResolver(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://example", TimeoutSeconds = 60 });
+        var runner = new FakeRunner();
+        var providers = new FakeProviderResolver(NewProvider());
 
-        var sp = new FakeServiceProvider().Add<IResearchService>(research);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), history, providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+        var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -231,8 +239,8 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence,
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
-            DateTime? specificDate = null, ResearchAnswerLength answerLength = ResearchAnswerLength.Balanced,
-            Guid? providerId = null) => throw new NotImplementedException();
+            DateTime? specificDate = null, Guid? providerId = null,
+            IReadOnlyCollection<string>? grantedTools = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -240,8 +248,8 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task UpdateAsync(Guid id, string? name = null, string? query = null,
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
-            int? dayOfMonth = null, int? month = null, ResearchAnswerLength? answerLength = null,
-            Guid? providerId = null) => throw new NotImplementedException();
+            int? dayOfMonth = null, int? month = null, Guid? providerId = null,
+            IReadOnlyCollection<string>? grantedTools = null) => throw new NotImplementedException();
 
         public Task DeleteAsync(Guid id) => throw new NotImplementedException();
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
@@ -250,63 +258,19 @@ public class ScheduledJobBackgroundServiceTests
         public Task UpsertFromSyncAsync(ScheduledJob job) => throw new NotImplementedException();
     }
 
-    private sealed class FakeResearchService : IResearchService
+    private sealed class FakeRunner : IBackgroundAssistantTurnRunner
     {
-        public string SynthesizedResult { get; set; } = string.Empty;
-        public bool ThrowOnExecute { get; set; }
-        public int ExecuteCount { get; private set; }
+        public int RunCount { get; private set; }
+        public BackgroundTurnResult Result { get; set; } = new(Guid.NewGuid(), true, null);
+        public string? ThrowMessage { get; set; }
 
-        public Task ExecuteResearchAsync(ResearchSession session, AiProvider provider,
-            ResearchAnswerLength answerLength, CancellationToken ct)
+        public Task<BackgroundTurnResult> RunAsync(BackgroundTurnRequest request, CancellationToken ct)
         {
-            ExecuteCount++;
-            if (ThrowOnExecute)
-            {
-                throw new InvalidOperationException("test failure");
-            }
-
-            session.SynthesizedResult = SynthesizedResult;
-            session.Status = ResearchStatus.Completed;
-            session.CompletedAt = DateTime.Now;
-            return Task.CompletedTask;
+            RunCount++;
+            if (ThrowMessage is not null)
+                throw new InvalidOperationException(ThrowMessage);
+            return Task.FromResult(Result);
         }
-    }
-
-    private sealed class FakeResearchHistoryService : IResearchHistoryService
-    {
-        public List<ResearchHistoryEntry> Added { get; } = new();
-
-#pragma warning disable CS0067 // Event is never used in tests.
-        public event EventHandler? SessionsChanged;
-#pragma warning restore CS0067
-
-        public Task AddEntryAsync(ResearchHistoryEntry entry)
-        {
-            Added.Add(entry);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<ResearchHistoryEntry>> SearchEntriesAsync(string? searchText = null,
-            DateTime? fromDate = null, DateTime? toDate = null, int offset = 0, int limit = 50)
-            => throw new NotImplementedException();
-
-        public Task<ResearchHistoryEntry?> GetEntryAsync(Guid id) => throw new NotImplementedException();
-        public Task DeleteEntryAsync(Guid id) => throw new NotImplementedException();
-
-        public Task<int> GetEntryCountAsync(string? searchText = null, DateTime? fromDate = null,
-            DateTime? toDate = null) => throw new NotImplementedException();
-
-        public Task UpdateEmbeddingAsync(Guid id, byte[] embedding) => throw new NotImplementedException();
-
-        public Task<IReadOnlyList<ResearchHistoryEntry>> VectorSearchAsync(float[] queryEmbedding,
-            int topK = 10, float threshold = 0.2f) => throw new NotImplementedException();
-
-        public Task<IReadOnlyList<ResearchHistoryEntry>> HybridSearchAsync(string query,
-            float[]? queryEmbedding = null, int topK = 10) => throw new NotImplementedException();
-
-        public Task<IReadOnlyList<ResearchHistoryEntry>> GetModifiedSinceAsync(DateTime since)
-            => throw new NotImplementedException();
-        public Task UpsertFromSyncAsync(ResearchHistoryEntry entry) => throw new NotImplementedException();
     }
 
     private sealed class FakeProviderResolver : IScheduledResearchProviderResolver
@@ -321,12 +285,18 @@ public class ScheduledJobBackgroundServiceTests
     {
         public int SuccessCount { get; private set; }
         public int FailureCount { get; private set; }
+        public Guid? LastSuccessChatId { get; private set; }
         public bool? AskAnswer { get; set; } = false;
         public int AskCount { get; private set; }
         public TaskCompletionSource<bool?>? PendingAsk { get; set; }
 
-        public void NotifySuccess(ScheduledJob job, ResearchHistoryEntry entry) => SuccessCount++;
-        public void NotifyFailure(ScheduledJob job, Guid resultEntryId, string reason) => FailureCount++;
+        public void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle)
+        {
+            SuccessCount++;
+            LastSuccessChatId = chatId;
+        }
+
+        public void NotifyFailure(ScheduledJob job, string reason) => FailureCount++;
 
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)
         {

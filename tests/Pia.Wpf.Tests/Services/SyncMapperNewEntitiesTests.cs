@@ -10,8 +10,8 @@ using Pia.Services.Interfaces;
 using Xunit;
 
 /// <summary>
-/// Mapper round-trip coverage for the two new sync entities (ScheduledJob, ResearchHistoryEntry),
-/// in both plaintext (E2EE off) and encrypted (E2EE on) modes.
+/// Mapper round-trip coverage for the ScheduledJob sync entity, in both plaintext (E2EE off)
+/// and encrypted (E2EE on) modes.
 /// </summary>
 public class SyncMapperNewEntitiesTests
 {
@@ -52,7 +52,7 @@ public class SyncMapperNewEntitiesTests
         Name = "Tesla daily briefing",
         Query = "Latest Tesla news in plain English",
         Kind = ScheduledJobKind.Research,
-        AnswerLength = ResearchAnswerLength.Detailed,
+        GrantedTools = ["create_memory", "create_todo"],
         ProviderId = Guid.NewGuid(),
         Recurrence = RecurrenceType.Weekly,
         TimeOfDay = new TimeOnly(8, 30),
@@ -64,23 +64,6 @@ public class SyncMapperNewEntitiesTests
         CreatedAt = new DateTime(2026, 5, 1, 10, 0, 0, DateTimeKind.Utc),
         UpdatedAt = new DateTime(2026, 5, 2, 12, 0, 0, DateTimeKind.Utc),
         OwnerDeviceId = Guid.NewGuid()
-    };
-
-    private static ResearchHistoryEntry SampleEntry() => new()
-    {
-        Id = Guid.NewGuid(),
-        Query = "Why does the sky look blue?",
-        SynthesizedResult = "Rayleigh scattering — short wavelengths scatter more strongly...",
-        StepsJson = "[{\"StepNumber\":1,\"Title\":\"Search\",\"Content\":\"...\",\"Status\":\"Completed\"}]",
-        ProviderId = Guid.NewGuid(),
-        ProviderName = "OpenAI",
-        Status = "Completed",
-        StepCount = 4,
-        CreatedAt = new DateTime(2026, 5, 1, 10, 0, 0, DateTimeKind.Utc),
-        UpdatedAt = new DateTime(2026, 5, 1, 10, 30, 0, DateTimeKind.Utc),
-        CompletedAt = new DateTime(2026, 5, 1, 10, 30, 0, DateTimeKind.Utc),
-        ScheduledJobId = Guid.NewGuid(),
-        Embedding = new byte[] { 1, 2, 3, 4 } // not synced
     };
 
     [Fact]
@@ -103,7 +86,7 @@ public class SyncMapperNewEntitiesTests
         Assert.Equal(original.Name, back.Name);
         Assert.Equal(original.Query, back.Query);
         Assert.Equal(original.Kind, back.Kind);
-        Assert.Equal(original.AnswerLength, back.AnswerLength);
+        Assert.Equal(original.GrantedTools, back.GrantedTools);
         Assert.Equal(original.ProviderId, back.ProviderId);
         Assert.Equal(original.Recurrence, back.Recurrence);
         Assert.Equal(original.TimeOfDay, back.TimeOfDay);
@@ -137,78 +120,12 @@ public class SyncMapperNewEntitiesTests
         Assert.Equal(original.Name, back.Name);
         Assert.Equal(original.Query, back.Query);
         Assert.Equal(original.Kind, back.Kind);
-        Assert.Equal(original.AnswerLength, back.AnswerLength);
+        Assert.Equal(original.GrantedTools, back.GrantedTools);
         Assert.Equal(original.ProviderId, back.ProviderId);
         Assert.Equal(original.Recurrence, back.Recurrence);
         Assert.Equal(original.TimeOfDay, back.TimeOfDay);
         Assert.Equal(original.DayOfWeek, back.DayOfWeek);
         Assert.Equal(original.Status, back.Status);
         Assert.Equal(original.OwnerDeviceId, back.OwnerDeviceId);
-    }
-
-    [Fact]
-    public void ResearchSession_RoundTrips_Plaintext()
-    {
-        var mapper = PlainMapper();
-        var original = SampleEntry();
-
-        var sync = mapper.ToSyncResearchSession(original);
-
-        Assert.Null(sync.EncryptedPayload);
-        Assert.Equal(original.Query, sync.Query);
-        Assert.Equal(original.SynthesizedResult, sync.SynthesizedResult);
-
-        var back = mapper.FromSyncResearchSession(sync);
-
-        Assert.Equal(original.Id, back.Id);
-        Assert.Equal(original.Query, back.Query);
-        Assert.Equal(original.SynthesizedResult, back.SynthesizedResult);
-        Assert.Equal(original.StepsJson, back.StepsJson);
-        Assert.Equal(original.ProviderId, back.ProviderId);
-        Assert.Equal(original.ProviderName, back.ProviderName);
-        Assert.Equal(original.Status, back.Status);
-        Assert.Equal(original.StepCount, back.StepCount);
-        Assert.Equal(original.ScheduledJobId, back.ScheduledJobId);
-        Assert.Equal(original.CreatedAt, back.CreatedAt);
-        Assert.Equal(original.UpdatedAt, back.UpdatedAt);
-        Assert.Equal(original.CompletedAt, back.CompletedAt);
-        // Embedding is intentionally never synced.
-        Assert.Null(back.Embedding);
-    }
-
-    [Fact]
-    public void ResearchSession_RoundTrips_Encrypted()
-    {
-        var (mapper, _) = E2EEMapper();
-        var original = SampleEntry();
-
-        var sync = mapper.ToSyncResearchSession(original, UserId);
-
-        // Content fields go into the encrypted blob.
-        Assert.NotNull(sync.EncryptedPayload);
-        Assert.NotNull(sync.WrappedDek);
-        Assert.Null(sync.Query);
-        Assert.Null(sync.SynthesizedResult);
-        Assert.Null(sync.ProviderName);
-        Assert.Null(sync.Status);
-        Assert.Null(sync.ProviderId);
-        Assert.Null(sync.ScheduledJobId);
-        // Plaintext metadata stays.
-        Assert.Equal(original.Id, sync.Id);
-        Assert.Equal(original.CreatedAt, sync.CreatedAt);
-        Assert.Equal(original.UpdatedAt, sync.UpdatedAt);
-        Assert.Equal(original.CompletedAt, sync.CompletedAt);
-
-        var back = mapper.FromSyncResearchSession(sync, UserId);
-
-        Assert.Equal(original.Query, back.Query);
-        Assert.Equal(original.SynthesizedResult, back.SynthesizedResult);
-        Assert.Equal(original.StepsJson, back.StepsJson);
-        Assert.Equal(original.ProviderId, back.ProviderId);
-        Assert.Equal(original.ProviderName, back.ProviderName);
-        Assert.Equal(original.Status, back.Status);
-        Assert.Equal(original.StepCount, back.StepCount);
-        Assert.Equal(original.ScheduledJobId, back.ScheduledJobId);
-        Assert.Null(back.Embedding);
     }
 }

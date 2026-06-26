@@ -156,27 +156,6 @@ public class BuiltInPluginHandler : IPluginToolHandler
     }
 
     /// <summary>
-    /// Factory: creates adapter wrapping IResearchHistoryToolHandler.
-    /// </summary>
-    public static BuiltInPluginHandler FromResearchHistoryHandler(
-        IResearchHistoryToolHandler handler, SyncPlugin config)
-    {
-        return new BuiltInPluginHandler(
-            config.Id,
-            config.Name,
-            handler.GetTools,
-            async (toolCall, ct) =>
-            {
-                var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
-                if (pending is null) return (result, null);
-                return (null, new PluginToolCall(
-                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute));
-            },
-            async pluginCall => await pluginCall.Execute(),
-            GetSystemPromptFromConfig(config.ConfigJson));
-    }
-
-    /// <summary>
     /// Factory: creates adapter wrapping IFilesToolHandler. The files plugin is
     /// only exposed when the user has configured a sandbox folder — when that
     /// path is empty, both <c>GetTools</c> and the system-prompt addition are

@@ -129,22 +129,6 @@ public class SqliteContext : IDisposable
             CREATE INDEX IF NOT EXISTS IX_Todos_Priority ON Todos(Priority);
             CREATE INDEX IF NOT EXISTS IX_Todos_DueDate ON Todos(DueDate);
 
-            CREATE TABLE IF NOT EXISTS ResearchSessions (
-                Id TEXT PRIMARY KEY,
-                Query TEXT NOT NULL,
-                SynthesizedResult TEXT NOT NULL DEFAULT '',
-                StepsJson TEXT NOT NULL DEFAULT '[]',
-                ProviderId TEXT NOT NULL,
-                ProviderName TEXT,
-                Status TEXT NOT NULL DEFAULT 'Completed',
-                StepCount INTEGER NOT NULL DEFAULT 0,
-                CreatedAt TEXT NOT NULL,
-                CompletedAt TEXT NOT NULL,
-                UpdatedAt TEXT NOT NULL DEFAULT ''
-            );
-
-            CREATE INDEX IF NOT EXISTS IX_ResearchSessions_CreatedAt ON ResearchSessions(CreatedAt);
-
             CREATE TABLE IF NOT EXISTS KanbanColumns (
                 Id TEXT PRIMARY KEY,
                 Name TEXT NOT NULL,
@@ -189,7 +173,8 @@ public class SqliteContext : IDisposable
                 LastFiredAt TEXT NULL,
                 LastResultEntryId TEXT NULL,
                 ConsecutiveFailures INTEGER NOT NULL DEFAULT 0,
-                OwnerDeviceId TEXT NULL
+                OwnerDeviceId TEXT NULL,
+                GrantedTools TEXT NOT NULL DEFAULT '[]'
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -372,66 +357,14 @@ public class SqliteContext : IDisposable
             createIndex.ExecuteNonQuery();
         }
 
-        // Add ScheduledJobId and Embedding columns to ResearchSessions if they don't exist
-        using var rsPragma = _connection!.CreateCommand();
-        rsPragma.CommandText = "PRAGMA table_info(ResearchSessions)";
-        using var rsReader = rsPragma.ExecuteReader();
-        var hasScheduledJobId = false;
-        var hasEmbedding = false;
-        while (rsReader.Read())
-        {
-            var columnName = rsReader.GetString(1);
-            if (columnName == "ScheduledJobId") hasScheduledJobId = true;
-            else if (columnName == "Embedding") hasEmbedding = true;
-        }
-        rsReader.Close();
+        // (Legacy ResearchSessions column/index migrations removed — the table is dropped below
+        // now that research results are persisted as assistant chats.)
 
-        if (!hasScheduledJobId)
-        {
-            using var addCol = _connection.CreateCommand();
-            addCol.CommandText = "ALTER TABLE ResearchSessions ADD COLUMN ScheduledJobId TEXT NULL";
-            addCol.ExecuteNonQuery();
-
-            using var addIdx = _connection.CreateCommand();
-            addIdx.CommandText = "CREATE INDEX IF NOT EXISTS IX_ResearchSessions_ScheduledJobId ON ResearchSessions(ScheduledJobId)";
-            addIdx.ExecuteNonQuery();
-        }
-
-        if (!hasEmbedding)
-        {
-            using var addEmb = _connection.CreateCommand();
-            addEmb.CommandText = "ALTER TABLE ResearchSessions ADD COLUMN Embedding BLOB NULL";
-            addEmb.ExecuteNonQuery();
-        }
-
-        // Add UpdatedAt to ResearchSessions for sync dirty-tracking; backfill from CreatedAt
-        var hasResearchUpdatedAt = false;
-        using (var p = _connection!.CreateCommand())
-        {
-            p.CommandText = "PRAGMA table_info(ResearchSessions)";
-            using var r = p.ExecuteReader();
-            while (r.Read())
-                if (r.GetString(1) == "UpdatedAt") { hasResearchUpdatedAt = true; break; }
-        }
-        if (!hasResearchUpdatedAt)
-        {
-            using var addCol = _connection.CreateCommand();
-            addCol.CommandText = "ALTER TABLE ResearchSessions ADD COLUMN UpdatedAt TEXT NOT NULL DEFAULT ''";
-            addCol.ExecuteNonQuery();
-            using var backfill = _connection.CreateCommand();
-            backfill.CommandText = "UPDATE ResearchSessions SET UpdatedAt = CreatedAt WHERE UpdatedAt = ''";
-            backfill.ExecuteNonQuery();
-        }
-        // Ensure index exists for both fresh installs and migrated databases.
-        using (var idx = _connection.CreateCommand())
-        {
-            idx.CommandText = "CREATE INDEX IF NOT EXISTS IX_ResearchSessions_UpdatedAt ON ResearchSessions(UpdatedAt)";
-            idx.ExecuteNonQuery();
-        }
-
-        // Add UpdatedAt and OwnerDeviceId to ScheduledJobs for sync
+        // Add UpdatedAt and OwnerDeviceId to ScheduledJobs for sync, and GrantedTools for the
+        // per-job background-turn tool policy.
         var hasJobUpdatedAt = false;
         var hasOwnerDeviceId = false;
+        var hasGrantedTools = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(ScheduledJobs)";
@@ -441,6 +374,7 @@ public class SqliteContext : IDisposable
                 var col = r.GetString(1);
                 if (col == "UpdatedAt") hasJobUpdatedAt = true;
                 else if (col == "OwnerDeviceId") hasOwnerDeviceId = true;
+                else if (col == "GrantedTools") hasGrantedTools = true;
             }
         }
         if (!hasJobUpdatedAt)
@@ -457,6 +391,20 @@ public class SqliteContext : IDisposable
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN OwnerDeviceId TEXT NULL";
             addCol.ExecuteNonQuery();
+        }
+        if (!hasGrantedTools)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN GrantedTools TEXT NOT NULL DEFAULT '[]'";
+            addCol.ExecuteNonQuery();
+        }
+
+        // The research view was removed; research results are now assistant chats. Drop the
+        // legacy standalone research store (data was never user-facing outside that view).
+        using (var dropResearch = _connection.CreateCommand())
+        {
+            dropResearch.CommandText = "DROP TABLE IF EXISTS ResearchSessions";
+            dropResearch.ExecuteNonQuery();
         }
         using (var idx = _connection.CreateCommand())
         {

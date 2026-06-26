@@ -25,7 +25,7 @@ public class NamingConventionTests
     [Fact]
     public void ServiceClasses_MustFollowNamingConvention()
     {
-        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine", "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store" };
+        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine", "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner" };
 
         // Domain-named service/helper classes that legitimately do not carry one of the suffixes above.
         // ChromiumProvisioner / TeamsMeetingSession / AudioHopResampler are agent-noun / stateful helpers

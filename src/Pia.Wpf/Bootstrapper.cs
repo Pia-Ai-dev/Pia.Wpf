@@ -246,7 +246,6 @@ public static class Bootstrapper
         services.AddSingleton<IBackgroundChatNotifier, BackgroundChatNotificationSurface>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
         services.AddSingleton<IScheduledJobToolHandler, ScheduledJobToolHandler>();
-        services.AddSingleton<IResearchHistoryToolHandler, ResearchHistoryToolHandler>();
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
@@ -263,13 +262,15 @@ public static class Bootstrapper
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
-        services.AddSingleton<IResearchHistoryService, ResearchHistoryService>();
         services.AddSingleton<IAssistantChatService, AssistantChatService>();
         // Assistant turn collaborators (extracted from AssistantViewModel).
         services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
         services.AddTransient<IChatTitleService, ChatTitleService>();
+        // Headless background assistant-turn runner. Transient (resolved per-run from a
+        // fresh scope by the scheduled-job service) so its transient AI-client decorator
+        // doesn't cache tokenization state across runs.
+        services.AddTransient<IBackgroundAssistantTurnRunner, BackgroundAssistantTurnRunner>();
         services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
-        services.AddTransient<IResearchExportService, ResearchExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
         services.AddSingleton<ISelectedTextService, SelectedTextService>();
@@ -349,7 +350,6 @@ public static class Bootstrapper
         services.AddScoped<Navigation.INavigationService, Navigation.NavigationService>();
         services.AddScoped<IDialogService, DialogService>();
         services.AddScoped<ITextOptimizationService, TextOptimizationService>();
-        services.AddScoped<IResearchService, ResearchService>();
         services.AddScoped<IVoiceInputService, VoiceInputService>();
 
         // Services - Transient (no shared state)
@@ -363,8 +363,6 @@ public static class Bootstrapper
         services.AddScoped<HistoryViewModel>();
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<MeetingAttendeeViewModel>();
-        services.AddScoped<ResearchViewModel>();
-        services.AddScoped<ResearchHistoryViewModel>();
         services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();

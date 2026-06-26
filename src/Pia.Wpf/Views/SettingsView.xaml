@@ -61,12 +61,6 @@
         </ListBoxItem>
         <ListBoxItem>
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Search24" FontSize="16" Margin="0,0,10,0"/>
-            <TextBlock Text="{loc:Str Settings_Tab_Research}" VerticalAlignment="Center"/>
-          </StackPanel>
-        </ListBoxItem>
-        <ListBoxItem>
-          <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Settings24" FontSize="16" Margin="0,0,10,0"/>
             <TextBlock Text="{loc:Str Settings_Tab_General}" VerticalAlignment="Center"/>
           </StackPanel>
@@ -126,25 +120,12 @@
           </localSettings:AssistantView.Style>
         </localSettings:AssistantView>
 
-        <localSettings:ResearchView DataContext="{Binding ResearchVm}">
-          <localSettings:ResearchView.Style>
-            <Style TargetType="localSettings:ResearchView">
-              <Setter Property="Visibility" Value="Collapsed"/>
-              <Style.Triggers>
-                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="3">
-                  <Setter Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </localSettings:ResearchView.Style>
-        </localSettings:ResearchView>
-
         <localSettings:GeneralView DataContext="{Binding GeneralVm}">
           <localSettings:GeneralView.Style>
             <Style TargetType="localSettings:GeneralView">
               <Setter Property="Visibility" Value="Collapsed"/>
               <Style.Triggers>
-                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="4">
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="3">
                   <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
               </Style.Triggers>
@@ -157,7 +138,7 @@
             <Style TargetType="localSettings:AccountView">
               <Setter Property="Visibility" Value="Collapsed"/>
               <Style.Triggers>
-                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="5">
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="4">
                   <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
               </Style.Triggers>
@@ -170,7 +151,7 @@
             <Style TargetType="localSettings:PluginsView">
               <Setter Property="Visibility" Value="Collapsed"/>
               <Style.Triggers>
-                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="6">
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="5">
                   <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
               </Style.Triggers>

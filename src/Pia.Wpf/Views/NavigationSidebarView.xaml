@@ -49,40 +49,12 @@
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
-      <!-- Research mode items -->
-      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
-                             CommandParameter="Research"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Research}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Research}">
-        <ui:NavigationViewItem.Content>
-          <StackPanel Orientation="Horizontal">
-            <TextBlock Text="{loc:Str Nav_Research}" />
-            <TextBlock Text="{Binding ResearchHotkeyHint, StringFormat=' ({0})'}"
-                       Opacity="0.5" />
-          </StackPanel>
-        </ui:NavigationViewItem.Content>
-        <ui:NavigationViewItem.Icon>
-          <ui:SymbolIcon Symbol="Search24" />
-        </ui:NavigationViewItem.Icon>
-      </ui:NavigationViewItem>
-
       <!-- History (Optimize only) -->
       <ui:NavigationViewItem Content="{loc:Str Nav_History}"
                              Command="{Binding NavigationCommand}"
                              CommandParameter="History"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=History}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
-        <ui:NavigationViewItem.Icon>
-          <ui:SymbolIcon Symbol="Clock24" />
-        </ui:NavigationViewItem.Icon>
-      </ui:NavigationViewItem>
-
-      <!-- Research History (Research only) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_ResearchHistory}"
-                             Command="{Binding NavigationCommand}"
-                             CommandParameter="ResearchHistory"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=ResearchHistory}"
-                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Research}">
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Clock24" />
         </ui:NavigationViewItem.Icon>
@@ -178,23 +150,6 @@
                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                   <Style.Triggers>
                     <DataTrigger Binding="{Binding Mode}" Value="{x:Static models:WindowMode.Assistant}">
-                      <Setter Property="IsEnabled" Value="False" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </MenuItem.Style>
-            </MenuItem>
-            <MenuItem Header="{loc:Str Nav_Research}"
-                      Command="{Binding OpenNewWindowCommand}"
-                      CommandParameter="{x:Static models:WindowMode.Research}"
-                      InputGestureText="{Binding ResearchHotkeyHint}">
-              <MenuItem.Icon>
-                <ui:SymbolIcon Symbol="Search24" />
-              </MenuItem.Icon>
-              <MenuItem.Style>
-                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding Mode}" Value="{x:Static models:WindowMode.Research}">
                       <Setter Property="IsEnabled" Value="False" />
                     </DataTrigger>
                   </Style.Triggers>

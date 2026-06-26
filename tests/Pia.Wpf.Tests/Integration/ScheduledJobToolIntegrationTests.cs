@@ -14,16 +14,13 @@ namespace Pia.Tests.Integration;
 /// <summary>
 /// End-to-end integration test for the scheduled-research pipeline:
 /// create a <see cref="ScheduledJob"/> via the tool handler -> background service finds
-/// it due -> stubbed research runs -> entry persisted -> search_research_history finds it.
+/// it due -> stubbed background assistant turn runs -> job marked complete with the chat id ->
+/// query_scheduled_research finds it.
 /// </summary>
 /// <remarks>
-/// <para>
 /// This test exercises the real <see cref="SqliteContext"/> against the user's
-/// <c>%LOCALAPPDATA%\Pia\history.db</c>. That is a known plan-accepted tradeoff: the
-/// project does not yet have a per-test in-memory SQLite harness, and the same convention
-/// is used by other integration tests in this folder. Cleanup deletes only TEST_E2E_-prefixed
-/// scheduled jobs and the research sessions linked to them, so dev-local data is not affected.
-/// </para>
+/// <c>%LOCALAPPDATA%\Pia\history.db</c> (a known plan-accepted tradeoff shared by the other
+/// integration tests). Cleanup deletes only TEST_E2E_-prefixed scheduled jobs.
 /// </remarks>
 [Trait("Category", "Integration")]
 public class ScheduledJobToolIntegrationTests : IDisposable
@@ -42,7 +39,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task EndToEnd_CreateJob_RunDueJob_SearchFinds()
+    public async Task EndToEnd_CreateJob_RunDueJob_MarksCompleteAndQueryFinds()
     {
         // Arrange the dependency graph manually for an integration test.
         var calc = new RecurrenceCalculator();
@@ -52,9 +49,8 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         var deleteTracker = new SyncDeleteTrackerService(tmpDir, NullLogger<SyncDeleteTrackerService>.Instance);
         var jobs = new ScheduledJobService(_ctx, calc, settings, deleteTracker, NullLogger<ScheduledJobService>.Instance);
 
-        var research = new StubResearchService("Test result for Tesla");
-        var embedding = new StubEmbedding();
-        var history = new ResearchHistoryService(_ctx, embedding, deleteTracker, NullLogger<ResearchHistoryService>.Instance);
+        var chatId = Guid.NewGuid();
+        var runner = new StubRunner(chatId);
         var providers = new StubProviderResolver(new AiProvider
         {
             Id = Guid.NewGuid(),
@@ -64,13 +60,12 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         });
         var notifications = new SilentNotificationSurface();
 
-        // The BG service takes IServiceScopeFactory after Task 11 fix.
         var sp = new IntegrationServiceProvider()
-            .Add<IResearchService>(research);
+            .Add<IBackgroundAssistantTurnRunner>(runner);
         var scopeFactory = new IntegrationScopeFactory(sp);
 
         var bg = new ScheduledJobBackgroundService(
-            jobs, scopeFactory, history, providers, notifications,
+            jobs, scopeFactory, providers, notifications,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // Create a job via the tool handler so the path exercises the actual JSON arg parsing.
@@ -85,7 +80,8 @@ public class ScheduledJobToolIntegrationTests : IDisposable
                 ["name"] = "TEST_E2E_Tesla",
                 ["query"] = "Tesla stock pricing news",
                 ["recurrence"] = "Daily",
-                ["timeOfDay"] = "08:00"
+                ["timeOfDay"] = "08:00",
+                ["grantedTools"] = "create_memory"
             });
 
         var (_, pending) = await toolHandler.HandleToolCallAsync(createCall);
@@ -94,33 +90,42 @@ public class ScheduledJobToolIntegrationTests : IDisposable
 
         // Force the row "due" so the BG service picks it up immediately.
         var conn = _ctx.GetConnection();
+        Guid jobId;
         using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @t WHERE Name = 'TEST_E2E_Tesla'";
+            cmd.CommandText = "SELECT Id FROM ScheduledJobs WHERE Name = 'TEST_E2E_Tesla'";
+            jobId = Guid.Parse((string)(await cmd.ExecuteScalarAsync())!);
+        }
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @t WHERE Id = @id";
             cmd.Parameters.AddWithValue("@t", DateTime.Now.AddSeconds(-1).ToString("O"));
+            cmd.Parameters.AddWithValue("@id", jobId.ToString());
             await cmd.ExecuteNonQueryAsync();
         }
 
         // Run the background service tick once.
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
-        // Assert: the job ran and a history entry was persisted with ScheduledJobId set.
-        var allEntries = await history.SearchEntriesAsync(
-            searchText: "Tesla stock pricing", fromDate: null, toDate: null, offset: 0, limit: 10);
-        Assert.Contains(allEntries,
-            e => e.ScheduledJobId.HasValue && e.SynthesizedResult == "Test result for Tesla");
+        // Assert: the runner ran and the job was marked complete with the produced chat id.
+        Assert.Equal(1, runner.RunCount);
+        Assert.Equal("Tesla stock pricing news", runner.LastPrompt);
+        Assert.Contains("create_memory", runner.LastGrantedTools);
 
-        // Assert: search_research_history finds it via the history tool handler.
-        var historyHandler = new ResearchHistoryToolHandler(
-            history, embedding, NullLogger<ResearchHistoryToolHandler>.Instance);
-        var searchCall = new FunctionCallContent("call2", "search_research_history",
-            new Dictionary<string, object?> { ["query"] = "Tesla stock pricing" });
-        var (searchResult, _) = await historyHandler.HandleToolCallAsync(searchCall);
+        var reloaded = await jobs.GetAsync(jobId);
+        Assert.NotNull(reloaded);
+        Assert.Equal(chatId, reloaded!.LastResultEntryId);
+        Assert.Equal(new[] { "create_memory" }, reloaded.GrantedTools);
+        Assert.Equal(1, notifications.SuccessCount);
 
-        Assert.NotNull(searchResult);
-        var text = searchResult!.ToString()!;
-        Assert.Contains("Tesla", text);
-        Assert.Contains("(scheduled)", text);
+        // Assert: query_scheduled_research renders the job.
+        var queryCall = new FunctionCallContent("call2", "query_scheduled_research",
+            new Dictionary<string, object?> { ["filter"] = "all" });
+        var (queryResult, _) = await toolHandler.HandleToolCallAsync(queryCall);
+
+        Assert.NotNull(queryResult);
+        var text = queryResult!.ToString()!;
+        Assert.Contains("TEST_E2E_Tesla", text);
     }
 
     public void Dispose()
@@ -128,23 +133,9 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         try
         {
             var conn = _ctx.GetConnection();
-
-            // Order matters: delete ResearchSessions BEFORE ScheduledJobs so the subselect
-            // can still resolve the test job IDs. Two separate executions because SQLite
-            // (Microsoft.Data.Sqlite) does not run multi-statement command text reliably.
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText =
-                    "DELETE FROM ResearchSessions WHERE ScheduledJobId IN " +
-                    "(SELECT Id FROM ScheduledJobs WHERE Name LIKE 'TEST_E2E_%')";
-                cmd.ExecuteNonQuery();
-            }
-
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_E2E_%'";
-                cmd.ExecuteNonQuery();
-            }
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_E2E_%'";
+            cmd.ExecuteNonQuery();
         }
         finally
         {
@@ -154,36 +145,22 @@ public class ScheduledJobToolIntegrationTests : IDisposable
 
     // ---- Stubs ---------------------------------------------------------------
 
-    private sealed class StubResearchService : IResearchService
+    private sealed class StubRunner : IBackgroundAssistantTurnRunner
     {
-        private readonly string _result;
-        public StubResearchService(string result) => _result = result;
+        private readonly Guid _chatId;
+        public StubRunner(Guid chatId) => _chatId = chatId;
 
-        public Task ExecuteResearchAsync(ResearchSession session, AiProvider provider,
-            ResearchAnswerLength answerLength, CancellationToken ct)
+        public int RunCount { get; private set; }
+        public string? LastPrompt { get; private set; }
+        public IReadOnlyCollection<string> LastGrantedTools { get; private set; } = [];
+
+        public Task<BackgroundTurnResult> RunAsync(BackgroundTurnRequest request, CancellationToken ct)
         {
-            session.SynthesizedResult = _result;
-            session.Status = ResearchStatus.Completed;
-            session.CompletedAt = DateTime.Now;
-            return Task.CompletedTask;
+            RunCount++;
+            LastPrompt = request.Prompt;
+            LastGrantedTools = request.GrantedWriteTools;
+            return Task.FromResult(new BackgroundTurnResult(_chatId, true, null));
         }
-    }
-
-    private sealed class StubEmbedding : IEmbeddingService
-    {
-        public bool IsModelAvailable => false;
-
-        public Task<bool> DownloadModelAsync(IProgress<float>? progress = null,
-            CancellationToken cancellationToken = default) => Task.FromResult(false);
-
-        public Task<bool> EnsureAvailableAsync(IProgress<float>? progress = null,
-            CancellationToken cancellationToken = default) => Task.FromResult(false);
-
-        public Task<float[]> GenerateEmbeddingAsync(string text,
-            CancellationToken cancellationToken = default) => Task.FromResult(Array.Empty<float>());
-
-        public byte[] FloatsToBytes(float[] embedding) => Array.Empty<byte>();
-        public float[] BytesToFloats(byte[] bytes) => Array.Empty<float>();
     }
 
     private sealed class StubProviderResolver : IScheduledResearchProviderResolver
@@ -235,8 +212,10 @@ public class ScheduledJobToolIntegrationTests : IDisposable
 
     private sealed class SilentNotificationSurface : IScheduledJobNotificationSurface
     {
-        public void NotifySuccess(ScheduledJob job, ResearchHistoryEntry entry) { }
-        public void NotifyFailure(ScheduledJob job, Guid resultEntryId, string reason) { }
+        public int SuccessCount { get; private set; }
+
+        public void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle) => SuccessCount++;
+        public void NotifyFailure(ScheduledJob job, string reason) { }
 
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)
             => Task.FromResult<bool?>(false);

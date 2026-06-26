@@ -145,7 +145,6 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             var settings = await _settingsService.GetSettingsAsync();
             settings.SetProviderForMode(WindowMode.Optimize, provider.Id);
             settings.SetProviderForMode(WindowMode.Assistant, provider.Id);
-            settings.SetProviderForMode(WindowMode.Research, provider.Id);
             settings.UseSameProviderForAllModes = true;
             await _settingsService.SaveSettingsAsync(settings);
         }
@@ -267,7 +266,6 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         {
             settings.SetProviderForMode(WindowMode.Optimize, piaCloud.Id);
             settings.SetProviderForMode(WindowMode.Assistant, piaCloud.Id);
-            settings.SetProviderForMode(WindowMode.Research, piaCloud.Id);
             settings.UseSameProviderForAllModes = true;
             await _settingsService.SaveSettingsAsync(settings);
             _logger.LogInformation(
@@ -526,10 +524,9 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         settings.ModeProviderDefaults.TryGetValue(WindowMode.Optimize, out var optId);
         settings.ModeProviderDefaults.TryGetValue(WindowMode.Assistant, out var asstId);
-        settings.ModeProviderDefaults.TryGetValue(WindowMode.Research, out var resId);
         _logger.LogInformation(
-            "Mode-default repair: {Repaired} repaired, {Removed} removed (Optimize={OptId} Assistant={AsstId} Research={ResId})",
-            repaired, removed, optId, asstId, resId);
+            "Mode-default repair: {Repaired} repaired, {Removed} removed (Optimize={OptId} Assistant={AsstId})",
+            repaired, removed, optId, asstId);
     }
 
     public async Task ConsolidateLocalDuplicatesAsync()

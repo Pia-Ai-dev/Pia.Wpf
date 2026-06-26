@@ -70,7 +70,6 @@ public class AppSettings
     public UserOperatingMode? UserOperatingMode { get; set; }
     public KeyboardShortcut OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
     public KeyboardShortcut? AssistantHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltP();
-    public KeyboardShortcut? ResearchHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltR();
     public KeyboardShortcut? FastPathHotkey { get; set; }
     public bool AutoCaptureSelectedText { get; set; } = true;
     public TargetLanguage? TargetLanguage { get; set; }
@@ -213,7 +212,6 @@ public class AppSettings
         {
             ModeProviderDefaults[WindowMode.Optimize] = DefaultProviderId.Value;
             ModeProviderDefaults[WindowMode.Assistant] = DefaultProviderId.Value;
-            ModeProviderDefaults[WindowMode.Research] = DefaultProviderId.Value;
             DefaultProviderId = null;
         }
     }

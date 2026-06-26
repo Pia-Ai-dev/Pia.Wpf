@@ -176,14 +176,6 @@ public partial class FlowItemViewModel : ObservableObject
                     _windowManager.ShowAssistantChat(chat.ChatId);
                     RetractByKey();
                     break;
-                case OpenBriefingAction briefing:
-                    // Fall back to the research-history root when there is no entry (design §8).
-                    if (briefing.EntryId == Guid.Empty)
-                        _windowManager.ShowWindow(WindowMode.Research);
-                    else
-                        _windowManager.ShowResearchHistoryWithEntry(briefing.EntryId);
-                    RetractByKey();
-                    break;
                 case OpenTodoAction:
                     NavigateToTodoBoard();
                     _flow.MarkRead(_item.Id); // the deadline auto-retracts when the todo is completed/out of window

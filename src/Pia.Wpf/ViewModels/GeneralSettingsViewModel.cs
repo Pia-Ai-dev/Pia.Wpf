@@ -78,14 +78,10 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private string _assistantHotkeyDisplayText = "";
 
     [ObservableProperty]
-    private string _researchHotkeyDisplayText = "";
-
-    [ObservableProperty]
     private string _fastPathHotkeyDisplayText = "";
 
     private KeyboardShortcut _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
     private KeyboardShortcut? _assistantHotkey = KeyboardShortcut.DefaultCtrlAltP();
-    private KeyboardShortcut? _researchHotkey = KeyboardShortcut.DefaultCtrlAltR();
     private KeyboardShortcut? _fastPathHotkey;
 
     // Speech
@@ -181,8 +177,6 @@ public partial class GeneralSettingsViewModel : ObservableObject
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
         _assistantHotkey = settings.AssistantHotkey;
         AssistantHotkeyDisplayText = _assistantHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
-        _researchHotkey = settings.ResearchHotkey;
-        ResearchHotkeyDisplayText = _researchHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
         _fastPathHotkey = settings.FastPathHotkey;
         FastPathHotkeyDisplayText = _fastPathHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
 
@@ -219,18 +213,6 @@ public partial class GeneralSettingsViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private async Task CaptureResearchHotkeyAsync()
-    {
-        var shortcut = await _dialogService.ShowHotkeyCaptureDialogAsync();
-        if (shortcut != null && !HasInternalConflict(shortcut, WindowMode.Research))
-        {
-            _researchHotkey = shortcut;
-            ResearchHotkeyDisplayText = shortcut.DisplayText;
-            await SaveSettingsAsync();
-            _trayIconService.UpdateHotkey(WindowMode.Research, _researchHotkey);
-        }
-    }
 
     [RelayCommand]
     private async Task CaptureFastPathHotkeyAsync()
@@ -263,14 +245,6 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _trayIconService.UpdateHotkey(WindowMode.Assistant, null);
     }
 
-    [RelayCommand]
-    private async Task ClearResearchHotkeyAsync()
-    {
-        _researchHotkey = null;
-        ResearchHotkeyDisplayText = _localizationService["Msg_Settings_HotkeyNotSet"];
-        await SaveSettingsAsync();
-        _trayIconService.UpdateHotkey(WindowMode.Research, null);
-    }
 
     [RelayCommand]
     private async Task ClearFastPathHotkeyAsync()
@@ -292,7 +266,6 @@ public partial class GeneralSettingsViewModel : ObservableObject
         {
             { WindowMode.Optimize.ToString(), _optimizeHotkey },
             { WindowMode.Assistant.ToString(), _assistantHotkey },
-            { WindowMode.Research.ToString(), _researchHotkey },
             { "FastPath", _fastPathHotkey }
         };
 
@@ -448,7 +421,6 @@ public partial class GeneralSettingsViewModel : ObservableObject
         settings.TargetSpeechLanguage = TargetSpeechLanguage;
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
-        settings.ResearchHotkey = _researchHotkey;
         settings.FastPathHotkey = _fastPathHotkey;
         await _settingsService.SaveSettingsAsync(settings);
     }

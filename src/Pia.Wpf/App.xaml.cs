@@ -92,12 +92,11 @@ public partial class App : Application
                 .GetRequiredService<ISettingsService>().GetSettingsAsync();
             startupSettings.ModeProviderDefaults.TryGetValue(WindowMode.Optimize, out var optId);
             startupSettings.ModeProviderDefaults.TryGetValue(WindowMode.Assistant, out var asstId);
-            startupSettings.ModeProviderDefaults.TryGetValue(WindowMode.Research, out var resId);
             var hasPiaCloud = providers.Any(p => p.Id == ProviderService.PiaCloudProviderId);
 
             startupLogger.LogInformation(
-                "Provider startup decision: providers={Count} (PiaCloud={HasPiaCloud}), modeDefaults Optimize={OptId} Assistant={AsstId} Research={ResId}, useSame={UseSame}",
-                providers.Count, hasPiaCloud, optId, asstId, resId, startupSettings.UseSameProviderForAllModes);
+                "Provider startup decision: providers={Count} (PiaCloud={HasPiaCloud}), modeDefaults Optimize={OptId} Assistant={AsstId}, useSame={UseSame}",
+                providers.Count, hasPiaCloud, optId, asstId, startupSettings.UseSameProviderForAllModes);
         }
         catch (Exception ex)
         {
