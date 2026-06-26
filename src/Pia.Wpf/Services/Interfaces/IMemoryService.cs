@@ -78,6 +78,15 @@ public interface IMemoryService
     /// the total byte size of the record files backing them.
     /// </summary>
     Task<(int Count, long Bytes)> GetVaultMemoryStatsAsync();
+
+    /// <summary>
+    /// Replace a vault memory's body with <paramref name="newBody"/> (the manual editor's save). A
+    /// <c>path#heading</c> <paramref name="reference"/> splices that section's body — frontmatter and
+    /// sibling sections are preserved byte-for-byte (§3.1), so list-valued frontmatter keys survive; a
+    /// bare path replaces the freeform file's preamble body. Whole-body replace (no bullet merge), and
+    /// <c>updated</c> is bumped. Embeddings reindex via the watcher, not here.
+    /// </summary>
+    Task UpdateSectionAsync(string reference, string newBody);
     Task UpdateEmbeddingAsync(Guid id, byte[] embedding);
     Task TouchAccessTimeAsync(Guid id);
     Task<int> GetObjectCountAsync();

@@ -206,6 +206,59 @@ public class MemoryWriteTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateSection_replaces_section_body_and_preserves_frontmatter_and_siblings()
+    {
+        var service = BuildService();
+
+        await service.RememberAsync("contact_list", "John Smith", "- email: john@x");
+        await service.RememberAsync("contact_list", "Jane Doe", "- email: jane@x");
+
+        var before = await _store.ReadAsync("memory/contacts.md");
+        var originalId = before!.Frontmatter["id"];
+
+        await service.UpdateSectionAsync("memory/contacts.md#John Smith", "- email: new@x\n- phone: 555");
+
+        var doc = await _store.ReadAsync("memory/contacts.md");
+        Assert.NotNull(doc);
+
+        // The edited section carries the new body (whole-body replace, no merge of the old email).
+        var john = Assert.Single(doc!.Sections, s => s.Heading == "John Smith");
+        Assert.Contains("new@x", john.Body);
+        Assert.Contains("phone: 555", john.Body);
+        Assert.DoesNotContain("john@x", john.Body);
+
+        // The sibling section is untouched (byte-range splice).
+        var jane = Assert.Single(doc.Sections, s => s.Heading == "Jane Doe");
+        Assert.Contains("jane@x", jane.Body);
+
+        // Frontmatter identity is preserved (only the body was spliced; updated may be bumped).
+        Assert.Equal(originalId, doc.Frontmatter["id"]);
+        Assert.Equal("contact_list", doc.Frontmatter["type"]);
+        Assert.Equal("managed", doc.Frontmatter["pia"]);
+    }
+
+    [Fact]
+    public async Task UpdateSection_on_bare_path_replaces_freeform_body_wholesale()
+    {
+        var service = BuildService();
+
+        await service.RememberAsync("note", "Q2 Retro", "- attendees: 8");
+        var before = await _store.ReadAsync("memory/notes/q2-retro.md");
+        var originalId = before!.Frontmatter["id"];
+
+        await service.UpdateSectionAsync("memory/notes/q2-retro.md", "Completely rewritten prose body.");
+
+        var doc = await _store.ReadAsync("memory/notes/q2-retro.md");
+        Assert.NotNull(doc);
+        Assert.Contains("Completely rewritten prose body.", doc!.RawText);
+        // Whole-body replace: the original bullets are gone.
+        Assert.DoesNotContain("attendees: 8", doc.RawText);
+        // Frontmatter survives.
+        Assert.Equal(originalId, doc.Frontmatter["id"]);
+        Assert.Equal("note", doc.Frontmatter["type"]);
+    }
+
+    [Fact]
     public async Task Remember_note_freeform_creates_single_file_then_edits_it()
     {
         var service = BuildService();

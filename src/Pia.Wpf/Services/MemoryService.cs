@@ -916,6 +916,39 @@ public class MemoryService : IMemoryService
     // ---- Vault read/list surface (UI) ----
 
     /// <inheritdoc />
+    public async Task UpdateSectionAsync(string reference, string newBody)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(newBody);
+
+        var (path, slug) = VaultReference.Parse(reference);
+        var body = newBody.EndsWith('\n') ? newBody : newBody + "\n";
+
+        if (slug is not null)
+        {
+            // Sectioned document: body-only byte-range splice. Frontmatter (incl. list-valued keys) and
+            // sibling sections are preserved verbatim; only the `updated:` scalar is bumped afterward.
+            await _vaultStore.SpliceSectionAsync(path, slug, body);
+            await BumpUpdatedAsync(path);
+            _logger.LogInformation("Updated a vault section body by reference");
+            return;
+        }
+
+        // Freeform file: replace the whole preamble body under the existing frontmatter (whole-body
+        // replace — no bullet merge on a manual edit).
+        var doc = await _vaultStore.ReadAsync(path);
+        if (doc is null)
+        {
+            throw new FileNotFoundException("Cannot update a vault file that does not exist.", path);
+        }
+
+        var newFile = SplicePreamble(doc, body);
+        await _vaultStore.WriteAtomicAsync(path, newFile);
+        await BumpUpdatedAsync(path);
+        _logger.LogInformation("Updated a freeform vault file body by reference");
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<VaultMemoryItem>> ListMemoriesAsync()
     {
         var docs = await EnumerateRecordDocsAsync();
