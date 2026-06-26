@@ -22,8 +22,7 @@
 
     <mem:PiaMemorySearchBar Grid.Row="1"
                             Margin="24,0,24,14"
-                            Query="{Binding SearchQuery, Mode=TwoWay}"
-                            ActiveFilter="{Binding ActiveFilter, Mode=TwoWay}"/>
+                            Query="{Binding SearchQuery, Mode=TwoWay}"/>
 
     <Grid Grid.Row="2" Margin="24,0,24,14">
       <Grid.ColumnDefinitions>

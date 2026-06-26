@@ -20,26 +20,6 @@
                Foreground="{DynamicResource TextDefaultBrush}"
                VerticalAlignment="Center"/>
 
-    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-      <ui:Button Appearance="Secondary"
-                 Command="{Binding ExportCommand}"
-                 ToolTip="{loc:Str Memory_ExportTooltip}"
-                 Margin="0,0,6,0">
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" Margin="0,0,6,0"/>
-          <TextBlock Text="{loc:Str Memory_Export}"/>
-        </StackPanel>
-      </ui:Button>
-      <ui:Button Appearance="Secondary"
-                 Command="{Binding ReviewStaleCommand}"
-                 ToolTip="{loc:Str Memory_ReviewStaleTooltip}">
-        <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="Clock24" FontSize="16" Margin="0,0,6,0"/>
-          <TextBlock Text="{loc:Str Memory_ReviewStale}"/>
-        </StackPanel>
-      </ui:Button>
-    </StackPanel>
-
     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                Margin="0,8,0,0"
                FontSize="12"
@@ -47,8 +27,6 @@
       <Run Text="{Binding TotalObjectCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Memory_StatsObjects}"/>
       <Run Text=" · "/>
       <Run Text="{Binding StorageSizeText, Mode=OneWay}"/>
-      <Run Text=" · "/>
-      <Run Text="{Binding StaleCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Memory_StatsStale}"/>
     </TextBlock>
   </Grid>
 </UserControl>

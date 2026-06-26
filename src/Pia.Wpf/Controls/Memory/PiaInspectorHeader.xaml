@@ -25,12 +25,6 @@
                   VerticalAlignment="Center"
                   Margin="0,0,0,6">
         <mem:PiaTypeChip Type="{Binding TypeKind}"/>
-        <TextBlock Text="{Binding ShortId}"
-                   FontFamily="{DynamicResource PiaMonoFont}"
-                   FontSize="11"
-                   Foreground="{DynamicResource TextSubtleBrush}"
-                   Margin="8,0,0,0"
-                   VerticalAlignment="Center"/>
       </StackPanel>
 
       <StackPanel Grid.Row="0" Grid.Column="1"
@@ -43,8 +37,8 @@
                    CommandParameter="{Binding}"/>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Copy20}"
                    Appearance="Transparent"
-                   ToolTip="{loc:Str Memory_CopyJson}"
-                   Command="{Binding DataContext.CopyJsonCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   ToolTip="{loc:Str Common_Copy}"
+                   Command="{Binding DataContext.CopyMarkdownCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
                    CommandParameter="{Binding}"/>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Delete20}"
                    Appearance="Transparent"
@@ -55,7 +49,7 @@
       </StackPanel>
 
       <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                 behaviors:EmojiTextBehavior.Text="{Binding Label}"
+                 behaviors:EmojiTextBehavior.Text="{Binding Title}"
                  FontSize="18"
                  FontWeight="SemiBold"
                  TextWrapping="Wrap"
@@ -64,18 +58,11 @@
       <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                  FontSize="11.5"
                  Margin="0,8,0,0"
-                 TextWrapping="Wrap">
-        <Run Text="{loc:Str Memory_Meta_Created}" Foreground="{DynamicResource TextMutedBrush}"/>
-        <Run Text=" "/>
-        <Run Text="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
-        <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
+                 TextWrapping="Wrap"
+                 Visibility="{Binding Updated, Converter={StaticResource NullToVisibilityConverter}}">
         <Run Text="{loc:Str Memory_Meta_Updated}" Foreground="{DynamicResource TextMutedBrush}"/>
         <Run Text=" "/>
-        <Run Text="{Binding UpdatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
-        <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
-        <Run Text="{loc:Str Memory_Meta_Accessed}" Foreground="{DynamicResource TextMutedBrush}"/>
-        <Run Text=" "/>
-        <Run Text="{Binding LastAccessedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+        <Run Text="{Binding Updated, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
       </TextBlock>
     </Grid>
   </Border>

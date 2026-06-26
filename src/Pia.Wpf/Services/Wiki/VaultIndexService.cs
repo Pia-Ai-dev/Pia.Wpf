@@ -25,8 +25,9 @@ public sealed class VaultIndexService
 
     // §8 canonical type order with the spec's display-name headings. NOT MemoryObjectTypes.GetDisplayName,
     // which renders "Notes & Knowledge"/"Contacts" and lacks a `topic` row — §8's example uses the short
-    // display names "Notes"/"Topics" and is the byte-for-byte authority.
-    private static readonly (string Type, string Display)[] CanonicalGroups =
+    // display names "Notes"/"Topics" and is the byte-for-byte authority. Public so the Memory view groups
+    // by the same authoritative order/display names rather than re-deriving them.
+    public static readonly (string Type, string Display)[] CanonicalGroups =
     [
         ("personal_profile", "Personal Profile"),
         ("contact_list", "Contacts"),

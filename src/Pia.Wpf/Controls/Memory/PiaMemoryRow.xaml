@@ -30,11 +30,11 @@
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0">
-        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Label}"
+        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Title}"
                    FontSize="13"
                    Foreground="{DynamicResource TextDefaultBrush}"
                    TextTrimming="CharacterEllipsis"/>
-        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding ValuePreview}"
+        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Preview}"
                    FontSize="11.5"
                    Margin="0,1,0,0"
                    Foreground="{DynamicResource TextSubtleBrush}"
@@ -47,7 +47,7 @@
                        VerticalAlignment="Center"/>
 
       <TextBlock Grid.Column="2"
-                 Text="{Binding UpdatedAt, StringFormat='{}{0:MM-dd}'}"
+                 Text="{Binding Updated, StringFormat='{}{0:MM-dd}'}"
                  FontSize="10.5"
                  FontFamily="{DynamicResource PiaMonoFont}"
                  Foreground="{DynamicResource TextSubtleBrush}"
