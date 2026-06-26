@@ -65,11 +65,16 @@ public sealed class VaultMigrationRunner : IVaultMigrationRunner
         }
 
         // GUARD 2 (cross-device): a device that pulled an already-migrated vault must not re-migrate.
+        // EnumerateAsync is not a real glob — it returns scaffolding (AGENTS.md), the index/log, and
+        // .archive snapshots too — so we count only genuine record files. Otherwise the scaffold that
+        // Bootstrapper writes BEFORE this runs (AGENTS.md) would falsely look like a populated vault and
+        // the legacy JSON would never migrate. GUARD 1 (VaultVersion) remains the authoritative gate.
         var existing = await _store.EnumerateAsync("memory/*.md");
-        if (existing.Count > 0)
+        var recordCount = existing.Count(VaultPaths.IsRecordFile);
+        if (recordCount > 0)
         {
             _logger.LogInformation(
-                "Vault migration skipped: vault already populated with {Count} memory file(s)", existing.Count);
+                "Vault migration skipped: vault already populated with {Count} memory record(s)", recordCount);
             return new MigrationReport(Skipped: true, 0, 0, 0);
         }
 
