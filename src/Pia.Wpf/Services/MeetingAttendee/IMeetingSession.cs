@@ -60,4 +60,33 @@ public interface IMeetingSession : IAsyncDisposable
     /// operations.
     /// </summary>
     Task<IReadOnlyList<string>> GetAttendeeNamesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Starts the <b>silent in-browser audio capture</b>: taps the meeting's remote audio inside the
+    /// page (Web Audio) and mutes it from the speakers, so the meeting is captured for transcription
+    /// without being audible on the device. This is the mechanism behind the "hidden ⇒ silent"
+    /// contract — the previous per-process WASAPI loopback only <i>captured</i> the browser audio (a
+    /// tap) and never silenced the speakers.
+    ///
+    /// <para><paramref name="onFormat"/> is invoked once with the source PCM <c>(sampleRate, channels)</c>
+    /// before any audio; <paramref name="onPcm"/> is then invoked repeatedly with little-endian
+    /// interleaved Float32 PCM frames in that format. Both run on the implementation's binding-dispatch
+    /// thread and must not block. Speaker muting is armed only once a remote track is actually captured,
+    /// so a failed capture never leaves the meeting silent — and <see cref="StopAudioCaptureAsync"/>
+    /// (also called on dispose) unmutes, which is what lets the orchestrator degrade to the audible
+    /// endpoint loopback. Throws if the in-page tap cannot be armed (so the caller can degrade).</para>
+    /// </summary>
+    Task StartAudioCaptureAsync(
+        Action<int, int> onFormat,
+        Action<byte[]> onPcm,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stops the in-browser audio tap started by <see cref="StartAudioCaptureAsync"/> and <b>unmutes</b>
+    /// the page's media elements. Best-effort and safe to call when no capture is running or the page is
+    /// already gone. Idempotent. The in-browser audio source calls this from its own dispose, which is
+    /// what unmutes the meeting before the orchestrator degrades to the audible endpoint loopback (on a
+    /// full session teardown the browser is closing anyway, so unmuting is moot).
+    /// </summary>
+    Task StopAudioCaptureAsync();
 }

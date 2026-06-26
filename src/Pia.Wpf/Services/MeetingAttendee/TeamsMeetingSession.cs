@@ -21,8 +21,15 @@ namespace Pia.Services.MeetingAttendee;
 /// real audio render session (the whole reason the attendee can hear the meeting), while the
 /// off-screen window position keeps it invisible. The bot joins <b>muted</b> — microphone and
 /// camera permissions are simply not granted (Playwright denies by default, with no hanging OS
-/// prompt) — but audio <b>output</b> is left untouched so the meeting can be captured (we never pass
-/// <c>--mute-audio</c> or a fake playback device).
+/// prompt). At the Chromium level audio <b>output</b> is left untouched (we never pass
+/// <c>--mute-audio</c> or a fake playback device), so the meeting still renders and can be captured.
+///
+/// <para>On the <b>hidden (silent) path</b> the meeting must not be audible on the device — otherwise
+/// the user attending the same call on the same machine gets an echo. Silence is achieved
+/// <i>in-page</i> (not by muting Chromium, which would also kill capture): an init script wraps
+/// <c>RTCPeerConnection</c> to collect the inbound audio tracks, and <see cref="StartAudioCaptureAsync"/>
+/// taps them through Web Audio while muting the page's media elements. See those members and
+/// <c>BrowserAudioCaptureService</c>.</para>
 ///
 /// The join flow is ported from the Node/Playwright blueprint
 /// (<c>microsoft-teams-meeting-bot/.../join-procedure.ts</c>): resolve the launcher URL, go to it,
@@ -123,6 +130,156 @@ public sealed class TeamsMeetingSession : IMeetingSession
         }
         """;
 
+    // ---- Silent in-browser audio capture (hidden path) -------------------------------------------
+    /// <summary>Name of the Playwright function the page calls to ship PCM/format to the host.</summary>
+    private const string AudioBindingName = "__piaAudioSink";
+
+    /// <summary>
+    /// Init script (added to the context BEFORE the first navigation, hidden path only) that wraps
+    /// <c>RTCPeerConnection</c> so every inbound (remote) audio track is collected into
+    /// <c>window.__piaRemoteTracks</c> as Teams negotiates the call. It must run before Teams creates
+    /// its peer connection, hence the init script. It does NOT mute anything and does NOT start capture
+    /// — muting is deferred to <see cref="AudioCaptureStartScript"/> so a failed/degraded capture never
+    /// leaves the meeting silent.
+    /// </summary>
+    private const string AudioHookInitScript = """
+        (() => {
+          if (window.__piaAudioHooked) return;
+          window.__piaAudioHooked = true;
+          const remoteTracks = new Set();
+          window.__piaRemoteTracks = remoteTracks;
+          const OrigPC = window.RTCPeerConnection;
+          if (!OrigPC) return;
+          const Wrapped = function (...args) {
+            const pc = new OrigPC(...args);
+            try {
+              pc.addEventListener('track', (e) => {
+                try {
+                  const tr = e && e.track;
+                  if (tr && tr.kind === 'audio') {
+                    remoteTracks.add(tr);
+                    tr.addEventListener('ended', () => { try { remoteTracks.delete(tr); } catch (_) {} });
+                    if (typeof window.__piaConnectTrack === 'function') window.__piaConnectTrack(tr);
+                  }
+                } catch (_) {}
+              });
+            } catch (_) {}
+            return pc;
+          };
+          Wrapped.prototype = OrigPC.prototype;
+          try { Object.setPrototypeOf(Wrapped, OrigPC); } catch (_) {}
+          try { window.RTCPeerConnection = Wrapped; } catch (_) {}
+          try { window.webkitRTCPeerConnection = Wrapped; } catch (_) {}
+        })();
+        """;
+
+    /// <summary>
+    /// Started post-admission once the PCM binding exists. Builds a Web Audio graph that taps every
+    /// collected remote track and a <c>ScriptProcessorNode → gain(0) → destination</c> chain — the
+    /// gain-0 sink makes the graph pump (so <c>onaudioprocess</c> fires and we get PCM) while emitting
+    /// silence. <c>ScriptProcessorNode</c> is used over <c>AudioWorklet</c> deliberately: it needs no
+    /// blob/module URL, so Teams' CSP can't block it. Each remote track is also attached to a muted
+    /// <c>&lt;audio&gt;</c> element — the known Chrome quirk (crbug 121673) is that a remote WebRTC
+    /// track only feeds Web Audio if it is ALSO sunk to a media element; a muted element satisfies that
+    /// without reaching the speakers. Speaker muting (sweep + observer + play hook) is armed only on the
+    /// FIRST captured track, so a meeting with no remote audio (capture impossible) is never muted.
+    /// Returns a short status string for host-side logging.
+    /// </summary>
+    private const string AudioCaptureStartScript = """
+        () => {
+          try {
+            if (window.__piaCaptureStarted) return 'already';
+            const post = window.__piaAudioSink;
+            if (typeof post !== 'function') return 'no-binding';
+            window.__piaCaptureStarted = true;
+
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            window.__piaCtx = ctx;
+            try { if (ctx.resume) ctx.resume(); } catch (_) {}
+            const inputGain = ctx.createGain(); inputGain.gain.value = 1;
+            const proc = ctx.createScriptProcessor(4096, 1, 1);
+            const silent = ctx.createGain(); silent.gain.value = 0;
+            let pumping = false;
+
+            proc.onaudioprocess = (ev) => {
+              try {
+                const ch = ev.inputBuffer.getChannelData(0);
+                const f32 = new Float32Array(ch);
+                const bytes = new Uint8Array(f32.buffer);
+                let bin = ''; const CH = 0x8000;
+                for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+                post(window.btoa(bin));
+              } catch (_) {}
+            };
+
+            const muteEl = (el) => { try { el.muted = true; el.volume = 0; } catch (_) {} };
+            const sweep = () => { try { document.querySelectorAll('audio,video').forEach(muteEl); } catch (_) {} };
+            window.__piaMuteState = { interval: 0, observer: null, origPlay: null };
+            const beginMuting = () => {
+              if (window.__piaMuteState.interval) return;
+              sweep();
+              try {
+                const mo = new MutationObserver(() => sweep());
+                mo.observe(document.documentElement, { subtree: true, childList: true });
+                window.__piaMuteState.observer = mo;
+              } catch (_) {}
+              try {
+                const proto = HTMLMediaElement.prototype;
+                window.__piaMuteState.origPlay = proto.play;
+                proto.play = function (...a) { muteEl(this); return window.__piaMuteState.origPlay.apply(this, a); };
+              } catch (_) {}
+              try { window.__piaMuteState.interval = window.setInterval(sweep, 1000); } catch (_) {}
+            };
+
+            const connected = new WeakSet();
+            window.__piaConnectTrack = (tr) => {
+              try {
+                if (!tr || connected.has(tr)) return;
+                connected.add(tr);
+                const ms = new MediaStream([tr]);
+                const a = document.createElement('audio'); a.muted = true; a.volume = 0; a.srcObject = ms;
+                try { const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+                (window.__piaSinks = window.__piaSinks || []).push(a);
+                ctx.createMediaStreamSource(ms).connect(inputGain);
+                if (!pumping) {
+                  pumping = true;
+                  inputGain.connect(proc); proc.connect(silent); silent.connect(ctx.destination);
+                  try { if (ctx.resume) ctx.resume(); } catch (_) {}
+                  beginMuting();
+                }
+              } catch (_) {}
+            };
+
+            post('f:' + Math.round(ctx.sampleRate) + ':1');
+            Array.from(remoteTracks_()).forEach(window.__piaConnectTrack);
+            function remoteTracks_() { return window.__piaRemoteTracks || []; }
+            return 'started:' + (window.__piaRemoteTracks ? window.__piaRemoteTracks.size : 0);
+          } catch (e) { return 'error:' + (e && e.message ? e.message : String(e)); }
+        }
+        """;
+
+    /// <summary>Tears the in-page tap down and unmutes the page's media elements. Best-effort.</summary>
+    private const string AudioCaptureStopScript = """
+        () => {
+          try {
+            const st = window.__piaMuteState;
+            if (st) {
+              try { if (st.interval) window.clearInterval(st.interval); } catch (_) {}
+              try { if (st.observer) st.observer.disconnect(); } catch (_) {}
+              try { if (st.origPlay) HTMLMediaElement.prototype.play = st.origPlay; } catch (_) {}
+            }
+            try { document.querySelectorAll('audio,video').forEach((el) => { try { el.muted = false; el.volume = 1; } catch (_) {} }); } catch (_) {}
+            try { (window.__piaSinks || []).forEach((a) => { try { a.srcObject = null; } catch (_) {} }); } catch (_) {}
+            window.__piaSinks = [];
+            try { if (window.__piaCtx && window.__piaCtx.close) window.__piaCtx.close(); } catch (_) {}
+            window.__piaCtx = null;
+            window.__piaCaptureStarted = false;
+            window.__piaConnectTrack = null;
+            return 'stopped';
+          } catch (e) { return 'error:' + (e && e.message ? e.message : String(e)); }
+        }
+        """;
+
     // ---- Timeouts (ms) ----------------------------------------------------------------------
     private const float ContinueOnWebTimeoutMs = 30_000;
     private const float NameInputTimeoutMs = 15_000;
@@ -158,6 +315,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
     private int? _browserProcessId;
     private bool _enteredLobbyRaised;
     private bool _rosterDomLogged;
+    private bool _audioBindingExposed;
 
     // Serializes all page access that can run concurrently once the meeting is live: WaitForEndAsync's
     // 2 s hangup poll (on the orchestrator's watch loop), LeaveAsync's hangup probe, and
@@ -408,6 +566,101 @@ public sealed class TeamsMeetingSession : IMeetingSession
         }
     }
 
+    public async Task StartAudioCaptureAsync(
+        Action<int, int> onFormat,
+        Action<byte[]> onPcm,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(onFormat);
+        ArgumentNullException.ThrowIfNull(onPcm);
+        var page = _page ?? throw new InvalidOperationException("Browser page was not created.");
+
+        // Expose the page→host channel once. The page calls window.__piaAudioSink(msg): "f:<rate>:<ch>"
+        // for the one-time format announcement, otherwise a base64-encoded little-endian Float32 PCM
+        // chunk. Exposed on the CONTEXT (the generic typed overload lives on IBrowserContext) so it is
+        // available to the page; the callback runs on Playwright's dispatch thread, so it must not block.
+        // PCM is user meeting content ⇒ it is NEVER logged here; only the chunk size is, and only on the
+        // first frame (see BrowserAudioCaptureSource).
+        if (!_audioBindingExposed && _context is not null)
+        {
+            await _context.ExposeFunctionAsync<string>(AudioBindingName, msg =>
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(msg)) return;
+                    if (msg.StartsWith("f:", StringComparison.Ordinal))
+                    {
+                        var parts = msg.Split(':');
+                        if (parts.Length >= 3
+                            && int.TryParse(parts[1], out var rate)
+                            && int.TryParse(parts[2], out var channels))
+                        {
+                            onFormat(rate, channels);
+                        }
+                        return;
+                    }
+
+                    onPcm(Convert.FromBase64String(msg));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "In-browser audio binding callback failed for one message");
+                }
+            }).ConfigureAwait(false);
+            _audioBindingExposed = true;
+        }
+
+        // Spin up the in-page Web Audio tap. Page-gated so it never collides with the hangup / roster
+        // polls (Playwright forbids concurrent ops on one IPage).
+        string status;
+        await _pageGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            status = await page.EvaluateAsync<string>(AudioCaptureStartScript).ConfigureAwait(false);
+        }
+        finally
+        {
+            _pageGate.Release();
+        }
+
+        _logger.LogInformation("In-browser audio capture armed: {Status}", status);
+
+        // A hard wiring failure (binding missing, in-page exception) means no audio will ever flow —
+        // throw so the orchestrator degrades to the audible endpoint loopback. "started:N" / "no-tracks"
+        // are NOT failures: tracks can connect late (via the RTCPeerConnection hook), and the caller's
+        // no-audio watchdog covers the case where none ever do.
+        if (status is null
+            || status == "no-binding"
+            || status.StartsWith("error:", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"In-browser audio capture failed to arm ({status}).");
+        }
+    }
+
+    public async Task StopAudioCaptureAsync()
+    {
+        var page = _page;
+        if (page is null) return;
+
+        try
+        {
+            await _pageGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var status = await page.EvaluateAsync<string>(AudioCaptureStopScript).ConfigureAwait(false);
+                _logger.LogDebug("In-browser audio capture stopped: {Status}", status);
+            }
+            finally
+            {
+                _pageGate.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Stopping in-browser audio capture failed (page already gone?)");
+        }
+    }
+
     /// <summary>
     /// Best-effort: if the roster panel is not already populated, click the "People" toggle and wait
     /// briefly for rows to appear. Swallows every failure — the caller reads whatever is rendered.
@@ -536,6 +789,15 @@ public sealed class TeamsMeetingSession : IMeetingSession
         {
             Permissions = [],
         }).ConfigureAwait(false);
+
+        // Hidden ⇒ silent path: arm the RTCPeerConnection track-collection hook BEFORE the first
+        // navigation so it is in place when Teams creates its peer connection. The actual tap + speaker
+        // muting starts later in StartAudioCaptureAsync (so a failed capture never mutes the meeting).
+        // The on-screen path leaves audio fully audible and skips this entirely.
+        if (!_launchSpec.ShowWindow)
+        {
+            await _context.AddInitScriptAsync(AudioHookInitScript).ConfigureAwait(false);
+        }
 
         _page = await _context.NewPageAsync().ConfigureAwait(false);
     }

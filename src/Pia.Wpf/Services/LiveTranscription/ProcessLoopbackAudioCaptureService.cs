@@ -10,9 +10,15 @@ namespace Pia.Services.LiveTranscription;
 /// Per-process WASAPI loopback capture isolated to a single target process (the attendee's browser)
 /// and its child process tree, via <c>ActivateAudioInterfaceAsync</c> +
 /// <c>AUDIOCLIENT_ACTIVATION_PARAMS</c> (<c>PROCESS_LOOPBACK</c> /
-/// <c>INCLUDE_TARGET_PROCESS_TREE</c>). Unlike <see cref="LoopbackAudioCaptureService"/> (which
-/// captures the whole render-device mix and is audible), this isolates only the browser's audio and
-/// does not play it out — so it is the inaudible, non-leaking source.
+/// <c>INCLUDE_TARGET_PROCESS_TREE</c>). Unlike <see cref="LoopbackAudioCaptureService"/> it isolates
+/// only the browser's audio (not the whole render-device mix).
+///
+/// <para><b>RETIRED / NOT SELECTED.</b> This was intended as the silent source, but per-process
+/// loopback is only a capture <i>tap</i>: the browser still renders the meeting to the default
+/// speakers while it is captured (confirmed in the field — the meeting was audible on the hidden
+/// path). It does NOT silence output, so the silent path now uses the in-browser Web Audio tap
+/// (<c>BrowserAudioCaptureSource</c>). This class is kept for reference and is no longer wired into
+/// the audio-source selection. See <c>BrowserAudioCaptureService</c> for the live silent source.</para>
 ///
 /// <para>The capture format is requested as 48 kHz stereo 16-bit PCM (the activated client converts
 /// for us via <c>AUTOCONVERTPCM</c>); the shared <see cref="AudioHopResampler"/> then downmixes to

@@ -260,35 +260,32 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             // hand the now-disposed source/engine onward or clobber the Idle state Stop set.
             startToken.ThrowIfCancellationRequested();
 
-            // 4) Audio source + transcription engine. Default = endpoint loopback (audible); per-process
-            //    (silent) loopback when the window is hidden AND the browser PID is known — with a
-            //    dispose-then-degrade fallback to the audible endpoint loopback if the silent path fails.
-            var usePerProcess = UsePerProcessLoopback(settings, session);
-            var source = _audioSourceFactory(session, usePerProcess);
+            // 4) Audio source + transcription engine. Default = endpoint loopback (audible); silent
+            //    in-browser capture when the window is hidden — with a dispose-then-degrade fallback to
+            //    the audible endpoint loopback if the silent path fails (disposing the silent source
+            //    unmutes the meeting, so the degrade is actually audible).
+            var useSilentCapture = UseSilentBrowserCapture(settings);
+            var source = _audioSourceFactory(session, useSilentCapture);
             _audioSource = source;
             try
             {
                 await source.StartAsync(startToken).ConfigureAwait(false);
-                if (usePerProcess)
-                {
-                    _logger.LogInformation(
-                        "Meeting attendee using per-process (silent) loopback for browser PID {Pid}",
-                        session.BrowserProcessId);
-                }
+                if (useSilentCapture)
+                    _logger.LogInformation("Meeting attendee using silent in-browser audio capture");
             }
-            catch (Exception ex) when (usePerProcess && ex is not OperationCanceledException)
+            catch (Exception ex) when (useSilentCapture && ex is not OperationCanceledException)
             {
-                // Per-process (silent) capture failed (e.g. Windows < 20348, or a WASAPI activation
-                // failure). Dispose the half-activated source FIRST — it does not self-clean on a
-                // mid-activation throw, so reassigning _audioSource without disposing would leak its
-                // WASAPI RCWs — then degrade to the audible endpoint loopback so the meeting is never
-                // lost to a silent-capture failure (it becomes "hidden but audible").
+                // Silent in-browser capture failed to produce audio (e.g. the in-page hook captured no
+                // remote track, or the tap could not be armed). Dispose it FIRST — that runs the source's
+                // teardown, which calls StopAudioCaptureAsync and UNMUTES the meeting — then degrade to the
+                // audible endpoint loopback so the meeting is never lost to a silent-capture failure (it
+                // becomes "hidden but audible" rather than "silent and untranscribed").
                 _logger.LogWarning(ex,
-                    "Per-process (silent) loopback failed to start; degrading to audible endpoint loopback");
+                    "Silent in-browser capture failed to start; degrading to audible endpoint loopback");
                 await source.DisposeAsync().ConfigureAwait(false);
                 _audioSource = null;
 
-                source = _audioSourceFactory(session, /* usePerProcess: */ false);
+                source = _audioSourceFactory(session, /* useSilentCapture: */ false);
                 _audioSource = source;
                 await source.StartAsync(startToken).ConfigureAwait(false);
             }
@@ -688,25 +685,24 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     }
 
     /// <summary>
-    /// Pure decision: use the per-process (silent) loopback source only when the browser window is
-    /// hidden (so the user wants the meeting inaudible) AND the browser process id is known (so we have a
-    /// target to isolate). A visible window keeps the audible endpoint loopback. The user-facing contract
-    /// is <i>hidden ⇒ silent</i>, so silence is derived from
-    /// <see cref="AppSettings.MeetingAttendeeShowBrowserWindow"/> rather than a separate toggle.
+    /// Pure decision: use the silent in-browser audio capture when the browser window is hidden (so the
+    /// user wants the meeting inaudible on this device). A visible window keeps the audible endpoint
+    /// loopback. The user-facing contract is <i>hidden ⇒ silent</i>, so silence is derived from
+    /// <see cref="AppSettings.MeetingAttendeeShowBrowserWindow"/> rather than a separate toggle. Unlike
+    /// the retired per-process loopback path, the in-browser tap needs no browser PID.
     /// </summary>
-    internal static bool UsePerProcessLoopback(AppSettings settings, IMeetingSession session)
-        => !settings.MeetingAttendeeShowBrowserWindow && session.BrowserProcessId is int;
+    internal static bool UseSilentBrowserCapture(AppSettings settings)
+        => !settings.MeetingAttendeeShowBrowserWindow;
 
     private static IAudioCaptureSource CreateDefaultAudioSource(
-        IMeetingSession session, bool usePerProcess, ILoggerFactory loggerFactory)
+        IMeetingSession session, bool useSilentCapture, ILoggerFactory loggerFactory)
     {
-        // Per-process loopback is selected only when the orchestrator already decided so (flag on AND a
-        // PID is known); otherwise the proven endpoint loopback is the default. The PID is re-checked
-        // here purely as a defensive guard before constructing the per-process source.
-        if (usePerProcess && session.BrowserProcessId is int pid)
+        // Silent capture (hidden window) taps the meeting audio inside the browser and mutes the
+        // speakers; otherwise the proven endpoint loopback (audible) is the default.
+        if (useSilentCapture)
         {
-            return new ProcessLoopbackAudioCaptureService(
-                pid, loggerFactory.CreateLogger<ProcessLoopbackAudioCaptureService>());
+            return new BrowserAudioCaptureService(
+                session, loggerFactory.CreateLogger<BrowserAudioCaptureService>());
         }
         return new LoopbackAudioCaptureService(loggerFactory.CreateLogger<LoopbackAudioCaptureService>());
     }

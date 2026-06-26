@@ -439,25 +439,18 @@ public sealed class MeetingAttendeeServiceStateTests
         httpClientFactory.DidNotReceive().CreateClient(Arg.Any<string>());
     }
 
-    // ---- per-process decision (pure) ------------------------------------------------------------
+    // ---- silent-capture decision (pure) ---------------------------------------------------------
 
     [Fact]
-    public void UsePerProcessLoopback_TrueWhenHiddenAndPidKnown()
+    public void UseSilentBrowserCapture_TrueWhenHidden()
     {
-        var session = Substitute.For<IMeetingSession>();
-        session.BrowserProcessId.Returns(1234);
-
-        // Hidden (ShowBrowserWindow=false) + PID known ⇒ silent per-process loopback.
-        Assert.True(MeetingAttendeeService.UsePerProcessLoopback(
-            new AppSettings { MeetingAttendeeShowBrowserWindow = false }, session));
+        // Hidden (ShowBrowserWindow=false) ⇒ silent in-browser capture. Unlike the retired per-process
+        // loopback, this needs no browser PID.
+        Assert.True(MeetingAttendeeService.UseSilentBrowserCapture(
+            new AppSettings { MeetingAttendeeShowBrowserWindow = false }));
         // Window shown ⇒ audible endpoint loopback.
-        Assert.False(MeetingAttendeeService.UsePerProcessLoopback(
-            new AppSettings { MeetingAttendeeShowBrowserWindow = true }, session));
-
-        // Hidden but no PID to isolate ⇒ fall back to endpoint loopback.
-        session.BrowserProcessId.Returns((int?)null);
-        Assert.False(MeetingAttendeeService.UsePerProcessLoopback(
-            new AppSettings { MeetingAttendeeShowBrowserWindow = false }, session));
+        Assert.False(MeetingAttendeeService.UseSilentBrowserCapture(
+            new AppSettings { MeetingAttendeeShowBrowserWindow = true }));
     }
 
     // ---- launch-spec resolution (Phase 0) -------------------------------------------------------
@@ -597,21 +590,21 @@ public sealed class MeetingAttendeeServiceStateTests
         await service.DisposeAsync();
     }
 
-    // ---- silent-loopback dispose-then-degrade fallback (Phase 4) --------------------------------
+    // ---- silent-capture dispose-then-degrade fallback -------------------------------------------
 
     [Fact]
-    public async Task StartAsync_WhenPerProcessLoopbackFailsToStart_DisposesItAndDegradesToEndpoint()
+    public async Task StartAsync_WhenSilentCaptureFailsToStart_DisposesItAndDegradesToEndpoint()
     {
-        // Hidden window + known PID ⇒ silent per-process loopback is selected; when its StartAsync throws
-        // (e.g. Windows < 20348), the orchestrator must dispose the half-activated source FIRST, then start
-        // the audible endpoint loopback, and still reach Attending ("hidden but audible").
+        // Hidden window ⇒ silent in-browser capture is selected; when its StartAsync throws (e.g. the
+        // in-page hook captured no remote track within the no-audio timeout), the orchestrator must
+        // dispose that source FIRST (which unmutes the meeting), then start the audible endpoint
+        // loopback, and still reach Attending ("hidden but audible").
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings { MeetingAttendeeShowBrowserWindow = false });
 
         var session = CreateJoinableSession();
-        session.BrowserProcessId.Returns(1234);
 
-        var perProcess = new FakeAudioSource(null, throwOnStart: true);
+        var silent = new FakeAudioSource(null, throwOnStart: true);
         var endpoint = new FakeAudioSource(null);
         var transcriptionEngine = Substitute.For<ITranscriptionEngine>();
 
@@ -622,15 +615,15 @@ public sealed class MeetingAttendeeServiceStateTests
             createTranscription: (_, _) => Task.FromResult<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>(
                 ("silero.onnx", transcriptionEngine, null)),
             sessionFactory: _ => session,
-            // First call (usePerProcess=true) returns the throwing source; the degrade call (false) the endpoint.
-            audioSourceFactory: (_, usePerProcess) => usePerProcess ? perProcess : endpoint,
+            // First call (useSilentCapture=true) returns the throwing source; the degrade call (false) the endpoint.
+            audioSourceFactory: (_, useSilentCapture) => useSilentCapture ? silent : endpoint,
             engineServiceFactory: (_, _, _, _, _, _, _) =>
                 Task.FromResult<IAsyncDisposable>(new RecordingDisposable(null, "engine")));
 
         await service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
 
         Assert.Equal(MeetingAttendeeState.Attending, service.State);
-        Assert.True(perProcess.Disposed);   // half-activated source disposed before reassigning
+        Assert.True(silent.Disposed);       // failed silent source disposed before reassigning (unmutes)
         Assert.True(endpoint.Started);      // degraded to the audible endpoint loopback
         Assert.True(endpoint.IsRunning);
 

@@ -117,9 +117,10 @@ public class AppSettings
     public MeetingBrowserSelection MeetingBrowserSelection { get; set; } = MeetingBrowserSelection.BundledChromium;
 
     // Show the attendee's browser window on-screen. Default false = hidden (window parked off-screen and
-    // its taskbar button suppressed) AND the meeting captured silently via per-process loopback. When
-    // true, the window opens normally and the meeting is audible via endpoint loopback. The audio source
-    // is derived from this flag (hidden ⇒ silent) — there is no separate audio-source toggle.
+    // its taskbar button suppressed) AND the meeting captured silently via the in-browser audio tap (the
+    // page mutes its own media elements so nothing reaches the speakers). When true, the window opens
+    // normally and the meeting is audible via endpoint loopback. The audio source is derived from this
+    // flag (hidden ⇒ silent) — there is no separate audio-source toggle.
     // Machine-specific, so local-only (no SyncSettings mirror).
     public bool MeetingAttendeeShowBrowserWindow { get; set; } = false;
 
