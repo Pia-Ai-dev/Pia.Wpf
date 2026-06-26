@@ -181,8 +181,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     }
 
     // Project semantic-search hits (RecallAsync indexes ## sections) back to the full VaultMemoryItem
-    // (real type/body/updated) by reference, preserving recall order. Hits whose section has since changed
-    // are dropped. Freeform preamble files are not chunked by the indexer, so they never appear here.
+    // (real type/body/updated) by reference. Hits whose section has since changed are dropped; freeform
+    // preamble files are not chunked by the indexer, so they never appear here. (Final display order is
+    // the canonical group order with alpha-within-group from BuildGroups, not recall rank — D3.)
     private static IReadOnlyList<VaultMemoryItem> ProjectRecallHits(
         IReadOnlyList<VaultMemoryItem> all, IReadOnlyList<RecallHit> hits)
     {
