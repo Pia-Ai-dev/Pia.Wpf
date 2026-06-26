@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -910,6 +912,108 @@ public class MemoryService : IMemoryService
         await _vaultStore.WriteAtomicAsync(path, newFile);
         _logger.LogInformation("Forget removed a single vault section");
     }
+
+    // ---- Vault read/list surface (UI) ----
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<VaultMemoryItem>> ListMemoriesAsync()
+    {
+        var docs = await EnumerateRecordDocsAsync();
+        var items = new List<VaultMemoryItem>();
+
+        foreach (var (filePath, doc) in docs)
+        {
+            var type = ResolveItemType(doc, filePath);
+            var updated = ParseFrontmatterUpdated(doc);
+
+            if (doc.Sections.Count > 0)
+            {
+                // Structured document: one item per ## section, addressed by path#heading.
+                foreach (var section in doc.Sections)
+                {
+                    items.Add(new VaultMemoryItem(
+                        $"{filePath}#{section.Heading}", filePath, type, section.Heading, section.Body, updated));
+                }
+            }
+            else
+            {
+                // Freeform file: the whole body lives in the preamble; one item addressed by bare path.
+                var title = doc.Frontmatter.TryGetValue("title", out var t) && !string.IsNullOrWhiteSpace(t)
+                    ? t
+                    : Path.GetFileNameWithoutExtension(filePath);
+                items.Add(new VaultMemoryItem(filePath, filePath, type, title, doc.Preamble, updated));
+            }
+        }
+
+        return items;
+    }
+
+    /// <inheritdoc />
+    public async Task<(int Count, long Bytes)> GetVaultMemoryStatsAsync()
+    {
+        var docs = await EnumerateRecordDocsAsync();
+        var count = 0;
+        long bytes = 0;
+
+        foreach (var (_, doc) in docs)
+        {
+            // One item per section, or one per freeform (section-less) file — mirror ListMemoriesAsync.
+            count += doc.Sections.Count > 0 ? doc.Sections.Count : 1;
+            // RawText is the exact on-disk content (UTF-8 without BOM), so its byte count is the file size.
+            bytes += Encoding.UTF8.GetByteCount(doc.RawText);
+        }
+
+        return (count, bytes);
+    }
+
+    // Read every genuine record file once. EnumerateAsync is not a real glob (it walks the whole memory/
+    // subtree), so the result is filtered through VaultPaths.IsRecordFile and paths are forward-slashed.
+    private async Task<List<(string FilePath, VaultDocument Doc)>> EnumerateRecordDocsAsync()
+    {
+        var files = await _vaultStore.EnumerateAsync("memory/*.md");
+        var result = new List<(string, VaultDocument)>();
+
+        foreach (var rel in files)
+        {
+            if (!VaultPaths.IsRecordFile(rel))
+            {
+                continue;
+            }
+
+            var doc = await _vaultStore.ReadAsync(rel);
+            if (doc is not null)
+            {
+                result.Add((rel.Replace('\\', '/'), doc));
+            }
+        }
+
+        return result;
+    }
+
+    // The §7 type of a record: the frontmatter `type` when present, else inferred from the document path
+    // (a non-Pia or hand-edited file may omit type; VaultDocument.Type throws on a missing key).
+    private static string ResolveItemType(VaultDocument doc, string filePath)
+        => doc.Frontmatter.TryGetValue("type", out var type) && !string.IsNullOrWhiteSpace(type)
+            ? type
+            : InferTypeFromPath(filePath);
+
+    private static string InferTypeFromPath(string filePath) => filePath switch
+    {
+        "memory/profile.md" => MemoryObjectTypes.PersonalProfile,
+        "memory/contacts.md" => MemoryObjectTypes.ContactList,
+        "memory/preferences.md" => MemoryObjectTypes.Preference,
+        _ when filePath.StartsWith("memory/projects/", StringComparison.OrdinalIgnoreCase) => MemoryObjectTypes.Project,
+        _ when filePath.StartsWith("memory/topics/", StringComparison.OrdinalIgnoreCase) => "topic",
+        _ => MemoryObjectTypes.Note,
+    };
+
+    // Parse the document-level `updated` frontmatter (§2.5 ISO-8601 UTC); null when absent/unparseable.
+    private static DateTime? ParseFrontmatterUpdated(VaultDocument doc)
+        => doc.Frontmatter.TryGetValue("updated", out var raw) &&
+           DateTime.TryParse(raw, CultureInfo.InvariantCulture,
+               DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var dt)
+            ? dt
+            : null;
 
     private static async Task<IReadOnlyList<(string FilePath, string Heading, string Slug, byte[]? Embedding)>>
         GetAllChunkHeadingsAsync(SqliteConnection connection)
