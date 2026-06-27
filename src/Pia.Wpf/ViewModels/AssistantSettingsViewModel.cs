@@ -1,7 +1,10 @@
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
+using Pia.Infrastructure;
+using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -14,6 +17,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
     private readonly IAssistantChatService _chatService;
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
+    private readonly IAssistantFolderRelocationService _relocationService;
     private bool _isLoading;
 
     public ProvidersSettingsViewModel ProvidersVm { get; }
@@ -32,7 +36,8 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ISettingsService settingsService,
         IAssistantChatService chatService,
         IDialogService dialogService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IAssistantFolderRelocationService relocationService)
     {
         ProvidersVm = providersVm;
         PersonasVm = personasVm;
@@ -42,6 +47,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         _chatService = chatService;
         _dialogService = dialogService;
         _localizationService = localizationService;
+        _relocationService = relocationService;
         _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(RetentionDaysDisplay));
     }
 
@@ -54,8 +60,17 @@ public partial class AssistantSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _suggestionsEnabled;
 
+    // Display-only: the current assistant files folder. Changed via the Change… command (which runs
+    // the validated copy/verify/delete move), not by free-text editing.
     [ObservableProperty]
     private string? _filesFolder;
+
+    [ObservableProperty]
+    private bool _fileToolsEnabled = true;
+
+    // "<folder>\Vault" — shown beneath the folder so the user sees where memory lives.
+    [ObservableProperty]
+    private string? _vaultLocationDisplay;
 
     [ObservableProperty]
     private bool _chatHistoryEnabled = true;
@@ -88,6 +103,14 @@ public partial class AssistantSettingsViewModel : ObservableObject
     }
 
     partial void OnFilesFolderChanged(string? value)
+    {
+        // The folder is persisted by the relocation move, not here. Just reflect the derived vault path.
+        VaultLocationDisplay = string.IsNullOrWhiteSpace(value)
+            ? null
+            : _localizationService.Format("Settings_AssistantVaultLocation", AssistantWorkspace.VaultRootFor(value));
+    }
+
+    partial void OnFileToolsEnabledChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -123,7 +146,8 @@ public partial class AssistantSettingsViewModel : ObservableObject
         DefaultWindowMode = settings.DefaultWindowMode;
         ShowTodoPanelButton = settings.ShowTodoPanelButton;
         SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
-        FilesFolder = settings.AssistantFilesFolder;
+        FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
+        FileToolsEnabled = settings.AssistantFileToolsEnabled;
         ChatHistoryEnabled = settings.ChatHistoryEnabled;
         ChatHistoryRetentionDays = Math.Clamp(settings.ChatHistoryRetentionDays, 1, 365);
         ChatAutoTitleEnabled = settings.ChatAutoTitleEnabled;
@@ -132,22 +156,63 @@ public partial class AssistantSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void BrowseFilesFolder()
+    private async Task ChangeFilesFolderAsync()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog
         {
-            Title = "Select assistant files folder",
+            Title = _localizationService["Settings_AssistantFilesFolder"],
             InitialDirectory = !string.IsNullOrWhiteSpace(FilesFolder) && System.IO.Directory.Exists(FilesFolder)
                 ? FilesFolder
-                : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+                : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
         };
 
-        if (dialog.ShowDialog() == true)
-            FilesFolder = dialog.FolderName;
+        if (dialog.ShowDialog() != true) return;
+
+        var target = dialog.FolderName;
+
+        var validation = AssistantFolderValidator.Validate(target, FilesFolder);
+        if (validation != FolderValidation.Ok)
+        {
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"], MapValidationMessage(validation));
+            return;
+        }
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Settings_AssistantFilesFolder_Change"],
+            _localizationService.Format("Settings_FolderMove_Confirm", target));
+        if (!confirmed) return;
+
+        var progress = new Progress<FolderMoveProgress>();
+        RelocationResult? result = null;
+        await _dialogService.ShowFolderMoveDialogAsync(progress, async () =>
+            result = await _relocationService.MoveAsync(target, progress, CancellationToken.None));
+
+        if (result is { Outcome: RelocationOutcome.Success or RelocationOutcome.NoChange })
+        {
+            // Update the display (persistence is owned by the relocation move).
+            _isLoading = true;
+            FilesFolder = target;
+            _isLoading = false;
+        }
+        else
+        {
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                result?.Error is { Length: > 0 } && result.Outcome == RelocationOutcome.ValidationFailed
+                    ? MapValidationMessage(Enum.TryParse<FolderValidation>(result.Error, out var v) ? v : FolderValidation.Invalid)
+                    : _localizationService["Settings_FolderMove_Failed"]);
+        }
     }
 
-    [RelayCommand]
-    private void ClearFilesFolder() => FilesFolder = null;
+    private string MapValidationMessage(FolderValidation validation) => validation switch
+    {
+        FolderValidation.OutsideUserProfile => _localizationService["Settings_FolderMove_OutsideProfile"],
+        FolderValidation.BlockedPath => _localizationService["Settings_FolderMove_Blocked"],
+        FolderValidation.NestedInCurrent => _localizationService["Settings_FolderMove_Nested"],
+        FolderValidation.NotEmpty => _localizationService["Settings_FolderMove_NotEmpty"],
+        _ => _localizationService["Settings_FolderMove_Failed"],
+    };
 
     [RelayCommand]
     private async Task DeleteAllChatHistoryAsync()
@@ -206,7 +271,10 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.DefaultWindowMode = DefaultWindowMode;
         settings.ShowTodoPanelButton = ShowTodoPanelButton;
         settings.AssistantSuggestionsEnabled = SuggestionsEnabled;
-        settings.AssistantFilesFolder = string.IsNullOrWhiteSpace(FilesFolder) ? null : FilesFolder;
+        // The folder is owned by the relocation move; never clear it here (the vault lives under it).
+        if (!string.IsNullOrWhiteSpace(FilesFolder))
+            settings.AssistantFilesFolder = FilesFolder;
+        settings.AssistantFileToolsEnabled = FileToolsEnabled;
         settings.ChatHistoryEnabled = ChatHistoryEnabled;
         settings.ChatHistoryRetentionDays = ChatHistoryRetentionDays;
         settings.ChatAutoTitleEnabled = ChatAutoTitleEnabled;

@@ -393,7 +393,20 @@
   <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>No folder selected</value></data>
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Browse…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Clear</value></data>
-  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Folder the assistant can read, summarize, update or delete text files in. The assistant is restricted to this folder and cannot access files outside it. Leave empty to disable the file tools.</value></data>
+  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Folder where the assistant keeps your files and its memory vault. The assistant is restricted to this folder and cannot access files outside it. Use the toggle below to enable or disable the file tools.</value></data>
+  <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Change…</value></data>
+  <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Allow the assistant to read and write files in this folder</value></data>
+  <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Memory vault: {0}</value></data>
+  <data name="Settings_FolderMove_Confirm" xml:space="preserve"><value>Move your assistant files and memory to {0}? This copies, verifies, then removes the old location.</value></data>
+  <data name="Settings_FolderMove_OutsideProfile" xml:space="preserve"><value>Choose a folder inside your user profile folder.</value></data>
+  <data name="Settings_FolderMove_Blocked" xml:space="preserve"><value>That folder is a protected system location. Choose another.</value></data>
+  <data name="Settings_FolderMove_Nested" xml:space="preserve"><value>Choose a folder that is not inside the current one.</value></data>
+  <data name="Settings_FolderMove_NotEmpty" xml:space="preserve"><value>Choose an empty or new folder.</value></data>
+  <data name="Settings_FolderMove_Failed" xml:space="preserve"><value>The folder could not be moved. Your files were left unchanged.</value></data>
+  <data name="Dialog_FolderMove_Title" xml:space="preserve"><value>Moving assistant folder</value></data>
+  <data name="Dialog_FolderMove_Copying" xml:space="preserve"><value>Copying files…</value></data>
+  <data name="Dialog_FolderMove_Verifying" xml:space="preserve"><value>Verifying…</value></data>
+  <data name="Dialog_FolderMove_CleaningUp" xml:space="preserve"><value>Cleaning up…</value></data>
   <data name="Settings_Chat_Section" xml:space="preserve"><value>Chat history</value></data>
   <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Save chat history</value></data>
   <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Store assistant chats on this device so you can resume and search them later.</value></data>

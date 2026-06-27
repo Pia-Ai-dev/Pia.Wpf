@@ -62,7 +62,7 @@
                    Margin="22,4,0,0"/>
       </StackPanel>
 
-      <!-- Files Folder (sandboxed) -->
+      <!-- Files Folder (sandboxed) + nested memory vault -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_AssistantFilesFolder}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
@@ -70,24 +70,26 @@
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="400"/>
             <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <ui:TextBox Grid.Column="0"
-                      Text="{Binding FilesFolder, UpdateSourceTrigger=PropertyChanged}"
+                      Text="{Binding FilesFolder}"
+                      IsReadOnly="True"
                       PlaceholderText="{loc:Str Settings_AssistantFilesFolder_Placeholder}"
                       PlaceholderEnabled="True"/>
           <ui:Button Grid.Column="1"
-                     Content="{loc:Str Settings_AssistantFilesFolder_Browse}"
-                     Command="{Binding BrowseFilesFolderCommand}"
+                     Content="{loc:Str Settings_AssistantFilesFolder_Change}"
+                     Command="{Binding ChangeFilesFolderCommand}"
                      Margin="8,0,0,0"/>
-          <ui:Button Grid.Column="2"
-                     Content="{loc:Str Settings_AssistantFilesFolder_Clear}"
-                     Command="{Binding ClearFilesFolderCommand}"
-                     Appearance="Secondary"
-                     Margin="4,0,0,0"/>
         </Grid>
+        <TextBlock Text="{Binding VaultLocationDisplay}"
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                   Margin="0,6,0,0"/>
+        <CheckBox Content="{loc:Str Settings_AssistantFileToolsEnabled}"
+                  IsChecked="{Binding FileToolsEnabled}"
+                  Margin="0,10,0,0"/>
         <TextBlock Text="{loc:Str Settings_AssistantFilesFolder_Description}"
-                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                   Margin="22,4,0,0"/>
       </StackPanel>
 
       <!-- Chat history -->

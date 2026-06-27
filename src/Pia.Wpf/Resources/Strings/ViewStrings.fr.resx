@@ -393,7 +393,20 @@
   <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>Aucun dossier sélectionné</value></data>
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Parcourir…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Effacer</value></data>
-  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Dossier dans lequel l'assistant peut lire, résumer, modifier ou supprimer des fichiers texte. L'assistant est limité à ce dossier et ne peut pas accéder aux fichiers en dehors. Laissez vide pour désactiver les outils de fichiers.</value></data>
+  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Dossier où l'assistant conserve vos fichiers et son coffre de mémoire. L'assistant est limité à ce dossier et ne peut pas accéder aux fichiers en dehors. Utilisez le commutateur ci-dessous pour activer ou désactiver les outils de fichiers.</value></data>
+  <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Modifier…</value></data>
+  <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Autoriser l'assistant à lire et écrire des fichiers dans ce dossier</value></data>
+  <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Coffre de mémoire : {0}</value></data>
+  <data name="Settings_FolderMove_Confirm" xml:space="preserve"><value>Déplacer les fichiers et la mémoire de l'assistant vers {0} ? Cette opération copie, vérifie, puis supprime l'ancien emplacement.</value></data>
+  <data name="Settings_FolderMove_OutsideProfile" xml:space="preserve"><value>Choisissez un dossier à l'intérieur de votre dossier de profil utilisateur.</value></data>
+  <data name="Settings_FolderMove_Blocked" xml:space="preserve"><value>Ce dossier est un emplacement système protégé. Choisissez-en un autre.</value></data>
+  <data name="Settings_FolderMove_Nested" xml:space="preserve"><value>Choisissez un dossier qui n'est pas à l'intérieur du dossier actuel.</value></data>
+  <data name="Settings_FolderMove_NotEmpty" xml:space="preserve"><value>Choisissez un dossier vide ou nouveau.</value></data>
+  <data name="Settings_FolderMove_Failed" xml:space="preserve"><value>Le dossier n'a pas pu être déplacé. Vos fichiers sont restés inchangés.</value></data>
+  <data name="Dialog_FolderMove_Title" xml:space="preserve"><value>Déplacement du dossier de l'assistant</value></data>
+  <data name="Dialog_FolderMove_Copying" xml:space="preserve"><value>Copie des fichiers…</value></data>
+  <data name="Dialog_FolderMove_Verifying" xml:space="preserve"><value>Vérification…</value></data>
+  <data name="Dialog_FolderMove_CleaningUp" xml:space="preserve"><value>Nettoyage…</value></data>
   <data name="Settings_Chat_Section" xml:space="preserve"><value>Historique des chats</value></data>
   <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Enregistrer l'historique des chats</value></data>
   <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Conserver les chats de l'assistant sur cet appareil pour pouvoir les reprendre et les rechercher plus tard.</value></data>

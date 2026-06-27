@@ -50,7 +50,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IPolicyService policyService,
         IPersonaService personaService,
         IAssistantChatService assistantChatService,
-        IToolPermissionService toolPermissionService)
+        IToolPermissionService toolPermissionService,
+        IAssistantFolderRelocationService folderRelocationService)
     {
         _logger = logger;
 
@@ -61,7 +62,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService);
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, logger, settingsService, assistantChatService, dialogService, localizationService);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService);
 
         ResearchVm = new ResearchSettingsViewModel(ProvidersVm);
 

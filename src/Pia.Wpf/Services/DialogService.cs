@@ -1,4 +1,5 @@
-﻿using Pia.Models;
+﻿using Pia.Infrastructure.Vault;
+using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using Pia.Views.Controls;
@@ -121,6 +122,27 @@ public class DialogService : IDialogService
         return new ModelDownloadResult(
             Completed: !wasCancelled,
             Cancelled: wasCancelled);
+    }
+
+    public async Task ShowFolderMoveDialogAsync(IProgress<FolderMoveProgress> progress, Func<Task> work)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new FolderMoveContentDialog(dialogHost, progress);
+
+        // Show without awaiting, run the move, then close. The move reports through `progress`,
+        // which marshals back to the UI thread inside the dialog.
+        var showTask = dialog.ShowAsync();
+        try
+        {
+            await work();
+        }
+        finally
+        {
+            dialog.Hide();
+        }
+
+        await showTask;
     }
 
     public async Task<bool> ShowOptimizingDialogAsync(string[] messages, CancellationToken cancellationToken)

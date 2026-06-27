@@ -1,3 +1,4 @@
+using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.ViewModels.Models;
 
@@ -18,6 +19,12 @@ public interface IDialogService
     Task<bool> ShowRecordingDialogAsync(CancellationToken cancellationToken);
     Task<bool> ShowTranscribingDialogAsync(CancellationToken cancellationToken);
     Task<string?> ShowInputDialogAsync(string title, string prompt);
+
+    /// <summary>
+    /// Shows a determinate folder-move progress dialog driven by <paramref name="progress"/> while
+    /// <paramref name="work"/> runs, then closes it. Used by the assistant-folder relocation flow.
+    /// </summary>
+    Task ShowFolderMoveDialogAsync(IProgress<FolderMoveProgress> progress, Func<Task> work);
 }
 
 public record ModelDownloadResult(bool Completed, bool Cancelled);
