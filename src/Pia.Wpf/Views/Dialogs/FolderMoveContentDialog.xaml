@@ -5,7 +5,7 @@
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   xmlns:loc="clr-namespace:Pia.Localization"
                   Title="{loc:Str Dialog_FolderMove_Title}"
-                  DefaultButton="None"
+                  DefaultButton="Close"
                   DialogMaxWidth="420">
   <ui:ContentDialog.Resources>
     <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
