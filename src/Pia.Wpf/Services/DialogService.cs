@@ -1,5 +1,4 @@
-﻿using Pia.Infrastructure.Vault;
-using Pia.Models;
+﻿using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using Pia.Views.Controls;

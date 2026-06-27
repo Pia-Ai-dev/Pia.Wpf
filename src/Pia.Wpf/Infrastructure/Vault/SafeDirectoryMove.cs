@@ -4,12 +4,9 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using Pia.Models; // FolderMoveProgress / FolderMovePhase
 
 namespace Pia.Infrastructure.Vault;
-
-public enum FolderMovePhase { Copying, Verifying, CleaningUp }
-
-public record FolderMoveProgress(FolderMovePhase Phase, int PercentComplete, string? CurrentItem = null);
 
 public enum DirectoryMoveOutcome { Success, CopyFailed, VerifyFailed }
 

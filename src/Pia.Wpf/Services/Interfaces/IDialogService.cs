@@ -1,4 +1,3 @@
-using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.ViewModels.Models;
 

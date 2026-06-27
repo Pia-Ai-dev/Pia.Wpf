@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;          // AssistantWorkspace
 using Pia.Infrastructure.Vault;    // VaultPathProvider, IVaultWriteGate, SafeDirectoryMove, validator
 using Pia.Logging;
+using Pia.Models;                  // FolderMoveProgress
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -37,6 +38,24 @@ public sealed class AssistantFolderRelocationService : IAssistantFolderRelocatio
         _logger = logger;
     }
 
+    public string GetVaultPath(string filesFolder) => AssistantWorkspace.VaultRootFor(filesFolder);
+
+    public RelocationOutcome Validate(string newFolder)
+    {
+        var settings = _settings.GetSettingsAsync().GetAwaiter().GetResult();
+        return MapValidation(AssistantFolderValidator.Validate(newFolder, settings.AssistantFilesFolder));
+    }
+
+    private static RelocationOutcome MapValidation(FolderValidation v) => v switch
+    {
+        FolderValidation.Ok => RelocationOutcome.Success,
+        FolderValidation.OutsideUserProfile => RelocationOutcome.OutsideUserProfile,
+        FolderValidation.BlockedPath => RelocationOutcome.BlockedPath,
+        FolderValidation.NestedInCurrent => RelocationOutcome.NestedInCurrent,
+        FolderValidation.NotEmpty => RelocationOutcome.NotEmpty,
+        _ => RelocationOutcome.Invalid,
+    };
+
     public async Task<RelocationResult> MoveAsync(
         string newFolder, IProgress<FolderMoveProgress>? progress, CancellationToken ct)
     {
@@ -45,7 +64,7 @@ public sealed class AssistantFolderRelocationService : IAssistantFolderRelocatio
 
         var validation = AssistantFolderValidator.Validate(newFolder, oldFolder);
         if (validation != FolderValidation.Ok)
-            return new RelocationResult(RelocationOutcome.ValidationFailed, validation.ToString());
+            return new RelocationResult(MapValidation(validation), validation.ToString());
 
         var newFull = Path.GetFullPath(newFolder);
         if (!string.IsNullOrWhiteSpace(oldFolder) &&

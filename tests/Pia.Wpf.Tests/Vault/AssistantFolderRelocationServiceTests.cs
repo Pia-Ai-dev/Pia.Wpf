@@ -74,7 +74,7 @@ public class AssistantFolderRelocationServiceTests : IDisposable
 
         var result = await _svc.MoveAsync(outside, null, CancellationToken.None);
 
-        Assert.Equal(RelocationOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(RelocationOutcome.OutsideUserProfile, result.Outcome);
         Assert.True(Directory.Exists(_old));
         Assert.Equal(AssistantWorkspace.VaultRootFor(_old), _paths.VaultRoot);
         await _indexer.DidNotReceive().RebuildAllAsync();

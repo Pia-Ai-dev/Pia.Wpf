@@ -1,6 +1,6 @@
 using System;
-using Pia.Infrastructure.Vault;
 using Pia.Localization;
+using Pia.Models;
 using Wpf.Ui.Controls;
 
 namespace Pia.Views.Dialogs;

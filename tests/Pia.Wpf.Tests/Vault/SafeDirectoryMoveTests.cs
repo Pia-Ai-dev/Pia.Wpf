@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Pia.Infrastructure.Vault;
+using Pia.Models;
 using Xunit;
 
 namespace Pia.Tests.Vault;

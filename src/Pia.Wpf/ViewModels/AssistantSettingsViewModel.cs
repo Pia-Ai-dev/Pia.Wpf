@@ -3,8 +3,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
-using Pia.Infrastructure;
-using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -107,7 +105,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         // The folder is persisted by the relocation move, not here. Just reflect the derived vault path.
         VaultLocationDisplay = string.IsNullOrWhiteSpace(value)
             ? null
-            : _localizationService.Format("Settings_AssistantVaultLocation", AssistantWorkspace.VaultRootFor(value));
+            : _localizationService.Format("Settings_AssistantVaultLocation", _relocationService.GetVaultPath(value));
     }
 
     partial void OnFileToolsEnabledChanged(bool value)
@@ -170,11 +168,11 @@ public partial class AssistantSettingsViewModel : ObservableObject
 
         var target = dialog.FolderName;
 
-        var validation = AssistantFolderValidator.Validate(target, FilesFolder);
-        if (validation != FolderValidation.Ok)
+        var validation = _relocationService.Validate(target);
+        if (validation != RelocationOutcome.Success)
         {
             await _dialogService.ShowMessageDialogAsync(
-                _localizationService["Msg_Error"], MapValidationMessage(validation));
+                _localizationService["Msg_Error"], MapOutcomeMessage(validation));
             return;
         }
 
@@ -199,18 +197,18 @@ public partial class AssistantSettingsViewModel : ObservableObject
         {
             await _dialogService.ShowMessageDialogAsync(
                 _localizationService["Msg_Error"],
-                result?.Error is { Length: > 0 } && result.Outcome == RelocationOutcome.ValidationFailed
-                    ? MapValidationMessage(Enum.TryParse<FolderValidation>(result.Error, out var v) ? v : FolderValidation.Invalid)
-                    : _localizationService["Settings_FolderMove_Failed"]);
+                result is null
+                    ? _localizationService["Settings_FolderMove_Failed"]
+                    : MapOutcomeMessage(result.Outcome));
         }
     }
 
-    private string MapValidationMessage(FolderValidation validation) => validation switch
+    private string MapOutcomeMessage(RelocationOutcome outcome) => outcome switch
     {
-        FolderValidation.OutsideUserProfile => _localizationService["Settings_FolderMove_OutsideProfile"],
-        FolderValidation.BlockedPath => _localizationService["Settings_FolderMove_Blocked"],
-        FolderValidation.NestedInCurrent => _localizationService["Settings_FolderMove_Nested"],
-        FolderValidation.NotEmpty => _localizationService["Settings_FolderMove_NotEmpty"],
+        RelocationOutcome.OutsideUserProfile => _localizationService["Settings_FolderMove_OutsideProfile"],
+        RelocationOutcome.BlockedPath => _localizationService["Settings_FolderMove_Blocked"],
+        RelocationOutcome.NestedInCurrent => _localizationService["Settings_FolderMove_Nested"],
+        RelocationOutcome.NotEmpty => _localizationService["Settings_FolderMove_NotEmpty"],
         _ => _localizationService["Settings_FolderMove_Failed"],
     };
 
