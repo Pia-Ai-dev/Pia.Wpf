@@ -407,7 +407,7 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.False(string.IsNullOrEmpty(localAppData));
 
         // Ensure the workdir exists so the resolver and the guard's exception canonicalize identically.
-        Directory.CreateDirectory(Pia.Infrastructure.AssistantWorkspace.DefaultWorkdir);
+        Directory.CreateDirectory(Pia.Infrastructure.AssistantWorkspace.LegacyWorkdir);
 
         var handler = BroadSandboxHandler(localAppData);
         var workdirTarget = Path.Combine("Pia", "workdir", "carveout-" + Guid.NewGuid().ToString("N") + ".ps1");

@@ -95,11 +95,14 @@ public static class SensitivePathGuard
     /// Islands carved out of an otherwise-blocked root. Canonicalized through the SAME
     /// <see cref="SafeCanonical"/> path as <see cref="BuildBlockedRoots"/> so the prefix match in
     /// <see cref="IsBlocked"/> (which compares against the resolver's already-canonicalized path)
-    /// lines up. Currently just the agent's default scratch workdir under <c>%LOCALAPPDATA%\Pia</c>.
+    /// lines up. The pre-relocation default workdir under <c>%LOCALAPPDATA%\Pia</c> — kept as a
+    /// back-compat carve-out for migrate-in-place users whose folder stays there. New installs use
+    /// <see cref="AssistantWorkspace.DefaultRoot"/> (under Documents), which is outside every blocked
+    /// root and needs no exception. The vault gets no entry here — full file-tool access by design.
     /// </summary>
     private static string[] BuildAllowedExceptions()
     {
-        var canonical = SafeCanonical(AssistantWorkspace.DefaultWorkdir);
+        var canonical = SafeCanonical(AssistantWorkspace.LegacyWorkdir);
         return canonical is null ? [] : [canonical];
     }
 

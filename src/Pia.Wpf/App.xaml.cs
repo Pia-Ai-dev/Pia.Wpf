@@ -117,7 +117,7 @@ public partial class App : Application
         {
             // Shared with SensitivePathGuard's carve-out — both must use the same value or the
             // guard re-blocks the whole workdir (see AssistantWorkspace).
-            var defaultFolder = Pia.Infrastructure.AssistantWorkspace.DefaultWorkdir;
+            var defaultFolder = Pia.Infrastructure.AssistantWorkspace.LegacyWorkdir;
             try
             {
                 System.IO.Directory.CreateDirectory(defaultFolder);
