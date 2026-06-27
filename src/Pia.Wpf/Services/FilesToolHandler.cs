@@ -42,6 +42,7 @@ public class FilesToolHandler : IFilesToolHandler
     private readonly IFileStalenessStore _stalenessStore;
     private readonly ILogger<FilesToolHandler> _logger;
     private volatile string? _currentFolder;
+    private volatile bool _toolsEnabled = true;
     private volatile string? _activeUiWorkingSubpath;
 
     /// <summary>
@@ -68,6 +69,7 @@ public class FilesToolHandler : IFilesToolHandler
         try
         {
             var settings = _settingsService.GetSettingsAsync().GetAwaiter().GetResult();
+            _toolsEnabled = settings.AssistantFileToolsEnabled;
             UpdateFolder(settings.AssistantFilesFolder);
         }
         catch (Exception ex)
@@ -79,10 +81,12 @@ public class FilesToolHandler : IFilesToolHandler
     }
 
     /// <summary>
-    /// True when a usable sandbox folder is configured. Used by the plugin host
-    /// to suppress tool registration and the system prompt while disabled.
+    /// True when the file tools are enabled AND a usable sandbox folder is configured. Used by the
+    /// plugin host to suppress tool registration and the system prompt while disabled. The folder is
+    /// always set now (the vault lives under it), so <see cref="AppSettings.AssistantFileToolsEnabled"/>
+    /// is the explicit on/off switch.
     /// </summary>
-    public bool IsAvailable => _currentFolder is not null;
+    public bool IsAvailable => _toolsEnabled && _currentFolder is not null;
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
@@ -90,6 +94,7 @@ public class FilesToolHandler : IFilesToolHandler
         // store so a read recorded under the old root can't satisfy a staleness check for a
         // re-pointed path, and so entries don't accumulate across the session lifetime (§0.2).
         _stalenessStore.Clear();
+        _toolsEnabled = settings.AssistantFileToolsEnabled;
         UpdateFolder(settings.AssistantFilesFolder);
     }
 
