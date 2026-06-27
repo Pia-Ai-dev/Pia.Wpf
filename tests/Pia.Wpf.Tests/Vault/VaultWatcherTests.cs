@@ -116,4 +116,29 @@ public class VaultWatcherTests : IDisposable
         await indexer.Received().RemoveFileAsync(Arg.Is<string>(p => p == "contacts.md"));
         Assert.True(removed);
     }
+
+    [Fact]
+    public async Task Restart_rebinds_watcher_to_new_root()
+    {
+        var indexer = Substitute.For<IVaultIndexer>();
+        var rootB = Path.Combine(_tmpDir, "vaultB");
+        Directory.CreateDirectory(rootB);
+
+        using var watcher = new VaultWatcher(indexer, _paths, NullLogger<VaultWatcher>.Instance);
+        watcher.Start(_vaultRoot);
+        watcher.Restart(rootB);
+
+        // A file created under the NEW root is indexed, relative to that new root.
+        var fullPath = Path.Combine(rootB, "moved.md");
+        await File.WriteAllTextAsync(fullPath, "## X\n- y\n", TestContext.Current.CancellationToken);
+
+        var indexed = await WaitUntilAsync(async () =>
+        {
+            await indexer.Received().IndexFileAsync(Arg.Is<string>(p => p == "moved.md"));
+            return true;
+        });
+
+        await indexer.Received().IndexFileAsync(Arg.Is<string>(p => p == "moved.md"));
+        Assert.True(indexed);
+    }
 }

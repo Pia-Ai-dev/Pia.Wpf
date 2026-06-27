@@ -154,15 +154,12 @@ public sealed class VaultWatcher : IDisposable
         return Convert.ToHexString(hash, 0, 4);
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Stop watching and release the directory handle (so the watched root can be moved/deleted on
+    /// Windows), leaving the instance reusable via <see cref="Start"/> / <see cref="Restart"/>.
+    /// </summary>
+    public void Stop()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-
         if (_watcher is not null)
         {
             _watcher.EnableRaisingEvents = false;
@@ -181,5 +178,24 @@ public sealed class VaultWatcher : IDisposable
         }
 
         _pending.Clear();
+    }
+
+    /// <summary>Stop and re-start on a new root (used by folder relocation).</summary>
+    public void Restart(string root)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Stop();
+        Start(root);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Stop();
     }
 }
