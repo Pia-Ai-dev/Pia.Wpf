@@ -26,6 +26,16 @@ public class VaultStoreTests : IDisposable
 
     private VaultStore NewStore() => new(_root, _parser);
 
+    [Fact]
+    public void Root_follows_provider_after_SetRoot()
+    {
+        var provider = new VaultPathProvider(@"C:\a");
+        var store = new VaultStore(provider, new MarkdownVaultParser());
+        Assert.Equal(@"C:\a", store.Root);
+        provider.SetRoot(@"C:\b");
+        Assert.Equal(@"C:\b", store.Root);
+    }
+
     // ---- (a) WriteAtomicAsync -> ReadAsync round-trips exact bytes ----
 
     [Fact]

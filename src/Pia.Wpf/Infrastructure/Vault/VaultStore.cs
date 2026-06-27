@@ -14,16 +14,25 @@ public class VaultStore : IVaultStore
     // UTF-8 without BOM so RawText round-trips byte-for-byte (a BOM would corrupt the splice contract).
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    private readonly VaultPathProvider _paths;
     private readonly MarkdownVaultParser _parser;
 
-    public VaultStore(string root, MarkdownVaultParser parser)
+    // Production ctor: shares the DI VaultPathProvider so a runtime re-point (folder relocation) is
+    // observed live without reconstructing the store.
+    public VaultStore(VaultPathProvider paths, MarkdownVaultParser parser)
     {
-        Root = root;
+        _paths = paths;
         _parser = parser;
     }
 
+    // Back-compat / test ctor: a fixed root, wrapped in a private provider.
+    public VaultStore(string root, MarkdownVaultParser parser)
+        : this(new VaultPathProvider(root), parser)
+    {
+    }
+
     /// <inheritdoc />
-    public string Root { get; }
+    public string Root => _paths.VaultRoot;
 
     /// <inheritdoc />
     public async Task<VaultDocument?> ReadAsync(string relativePath)

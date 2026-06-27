@@ -208,7 +208,7 @@ public static class Bootstrapper
         services.AddSingleton<VaultPathProvider>();
         services.AddSingleton<MarkdownVaultParser>();
         services.AddSingleton<IVaultStore>(sp => new VaultStore(
-            sp.GetRequiredService<VaultPathProvider>().VaultRoot,
+            sp.GetRequiredService<VaultPathProvider>(),
             sp.GetRequiredService<MarkdownVaultParser>()));
         services.AddSingleton<DpapiHelper>();
         services.AddTransient<HttpLoggingHandler>();
