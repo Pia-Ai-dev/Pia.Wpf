@@ -101,12 +101,11 @@ public static class SafeDirectoryMove
         {
             if (!dstFiles.TryGetValue(rel, out var dstPath)) return false;
             if (new FileInfo(dstPath).Length != size) return false;
-            // Hash the Vault subtree (memory integrity); size-check suffices elsewhere.
-            if (rel.Replace('\\', '/').StartsWith("Vault/", StringComparison.OrdinalIgnoreCase))
-            {
-                var srcPath = Path.Combine(source, rel);
-                if (!HashEquals(srcPath, dstPath)) return false;
-            }
+            // Hash EVERY copied file. The folder holds both the user's files and the memory vault, and
+            // the in-place vault migration passes the vault root itself as the source (relative paths
+            // like "memory/x.md", no "Vault/" prefix) — a prefix-scoped hash would skip exactly the
+            // memory files it most needs to protect. A move is rare, so the extra read is acceptable.
+            if (!HashEquals(Path.Combine(source, rel), dstPath)) return false;
         }
         return true;
     }

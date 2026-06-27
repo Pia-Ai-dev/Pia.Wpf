@@ -51,6 +51,25 @@ public class SafeDirectoryMoveTests : IDisposable
     }
 
     [Fact]
+    public async Task Migration_shaped_move_verifies_vault_root_files()
+    {
+        // Mirrors the in-place migration: the SOURCE is the vault root itself, so relative paths are
+        // "memory/..." / "index.md" with no "Vault/" prefix. Confirms hash-verify covers them.
+        var src = Path.Combine(_base, "legacyVault");
+        var dst = Path.Combine(_base, "nestedVault");
+        Directory.CreateDirectory(Path.Combine(src, "memory"));
+        await File.WriteAllTextAsync(Path.Combine(src, "memory", "m.md"), "---\nid: 1\n---\nremember", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(src, "index.md"), "# index", TestContext.Current.CancellationToken);
+
+        var result = await SafeDirectoryMove.MoveAsync(src, dst, null, CancellationToken.None);
+
+        Assert.Equal(DirectoryMoveOutcome.Success, result.Outcome);
+        Assert.False(Directory.Exists(src));
+        Assert.Equal("---\nid: 1\n---\nremember",
+            await File.ReadAllTextAsync(Path.Combine(dst, "memory", "m.md"), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task Missing_source_is_a_noop_success()
     {
         var src = Path.Combine(_base, "does-not-exist");
