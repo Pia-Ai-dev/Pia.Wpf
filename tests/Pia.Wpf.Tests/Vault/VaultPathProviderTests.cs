@@ -27,4 +27,19 @@ public class VaultPathProviderTests
 
         Assert.Equal("/some/custom/root", provider.VaultRoot);
     }
+
+    [Fact]
+    public void SetRoot_updates_VaultRoot()
+    {
+        var provider = new VaultPathProvider("/initial");
+        provider.SetRoot("/changed");
+        Assert.Equal("/changed", provider.VaultRoot);
+    }
+
+    [Fact]
+    public void SetRoot_rejects_blank()
+    {
+        var provider = new VaultPathProvider("/initial");
+        Assert.Throws<ArgumentException>(() => provider.SetRoot("  "));
+    }
 }
