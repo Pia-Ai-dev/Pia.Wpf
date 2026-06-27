@@ -16,13 +16,16 @@ public class VaultStore : IVaultStore
 
     private readonly VaultPathProvider _paths;
     private readonly MarkdownVaultParser _parser;
+    private readonly IVaultWriteGate _gate;
 
     // Production ctor: shares the DI VaultPathProvider so a runtime re-point (folder relocation) is
-    // observed live without reconstructing the store.
-    public VaultStore(VaultPathProvider paths, MarkdownVaultParser parser)
+    // observed live without reconstructing the store, and the DI write gate so a relocation can
+    // quiesce in-flight memory writes. A null gate (tests) gets a private one.
+    public VaultStore(VaultPathProvider paths, MarkdownVaultParser parser, IVaultWriteGate? gate = null)
     {
         _paths = paths;
         _parser = parser;
+        _gate = gate ?? new VaultWriteGate();
     }
 
     // Back-compat / test ctor: a fixed root, wrapped in a private provider.
@@ -50,6 +53,11 @@ public class VaultStore : IVaultStore
     /// <inheritdoc />
     public async Task WriteAtomicAsync(string relativePath, string content)
     {
+        // Hold a write lease so a folder relocation (exclusive lease) drains in-flight writes and
+        // blocks new ones during the swap window. SpliceSectionAsync routes through here, so it must
+        // NOT take its own lease (the gate is not reentrant).
+        using var _ = await _gate.EnterWriteAsync().ConfigureAwait(false);
+
         var fullPath = ResolvePath(relativePath);
         var directory = Path.GetDirectoryName(fullPath);
         if (!string.IsNullOrEmpty(directory))
@@ -140,15 +148,15 @@ public class VaultStore : IVaultStore
     }
 
     /// <inheritdoc />
-    public Task DeleteAsync(string relativePath)
+    public async Task DeleteAsync(string relativePath)
     {
+        using var _ = await _gate.EnterWriteAsync().ConfigureAwait(false);
+
         var fullPath = ResolvePath(relativePath);
         if (File.Exists(fullPath))
         {
             File.Delete(fullPath);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>

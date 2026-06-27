@@ -36,6 +36,14 @@ public class VaultStoreTests : IDisposable
         Assert.Equal(@"C:\b", store.Root);
     }
 
+    [Fact]
+    public async Task WriteAtomic_succeeds_with_injected_gate()
+    {
+        var store = new VaultStore(new VaultPathProvider(_root), _parser, new VaultWriteGate());
+        await store.WriteAtomicAsync("memory/a.md", "---\nid: x\n---\nhi");
+        Assert.True(File.Exists(Path.Combine(_root, "memory", "a.md")));
+    }
+
     // ---- (a) WriteAtomicAsync -> ReadAsync round-trips exact bytes ----
 
     [Fact]
