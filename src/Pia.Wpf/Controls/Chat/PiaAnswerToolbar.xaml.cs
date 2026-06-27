@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Pia.Models;
+using Pia.ViewModels.Models;
 
 namespace Pia.Controls.Chat;
 
@@ -13,6 +14,10 @@ public partial class PiaAnswerToolbar : UserControl
         DependencyProperty.Register(nameof(SpeakCommand), typeof(ICommand), typeof(PiaAnswerToolbar));
     public static readonly DependencyProperty RegenerateCommandProperty =
         DependencyProperty.Register(nameof(RegenerateCommand), typeof(ICommand), typeof(PiaAnswerToolbar));
+    public static readonly DependencyProperty RegenerateStyledCommandProperty =
+        DependencyProperty.Register(nameof(RegenerateStyledCommand), typeof(ICommand), typeof(PiaAnswerToolbar));
+    public static readonly DependencyProperty ExportCommandProperty =
+        DependencyProperty.Register(nameof(ExportCommand), typeof(ICommand), typeof(PiaAnswerToolbar));
     public static readonly DependencyProperty RateCommandProperty =
         DependencyProperty.Register(nameof(RateCommand), typeof(ICommand), typeof(PiaAnswerToolbar));
     public static readonly DependencyProperty CommandParameterProperty =
@@ -46,6 +51,18 @@ public partial class PiaAnswerToolbar : UserControl
     {
         get => (ICommand?)GetValue(RegenerateCommandProperty);
         set => SetValue(RegenerateCommandProperty, value);
+    }
+
+    public ICommand? RegenerateStyledCommand
+    {
+        get => (ICommand?)GetValue(RegenerateStyledCommandProperty);
+        set => SetValue(RegenerateStyledCommandProperty, value);
+    }
+
+    public ICommand? ExportCommand
+    {
+        get => (ICommand?)GetValue(ExportCommandProperty);
+        set => SetValue(ExportCommandProperty, value);
     }
 
     public ICommand? RateCommand
@@ -84,4 +101,29 @@ public partial class PiaAnswerToolbar : UserControl
 
     private void RecomputeFooter() =>
         SetValue(FooterSummaryKey, FooterSummaryFormatter.Compose(Stats, PersonaName));
+
+    /// <summary>Opens the regenerate-style menu anchored to the caret button.</summary>
+    private void OnRegenerateMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.IsOpen = true;
+        }
+    }
+
+    /// <summary>
+    /// A regenerate-style menu item was chosen. A ContextMenu is a separate NameScope, so the menu
+    /// items can't bind to the toolbar's command/parameter directly; resolve both here from the item's
+    /// Tag (the style) plus the toolbar's CommandParameter (the message) and invoke the styled command.
+    /// </summary>
+    private void OnRegenerateStyleClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: RegenerateStyle style }) return;
+        if (CommandParameter is not AssistantMessage message) return;
+
+        var request = new RegenerateRequest(message, style);
+        if (RegenerateStyledCommand?.CanExecute(request) == true)
+            RegenerateStyledCommand.Execute(request);
+    }
 }

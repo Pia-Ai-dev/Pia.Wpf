@@ -40,8 +40,11 @@ public interface IChatSessionManager
     /// <summary>
     /// Prepare and start a turn for <paramref name="session"/> with the given user input.
     /// Resolves persona/provider/prompt, adds the user + assistant messages, and runs the loop.
+    /// <paramref name="regenerationInstruction"/> (optional) is injected AI-side for a styled
+    /// regeneration (e.g. "make it shorter") without changing the displayed user bubble.
     /// </summary>
-    Task StartTurnAsync(ChatSession session, string userText, ImageAttachment? attachment);
+    Task StartTurnAsync(
+        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null);
 
     /// <summary>Live state for <paramref name="chatId"/>, or <see cref="ChatState.Idle"/> if not live.</summary>
     ChatState GetState(Guid chatId);

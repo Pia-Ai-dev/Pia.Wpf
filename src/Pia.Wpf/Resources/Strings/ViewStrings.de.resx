@@ -811,4 +811,10 @@
   <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing bereit</value></data>
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
+  <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Kürzer</value></data>
+  <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Ausführlicher</value></data>
+  <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-fertig</value></data>
+  <data name="Assistant_RegenerateOptions_Tooltip" xml:space="preserve"><value>Mit Optionen neu generieren</value></data>
+  <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exportieren</value></data>
+  <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
 </root>

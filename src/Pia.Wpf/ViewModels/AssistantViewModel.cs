@@ -46,6 +46,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IWorkingDirectoryService _workingDirectoryService;
     private readonly IFilesToolHandler _filesToolHandler;
+    private readonly IMarkdownExportService _markdownExportService;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -136,6 +137,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand ToggleTtsCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> PlayMessageCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> RegenerateMessageCommand { get; }
+    public IAsyncRelayCommand<RegenerateRequest> RegenerateStyledCommand { get; }
+    public IAsyncRelayCommand<AssistantMessage> ExportMessageHtmlCommand { get; }
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
     public IRelayCommand<string> UseFollowupCommand { get; }
@@ -168,7 +171,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAssistantPromptComposer promptComposer,
         IChatSessionManager chatSessionManager,
         IWorkingDirectoryService workingDirectoryService,
-        IFilesToolHandler filesToolHandler)
+        IFilesToolHandler filesToolHandler,
+        IMarkdownExportService markdownExportService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -193,6 +197,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatSessionManager = chatSessionManager;
         _workingDirectoryService = workingDirectoryService;
         _filesToolHandler = filesToolHandler;
+        _markdownExportService = markdownExportService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -202,6 +207,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ToggleTtsCommand = new RelayCommand(ExecuteToggleTts);
         PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         RegenerateMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteRegenerateMessage);
+        RegenerateStyledCommand = new AsyncRelayCommand<RegenerateRequest>(ExecuteRegenerateStyled);
+        ExportMessageHtmlCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteExportMessageHtml);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
         UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
@@ -574,7 +581,20 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
-    private async Task ExecuteRegenerateMessage(AssistantMessage? message)
+    private Task ExecuteRegenerateMessage(AssistantMessage? message) =>
+        RegenerateCore(message, RegenerateStyle.Default);
+
+    private Task ExecuteRegenerateStyled(RegenerateRequest? request) =>
+        request is null ? Task.CompletedTask : RegenerateCore(request.Message, request.Style);
+
+    /// <summary>
+    /// Re-runs the user prompt that produced <paramref name="message"/>, optionally appending a style
+    /// instruction (Shorter / More detailed / Export-ready). Removes the prior answer and anything after
+    /// it, then starts a fresh turn directly via the session manager — bypassing the composer round-trip
+    /// so it never clobbers whatever the user has typed. The style instruction is injected AI-side only,
+    /// so the re-sent user bubble stays the original prompt.
+    /// </summary>
+    private async Task RegenerateCore(AssistantMessage? message, RegenerateStyle style)
     {
         if (message is null || IsStreaming) return;
 
@@ -594,9 +614,40 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         if (Messages.Count == 0) HasMessages = false;
 
-        InputText = prompt;
-        PendingAttachment = attachment;
-        await SendMessageCommand.ExecuteAsync(null);
+        var session = _chatSessionManager.ActiveSession
+            ?? _chatSessionManager.GetOrCreateActiveForNewChat();
+
+        await _chatSessionManager.StartTurnAsync(session, prompt, attachment, RegenerateInstructions.For(style));
+    }
+
+    private async Task ExecuteExportMessageHtml(AssistantMessage? message)
+    {
+        if (message is null || string.IsNullOrEmpty(message.Content))
+            return;
+
+        try
+        {
+            var fallbackTitle = _localizationService["Msg_Assistant_ExportDefaultTitle"];
+            var path = await _markdownExportService.ExportAsync(
+                message.Content, title: null, fallbackTitle, _chatSessionManager.ActiveSession?.WorkingDirectory);
+
+            // Surface the generated file as an open-file/open-folder chip, and open it in the browser.
+            message.AddOrUpgradeFileRef(new FileRef(path, FileRefKind.Exported));
+            ShellLauncher.OpenFile(path);
+
+            _snackbarService.Show(
+                _localizationService["Msg_Assistant_Exported"],
+                _localizationService.Format("Msg_Assistant_ExportedTo", System.IO.Path.GetFileName(path)),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export message to HTML");
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService["Msg_Assistant_ExportFailed"],
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
+        }
     }
 
     private async Task ExecuteAddPiiKeyword(PiiKeywordRequest? request)

@@ -319,7 +319,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return session;
     }
 
-    public async Task StartTurnAsync(ChatSession session, string userText, ImageAttachment? attachment)
+    public async Task StartTurnAsync(
+        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null)
     {
         // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
         // so this marks the first turn (never persisted) vs. a resumed/continuing chat
@@ -415,7 +416,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // so a model that won't call read_file on its own still sees the file (the root cause of
             // the @Files hallucination). Independent of tool support — most valuable on a no-tools turn.
             var injectedFileContext = await BuildInjectedFileContextAsync(
-                atCommands, session.WorkingDirectory, turnSetup.SupportsTools);
+                atCommands, session.WorkingDirectory, turnSetup.SupportsTools, assistantMessage);
 
             request = new ChatTurnRequest
             {
@@ -425,6 +426,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 TurnSetup = turnSetup,
                 AtCommands = atCommands,
                 InjectedFileContext = injectedFileContext,
+                RegenerationInstruction = regenerationInstruction,
                 TokenizationEnabled = tokenizationEnabled,
             };
         }
@@ -477,7 +479,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// (no path-tagged files, or no assistant files folder is configured).
     /// </summary>
     private async Task<string?> BuildInjectedFileContextAsync(
-        IReadOnlyList<AtCommand> atCommands, string? workingDirectory, bool supportsTools)
+        IReadOnlyList<AtCommand> atCommands, string? workingDirectory, bool supportsTools, AssistantMessage assistantMessage)
     {
         if (!_filesToolHandler.IsAvailable)
             return null;
@@ -503,7 +505,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // OperationCanceledException — letting an OCE escape here would wedge the session in Running.
         var previews = new List<FilePromptPreview>(paths.Count);
         foreach (var path in paths)
-            previews.Add(await _filesToolHandler.ReadPromptPreviewAsync(path, workingDirectory, FilePreviewLines, CancellationToken.None));
+        {
+            var preview = await _filesToolHandler.ReadPromptPreviewAsync(path, workingDirectory, FilePreviewLines, CancellationToken.None);
+            previews.Add(preview);
+
+            // Surface the referenced file as an "open file" chip on the answer (the @File scope).
+            if (preview is { Found: true, AbsolutePath: { } abs })
+                assistantMessage.AddOrUpgradeFileRef(new Pia.Models.FileRef(abs, Pia.Models.FileRefKind.Referenced));
+        }
 
         if (dropped > 0)
             _logger.LogInformation(

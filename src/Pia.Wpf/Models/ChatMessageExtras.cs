@@ -1,6 +1,31 @@
+using System.IO;
+
 namespace Pia.Models;
 
 public sealed record SourceRef(int Number, string Source, string Meta, string? Url = null);
+
+/// <summary>
+/// A local file an assistant turn touched — read, created/updated, exported, or referenced via
+/// <c>@File</c>. Surfaced under the answer as an "open file / open folder" chip (see PiaFileChip),
+/// the local-file analogue of <see cref="SourceRef"/>. In-memory only (not persisted, like Sources).
+/// </summary>
+public sealed record FileRef(string AbsolutePath, FileRefKind Kind)
+{
+    public string FileName => Path.GetFileName(AbsolutePath);
+}
+
+/// <summary>
+/// How a chat touched a file, ordered by precedence (highest wins when the same path is touched
+/// more than once in a turn — see <c>AssistantMessage.AddOrUpgradeFileRef</c>).
+/// </summary>
+public enum FileRefKind
+{
+    Read,
+    Referenced,
+    Updated,
+    Created,
+    Exported,
+}
 
 public sealed record MessageMeta(string Timing, string? ProfileLabel = null);
 

@@ -78,11 +78,31 @@
       </ItemsControl.ItemTemplate>
     </ItemsControl>
 
+    <!-- Local file chips (read / created / updated / exported / @File-referenced) -->
+    <ItemsControl ItemsSource="{Binding FileRefs}" Margin="0,10,0,0"
+                  Visibility="{Binding HasFileRefs, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <chat:PiaFileChip AbsolutePath="{Binding AbsolutePath}"
+                            FileName="{Binding FileName}"
+                            Kind="{Binding Kind}"
+                            Margin="0,0,6,6" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
     <!-- Toolbar -->
     <chat:PiaAnswerToolbar Margin="-6,6,0,0"
                            CopyCommand="{Binding CopyCommand, ElementName=Root}"
                            SpeakCommand="{Binding SpeakCommand, ElementName=Root}"
                            RegenerateCommand="{Binding RegenerateCommand, ElementName=Root}"
+                           RegenerateStyledCommand="{Binding RegenerateStyledCommand, ElementName=Root}"
+                           ExportCommand="{Binding ExportCommand, ElementName=Root}"
                            RateCommand="{Binding RateCommand, ElementName=Root}"
                            CommandParameter="{Binding}"
                            Stats="{Binding Stats}"

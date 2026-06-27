@@ -355,4 +355,8 @@
   <data name="Tool_Memory_Desc_Forget" xml:space="preserve"><value>Vergessen: {0}</value></data>
   <data name="Tool_Memory_Exec_Remembered" xml:space="preserve"><value>Erinnerung gespeichert ({0}).</value></data>
   <data name="Tool_Memory_Exec_Forgotten" xml:space="preserve"><value>Erinnerung entfernt ({0}).</value></data>
+  <data name="Msg_Assistant_Exported" xml:space="preserve"><value>Exportiert</value></data>
+  <data name="Msg_Assistant_ExportedTo" xml:space="preserve"><value>Gespeichert unter {0}</value></data>
+  <data name="Msg_Assistant_ExportFailed" xml:space="preserve"><value>Die Antwort konnte nicht exportiert werden.</value></data>
+  <data name="Msg_Assistant_ExportDefaultTitle" xml:space="preserve"><value>Pia-Antwort</value></data>
 </root>

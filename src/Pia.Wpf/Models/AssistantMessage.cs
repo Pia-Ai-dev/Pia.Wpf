@@ -31,6 +31,10 @@ public partial class AssistantMessage : ObservableObject
 
     public ObservableCollection<SourceRef> Sources { get; } = [];
 
+    /// <summary>Local files this turn read, wrote, exported, or referenced via @File. Rendered as
+    /// open-file/open-folder chips (PiaFileChip). In-memory only — not persisted (see Sources).</summary>
+    public ObservableCollection<FileRef> FileRefs { get; } = [];
+
     public ObservableCollection<string> Suggestions { get; } = [];
 
     [ObservableProperty]
@@ -53,6 +57,8 @@ public partial class AssistantMessage : ObservableObject
     public bool HasPendingConfirmation => ActionCards.Any(c => c.IsPending);
 
     public bool HasSources => Sources.Count > 0;
+
+    public bool HasFileRefs => FileRefs.Count > 0;
 
     public bool HasSuggestions => Suggestions.Count > 0;
 
@@ -108,7 +114,30 @@ public partial class AssistantMessage : ObservableObject
         Timestamp = timestamp;
         ActionCards.CollectionChanged += OnActionCardsChanged;
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSources));
+        FileRefs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFileRefs));
         Suggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSuggestions));
+    }
+
+    /// <summary>
+    /// Adds a file chip, deduplicating by absolute path (Windows-insensitive). If the file was
+    /// already touched this turn, keeps the higher-precedence <see cref="FileRefKind"/> (e.g. a
+    /// file Created then later Updated stays "Created"; an Exported output outranks all) so a
+    /// single file never shows two chips. The shared entry point for the tool sink, the @File
+    /// path, and HTML export.
+    /// </summary>
+    public void AddOrUpgradeFileRef(FileRef incoming)
+    {
+        for (var i = 0; i < FileRefs.Count; i++)
+        {
+            var existing = FileRefs[i];
+            if (!string.Equals(existing.AbsolutePath, incoming.AbsolutePath, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (incoming.Kind > existing.Kind)
+                FileRefs[i] = incoming;
+            return;
+        }
+        FileRefs.Add(incoming);
     }
 
     private void OnActionCardsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -142,6 +171,25 @@ public partial class AssistantMessage : ObservableObject
         if (HasContent)
         {
             contents.Add(new TextContent(Content));
+        }
+        contents.Add(new DataContent(Attachment.JpegBytes, Attachment.MimeType));
+        return new ChatMessage(Role, contents);
+    }
+
+    /// <summary>
+    /// Builds the AI-visible message with <paramref name="overrideText"/> instead of <see cref="Content"/>
+    /// (used to inject @Files context / regeneration instructions without changing the displayed bubble),
+    /// while preserving any image attachment. The image-encoding branch mirrors <see cref="ToChatMessage()"/>
+    /// exactly — without this overload the prior text-only injection silently dropped the attachment.
+    /// </summary>
+    public ChatMessage ToChatMessage(string overrideText)
+    {
+        if (Attachment is null) return new ChatMessage(Role, overrideText);
+
+        var contents = new List<AIContent>();
+        if (!string.IsNullOrEmpty(overrideText))
+        {
+            contents.Add(new TextContent(overrideText));
         }
         contents.Add(new DataContent(Attachment.JpegBytes, Attachment.MimeType));
         return new ChatMessage(Role, contents);

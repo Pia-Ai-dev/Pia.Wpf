@@ -395,6 +395,7 @@ public static class Bootstrapper
         services.AddTransient<IChatTitleService, ChatTitleService>();
         services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
         services.AddTransient<IResearchExportService, ResearchExportService>();
+        services.AddSingleton<IMarkdownExportService, MarkdownExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
         services.AddSingleton<ISelectedTextService, SelectedTextService>();

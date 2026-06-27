@@ -354,4 +354,8 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_Memory_Desc_Forget" xml:space="preserve"><value>Oublier : {0}</value></data>
   <data name="Tool_Memory_Exec_Remembered" xml:space="preserve"><value>Mémoire enregistrée ({0}).</value></data>
   <data name="Tool_Memory_Exec_Forgotten" xml:space="preserve"><value>Mémoire supprimée ({0}).</value></data>
+  <data name="Msg_Assistant_Exported" xml:space="preserve"><value>Exporté</value></data>
+  <data name="Msg_Assistant_ExportedTo" xml:space="preserve"><value>Enregistré dans {0}</value></data>
+  <data name="Msg_Assistant_ExportFailed" xml:space="preserve"><value>Impossible d'exporter la réponse.</value></data>
+  <data name="Msg_Assistant_ExportDefaultTitle" xml:space="preserve"><value>Réponse Pia</value></data>
 </root>
