@@ -98,6 +98,42 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public async Task ReasoningDelta_PopulatesThinkingContent_SeparateFromVisibleText()
+    {
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(
+                new ReasoningDelta("I should greet "),
+                new ReasoningDelta("the user."),
+                new TextDelta("Hello!")));
+
+        var session = CreateSession();
+        await session.RunTurnAsync(BuildRequest(session), CancellationToken.None);
+
+        var message = session.Messages.Last(m => !m.IsUser);
+        Assert.Equal("Hello!", message.Content);
+        Assert.Equal("I should greet the user.", message.ThinkingContent);
+        Assert.True(message.HasThinkingContent);
+    }
+
+    [Fact]
+    public async Task InlineThinkTags_PopulateThinkingContent_AndAreStrippedFromVisibleText()
+    {
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(new TextDelta("<think>weighing options</think>"), new TextDelta("Answer")));
+
+        var session = CreateSession();
+        await session.RunTurnAsync(BuildRequest(session), CancellationToken.None);
+
+        var message = session.Messages.Last(m => !m.IsUser);
+        Assert.Equal("Answer", message.Content);
+        Assert.Equal("weighing options", message.ThinkingContent);
+    }
+
+    [Fact]
     public async Task BackgroundSession_StreamingContent_EndsInCompleted()
     {
         _ai.GetChatCompletionWithToolsAsync(

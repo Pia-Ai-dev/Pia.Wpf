@@ -83,6 +83,8 @@
   <data name="Assistant_Regenerate_Tooltip" xml:space="preserve"><value>Neu generieren</value></data>
   <data name="Assistant_StopReading_Tooltip" xml:space="preserve"><value>Vorlesen beenden</value></data>
   <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Überlegungen anzeigen</value></data>
+  <data name="Assistant_Thinking" xml:space="preserve"><value>Denkt nach</value></data>
+  <data name="Assistant_ThoughtForDuration" xml:space="preserve"><value>Nachgedacht für {0}</value></data>
   <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Unterhaltung löschen</value></data>
   <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Abbrechen</value></data>
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Sprachausgabe ein-/ausschalten</value></data>

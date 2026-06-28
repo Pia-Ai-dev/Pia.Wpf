@@ -25,9 +25,13 @@ internal static class ReasoningEffortMapping
         };
     }
 
-    public static ResponseReasoningEffortLevel? ToOpenAiResponses(ReasoningEffort? effort, bool hasTools)
+    // The Responses API supports reasoning alongside tool calls, and the assistant always
+    // sends a tool schema — so reasoning is gated only on the configured effort, NOT on the
+    // presence of tools. (The Chat Completions path above keeps the tool gate.) Without this,
+    // reasoning and its summary would never surface in the tool-enabled assistant.
+    public static ResponseReasoningEffortLevel? ToOpenAiResponses(ReasoningEffort? effort)
     {
-        if (!ShouldSend(effort, hasTools)) return null;
+        if (effort is null or ReasoningEffort.None) return null;
 
         return effort switch
         {

@@ -283,6 +283,42 @@ public sealed class ChatSession : IDisposable
             }
 
             var rawBuffer = new StringBuilder();
+            // Reasoning reaches us via two channels that never overlap for a given provider:
+            // a separate ReasoningDelta stream (TextReasoningContent / OpenRouter `reasoning`)
+            // and inline <think> tags parsed out of the visible text. Merge both into ThinkingContent.
+            var reasoningBuffer = new StringBuilder();
+            var tagThinking = string.Empty;
+
+            void UpdateThinking()
+            {
+                var separate = reasoningBuffer.ToString().Trim();
+                var combined = (separate.Length > 0, tagThinking.Length > 0) switch
+                {
+                    (true, true) => $"{separate}\n\n{tagThinking}",
+                    (true, false) => separate,
+                    (false, true) => tagThinking,
+                    _ => string.Empty,
+                };
+                if (!string.IsNullOrEmpty(combined))
+                    assistantMessage.ThinkingContent = combined;
+            }
+
+            // Time the "thinking" phase: from the first reasoning token to the first answer
+            // token (or stream end), surfaced as a localized "Thought for Ns" chip.
+            DateTime? reasoningStartedAt = null;
+            var reasoningTimed = false;
+
+            void StopReasoningTimer()
+            {
+                if (reasoningStartedAt is { } startedAt && !reasoningTimed)
+                {
+                    reasoningTimed = true;
+                    var seconds = Math.Max(1, (int)Math.Round((DateTime.Now - startedAt).TotalSeconds));
+                    var duration = seconds < 60 ? $"{seconds}s" : $"{seconds / 60}m {seconds % 60}s";
+                    assistantMessage.ReasoningDurationLabel =
+                        _localizationService.Format("Assistant_ThoughtForDuration", duration);
+                }
+            }
 
             await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
                 chatMessages, provider, tools,
@@ -296,9 +332,19 @@ public sealed class ChatSession : IDisposable
                         rawBuffer.Append(td.Text);
                         var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
 
-                        assistantMessage.Content = visible;
                         if (!string.IsNullOrEmpty(thinking))
-                            assistantMessage.ThinkingContent = thinking;
+                            reasoningStartedAt ??= DateTime.Now; // inline <think> reasoning
+                        if (!string.IsNullOrEmpty(visible))
+                            StopReasoningTimer(); // first answer token ends the thinking phase (set label first)
+                        assistantMessage.Content = visible;
+                        tagThinking = thinking;
+                        UpdateThinking();
+                        break;
+
+                    case ReasoningDelta rd:
+                        reasoningStartedAt ??= DateTime.Now;
+                        reasoningBuffer.Append(rd.Text);
+                        UpdateThinking();
                         break;
 
                     case Finished finished:
@@ -306,6 +352,9 @@ public sealed class ChatSession : IDisposable
                         break;
                 }
             }
+
+            // Reasoning-only / no-visible-answer turns: close the timer at stream end.
+            StopReasoningTimer();
 
             if (webSearchActive)
                 ApplyWebCitations(assistantMessage);

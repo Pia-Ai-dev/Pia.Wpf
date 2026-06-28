@@ -27,6 +27,16 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private bool _isSpeaking;
 
+    /// <summary>Whether the collapsed reasoning toggle is expanded to show the full reasoning.
+    /// Per-message UI state (the message template is reused as the list virtualizes).</summary>
+    [ObservableProperty]
+    private bool _isReasoningExpanded;
+
+    /// <summary>Localized "Thought for Ns" label, set once reasoning completes. Empty when the
+    /// turn produced no reasoning.</summary>
+    [ObservableProperty]
+    private string _reasoningDurationLabel = string.Empty;
+
     public ObservableCollection<ActionCardInfo> ActionCards { get; } = [];
 
     public ObservableCollection<SourceRef> Sources { get; } = [];
@@ -66,6 +76,17 @@ public partial class AssistantMessage : ObservableObject
 
     public bool HasThinkingContent => !string.IsNullOrEmpty(ThinkingContent);
 
+    public bool HasReasoningDuration => !string.IsNullOrEmpty(ReasoningDurationLabel);
+
+    /// <summary>The "thinking" phase — streaming with no answer text yet. Drives the live
+    /// rolling-reasoning view (header shows <see cref="StatusText"/>, body shows the latest
+    /// <see cref="ThinkingContent"/>).</summary>
+    public bool ShowLiveReasoning => IsStreaming && !HasContent;
+
+    /// <summary>Reasoning exists and the thinking phase is over — drives the collapsed
+    /// "Thought for Ns" toggle shown above the answer.</summary>
+    public bool ShowReasoningSummary => HasThinkingContent && !ShowLiveReasoning;
+
     public bool HasAttachment => Attachment is not null;
 
     public bool IsUser => Role == ChatRole.User;
@@ -80,11 +101,25 @@ public partial class AssistantMessage : ObservableObject
     partial void OnContentChanged(string value)
     {
         OnPropertyChanged(nameof(HasContent));
+        OnPropertyChanged(nameof(ShowLiveReasoning));
+        OnPropertyChanged(nameof(ShowReasoningSummary));
     }
 
     partial void OnThinkingContentChanged(string value)
     {
         OnPropertyChanged(nameof(HasThinkingContent));
+        OnPropertyChanged(nameof(ShowReasoningSummary));
+    }
+
+    partial void OnIsStreamingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowLiveReasoning));
+        OnPropertyChanged(nameof(ShowReasoningSummary));
+    }
+
+    partial void OnReasoningDurationLabelChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasReasoningDuration));
     }
 
     partial void OnAttachmentChanged(ImageAttachment? value)

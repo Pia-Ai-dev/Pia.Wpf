@@ -8,6 +8,10 @@
              x:Name="Root">
   <StackPanel>
 
+    <!-- Reasoning: live rolling window while thinking, then a "Thought for Ns" toggle.
+         Sits ABOVE the answer (DataContext is the AssistantMessage). -->
+    <chat:PiaReasoningView />
+
     <!-- Awaiting-confirmation accent: left bar + soft fill while a card is pending.
          Wraps bubble + cards so it survives an empty-content tool-call message.
          AssistantBubbleStyle is Background=Transparent, so WarnSoftBrush shows through. -->
@@ -128,45 +132,5 @@
                              ItemClickCommand="{Binding SuggestionCommand, ElementName=Root}"
                              Visibility="{Binding HasSuggestions, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-    <!-- Thinking content (preserved from existing) -->
-    <Expander Margin="0,6,0,0"
-              Header="{loc:Str Assistant_ShowReasoning}"
-              IsExpanded="False"
-              FontSize="12">
-      <Expander.Style>
-        <Style TargetType="Expander">
-          <Setter Property="Visibility" Value="Collapsed" />
-          <Style.Triggers>
-            <DataTrigger Binding="{Binding HasThinkingContent}" Value="True">
-              <Setter Property="Visibility" Value="Visible" />
-            </DataTrigger>
-          </Style.Triggers>
-        </Style>
-      </Expander.Style>
-      <TextBlock Text="{Binding ThinkingContent}"
-                 TextWrapping="Wrap"
-                 FontSize="12"
-                 FontStyle="Italic"
-                 Margin="12,4"
-                 Foreground="{DynamicResource TextMutedBrush}" />
-    </Expander>
-
-    <!-- Streaming status -->
-    <TextBlock Text="{Binding StatusText}"
-               FontSize="12"
-               Margin="6,4,0,0"
-               FontStyle="Italic"
-               Foreground="{DynamicResource TextSubtleBrush}">
-      <TextBlock.Style>
-        <Style TargetType="TextBlock">
-          <Setter Property="Visibility" Value="Collapsed" />
-          <Style.Triggers>
-            <DataTrigger Binding="{Binding IsStreaming}" Value="True">
-              <Setter Property="Visibility" Value="Visible" />
-            </DataTrigger>
-          </Style.Triggers>
-        </Style>
-      </TextBlock.Style>
-    </TextBlock>
   </StackPanel>
 </UserControl>
