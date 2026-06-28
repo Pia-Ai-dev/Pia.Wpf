@@ -30,6 +30,32 @@ public class MarkdownExportServiceTests
     }
 
     [Fact]
+    public void ToHtml_IncludesLightAndDarkThemesAndToggle()
+    {
+        var svc = NewService(null);
+
+        var html = svc.ToHtml("# Title\n\nbody", "Doc");
+
+        // Both theme token sets are present...
+        Assert.Contains(":root {", html);
+        Assert.Contains("html.dark {", html);
+        // ...and the in-page toggle is wired up.
+        Assert.Contains("id=\"theme-toggle\"", html);
+        Assert.Contains("classList.toggle(\"dark\")", html);
+    }
+
+    [Fact]
+    public void ToHtml_FooterLinksToPiaSite()
+    {
+        var svc = NewService(null);
+
+        var html = svc.ToHtml("# Title\n\nbody", "Doc");
+
+        Assert.Contains("href=\"https://pia-ai.de\"", html);
+        Assert.Contains("Personal Intelligent Assistant", html);
+    }
+
+    [Fact]
     public void ToHtml_HtmlEncodesTitle()
     {
         var svc = NewService(null);

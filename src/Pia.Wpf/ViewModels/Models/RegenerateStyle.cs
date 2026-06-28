@@ -34,7 +34,7 @@ public static class RegenerateInstructions
         RegenerateStyle.Detailed =>
             "Give a more thorough version of your previous answer, expanding the reasoning and adding relevant detail and examples." + KeepLanguage,
         RegenerateStyle.Exportable =>
-            "Rewrite your previous answer as a clean, self-contained document: clear Markdown headings, well-structured sections, and no conversational filler or meta-commentary." + KeepLanguage,
+            "Rewrite your previous answer as a clean, self-contained document: clear Markdown headings, well-structured sections, and no conversational filler or meta-commentary. Use bold text very sparingly — only for the rare word or phrase that genuinely needs emphasis, never for whole sentences or as a default." + KeepLanguage,
         _ => null,
     };
 }
