@@ -102,6 +102,26 @@ public class MarkdownExportServiceTests
     }
 
     [Fact]
+    public async Task ExportAsync_WritesIntoExportsSubfolder()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pia-export-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var svc = NewService(dir);
+
+            var path = await svc.ExportAsync("# Heading\n\nbody", title: null, fallbackTitle: "Pia answer", workingSubpath: null);
+
+            Assert.True(File.Exists(path));
+            Assert.Equal(Path.Combine(Path.GetFullPath(dir), "Exports"), Path.GetDirectoryName(path));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ExportAsync_SameSecond_DoesNotOverwrite()
     {
         var dir = Path.Combine(Path.GetTempPath(), "pia-export-test-" + Guid.NewGuid().ToString("N"));

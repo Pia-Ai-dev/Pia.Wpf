@@ -143,6 +143,9 @@ public sealed class MarkdownExportService : IMarkdownExportService
         return null;
     }
 
+    /// <summary>Subfolder under the resolved working dir that exported answers are written into.</summary>
+    private const string ExportsSubfolder = "Exports";
+
     private async Task<string> ResolveOutputFolderAsync(string? workingSubpath)
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -151,7 +154,7 @@ public sealed class MarkdownExportService : IMarkdownExportService
         // Export is a user action, not an LLM write, so it works even when the file tools are disabled:
         // fall back to the default assistant files folder when no sandbox folder is configured.
         if (string.IsNullOrWhiteSpace(configured))
-            return AssistantWorkspace.DefaultRoot;
+            return Path.Combine(AssistantWorkspace.DefaultRoot, ExportsSubfolder);
 
         var baseRoot = Path.GetFullPath(configured);
 
@@ -162,10 +165,10 @@ public sealed class MarkdownExportService : IMarkdownExportService
             && SafeFolderPath.TryResolveInsideAllowingAbsolute(baseRoot, workingSubpath, out var scoped)
             && Directory.Exists(scoped))
         {
-            return scoped;
+            return Path.Combine(scoped, ExportsSubfolder);
         }
 
-        return baseRoot;
+        return Path.Combine(baseRoot, ExportsSubfolder);
     }
 
     private static string NextAvailablePath(string folder)
