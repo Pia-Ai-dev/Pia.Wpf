@@ -1,17 +1,22 @@
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using Pia.Models;
 using Pia.Helpers;
+using Pia.Models.Vault;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
+using Pia.Services.Wiki;
 
 namespace Pia.ViewModels;
 
+/// <summary>
+/// Drives the Memory screen from the on-disk markdown vault — the source of truth for the assistant's
+/// recall — rather than the legacy SQLite JSON store. Items are <see cref="VaultMemoryItem"/> sections
+/// addressed by <c>path#heading</c>; edits and deletes go through the vault verbs
+/// (<see cref="IMemoryService.UpdateSectionAsync"/> / <see cref="IMemoryService.ForgetAsync"/>) and the
+/// vault watcher owns embedding reindex, so this view never generates embeddings.
+/// </summary>
 public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisposable
 {
     private readonly ILogger<MemoryViewModel> _logger;
@@ -28,7 +33,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private ObservableCollection<MemoryGroupViewModel> _memoryGroups = new();
 
     [ObservableProperty]
-    private MemoryObject? _selectedMemory;
+    private VaultMemoryItem? _selectedMemory;
 
     [ObservableProperty]
     private string _searchQuery = string.Empty;
@@ -52,42 +57,23 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private float _downloadProgress;
 
     [ObservableProperty]
-    private string _selectedMemoryDataFormatted = string.Empty;
-
-    [ObservableProperty]
     private string _editingData = string.Empty;
 
     [ObservableProperty]
     private bool _isEditing;
 
     [ObservableProperty]
-    private string _activeFilter = "All";
-
-    [ObservableProperty]
-    private int _staleCount;
-
-    [ObservableProperty]
     private int _embeddingDim = 384;
 
-    [ObservableProperty]
-    private DateTime _lastSyncedAt = DateTime.UtcNow;
-
-    [ObservableProperty]
-    private DateTime _lastIndexBuiltAt = DateTime.UtcNow;
-
     public IAsyncRelayCommand RefreshCommand { get; }
-    public IAsyncRelayCommand<MemoryObject> DeleteMemoryCommand { get; }
-    public IAsyncRelayCommand<MemoryObject> EditMemoryCommand { get; }
+    public IAsyncRelayCommand<VaultMemoryItem> DeleteMemoryCommand { get; }
+    public IAsyncRelayCommand<VaultMemoryItem> EditMemoryCommand { get; }
     public IAsyncRelayCommand SaveEditCommand { get; }
     public IRelayCommand CancelEditCommand { get; }
-    public IAsyncRelayCommand ExportCommand { get; }
     public IAsyncRelayCommand DownloadEmbeddingModelCommand { get; }
     public IAsyncRelayCommand RegenerateEmbeddingsCommand { get; }
-    public IAsyncRelayCommand ReviewStaleCommand { get; }
-    public IRelayCommand<MemoryObject> SelectMemoryCommand { get; }
-    public IAsyncRelayCommand<MemoryObject> CopyJsonCommand { get; }
-    public IRelayCommand<MemoryObject> OpenSourceCommand { get; }
-    public IAsyncRelayCommand NewMemoryCommand { get; }
+    public IRelayCommand<VaultMemoryItem> SelectMemoryCommand { get; }
+    public IAsyncRelayCommand<VaultMemoryItem> CopyMarkdownCommand { get; }
 
     public MemoryViewModel(
         ILogger<MemoryViewModel> logger,
@@ -107,55 +93,32 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         _clipboardService = clipboardService;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
-        DeleteMemoryCommand = new AsyncRelayCommand<MemoryObject>(ExecuteDeleteMemory);
-        EditMemoryCommand = new AsyncRelayCommand<MemoryObject>(ExecuteEditMemory);
+        DeleteMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteDeleteMemory);
+        EditMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteEditMemory);
         SaveEditCommand = new AsyncRelayCommand(ExecuteSaveEdit, CanSaveEdit);
         CancelEditCommand = new RelayCommand(ExecuteCancelEdit);
-        ExportCommand = new AsyncRelayCommand(ExecuteExport);
         DownloadEmbeddingModelCommand = new AsyncRelayCommand(ExecuteDownloadEmbeddingModel);
         RegenerateEmbeddingsCommand = new AsyncRelayCommand(ExecuteRegenerateEmbeddings);
-        ReviewStaleCommand = new AsyncRelayCommand(ExecuteReviewStale);
-        SelectMemoryCommand = new RelayCommand<MemoryObject>(ExecuteSelectMemory);
-        CopyJsonCommand = new AsyncRelayCommand<MemoryObject>(ExecuteCopyJson);
-        OpenSourceCommand = new RelayCommand<MemoryObject>(ExecuteOpenSource);
-        NewMemoryCommand = new AsyncRelayCommand(ExecuteNewMemory);
+        SelectMemoryCommand = new RelayCommand<VaultMemoryItem>(ExecuteSelectMemory);
+        CopyMarkdownCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteCopyMarkdown);
 
         PropertyChanged += OnPropertyChanged;
     }
 
-    private async Task ExecuteCopyJson(MemoryObject? memory)
+    private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)
     {
         if (memory is null) return;
         try
         {
-            var pretty = JsonHelper.FormatJson(memory.Data);
-            _clipboardService.SetText(pretty);
+            _clipboardService.SetText(memory.Body);
             _snackbarService.Show(_localizationService["Memory_Copied"], string.Empty,
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(2));
             await Task.CompletedTask;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to copy JSON to clipboard");
+            _logger.LogWarning(ex, "Failed to copy memory body to clipboard");
         }
-    }
-
-    private void ExecuteOpenSource(MemoryObject? memory)
-    {
-        if (memory?.SourceConversationId is null) return;
-        _logger.LogInformation("Open source conversation {Id}", memory.SourceConversationId);
-    }
-
-    private async Task ExecuteNewMemory()
-    {
-        await Task.CompletedTask;
-    }
-
-    private static int CountStale(IEnumerable<MemoryObject> items)
-    {
-        var n = 0;
-        foreach (var m in items) if (m.IsStale) n++;
-        return n;
     }
 
     public void OnNavigatedTo(object? parameter)
@@ -180,37 +143,13 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         {
             IsLoading = true;
 
-            IReadOnlyList<MemoryObject> memories;
+            // One enumeration of the vault yields both the items and the storage size.
+            var snapshot = await _memoryService.ListMemoriesAsync();
+            var items = string.IsNullOrWhiteSpace(SearchQuery)
+                ? snapshot.Items
+                : ProjectRecallHits(snapshot.Items, await _memoryService.RecallAsync(SearchQuery));
 
-            if (!string.IsNullOrWhiteSpace(SearchQuery))
-            {
-                memories = await _memoryService.HybridSearchAsync(SearchQuery);
-            }
-            else
-            {
-                memories = await _memoryService.GetAllObjectsAsync();
-            }
-
-            var filtered = ApplyFilter(memories);
-
-            // Group by type
-            var groups = filtered
-                .GroupBy(m => m.Type)
-                .OrderBy(g => g.Key)
-                .Select(g =>
-                {
-                    var items = g.OrderByDescending(m => m.UpdatedAt).ToList();
-                    return new MemoryGroupViewModel
-                    {
-                        Type = g.Key,
-                        DisplayName = MemoryObjectTypes.GetDisplayName(g.Key),
-                        Items = new ObservableCollection<MemoryObject>(items),
-                        ItemCount = items.Count,
-                        LastUpdated = items.Max(m => m.UpdatedAt),
-                        StaleCount = CountStale(items)
-                    };
-                })
-                .ToList();
+            var groups = BuildGroups(items);
 
             MemoryGroups.Clear();
             foreach (var group in groups)
@@ -218,18 +157,18 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 MemoryGroups.Add(group);
             }
 
+            // Keep the inspector on the selected memory only if it is still present (by reference).
             if (SelectedMemory is not null &&
-                !MemoryGroups.Any(g => g.Items.Any(m => m.Id == SelectedMemory.Id)))
+                !MemoryGroups.Any(g => g.Items.Any(m => m.Reference == SelectedMemory.Reference)))
             {
                 SelectedMemory = null;
                 IsEditing = false;
             }
 
-            TotalObjectCount = await _memoryService.GetObjectCountAsync();
-            var storageSize = await _memoryService.GetStorageSizeAsync();
-            StorageSizeText = FormatBytes(storageSize);
-            StaleCount = CountStale(memories);
-            LastSyncedAt = DateTime.UtcNow;
+            // Header count is the total of displayable (canonical-typed) memories — independent of the
+            // search filter — so it matches what the unfiltered grouped list shows (no silent divergence).
+            TotalObjectCount = CountDisplayable(snapshot.Items);
+            StorageSizeText = FormatBytes(snapshot.Bytes);
         }
         catch (Exception ex)
         {
@@ -241,21 +180,96 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         }
     }
 
-    private async Task ExecuteDeleteMemory(MemoryObject? memory)
+    // Project semantic-search hits (RecallAsync indexes ## sections) back to the full VaultMemoryItem
+    // (real type/body/updated) by reference. Hits whose section has since changed are dropped; freeform
+    // preamble files are not chunked by the indexer, so they never appear here. (Final display order is
+    // the canonical group order with alpha-within-group from BuildGroups, not recall rank — D3.)
+    private static IReadOnlyList<VaultMemoryItem> ProjectRecallHits(
+        IReadOnlyList<VaultMemoryItem> all, IReadOnlyList<RecallHit> hits)
+    {
+        // Last-wins rather than ToDictionary: a hand-edited file may carry two identical ## headings,
+        // which slug-dedup does not collapse, so two items can share a Reference. A throw here would
+        // crash search; collapsing is harmless (the path#heading scheme already aliases such sections).
+        var byReference = new Dictionary<string, VaultMemoryItem>(StringComparer.Ordinal);
+        foreach (var item in all)
+        {
+            byReference[item.Reference] = item;
+        }
+
+        var results = new List<VaultMemoryItem>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var hit in hits)
+        {
+            var filePath = hit.FilePath.Replace('\\', '/');
+            var reference = string.IsNullOrEmpty(hit.Heading) ? filePath : $"{filePath}#{hit.Heading}";
+            if (seen.Add(reference) && byReference.TryGetValue(reference, out var item))
+            {
+                results.Add(item);
+            }
+        }
+
+        return results;
+    }
+
+    // The §8 canonical type set (case-insensitive) — the types the Memory view can group and display.
+    private static readonly HashSet<string> DisplayableTypes =
+        new(VaultIndexService.CanonicalGroups.Select(g => g.Type), StringComparer.OrdinalIgnoreCase);
+
+    // Count of memories the view can actually show, so the header total matches the grouped list rather
+    // than counting hand-edited/foreign-typed records the canonical grouping silently drops.
+    private static int CountDisplayable(IReadOnlyList<VaultMemoryItem> items)
+        => items.Count(i => DisplayableTypes.Contains(i.Type));
+
+    // Group by the §8 canonical type order with the spec's display names; within a group, items sort
+    // alphabetically by title (D3: frontmatter `updated` is document-level, so per-item recency is
+    // meaningless). The group timestamp is the newest document `updated` among its items.
+    private static List<MemoryGroupViewModel> BuildGroups(IReadOnlyList<VaultMemoryItem> items)
+    {
+        // Case-insensitive so a case-drifted frontmatter `type` (e.g. "Note") still lands in its group.
+        var byType = items
+            .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var groups = new List<MemoryGroupViewModel>();
+
+        foreach (var (type, display) in VaultIndexService.CanonicalGroups)
+        {
+            if (!byType.TryGetValue(type, out var groupItems))
+            {
+                continue;
+            }
+
+            var ordered = groupItems
+                .OrderBy(i => i.Title, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+
+            groups.Add(new MemoryGroupViewModel
+            {
+                Type = type,
+                DisplayName = display,
+                Items = new ObservableCollection<VaultMemoryItem>(ordered),
+                ItemCount = ordered.Count,
+                LastUpdated = ordered.Max(i => i.Updated) ?? DateTime.MinValue,
+            });
+        }
+
+        return groups;
+    }
+
+    private async Task ExecuteDeleteMemory(VaultMemoryItem? memory)
     {
         if (memory is null) return;
 
         var confirmed = await _dialogService.ShowConfirmationDialogAsync(
             _localizationService["Msg_Memory_DeleteTitle"],
-            _localizationService.Format("Msg_Memory_DeleteConfirm", memory.Label));
+            _localizationService.Format("Msg_Memory_DeleteConfirm", memory.Title));
 
         if (!confirmed) return;
 
         try
         {
-            await _memoryService.DeleteObjectAsync(memory.Id);
+            await _memoryService.ForgetAsync(memory.Reference);
 
-            // Remove from the group
+            // Remove from the group.
             foreach (var group in MemoryGroups)
             {
                 if (group.Items.Remove(memory))
@@ -275,26 +289,26 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 IsEditing = false;
             }
 
-            TotalObjectCount = await _memoryService.GetObjectCountAsync();
-            var storageSize = await _memoryService.GetStorageSizeAsync();
-            StorageSizeText = FormatBytes(storageSize);
+            var snapshot = await _memoryService.ListMemoriesAsync();
+            TotalObjectCount = CountDisplayable(snapshot.Items);
+            StorageSizeText = FormatBytes(snapshot.Bytes);
 
-            _snackbarService.Show(_localizationService["Msg_Memory_Deleted"], _localizationService.Format("Msg_Memory_MemoryDeleted", memory.Label),
+            _snackbarService.Show(_localizationService["Msg_Memory_Deleted"], _localizationService.Format("Msg_Memory_MemoryDeleted", memory.Title),
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete memory {Id}", memory.Id);
+            _logger.LogError(ex, "Failed to delete memory");
             await _dialogService.ShowMessageDialogAsync(_localizationService["Msg_Error"], _localizationService.Format("Msg_Memory_DeleteFailed", ex.Message));
         }
     }
 
-    private Task ExecuteEditMemory(MemoryObject? memory)
+    private Task ExecuteEditMemory(VaultMemoryItem? memory)
     {
         if (memory is null) return Task.CompletedTask;
 
         SelectedMemory = memory;
-        EditingData = JsonHelper.FormatJson(memory.Data);
+        EditingData = memory.Body;
         IsEditing = true;
         SaveEditCommand.NotifyCanExecuteChanged();
 
@@ -307,38 +321,19 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     {
         if (SelectedMemory is null) return;
 
+        var reference = SelectedMemory.Reference;
         try
         {
-            // Validate JSON
-            JsonNode.Parse(EditingData);
-
-            var connection = SelectedMemory;
-            await _memoryService.UpdateObjectDataAsync(connection.Id, connection.Label, EditingData);
-
-            // Regenerate embedding if model is available
-            if (_embeddingService.IsModelAvailable)
-            {
-                try
-                {
-                    var textToEmbed = $"{connection.Label} {EditingData}";
-                    var embedding = await _embeddingService.GenerateEmbeddingAsync(textToEmbed);
-                    await _memoryService.UpdateEmbeddingAsync(connection.Id, _embeddingService.FloatsToBytes(embedding));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to regenerate embedding for {Id}", connection.Id);
-                }
-            }
+            // Whole-body replace through the vault; the watcher reindexes embeddings on the file change.
+            await _memoryService.UpdateSectionAsync(reference, EditingData);
 
             IsEditing = false;
-
-            var savedId = connection.Id;
             await LoadMemoriesAsync();
 
-            // Re-select the saved memory by id so the inspector keeps focus on it.
+            // Re-select the saved memory by reference so the inspector keeps focus on it.
             foreach (var group in MemoryGroups)
             {
-                var match = group.Items.FirstOrDefault(m => m.Id == savedId);
+                var match = group.Items.FirstOrDefault(m => m.Reference == reference);
                 if (match is not null)
                 {
                     SelectedMemory = match;
@@ -348,10 +343,6 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
 
             _snackbarService.Show(_localizationService["Msg_Memory_Saved"], _localizationService["Msg_Memory_MemoryUpdated"],
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-        }
-        catch (JsonException)
-        {
-            await _dialogService.ShowMessageDialogAsync(_localizationService["Msg_Memory_InvalidJsonTitle"], _localizationService["Msg_Memory_InvalidJsonMessage"]);
         }
         catch (Exception ex)
         {
@@ -366,35 +357,11 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         EditingData = string.Empty;
     }
 
-    private void ExecuteSelectMemory(MemoryObject? memory)
+    private void ExecuteSelectMemory(VaultMemoryItem? memory)
     {
         if (memory is not null)
         {
             SelectedMemory = memory;
-        }
-    }
-
-    private async Task ExecuteExport()
-    {
-        try
-        {
-            var exportJson = await _memoryService.ExportAllAsync();
-
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var exportDir = Path.Combine(localAppData, "Pia", "Exports");
-            Directory.CreateDirectory(exportDir);
-
-            var fileName = $"pia-memories-{DateTime.Now:yyyy-MM-dd-HHmmss}.json";
-            var exportPath = Path.Combine(exportDir, fileName);
-            await File.WriteAllTextAsync(exportPath, exportJson);
-
-            _snackbarService.Show(_localizationService["Msg_Memory_Exported"], _localizationService.Format("Msg_Memory_ExportedTo", exportPath),
-                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(5));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to export memories");
-            await _dialogService.ShowMessageDialogAsync(_localizationService["Msg_Error"], _localizationService.Format("Msg_Memory_ExportFailed", ex.Message));
         }
     }
 
@@ -434,6 +401,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         }
     }
 
+    // NOTE: the embedding model UI (download / regenerate) is deferred for removal — the vault watcher
+    // owns reindex, so the save path no longer regenerates embeddings. This command still operates on the
+    // legacy table and is kept only until the status-bar embedding affordance is retired (follow-up).
     private async Task ExecuteRegenerateEmbeddings()
     {
         if (!_embeddingService.IsModelAvailable)
@@ -486,52 +456,6 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         }
     }
 
-    private async Task ExecuteReviewStale()
-    {
-        try
-        {
-            var staleMemories = await _memoryService.GetStaleObjectsAsync(TimeSpan.FromDays(90));
-
-            if (staleMemories.Count == 0)
-            {
-                _snackbarService.Show(_localizationService["Msg_Memory_AllFresh"], _localizationService["Msg_Memory_NoStaleMemories"],
-                    Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-                return;
-            }
-
-            var message = _localizationService.Format("Msg_Memory_StaleFound", staleMemories.Count) + "\n\n";
-            message += string.Join("\n", staleMemories.Take(10).Select(m =>
-                $"- {m.Label} ({MemoryObjectTypes.GetDisplayName(m.Type)}) - {_localizationService.Format("Msg_Memory_LastAccessed", m.LastAccessedAt.ToString("yyyy-MM-dd"))}"));
-
-            if (staleMemories.Count > 10)
-            {
-                message += "\n" + _localizationService.Format("Msg_Memory_AndMore", staleMemories.Count - 10);
-            }
-
-            message += "\n\n" + _localizationService["Msg_Memory_DeleteAllStaleQuestion"];
-
-            var confirmed = await _dialogService.ShowConfirmationDialogAsync(
-                _localizationService["Msg_Memory_StaleReviewTitle"], message);
-
-            if (confirmed)
-            {
-                foreach (var memory in staleMemories)
-                {
-                    await _memoryService.DeleteObjectAsync(memory.Id);
-                }
-
-                await LoadMemoriesAsync();
-
-                _snackbarService.Show(_localizationService["Msg_Memory_CleanedUp"], _localizationService.Format("Msg_Memory_StaleDeleted", staleMemories.Count),
-                    Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to review stale memories");
-        }
-    }
-
     private void DebounceSearch()
     {
         _debounceCts?.Cancel();
@@ -552,26 +476,6 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         {
             DebounceSearch();
         }
-
-        if (e.PropertyName == nameof(ActiveFilter))
-        {
-            DebounceSearch();
-        }
-
-        if (e.PropertyName == nameof(SelectedMemory) && SelectedMemory is not null)
-        {
-            SelectedMemoryDataFormatted = JsonHelper.FormatJson(SelectedMemory.Data);
-        }
-    }
-
-    private IEnumerable<MemoryObject> ApplyFilter(IEnumerable<MemoryObject> source)
-    {
-        return ActiveFilter switch
-        {
-            "Stale" => source.Where(m => m.IsStale),
-            "Today" => source.Where(m => m.UpdatedAt.Date == DateTime.UtcNow.Date),
-            _ => source
-        };
     }
 
     private static string FormatBytes(long bytes) => bytes switch
@@ -603,7 +507,7 @@ public partial class MemoryGroupViewModel : ObservableObject
     private string _displayName = string.Empty;
 
     [ObservableProperty]
-    private ObservableCollection<MemoryObject> _items = new();
+    private ObservableCollection<VaultMemoryItem> _items = new();
 
     [ObservableProperty]
     private int _itemCount;
@@ -613,7 +517,4 @@ public partial class MemoryGroupViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isExpanded = true;
-
-    [ObservableProperty]
-    private int _staleCount;
 }

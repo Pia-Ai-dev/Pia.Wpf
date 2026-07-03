@@ -210,6 +210,8 @@
                     CopyCommand="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SpeakCommand="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     RegenerateCommand="{Binding DataContext.RegenerateMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    RegenerateStyledCommand="{Binding DataContext.RegenerateStyledCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    ExportCommand="{Binding DataContext.ExportMessageHtmlCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SuggestionCommand="{Binding DataContext.UseFollowupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     ManageToolPermissionsCommand="{Binding DataContext.NavigateToToolPermissionsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     AddToPiiRequested="OnAddToPiiRequested" />

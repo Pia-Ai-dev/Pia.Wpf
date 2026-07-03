@@ -15,12 +15,16 @@ public sealed class MistralProviderHandler : IAiProviderHandler
     /// Mistral models that accept the OpenAI-style `reasoning_effort` field on
     /// `/v1/chat/completions`. Every other model (Magistral, Large, Codestral,
     /// embeddings) returns HTTP 422 "Extra inputs are not permitted" when the
-    /// field is present.
+    /// field is present. Includes the rolling `-latest` aliases, which resolve
+    /// server-side to a reasoning-capable snapshot (e.g. mistral-medium-latest
+    /// → mistral-medium-3.5) but must be matched here on the literal name.
     /// </summary>
     private static readonly HashSet<string> ReasoningCapableModels = new(StringComparer.OrdinalIgnoreCase)
     {
         "mistral-small-latest",
+        "mistral-medium-latest",
         "mistral-medium-3.5",
+        "magistral-medium-latest",
     };
 
     public AiProviderType ProviderType => AiProviderType.Mistral;
@@ -80,15 +84,23 @@ public sealed class MistralProviderHandler : IAiProviderHandler
 #pragma warning disable OPENAI001
     internal static (bool emit, ChatReasoningEffortLevel level) ShouldEmitReasoning(AiProvider provider, bool hasTools)
     {
-        if (hasTools) return (false, default);
         if (provider.ReasoningEffort is null) return (false, default);
-        if (provider.ReasoningEffort == Pia.Models.ReasoningEffort.None) return (false, default);
 
         var model = provider.ModelName ?? string.Empty;
         if (!ReasoningCapableModels.Contains(model)) return (false, default);
 
-        // Mistral accepts only `none` or `high`. We've already filtered `None`
-        // above; everything else clamps to High.
+        // Reasoning-capable Mistral models think by DEFAULT when `reasoning_effort`
+        // is absent, so turning reasoning OFF means actively sending `none` — and
+        // it must happen even on tool-using turns (the normal assistant case).
+        // Omitting the field would silently leave reasoning on; that gap is the
+        // bug this branch closes.
+        if (provider.ReasoningEffort == Pia.Models.ReasoningEffort.None)
+            return (true, ChatReasoningEffortLevel.None);
+
+        // Turning reasoning ON stays gated on tool-free turns (reasoning during
+        // tool calls is suppressed by design). Mistral accepts only `none` or
+        // `high`, so every non-None value clamps to High.
+        if (hasTools) return (false, default);
         return (true, ChatReasoningEffortLevel.High);
     }
 #pragma warning restore OPENAI001

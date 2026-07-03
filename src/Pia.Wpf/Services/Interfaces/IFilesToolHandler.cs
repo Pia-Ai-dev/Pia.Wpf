@@ -26,7 +26,8 @@ public sealed record FilePromptPreview(
     int TotalLines,
     int ShownLines,
     bool Truncated,
-    string? Error);
+    string? Error,
+    string? AbsolutePath = null);
 
 public interface IFilesToolHandler
 {

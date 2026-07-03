@@ -42,6 +42,7 @@ public class FilesToolHandler : IFilesToolHandler
     private readonly IFileStalenessStore _stalenessStore;
     private readonly ILogger<FilesToolHandler> _logger;
     private volatile string? _currentFolder;
+    private volatile bool _toolsEnabled = true;
     private volatile string? _activeUiWorkingSubpath;
 
     /// <summary>
@@ -68,6 +69,7 @@ public class FilesToolHandler : IFilesToolHandler
         try
         {
             var settings = _settingsService.GetSettingsAsync().GetAwaiter().GetResult();
+            _toolsEnabled = settings.AssistantFileToolsEnabled;
             UpdateFolder(settings.AssistantFilesFolder);
         }
         catch (Exception ex)
@@ -79,10 +81,12 @@ public class FilesToolHandler : IFilesToolHandler
     }
 
     /// <summary>
-    /// True when a usable sandbox folder is configured. Used by the plugin host
-    /// to suppress tool registration and the system prompt while disabled.
+    /// True when the file tools are enabled AND a usable sandbox folder is configured. Used by the
+    /// plugin host to suppress tool registration and the system prompt while disabled. The folder is
+    /// always set now (the vault lives under it), so <see cref="AppSettings.AssistantFileToolsEnabled"/>
+    /// is the explicit on/off switch.
     /// </summary>
-    public bool IsAvailable => _currentFolder is not null;
+    public bool IsAvailable => _toolsEnabled && _currentFolder is not null;
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
@@ -90,6 +94,7 @@ public class FilesToolHandler : IFilesToolHandler
         // store so a read recorded under the old root can't satisfy a staleness check for a
         // re-pointed path, and so entries don't accumulate across the session lifetime (§0.2).
         _stalenessStore.Clear();
+        _toolsEnabled = settings.AssistantFileToolsEnabled;
         UpdateFolder(settings.AssistantFilesFolder);
     }
 
@@ -635,6 +640,9 @@ public class FilesToolHandler : IFilesToolHandler
             // Record the observed mtime keyed by the canonicalized resolved path (not the model string).
             _stalenessStore.RecordRead(TaskAmbient.Current?.TaskId ?? Guid.Empty, safePath, File.GetLastWriteTimeUtc(safePath));
 
+            // Surface the read to the active turn's message as an "open file" chip (read scope).
+            TaskAmbient.Current?.OnFileTouched?.Invoke(new FileTouch(safePath, FileTouchKind.Read));
+
             _logger.LogInformation("read_file succeeded (offset {Offset}, limit {Limit})", offset, limit);
             _logger.SensitiveDebug("read_file path: {Path}", requested);
             return result;
@@ -752,7 +760,7 @@ public class FilesToolHandler : IFilesToolHandler
         // setup (TaskAmbient is not yet this session's), so the model must still read_file before editing.
         _logger.LogInformation("@Files prompt preview ({Shown}/{Total} lines, truncated={Truncated})", shown, total, truncated);
         _logger.SensitiveDebug("@Files prompt preview path: {Path}", relativePath);
-        return new FilePromptPreview(relativePath, Found: true, preview, total, shown, truncated, Error: null);
+        return new FilePromptPreview(relativePath, Found: true, preview, total, shown, truncated, Error: null, AbsolutePath: safePath);
     }
 
     /// <summary>
@@ -939,12 +947,17 @@ public class FilesToolHandler : IFilesToolHandler
         // after the approval await, where ambient flow is not guaranteed).
         var taskId = TaskAmbient.Current?.TaskId ?? Guid.Empty;
 
+        // Capture the per-turn file-touch sink at PREPARE time for the same reason as taskId above:
+        // ambient flow is not guaranteed inside the deferred execute closure (it runs after the
+        // approval await). On a successful write the closure reports the file so an "open" chip appears.
+        var touch = TaskAmbient.Current?.OnFileTouched;
+
         return (null, new FilesToolCall(
             ToolName: "write_file",
             Description: desc,
             Details: $"{content.Length} character(s) will be written.",
             TargetPath: rel,
-            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, previewMtime, taskId),
+            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, previewMtime, taskId, touch),
             DiffPreview: diff));
     }
 
@@ -957,7 +970,7 @@ public class FilesToolHandler : IFilesToolHandler
 
     private Task<object?> ExecuteWriteAsync(
         string root, string requested, string rel, string content, string? oldContent,
-        bool existedAtPrepare, DateTime? previewMtime, Guid taskId)
+        bool existedAtPrepare, DateTime? previewMtime, Guid taskId, Action<FileTouch>? touch = null)
     {
         // Re-validate inside the deferred execution path — the sandbox root might have changed
         // between preparation and confirmation. Re-check the sensitive blocklist for the same reason.
@@ -1017,6 +1030,10 @@ public class FilesToolHandler : IFilesToolHandler
                 "write_file succeeded ({Bytes} bytes, {Lines} lines, crlf={Crlf}, bom={Bom})",
                 write.BytesWritten, lineCount, write.UsedCrlf, write.HadBom);
             _logger.SensitiveDebug("write_file path: {Path}", requested);
+
+            // Surface the written file to the active turn's message as an "open file" chip. Use the
+            // re-resolved finalPath (the bytes' true location) and existsNow (create vs update at write time).
+            touch?.Invoke(new FileTouch(finalPath, existsNow ? FileTouchKind.Updated : FileTouchKind.Created));
 
             var result = WriteResult.Ok(rel, write.BytesWritten, lineCount, lint, warning, !existsNow);
             return Task.FromResult<object?>(ClampResult(result));

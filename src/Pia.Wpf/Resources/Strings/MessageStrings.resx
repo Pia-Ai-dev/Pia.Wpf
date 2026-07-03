@@ -359,14 +359,12 @@ Changes will be applied.</value></data>
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Search past research findings</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Get a research entry by ID</value></data>
   <!-- MemoryToolHandler -->
-  <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Create new {0}: {1}</value></data>
-  <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>Update {0}: {1}</value></data>
-  <data name="Tool_Memory_Desc_Append" xml:space="preserve"><value>Add entry to {0}: {1}</value></data>
-  <data name="Tool_Memory_Desc_Delete" xml:space="preserve"><value>Delete {0}: {1}</value></data>
-  <data name="Tool_Memory_Desc_Merge" xml:space="preserve"><value>Merge {0} memories into: {1}</value></data>
-  <data name="Tool_Memory_Exec_Created" xml:space="preserve"><value>Memory object created successfully with ID: {0}</value></data>
-  <data name="Tool_Memory_Exec_Updated" xml:space="preserve"><value>Memory object {0} updated successfully.</value></data>
-  <data name="Tool_Memory_Exec_Appended" xml:space="preserve"><value>Entry appended to memory object {0} successfully.</value></data>
-  <data name="Tool_Memory_Exec_Deleted" xml:space="preserve"><value>Memory object {0} deleted successfully.</value></data>
-  <data name="Tool_Memory_Exec_Merged" xml:space="preserve"><value>Merged {0} memories into '{1}' (ID: {2}). {3} duplicate(s) deleted.</value></data>
+  <data name="Tool_Memory_Desc_Remember" xml:space="preserve"><value>Remember: {0}</value></data>
+  <data name="Tool_Memory_Desc_Forget" xml:space="preserve"><value>Forget: {0}</value></data>
+  <data name="Tool_Memory_Exec_Remembered" xml:space="preserve"><value>Memory saved ({0}).</value></data>
+  <data name="Tool_Memory_Exec_Forgotten" xml:space="preserve"><value>Memory removed ({0}).</value></data>
+  <data name="Msg_Assistant_Exported" xml:space="preserve"><value>Exported</value></data>
+  <data name="Msg_Assistant_ExportedTo" xml:space="preserve"><value>Saved to {0}</value></data>
+  <data name="Msg_Assistant_ExportFailed" xml:space="preserve"><value>Could not export the answer.</value></data>
+  <data name="Msg_Assistant_ExportDefaultTitle" xml:space="preserve"><value>Pia answer</value></data>
 </root>

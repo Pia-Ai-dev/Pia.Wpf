@@ -35,6 +35,13 @@ public sealed class ChatTurnRequest
     /// </summary>
     public string? InjectedFileContext { get; init; }
 
+    /// <summary>
+    /// Extra model-facing instruction appended to the AI-visible user message for a styled
+    /// regeneration (e.g. "make it shorter") — injected like <see cref="InjectedFileContext"/> so the
+    /// displayed user bubble stays unchanged. Null = a normal turn / default regenerate.
+    /// </summary>
+    public string? RegenerationInstruction { get; init; }
+
     /// <summary>Whether PII tokenization is active for this turn.</summary>
     public required bool TokenizationEnabled { get; init; }
 }

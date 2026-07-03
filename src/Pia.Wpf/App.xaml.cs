@@ -110,24 +110,9 @@ public partial class App : Application
         var settingsService = Bootstrapper.ServiceProvider.GetRequiredService<ISettingsService>();
         var settings = await settingsService.GetSettingsAsync();
 
-        // Initialize assistant files folder default on first run (or after upgrade).
-        // Once the user clears the path the empty value sticks — we only seed it when it's missing.
-        if (string.IsNullOrWhiteSpace(settings.AssistantFilesFolder))
-        {
-            // Shared with SensitivePathGuard's carve-out — both must use the same value or the
-            // guard re-blocks the whole workdir (see AssistantWorkspace).
-            var defaultFolder = Pia.Infrastructure.AssistantWorkspace.DefaultWorkdir;
-            try
-            {
-                System.IO.Directory.CreateDirectory(defaultFolder);
-                settings.AssistantFilesFolder = defaultFolder;
-                await settingsService.SaveSettingsAsync(settings);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to create default assistant files folder: {ex.Message}");
-            }
-        }
+        // NOTE: the assistant files folder + vault root are seeded/derived earlier in
+        // Bootstrapper.InitializeAssistantFoldersAsync (before vault scaffolding/migration/watcher),
+        // so there is no folder seeding here anymore.
 
         // Sync autostart registry state with setting (covers existing installs upgrading to this version)
         var autostartService = Bootstrapper.ServiceProvider.GetRequiredService<IAutostartService>();

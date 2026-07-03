@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
 namespace Pia.Services;
@@ -440,6 +441,66 @@ public class SyncMapper
             UpdatedAt = sync.UpdatedAt,
             LastAccessedAt = sync.LastAccessedAt
         };
+    }
+
+    // --- Vault files (memory-vault format spec §11, contract C5) ---
+    //
+    // The sync unit is the FILE: each Pia-managed vault file maps to one server row keyed by its
+    // frontmatter id GUID (NOT by path), so a file can be renamed/moved without orphaning its row.
+    // The {path,content} envelope (VaultSyncPayload) mirrors the existing E2EE on/off split:
+    //   E2EE ON  -> EncryptRecord({path,content}); Path stays null so the server never sees a
+    //               plaintext path (C5); Data stays null.
+    //   E2EE OFF -> Path = path, Data = content (plaintext fields round-trip the path).
+    //
+    // NOTE: these are NEW, standalone mappers for the vault-file sync capability (Task 5.3). The live
+    // SyncClientService still syncs MemoryObject rows (To/FromSyncMemory above); that cut-over is
+    // deferred (Task 4.3) and those methods are intentionally untouched.
+
+    /// <summary>Build a <see cref="SyncMemory"/> envelope for one vault file (spec §11).</summary>
+    public SyncMemory ToVaultSyncMemory(Guid id, string path, string content, string? userId = null)
+    {
+        var sync = new SyncMemory
+        {
+            Id = id
+        };
+
+        if (IsE2EEActive && userId is not null)
+        {
+            (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
+                new VaultSyncPayload(path, content), userId, "vault_file", id.ToString());
+            // C5: leave Path/Data null — path lives only inside EncryptedPayload.
+        }
+        else
+        {
+            sync.Path = path;
+            sync.Data = content;
+        }
+
+        return sync;
+    }
+
+    /// <summary>Extract the <c>(path, content)</c> of a vault file from its <see cref="SyncMemory"/> envelope.</summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the envelope carries ciphertext but this client cannot decrypt it (E2EE inactive,
+    /// missing userId). The sync layer catches this and skips the row rather than persisting an empty
+    /// vault document — mirrors <see cref="FromSyncAssistantChat"/>.
+    /// </exception>
+    public (string Path, string Content) FromVaultSyncMemory(SyncMemory sync, string? userId = null)
+    {
+        if (sync.EncryptedPayload is not null && sync.WrappedDek is not null)
+        {
+            if (!IsE2EEActive || userId is null)
+            {
+                throw new InvalidOperationException(
+                    "Incoming vault file is encrypted but E2EE is not active on this client.");
+            }
+
+            var decrypted = _e2ee!.DecryptRecord<VaultSyncPayload>(
+                sync.EncryptedPayload, sync.WrappedDek, userId, "vault_file", sync.Id.ToString());
+            return (decrypted.Path, decrypted.Content);
+        }
+
+        return (sync.Path ?? "", sync.Data ?? "");
     }
 
     // --- Todos ---

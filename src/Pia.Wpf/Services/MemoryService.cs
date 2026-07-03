@@ -1,9 +1,14 @@
+using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Infrastructure.Vault;
 using Pia.Models;
+using Pia.Models.Vault;
 using Pia.Services.Interfaces;
 using Pia.Services.Search;
 using Pia.Services.Similarity;
@@ -16,18 +21,22 @@ public class MemoryService : IMemoryService
     private readonly ILogger<MemoryService> _logger;
     private readonly IEmbeddingService _embeddingService;
     private readonly SyncDeleteTrackerService _deleteTracker;
+    private readonly IVaultStore _vaultStore;
+    private readonly ISectionUpsertService _sectionUpsert;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
     };
 
-    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker)
+    public MemoryService(SqliteContext context, ILogger<MemoryService> logger, IEmbeddingService embeddingService, SyncDeleteTrackerService deleteTracker, IVaultStore vaultStore, ISectionUpsertService sectionUpsert)
     {
         _context = context;
         _logger = logger;
         _embeddingService = embeddingService;
         _deleteTracker = deleteTracker;
+        _vaultStore = vaultStore;
+        _sectionUpsert = sectionUpsert;
     }
 
     public async Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData)
@@ -398,6 +407,690 @@ public class MemoryService : IMemoryService
             .ToList();
 
         return merged.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Whole-vault hybrid recall over the <c>Chunks</c> index (every <c>## Heading</c> section of every
+    /// vault file, regardless of folder). Mirrors the tier weights of <see cref="HybridSearchAsync"/>
+    /// (LIKE 0.6 / FTS 0.7 / fuzzy / vector 0.8) but scopes to chunks rather than the legacy Memories
+    /// table. Hits are merged per (FilePath, Slug) taking the max tier score, ranked descending, and the
+    /// snippet is the first ~200 chars of the section body read back from the vault.
+    /// </summary>
+    public async Task<IReadOnlyList<RecallHit>> RecallAsync(string query, int topK = 10)
+    {
+        // Keyed by (FilePath, Slug) so the same section matched by multiple tiers keeps its best score.
+        var scored = new Dictionary<(string FilePath, string Slug), (string Heading, float Score)>();
+
+        void Merge(string filePath, string heading, string slug, float score)
+        {
+            var key = (filePath, slug);
+            if (scored.TryGetValue(key, out var existing))
+            {
+                scored[key] = (existing.Heading, Math.Max(existing.Score, score));
+            }
+            else
+            {
+                scored[key] = (heading, score);
+            }
+        }
+
+        var connection = _context.GetConnection();
+
+        // Tier 1: LIKE 0.6 over headings.
+        using (var like = connection.CreateCommand())
+        {
+            like.CommandText =
+                "SELECT FilePath, Heading, Slug FROM Chunks WHERE Heading LIKE '%' || @q || '%';";
+            like.Parameters.AddWithValue("@q", query);
+            using var reader = await like.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                Merge(reader.GetString(0), reader.GetString(1), reader.GetString(2), 0.6f);
+            }
+        }
+
+        // Tier 2: FTS 0.7 over the contentless ChunksFts (rowid aligned to Chunks.rowid).
+        var ftsQuery = BuildFtsQuery(query);
+        if (!string.IsNullOrWhiteSpace(ftsQuery))
+        {
+            try
+            {
+                using var fts = connection.CreateCommand();
+                fts.CommandText = """
+                    SELECT c.FilePath, c.Heading, c.Slug
+                    FROM Chunks c
+                    JOIN (SELECT rowid FROM ChunksFts WHERE ChunksFts MATCH @q) f
+                      ON c.rowid = f.rowid;
+                    """;
+                fts.Parameters.AddWithValue("@q", ftsQuery);
+                using var reader = await fts.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    Merge(reader.GetString(0), reader.GetString(1), reader.GetString(2), 0.7f);
+                }
+            }
+            catch (SqliteException ex)
+            {
+                // A malformed MATCH query must degrade gracefully (the other tiers still run).
+                _logger.LogWarning(ex, "Vault FTS recall failed; falling back to other tiers");
+            }
+        }
+
+        // Tier 2.5: fuzzy Jaro-Winkler over chunk headings (same scoring shape as FuzzyLabelSearchAsync).
+        var allChunks = await GetAllChunkHeadingsAsync(connection);
+        var queryTokens = query.ToLowerInvariant()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => t.Length > 3)
+            .ToArray();
+        if (queryTokens.Length > 0)
+        {
+            foreach (var chunk in allChunks)
+            {
+                var headingTokens = chunk.Heading.ToLowerInvariant()
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                float bestScore = 0f;
+                foreach (var qt in queryTokens)
+                {
+                    foreach (var ht in headingTokens)
+                    {
+                        var jwScore = (float)JaroWinkler.Similarity(qt, ht);
+                        if (jwScore > bestScore) bestScore = jwScore;
+
+                        if (ht.Contains(qt) || qt.Contains(ht))
+                        {
+                            if (0.80f > bestScore) bestScore = 0.80f;
+                        }
+                    }
+                }
+
+                if (bestScore >= 0.75f)
+                {
+                    Merge(chunk.FilePath, chunk.Heading, chunk.Slug, 0.5f + (bestScore - 0.75f) * 0.6f);
+                }
+            }
+        }
+
+        // Tier 3: vector 0.8 — embed the query and cosine-compare against each chunk embedding.
+        var queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query);
+        foreach (var chunk in allChunks)
+        {
+            if (chunk.Embedding is null) continue;
+            var chunkVector = _embeddingService.BytesToFloats(chunk.Embedding);
+            if (chunkVector.Length != queryEmbedding.Length) continue;
+            var similarity = VectorSearchHelper.CosineSimilarity(queryEmbedding, chunkVector);
+            if (similarity >= 0.2f)
+            {
+                Merge(chunk.FilePath, chunk.Heading, chunk.Slug, 0.8f);
+            }
+        }
+
+        // Rank by score descending; build snippets lazily, skipping any section that has since vanished.
+        var ranked = scored
+            .Select(kv => (kv.Key.FilePath, kv.Key.Slug, kv.Value.Heading, kv.Value.Score))
+            .OrderByDescending(x => x.Score)
+            .ToList();
+
+        var hits = new List<RecallHit>();
+        foreach (var (filePath, slug, heading, score) in ranked)
+        {
+            var snippet = await BuildSnippetAsync(filePath, slug);
+            if (snippet is null)
+            {
+                // File or section is gone (index lagging the vault); skip rather than emit an empty hit.
+                continue;
+            }
+
+            hits.Add(new RecallHit(filePath, heading, snippet, score));
+            if (hits.Count >= topK) break;
+        }
+
+        return hits.AsReadOnly();
+    }
+
+    // ---- Vault write path (format spec v1 §2/§4/§6/§7) ----
+
+    // Structured types map to one shared document; records are ## headings within it.
+    private static readonly Dictionary<string, string> StructuredPaths = new(StringComparer.Ordinal)
+    {
+        ["personal_profile"] = "memory/profile.md",
+        ["contact_list"] = "memory/contacts.md",
+        ["preference"] = "memory/preferences.md",
+    };
+
+    // Freeform/compiled types map to one file each under a per-type directory (slug = filename).
+    private static readonly Dictionary<string, string> FreeformDirs = new(StringComparer.Ordinal)
+    {
+        ["note"] = "memory/notes",
+        ["project"] = "memory/projects",
+        ["topic"] = "memory/topics",
+    };
+
+    private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
+
+    /// <inheritdoc />
+    public async Task<RememberOutcome> RememberAsync(
+        string type, string subject, string content, bool createOnAmbiguous = false)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (StructuredPaths.TryGetValue(type, out var structuredPath))
+        {
+            return await RememberStructuredAsync(type, structuredPath, subject, content, createOnAmbiguous);
+        }
+
+        if (FreeformDirs.TryGetValue(type, out var dir))
+        {
+            // Freeform is never ambiguous (exists -> Edit / not -> Create), so the flag is a no-op here.
+            return await RememberFreeformAsync(type, dir, subject, content);
+        }
+
+        throw new ArgumentException($"Unknown memory type '{type}' (spec §7).", nameof(type));
+    }
+
+    /// <inheritdoc />
+    public async Task<RememberOutcome> ResolveRememberAsync(string type, string subject, string content)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (StructuredPaths.TryGetValue(type, out var structuredPath))
+        {
+            return await ResolveStructuredAsync(structuredPath, subject, content);
+        }
+
+        if (FreeformDirs.TryGetValue(type, out var dir))
+        {
+            // Freeform: one file per item. The file either exists (Edit) or not (Create); no ambiguity.
+            var path = $"{dir}/{VaultSlug.Slugify(subject)}.md";
+            var existing = await _vaultStore.ReadAsync(path);
+            var band = existing is null ? UpsertBand.Create : UpsertBand.Edit;
+            return new RememberOutcome(band, path, []);
+        }
+
+        throw new ArgumentException($"Unknown memory type '{type}' (spec §7).", nameof(type));
+    }
+
+    // Resolution-only structured classification — mirrors RememberStructuredAsync's branching but never
+    // writes. The Edit/Create reference matches what RememberAsync would produce so the preview is exact.
+    private async Task<RememberOutcome> ResolveStructuredAsync(string path, string subject, string content)
+    {
+        var doc = await _vaultStore.ReadAsync(path);
+
+        if (doc is null || doc.Sections.Count == 0)
+        {
+            return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+        }
+
+        var resolution = await _sectionUpsert.ResolveAsync(doc, subject, content);
+        return resolution.Band switch
+        {
+            UpsertBand.Edit => new RememberOutcome(
+                UpsertBand.Edit,
+                $"{path}#{doc.Sections.First(s => s.Slug == resolution.MatchedSlug).Heading}",
+                []),
+            UpsertBand.Ambiguous => new RememberOutcome(UpsertBand.Ambiguous, string.Empty, resolution.Candidates),
+            _ => new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []),
+        };
+    }
+
+    // Structured: one shared document, records keyed by ## heading. Resolve -> Edit/Ambiguous/Create.
+    // When createOnAmbiguous is true, the Ambiguous band is resolved as a Create (a new section is
+    // appended) so a write always lands — used by the lossless migration path.
+    private async Task<RememberOutcome> RememberStructuredAsync(
+        string type, string path, string subject, string content, bool createOnAmbiguous)
+    {
+        var doc = await _vaultStore.ReadAsync(path);
+        var bullets = NormalizeContentToBullets(content);
+
+        // No file or no sections yet -> always a Create (ResolveAsync would say the same, but we avoid
+        // the embedding round-trip and the null-doc case in one branch).
+        if (doc is null || doc.Sections.Count == 0)
+        {
+            await CreateStructuredSectionAsync(type, path, doc, subject, bullets);
+            _logger.LogInformation("Remember created structured section in vault file (Create band)");
+            return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+        }
+
+        var resolution = await _sectionUpsert.ResolveAsync(doc, subject, content);
+        switch (resolution.Band)
+        {
+            case UpsertBand.Edit:
+            {
+                var matchedSlug = resolution.MatchedSlug!;
+                var section = doc.Sections.First(s => s.Slug == matchedSlug);
+                var newBody = _sectionUpsert.MergeBullets(section.Body, bullets);
+                await _vaultStore.SpliceSectionAsync(path, matchedSlug, newBody);
+                await BumpUpdatedAsync(path);
+                _logger.LogInformation("Remember edited existing structured section (Edit band)");
+                return new RememberOutcome(UpsertBand.Edit, $"{path}#{section.Heading}", []);
+            }
+
+            case UpsertBand.Ambiguous:
+                if (createOnAmbiguous)
+                {
+                    // Deterministic, lossless resolution: append a new section so a write always lands.
+                    await CreateStructuredSectionAsync(type, path, doc, subject, bullets);
+                    _logger.LogInformation(
+                        "Remember resolved an ambiguous match to a new structured section (Create band)");
+                    return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+                }
+
+                // No write: the caller (model/user) disambiguates and re-issues a concrete reference.
+                _logger.LogInformation(
+                    "Remember was ambiguous across {Count} candidate sections; no write performed",
+                    resolution.Candidates.Count);
+                return new RememberOutcome(UpsertBand.Ambiguous, string.Empty, resolution.Candidates);
+
+            default: // Create
+                await CreateStructuredSectionAsync(type, path, doc, subject, bullets);
+                _logger.LogInformation("Remember appended new structured section (Create band)");
+                return new RememberOutcome(UpsertBand.Create, $"{path}#{subject}", []);
+        }
+    }
+
+    // Freeform/compiled: one file per item, slug -> filename. Exists -> Edit (merge into its preamble
+    // bullets); else Create a new file.
+    private async Task<RememberOutcome> RememberFreeformAsync(
+        string type, string dir, string subject, string content)
+    {
+        var path = $"{dir}/{VaultSlug.Slugify(subject)}.md";
+        var bullets = NormalizeContentToBullets(content);
+        var existing = await _vaultStore.ReadAsync(path);
+
+        if (existing is null)
+        {
+            var frontmatter = BuildFrontmatter(type, subject);
+            var body = bullets.EndsWith('\n') ? bullets : bullets + "\n";
+            await _vaultStore.WriteAtomicAsync(path, frontmatter + body);
+            _logger.LogInformation("Remember created freeform vault file (Create band)");
+            return new RememberOutcome(UpsertBand.Create, path, []);
+        }
+
+        // Freeform body lives in the preamble (the single-record file has no ## headings of its own).
+        // The preamble byte-range is [frontmatterEnd, firstSectionStart) — frontmatter and any
+        // sections are preserved verbatim around the spliced-in merged bullets.
+        var merged = _sectionUpsert.MergeBullets(existing.Preamble, bullets);
+        var newFile = SplicePreamble(existing, merged);
+        await _vaultStore.WriteAtomicAsync(path, newFile);
+        await BumpUpdatedAsync(path);
+        _logger.LogInformation("Remember edited freeform vault file (Edit band)");
+        return new RememberOutcome(UpsertBand.Edit, path, []);
+    }
+
+    // Replace the preamble byte-range. The preamble runs from the end of the frontmatter block to the
+    // start of the first section heading line (or EOF when there are no sections), so frontmatter and
+    // any sibling sections are preserved verbatim.
+    private static string SplicePreamble(VaultDocument doc, string newPreamble)
+    {
+        int preambleEnd;
+        if (doc.Sections.Count > 0)
+        {
+            // First section's heading line starts just before its BodyStart.
+            preambleEnd = HeadingLineStart(doc.RawText, doc.Sections[0].BodyStart);
+        }
+        else
+        {
+            preambleEnd = doc.RawText.Length;
+        }
+
+        var preambleStart = preambleEnd - doc.Preamble.Length;
+        return doc.RawText[..preambleStart] + newPreamble + doc.RawText[preambleEnd..];
+    }
+
+    // Given a section's BodyStart (the byte just after the heading line's '\n' terminator), return the
+    // index of the first byte of that heading line. BodyStart-1 is the heading line's own terminator;
+    // we walk back ONE MORE '\n' (the terminator of the line before the heading) and step past it, or
+    // to 0 when the heading is the file's first line.
+    private static int HeadingLineStart(string raw, int bodyStart)
+    {
+        // Index of the heading line's terminating '\n' (BodyStart-1), if the body started after one.
+        var headingTerminator = bodyStart - 1;
+        if (headingTerminator < 0 || headingTerminator > raw.Length - 1 || raw[headingTerminator] != '\n')
+        {
+            // No trailing '\n' on the heading line (heading is the file's last line); scan from end.
+            headingTerminator = raw.Length;
+        }
+
+        var lineBefore = raw.LastIndexOf('\n', Math.Max(headingTerminator - 1, 0));
+        return lineBefore < 0 ? 0 : lineBefore + 1;
+    }
+
+    // Create the file (with frontmatter) if missing, else append a new "## subject\n<bullets>\n" section
+    // to the existing RawText. The existing doc (if any) is passed so we only re-read once.
+    private async Task CreateStructuredSectionAsync(
+        string type, string path, VaultDocument? doc, string subject, string bullets)
+    {
+        var body = bullets.EndsWith('\n') ? bullets : bullets + "\n";
+        var section = $"## {subject}\n{body}";
+
+        if (doc is null)
+        {
+            var frontmatter = BuildFrontmatter(type, DisplayTitle(type));
+            await _vaultStore.WriteAtomicAsync(path, frontmatter + section);
+            return;
+        }
+
+        // Append after the existing content; a separating blank line keeps the file readable.
+        var raw = doc.RawText;
+        var separator = raw.EndsWith('\n') ? "\n" : "\n\n";
+        await _vaultStore.WriteAtomicAsync(path, raw + separator + section);
+    }
+
+    /// <summary>
+    /// Build a fresh frontmatter block (spec §2). <c>id</c> is a NEW lowercase-canonical GUID (§2.1
+    /// write rule); <c>created</c>/<c>updated</c> are <see cref="DateTime.UtcNow"/> in the §2.5 format.
+    /// </summary>
+    private static string BuildFrontmatter(string type, string title)
+    {
+        var id = Guid.NewGuid().ToString("D").ToLowerInvariant();
+        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        return "---\n" +
+               "pia: managed\n" +
+               $"id: {id}\n" +
+               $"type: {type}\n" +
+               $"title: {title}\n" +
+               $"created: {now}\n" +
+               $"updated: {now}\n" +
+               "schemaVersion: 1\n" +
+               "---\n";
+    }
+
+    private static string DisplayTitle(string type) => type switch
+    {
+        "personal_profile" => "Profile",
+        "contact_list" => "Contacts",
+        "preference" => "Preferences",
+        _ => type,
+    };
+
+    /// <summary>
+    /// Rewrite ONLY the <c>updated:</c> frontmatter line to now (§2.5), preserving every other byte —
+    /// unknown keys, ordering, body — verbatim. If no <c>updated:</c> line exists the file is left
+    /// untouched (a non-conforming or section-less file is not our concern here).
+    /// </summary>
+    private async Task BumpUpdatedAsync(string path)
+    {
+        var doc = await _vaultStore.ReadAsync(path);
+        if (doc is null)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        var updated = ReplaceFrontmatterLine(doc.RawText, "updated", now);
+        if (updated is not null)
+        {
+            await _vaultStore.WriteAtomicAsync(path, updated);
+        }
+    }
+
+    // Replace the value of a single frontmatter scalar line "key: value" within the leading "---" block,
+    // preserving the line's terminator and all surrounding bytes. Returns null if the key is absent.
+    private static string? ReplaceFrontmatterLine(string raw, string key, string newValue)
+    {
+        // Only operate inside the leading frontmatter block (first line is "---").
+        if (!raw.StartsWith("---\n", StringComparison.Ordinal) &&
+            !raw.StartsWith("---\r\n", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var search = $"\n{key}:";
+        var keyIdx = raw.IndexOf(search, StringComparison.Ordinal);
+        if (keyIdx < 0)
+        {
+            return null;
+        }
+
+        var valueStart = keyIdx + search.Length;
+        var lineEnd = raw.IndexOf('\n', valueStart);
+        if (lineEnd < 0)
+        {
+            lineEnd = raw.Length;
+        }
+
+        // Preserve a trailing '\r' (CRLF files) on the rewritten line.
+        var hasCr = lineEnd > valueStart && raw[lineEnd - 1] == '\r';
+        var newLineContent = $"{search} {newValue}" + (hasCr ? "\r" : string.Empty);
+        return raw[..keyIdx] + newLineContent + raw[lineEnd..];
+    }
+
+    /// <summary>
+    /// Normalize free content into the bullet body format (spec §4). If <paramref name="content"/>
+    /// already consists of <c>- key: value</c> bullet lines, it is used as-is. Otherwise the whole
+    /// content is treated as free prose and returned unchanged (it lands below any existing bullets via
+    /// <see cref="ISectionUpsertService.MergeBullets"/>). NOTE: a model-assisted prose REWRITE — turning
+    /// arbitrary prose into structured bullets — is intentionally DEFERRED; this method does no such
+    /// rewrite today.
+    /// </summary>
+    private static string NormalizeContentToBullets(string content) => content;
+
+    /// <inheritdoc />
+    public async Task ForgetAsync(string reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+
+        var (path, slug) = VaultReference.Parse(reference);
+        if (slug is null)
+        {
+            // Bare path -> delete the whole file. The watcher/indexer drops its chunks on the change.
+            await _vaultStore.DeleteAsync(path);
+            _logger.LogInformation("Forget deleted a whole vault file");
+            return;
+        }
+
+        var doc = await _vaultStore.ReadAsync(path);
+        if (doc is null)
+        {
+            _logger.LogInformation("Forget target file does not exist; nothing to remove");
+            return;
+        }
+
+        VaultSection? target = null;
+        foreach (var section in doc.Sections)
+        {
+            if (section.Slug == slug)
+            {
+                target = section;
+                break;
+            }
+        }
+
+        if (target is null)
+        {
+            _logger.LogInformation("Forget target section was not found; nothing to remove");
+            return;
+        }
+
+        // Splice out the heading LINE + body, not just the body, so the whole record disappears.
+        var headingLineStart = HeadingLineStart(doc.RawText, target.BodyStart);
+        var newFile = doc.RawText[..headingLineStart] + doc.RawText[target.BodyEnd..];
+        await _vaultStore.WriteAtomicAsync(path, newFile);
+        _logger.LogInformation("Forget removed a single vault section");
+    }
+
+    // ---- Vault read/list surface (UI) ----
+
+    /// <inheritdoc />
+    public async Task UpdateSectionAsync(string reference, string newBody)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(newBody);
+
+        var (path, slug) = VaultReference.Parse(reference);
+        var body = newBody.EndsWith('\n') ? newBody : newBody + "\n";
+
+        if (slug is not null)
+        {
+            // Sectioned document: body-only byte-range splice. Frontmatter (incl. list-valued keys) and
+            // sibling sections are preserved verbatim; only the `updated:` scalar is bumped afterward.
+            await _vaultStore.SpliceSectionAsync(path, slug, body);
+            await BumpUpdatedAsync(path);
+            _logger.LogInformation("Updated a vault section body by reference");
+            return;
+        }
+
+        // Freeform file: replace the whole preamble body under the existing frontmatter (whole-body
+        // replace — no bullet merge on a manual edit).
+        var doc = await _vaultStore.ReadAsync(path);
+        if (doc is null)
+        {
+            throw new FileNotFoundException("Cannot update a vault file that does not exist.", path);
+        }
+
+        var newFile = SplicePreamble(doc, body);
+        await _vaultStore.WriteAtomicAsync(path, newFile);
+        await BumpUpdatedAsync(path);
+        _logger.LogInformation("Updated a freeform vault file body by reference");
+    }
+
+    /// <inheritdoc />
+    public async Task<VaultMemorySnapshot> ListMemoriesAsync()
+    {
+        var docs = await EnumerateRecordDocsAsync();
+        var items = new List<VaultMemoryItem>();
+        long bytes = 0;
+
+        foreach (var (filePath, doc) in docs)
+        {
+            // RawText is the exact on-disk content (UTF-8 without BOM), so its byte count is the file size.
+            bytes += Encoding.UTF8.GetByteCount(doc.RawText);
+
+            var type = ResolveItemType(doc, filePath);
+            var updated = ParseFrontmatterUpdated(doc);
+
+            if (doc.Sections.Count > 0)
+            {
+                // Structured document: one item per ## section, addressed by path#heading.
+                foreach (var section in doc.Sections)
+                {
+                    items.Add(new VaultMemoryItem(
+                        $"{filePath}#{section.Heading}", filePath, type, section.Heading, section.Body, updated));
+                }
+            }
+            else
+            {
+                // Freeform file: the whole body lives in the preamble; one item addressed by bare path.
+                var title = doc.Frontmatter.TryGetValue("title", out var t) && !string.IsNullOrWhiteSpace(t)
+                    ? t
+                    : Path.GetFileNameWithoutExtension(filePath);
+                items.Add(new VaultMemoryItem(filePath, filePath, type, title, doc.Preamble, updated));
+            }
+        }
+
+        return new VaultMemorySnapshot(items, bytes);
+    }
+
+    // Read every genuine record file once. EnumerateAsync is not a real glob (it walks the whole memory/
+    // subtree), so the result is filtered through VaultPaths.IsRecordFile and paths are forward-slashed.
+    private async Task<List<(string FilePath, VaultDocument Doc)>> EnumerateRecordDocsAsync()
+    {
+        var files = await _vaultStore.EnumerateAsync("memory/*.md");
+        var result = new List<(string, VaultDocument)>();
+
+        foreach (var rel in files)
+        {
+            if (!VaultPaths.IsRecordFile(rel))
+            {
+                continue;
+            }
+
+            var doc = await _vaultStore.ReadAsync(rel);
+            if (doc is not null)
+            {
+                result.Add((rel.Replace('\\', '/'), doc));
+            }
+        }
+
+        return result;
+    }
+
+    // The §7 type of a record: the frontmatter `type` when present, else inferred from the document path
+    // (a non-Pia or hand-edited file may omit type; VaultDocument.Type throws on a missing key).
+    private static string ResolveItemType(VaultDocument doc, string filePath)
+        => doc.Frontmatter.TryGetValue("type", out var type) && !string.IsNullOrWhiteSpace(type)
+            ? type
+            : InferTypeFromPath(filePath);
+
+    private static string InferTypeFromPath(string filePath) => filePath switch
+    {
+        "memory/profile.md" => MemoryObjectTypes.PersonalProfile,
+        "memory/contacts.md" => MemoryObjectTypes.ContactList,
+        "memory/preferences.md" => MemoryObjectTypes.Preference,
+        _ when filePath.StartsWith("memory/projects/", StringComparison.OrdinalIgnoreCase) => MemoryObjectTypes.Project,
+        _ when filePath.StartsWith("memory/topics/", StringComparison.OrdinalIgnoreCase) => "topic",
+        _ => MemoryObjectTypes.Note,
+    };
+
+    // Parse the document-level `updated` frontmatter (§2.5 ISO-8601 UTC); null when absent/unparseable.
+    private static DateTime? ParseFrontmatterUpdated(VaultDocument doc)
+        => doc.Frontmatter.TryGetValue("updated", out var raw) &&
+           DateTime.TryParse(raw, CultureInfo.InvariantCulture,
+               DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var dt)
+            ? dt
+            : null;
+
+    private static async Task<IReadOnlyList<(string FilePath, string Heading, string Slug, byte[]? Embedding)>>
+        GetAllChunkHeadingsAsync(SqliteConnection connection)
+    {
+        var chunks = new List<(string, string, string, byte[]?)>();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT FilePath, Heading, Slug, Embedding FROM Chunks;";
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var embedding = reader.IsDBNull(3) ? null : (byte[])reader[3];
+            chunks.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), embedding));
+        }
+
+        return chunks;
+    }
+
+    private async Task<string?> BuildSnippetAsync(string filePath, string slug)
+    {
+        var doc = await _vaultStore.ReadAsync(filePath);
+        if (doc is null) return null;
+
+        VaultSection? section = null;
+        foreach (var candidate in doc.Sections)
+        {
+            if (candidate.Slug == slug)
+            {
+                section = candidate;
+                break;
+            }
+        }
+
+        if (section is null) return null;
+
+        var body = section.Body.Trim();
+        if (body.Length == 0) return null;
+
+        return body.Length > 200 ? body[..200] : body;
+    }
+
+    /// <summary>
+    /// Build a sanitized FTS5 MATCH query: each token is double-quoted (so special characters are
+    /// treated as literal terms) and OR-joined, mirroring <see cref="FullTextSearchAsync"/>.
+    /// </summary>
+    private static string BuildFtsQuery(string query)
+    {
+        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var ftsTerms = new List<string>();
+        foreach (var term in terms)
+        {
+            var escaped = EscapeFtsQuery(term);
+            if (escaped.Length == 0) continue;
+            ftsTerms.Add($"\"{escaped}\"");
+            if (escaped.Length >= 3)
+                ftsTerms.Add($"{escaped}*");
+        }
+
+        return string.Join(" OR ", ftsTerms);
     }
 
     public async Task UpdateEmbeddingAsync(Guid id, byte[] embedding)

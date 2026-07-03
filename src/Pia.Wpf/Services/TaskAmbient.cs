@@ -1,5 +1,11 @@
 namespace Pia.Services;
 
+/// <summary>How a file was touched during a turn — reported through <see cref="TaskContext.OnFileTouched"/>.</summary>
+public enum FileTouchKind { Read, Created, Updated }
+
+/// <summary>A single file the turn's tools touched, carrying the resolved absolute path.</summary>
+public readonly record struct FileTouch(string AbsolutePath, FileTouchKind Kind);
+
 /// <summary>
 /// Ambient context for the current logical async turn, carrying the facts tool handlers
 /// (the reader is <c>FilesToolHandler</c>) need without any parameter plumbing — the
@@ -13,7 +19,15 @@ namespace Pia.Services;
 /// The active chat's working directory, RELATIVE to the assistant-files sandbox root
 /// (forward slashes); null/empty = sandbox root.
 /// </param>
-public readonly record struct TaskContext(Guid? TaskId, string? WorkingSubpath);
+/// <param name="OnFileTouched">
+/// Optional per-turn sink wired by <c>ChatSession.RunTurnAsync</c> so the file tools can report each
+/// file they read/write to the active assistant message (drives the open-file chips). The write path
+/// captures this at prepare time (ambient flow is not guaranteed inside the deferred execute closure).
+/// </param>
+public readonly record struct TaskContext(
+    Guid? TaskId,
+    string? WorkingSubpath,
+    Action<FileTouch>? OnFileTouched = null);
 
 /// <summary>
 /// Flows the current turn's <see cref="TaskContext"/> down a single logical async turn via

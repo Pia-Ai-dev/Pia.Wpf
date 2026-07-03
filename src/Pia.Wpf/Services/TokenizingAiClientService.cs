@@ -12,7 +12,7 @@ public class TokenizingAiClientService : IAiClientService
 {
     private static readonly string[] WriteOperations =
     [
-        "create_object", "update_object", "append_to_list", "delete_object",
+        "remember", "forget",
         "create_reminder", "update_reminder", "delete_reminder",
         "create_todo", "update_todo", "complete_todo", "delete_todo",
         "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"
@@ -169,6 +169,12 @@ public class TokenizingAiClientService : IAiClientService
         var wrappedHandler = toolHandler is not null ? WrapToolHandler(toolHandler) : null;
         var tokenBuffer = new StringBuilder();
         var isBuffering = false;
+        // Reasoning streams as its own deltas; detokenize it with a SEPARATE buffer so masked
+        // PII the model echoes in its reasoning is restored — and, crucially, so ReasoningDelta
+        // is forwarded at all (a missing branch here previously dropped all reasoning when
+        // tokenization was enabled).
+        var reasoningBuffer = new StringBuilder();
+        var reasoningIsBuffering = false;
 
         await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
             tokenizedMessages, provider, tools, wrappedHandler, mode, cancellationToken))
@@ -179,6 +185,12 @@ public class TokenizingAiClientService : IAiClientService
                 if (detokenized.Length > 0)
                     yield return new TextDelta(detokenized);
             }
+            else if (item is ReasoningDelta rd)
+            {
+                var detokenized = BufferedDetokenize(rd.Text, reasoningBuffer, ref reasoningIsBuffering);
+                if (detokenized.Length > 0)
+                    yield return new ReasoningDelta(detokenized);
+            }
             else if (item is Finished)
             {
                 if (tokenBuffer.Length > 0)
@@ -187,6 +199,17 @@ public class TokenizingAiClientService : IAiClientService
                     tokenBuffer.Clear();
                     isBuffering = false;
                 }
+                if (reasoningBuffer.Length > 0)
+                {
+                    yield return new ReasoningDelta(TryGetTokenMapService()!.Detokenize(reasoningBuffer.ToString()));
+                    reasoningBuffer.Clear();
+                    reasoningIsBuffering = false;
+                }
+                yield return item;
+            }
+            else
+            {
+                // Any other stream item (or future type) passes through untouched.
                 yield return item;
             }
         }
@@ -194,6 +217,8 @@ public class TokenizingAiClientService : IAiClientService
         // Safety net flush if Finished was never emitted (e.g. inner faulted before completion)
         if (tokenBuffer.Length > 0)
             yield return new TextDelta(TryGetTokenMapService()!.Detokenize(tokenBuffer.ToString()));
+        if (reasoningBuffer.Length > 0)
+            yield return new ReasoningDelta(TryGetTokenMapService()!.Detokenize(reasoningBuffer.ToString()));
     }
 
     public async Task<AiCompletionResult> OptimizeViaPiaCloudAsync(
@@ -332,6 +357,6 @@ public class TokenizingAiClientService : IAiClientService
         return result.ToString();
     }
 
-    private static bool IsWriteOperation(string toolName) =>
+    internal static bool IsWriteOperation(string toolName) =>
         WriteOperations.Contains(toolName);
 }

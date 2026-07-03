@@ -1,7 +1,11 @@
 <UserControl x:Class="Pia.Controls.Memory.PiaMemoryInspector"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mem="clr-namespace:Pia.Controls.Memory">
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:controls="clr-namespace:Pia.Controls"
+             xmlns:mem="clr-namespace:Pia.Controls.Memory"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:views="clr-namespace:Pia.Views">
   <Border Style="{StaticResource PiaCardStyle}">
     <Grid>
       <Grid.RowDefinitions>
@@ -12,7 +16,78 @@
       <mem:PiaInspectorHeader Grid.Row="0"/>
 
       <Grid Grid.Row="1" Margin="14,14,14,14">
-        <mem:PiaJsonView/>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Read: render the memory body as markdown -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource SurfaceSunkBrush}"
+                BorderBrush="{DynamicResource BorderBrush_}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="12,10"
+                Visibility="{Binding DataContext.IsEditing,
+                                     RelativeSource={RelativeSource AncestorType=views:MemoryView},
+                                     Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+          <!-- Horizontal scrolling MUST stay Disabled: the inner RichTextBox, if measured with infinite
+               width, lays out to zero height and renders blank. Disabled constrains its width so the
+               body wraps and the vertical scrollbar engages for long content. -->
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <controls:MarkdownMessageControl MarkdownText="{Binding Body}"/>
+          </ScrollViewer>
+        </Border>
+
+        <!-- Edit: raw markdown body editor -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource SurfaceSunkBrush}"
+                BorderBrush="{DynamicResource PiaAccentBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="0"
+                Visibility="{Binding DataContext.IsEditing,
+                                     RelativeSource={RelativeSource AncestorType=views:MemoryView},
+                                     Converter={StaticResource BooleanToVisibilityConverter}}">
+          <TextBox Text="{Binding DataContext.EditingData,
+                                  RelativeSource={RelativeSource AncestorType=views:MemoryView},
+                                  UpdateSourceTrigger=PropertyChanged}"
+                   AcceptsReturn="True"
+                   AcceptsTab="True"
+                   TextWrapping="NoWrap"
+                   VerticalScrollBarVisibility="Auto"
+                   HorizontalScrollBarVisibility="Auto"
+                   FontFamily="{DynamicResource PiaMonoFont}"
+                   FontSize="12.5"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   Padding="12,10"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
+        </Border>
+
+        <!-- Edit action row -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,10,0,0"
+                    Visibility="{Binding DataContext.IsEditing,
+                                         RelativeSource={RelativeSource AncestorType=views:MemoryView},
+                                         Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ui:Button Appearance="Secondary"
+                     Margin="0,0,8,0"
+                     Command="{Binding DataContext.CancelEditCommand,
+                                       RelativeSource={RelativeSource AncestorType=views:MemoryView}}">
+            <TextBlock Text="{loc:Str Memory_Cancel}"/>
+          </ui:Button>
+          <ui:Button Appearance="Primary"
+                     Command="{Binding DataContext.SaveEditCommand,
+                                       RelativeSource={RelativeSource AncestorType=views:MemoryView}}">
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="Save24" FontSize="16" Margin="0,0,6,0"/>
+              <TextBlock Text="{loc:Str Memory_Save}"/>
+            </StackPanel>
+          </ui:Button>
+        </StackPanel>
       </Grid>
     </Grid>
   </Border>

@@ -13,6 +13,10 @@ public partial class PiaAssistantMessage : UserControl
         DependencyProperty.Register(nameof(SpeakCommand), typeof(ICommand), typeof(PiaAssistantMessage));
     public static readonly DependencyProperty RegenerateCommandProperty =
         DependencyProperty.Register(nameof(RegenerateCommand), typeof(ICommand), typeof(PiaAssistantMessage));
+    public static readonly DependencyProperty RegenerateStyledCommandProperty =
+        DependencyProperty.Register(nameof(RegenerateStyledCommand), typeof(ICommand), typeof(PiaAssistantMessage));
+    public static readonly DependencyProperty ExportCommandProperty =
+        DependencyProperty.Register(nameof(ExportCommand), typeof(ICommand), typeof(PiaAssistantMessage));
     public static readonly DependencyProperty RateCommandProperty =
         DependencyProperty.Register(nameof(RateCommand), typeof(ICommand), typeof(PiaAssistantMessage));
     public static readonly DependencyProperty SuggestionCommandProperty =
@@ -36,6 +40,18 @@ public partial class PiaAssistantMessage : UserControl
     {
         get => (ICommand?)GetValue(RegenerateCommandProperty);
         set => SetValue(RegenerateCommandProperty, value);
+    }
+
+    public ICommand? RegenerateStyledCommand
+    {
+        get => (ICommand?)GetValue(RegenerateStyledCommandProperty);
+        set => SetValue(RegenerateStyledCommandProperty, value);
+    }
+
+    public ICommand? ExportCommand
+    {
+        get => (ICommand?)GetValue(ExportCommandProperty);
+        set => SetValue(ExportCommandProperty, value);
     }
 
     public ICommand? RateCommand

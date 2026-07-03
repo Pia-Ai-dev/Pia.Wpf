@@ -2,6 +2,7 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Net.Http;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using OpenAI;
 using OpenAI.Responses;
 using Pia.Models;
@@ -11,6 +12,11 @@ namespace Pia.Services.Providers;
 
 public sealed class OpenAiProviderHandler : IAiProviderHandler
 {
+    private readonly ILogger<OpenAiProviderHandler>? _logger;
+
+    // Logger is optional so existing direct constructions in tests keep working; DI injects it at runtime.
+    public OpenAiProviderHandler(ILogger<OpenAiProviderHandler>? logger = null) => _logger = logger;
+
     public AiProviderType ProviderType => AiProviderType.OpenAI;
 
     public Task<IChatClient> CreateChatClientAsync(
@@ -22,12 +28,14 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
     {
         var model = provider.ModelName ?? "gpt-4o-mini";
 
-        var http = httpClient;
+        // Outermost handler retries without reasoning.summary if the org/model 400s on it,
+        // so requesting a reasoning summary can never regress a working OpenAI provider.
+        HttpMessageHandler tail = new HttpClientHandler();
         if (provider.EnableWebSearch)
-        {
-            var webSearch = new OpenAiWebSearchHandler { InnerHandler = new HttpClientHandler() };
-            http = new HttpClient(webSearch, disposeHandler: true);
-        }
+            tail = new OpenAiWebSearchHandler { InnerHandler = tail };
+        var http = new HttpClient(
+            new OpenAiReasoningSummaryFallbackHandler(_logger) { InnerHandler = tail },
+            disposeHandler: true);
 
 #pragma warning disable OPENAI001
         var client = new ResponsesClient(
@@ -44,7 +52,7 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
 
     public ChatOptions CreateChatOptions(AiProvider provider, bool hasTools)
     {
-        var effort = ReasoningEffortMapping.ToOpenAiResponses(provider.ReasoningEffort, hasTools);
+        var effort = ReasoningEffortMapping.ToOpenAiResponses(provider.ReasoningEffort);
         return new ChatOptions
         {
             RawRepresentationFactory = _ =>
@@ -52,7 +60,14 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
 #pragma warning disable OPENAI001
                 var options = new CreateResponseOptions();
                 if (effort is not null)
-                    options.ReasoningOptions = new ResponseReasoningOptions { ReasoningEffortLevel = effort };
+                    options.ReasoningOptions = new ResponseReasoningOptions
+                    {
+                        ReasoningEffortLevel = effort,
+                        // Without an explicit summary request the Responses API returns no
+                        // reasoning text at all. "Auto" lets the model emit whatever summary
+                        // it supports, which Microsoft.Extensions.AI maps to TextReasoningContent.
+                        ReasoningSummaryVerbosity = ResponseReasoningSummaryVerbosity.Auto,
+                    };
                 return options;
 #pragma warning restore OPENAI001
             },

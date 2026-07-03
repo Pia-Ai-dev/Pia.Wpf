@@ -18,7 +18,7 @@ public sealed class SensitivePathGuardTests
     [Fact]
     public void Workdir_IsCarvedOut_WhileSiblingsStayBlocked()
     {
-        var workdir = AssistantWorkspace.DefaultWorkdir;       // %LOCALAPPDATA%\Pia\workdir
+        var workdir = AssistantWorkspace.LegacyWorkdir;        // %LOCALAPPDATA%\Pia\workdir
         var piaDir = Path.GetDirectoryName(workdir)!;          // %LOCALAPPDATA%\Pia
 
         // Create the workdir so canonicalization resolves the same handle the resolver would.

@@ -83,6 +83,8 @@
   <data name="Assistant_Regenerate_Tooltip" xml:space="preserve"><value>Neu generieren</value></data>
   <data name="Assistant_StopReading_Tooltip" xml:space="preserve"><value>Vorlesen beenden</value></data>
   <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Überlegungen anzeigen</value></data>
+  <data name="Assistant_Thinking" xml:space="preserve"><value>Denkt nach</value></data>
+  <data name="Assistant_ThoughtForDuration" xml:space="preserve"><value>Nachgedacht für {0}</value></data>
   <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Unterhaltung löschen</value></data>
   <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Abbrechen</value></data>
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Sprachausgabe ein-/ausschalten</value></data>
@@ -412,7 +414,20 @@
   <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>Kein Ordner ausgewählt</value></data>
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Durchsuchen…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Leeren</value></data>
-  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Ordner, in dem der Assistent Textdateien lesen, zusammenfassen, ändern oder löschen darf. Der Assistent ist auf diesen Ordner beschränkt und kann nicht auf Dateien außerhalb davon zugreifen. Leer lassen, um die Datei-Tools zu deaktivieren.</value></data>
+  <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Ordner, in dem der Assistent Ihre Dateien und seinen Speicher-Tresor ablegt. Der Assistent ist auf diesen Ordner beschränkt und kann nicht auf Dateien außerhalb davon zugreifen. Mit dem Schalter unten aktivieren oder deaktivieren Sie die Datei-Tools.</value></data>
+  <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Ändern…</value></data>
+  <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Dem Assistenten erlauben, Dateien in diesem Ordner zu lesen und zu schreiben</value></data>
+  <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Speicher-Tresor: {0}</value></data>
+  <data name="Settings_FolderMove_Confirm" xml:space="preserve"><value>Assistenten-Dateien und Speicher nach {0} verschieben? Dabei wird kopiert, überprüft und der alte Speicherort entfernt.</value></data>
+  <data name="Settings_FolderMove_OutsideProfile" xml:space="preserve"><value>Wählen Sie einen Ordner innerhalb Ihres Benutzerprofil-Ordners.</value></data>
+  <data name="Settings_FolderMove_Blocked" xml:space="preserve"><value>Dieser Ordner ist ein geschützter Systemort. Wählen Sie einen anderen.</value></data>
+  <data name="Settings_FolderMove_Nested" xml:space="preserve"><value>Wählen Sie einen Ordner, der nicht im aktuellen Ordner liegt.</value></data>
+  <data name="Settings_FolderMove_NotEmpty" xml:space="preserve"><value>Wählen Sie einen leeren oder neuen Ordner.</value></data>
+  <data name="Settings_FolderMove_Failed" xml:space="preserve"><value>Der Ordner konnte nicht verschoben werden. Ihre Dateien wurden nicht verändert.</value></data>
+  <data name="Dialog_FolderMove_Title" xml:space="preserve"><value>Assistenten-Ordner wird verschoben</value></data>
+  <data name="Dialog_FolderMove_Copying" xml:space="preserve"><value>Dateien werden kopiert…</value></data>
+  <data name="Dialog_FolderMove_Verifying" xml:space="preserve"><value>Wird überprüft…</value></data>
+  <data name="Dialog_FolderMove_CleaningUp" xml:space="preserve"><value>Wird aufgeräumt…</value></data>
   <data name="Settings_Chat_Section" xml:space="preserve"><value>Chatverlauf</value></data>
   <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Chatverlauf speichern</value></data>
   <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Assistenten-Chats auf diesem Gerät speichern, damit du sie später fortsetzen und durchsuchen kannst.</value></data>
@@ -821,4 +836,10 @@
   <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing bereit</value></data>
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
+  <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Kürzer</value></data>
+  <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Ausführlicher</value></data>
+  <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-fertig</value></data>
+  <data name="Assistant_RegenerateOptions_Tooltip" xml:space="preserve"><value>Mit Optionen neu generieren</value></data>
+  <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exportieren</value></data>
+  <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
 </root>

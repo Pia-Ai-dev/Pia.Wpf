@@ -1,3 +1,5 @@
+using System.ClientModel.Primitives;
+using OpenAI.Chat;
 using Pia.Models;
 using Pia.Services.Providers;
 using Xunit;
@@ -7,11 +9,14 @@ namespace Pia.Wpf.Tests.Unit.Providers;
 public class MistralProviderHandlerTests
 {
     // Mistral's API returns HTTP 422 when `reasoning_effort` is sent to a model
-    // that doesn't accept it. Only mistral-small-latest and mistral-medium-3.5
-    // currently accept the field, and only with values `none` or `high`.
+    // that doesn't accept it. Only mistral-small-latest, mistral-medium-latest,
+    // and mistral-medium-3.5 currently accept the field, and only with values
+    // `none` or `high`.
 
     [Theory]
     [InlineData("mistral-small-latest")]
+    [InlineData("mistral-medium-latest")]
+    [InlineData("magistral-medium-latest")]
     [InlineData("mistral-medium-3.5")]
     public void ShouldEmitReasoning_True_ForCapableModels(string model)
     {
@@ -38,13 +43,34 @@ public class MistralProviderHandlerTests
     }
 
     [Fact]
-    public void ShouldEmitReasoning_False_WhenEffortIsNone()
+    public void ShouldEmitReasoning_SendsNone_WhenEffortIsNone()
     {
+        // These models reason by default, so "None" must actively send
+        // `reasoning_effort: none` to suppress it — omitting the field would
+        // leave reasoning on.
         var provider = MakeProvider("mistral-small-latest", ReasoningEffort.None);
 
-        var (emit, _) = MistralProviderHandler.ShouldEmitReasoning(provider, hasTools: false);
+        var (emit, level) = MistralProviderHandler.ShouldEmitReasoning(provider, hasTools: false);
 
-        Assert.False(emit);
+        Assert.True(emit);
+#pragma warning disable OPENAI001
+        Assert.Equal(ChatReasoningEffortLevel.None, level);
+#pragma warning restore OPENAI001
+    }
+
+    [Fact]
+    public void ShouldEmitReasoning_SendsNone_WhenEffortIsNone_EvenWithTools()
+    {
+        // The assistant always sends tools, so the disable case must fire on
+        // tool-using turns too — otherwise picking "None" never takes effect.
+        var provider = MakeProvider("mistral-medium-latest", ReasoningEffort.None);
+
+        var (emit, level) = MistralProviderHandler.ShouldEmitReasoning(provider, hasTools: true);
+
+        Assert.True(emit);
+#pragma warning disable OPENAI001
+        Assert.Equal(ChatReasoningEffortLevel.None, level);
+#pragma warning restore OPENAI001
     }
 
     [Fact]
@@ -58,8 +84,10 @@ public class MistralProviderHandlerTests
     }
 
     [Fact]
-    public void ShouldEmitReasoning_False_WhenToolsArePresent()
+    public void ShouldEmitReasoning_False_WhenEnablingReasoningWithToolsPresent()
     {
+        // Turning reasoning ON is still suppressed during tool-using turns. (The
+        // disable case is the exception — see the "EvenWithTools" test above.)
         var provider = MakeProvider("mistral-small-latest", ReasoningEffort.High);
 
         var (emit, _) = MistralProviderHandler.ShouldEmitReasoning(provider, hasTools: true);
@@ -84,6 +112,25 @@ public class MistralProviderHandlerTests
 #pragma warning disable OPENAI001
         Assert.Equal(OpenAI.Chat.ChatReasoningEffortLevel.High, level);
 #pragma warning restore OPENAI001
+    }
+
+    [Fact]
+    public void CreateChatOptions_SerializesReasoningEffortNone_ForNoneEffortWithTools()
+    {
+        // End-to-end guard for the linchpin: the request body must carry
+        // `reasoning_effort: none`. A value the SDK silently drops as a default
+        // would break the disable without failing the tuple-level tests.
+        var handler = new MistralProviderHandler();
+        var provider = MakeProvider("mistral-medium-latest", ReasoningEffort.None);
+
+        var options = handler.CreateChatOptions(provider, hasTools: true);
+
+        Assert.NotNull(options.RawRepresentationFactory);
+#pragma warning disable OPENAI001
+        var raw = (ChatCompletionOptions)options.RawRepresentationFactory!(null!)!;
+#pragma warning restore OPENAI001
+        var json = ModelReaderWriter.Write(raw).ToString();
+        Assert.Contains("\"reasoning_effort\":\"none\"", json);
     }
 
     private static AiProvider MakeProvider(string modelName, ReasoningEffort? effort)

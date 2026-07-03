@@ -140,14 +140,28 @@ public sealed class PiaCloudChatClient : IChatClient
 
             var finishReason = choice["finish_reason"]?.GetValue<string>();
 
-            // Text content
-            var textContent = delta["content"]?.GetValue<string>();
+            // Text content. Read defensively: the canonical shape is a plain string, but
+            // some providers (e.g. Mistral reasoning chunks) emit content as an array of
+            // typed parts, which would throw on GetValue<string>().
+            var textContent = ReadContent(delta["content"]);
             if (!string.IsNullOrEmpty(textContent))
             {
                 yield return new ChatResponseUpdate
                 {
                     Role = ChatRole.Assistant,
                     Contents = [new TextContent(textContent)]
+                };
+            }
+
+            // Reasoning content (when the server forwards it). Surfaced as
+            // TextReasoningContent so it funnels into ThinkingContent like every other provider.
+            var reasoning = ReadString(delta["reasoning"]) ?? ReadString(delta["reasoning_content"]);
+            if (!string.IsNullOrEmpty(reasoning))
+            {
+                yield return new ChatResponseUpdate
+                {
+                    Role = ChatRole.Assistant,
+                    Contents = [new TextReasoningContent(reasoning)]
                 };
             }
 
@@ -307,6 +321,39 @@ public sealed class PiaCloudChatClient : IChatClient
         if (node is null) return null;
         try { return node.GetValue<long>(); }
         catch { return null; }
+    }
+
+    private static string? ReadString(JsonNode? node)
+        => node is JsonValue value && value.TryGetValue<string>(out var s) && !string.IsNullOrEmpty(s)
+            ? s
+            : null;
+
+    /// <summary>
+    /// Reads message/delta content tolerantly. The canonical shape is a plain string, but
+    /// some providers emit an array of typed parts (e.g. <c>[{ "type": "text", "text": "…" }]</c>);
+    /// in that case the text parts are concatenated. Any other shape is ignored (returns null)
+    /// rather than throwing.
+    /// </summary>
+    private static string? ReadContent(JsonNode? node)
+    {
+        if (node is null) return null;
+
+        if (ReadString(node) is { } scalar) return scalar;
+
+        if (node is JsonArray array)
+        {
+            var sb = new StringBuilder();
+            foreach (var part in array)
+            {
+                if (part is not JsonObject obj) continue;
+                var type = ReadString(obj["type"]);
+                if (type is null or "text" && ReadString(obj["text"]) is { } text)
+                    sb.Append(text);
+            }
+            return sb.Length > 0 ? sb.ToString() : null;
+        }
+
+        return null;
     }
 
     private static JsonArray SerializeMessages(IEnumerable<ChatMessage> messages)
@@ -479,10 +526,16 @@ public sealed class PiaCloudChatClient : IChatClient
     {
         var contents = new List<AIContent>();
 
-        var textContent = message["content"]?.GetValue<string>();
+        var textContent = ReadContent(message["content"]);
         if (!string.IsNullOrEmpty(textContent))
         {
             contents.Add(new TextContent(textContent));
+        }
+
+        var reasoning = ReadString(message["reasoning"]) ?? ReadString(message["reasoning_content"]);
+        if (!string.IsNullOrEmpty(reasoning))
+        {
+            contents.Add(new TextReasoningContent(reasoning));
         }
 
         var toolCalls = message["tool_calls"]?.AsArray();

@@ -201,6 +201,7 @@ public sealed class ChatSession : IDisposable
         var turnSetup = request.TurnSetup;
         var atCommands = request.AtCommands;
         var injectedFileContext = request.InjectedFileContext;
+        var regenerationInstruction = request.RegenerationInstruction;
         var tokenizationEnabled = request.TokenizationEnabled;
 
         // Reuse the CTS created by BeginTurn() (so a cancel during the manager's
@@ -228,7 +229,16 @@ public sealed class ChatSession : IDisposable
         // parameter plumbing. Id is Guid? — null on direct test callers that skip the
         // manager's SetIdentity. Restored in the same finally as the token map.
         var previousTask = TaskAmbient.Current;
-        TaskAmbient.Current = new TaskContext(Id, WorkingDirectory);
+        // Wire a per-turn file-touch sink so the file tools can surface each file they read/write to
+        // THIS turn's answer as an open-file chip. The run loop is UI-affine (no ConfigureAwait(false)),
+        // so the callback adds to the bound collection directly — same contract as message.ActionCards.Add.
+        TaskAmbient.Current = new TaskContext(Id, WorkingDirectory, touch =>
+            assistantMessage.AddOrUpgradeFileRef(new FileRef(touch.AbsolutePath, touch.Kind switch
+            {
+                FileTouchKind.Created => FileRefKind.Created,
+                FileTouchKind.Updated => FileRefKind.Updated,
+                _ => FileRefKind.Read,
+            })));
 
         var succeeded = false;
         try
@@ -253,27 +263,62 @@ public sealed class ChatSession : IDisposable
                 if (msg == assistantMessage)
                     continue;
 
-                if (msg == userMessage && atCommands.Count > 0)
+                var hasInjection = !string.IsNullOrEmpty(injectedFileContext) || !string.IsNullOrEmpty(regenerationInstruction);
+                if (msg == userMessage && (atCommands.Count > 0 || hasInjection))
                 {
-                    // Strip the @-command tokens, then append any @Files content the manager read at
-                    // setup so the model sees the file inline (not only via a tool it may decline to
-                    // call). Injection is ephemeral — msg.Content (the persisted/displayed text) keeps
-                    // the original @Files token, so history never bloats with file dumps.
-                    var stripped = AtCommandParser.StripCommands(msg.Content);
-                    string visible;
-                    if (string.IsNullOrEmpty(injectedFileContext))
-                        visible = stripped;
-                    else if (string.IsNullOrEmpty(stripped))
-                        visible = injectedFileContext;
-                    else
-                        visible = $"{stripped}\n\n{injectedFileContext}";
-                    chatMessages.Add(new ChatMessage(ChatRole.User, visible));
+                    // Strip the @-command tokens (when present), then append any @Files content the
+                    // manager read at setup and/or a styled-regeneration instruction so the model sees
+                    // them inline. Injection is ephemeral — msg.Content (the persisted/displayed text)
+                    // is unchanged, so history never bloats and the user's bubble stays clean.
+                    var stripped = atCommands.Count > 0 ? AtCommandParser.StripCommands(msg.Content) : msg.Content;
+                    var parts = new[] { stripped, injectedFileContext, regenerationInstruction }
+                        .Where(p => !string.IsNullOrEmpty(p));
+                    var visible = string.Join("\n\n", parts);
+                    // ToChatMessage(overrideText) preserves an image attachment — the prior text-only
+                    // ChatMessage construction here silently dropped it.
+                    chatMessages.Add(msg.ToChatMessage(visible));
                 }
                 else
                     chatMessages.Add(msg.ToChatMessage());
             }
 
             var rawBuffer = new StringBuilder();
+            // Reasoning reaches us via two channels that never overlap for a given provider:
+            // a separate ReasoningDelta stream (TextReasoningContent / OpenRouter `reasoning`)
+            // and inline <think> tags parsed out of the visible text. Merge both into ThinkingContent.
+            var reasoningBuffer = new StringBuilder();
+            var tagThinking = string.Empty;
+
+            void UpdateThinking()
+            {
+                var separate = reasoningBuffer.ToString().Trim();
+                var combined = (separate.Length > 0, tagThinking.Length > 0) switch
+                {
+                    (true, true) => $"{separate}\n\n{tagThinking}",
+                    (true, false) => separate,
+                    (false, true) => tagThinking,
+                    _ => string.Empty,
+                };
+                if (!string.IsNullOrEmpty(combined))
+                    assistantMessage.ThinkingContent = combined;
+            }
+
+            // Time the "thinking" phase: from the first reasoning token to the first answer
+            // token (or stream end), surfaced as a localized "Thought for Ns" chip.
+            DateTime? reasoningStartedAt = null;
+            var reasoningTimed = false;
+
+            void StopReasoningTimer()
+            {
+                if (reasoningStartedAt is { } startedAt && !reasoningTimed)
+                {
+                    reasoningTimed = true;
+                    var seconds = Math.Max(1, (int)Math.Round((DateTime.Now - startedAt).TotalSeconds));
+                    var duration = seconds < 60 ? $"{seconds}s" : $"{seconds / 60}m {seconds % 60}s";
+                    assistantMessage.ReasoningDurationLabel =
+                        _localizationService.Format("Assistant_ThoughtForDuration", duration);
+                }
+            }
 
             await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
                 chatMessages, provider, tools,
@@ -287,9 +332,19 @@ public sealed class ChatSession : IDisposable
                         rawBuffer.Append(td.Text);
                         var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
 
-                        assistantMessage.Content = visible;
                         if (!string.IsNullOrEmpty(thinking))
-                            assistantMessage.ThinkingContent = thinking;
+                            reasoningStartedAt ??= DateTime.Now; // inline <think> reasoning
+                        if (!string.IsNullOrEmpty(visible))
+                            StopReasoningTimer(); // first answer token ends the thinking phase (set label first)
+                        assistantMessage.Content = visible;
+                        tagThinking = thinking;
+                        UpdateThinking();
+                        break;
+
+                    case ReasoningDelta rd:
+                        reasoningStartedAt ??= DateTime.Now;
+                        reasoningBuffer.Append(rd.Text);
+                        UpdateThinking();
                         break;
 
                     case Finished finished:
@@ -297,6 +352,9 @@ public sealed class ChatSession : IDisposable
                         break;
                 }
             }
+
+            // Reasoning-only / no-visible-answer turns: close the timer at stream end.
+            StopReasoningTimer();
 
             if (webSearchActive)
                 ApplyWebCitations(assistantMessage);

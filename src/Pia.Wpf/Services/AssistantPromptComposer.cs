@@ -141,7 +141,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
                  - YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
                  - NO → Continue to step 3.
               3. Does the request involve STORING, RECALLING, or UPDATING personal information?
-                 - YES → Use Memory tools (remember: query first, then create/update). NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+                 - YES → Use Memory tools. To store/update, call remember(type, subject, content) — it automatically finds-or-creates the right record (you do NOT need to recall first). Use recall to look something up, and forget to remove a record. NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
                  - NO → Continue to step 4.
               4. Does the request involve reading, searching, or editing CODE or FILES in the configured folder?
                  - YES → Use the file tools: search_files to locate files or text, read_file to inspect content (request a windowed slice with offset/limit for large files), and write_file to apply edits (the user approves a diff before any change is written).
@@ -170,8 +170,8 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
     {
         Pia.Models.AtCommandDomain.Memory => (
             "memory entry",
-            "query_memory",
-            (IReadOnlyList<string>)["query_memory", "list_memories", "create_object", "update_object", "append_to_list", "delete_object"]),
+            "recall",
+            (IReadOnlyList<string>)["recall", "remember", "forget"]),
         Pia.Models.AtCommandDomain.Todo => (
             "todo",
             "query_todos",

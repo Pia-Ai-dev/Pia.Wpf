@@ -68,6 +68,36 @@ public class ActionCardBuilderTests
     }
 
     [Fact]
+    public void Build_Remember_IsUpdateMemoryTitleAndNotDestructive()
+    {
+        var builder = CreateBuilder(out _);
+
+        var card = builder.Build(Call("remember", "memory", "Remember John's email", "{\"key\":\"value\"}"), detokenize: false);
+
+        Assert.Equal(ActionCardCategory.Memory, card.Category);
+        Assert.False(card.IsDestructive);
+        Assert.Null(card.WarningText);
+        // remember maps to the Update action, NOT the default "Create Memory" title.
+        Assert.Equal("ActionCard_Action_Update ActionCard_Category_Memory", card.Title);
+        Assert.NotEqual("ActionCard_Action_Create ActionCard_Category_Memory", card.Title);
+    }
+
+    [Fact]
+    public void Build_Forget_IsDestructiveWithDeleteTitleAndWarning()
+    {
+        var builder = CreateBuilder(out _);
+
+        var card = builder.Build(Call("forget", "memory", "Forget John's contact"), detokenize: false);
+
+        Assert.Equal(ActionCardCategory.Memory, card.Category);
+        Assert.True(card.IsDestructive);
+        Assert.Equal("Msg_Assistant_PermanentDeleteMemory", card.WarningText);
+        // forget maps to the Delete action, NOT the default "Create Memory" title.
+        Assert.Equal("ActionCard_Action_Delete ActionCard_Category_Memory", card.Title);
+        Assert.NotEqual("ActionCard_Action_Create ActionCard_Category_Memory", card.Title);
+    }
+
+    [Fact]
     public void Build_WhenDetokenizeFalse_DoesNotTouchTokenMap()
     {
         var builder = CreateBuilder(out var tokenMap);
@@ -78,13 +108,25 @@ public class ActionCardBuilderTests
     }
 
     [Theory]
-    [InlineData("query_memory", "Msg_Assistant_StatusSearchingMemory")]
+    [InlineData("recall", "Msg_Assistant_StatusSearchingMemory")]
+    [InlineData("remember", "Msg_Assistant_StatusUpdatingMemory")]
+    [InlineData("forget", "Msg_Assistant_StatusDeletingMemory")]
     [InlineData("delete_todo", "Msg_Assistant_StatusDeletingTodo")]
     [InlineData("totally_unknown_tool", "Msg_Assistant_StatusProcessing")]
     public void ResolveStatusText_MapsKnownToolsAndFallsBack(string toolName, string expectedKey)
     {
         var builder = CreateBuilder(out _);
         Assert.Equal(expectedKey, builder.ResolveStatusText(toolName));
+    }
+
+    [Theory]
+    [InlineData("recall")]
+    [InlineData("remember")]
+    [InlineData("forget")]
+    public void ResolveStatusText_MemoryVerbs_AreNotGeneric(string toolName)
+    {
+        var builder = CreateBuilder(out _);
+        Assert.NotEqual("Msg_Assistant_StatusProcessing", builder.ResolveStatusText(toolName));
     }
 
     [Theory]

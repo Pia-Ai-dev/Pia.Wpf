@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NReco.Logging.File;
 using Pia.Infrastructure;
+using Pia.Infrastructure.Vault;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
@@ -116,8 +117,110 @@ public static class Bootstrapper
             }
         }
 
+        // Derive the vault root from the (relocatable) assistant files folder and run the one-shot
+        // in-place vault nesting BEFORE scaffolding/migration/watcher bind to the vault path.
+        await InitializeAssistantFoldersAsync(_serviceProvider, bootstrapLogger);
+
+        // Scaffold the §1 vault layout so a fresh install has sources/ and a default AGENTS.md before
+        // anything reads or migrates into the vault. Idempotent and never overwrites a co-evolved
+        // AGENTS.md; like migration and the watcher it must NEVER block startup, so guard and continue.
+        try
+        {
+            await _serviceProvider.GetRequiredService<Pia.Services.Wiki.VaultSchemaService>()
+                .EnsureScaffoldingAsync();
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Vault scaffolding failed; sources/ and AGENTS.md may be missing this session");
+        }
+
+        // Migrate the legacy Memories table into the on-disk vault (one-shot, idempotent, guarded by
+        // AppSettings.VaultVersion + a populated-vault cross-device check). Migration must NEVER block
+        // startup: on failure the legacy table remains the fallback, so log a warning and continue.
+        try
+        {
+            var migrationReport = await _serviceProvider.GetRequiredService<IVaultMigrationRunner>().RunAsync();
+            if (!migrationReport.Skipped)
+            {
+                bootstrapLogger.LogInformation(
+                    "Vault migration ran: {Rows} row(s) -> {Records} record(s), {Archived} archived",
+                    migrationReport.RowsMigrated, migrationReport.RecordsWritten, migrationReport.Archived);
+            }
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Vault migration failed; legacy memory table remains the fallback");
+        }
+
+        // Start the vault file-watcher on the default root so external edits (and Pia's own writes)
+        // flow into the index. Start() creates the root dir if absent, so this never throws on a
+        // fresh install; guard anyway so a watcher failure cannot block app startup.
+        try
+        {
+            _serviceProvider.GetRequiredService<VaultWatcher>().Start();
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Failed to start vault watcher; vault edits won't auto-index this session");
+        }
+
         // Initialize ViewModelLocator with root service provider (fallback for design-time)
         ViewModelLocator.Initialize(_serviceProvider);
+    }
+
+    /// <summary>
+    /// Seeds the default assistant files folder on first run, points the vault root at
+    /// <c>&lt;folder&gt;\Vault</c>, and runs the one-shot in-place migration that nests an existing
+    /// user's legacy <c>%LOCALAPPDATA%\Pia\Vault</c> under their folder. Runs BEFORE scaffolding /
+    /// migration / the watcher so they all bind to the nested vault. Guarded so a failure never blocks
+    /// startup; idempotent via the layout-version marker + the derived-vault existence guard.
+    /// </summary>
+    private static async Task InitializeAssistantFoldersAsync(IServiceProvider sp, ILogger logger)
+    {
+        var settingsService = sp.GetRequiredService<ISettingsService>();
+        var settings = await settingsService.GetSettingsAsync();
+        var paths = sp.GetRequiredService<VaultPathProvider>();
+
+        // Seed the default folder on first run (creating it + the Vault subfolder).
+        var folder = settings.AssistantFilesFolder;
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            folder = AssistantWorkspace.DefaultRoot;
+            try
+            {
+                Directory.CreateDirectory(AssistantWorkspace.VaultRootFor(folder));
+                settings.AssistantFilesFolder = folder;
+                await settingsService.SaveSettingsAsync(settings);
+            }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to seed default assistant folder"); }
+        }
+
+        // Point the vault root at <folder>\Vault BEFORE scaffolding/migration/watcher run.
+        paths.SetRoot(AssistantWorkspace.VaultRootFor(folder!));
+
+        // One-shot in-place nesting: move legacy %LOCALAPPDATA%\Pia\Vault under the folder.
+        if (settings.AssistantFolderLayoutVersion < 1)
+        {
+            var legacyVault = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Pia", "Vault");
+            var derivedVault = AssistantWorkspace.VaultRootFor(folder!);
+            try
+            {
+                if (Directory.Exists(legacyVault) &&
+                    !string.Equals(Path.GetFullPath(legacyVault), Path.GetFullPath(derivedVault),
+                                   StringComparison.OrdinalIgnoreCase) &&
+                    !Directory.Exists(derivedVault))
+                {
+                    var result = await SafeDirectoryMove.MoveAsync(
+                        legacyVault, derivedVault, progress: null, CancellationToken.None);
+                    logger.LogInformation("In-place vault nesting: {Outcome}", result.Outcome);
+                }
+                settings.AssistantFolderLayoutVersion = 1;
+                await settingsService.SaveSettingsAsync(settings);
+            }
+            catch (Exception ex) { logger.LogWarning(ex, "In-place vault nesting failed; will retry next start"); }
+        }
     }
 
     private static void ConfigureServices(IServiceCollection services)
@@ -161,6 +264,13 @@ public static class Bootstrapper
 
         // Infrastructure
         services.AddSingleton<SqliteContext>();
+        services.AddSingleton<VaultPathProvider>();
+        services.AddSingleton<MarkdownVaultParser>();
+        services.AddSingleton<Pia.Infrastructure.Vault.IVaultWriteGate, Pia.Infrastructure.Vault.VaultWriteGate>();
+        services.AddSingleton<IVaultStore>(sp => new VaultStore(
+            sp.GetRequiredService<VaultPathProvider>(),
+            sp.GetRequiredService<MarkdownVaultParser>(),
+            sp.GetRequiredService<Pia.Infrastructure.Vault.IVaultWriteGate>()));
         services.AddSingleton<DpapiHelper>();
         services.AddTransient<HttpLoggingHandler>();
         services.AddTransient<RateLimitRetryHandler>();
@@ -237,7 +347,23 @@ public static class Bootstrapper
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
+        services.AddSingleton<IVaultIndexer, VaultIndexer>();
+        services.AddSingleton<ISectionUpsertService, SectionUpsertService>();
+        services.AddSingleton<Pia.Services.Wiki.VaultIndexService>();
+        services.AddSingleton<Pia.Services.Wiki.VaultLogService>();
+        services.AddSingleton<Pia.Services.Wiki.VaultSchemaService>();
+        services.AddSingleton<IIngestExtractor, Pia.Services.Wiki.AiIngestExtractionService>();
+        services.AddSingleton<IIngestService, Pia.Services.Wiki.IngestService>();
+        services.AddSingleton<ILintService, Pia.Services.Wiki.LintService>();
+        services.AddSingleton<Pia.Services.Sync.SectionMergeEngine>();
+        services.AddSingleton<Pia.Infrastructure.Sync.SyncBaseStore>();
+        services.AddSingleton<IVaultSyncService, Pia.Services.Sync.VaultSyncService>();
+        services.AddSingleton<Pia.Services.Migration.MemoryJsonRenderer>();
+        services.AddSingleton<IVaultMigrationRunner, Pia.Services.Migration.VaultMigrationRunner>();
+        services.AddSingleton<VaultWatcher>();
+        services.AddSingleton<IAssistantFolderRelocationService, AssistantFolderRelocationService>();
         services.AddSingleton<IMemoryToolHandler, MemoryToolHandler>();
+        services.AddSingleton<IIngestToolHandler, IngestToolHandler>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<IScheduledJobService, ScheduledJobService>();
@@ -271,6 +397,7 @@ public static class Bootstrapper
         // doesn't cache tokenization state across runs.
         services.AddTransient<IBackgroundAssistantTurnRunner, BackgroundAssistantTurnRunner>();
         services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
+        services.AddSingleton<IMarkdownExportService, MarkdownExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
         services.AddSingleton<ISelectedTextService, SelectedTextService>();

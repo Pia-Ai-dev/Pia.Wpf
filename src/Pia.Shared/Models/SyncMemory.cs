@@ -29,4 +29,12 @@ public class SyncMemory
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? WrappedDek { get; set; }
+
+    /// <summary>
+    /// Vault-relative path for NON-E2EE (plaintext) sync (spec section 11, C5).
+    /// When E2EE is active this stays null and the path lives inside
+    /// <see cref="EncryptedPayload"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Path { get; set; }
 }

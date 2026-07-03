@@ -215,10 +215,21 @@ public class AiClientService : IAiClientService
                     {
                         while (true)
                         {
-                            updates.Add(enumerator!.Current);
-                            if (!string.IsNullOrEmpty(enumerator.Current.Text))
+                            var current = enumerator!.Current;
+                            updates.Add(current);
+                            if (!string.IsNullOrEmpty(current.Text))
                             {
-                                yield return new TextDelta(enumerator.Current.Text);
+                                yield return new TextDelta(current.Text);
+                            }
+
+                            // The `reasoning` scalar (OpenRouter) only rides text-less chunks, so
+                            // skip the raw-representation round-trip whenever this chunk already
+                            // carries visible text — avoids serializing every content delta.
+                            foreach (var reasoning in ExtractReasoning(
+                                current.Contents, current.RawRepresentation,
+                                attemptRawExtraction: string.IsNullOrEmpty(current.Text)))
+                            {
+                                yield return reasoning;
                             }
 
                             bool hasNext;
@@ -279,6 +290,13 @@ public class AiClientService : IAiClientService
                 if (!string.IsNullOrEmpty(text))
                 {
                     yield return new TextDelta(text);
+                }
+
+                var nonStreamingContents = response.Messages.SelectMany(m => m.Contents);
+                foreach (var reasoning in ExtractReasoning(
+                    nonStreamingContents, response.RawRepresentation, attemptRawExtraction: true))
+                {
+                    yield return reasoning;
                 }
             }
 
@@ -770,6 +788,31 @@ public class AiClientService : IAiClientService
 
     private static string Truncate(string value, int max)
             => value.Length > max ? value[..max] + "..." : value;
+
+    /// <summary>
+    /// Surfaces model reasoning from a response chunk via every channel a provider might use:
+    /// the canonical <see cref="TextReasoningContent"/> that Microsoft.Extensions.AI maps from
+    /// <c>reasoning_content</c> (DeepSeek / vLLM / Ollama) and OpenAI Responses reasoning
+    /// summaries, plus OpenRouter's non-standard <c>reasoning</c> scalar that the adapter drops
+    /// (recovered from the raw representation). The two channels are mutually exclusive per
+    /// provider, so this never double-counts.
+    /// </summary>
+    private static IEnumerable<ChatStreamItem> ExtractReasoning(
+            IEnumerable<AIContent> contents, object? rawRepresentation, bool attemptRawExtraction)
+    {
+        foreach (var content in contents)
+        {
+            if (content is TextReasoningContent { Text: { Length: > 0 } reasoningText })
+                yield return new ReasoningDelta(reasoningText);
+        }
+
+        if (attemptRawExtraction)
+        {
+            var rawReasoning = ReasoningExtractor.FromRawRepresentation(rawRepresentation);
+            if (!string.IsNullOrEmpty(rawReasoning))
+                yield return new ReasoningDelta(rawReasoning);
+        }
+    }
 
     private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput)
     {

@@ -143,9 +143,20 @@ public class AppSettings
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 
-    // Sandboxed folder the assistant's file tool may read/write/delete in.
-    // Null/empty disables the tool entirely.
+    // Sandboxed folder the assistant's file tool may read/write/delete in. The memory vault lives
+    // under it (<folder>\Vault), so it is always set after first run; file-tool enablement is the
+    // separate AssistantFileToolsEnabled flag (clearing the folder no longer disables the tools).
     public string? AssistantFilesFolder { get; set; }
+
+    // True when the assistant's file tools (read/write/delete/list/search) are exposed over
+    // AssistantFilesFolder. The folder is always set (the vault lives under it), so file-tool
+    // enablement is a distinct flag rather than "clear the folder to disable".
+    public bool AssistantFileToolsEnabled { get; set; } = true;
+
+    // Layout-migration marker, distinct from VaultVersion (SQLite->vault). 0 = pre-nesting
+    // (legacy vault at %LOCALAPPDATA%\Pia\Vault, sibling of workdir); 1 = vault nested under
+    // AssistantFilesFolder. Set once the in-place nesting migration completes on this device.
+    public int AssistantFolderLayoutVersion { get; set; } = 0;
 
     // Assistant chat history
     public bool ChatHistoryEnabled { get; set; } = true;
@@ -184,6 +195,15 @@ public class AppSettings
 
     // Privacy settings
     public PrivacySettings Privacy { get; set; } = new();
+
+    /// <summary>
+    /// Persistent marker for the memory-vault migration. <c>0</c> = the legacy <c>Memories</c> table has
+    /// not yet been migrated into the on-disk vault; <c>1</c> = migration completed on this device.
+    /// <see cref="Services.Migration.VaultMigrationRunner"/> sets this to <c>1</c> after a successful run
+    /// so the migration is idempotent. Synced across devices via settings so a device that pulls an
+    /// already-migrated vault does not re-migrate.
+    /// </summary>
+    public int VaultVersion { get; set; } = 0;
 
     public Guid? GetProviderForMode(WindowMode mode)
     {

@@ -351,14 +351,12 @@
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Frühere Rechercheergebnisse durchsuchen</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Rechercheeintrag per ID abrufen</value></data>
   <!-- MemoryToolHandler -->
-  <data name="Tool_Memory_Desc_Create" xml:space="preserve"><value>Neues {0} erstellen: {1}</value></data>
-  <data name="Tool_Memory_Desc_Update" xml:space="preserve"><value>{0} aktualisieren: {1}</value></data>
-  <data name="Tool_Memory_Desc_Append" xml:space="preserve"><value>Eintrag hinzufügen zu {0}: {1}</value></data>
-  <data name="Tool_Memory_Desc_Delete" xml:space="preserve"><value>{0} löschen: {1}</value></data>
-  <data name="Tool_Memory_Desc_Merge" xml:space="preserve"><value>{0} Erinnerungen zusammenführen zu: {1}</value></data>
-  <data name="Tool_Memory_Exec_Created" xml:space="preserve"><value>Speicherobjekt erfolgreich erstellt mit ID: {0}</value></data>
-  <data name="Tool_Memory_Exec_Updated" xml:space="preserve"><value>Speicherobjekt {0} erfolgreich aktualisiert.</value></data>
-  <data name="Tool_Memory_Exec_Appended" xml:space="preserve"><value>Eintrag erfolgreich zu Speicherobjekt {0} hinzugefügt.</value></data>
-  <data name="Tool_Memory_Exec_Deleted" xml:space="preserve"><value>Speicherobjekt {0} erfolgreich gelöscht.</value></data>
-  <data name="Tool_Memory_Exec_Merged" xml:space="preserve"><value>{0} Erinnerungen zu '{1}' zusammengeführt (ID: {2}). {3} Duplikat(e) gelöscht.</value></data>
+  <data name="Tool_Memory_Desc_Remember" xml:space="preserve"><value>Merken: {0}</value></data>
+  <data name="Tool_Memory_Desc_Forget" xml:space="preserve"><value>Vergessen: {0}</value></data>
+  <data name="Tool_Memory_Exec_Remembered" xml:space="preserve"><value>Erinnerung gespeichert ({0}).</value></data>
+  <data name="Tool_Memory_Exec_Forgotten" xml:space="preserve"><value>Erinnerung entfernt ({0}).</value></data>
+  <data name="Msg_Assistant_Exported" xml:space="preserve"><value>Exportiert</value></data>
+  <data name="Msg_Assistant_ExportedTo" xml:space="preserve"><value>Gespeichert unter {0}</value></data>
+  <data name="Msg_Assistant_ExportFailed" xml:space="preserve"><value>Die Antwort konnte nicht exportiert werden.</value></data>
+  <data name="Msg_Assistant_ExportDefaultTitle" xml:space="preserve"><value>Pia-Antwort</value></data>
 </root>

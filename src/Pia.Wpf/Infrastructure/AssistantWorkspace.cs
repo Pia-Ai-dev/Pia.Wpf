@@ -3,19 +3,38 @@ using System.IO;
 namespace Pia.Infrastructure;
 
 /// <summary>
-/// Single source of truth for the default assistant files folder — the agent's scratch
-/// "workdir". It lives <b>inside</b> <c>%LOCALAPPDATA%\Pia</c>, which
-/// <see cref="SensitivePathGuard"/> otherwise blocks wholesale (Pia's own DB/config/logs sit
-/// there too). The guard carves this exact subtree back out, so the seeding in
-/// <c>App.OnStartup</c> and the guard's allow-exception MUST derive from the same value — compute
-/// it here once and reference it from both, or a divergence silently re-blocks the whole workdir.
+/// Path constants for the assistant files folder and its derived memory vault. The files folder is
+/// the user-relocatable sandbox root (default <see cref="DefaultRoot"/>); the vault always lives at
+/// <see cref="VaultRootFor"/> beneath it. <see cref="LegacyWorkdir"/> is retained only so
+/// <see cref="SensitivePathGuard"/> keeps carving the pre-relocation default out of the otherwise-
+/// blocked <c>%LOCALAPPDATA%\Pia</c> for migrate-in-place users.
 /// </summary>
 public static class AssistantWorkspace
 {
+    /// <summary>Vault subfolder name under the assistant files folder.</summary>
+    public const string VaultSubfolderName = "Vault";
+
     /// <summary>
-    /// <c>%LOCALAPPDATA%\Pia\workdir</c> — created on first run and seeded as the default sandbox.
+    /// Default assistant files folder for new installs: <c>%USERPROFILE%\Documents\Pia Assistant</c>.
+    /// Built from the literal profile + "Documents" (not SpecialFolder.MyDocuments) so an OneDrive-
+    /// redirected Documents cannot push the default outside the profile and break the "under
+    /// %USERPROFILE%" rule.
     /// </summary>
-    public static string DefaultWorkdir { get; } = Path.Combine(
+    public static string DefaultRoot { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        "Documents", "Pia Assistant");
+
+    /// <summary>
+    /// Legacy default workdir (<c>%LOCALAPPDATA%\Pia\workdir</c>). Retained ONLY so
+    /// <see cref="SensitivePathGuard"/> keeps carving it out of the otherwise-blocked
+    /// <c>%LOCALAPPDATA%\Pia</c> for migrate-in-place users whose folder stays there. New installs use
+    /// <see cref="DefaultRoot"/>, which is outside every blocked root and needs no carve-out.
+    /// </summary>
+    public static string LegacyWorkdir { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Pia", "workdir");
+
+    /// <summary>The vault root derived from an assistant files folder: <c>&lt;folder&gt;\Vault</c>.</summary>
+    public static string VaultRootFor(string filesFolder) =>
+        Path.Combine(filesFolder, VaultSubfolderName);
 }

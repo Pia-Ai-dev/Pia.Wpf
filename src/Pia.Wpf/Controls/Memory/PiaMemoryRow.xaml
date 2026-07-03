@@ -22,19 +22,21 @@
       </Style>
     </Border.Style>
 
+    <!-- No per-row date: VaultMemoryItem.Updated is the DOCUMENT-level frontmatter timestamp, so showing
+         it on every section row of a structured doc (contacts.md with N people) would misrepresent it as
+         per-item recency. The group card header carries the document timestamp at the right granularity. -->
     <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0">
-        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Label}"
+        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Title}"
                    FontSize="13"
                    Foreground="{DynamicResource TextDefaultBrush}"
                    TextTrimming="CharacterEllipsis"/>
-        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding ValuePreview}"
+        <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Preview}"
                    FontSize="11.5"
                    Margin="0,1,0,0"
                    Foreground="{DynamicResource TextSubtleBrush}"
@@ -45,15 +47,6 @@
                        Type="{Binding TypeKind}"
                        Margin="10,0"
                        VerticalAlignment="Center"/>
-
-      <TextBlock Grid.Column="2"
-                 Text="{Binding UpdatedAt, StringFormat='{}{0:MM-dd}'}"
-                 FontSize="10.5"
-                 FontFamily="{DynamicResource PiaMonoFont}"
-                 Foreground="{DynamicResource TextSubtleBrush}"
-                 TextAlignment="Right"
-                 MinWidth="42"
-                 VerticalAlignment="Center"/>
     </Grid>
   </Border>
 </UserControl>

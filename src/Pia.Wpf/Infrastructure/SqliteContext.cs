@@ -93,6 +93,17 @@ public class SqliteContext : IDisposable
             CREATE INDEX IF NOT EXISTS IX_Memories_UpdatedAt ON Memories(UpdatedAt);
             CREATE INDEX IF NOT EXISTS IX_Memories_LastAccessedAt ON Memories(LastAccessedAt);
 
+            CREATE TABLE IF NOT EXISTS Chunks (
+                FilePath TEXT NOT NULL,
+                Heading  TEXT NOT NULL,
+                Slug     TEXT NOT NULL,
+                ContentHash TEXT NOT NULL,
+                Embedding BLOB,
+                IndexedAt TEXT NOT NULL,
+                PRIMARY KEY (FilePath, Slug)
+            );
+            CREATE INDEX IF NOT EXISTS IX_Chunks_FilePath ON Chunks(FilePath);
+
             CREATE TABLE IF NOT EXISTS Reminders (
                 Id TEXT PRIMARY KEY,
                 Description TEXT NOT NULL,
@@ -241,6 +252,7 @@ public class SqliteContext : IDisposable
 
         MigrateSchema();
         EnsureMemoriesFts();
+        EnsureChunksFts();
         EnsureAssistantChatsFts();
     }
 
@@ -557,6 +569,25 @@ public class SqliteContext : IDisposable
                 INSERT INTO MemoriesFts(rowid, Id, Label, Data)
                 VALUES (new.rowid, new.Id, new.Label, new.Data);
             END;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private void EnsureChunksFts()
+    {
+        // Contentless FTS5 over vault chunk bodies: bodies are NOT stored, only
+        // indexed. The indexer manages rows explicitly (INSERT with an explicit
+        // rowid equal to the Chunks rowid so matches map back), so there are no
+        // triggers — mirroring the AssistantChatsFts style.
+        using var command = _connection!.CreateCommand();
+        command.CommandText = """
+            CREATE VIRTUAL TABLE IF NOT EXISTS ChunksFts USING fts5(
+                FilePath UNINDEXED,
+                Heading,
+                Body,
+                content='',
+                contentless_delete=1
+            );
             """;
         command.ExecuteNonQuery();
     }

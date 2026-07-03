@@ -1,0 +1,107 @@
+<UserControl x:Class="Pia.Controls.Chat.PiaReasoningView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             x:Name="Root">
+  <Grid Margin="2,0,0,6">
+
+    <!-- ===== LIVE: the "thinking" phase (streaming, no answer yet) ===== -->
+    <StackPanel Visibility="{Binding ShowLiveReasoning, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <!-- Header: animated ring + current status (Thinking… / tool status) -->
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+        <ui:ProgressRing Width="14" Height="14"
+                         IsIndeterminate="{Binding ShowLiveReasoning}"
+                         Margin="0,0,8,0"
+                         VerticalAlignment="Center" />
+        <TextBlock Text="{Binding StatusText}"
+                   FontSize="12"
+                   FontStyle="Italic"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextSubtleBrush}" />
+      </StackPanel>
+
+      <!-- Rolling ~2-line window of the latest reasoning, fading at the top -->
+      <ScrollViewer x:Name="LiveScroller"
+                    MaxHeight="40"
+                    VerticalScrollBarVisibility="Hidden"
+                    HorizontalScrollBarVisibility="Disabled"
+                    Margin="22,0,0,0"
+                    Visibility="{Binding HasThinkingContent, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ScrollViewer.OpacityMask>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="Transparent" Offset="0.0" />
+            <GradientStop Color="Black" Offset="0.45" />
+            <GradientStop Color="Black" Offset="1.0" />
+          </LinearGradientBrush>
+        </ScrollViewer.OpacityMask>
+        <TextBlock Text="{Binding ThinkingContent}"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   FontStyle="Italic"
+                   Foreground="{DynamicResource TextMutedBrush}" />
+      </ScrollViewer>
+    </StackPanel>
+
+    <!-- ===== SUMMARY: collapsed "Thought for Ns" toggle (answer present) ===== -->
+    <StackPanel Visibility="{Binding ShowReasoningSummary, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <ui:Button Click="Toggle_Click"
+                 Appearance="Transparent"
+                 Padding="2,2"
+                 HorizontalAlignment="Left"
+                 Cursor="Hand"
+                 ToolTip="{loc:Str Assistant_ShowReasoning}">
+        <StackPanel Orientation="Horizontal">
+          <!-- Chevron: points right when collapsed, rotates down when expanded -->
+          <Path Data="M 0,0 L 4,4 L 0,8"
+                Stroke="{DynamicResource TextSubtleBrush}"
+                StrokeThickness="1.4"
+                StrokeStartLineCap="Round"
+                StrokeEndLineCap="Round"
+                Width="6" Height="8"
+                Margin="0,0,7,0"
+                VerticalAlignment="Center"
+                RenderTransformOrigin="0.5,0.5">
+            <Path.Style>
+              <Style TargetType="Path">
+                <Setter Property="RenderTransform">
+                  <Setter.Value><RotateTransform Angle="0" /></Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsReasoningExpanded}" Value="True">
+                    <Setter Property="RenderTransform">
+                      <Setter.Value><RotateTransform Angle="90" /></Setter.Value>
+                    </Setter>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Path.Style>
+          </Path>
+
+          <!-- "Thought for Ns" when timed; otherwise a generic "Show reasoning" fallback -->
+          <TextBlock Text="{Binding ReasoningDurationLabel}"
+                     FontSize="12"
+                     FontStyle="Italic"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Visibility="{Binding HasReasoningDuration, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <TextBlock Text="{loc:Str Assistant_ShowReasoning}"
+                     FontSize="12"
+                     FontStyle="Italic"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Visibility="{Binding HasReasoningDuration, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+        </StackPanel>
+      </ui:Button>
+
+      <!-- Expanded: full reasoning, indented, no heavy chrome -->
+      <TextBlock Text="{Binding ThinkingContent}"
+                 TextWrapping="Wrap"
+                 FontSize="12"
+                 FontStyle="Italic"
+                 Margin="20,2,0,4"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Visibility="{Binding IsReasoningExpanded, Converter={StaticResource BooleanToVisibilityConverter}}" />
+    </StackPanel>
+  </Grid>
+</UserControl>
