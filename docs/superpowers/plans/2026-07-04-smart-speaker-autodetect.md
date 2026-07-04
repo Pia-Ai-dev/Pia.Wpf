@@ -23,6 +23,7 @@
 - **Logging privacy:** speaker labels can become user-typed names after rename → log them only via `_logger.SensitiveInformation(...)` (from `Pia.Logging`). Counts, durations, cut distances are safe at `LogDebug`.
 - **Commit style:** small commits per task, message prefix like existing history, trailer:
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
+  The `git commit -m "..."` blocks below omit the trailer for brevity — ALWAYS append it (multi-line `-m` or a here-string).
 
 ---
 
@@ -456,8 +457,10 @@ Add to `SpeakerClusterer`:
     /// <summary>
     /// Clusters L2-normalized embeddings (caller's contract) by average-linkage AHC and the
     /// <see cref="ChooseCut"/> policy. <paramref name="previousClusterCount"/> (0 = none) feeds
-    /// the hysteresis. Assignments are numbered 0..k-1 in first-appearance order so callers get
-    /// stable, comparable indexes for the same input.
+    /// the hysteresis — a deliberate call-compatible extension of the spec's §4.3 signature (the
+    /// spec mandates hysteresis toward the previous pass's count; this is how the count gets in).
+    /// Assignments are numbered 0..k-1 in first-appearance order so callers get stable,
+    /// comparable indexes for the same input.
     /// </summary>
     public ClusterResult Cluster(IReadOnlyList<float[]> embeddings, int previousClusterCount = 0)
     {
@@ -778,15 +781,17 @@ public class AdaptiveSpeakerIdentificationServiceTests
         var events = new List<IReadOnlyList<SpeakerReassignment>>();
         svc.SpeakersReassigned += (_, e) => events.Add(e);
 
-        // Speaker A: 3 segments around 0°. Speaker B: around 55° — cos55 ≈ 0.574 ≥ 0.50, so the
-        // instant path wrongly merges B into "Speaker 1" (the exact first-impression failure).
+        // Speaker A: 3 segments around 0°. Speaker B: around 55° — similarity to A's ~2° CENTROID
+        // ≈ cos 53° ≈ 0.60 ≥ 0.50 (initial threshold), so the instant path wrongly merges B into
+        // "Speaker 1" (the exact first-impression failure).
         foreach (var deg in new[] { 0.0, 2, 4 })
             Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(deg), 16000).Label);
         foreach (var deg in new[] { 55.0, 57 })
             Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(deg), 16000).Label);
 
         // 6th segment reaches warm-up; the pass re-clusters and splits B out retroactively.
-        var sixth = svc.IdentifyOrRegisterSegment(Seg(59), 16000);
+        // Discard the result: its label is the stale pre-pass provisional one by design.
+        _ = svc.IdentifyOrRegisterSegment(Seg(59), 16000);
 
         var change = Assert.Single(events);
         Assert.All(change, c => Assert.Equal("Speaker 2", c.NewLabel));
@@ -796,24 +801,37 @@ public class AdaptiveSpeakerIdentificationServiceTests
     }
 
     [Fact]
-    public void ElapsedTime_TriggersAPass_EvenBelowTheSegmentStride()
+    public void ElapsedTime_TriggersAHealingPass_EvenBelowTheSegmentStride()
     {
         var clock = new DateTimeOffset(2026, 7, 4, 12, 0, 0, TimeSpan.Zero);
         using var svc = Create(now: () => clock);
         var events = new List<IReadOnlyList<SpeakerReassignment>>();
         svc.SpeakersReassigned += (_, e) => events.Add(e);
 
-        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000); // pass at #6, clean
-        svc.IdentifyOrRegisterSegment(Seg(55), 16000);                            // wrongly merged
-        Assert.Empty(events);                                                     // stride not reached
+        // 6 tight segments (0°–5°) → clean pass at #6 → one cluster, and the adaptive threshold
+        // TIGHTENS to sim ≥ 0.70 (cut = CutMin). Note: after such a pass, a "wrong provisional
+        // merge then split" scenario is unreachable by construction (a provisional merge needs
+        // centroid sim ≥ 0.70 ⇒ cross-cluster distance < 0.30 ⇒ below the guardrail band), so the
+        // healable error in this regime is the opposite one: a spurious over-SPLIT.
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        Assert.Empty(events);
 
+        // Off-center segment of the SAME voice at 50°: sim to the ~2.5° centroid ≈ cos 47.5°
+        // ≈ 0.676 < 0.70 → spuriously registers as provisional "Speaker 2" (segment id 6).
+        Assert.Equal("Speaker 2", svc.IdentifyOrRegisterSegment(Seg(50), 16000).Label);
+        Assert.Empty(events); // stride (5) not reached, latency (30 s) not elapsed → no pass yet
+
+        // Bridging segment at 25° arrives 31 s later: the instant path joins "Speaker 1"
+        // (sim cos 22.5° ≈ 0.924 beats the 50° centroid's cos 25° ≈ 0.906), the ≥30 s latency
+        // trigger fires, and average linkage now chains 0–5° ∪ 25° ∪ 50° entirely below CutMin
+        // (the 50° merge lands at ≈ 0.292) → one cluster → the spurious "Speaker 2" heals back.
         clock += TimeSpan.FromSeconds(31);
-        svc.IdentifyOrRegisterSegment(Seg(1), 16000);                             // latency trigger
+        Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(25), 16000).Label);
 
         var change = Assert.Single(events);
         var single = Assert.Single(change);
         Assert.Equal(6, single.SegmentId);
-        Assert.Equal("Speaker 2", single.NewLabel);
+        Assert.Equal("Speaker 1", single.NewLabel);
     }
 
     [Fact]
@@ -1221,6 +1239,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         _speakerCounter = 0;
         _matchSimilarity = InitialMatchSimilarity;
         _segmentsSinceLastPass = 0;
+        // _lastPassAt is deliberately NOT reset: the warm-up gate already blocks a pass until
+        // enough new segments exist, and _nextSegmentId must stay monotonic across Reset anyway.
     }
 
     public void Dispose()
@@ -1291,7 +1311,9 @@ Note: `members.Index()` is .NET 10's `Enumerable.Index()`; if it trips analyzers
 - [ ] **Step 4: Run the new tests, verify they pass**
 
 Run: `dotnet test --filter-class "Pia.Tests.Services.LiveTranscription.AdaptiveSpeakerIdentificationServiceTests"`
-Expected: 9 PASSED. Walk through any failure carefully — the pass-trigger arithmetic (`WarmupSegments`/stride interplay in `ReclusterPass_Splits…`) is the most likely off-by-one: the stride pass attempt at segment #5 must be SKIPPED for warm-up **without** resetting `_segmentsSinceLastPass` (the implementation above only resets when the pass was due AND ran or failed — check that a warm-up skip leaves the counter intact; the `due && _segments.Count >= WarmupSegments` guard does this correctly because the reset lines sit inside the `if`).
+Expected: 9 PASSED. Walk through any failure carefully — two subtleties matter:
+1. Pass-trigger arithmetic (`WarmupSegments`/stride interplay in `ReclusterPass_Splits…`): the stride pass attempt at segment #5 must be SKIPPED for warm-up **without** resetting `_segmentsSinceLastPass` (the implementation above only resets when the pass was due AND ran or failed — the reset lines sit inside the `if (due && _segments.Count >= WarmupSegments)` block, which is correct).
+2. Threshold tightening: every pass sets `_matchSimilarity = 1 − CutDistance`, so after a clean single-cluster pass the instant-match threshold is 0.70, not 0.50. Test scenarios must respect the regime they are in — that is why `ElapsedTime_TriggersAHealingPass…` exercises an over-split healed by a bridging segment rather than a wrong merge (which is unreachable after a 0.70-threshold pass: merging needs sim ≥ 0.70 ⇒ cross distance < 0.30 ⇒ below the guardrail band, so no split can follow).
 
 - [ ] **Step 5: Full test gate + commit**
 
@@ -1314,7 +1336,7 @@ git commit -m "Add adaptive speaker identification with periodic re-clustering"
 - Modify: `src/Pia.Wpf/ViewModels/MeetingAttendeeViewModel.cs` (two `Bubbles.Clear()` sites, lines ~141 and ~175)
 - Modify: `tests/Pia.Wpf.Tests/ViewModels/MeetingAttendeeViewModelTests.cs`
 
-Existing tests drive the VM through the internal `AddUtterance` seam with a fake `IMeetingAttendeeService` — mirror that fixture (read the top of `MeetingAttendeeViewModelTests.cs` first and reuse its helpers for constructing the VM). `DispatchToUi` runs synchronously in tests (no WPF `Application.Current`), so no dispatcher pumping is needed.
+Existing tests drive the VM through the internal `AddUtterance` seam with a fake `IMeetingAttendeeService` — mirror that fixture. Concretely: the file has NO shared `T0` constant or `CreateVm()` helper; existing tests use a tuple-returning `CreateSut()` / `CreateSutFull()` and a per-test `var t0 = DateTimeOffset.Now;`. Rewrite the snippets below accordingly (`var (vm, _) = CreateSut(); var t0 = DateTimeOffset.Now;` and `t0` in place of `T0`). `DispatchToUi` runs synchronously in tests (no WPF `Application.Current`), so no dispatcher pumping is needed.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1574,7 +1596,7 @@ In `IMeetingAttendeeService.cs`, after `StateChanged`:
     event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned;
 ```
 
-(`SpeakerReassignment` lives in `Pia.Services.LiveTranscription` — the file already imports it via the `Pia.Services.LiveTranscription` types used in the tuple seam; add the `using` if missing.)
+(`SpeakerReassignment` lives in `Pia.Services.LiveTranscription`. `IMeetingAttendeeService.cs` does NOT currently import that namespace — its usings are only `System.Threading.Channels`, `Pia.Models`, `Pia.Services.Interfaces` — so ADD `using Pia.Services.LiveTranscription;` at the top.)
 
 - [ ] **Step 3: Orchestrator — select the adaptive service and forward the event**
 
@@ -1701,7 +1723,7 @@ Add to `MeetingSettingsViewModelTests.cs`, following the file's existing load/pe
     }
 ```
 
-(Adapt helper names/`await`-drain idioms to the file's existing conventions — the save is fire-and-forget via `SafeFireAndForget`, and the existing tests already know how to observe it; mirror them.)
+(Adapt helper names/`await`-drain idioms to the file's existing conventions — the save is fire-and-forget via `SafeFireAndForget`, and the existing `TogglingDiarization_PersistsToAppSettings` test already shows how to observe it: the NSubstitute `ISettingsService` returns the same `AppSettings` instance that `SaveSettingsAsync` mutates, synchronously. NOTE the fixture's naming: in its `Create()` helper, `settings` is the `ISettingsService` substitute and `stored` is the `AppSettings` — so the final assertion becomes `Assert.False(stored.MeetingSmartSpeakerDetection);`.)
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -1743,6 +1765,8 @@ git commit -m "Add smart speaker detection toggle to meeting settings"
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.resx`, `ViewStrings.de.resx`, `ViewStrings.fr.resx`
 
 - [ ] **Step 1: Add the resource strings**
+
+(The repo's resx entries are single-line `<data ...><value>...</value></data>`; match that style even though the snippets below wrap for readability.)
 
 Add to `ViewStrings.resx`:
 
@@ -1797,11 +1821,7 @@ Then add to EACH of the three tuning StackPanels (threshold ~line 230, max speak
                         Visibility="{Binding ShowManualTuning, Converter={StaticResource BooleanToVisibilityConverter}}"
 ```
 
-Check `App.xaml` (~line 35 area) declares `BooleanToVisibilityConverter` as a resource key; the codebase has `Pia.Converters.BooleanToVisibilityConverter` and registers converters there — if only the Inverse variant is registered, register the plain one the same way:
-
-```xml
-      <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
-```
+`App.xaml` line 34 ALREADY registers `<converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />` (line 35 has the Inverse variant) — no App.xaml edit is needed; just use the existing key.
 
 - [ ] **Step 3: Build + full gate**
 
@@ -1811,7 +1831,7 @@ Expected: 0 errors, 0 failures (XAML compiles; localization tests, if any assert
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/Pia.Wpf/Views/SettingsViews/AssistantView.xaml src/Pia.Wpf/Resources/Strings/ src/Pia.Wpf/App.xaml
+git add src/Pia.Wpf/Views/SettingsViews/AssistantView.xaml src/Pia.Wpf/Resources/Strings/
 git commit -m "Add smart speaker detection settings UI (en/de/fr)"
 ```
 
