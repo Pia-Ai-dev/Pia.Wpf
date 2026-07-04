@@ -1,3 +1,5 @@
+using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -192,7 +194,7 @@ public sealed class AssistantChatSyncService : BackgroundService
         using (client)
         {
             var wire = _mapper.ToSyncAssistantChat(chat, userId);
-            using var content = JsonContent.Create(wire, options: JsonOptions);
+            using var content = CreateGzipJsonContent(wire);
             using var response = await client.PutAsync(url, content, ct);
 
             if (response.IsSuccessStatusCode)
@@ -339,6 +341,21 @@ public sealed class AssistantChatSyncService : BackgroundService
                     ? null
                     : Uri.EscapeDataString(since.Value.ToUniversalTime().ToString("O"));
 
+                // Conditional GET: the stored ETag represents the whole chat set (it rides the
+                // user's server-side DataVersion, not a page cursor), so it is only echoed on the
+                // first page. A 304 there means nothing changed since the last successful full
+                // pull. Old servers that don't emit a chat ETag simply return 200 and this stays
+                // inert. See docs plan Sec 5.5 (server-side emission is srv-1a).
+                // KNOWN LIMITATION: the ETag is decoupled from `since` (ETag lives in settings,
+                // `since` is derived from the local chat DB max UpdatedAt) — if the local chat DB
+                // is restored/rolled back while settings survive, a DataVersion-only 304 could
+                // skip chats that the older `since` should re-fetch. The main sync pull avoids
+                // this by folding since.Ticks into its ETag (plan Sec 3.4); flagged for srv-1a to
+                // do the same for the chat ETag, or for a future client fix to persist `since`
+                // alongside LastChatPullETag and skip If-None-Match when they disagree.
+                var chatETag = (await _settingsService.GetSettingsAsync()).LastChatPullETag;
+                string? newETag = null;
+
                 string? cursor = null;
                 var totalMerged = 0;
                 var totalDeleted = 0;
@@ -349,7 +366,24 @@ public sealed class AssistantChatSyncService : BackgroundService
                 {
                     var url = BuildPullUrl(baseUrl, sinceParam, cursor);
 
-                    using var response = await client.GetAsync(url, ct);
+                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                    // TryParse (not the EntityTagHeaderValue ctor) because it accepts both strong
+                    // and weak (W/"...") tags — the ctor throws FormatException on weak tags, which
+                    // would otherwise abort the whole startup pull on every launch after the server
+                    // starts emitting a weak DataVersion-backed chat ETag.
+                    if (cursor is null && !string.IsNullOrEmpty(chatETag) && EntityTagHeaderValue.TryParse(chatETag, out var ifNoneMatchTag))
+                        request.Headers.IfNoneMatch.Add(ifNoneMatchTag);
+
+                    using var response = await client.SendAsync(request, ct);
+
+                    // 304 is not a success status, so handle it before the failure branch and do
+                    // NOT invalidate the capability — it is the healthy "no changes" answer.
+                    if (response.StatusCode == HttpStatusCode.NotModified)
+                    {
+                        _logger.LogInformation("Startup pull: 304 Not Modified — no chat changes since last pull");
+                        return;
+                    }
+
                     if (!response.IsSuccessStatusCode)
                     {
                         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -359,6 +393,12 @@ public sealed class AssistantChatSyncService : BackgroundService
                             (int)response.StatusCode, pages + 1);
                         return;
                     }
+
+                    // Capture the first page's ETag; persist it only after the full pull completes
+                    // (below), so a mid-pagination failure never strands an ETag that would
+                    // 304-skip an incomplete set next launch.
+                    if (cursor is null && response.Headers.ETag is not null)
+                        newETag = response.Headers.ETag.ToString();
 
                     await using var stream = await response.Content.ReadAsStreamAsync(ct);
                     using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
@@ -446,6 +486,15 @@ public sealed class AssistantChatSyncService : BackgroundService
                 _logger.LogInformation(
                     "Startup pull merged {Merged} chats and applied {Deleted} delete(s) across {Pages} page(s)",
                     totalMerged, totalDeleted, pages);
+
+                // Persist the chat ETag only after the full pull completed (mirrors LastPullETag),
+                // so the next launch can 304-skip when nothing changed.
+                if (newETag is not null && newETag != chatETag)
+                {
+                    var toSave = await _settingsService.GetSettingsAsync();
+                    toSave.LastChatPullETag = newETag;
+                    await _settingsService.SaveSettingsAsync(toSave);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -486,6 +535,27 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
         client.Timeout = TimeSpan.FromSeconds(60);
         return (client, serverUrl, settings.SyncUserId);
+    }
+
+    /// <summary>
+    /// Serializes <paramref name="value"/> to JSON, gzip-compresses it, and wraps it in a
+    /// StreamContent tagged Content-Encoding: gzip. The server runs UseRequestDecompression
+    /// globally (Program.cs, before endpoint routing), so it transparently covers the
+    /// /api/v1/chats/* route. The returned content owns the compressed stream and disposes it.
+    /// </summary>
+    private static StreamContent CreateGzipJsonContent<T>(T value)
+    {
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        var compressed = new MemoryStream();
+        using (var gzip = new GZipStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            gzip.Write(jsonBytes);
+        }
+        compressed.Position = 0;
+        var content = new StreamContent(compressed);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Headers.ContentEncoding.Add("gzip");
+        return content;
     }
 
     private static async Task<SyncAssistantChat?> TryReadAsync(HttpResponseMessage response, CancellationToken ct)

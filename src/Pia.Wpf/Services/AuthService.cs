@@ -295,6 +295,13 @@ public class AuthService : IAuthService
             settings.SyncProvider = null;
             settings.LastSyncTimestamp = null;
             settings.AssistantChatsBackfilledAt = null;
+            // Clear cross-account sync gate/ETag state so a subsequent login (same or different
+            // account) never inherits stale state: a stale LastPushedSettingsHash could suppress
+            // the settings row on the next first sync, and stale ETags rely on the server never
+            // colliding tag values across accounts.
+            settings.LastPushedSettingsHash = null;
+            settings.LastChatPullETag = null;
+            settings.LastPullETag = null;
             await _settingsService.SaveSettingsAsync(settings);
 
             LoginStateChanged?.Invoke(this, false);

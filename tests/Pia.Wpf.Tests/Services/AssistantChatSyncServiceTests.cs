@@ -75,6 +75,91 @@ public class AssistantChatSyncServiceTests
     }
 
     [Fact]
+    public async Task StartupPull_StoredETag_Server304_IsNoOpAndLeavesETagUnchanged()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            LastChatPullETag = "\"v1\"",
+        });
+        _handler.SetGetSequence("/api/v1/chats", (HttpStatusCode.NotModified, "", null));
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPullAsync(sut);
+
+        await _chatService.DidNotReceive().SaveFromRemoteAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().DeleteFromRemoteAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _capabilities.DidNotReceive().Invalidate();
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    [Fact]
+    public async Task StartupPull_MultiPage_EchoesETagOnFirstPageOnly_AndPersistsOnceAfterLastPage()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            LastChatPullETag = "\"v1\"",
+        });
+        _handler.SetGetSequence("/api/v1/chats",
+            (HttpStatusCode.OK, @"{""chats"":[],""deleted"":[],""hasMore"":true,""nextCursor"":""abc""}", "\"v2\""),
+            (HttpStatusCode.OK, @"{""chats"":[],""deleted"":[],""hasMore"":false}", null));
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPullAsync(sut);
+
+        var requests = _handler.RequestsByUri.Values.ToList();
+        Assert.Equal(2, requests.Count);
+        var firstPageRequest = requests.Single(r => !r.RequestUri!.ToString().Contains("cursor="));
+        var secondPageRequest = requests.Single(r => r.RequestUri!.ToString().Contains("cursor="));
+        Assert.NotEmpty(firstPageRequest.Headers.IfNoneMatch);
+        Assert.Empty(secondPageRequest.Headers.IfNoneMatch);
+
+        await _settings.Received(1).SaveSettingsAsync(
+            Arg.Is<AppSettings>(s => s.LastChatPullETag == "\"v2\""));
+    }
+
+    [Fact]
+    public async Task StartupPull_MidPaginationFailure_DoesNotPersistETag()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+        });
+        _handler.SetGetSequence("/api/v1/chats",
+            (HttpStatusCode.OK, @"{""chats"":[],""deleted"":[],""hasMore"":true,""nextCursor"":""abc""}", "\"v3\""),
+            (HttpStatusCode.InternalServerError, "", null));
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPullAsync(sut);
+
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    [Fact]
+    public async Task StartupPull_WeakStoredETag_DoesNotThrow()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            LastChatPullETag = "W/\"v4\"",
+        });
+        _handler.SetGetSequence("/api/v1/chats",
+            (HttpStatusCode.OK, @"{""chats"":[],""deleted"":[],""hasMore"":false}", null));
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPullAsync(sut);
+
+        var request = _handler.RequestsByUri.Values.Single();
+        var ifNoneMatch = Assert.Single(request.Headers.IfNoneMatch);
+        Assert.True(ifNoneMatch.IsWeak);
+    }
+
+    [Fact]
     public async Task SendUpsert_Returns404_InvalidatesCapability()
     {
         var chat = SampleChat();
@@ -252,6 +337,7 @@ public class AssistantChatSyncServiceTests
         public ConcurrentDictionary<string, (HttpStatusCode Status, string Body)> GetResponses { get; } = new();
         public ConcurrentDictionary<string, (HttpStatusCode Status, string Body)> PutResponses { get; } = new();
         public ConcurrentDictionary<string, (HttpStatusCode Status, string Body)> DeleteResponses { get; } = new();
+        public ConcurrentDictionary<string, Queue<(HttpStatusCode Status, string Body, string? ETag)>> GetSequences { get; } = new();
         public ConcurrentDictionary<string, HttpRequestMessage> RequestsByUri { get; } = new();
         public string? LastPutBody { get; private set; }
 
@@ -262,11 +348,34 @@ public class AssistantChatSyncServiceTests
         public void SetDelete(string path, HttpStatusCode status, string body) =>
             DeleteResponses[path] = (status, body);
 
+        // Queues successive responses (with optional ETag headers) for the same path — used to
+        // test multi-page conditional-GET behavior where page 1 and page 2 must differ.
+        public void SetGetSequence(string pathPrefix, params (HttpStatusCode Status, string Body, string? ETag)[] responses) =>
+            GetSequences[pathPrefix] = new Queue<(HttpStatusCode, string, string?)>(responses);
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var uri = request.RequestUri!.ToString();
             RequestsByUri[uri] = request;
+
+            if (request.Method == HttpMethod.Get)
+            {
+                foreach (var (path, queue) in GetSequences)
+                {
+                    if (uri.Contains(path) && queue.Count > 0)
+                    {
+                        var (status, body, etag) = queue.Dequeue();
+                        var queuedResponse = new HttpResponseMessage(status)
+                        {
+                            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+                        };
+                        if (etag is not null)
+                            queuedResponse.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue(etag);
+                        return queuedResponse;
+                    }
+                }
+            }
 
             (HttpStatusCode Status, string Body)? match = null;
             if (request.Method == HttpMethod.Get)
@@ -283,7 +392,7 @@ public class AssistantChatSyncServiceTests
             else if (request.Method == HttpMethod.Put)
             {
                 if (request.Content is not null)
-                    LastPutBody = await request.Content.ReadAsStringAsync(cancellationToken);
+                    LastPutBody = await ReadBodyAsync(request.Content, cancellationToken);
                 foreach (var (path, resp) in PutResponses)
                 {
                     if (uri.EndsWith(path))
@@ -312,6 +421,21 @@ public class AssistantChatSyncServiceTests
             {
                 Content = new StringContent(match.Value.Body, System.Text.Encoding.UTF8, "application/json"),
             };
+        }
+
+        // The per-chat PUT is now gzipped (Content-Encoding: gzip); decompress so body assertions
+        // can inspect the JSON. Falls back to a plain read for uncompressed content.
+        private static async Task<string> ReadBodyAsync(HttpContent content, CancellationToken ct)
+        {
+            var bytes = await content.ReadAsByteArrayAsync(ct);
+            if (!content.Headers.ContentEncoding.Contains("gzip"))
+                return System.Text.Encoding.UTF8.GetString(bytes);
+
+            using var input = new System.IO.MemoryStream(bytes);
+            using var gzip = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress);
+            using var output = new System.IO.MemoryStream();
+            await gzip.CopyToAsync(output, ct);
+            return System.Text.Encoding.UTF8.GetString(output.ToArray());
         }
     }
 }

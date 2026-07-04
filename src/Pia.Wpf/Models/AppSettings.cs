@@ -178,6 +178,19 @@ public class AppSettings
     public string? SyncProvider { get; set; }
     public DateTime? LastSyncTimestamp { get; set; }
     public string? LastPullETag { get; set; }
+    // SHA-256 (base64) of the plaintext settings projection last successfully pushed. Lets the
+    // delta/first-sync push omit Settings entirely when the local settings are byte-identical to
+    // the last push (E2EE re-encrypts with a fresh DEK/nonce each run, so the ciphertext always
+    // differs — the gate must be over plaintext). See SyncMapper.ComputeSettingsHash.
+    public string? LastPushedSettingsHash { get; set; }
+    // Last plugin-catalog version the server echoed on a pull (SyncPullResponse.CatalogVersion).
+    // Sent back as ?catalogVersion= on the next pull so the server can skip re-sending an unchanged
+    // plugin catalog (Sec 3.5). Null on first run / pre-upgrade servers => the param is omitted and
+    // the server returns the full catalog.
+    public long? LastCatalogVersion { get; set; }
+    // ETag from the last successful assistant-chat startup pull (GET /api/v1/chats). Echoed as
+    // If-None-Match so an unchanged chat set answers 304 with no body. Mirrors LastPullETag.
+    public string? LastChatPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
     // One-time gate for the assistant-chat startup backfill. Chats predating

@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
 using Pia.Models;
@@ -38,10 +39,58 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly ILogger<SyncClientService> _logger;
     private readonly SyncDeleteTrackerService _deleteTracker;
 
+    // Single serializer for both push sites (first-sync + delta). camelCase unifies the previous
+    // PascalCase(delta)/camelCase(first-sync) split; WhenWritingNull trims "field":null keys
+    // (notably an omitted Settings when unchanged); case-insensitive read keeps parity with the
+    // server's case-insensitive binder. The server accepts either casing, so this is a pure
+    // client cleanup with no server-compat impact.
+    internal static readonly JsonSerializerOptions PushSerializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true
+    };
+
     private Timer? _syncTimer;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private static readonly TimeSpan SyncInterval = TimeSpan.FromMinutes(5);
+    // Backoff ceiling: after enough consecutive idle cycles the period grows toward this.
+    private static readonly TimeSpan MaxSyncInterval = TimeSpan.FromMinutes(15);
+    // First run after 10 seconds (one-shot; the cycle re-arms itself thereafter).
+    private static readonly TimeSpan InitialSyncDelay = TimeSpan.FromSeconds(10);
+    // Number of consecutive idle cycles before the period starts backing off toward the ceiling.
+    private const int IdleBackoffThreshold = 6;
+    // Multiplicative growth applied per idle cycle beyond the threshold.
+    private const double BackoffGrowthFactor = 1.5;
+    // +/- jitter applied to every scheduled delay to break thundering-herd alignment.
+    private const double JitterFraction = 0.20;
+    // Interim (Phase 2.2): the pending-device check runs on this cadence (every Nth eligible
+    // cycle) instead of every cycle, until the pull response carries PendingDevices (Phase 5).
+    private const int DeviceCheckCadence = 6;
+    // Max sessions per first-sync push body (Sec 6.4). Sessions dominate the payload, so the chunked
+    // first-sync migration ships <=this many sessions per POST to stay within the 30/60s rate limit.
+    private const int FirstSyncBatchSize = 200;
+    // Page size for loading every session during first-sync (replaces the old silent 10k cap).
+    private const int SessionLoadPageSize = 1000;
+    // Mirrors the server's per-user "sync" rate-limit policy (Pia.Server RateLimitOptions: default
+    // Sync PermitLimit=30 requests / 60s sliding window). The chunked first-sync push paces itself
+    // against this so an account with many batches (~29+, i.e. ~5,800+ sessions at
+    // FirstSyncBatchSize=200) never trips the limit: RateLimitRetryHandler's exponential backoff
+    // cannot recover from a sliding-window 429 (no Retry-After is sent, and the window doesn't free
+    // a permit any sooner), so an unpaced loop would abort the migration permanently and re-fail at
+    // the same batch on every retry.
+    private const int SyncRateLimitPermits = 30;
+    private static readonly TimeSpan SyncRateLimitWindow = TimeSpan.FromSeconds(60);
+    // Safety margin below the server's real permit count, leaving headroom for the trailing pull
+    // (and any other concurrent sync traffic) that shares the same rate-limit bucket.
+    private const int SyncRateLimitSafetyMargin = 2;
+
+    private int _consecutiveIdleCycles;
+    private int _deviceCheckCounter;
     private bool _hasVerifiedServerE2EEStatus;
+    // Bumped on every Start/Stop so a sync cycle in flight during a Stop+Start cannot re-arm
+    // the newly-started timer with a stale (non-InitialSyncDelay) period.
+    private int _syncGeneration;
 
     public bool IsSyncActive => _syncTimer is not null;
     public bool IsE2EEOnboardingRequired { get; private set; }
@@ -118,21 +167,136 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         if (_syncTimer is not null) return;
 
-        _syncTimer = new Timer(async _ =>
+        _consecutiveIdleCycles = 0;
+        _deviceCheckCounter = 0;
+        var generation = ++_syncGeneration;
+
+        // One-shot timer: it fires once after InitialSyncDelay, then each cycle re-arms the
+        // timer for a jittered, adaptively-backed-off delay via ArmNextSyncCycle. An infinite
+        // period keeps the timer from auto-repeating. The timer instance and generation are
+        // captured in the closure so a Stop+Start that races an in-flight cycle can never let
+        // the stale cycle re-arm the new session's timer (see ArmNextSyncCycle).
+        Timer? timer = null;
+        timer = new Timer(async _ =>
         {
             try { await SyncNowAsync(); }
             catch (Exception ex) { _logger.LogWarning(ex, "Background sync cycle failed"); }
-        }, null, TimeSpan.FromSeconds(10), SyncInterval); // First run after 10 seconds
+            finally { ArmNextSyncCycle(generation, timer!); }
+        }, null, InitialSyncDelay, Timeout.InfiniteTimeSpan);
+        _syncTimer = timer;
 
-        _logger.LogInformation("Background sync started (interval: {Interval})", SyncInterval);
+        _logger.LogInformation("Background sync started (base interval: {Interval})", SyncInterval);
     }
 
     public void StopBackgroundSync()
     {
+        _syncGeneration++; // invalidate any in-flight cycle's pending re-arm
         _syncTimer?.Dispose();
         _syncTimer = null;
         _hasVerifiedServerE2EEStatus = false;
         _logger.LogInformation("Background sync stopped");
+    }
+
+    // Re-arm the one-shot sync timer for the next cycle. Called from the timer callback after
+    // every SyncNowAsync run. The delay adapts to how many consecutive idle cycles have elapsed
+    // (backoff) and carries +/- jitter to avoid synchronized fleet-wide polling.
+    // <paramref name="generation"/>/<paramref name="timer"/> pin this call to the session that
+    // scheduled it: if StopBackgroundSync (and possibly a subsequent StartBackgroundSync) ran
+    // while the cycle was in flight, both the generation and the timer reference will have
+    // moved on, and this stale callback must not touch the new session's timer.
+    private void ArmNextSyncCycle(int generation, Timer timer)
+    {
+        if (generation != _syncGeneration || !ReferenceEquals(timer, _syncTimer))
+            return; // background sync was stopped (and possibly restarted) since this cycle began
+
+        var delay = ComputeNextSyncDelay(_consecutiveIdleCycles, Random.Shared.NextDouble());
+        try
+        {
+            timer.Change(delay, Timeout.InfiniteTimeSpan);
+            _logger.LogDebug("Next background sync in {DelaySeconds:F0}s (consecutive idle cycles: {Idle})",
+                delay.TotalSeconds, _consecutiveIdleCycles);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Timer was disposed concurrently by StopBackgroundSync; nothing to re-arm.
+        }
+    }
+
+    /// <summary>
+    /// Pure scheduling math (unit-testable): computes the next sync delay from the number of
+    /// consecutive idle cycles and a uniform random unit value in [0,1). Below the backoff
+    /// threshold the base period is used; at/above it the period grows by
+    /// <see cref="BackoffGrowthFactor"/> per extra idle cycle, capped at <see cref="MaxSyncInterval"/>.
+    /// A +/- <see cref="JitterFraction"/> jitter is then applied.
+    /// </summary>
+    internal static TimeSpan ComputeNextSyncDelay(int consecutiveIdleCycles, double randomUnit)
+    {
+        var period = SyncInterval.TotalMilliseconds;
+        if (consecutiveIdleCycles >= IdleBackoffThreshold)
+        {
+            var exponent = consecutiveIdleCycles - IdleBackoffThreshold + 1;
+            period = SyncInterval.TotalMilliseconds * Math.Pow(BackoffGrowthFactor, exponent);
+            period = Math.Min(period, MaxSyncInterval.TotalMilliseconds);
+        }
+
+        // Map randomUnit [0,1) -> jitter multiplier [1 - JitterFraction, 1 + JitterFraction).
+        var jitterMultiplier = 1.0 + (randomUnit * 2.0 - 1.0) * JitterFraction;
+        return TimeSpan.FromMilliseconds(period * jitterMultiplier);
+    }
+
+    /// <summary>
+    /// Pure classification of a completed sync cycle from the push outcome and the pull tuple.
+    /// A cycle is <see cref="SyncCycleOutcome.Active"/> when it moved data (the push sent
+    /// changes — upserts, deletes, or plugin preferences — or a pull returned rows),
+    /// <see cref="SyncCycleOutcome.Idle"/> when the push had nothing to send and the pull
+    /// succeeded with no changes (304 -> ServerTimestamp null), and
+    /// <see cref="SyncCycleOutcome.Inconclusive"/> otherwise (e.g. a failed push or a failed
+    /// pull), which neither advances nor resets the backoff. A failed push must never be
+    /// classified as idle: unpushed local changes are still pending and should not engage
+    /// backoff, which would slow their retry.
+    /// </summary>
+    internal static SyncCycleOutcome ClassifyCycle(bool pushSucceeded, bool pushSentChanges, int pulled, bool pullSucceeded, DateTime? serverTimestamp)
+    {
+        if (!pushSucceeded)
+            return SyncCycleOutcome.Inconclusive;
+        if (pushSentChanges || pulled > 0)
+            return SyncCycleOutcome.Active;
+        if (pullSucceeded && serverTimestamp is null)
+            return SyncCycleOutcome.Idle;
+        return SyncCycleOutcome.Inconclusive;
+    }
+
+    /// <summary>
+    /// Pure update of the consecutive-idle counter: reset to 0 on activity, increment on idle,
+    /// leave unchanged on an inconclusive cycle.
+    /// </summary>
+    internal static int UpdateIdleCycleCount(int current, SyncCycleOutcome outcome) => outcome switch
+    {
+        SyncCycleOutcome.Active => 0,
+        SyncCycleOutcome.Idle => current + 1,
+        _ => current,
+    };
+
+    /// <summary>
+    /// Pure cadence gate for the interim (Phase 2.2) pending-device check (Sec 4.2): true on
+    /// the first eligible cycle (counter 0) and every <see cref="DeviceCheckCadence"/>th cycle
+    /// thereafter.
+    /// </summary>
+    internal static bool ShouldCheckDevices(int counter) => counter % DeviceCheckCadence == 0;
+
+    /// <summary>
+    /// Pure state-machine step for the interim (Phase 2.2) pending-device check cadence:
+    /// decides whether to check this cycle (<see cref="ShouldCheckDevices"/>, or unconditionally
+    /// when <paramref name="got200Pull"/>) and what the counter should be for the next cycle.
+    /// After a check the counter resets to 1 (not 0) so the cadence engages every
+    /// <see cref="DeviceCheckCadence"/>th eligible cycle instead of every cycle — resetting to 0
+    /// would make <see cref="ShouldCheckDevices"/> true again on the very next call.
+    /// </summary>
+    internal static (bool ShouldCheck, int NextCounter) AdvanceDeviceCheck(int counter, bool got200Pull)
+    {
+        var shouldCheck = ShouldCheckDevices(counter) || got200Pull;
+        var nextCounter = shouldCheck ? 1 : counter + 1;
+        return (shouldCheck, nextCounter);
     }
 
     public async Task<SyncResult?> SyncNowAsync()
@@ -183,7 +347,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             using var client = CreateAuthenticatedClient(accessToken);
 
             // Push local changes
-            var pushed = await PushChangesAsync(client, serverUrl, settings);
+            var (pushedCount, pushSucceeded, pushSentChanges) = await PushChangesAsync(client, serverUrl, settings);
 
             // Pull remote changes
             var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
@@ -202,13 +366,33 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
             }
 
-            // Check for pending devices (only if this device is active with E2EE)
+            // Check for pending devices (only if this device is active with E2EE).
+            // Interim (Phase 2.2): moved off the hot path onto a slower cadence — every Nth
+            // eligible cycle instead of every cycle — until the pull response carries
+            // PendingDevices (Phase 5). The first eligible cycle still checks so a device
+            // awaiting approval is surfaced promptly. Worst-case latency at the backoff
+            // ceiling is bounded by also checking on every 200 pull (ServerTimestamp != null):
+            // under the Phase 1 server that is the only signal that something — possibly a
+            // device registration — changed server-side, so it is cheap insurance against the
+            // cadence alone taking up to ~90 min (6 cycles x the 15 min ceiling) to surface a
+            // pending device.
             if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
             {
-                await CheckForPendingDevicesAsync();
+                var got200Pull = pullOk && serverTimestamp.HasValue;
+                var (shouldCheckDevices, nextDeviceCheckCounter) = AdvanceDeviceCheck(_deviceCheckCounter, got200Pull);
+                _deviceCheckCounter = nextDeviceCheckCounter;
+                if (shouldCheckDevices)
+                {
+                    await CheckForPendingDevicesAsync();
+                }
             }
 
-            result = new SyncResult(pushed, pulled, decryptErrors);
+            // Adaptive scheduling: classify this cycle and update the consecutive-idle counter
+            // that ArmNextSyncCycle reads to decide the next delay.
+            var outcome = ClassifyCycle(pushSucceeded, pushSentChanges, pulled, pullOk, serverTimestamp);
+            _consecutiveIdleCycles = UpdateIdleCycleCount(_consecutiveIdleCycles, outcome);
+
+            result = new SyncResult(pushedCount, pulled, decryptErrors);
             syncSw.Stop();
             _logger.LogInformation("SyncNowAsync completed in {ElapsedMs}ms — Pushed: {Pushed}, Pulled: {Pulled}, DecryptionErrors: {DecryptErrors}",
                 syncSw.ElapsedMilliseconds, result.PushedCount, result.PulledCount, result.DecryptionErrors);
@@ -253,7 +437,17 @@ public class SyncClientService : ISyncClientService, IDisposable
                 ? await _personaService.GetPersonasAsync()
                 : [];
             var providers = await _providerService.GetProvidersAsync();
-            var sessions = await _historyService.GetSessionsAsync(0, 10_000);
+            // Load every session in pages instead of the old silent 10k cap (GetSessionsAsync(0, 10_000)),
+            // so accounts with more than 10k sessions still migrate fully. The chunked push below bounds
+            // the request bodies, so there is no reason to cap the load either.
+            var sessions = new List<OptimizationSession>();
+            for (var offset = 0; ; offset += SessionLoadPageSize)
+            {
+                var batch = await _historyService.GetSessionsAsync(offset, SessionLoadPageSize);
+                if (batch.Count == 0) break;
+                sessions.AddRange(batch);
+                if (batch.Count < SessionLoadPageSize) break;
+            }
             var memories = await _memoryService.GetAllObjectsAsync();
             var kanbanColumns = _columnService is not null
                 ? await _columnService.GetAllAsync()
@@ -272,73 +466,77 @@ public class SyncClientService : ISyncClientService, IDisposable
             var isE2EE = _e2ee?.IsReady() == true;
             var userId = isE2EE ? settings.SyncUserId : null;
 
-            var request = new SyncPushRequest
+            // Unlike the delta push, first sync never gates Settings on the hash: it's the one
+            // path where an unchanged-since-last-push local hash can still mean the server needs
+            // a fresh Settings row — e.g. EnableE2EEAsync migrating a previously-plaintext-synced
+            // account (settings content unchanged, but the server's row must switch from
+            // plaintext to E2EE), or a first sync to a brand-new account/server that has no
+            // Settings row at all yet. The byte win from omitting Settings only matters on the
+            // frequent delta push; first sync is rare, so always include them here.
+            var settingsHash = SyncMapper.ComputeSettingsHash(settings);
+            const bool settingsChanged = true;
+
+            // Project every entity to its Sync DTO once, up front. Sessions dominate the volume, so
+            // the push is chunked below by session slices; the (typically small) non-session entities
+            // and Settings ride only the first chunk.
+            var templateDtos = templates.Where(t => !t.IsBuiltIn).Select(t => _mapper.ToSyncTemplate(t, userId)).ToList();
+            var personaDtos = personas.Where(p => !p.IsBuiltIn).Select(p => _mapper.ToSyncPersona(p, userId)).ToList();
+            var providerDtos = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Select(p => _mapper.ToSyncProvider(p, userId)).ToList();
+            var sessionDtos = sessions.Select(s => _mapper.ToSyncSession(s, userId)).ToList();
+            var memoryDtos = memories.Select(m => _mapper.ToSyncMemory(m, userId)).ToList();
+            var kanbanDtos = kanbanColumns.Select(c => _mapper.ToSyncKanbanColumn(c, userId)).ToList();
+            var todoDtos = todos.Select(t => _mapper.ToSyncTodo(t, userId)).ToList();
+            var jobDtos = scheduledJobs.Select(j => _mapper.ToSyncScheduledJob(j, userId)).ToList();
+
+            // Chunk the push into <=FirstSyncBatchSize-session bodies (Sec 6.4) so a large first sync
+            // stays well within the 30/60s rate limit and never ships one multi-MB body. At least one
+            // batch always runs (so an account with no sessions still pushes its other entities +
+            // Settings). Each batch is gzipped via the shared PostPushAsync (server runs
+            // UseRequestDecompression), same as the delta push.
+            var batchCount = Math.Max(1, (int)Math.Ceiling(sessionDtos.Count / (double)FirstSyncBatchSize));
+            var batchSendTimes = new Queue<DateTime>();
+            for (var batch = 0; batch < batchCount; batch++)
             {
-                ClientTimestamp = DateTime.UtcNow,
-                LastSyncTimestamp = DateTime.MinValue,
-                DeviceId = settings.SyncDeviceId,
-                IsE2EEEncrypted = isE2EE,
-                Settings = _mapper.ToSyncSettings(settings, userId),
-                Templates = new SyncEntityChanges<SyncTemplate>
-                {
-                    Upserted = templates
-                        .Where(t => !t.IsBuiltIn)
-                        .Select(t => _mapper.ToSyncTemplate(t, userId))
-                        .ToList()
-                },
-                Personas = new SyncEntityChanges<SyncPersona>
-                {
-                    Upserted = personas
-                        .Where(p => !p.IsBuiltIn)
-                        .Select(p => _mapper.ToSyncPersona(p, userId))
-                        .ToList()
-                },
-                Providers = new SyncEntityChanges<SyncProvider>
-                {
-                    Upserted = providers
-                        .Where(p => p.ProviderType != AiProviderType.PiaCloud)
-                        .Select(p => _mapper.ToSyncProvider(p, userId))
-                        .ToList()
-                },
-                Sessions = new SyncSessionChanges
-                {
-                    Added = sessions
-                        .Select(s => _mapper.ToSyncSession(s, userId))
-                        .ToList()
-                },
-                Memories = new SyncEntityChanges<SyncMemory>
-                {
-                    Upserted = memories
-                        .Select(m => _mapper.ToSyncMemory(m, userId))
-                        .ToList()
-                },
-                KanbanColumns = new SyncEntityChanges<SyncKanbanColumn>
-                {
-                    Upserted = kanbanColumns
-                        .Select(c => _mapper.ToSyncKanbanColumn(c, userId))
-                        .ToList()
-                },
-                Todos = new SyncEntityChanges<SyncTodo>
-                {
-                    Upserted = todos
-                        .Select(t => _mapper.ToSyncTodo(t, userId))
-                        .ToList()
-                },
-                ScheduledJobs = new SyncEntityChanges<SyncScheduledJob>
-                {
-                    Upserted = scheduledJobs
-                        .Select(j => _mapper.ToSyncScheduledJob(j, userId))
-                        .ToList()
-                }
-            };
+                await PaceBatchPushAsync(batchSendTimes);
 
-            var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
-            await EnsureSuccessAsync(response, "First-sync push");
+                var isFirstBatch = batch == 0;
+                var sessionSlice = sessionDtos.Skip(batch * FirstSyncBatchSize).Take(FirstSyncBatchSize).ToList();
 
-            _logger.LogInformation("First-sync push completed (templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos}, scheduledJobs: {Jobs})",
-                request.Templates.Upserted.Count, request.Personas.Upserted.Count, request.Providers.Upserted.Count,
-                request.Sessions.Added.Count, request.Memories.Upserted.Count,
-                request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count, request.ScheduledJobs.Upserted.Count);
+                var request = new SyncPushRequest
+                {
+                    ClientTimestamp = DateTime.UtcNow,
+                    LastSyncTimestamp = DateTime.MinValue,
+                    DeviceId = settings.SyncDeviceId,
+                    IsE2EEEncrypted = isE2EE,
+                    Settings = isFirstBatch && settingsChanged ? _mapper.ToSyncSettings(settings, userId) : null,
+                    Templates = new SyncEntityChanges<SyncTemplate> { Upserted = isFirstBatch ? templateDtos : [] },
+                    Personas = new SyncEntityChanges<SyncPersona> { Upserted = isFirstBatch ? personaDtos : [] },
+                    Providers = new SyncEntityChanges<SyncProvider> { Upserted = isFirstBatch ? providerDtos : [] },
+                    Sessions = new SyncSessionChanges { Added = sessionSlice },
+                    Memories = new SyncEntityChanges<SyncMemory> { Upserted = isFirstBatch ? memoryDtos : [] },
+                    KanbanColumns = new SyncEntityChanges<SyncKanbanColumn> { Upserted = isFirstBatch ? kanbanDtos : [] },
+                    Todos = new SyncEntityChanges<SyncTodo> { Upserted = isFirstBatch ? todoDtos : [] },
+                    ScheduledJobs = new SyncEntityChanges<SyncScheduledJob> { Upserted = isFirstBatch ? jobDtos : [] }
+                };
+
+                using var response = await PostPushAsync(client, serverUrl, request);
+                batchSendTimes.Enqueue(DateTime.UtcNow);
+                await EnsureSuccessAsync(response, $"First-sync push (batch {batch + 1}/{batchCount})");
+
+                _logger.LogInformation("First-sync push batch {Batch}/{BatchCount} completed (settingsIncluded: {SettingsIncluded}, templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos}, scheduledJobs: {Jobs})",
+                    batch + 1, batchCount, request.Settings is not null,
+                    request.Templates.Upserted.Count, request.Personas.Upserted.Count, request.Providers.Upserted.Count,
+                    request.Sessions.Added.Count, request.Memories.Upserted.Count,
+                    request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count, request.ScheduledJobs.Upserted.Count);
+            }
+
+            // Persist the settings hash only after every batch pushed successfully (EnsureSuccessAsync
+            // throws otherwise), so a failed push never strands settings behind an advanced hash.
+            await PersistSettingsHashIfChangedAsync(settings, settingsHash, settingsChanged);
+
+            _logger.LogInformation("First-sync push completed in {BatchCount} batch(es): {Sessions} sessions, {Templates} templates, {Personas} personas, {Providers} providers, {Memories} memories, {KanbanColumns} kanbanColumns, {Todos} todos, {Jobs} scheduledJobs",
+                batchCount, sessionDtos.Count, templateDtos.Count, personaDtos.Count, providerDtos.Count,
+                memoryDtos.Count, kanbanDtos.Count, todoDtos.Count, jobDtos.Count);
 
             // Pull all data from server (including other devices' data)
             var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
@@ -358,6 +556,28 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             _syncLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Blocks before a first-sync batch send once <see cref="SyncRateLimitPermits"/> minus the
+    /// safety margin worth of batches have already been sent within the trailing
+    /// <see cref="SyncRateLimitWindow"/>, waiting out the remainder of the window so the sliding
+    /// per-user "sync" rate limit is never exhausted mid-migration. No-op for small syncs — <paramref
+    /// name="sendTimes"/> never reaches the margin, so this returns immediately without delay.
+    /// </summary>
+    private static async Task PaceBatchPushAsync(Queue<DateTime> sendTimes)
+    {
+        var now = DateTime.UtcNow;
+        while (sendTimes.Count > 0 && now - sendTimes.Peek() > SyncRateLimitWindow)
+            sendTimes.Dequeue();
+
+        const int safeBatchesPerWindow = SyncRateLimitPermits - SyncRateLimitSafetyMargin;
+        if (sendTimes.Count < safeBatchesPerWindow)
+            return;
+
+        var wait = SyncRateLimitWindow - (now - sendTimes.Peek());
+        if (wait > TimeSpan.Zero)
+            await Task.Delay(wait);
     }
 
     public async Task ForceFullResyncAsync()
@@ -386,7 +606,45 @@ public class SyncClientService : ISyncClientService, IDisposable
         _syncLock.Release();
     }
 
-    private async Task<int> PushChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    /// <summary>
+    /// Serializes a push request with the shared camelCase/null-eliding serializer, gzip-compresses
+    /// it (the server runs UseRequestDecompression), and POSTs it to /api/sync/push. Shared by the
+    /// delta push and the first-sync migration so both use one serializer and one compression path.
+    /// The caller owns the returned response (dispose it).
+    /// </summary>
+    private async Task<HttpResponseMessage> PostPushAsync(HttpClient client, string serverUrl, SyncPushRequest request)
+    {
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(request, PushSerializerOptions);
+        using var compressedStream = new MemoryStream();
+        using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            await gzipStream.WriteAsync(jsonBytes);
+        }
+        compressedStream.Position = 0;
+        var compressionRatio = jsonBytes.Length > 0 ? (int)((1.0 - (double)compressedStream.Length / jsonBytes.Length) * 100) : 0;
+        _logger.LogInformation("Push compressed: {OriginalSize}B → {CompressedSize}B ({Ratio}% reduction)",
+            jsonBytes.Length, compressedStream.Length, compressionRatio);
+
+        using var content = new StreamContent(compressedStream);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Headers.ContentEncoding.Add("gzip");
+        var pushSw = Stopwatch.StartNew();
+        var response = await client.PostAsync($"{serverUrl}/api/sync/push", content);
+        pushSw.Stop();
+        _logger.LogInformation("Push HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pushSw.ElapsedMilliseconds);
+        return response;
+    }
+
+    /// <summary>
+    /// Pushes local changes and reports the outcome as a (count, succeeded, sent-changes)
+    /// tuple so callers can distinguish "nothing to push" from "the POST failed" — both
+    /// otherwise collapse to a pushed count of 0, but only the former is safe to treat as an
+    /// idle cycle for backoff purposes (see <see cref="ClassifyCycle"/>). <c>SentChanges</c>
+    /// is true whenever the short-circuit below was NOT taken and the POST succeeded, so it
+    /// also covers a deletes-only or plugin-prefs-only push that <c>PushedCount</c> (upserts
+    /// only) would otherwise miss.
+    /// </summary>
+    private async Task<(int PushedCount, bool PushSucceeded, bool SentChanges)> PushChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
 
@@ -426,13 +684,21 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         var pendingDeletes = _deleteTracker.GetPendingDeletes();
 
+        // Settings-hash gate: omit Settings from the push unless the plaintext projection changed
+        // since the last successful push. ToSyncSettings stamps ModifiedAt = UtcNow and (under
+        // E2EE) re-encrypts with a fresh DEK/nonce every call, so the payload always differs on
+        // the wire — hashing plaintext is the only stable change-signal. The server treats absent
+        // Settings as no-change, so omitting them is safe.
+        var settingsHash = SyncMapper.ComputeSettingsHash(settings);
+        var settingsChanged = settingsHash != settings.LastPushedSettingsHash;
+
         var request = new SyncPushRequest
         {
             ClientTimestamp = DateTime.UtcNow,
             LastSyncTimestamp = lastSync,
             DeviceId = settings.SyncDeviceId,
             IsE2EEEncrypted = isE2EE,
-            Settings = _mapper.ToSyncSettings(settings, userId),
+            Settings = settingsChanged ? _mapper.ToSyncSettings(settings, userId) : null,
             Templates = new SyncEntityChanges<SyncTemplate>
             {
                 Upserted = templates
@@ -529,32 +795,18 @@ public class SyncClientService : ISyncClientService, IDisposable
         // Short-circuit: skip HTTP POST when there are no changes to push. Plugin prefs are
         // NOT in pushedCount, so they must be checked explicitly — otherwise a prefs-only
         // change is short-circuited away and (with peek semantics) never leaves the device.
+        // A settings-only change also isn't in pushedCount/deletes/prefs, so it must be counted
+        // here too, or a genuine settings edit would be short-circuited away and never sync.
         if (pushedCount == 0
             && pendingDeletes.Values.All(v => v.Count == 0)
-            && request.PluginPreferences.Count == 0)
+            && request.PluginPreferences.Count == 0
+            && !settingsChanged)
         {
             _logger.LogInformation("Push short-circuited: no changes to push");
-            return 0;
+            return (0, true, false);
         }
 
-        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(request);
-        using var compressedStream = new MemoryStream();
-        using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Fastest, leaveOpen: true))
-        {
-            await gzipStream.WriteAsync(jsonBytes);
-        }
-        compressedStream.Position = 0;
-        var compressionRatio = jsonBytes.Length > 0 ? (int)((1.0 - (double)compressedStream.Length / jsonBytes.Length) * 100) : 0;
-        _logger.LogInformation("Push compressed: {OriginalSize}B → {CompressedSize}B ({Ratio}% reduction)",
-            jsonBytes.Length, compressedStream.Length, compressionRatio);
-
-        using var content = new StreamContent(compressedStream);
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        content.Headers.ContentEncoding.Add("gzip");
-        var pushSw = Stopwatch.StartNew();
-        var response = await client.PostAsync($"{serverUrl}/api/sync/push", content);
-        pushSw.Stop();
-        _logger.LogInformation("Push HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pushSw.ElapsedMilliseconds);
+        using var response = await PostPushAsync(client, serverUrl, request);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
@@ -568,7 +820,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogWarning("Server requires E2EE for this account; onboarding required");
                 NotifyE2EEOnboardingRequired();
             }
-            return 0;
+            // Failed, not idle: local changes are still pending and must not be treated as
+            // "nothing to push" by ClassifyCycle, or persistent failures would engage backoff
+            // and slow the retry of unpushed data.
+            return (0, false, false);
         }
 
         var pushResponse = await response.Content.ReadFromJsonAsync<SyncPushResponse>();
@@ -584,9 +839,50 @@ public class SyncClientService : ISyncClientService, IDisposable
         // 403/failure/short-circuit above returned without reaching here, so they persist.
         _pluginService?.ClearPreferenceChangesAfterSuccessfulPush();
 
-        return pushedCount;
+        // Persist the settings hash only after a successful push (mirrors the cursor save) —
+        // never before, or a failed push would strand the settings behind an advanced hash and
+        // they'd never re-sync.
+        await PersistSettingsHashIfChangedAsync(settings, settingsHash, settingsChanged);
+
+        return (pushedCount, true, true);
     }
 
+    /// <summary>
+    /// Persists <see cref="AppSettings.LastPushedSettingsHash"/> after a successful push, shared
+    /// by the delta and first-sync push paths. No-ops when the settings did not change, so a
+    /// push that omitted Settings never rewrites an already-current hash.
+    /// </summary>
+    private async Task PersistSettingsHashIfChangedAsync(AppSettings settings, string settingsHash, bool settingsChanged)
+    {
+        if (!settingsChanged) return;
+
+        settings.LastPushedSettingsHash = settingsHash;
+        await _settingsService.SaveSettingsAsync(settings);
+    }
+
+    // Pull page size (Sec 6.3): caps each collection per response so a large first delta (many
+    // sessions) streams in bounded chunks instead of one huge body. Opt-in — a pre-upgrade server
+    // ignores the param and returns everything in one page (HasMore stays null, the loop runs once).
+    private const int PullPageLimit = 500;
+    // Hard ceiling on drain iterations so a server that keeps reporting HasMore without advancing the
+    // cursor can never spin forever.
+    private const int MaxPullPages = 1000;
+
+    /// <summary>
+    /// Pulls remote changes, draining the opt-in <c>?limit=</c> pagination (Sec 6.3): each page is
+    /// applied, and while the server reports <see cref="SyncPullResponse.HasMore"/> the loop re-pulls
+    /// with the advanced <c>since</c> cursor (the continuation token). The returned tuple reports the
+    /// aggregate across all drained pages; the returned <c>ServerTimestamp</c> is the last page's, so
+    /// the caller advances the cursor past everything drained.
+    ///
+    /// Server contract this drain depends on (not verifiable from this repo — see the Pia-server
+    /// unit that implements <c>?limit=</c>): on a <c>HasMore=true</c> page, <c>ServerTimestamp</c>
+    /// must be the max <c>SyncedAt</c> actually included in that page (never "server now"), and
+    /// pagination must never split rows that share the same <c>SyncedAt</c> across two pages.
+    /// Otherwise advancing <c>since</c> to it — including the later-page-drain-failure path below,
+    /// which advances the cursor past only the pages successfully applied so far — would silently
+    /// and permanently skip un-drained rows.
+    /// </summary>
     private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
@@ -594,14 +890,72 @@ public class SyncClientService : ISyncClientService, IDisposable
         // timestamptz comparison failures when the server uses PostgreSQL.
         if (lastSync.Kind != DateTimeKind.Utc)
             lastSync = DateTime.SpecifyKind(lastSync, DateTimeKind.Utc);
-        var since = lastSync.ToString("O");
 
-        var pullUrl = $"{serverUrl}/api/sync/pull?since={since}";
+        var totalPulled = 0;
+        var totalDecryptErrors = 0;
+        DateTime? lastServerTimestamp = null;
+
+        for (var page = 0; page < MaxPullPages; page++)
+        {
+            // Only the first page is conditional / stores the ETag+catalog version: it is the one
+            // request whose `since` equals the persisted cursor, so it is the only representation the
+            // stored conditional-GET metadata can describe. Drain pages use a moving `since`.
+            var pageResult = await PullPageAsync(client, serverUrl, settings, lastSync, isFirstPage: page == 0);
+
+            if (pageResult.NotModified)
+                return (0, 0, true, null); // only reachable on the first page
+
+            if (!pageResult.PullSucceeded)
+            {
+                // First-page failure => nothing applied, keep the cursor. A later-page failure means
+                // earlier pages were already applied: advance the cursor to the last drained page so
+                // the next sync resumes after them instead of re-pulling from the start.
+                if (page == 0)
+                    return (0, 0, false, null);
+                _logger.LogWarning("Pull drain failed on page {Page}; keeping earlier pages and advancing cursor", page);
+                return (totalPulled, totalDecryptErrors, true, lastServerTimestamp);
+            }
+
+            totalPulled += pageResult.Pulled;
+            totalDecryptErrors += pageResult.DecryptionErrors;
+            lastServerTimestamp = pageResult.ServerTimestamp;
+
+            // Continue draining only while the server both flags more data AND advances the cursor
+            // (the `since` continuation token). A non-advancing cursor with HasMore would loop, so the
+            // strict `>` guard (plus MaxPullPages) makes runaway pagination impossible.
+            if (pageResult.HasMore && pageResult.ServerTimestamp is DateTime ts && ts > lastSync)
+            {
+                lastSync = DateTime.SpecifyKind(ts, DateTimeKind.Utc);
+                continue;
+            }
+            break;
+        }
+
+        return (totalPulled, totalDecryptErrors, true, lastServerTimestamp);
+    }
+
+    /// <summary>
+    /// Requests and applies a single pull page. Returns the page outcome including
+    /// <c>HasMore</c> so the <see cref="PullChangesAsync"/> drain loop knows whether to continue.
+    /// </summary>
+    private async Task<(bool NotModified, bool PullSucceeded, int Pulled, int DecryptionErrors, DateTime? ServerTimestamp, bool HasMore)> PullPageAsync(HttpClient client, string serverUrl, AppSettings settings, DateTime sinceUtc, bool isFirstPage)
+    {
+        var since = sinceUtc.ToString("O");
+
+        // ?limit caps each collection (Sec 6.3); ?catalogVersion lets the server skip re-sending the
+        // full plugin catalog when it is unchanged (Sec 3.5). Both are opt-in — a pre-upgrade server
+        // ignores them. catalogVersion is omitted on first run (null) so the server sends the full catalog.
+        var pullUrl = $"{serverUrl}/api/sync/pull?since={since}&limit={PullPageLimit}";
+        if (settings.LastCatalogVersion.HasValue)
+            pullUrl += $"&catalogVersion={settings.LastCatalogVersion.Value}";
         _logger.LogInformation("Pull requesting: {Url}", SafeUrl.Format(pullUrl));
 
         var pullRequest = new HttpRequestMessage(HttpMethod.Get, pullUrl);
-        if (!string.IsNullOrEmpty(settings.LastPullETag))
-            pullRequest.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(settings.LastPullETag));
+        // TryParse (not the EntityTagHeaderValue ctor) so a weak (W/"...") stored ETag never
+        // throws FormatException and aborts the whole pull cycle — see AssistantChatSyncService's
+        // identical guard for the chat ETag. Only the first page is conditional (see PullChangesAsync).
+        if (isFirstPage && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
+            pullRequest.Headers.IfNoneMatch.Add(lastPullTag);
 
         var pullSw = Stopwatch.StartNew();
         var response = await client.SendAsync(pullRequest);
@@ -611,16 +965,16 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
         {
             _logger.LogDebug("Pull returned 304 Not Modified — no changes since last sync");
-            return (0, 0, true, null);
+            return (true, true, 0, 0, null, false);
         }
 
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Pull failed with status {Status}", response.StatusCode);
-            return (0, 0, false, null);
+            return (false, false, 0, 0, null, false);
         }
 
-        if (response.Headers.ETag is not null)
+        if (isFirstPage && response.Headers.ETag is not null)
         {
             settings.LastPullETag = response.Headers.ETag.ToString();
             await _settingsService.SaveSettingsAsync(settings);
@@ -628,7 +982,19 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
-        if (pullResponse is null) return (0, 0, false, null);
+        if (pullResponse is null) return (false, false, 0, 0, null, false);
+
+        // The server's current catalog version is applied further down, only after the page's
+        // entities have been fully applied (see the persist just before the return below). The
+        // catalog query is gated solely on ?catalogVersion= with no SyncedAt filter (Sec 3.5), so
+        // storing it here — before the apply step below has run — would let an apply exception
+        // (thrown by any entity service and propagated out of this method) strand a stored
+        // version that makes the next pull's ?catalogVersion= match the server's and skip resending
+        // the very plugin changes this page never actually applied.
+        var newCatalogVersion = isFirstPage && pullResponse.CatalogVersion.HasValue
+            && pullResponse.CatalogVersion != settings.LastCatalogVersion
+            ? pullResponse.CatalogVersion
+            : null;
 
         _logger.LogInformation(
             "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Personas: {PeU}u/{PeD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d",
@@ -1157,6 +1523,18 @@ public class SyncClientService : ISyncClientService, IDisposable
                 pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
         }
 
+        // Persist the server's current catalog version now that every entity in this page (including
+        // plugins, applied just above) has been applied without throwing. Storing it only here — not
+        // when it was first read off the response, further up — means a mid-apply exception leaves
+        // the stored version unchanged, so the next pull still omits/mismatches ?catalogVersion= and
+        // the server resends the full catalog instead of skipping the un-applied changes.
+        if (newCatalogVersion.HasValue)
+        {
+            settings.LastCatalogVersion = newCatalogVersion;
+            await _settingsService.SaveSettingsAsync(settings);
+            _logger.LogDebug("Pull catalog version stored: {CatalogVersion}", newCatalogVersion);
+        }
+
         var pulledCount = pullResponse.Templates.Upserted.Count
             + pullResponse.Personas.Upserted.Count
             + pullResponse.Providers.Upserted.Count
@@ -1170,6 +1548,9 @@ public class SyncClientService : ISyncClientService, IDisposable
         _logger.LogInformation("Pull merge: {Inserted} inserted, {Updated} updated, {Skipped} skipped, {Deleted} deleted, {DecryptErrors} decrypt errors",
             mergeInserted, mergeUpdated, mergeSkipped, mergeDeleted, decryptionErrors);
 
+        // Note: SyncCompleted fires once per drained page (not once per overall pull) — a large
+        // multi-page drain raises it repeatedly. This is intentional for now; consumers that refresh
+        // UI state on this event should debounce if that churn becomes noticeable.
         try
         {
             SyncCompleted?.Invoke(this, new SyncCompletedEventArgs
@@ -1187,7 +1568,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             _logger.LogWarning(ex, "SyncCompleted handler threw — sync continues");
         }
 
-        return (pulledCount, decryptionErrors, true, pullResponse.ServerTimestamp);
+        return (false, true, pulledCount, decryptionErrors, pullResponse.ServerTimestamp, pullResponse.HasMore == true);
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)
@@ -1259,4 +1640,15 @@ public class SyncClientService : ISyncClientService, IDisposable
         _syncTimer?.Dispose();
         _syncLock.Dispose();
     }
+}
+
+/// <summary>Classification of a completed background-sync cycle for adaptive-polling backoff.</summary>
+internal enum SyncCycleOutcome
+{
+    /// <summary>The cycle moved data (a push sent changes or a pull returned rows). Resets backoff.</summary>
+    Active,
+    /// <summary>The pull succeeded with no changes (304). Advances backoff.</summary>
+    Idle,
+    /// <summary>The cycle was neither active nor a clean no-change (e.g. a failed pull). Leaves backoff unchanged.</summary>
+    Inconclusive,
 }

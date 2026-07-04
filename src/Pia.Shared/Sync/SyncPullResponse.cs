@@ -23,6 +23,15 @@ public class SyncPullResponse
     public SyncEntityChanges<SyncScheduledJob> ScheduledJobs { get; set; } = new();
     public SyncEntityChanges<SyncResearchSession> ResearchSessions { get; set; } = new();
     public SyncEntityChanges<SyncPlugin> Plugins { get; set; } = new();
+
+    /// <summary>Current plugin catalog version echoed back for the client's next pull; null when not provided.</summary>
+    public long? CatalogVersion { get; set; }
+
+    /// <summary>Devices awaiting approval, returned inline so the client can prompt without a follow-up call; null when none/unset.</summary>
+    public List<SyncPendingDevice>? PendingDevices { get; set; }
+
+    /// <summary>True when more changes remain beyond this response (paged pull); null when not applicable.</summary>
+    public bool? HasMore { get; set; }
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
@@ -60,11 +61,11 @@ public class SyncClientServiceE2EEWindowTests
             pluginService: _pluginService);
     }
 
-    private static async Task<int> InvokePushChangesAsync(SyncClientService sut, HttpClient client, AppSettings settings)
+    private static async Task<(int PushedCount, bool PushSucceeded, bool SentChanges)> InvokePushChangesAsync(SyncClientService sut, HttpClient client, AppSettings settings)
     {
         var method = typeof(SyncClientService)
             .GetMethod("PushChangesAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        return await (Task<int>)method.Invoke(sut, [client, "http://test", settings])!;
+        return await (Task<(int PushedCount, bool PushSucceeded, bool SentChanges)>)method.Invoke(sut, [client, "http://test", settings])!;
     }
 
     [Fact]
@@ -77,9 +78,11 @@ public class SyncClientServiceE2EEWindowTests
         var handler = new CapturingHandler(HttpStatusCode.Forbidden, """{"error":"e2ee_required"}""");
         using var client = new HttpClient(handler);
 
-        var pushed = await InvokePushChangesAsync(sut, client, new AppSettings());
+        var result = await InvokePushChangesAsync(sut, client, new AppSettings());
 
-        Assert.Equal(0, pushed);
+        Assert.Equal(0, result.PushedCount);
+        Assert.False(result.PushSucceeded); // a failed push must be distinguishable from a no-op push
+        Assert.False(result.SentChanges);
         Assert.Equal(1, handler.PushCount); // it actually attempted the POST (not short-circuited)
         // The pending prefs must NOT be dropped — the push failed, so they persist for retry.
         _pluginService.DidNotReceive().ClearPreferenceChangesAfterSuccessfulPush();
@@ -97,9 +100,13 @@ public class SyncClientServiceE2EEWindowTests
         var handler = new CapturingHandler(HttpStatusCode.OK, okBody);
         using var client = new HttpClient(handler);
 
-        var pushed = await InvokePushChangesAsync(sut, client, new AppSettings());
+        var result = await InvokePushChangesAsync(sut, client, new AppSettings());
 
         Assert.Equal(1, handler.PushCount); // prefs-only cycle was NOT short-circuited
+        Assert.True(result.PushSucceeded);
+        // PushedCount only counts upserts, but a prefs-only push must still report SentChanges
+        // so a prefs-only push resets backoff instead of being misclassified as idle.
+        Assert.True(result.SentChanges);
         _pluginService.Received(1).ClearPreferenceChangesAfterSuccessfulPush();
     }
 
@@ -127,7 +134,8 @@ public class SyncClientServiceE2EEWindowTests
 
         Assert.Equal(1, handler.PushCount);
         Assert.NotNull(handler.LastPushBody);
-        // The migration request (plain JSON, not gzipped) must carry the scheduled job.
+        // The migration request is now gzipped; CapturingHandler decompresses it back to JSON,
+        // which must carry the scheduled job.
         Assert.Contains(jobId.ToString(), handler.LastPushBody!);
     }
 
@@ -143,12 +151,27 @@ public class SyncClientServiceE2EEWindowTests
             {
                 PushCount++;
                 if (request.Content is not null)
-                    LastPushBody = await request.Content.ReadAsStringAsync(cancellationToken);
+                    LastPushBody = await ReadBodyAsync(request.Content, cancellationToken);
             }
             return new HttpResponseMessage(status)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
             };
+        }
+
+        // Both push sites gzip the body (Content-Encoding: gzip); decompress so assertions can
+        // inspect the JSON. Falls back to a plain read for any uncompressed content.
+        private static async Task<string> ReadBodyAsync(HttpContent content, CancellationToken ct)
+        {
+            var bytes = await content.ReadAsByteArrayAsync(ct);
+            if (!content.Headers.ContentEncoding.Contains("gzip"))
+                return System.Text.Encoding.UTF8.GetString(bytes);
+
+            using var input = new MemoryStream(bytes);
+            using var gzip = new GZipStream(input, CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            await gzip.CopyToAsync(output, ct);
+            return System.Text.Encoding.UTF8.GetString(output.ToArray());
         }
     }
 }

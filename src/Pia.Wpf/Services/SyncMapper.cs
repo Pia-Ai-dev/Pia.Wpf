@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -680,23 +681,7 @@ public class SyncMapper
 
         if (IsE2EEActive && userId is not null)
         {
-            var plainPayload = new
-            {
-                DefaultOutputAction = (int)settings.DefaultOutputAction,
-                settings.DefaultTemplateId,
-                WhisperModel = (int)settings.WhisperModel,
-                settings.AutoTypeDelayMs,
-                Theme = (int)settings.Theme,
-                settings.StartMinimized,
-                TargetLanguage = settings.TargetLanguage.HasValue ? (int?)settings.TargetLanguage.Value : null,
-                TargetSpeechLanguage = (int)settings.TargetSpeechLanguage,
-                DefaultWindowMode = (int)settings.DefaultWindowMode,
-                ModeProviderDefaults = settings.ModeProviderDefaults.ToDictionary(
-                    kvp => (int)kvp.Key, kvp => kvp.Value),
-                ModePersonaDefaults = settings.ModePersonaDefaults.ToDictionary(
-                    kvp => (int)kvp.Key, kvp => kvp.Value),
-                settings.UseSameProviderForAllModes
-            };
+            var plainPayload = BuildSettingsPlainPayload(settings);
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
                 plainPayload, userId, "settings", "user-settings");
         }
@@ -719,6 +704,64 @@ public class SyncMapper
         }
 
         return sync;
+    }
+
+    // Deterministic JSON options for the settings hash: no naming policy (declaration order is
+    // stable), nulls written so a field flipping to/from null still changes the hash. The hash
+    // never has to match the ciphertext — it only has to be stable across runs for identical
+    // content — so any fixed options work as long as they are used consistently here.
+    private static readonly JsonSerializerOptions HashSerializerOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never
+    };
+
+    /// <summary>
+    /// Builds the plaintext projection of the synced settings fields — the single source shared
+    /// by the E2EE payload (encrypted with a fresh random DEK/nonce each run) and by the
+    /// settings-hash gate (<see cref="ComputeSettingsHash"/>). The mode-default dictionaries are
+    /// emitted as <see cref="SortedDictionary{TKey,TValue}"/> so enumeration order never churns
+    /// the hash (or the ciphertext). The decrypt side reads by property name into
+    /// <c>SyncSettings</c>, so the sorted-dictionary runtime type is wire-transparent.
+    /// </summary>
+    internal static object BuildSettingsPlainPayload(AppSettings settings) => new
+    {
+        DefaultOutputAction = (int)settings.DefaultOutputAction,
+        settings.DefaultTemplateId,
+        WhisperModel = (int)settings.WhisperModel,
+        settings.AutoTypeDelayMs,
+        Theme = (int)settings.Theme,
+        settings.StartMinimized,
+        TargetLanguage = settings.TargetLanguage.HasValue ? (int?)settings.TargetLanguage.Value : null,
+        TargetSpeechLanguage = (int)settings.TargetSpeechLanguage,
+        DefaultWindowMode = (int)settings.DefaultWindowMode,
+        ModeProviderDefaults = new SortedDictionary<int, Guid>(
+            settings.ModeProviderDefaults.ToDictionary(kvp => (int)kvp.Key, kvp => kvp.Value)),
+        ModePersonaDefaults = new SortedDictionary<int, Guid>(
+            settings.ModePersonaDefaults.ToDictionary(kvp => (int)kvp.Key, kvp => kvp.Value)),
+        settings.UseSameProviderForAllModes
+    };
+
+    /// <summary>
+    /// SHA-256 (base64) of the deterministic plaintext settings projection, salted with the mode
+    /// (plaintext vs E2EE) and account identity. The push gate compares this against
+    /// <see cref="AppSettings.LastPushedSettingsHash"/> to skip re-sending settings that have not
+    /// changed. Hashing plaintext (not ciphertext) is required because E2EE re-encrypts with a
+    /// fresh DEK/nonce on every call, so the ciphertext always differs. The salt is belt-and-braces
+    /// defense in depth for cases where content is unchanged but the server-side row still needs a
+    /// re-push (e.g. an E2EE-enable migration or a switch to a different account) — the first-sync
+    /// path bypasses this gate entirely (see PerformFirstSyncMigrationAsync), so this only guards
+    /// the delta push.
+    /// </summary>
+    public static string ComputeSettingsHash(AppSettings settings)
+    {
+        var salted = new
+        {
+            IsE2EE = settings.IsE2EEEnabled,
+            settings.SyncUserId,
+            Payload = BuildSettingsPlainPayload(settings)
+        };
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(salted, HashSerializerOptions);
+        return Convert.ToBase64String(SHA256.HashData(bytes));
     }
 
     public void ApplySyncSettings(SyncSettings sync, AppSettings target, string? userId = null)
