@@ -758,8 +758,9 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Configurer maintenant</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Chiffrement de bout en bout</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, toutes les données synchronisées sont chiffrées sur votre appareil avant d'être envoyées au serveur. Une nouvelle clé de chiffrement et un nouveau code de récupération sont générés à chaque activation. Basculer ce réglage déclenche une synchronisation complète.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, toutes les données synchronisées sont chiffrées sur votre appareil avant d'être envoyées au serveur. Une clé de chiffrement et un code de récupération sont générés à l'activation, qui déclenche une synchronisation complète. L'activation est définitive pour votre compte.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Activer le chiffrement de bout en bout</value></data>
+  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Le chiffrement de bout en bout est définitif pour ce compte. Pour repartir sans chiffrement, réinitialisez vos données de synchronisation sur le serveur.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Mise à jour du chiffrement et synchronisation des données...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Vérifier les demandes d'appareils</value></data>

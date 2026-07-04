@@ -250,9 +250,15 @@
                          TextWrapping="Wrap"
                          Margin="0,0,0,10"/>
               <ui:ToggleSwitch IsChecked="{Binding IsE2EEEnabled, Mode=TwoWay}"
-                               IsEnabled="{Binding CanToggleE2EE}"
+                               IsEnabled="{Binding IsE2EEToggleEnabled}"
                                Content="{loc:Str Settings_E2EE_Toggle}"
                                Margin="0,0,0,8"/>
+              <TextBlock Visibility="{Binding IsE2EEEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         Text="{loc:Str Settings_E2EE_Permanent}"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextMutedBrush}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"/>
               <StackPanel Orientation="Horizontal"
                           Margin="0,0,0,8"
                           Visibility="{Binding CanToggleE2EE, Converter={StaticResource InverseBooleanToVisibilityConverter}}">

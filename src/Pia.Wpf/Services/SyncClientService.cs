@@ -543,6 +543,14 @@ public class SyncClientService : ISyncClientService, IDisposable
             var body = await response.Content.ReadAsStringAsync();
             _logger.LogWarning("Push failed with status {Status}", response.StatusCode);
             _logger.SensitiveDebug("Push failure body: {Body}", body);
+            if ((int)response.StatusCode == 403 && body.Contains("e2ee_required"))
+            {
+                // The account is E2EE-enabled server-side but this client pushed
+                // plaintext (no local UMK / stale settings). Silent retries can never
+                // succeed — route into device onboarding instead.
+                _logger.LogWarning("Server requires E2EE for this account; onboarding required");
+                NotifyE2EEOnboardingRequired();
+            }
             return 0;
         }
 
@@ -794,8 +802,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
                     {
-                        var apiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
-                        await _providerService.UpdateProviderAsync(local, apiKey);
+                        // API keys never travel plaintext (device-local without E2EE);
+                        // under E2EE the mapper has already placed the synced key on
+                        // local.EncryptedApiKey and UpdateProviderAsync honors it.
+                        await _providerService.UpdateProviderAsync(local);
                         mergeUpdated++;
                         _logger.LogInformation("Updated provider {Id}", provider.Id);
                         _logger.SensitiveDebug("Updated provider {Id} name: {Name}", provider.Id, local.Name);
@@ -835,8 +845,9 @@ public class SyncClientService : ISyncClientService, IDisposable
                     continue;
                 }
 
-                var newApiKey = (provider.EncryptedPayload is not null) ? null : provider.ApiKey;
-                await _providerService.AddProviderAsync(local, newApiKey);
+                // Plaintext wire keys are ignored (device-local policy); an E2EE-synced
+                // key is already on local.EncryptedApiKey and survives AddProviderAsync.
+                await _providerService.AddProviderAsync(local, null);
                 if (fingerprint != ProviderFingerprint.PiaCloudSentinel)
                     localByFingerprint[fingerprint] = local;
                 mergeInserted++;

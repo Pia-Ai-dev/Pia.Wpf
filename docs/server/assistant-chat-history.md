@@ -33,6 +33,11 @@ be rejected by the client.
 - Unknown fields received from a client **must be stored and returned
   verbatim** on subsequent reads. The server is a transport for the chat
   document, not its interpreter.
+- **E2EE exception**: for encrypted chats (`encryptedPayload` set), unknown
+  fields round-trip **inside the ciphertext**, not as plaintext top-level
+  keys — plaintext extension keys would bypass E2EE. The server strips
+  top-level unknown keys from encrypted documents, and the client drops any
+  plaintext extension keys it receives on an encrypted chat.
 - The server may set its own server-owned fields (e.g. `serverReceivedAt`).
   These must be prefixed `server_` to avoid collisions with future client
   fields.
@@ -208,7 +213,7 @@ endpoints.
 | `title`          | string \| null  | no       | Up to 200 chars. May be null until the client auto-titles. |
 | `createdAt`      | ISO8601 UTC     | yes      | Immutable after first write. |
 | `updatedAt`      | ISO8601 UTC     | yes      | Client sets on every change; used for conflict resolution. |
-| `lastAccessedAt` | ISO8601 UTC     | yes      | Client-owned. Server stores and returns. Used by client for retention. |
+| `lastAccessedAt` | ISO8601 UTC     | yes      | Client-owned. Server stores and returns. Used by client for retention. Clients send it **day-truncated** (read-activity privacy); on pull the client keeps the newer of local/remote. |
 | `windowMode`     | string          | yes      | Matches the existing `X-Pia-Mode` values — PascalCase enum names (`"Assistant"`, `"Optimize"`, `"Research"`). |
 | `providerId`     | UUID (string) \| null | no | Provider used. UUID matching a client-side provider configuration. |
 | `messages`       | array<Message\> | yes      | Ordered oldest → newest. May be empty for a freshly-titled chat. |

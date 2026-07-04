@@ -197,10 +197,18 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     // E2EE properties
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsE2EEToggleEnabled))]
     private bool _isE2EEEnabled;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsE2EEToggleEnabled))]
     private bool _canToggleE2EE = true;
+
+    /// <summary>
+    /// E2EE is permanent per account (the server rejects plaintext pushes once enabled),
+    /// so the toggle locks as soon as encryption is on.
+    /// </summary>
+    public bool IsE2EEToggleEnabled => CanToggleE2EE && !IsE2EEEnabled;
 
     [ObservableProperty]
     private string _deviceFingerprint = "";
@@ -247,9 +255,21 @@ public partial class AccountSettingsViewModel : ObservableObject
         if (_isLoading) return;
 
         if (value)
+        {
             _ = EnableE2EEAsync();
+        }
         else
-            _ = DisableE2EEAsync();
+        {
+            // E2EE is permanent once enabled: the server rejects plaintext pushes for
+            // this account (e2ee_required), so a local "disable" would only stall sync
+            // and destroy nothing but this device's ability to participate. Revert.
+            _isLoading = true;
+            IsE2EEEnabled = true;
+            _isLoading = false;
+            _snackbarService.Show("End-to-end encryption",
+                "E2EE cannot be disabled once enabled. Resetting server sync data is the only way to start over without it.",
+                Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(5));
+        }
     }
 
     partial void OnTrustSelfSignedCertificatesChanged(bool value)
@@ -689,33 +709,6 @@ public partial class AccountSettingsViewModel : ObservableObject
                 _snackbarService.Show("Error", $"Failed to enable E2EE: {ex.Message}",
                     Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
             }
-        }
-        finally
-        {
-            _syncClientService.StartBackgroundSync();
-            CanToggleE2EE = true;
-        }
-    }
-
-    private async Task DisableE2EEAsync()
-    {
-        try
-        {
-            CanToggleE2EE = false;
-
-            await _syncClientService.StopBackgroundSyncAndWaitAsync();
-
-            var settings = await _settingsService.GetSettingsAsync();
-            settings.IsE2EEEnabled = false;
-            await _settingsService.SaveSettingsAsync(settings);
-
-            await _syncClientService.PerformFirstSyncMigrationAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to disable E2EE");
-            _snackbarService.Show("Error", $"Failed to disable encryption: {ex.Message}",
-                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
         }
         finally
         {

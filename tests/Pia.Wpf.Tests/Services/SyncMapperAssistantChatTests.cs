@@ -136,7 +136,8 @@ public class SyncMapperAssistantChatTests
         Assert.Equal(original.SchemaVersion, wire.SchemaVersion);
         Assert.Equal(original.CreatedAt, wire.CreatedAt);
         Assert.Equal(original.UpdatedAt, wire.UpdatedAt);
-        Assert.Equal(original.LastAccessedAt, wire.LastAccessedAt);
+        // LastAccessedAt is deliberately day-truncated on the wire (read-tracking privacy).
+        Assert.Equal(original.LastAccessedAt.Date, wire.LastAccessedAt);
         Assert.Equal(original.WindowMode, wire.WindowMode);
 
         var back = mapper.FromSyncAssistantChat(wire, UserId);
@@ -154,6 +155,65 @@ public class SyncMapperAssistantChatTests
         Assert.Equal(original.Messages[1].Persona!.Name, back.Messages[1].Persona!.Name);
         Assert.Equal(original.Messages[1].Persona!.Id, back.Messages[1].Persona!.Id);
         Assert.Equal(original.Messages[1].Persona!.Emoji, back.Messages[1].Persona!.Emoji);
+    }
+
+    [Fact]
+    public void AssistantChat_E2EE_ExtensionDataRidesInsideCiphertext()
+    {
+        var mapper = E2EEMapper();
+        var original = SampleChat();
+        original.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            ["serverFutureField"] = System.Text.Json.JsonSerializer.SerializeToElement("future-value"),
+        };
+
+        var wire = mapper.ToSyncAssistantChat(original, UserId);
+
+        // Unknown/forward-compat fields must not bypass E2EE via the plaintext wire.
+        Assert.Null(wire.ExtensionData);
+        Assert.NotNull(wire.EncryptedPayload);
+
+        var back = mapper.FromSyncAssistantChat(wire, UserId);
+
+        // ...but they must survive the round-trip through the ciphertext.
+        Assert.NotNull(back.ExtensionData);
+        Assert.Equal("future-value", back.ExtensionData!["serverFutureField"].GetString());
+    }
+
+    [Fact]
+    public void AssistantChat_E2EE_PlaintextWireExtensionKeys_AreDropped()
+    {
+        var mapper = E2EEMapper();
+        var wire = mapper.ToSyncAssistantChat(SampleChat(), UserId);
+
+        // Simulate a server echoing plaintext extension keys onto an encrypted chat.
+        wire.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            ["injectedByServer"] = System.Text.Json.JsonSerializer.SerializeToElement("plaintext"),
+        };
+
+        var back = mapper.FromSyncAssistantChat(wire, UserId);
+
+        // Plaintext keys must not enter the local store (they would echo back out
+        // on the next push, permanently bypassing E2EE).
+        Assert.True(back.ExtensionData is null || !back.ExtensionData.ContainsKey("injectedByServer"));
+    }
+
+    [Fact]
+    public void AssistantChat_Plaintext_ExtensionDataStillRoundTrips()
+    {
+        var mapper = PlainMapper();
+        var original = SampleChat();
+        original.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            ["serverFutureField"] = System.Text.Json.JsonSerializer.SerializeToElement(42),
+        };
+
+        var wire = mapper.ToSyncAssistantChat(original, UserId);
+        Assert.NotNull(wire.ExtensionData);
+
+        var back = mapper.FromSyncAssistantChat(wire, UserId);
+        Assert.Equal(42, back.ExtensionData!["serverFutureField"].GetInt32());
     }
 
     [Fact]

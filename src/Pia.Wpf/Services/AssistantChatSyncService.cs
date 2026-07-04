@@ -30,6 +30,7 @@ public sealed class AssistantChatSyncService : BackgroundService
     private readonly ISettingsService _settingsService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SyncMapper _mapper;
+    private readonly ISyncClientService _syncClient;
     private readonly ILogger<AssistantChatSyncService> _logger;
 
     // Channel is a wakeup signal only; the actual per-chat coalescing lives in
@@ -47,6 +48,7 @@ public sealed class AssistantChatSyncService : BackgroundService
         ISettingsService settingsService,
         IHttpClientFactory httpClientFactory,
         SyncMapper mapper,
+        ISyncClientService syncClient,
         ILogger<AssistantChatSyncService> logger)
     {
         _chatService = chatService;
@@ -55,6 +57,7 @@ public sealed class AssistantChatSyncService : BackgroundService
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
         _mapper = mapper;
+        _syncClient = syncClient;
         _logger = logger;
     }
 
@@ -221,6 +224,22 @@ public sealed class AssistantChatSyncService : BackgroundService
                 // Endpoint disappeared mid-session (feature flag flipped or server downgrade).
                 // Drop the cached capability so the next session re-probes /api/capabilities.
                 _capabilities.Invalidate();
+            }
+
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                if (errorBody.Contains("e2ee_required"))
+                {
+                    // The account is E2EE-enabled server-side but this chat went out in
+                    // plaintext (no local UMK yet). Dropping silently is fine for the op —
+                    // the local store is authoritative — but the user needs onboarding.
+                    _logger.LogWarning(
+                        "Server requires E2EE for this account; chat {ChatId} not pushed, onboarding required",
+                        chat.Id);
+                    _syncClient.NotifyE2EEOnboardingRequired();
+                    return;
+                }
             }
 
             _logger.LogInformation(

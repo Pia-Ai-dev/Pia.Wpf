@@ -4,7 +4,8 @@ namespace Pia.Shared.Models;
 
 /// <summary>
 /// Sync DTO for AI provider configurations.
-/// ApiKey is sent as plaintext over TLS during sync (encrypted at rest on both ends).
+/// The API key syncs only inside the E2EE EncryptedPayload; without E2EE, keys are
+/// device-local and the plaintext <see cref="ApiKey"/> field stays null in both directions.
 /// </summary>
 public class SyncProvider
 {
@@ -13,6 +14,8 @@ public class SyncProvider
     public int ProviderType { get; set; }
     public string? Endpoint { get; set; }
     public string? ModelName { get; set; }
+
+    /// <summary>Legacy wire field — no longer populated (see class remarks). Kept for schema stability.</summary>
     public string? ApiKey { get; set; }
     public string? AzureDeploymentName { get; set; }
     public bool SupportsToolCalling { get; set; } = true;

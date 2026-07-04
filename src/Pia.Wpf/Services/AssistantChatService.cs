@@ -22,12 +22,14 @@ public class AssistantChatService : IAssistantChatService
         ChatsChanged?.Invoke(this, new AssistantChatChangedEventArgs { Id = id, Kind = kind });
 
     public Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
-        SaveCoreAsync(chat, raiseEvent: true, ct);
+        SaveCoreAsync(chat, raiseEvent: true, preserveNewerLastAccessed: false, ct);
 
     public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
-        SaveCoreAsync(chat, raiseEvent: false, ct);
+        // Remote LastAccessedAt is day-truncated on the wire; never let it regress a
+        // more precise local value or retention could evict up to a day early.
+        SaveCoreAsync(chat, raiseEvent: false, preserveNewerLastAccessed: true, ct);
 
-    private async Task SaveCoreAsync(SyncAssistantChat chat, bool raiseEvent, CancellationToken ct)
+    private async Task SaveCoreAsync(SyncAssistantChat chat, bool raiseEvent, bool preserveNewerLastAccessed, CancellationToken ct)
     {
         var connection = _context.GetConnection();
         using var transaction = connection.BeginTransaction();
@@ -35,7 +37,12 @@ public class AssistantChatService : IAssistantChatService
         using (var upsertChat = connection.CreateCommand())
         {
             upsertChat.Transaction = transaction;
-            upsertChat.CommandText = """
+            // Timestamps are stored as fixed-width ISO-8601 UTC ("O"), so SQLite's
+            // lexicographic max() is chronological.
+            var lastAccessedSet = preserveNewerLastAccessed
+                ? "max(LastAccessedAt, excluded.LastAccessedAt)"
+                : "excluded.LastAccessedAt";
+            upsertChat.CommandText = $"""
                 INSERT INTO AssistantChats
                     (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson)
                 VALUES
@@ -44,7 +51,7 @@ public class AssistantChatService : IAssistantChatService
                     SchemaVersion = excluded.SchemaVersion,
                     Title = excluded.Title,
                     UpdatedAt = excluded.UpdatedAt,
-                    LastAccessedAt = excluded.LastAccessedAt,
+                    LastAccessedAt = {lastAccessedSet},
                     WindowMode = excluded.WindowMode,
                     ProviderId = excluded.ProviderId,
                     WorkingDirectory = excluded.WorkingDirectory,

@@ -758,8 +758,9 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Jetzt einrichten</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, werden alle synchronisierten Daten auf deinem Gerät verschlüsselt, bevor sie an den Server gesendet werden. Bei jeder Aktivierung werden ein neuer Schlüssel und ein neuer Wiederherstellungscode erzeugt. Das Umschalten dieser Einstellung löst eine vollständige Synchronisation aus.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, werden alle synchronisierten Daten auf deinem Gerät verschlüsselt, bevor sie an den Server gesendet werden. Beim Aktivieren werden ein Schlüssel und ein Wiederherstellungscode erzeugt und eine vollständige Synchronisation ausgelöst. Die Aktivierung ist für dieses Konto dauerhaft.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
+  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung ist für dieses Konto dauerhaft. Um ohne Verschlüsselung neu zu beginnen, setze die Synchronisationsdaten auf dem Server zurück.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Verschlüsselung wird aktualisiert und Daten werden synchronisiert...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Nach Geräteanfragen suchen</value></data>

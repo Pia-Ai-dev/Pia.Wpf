@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
@@ -241,8 +243,9 @@ public class SyncMapper
             sync.ProviderType = (int)provider.ProviderType;
             sync.Endpoint = provider.Endpoint;
             sync.ModelName = provider.ModelName;
-            sync.ApiKey = !string.IsNullOrEmpty(provider.EncryptedApiKey)
-                ? _dpapiHelper.Decrypt(provider.EncryptedApiKey) : null;
+            // ApiKey deliberately not synced without E2EE: keys are device-local then.
+            // Sending it would put the plaintext key in the request body and hand the
+            // server a copy it can decrypt at will.
             sync.AzureDeploymentName = provider.AzureDeploymentName;
             sync.SupportsToolCalling = provider.SupportsToolCalling;
             sync.TimeoutSeconds = provider.TimeoutSeconds;
@@ -285,8 +288,10 @@ public class SyncMapper
             ProviderType = (AiProviderType)sync.ProviderType,
             Endpoint = sync.Endpoint ?? "",
             ModelName = sync.ModelName,
-            EncryptedApiKey = !string.IsNullOrEmpty(sync.ApiKey)
-                ? _dpapiHelper.Encrypt(sync.ApiKey) : null,
+            // Without E2EE, API keys are device-local: ignore any plaintext key an
+            // older server might still emit. The pull path preserves whatever key is
+            // already stored locally.
+            EncryptedApiKey = null,
             AzureDeploymentName = sync.AzureDeploymentName,
             SupportsToolCalling = sync.SupportsToolCalling,
             TimeoutSeconds = sync.TimeoutSeconds is > 0 ? sync.TimeoutSeconds : 300,
@@ -385,7 +390,9 @@ public class SyncMapper
             Id = memory.Id,
             CreatedAt = ToUtc(memory.CreatedAt),
             UpdatedAt = ToUtc(memory.UpdatedAt),
-            LastAccessedAt = ToUtc(memory.LastAccessedAt)
+            // Day granularity only — read activity is not the server's business
+            // (staleness works on a 90-day window, so nothing needs precision).
+            LastAccessedAt = ToUtc(memory.LastAccessedAt).Date
         };
 
         if (IsE2EEActive && userId is not null)
@@ -512,8 +519,7 @@ public class SyncMapper
             Id = todo.Id,
             CreatedAt = ToUtc(todo.CreatedAt),
             UpdatedAt = ToUtc(todo.UpdatedAt),
-            SortOrder = todo.SortOrder,
-            ColumnId = todo.ColumnId
+            SortOrder = todo.SortOrder
         };
 
         if (IsE2EEActive && userId is not null)
@@ -541,6 +547,9 @@ public class SyncMapper
             sync.DueDate = ToUtc(todo.DueDate);
             sync.LinkedReminderId = todo.LinkedReminderId;
             sync.CompletedAt = ToUtc(todo.CompletedAt);
+            // ColumnId reveals board structure, so it rides inside the encrypted
+            // payload when E2EE is active (the pull path prefers the decrypted copy).
+            sync.ColumnId = todo.ColumnId;
         }
 
         return sync;
@@ -926,10 +935,11 @@ public class SyncMapper
     // --- Assistant Chats ---
 
     /// <summary>
-    /// Prepare a chat for the wire. When E2EE is active, encrypts Title / ProviderId / Messages
-    /// into EncryptedPayload+WrappedDek and clears the plaintext fields. Otherwise returns a
-    /// copy unchanged. Id, SchemaVersion, timestamps, and WindowMode stay plaintext — the
-    /// server needs them for indexing, conflict resolution, and validation.
+    /// Prepare a chat for the wire. When E2EE is active, encrypts Title / ProviderId /
+    /// Messages / ExtensionData into EncryptedPayload+WrappedDek and clears the plaintext
+    /// fields. Otherwise returns a copy unchanged. Id, SchemaVersion, timestamps, and
+    /// WindowMode stay plaintext — the server needs them for indexing, conflict
+    /// resolution, and validation.
     /// </summary>
     public SyncAssistantChat ToSyncAssistantChat(SyncAssistantChat chat, string? userId = null)
     {
@@ -939,29 +949,35 @@ public class SyncMapper
             SchemaVersion = chat.SchemaVersion,
             CreatedAt = ToUtc(chat.CreatedAt),
             UpdatedAt = ToUtc(chat.UpdatedAt),
-            LastAccessedAt = ToUtc(chat.LastAccessedAt),
-            WindowMode = chat.WindowMode,
-            ExtensionData = chat.ExtensionData
+            // Day granularity only: LastAccessedAt reflects read activity, and precise
+            // per-read timestamps hand the server a traffic-analysis signal. Retention
+            // (its only consumer) compares against whole-day cutoffs anyway.
+            LastAccessedAt = ToUtc(chat.LastAccessedAt).Date,
+            WindowMode = chat.WindowMode
         };
 
         if (IsE2EEActive && userId is not null)
         {
-            var plainPayload = new
+            var plainPayload = new AssistantChatCipherPayload
             {
-                chat.Title,
-                chat.ProviderId,
-                chat.Messages
+                Title = chat.Title,
+                ProviderId = chat.ProviderId,
+                Messages = chat.Messages,
+                ExtensionData = chat.ExtensionData
             };
             (wire.EncryptedPayload, wire.WrappedDek) = _e2ee!.EncryptRecord(
                 plainPayload, userId, "assistant_chat", chat.Id.ToString());
             // Leave Title/ProviderId/Messages defaults — server enforces they stay empty
             // when EncryptedPayload is set (see assistant-chat-history.md §4.3).
+            // ExtensionData rides inside the ciphertext: unknown fields would bypass
+            // E2EE if they stayed plaintext on the wire.
         }
         else
         {
             wire.Title = chat.Title;
             wire.ProviderId = chat.ProviderId;
             wire.Messages = chat.Messages;
+            wire.ExtensionData = chat.ExtensionData;
         }
 
         return wire;
@@ -1002,7 +1018,10 @@ public class SyncMapper
                 UpdatedAt = wire.UpdatedAt,
                 LastAccessedAt = wire.LastAccessedAt,
                 WindowMode = wire.WindowMode,
-                ExtensionData = wire.ExtensionData
+                // Forward-compat fields travel inside the ciphertext for encrypted chats;
+                // plaintext wire extension keys are dropped so they can't re-enter the
+                // local store and echo back out on the next push.
+                ExtensionData = decrypted.ExtensionData
                 // EncryptedPayload / WrappedDek deliberately null — local store holds plaintext.
             };
         }
@@ -1020,5 +1039,22 @@ public class SyncMapper
             WindowMode = wire.WindowMode,
             ExtensionData = wire.ExtensionData
         };
+    }
+
+    /// <summary>
+    /// Serialization shape of the encrypted assistant-chat payload. Property names must
+    /// match the anonymous type used before this class existed (default PascalCase), so
+    /// ciphertext from older clients stays decryptable. ExtensionData serializes inline
+    /// ([JsonExtensionData]), which is what lets unknown fields round-trip through the
+    /// ciphertext instead of the plaintext wire.
+    /// </summary>
+    private sealed class AssistantChatCipherPayload
+    {
+        public string? Title { get; set; }
+        public Guid? ProviderId { get; set; }
+        public List<SyncAssistantChatMessage> Messages { get; set; } = [];
+
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }
 }

@@ -164,6 +164,7 @@ public class AssistantChatSyncServiceTests
 
     private AssistantChatSyncService CreateSut(SyncMapper mapper) =>
         new(_chatService, _capabilities, _auth, _settings, _clientFactory, mapper,
+            Substitute.For<ISyncClientService>(),
             NullLogger<AssistantChatSyncService>.Instance);
 
     private static SyncMapper NewPlainMapper()

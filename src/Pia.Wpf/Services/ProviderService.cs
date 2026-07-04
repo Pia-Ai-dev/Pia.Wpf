@@ -164,10 +164,14 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         var index = providers.IndexOf(existing);
 
-        // Preserve encrypted key if no new key provided
+        // Preserve encrypted key if no new key provided — unless the incoming provider
+        // already carries one (the E2EE pull path maps the synced key onto
+        // EncryptedApiKey directly; clobbering it here would keep rotated keys from
+        // ever propagating to other devices).
         if (string.IsNullOrEmpty(newApiKey))
         {
-            provider.EncryptedApiKey = existing.EncryptedApiKey;
+            if (string.IsNullOrEmpty(provider.EncryptedApiKey))
+                provider.EncryptedApiKey = existing.EncryptedApiKey;
         }
         else
         {
