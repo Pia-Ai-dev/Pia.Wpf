@@ -15,6 +15,7 @@ public interface IPluginService
     Task ApplyServerPluginsAsync(IReadOnlyList<SyncPlugin> upserted, IReadOnlyList<Guid> deleted);
     Task SetPluginEnabledAsync(Guid pluginId, bool enabled);
     List<SyncPluginPreference> GetPendingPreferenceChanges();
+    void ClearPreferenceChangesAfterSuccessfulPush();
     IReadOnlyList<SyncPlugin> GetAllPluginConfigs();
     Task ShutdownAllAsync();
 }

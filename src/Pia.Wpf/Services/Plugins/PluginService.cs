@@ -603,11 +603,21 @@ public class PluginService : IPluginService
 
     public List<SyncPluginPreference> GetPendingPreferenceChanges()
     {
+        // Peek only — do NOT drain here. Draining at request-build time loses the changes
+        // whenever the push then fails (e.g. 403 e2ee_required, a transient 500, or the
+        // no-op short-circuit). Mirrors SyncDeleteTrackerService: the queue is cleared by
+        // ClearPreferenceChangesAfterSuccessfulPush once the push actually succeeds.
         lock (_pendingPrefs)
         {
-            var prefs = new List<SyncPluginPreference>(_pendingPrefs);
+            return new List<SyncPluginPreference>(_pendingPrefs);
+        }
+    }
+
+    public void ClearPreferenceChangesAfterSuccessfulPush()
+    {
+        lock (_pendingPrefs)
+        {
             _pendingPrefs.Clear();
-            return prefs;
         }
     }
 

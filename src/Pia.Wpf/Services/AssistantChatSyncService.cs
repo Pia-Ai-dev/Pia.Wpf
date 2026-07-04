@@ -289,6 +289,19 @@ public sealed class AssistantChatSyncService : BackgroundService
                 await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct);
             }
 
+            // If any push hit 403 e2ee_required, the account is E2EE-enabled server-side but
+            // this device hasn't onboarded — the chats went out plaintext and were rejected.
+            // Do NOT mark the backfill complete: leaving the gate unset re-runs the full
+            // backfill on the next launch (after onboarding, the pushes succeed encrypted).
+            // Marking it done here would strand those chats in the cloud until logout/login.
+            if (_syncClient.IsE2EEOnboardingRequired)
+            {
+                _logger.LogWarning(
+                    "Startup backfill deferred: E2EE onboarding required; {Count} chat(s) not yet uploaded, will retry on next launch after onboarding",
+                    ids.Count);
+                return;
+            }
+
             // Re-read so we don't clobber any settings written meanwhile.
             var toSave = await _settingsService.GetSettingsAsync();
             toSave.AssistantChatsBackfilledAt = DateTime.UtcNow;

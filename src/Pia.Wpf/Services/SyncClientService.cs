@@ -261,6 +261,13 @@ public class SyncClientService : ISyncClientService, IDisposable
             var todos = _todoService is not null
                 ? await _todoService.GetAllAsync()
                 : [];
+            // MinValue = "everything": scheduled jobs are cursor-gated in the delta push and
+            // were previously omitted here, so a job edited during an E2EE-onboarding window
+            // (pushed plaintext -> 403, cursor advanced on pull) could never re-sync. Include
+            // them in the full re-push like every other entity.
+            var scheduledJobs = _scheduledJobService is not null
+                ? await _scheduledJobService.GetModifiedSinceAsync(DateTime.MinValue)
+                : [];
 
             var isE2EE = _e2ee?.IsReady() == true;
             var userId = isE2EE ? settings.SyncUserId : null;
@@ -316,16 +323,22 @@ public class SyncClientService : ISyncClientService, IDisposable
                     Upserted = todos
                         .Select(t => _mapper.ToSyncTodo(t, userId))
                         .ToList()
+                },
+                ScheduledJobs = new SyncEntityChanges<SyncScheduledJob>
+                {
+                    Upserted = scheduledJobs
+                        .Select(j => _mapper.ToSyncScheduledJob(j, userId))
+                        .ToList()
                 }
             };
 
             var response = await client.PostAsJsonAsync($"{serverUrl}/api/sync/push", request);
             await EnsureSuccessAsync(response, "First-sync push");
 
-            _logger.LogInformation("First-sync push completed (templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos})",
+            _logger.LogInformation("First-sync push completed (templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos}, scheduledJobs: {Jobs})",
                 request.Templates.Upserted.Count, request.Personas.Upserted.Count, request.Providers.Upserted.Count,
                 request.Sessions.Added.Count, request.Memories.Upserted.Count,
-                request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count);
+                request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count, request.ScheduledJobs.Upserted.Count);
 
             // Pull all data from server (including other devices' data)
             var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
@@ -513,8 +526,12 @@ public class SyncClientService : ISyncClientService, IDisposable
             request.ScheduledJobs.Upserted.Count,
             request.LastSyncTimestamp, request.DeviceId, request.IsE2EEEncrypted);
 
-        // Short-circuit: skip HTTP POST when there are no changes to push
-        if (pushedCount == 0 && pendingDeletes.Values.All(v => v.Count == 0))
+        // Short-circuit: skip HTTP POST when there are no changes to push. Plugin prefs are
+        // NOT in pushedCount, so they must be checked explicitly — otherwise a prefs-only
+        // change is short-circuited away and (with peek semantics) never leaves the device.
+        if (pushedCount == 0
+            && pendingDeletes.Values.All(v => v.Count == 0)
+            && request.PluginPreferences.Count == 0)
         {
             _logger.LogInformation("Push short-circuited: no changes to push");
             return 0;
@@ -563,6 +580,9 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         _deleteTracker.ClearAfterSuccessfulPush();
+        // Only now that the push succeeded is it safe to drop the pending plugin prefs; a
+        // 403/failure/short-circuit above returned without reaching here, so they persist.
+        _pluginService?.ClearPreferenceChangesAfterSuccessfulPush();
 
         return pushedCount;
     }
