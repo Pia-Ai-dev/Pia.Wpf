@@ -50,7 +50,12 @@ re-clusters all of them**, so speaker assignments self-heal as evidence accumula
   roster-union → summary-prompt flow stays as is).
 - Cross-meeting / persistent speaker memory (explicitly OUT — reopens the biometric-consent
   question per the handover's privacy note).
-- Changes to voice mode's live-transcription diarization path or its blocklist/consent flow.
+- Repurposing or removing existing `ISpeakerIdentificationService` members. Note: the meeting
+  attendee is the interface's only real consumer today — the "blocklist/consent flow" mentioned in
+  its doc comments is a remnant of the salvaged POC branch (no `ConsentStateManager` type exists in
+  `src/`). Members stay additive so the sole test stub
+  (`tests/Pia.Wpf.Tests/Services/MeetingAttendee/MeetingAttendeeServiceStateTests.cs`) updates
+  mechanically.
 - Changing the embedding model (stays 3D-Speaker CAM++ via sherpa-onnx).
 
 ## 3. Architecture overview
@@ -120,7 +125,9 @@ public readonly record struct SpeakerReassignment(long SegmentId, string NewLabe
 `SpeakerIdentificationService` (manual) implements `IdentifyOrRegisterSegment` by wrapping its
 existing logic with a counter and never raises the event. Existing members
 (`IdentifyOrRegister`, `IdentifyOrRegisterWithEmbedding`, `Rename`, `Reset`,
-`SpeakerRegistered`) stay for the voice-mode path.
+`SpeakerRegistered`) stay untouched — they have no other production consumer today (see §2
+non-goals), so keeping the change additive is about mechanical test-stub updates, not about
+protecting another feature.
 
 ### 4.3 `SpeakerClusterer` (new, pure logic — the testable heart)
 
@@ -146,6 +153,9 @@ public sealed record ClusterResult(int[] AssignmentPerSegment, int ClusterCount,
    - All merges below `CutMin` → single speaker (one cluster).
    - No gap in band (degenerate) → fall back to cutting at distance `0.50`
      (equivalent to today's default threshold).
+   - Single-cluster outcome (all merges below `CutMin`): `ClusterResult.CutDistance` is still
+     defined — it is `CutMin` (0.30), so the instant path's derived match threshold stays strict
+     rather than degenerate.
    - **Hysteresis:** if the best and second-best gaps differ by `< 0.03`, prefer the cut whose
      resulting cluster count matches the previous pass's count (label churn dampening).
 4. **Sanity cap:** if the cut yields more than 12 clusters (max of today's manual cap), keep
@@ -165,9 +175,12 @@ State (all under one lock, mirroring today's service):
 - Monotonic `_nextSegmentId`, `_speakerCounter` ("Speaker N" numbering, never reused in-meeting).
 
 **Instant path (`IdentifyOrRegisterSegment`):** compute embedding, journal it, match against
-current cluster centroids with the **adaptive** threshold (last pass's `CutDistance`; before the
-first pass, 0.50). Above → provisional member of that cluster; below → provisional new
-"Speaker N" (raises `SpeakerRegistered`, like today). Returns `(segmentId, label)` immediately.
+current cluster centroids with the **adaptive similarity threshold `1 − CutDistance`** (the
+clusterer outputs a cosine *distance*; centroid matching compares cosine *similarity*, so a pass
+yielding `CutDistance = 0.30` means "match at sim ≥ 0.70"). Before the first pass the threshold is
+similarity 0.50 (today's default). At or above → provisional member of that cluster; below →
+provisional new "Speaker N" (raises `SpeakerRegistered`, like today). Returns
+`(segmentId, label)` immediately.
 
 **Re-cluster pass:** triggered at the end of an identify call when `newSegmentsSinceLastPass ≥ 5`
 **or** (`≥ 1` new segment **and** `≥ 30 s` since the last pass). Runs synchronously on the engine's
@@ -185,8 +198,9 @@ against a multi-hundred-ms STT step). Steps:
    (outside the lock, subscriber exceptions caught — same pattern as `SpeakerRegistered`).
 
 **Caps:** embedding journal capped at 2000 entries; beyond that the oldest entries are dropped and
-their assignments frozen (they are older than anything the UI still shows — the bubble list trims
-at 200 bubbles long before that).
+their assignments frozen. Safe because the VM's utterance journal (§4.7) keeps only the newest
+1000 utterances, and every journaled utterance's segment is among the newest ≤ 2000 segments — so
+a frozen segment can never correspond to an utterance the UI could still rebuild.
 
 **`Rename(old, new)`:** re-keys the display-label map by cluster id — renames survive re-cluster
 passes by construction. **`Reset`/`Dispose`:** extend today's biometric wipe — zero every journaled
@@ -225,7 +239,10 @@ still pinned by the existing regression test).
 
 ### 4.7 Transcript VM (`TranscriptOverlayViewModel`) — utterance journal + rebuild
 
-Bubbles concatenate utterance text today, so retro correction needs per-utterance retention:
+Bubbles concatenate utterance text today, so retro correction needs per-utterance retention. The
+journal and `ApplyReassignments` live in the abstract **base** `TranscriptOverlayViewModel`
+(alongside `Bubbles` and `RelabelSpeaker`); the attendee VM is currently its only subclass, but the
+journal is base-level state because `AddUtterance` (base) must feed it:
 
 - New private journal `List<UtteranceEntry>` (`Speaker`, `Text`, `Timestamp`, `Label`,
   `SegmentId`), appended by `AddUtterance`, capped at 1000 entries (oldest dropped — comfortably
@@ -234,7 +251,8 @@ Bubbles concatenate utterance text today, so retro correction needs per-utteranc
   1. Update `Label` on matching journal entries (by `SegmentId`).
   2. Rebuild the `Bubbles` collection from the journal on the UI thread using the **same** merge
      rules as the incremental path (extract the merge decision from `GetOrCreateBubble` so both
-     paths share it), then apply the existing trim.
+     paths share it), then trim **until** under the 200-bubble cap (the existing `TrimIfNeeded`
+     removes at most one `TrimBatch` per call — a full rebuild must loop, not call it once).
   3. `_speakerColorIndex` persists across rebuilds → speakers keep their colors; a label that
      disappears keeps its slot reserved (harmless).
   No-op when `changes` is empty or nothing matches (e.g. all affected entries already trimmed).
@@ -244,8 +262,7 @@ Bubbles concatenate utterance text today, so retro correction needs per-utteranc
   same dispatcher marshalling as `AddUtterance`).
 
 `MeetingAttendeeViewModel` subscribes to the service's `SpeakersReassigned` and forwards to
-`ApplyReassignments`. Live-transcription VM (voice mode) never receives reassignments (manual
-service never raises) — zero behavior change there.
+`ApplyReassignments`. In manual mode the event never fires, so behavior is unchanged there.
 
 ### 4.8 Settings + UI
 
@@ -340,4 +357,4 @@ any slider.
 | Visible bubble churn on reassignment | Changes-only diffs, hysteresis dampening, color stability across rebuilds |
 | Pass cost grows with meeting length | O(n²) Lance–Williams, 2000-embedding cap, duration logged |
 | Renames lost across passes | Labels keyed by cluster id + rename-preferring tie-break; covered by tests |
-| Interface change ripples to voice mode | Additive members only; manual service implements trivially; voice-mode behavior byte-identical |
+| Interface change ripples to other consumers | Additive members only; manual service implements trivially; the only other touch point is the mechanical test-stub update (§2 non-goals) |
