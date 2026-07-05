@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
+             xmlns:locConverters="clr-namespace:Pia.Localization"
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
@@ -10,11 +11,12 @@
     <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
     <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
     <converters:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
+    <locConverters:CategoryDisplayConverter x:Key="CategoryDisplayConverter"/>
   </UserControl.Resources>
   <Grid>
     <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
-      <!-- Appearance tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Appearance}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+      <!-- Application tab -->
+      <TabItem Header="{loc:Str Settings_InnerTab_Application}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
             <StackPanel Margin="0,0,0,20">
@@ -61,6 +63,31 @@
               <TextBlock Text="{loc:Str Settings_AutoCaptureSelectedText_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          Margin="22,4,0,0"/>
+            </StackPanel>
+
+            <Border BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource BorderBrush_}"
+                    Margin="0,4,0,20"/>
+
+            <!-- Reset Application (Danger Zone) -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_ResetAppData}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Settings_ResetAppData_Description}"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextMutedBrush}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,12"/>
+              <ui:Button Command="{Binding ResetAppDataCommand}"
+                         Appearance="Secondary"
+                         Foreground="{DynamicResource PiaDangerBrush}"
+                         HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,8,0"
+                                 Foreground="{DynamicResource PiaDangerBrush}"/>
+                  <TextBlock Text="{loc:Str Settings_ResetAppData_Button}"/>
+                </StackPanel>
+              </ui:Button>
             </StackPanel>
           </StackPanel>
         </ScrollViewer>
@@ -416,6 +443,114 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Privacy tab (applies to all AI traffic, cloud-independent) -->
+      <TabItem Header="{loc:Str Settings_InnerTab_Privacy}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding PrivacyVm}">
+          <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+            <!-- Tokenization Toggle -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Privacy_Tokenization}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <CheckBox Content="{loc:Str Settings_Privacy_TokenizationEnabled}"
+                        IsChecked="{Binding TokenizationEnabled}"
+                        Margin="0,4,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Privacy_TokenizationDescription}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
+            <Border BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource BorderBrush_}"
+                    Margin="0,4,0,20"/>
+
+            <!-- PII Keywords -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Privacy_Keywords}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Privacy_KeywordsDescription}"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextMutedBrush}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,12"/>
+
+              <!-- Add keyword input -->
+              <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ui:TextBox Grid.Column="0"
+                            Text="{Binding NewKeywordInput, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="{loc:Str Settings_Privacy_KeywordPlaceholder}"
+                            Margin="0,0,8,0"/>
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding AvailableCategories}"
+                          SelectedItem="{Binding SelectedNewCategory}"
+                          MinWidth="120"
+                          Margin="0,0,8,0">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding Converter={StaticResource CategoryDisplayConverter}}"/>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ui:Button Grid.Column="2"
+                           Command="{Binding AddPiiKeywordCommand}"
+                           Appearance="Primary">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
+                    <TextBlock Text="{loc:Str Settings_Privacy_AddKeyword}"/>
+                  </StackPanel>
+                </ui:Button>
+              </Grid>
+
+              <!-- Keyword list -->
+              <ItemsControl ItemsSource="{Binding PiiKeywords}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Style="{StaticResource PiaSettingsCardStyle}"
+                            Padding="10,6"
+                            Margin="0,0,0,6">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Keyword}"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextDefaultBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding DataContext.AvailableCategories, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  SelectedItem="{Binding Category}"
+                                  MinWidth="120"
+                                  Margin="8,0"
+                                  VerticalAlignment="Center">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding Converter={StaticResource CategoryDisplayConverter}}"/>
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ui:Button Grid.Column="2"
+                                   Command="{Binding DataContext.RemovePiiKeywordCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                   CommandParameter="{Binding}"
+                                   Appearance="Secondary"
+                                   Padding="4">
+                          <ui:SymbolIcon Symbol="Dismiss24" FontSize="12"/>
+                        </ui:Button>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
@@ -152,6 +153,6 @@ public partial class PluginsSettingsViewModel : ObservableObject
     [RelayCommand]
     private void GoToAccount()
     {
-        _parent.SelectedTabIndex = 4;
+        _parent.SelectedTabIndex = (int)SettingsTab.Account;
     }
 }

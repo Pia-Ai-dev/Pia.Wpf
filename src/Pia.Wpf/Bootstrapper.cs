@@ -494,7 +494,6 @@ public static class Bootstrapper
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();
         services.AddScoped<TodoViewModel>();
-        services.AddScoped<DeviceManagementViewModel>();
         services.AddScoped<E2EEOnboardingViewModel>();
         services.AddScoped<E2EESetupStepViewModel>();
         services.AddScoped<ViewModels.Flow.FlowViewModel>();

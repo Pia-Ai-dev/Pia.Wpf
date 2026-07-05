@@ -64,7 +64,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService);
         AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService);
 
-        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService);
+        var privacyVm = new PrivacySettingsViewModel(logger, settingsService);
+        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService);
 
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
 
@@ -80,11 +81,11 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
                 break;
             case ValueTuple<int, int> tabs:
                 // (outer tab, inner tab). Inner tab applies only when the outer tab
-                // hosts its own TabControl — Assistant (2) and General (3).
+                // hosts its own TabControl — Assistant and General.
                 SelectedTabIndex = tabs.Item1;
-                if (tabs.Item1 == 2)
+                if (tabs.Item1 == (int)SettingsTab.Assistant)
                     AssistantVm.SelectedInnerTabIndex = tabs.Item2;
-                else if (tabs.Item1 == 3)
+                else if (tabs.Item1 == (int)SettingsTab.General)
                     GeneralVm.SelectedInnerTabIndex = tabs.Item2;
                 break;
         }

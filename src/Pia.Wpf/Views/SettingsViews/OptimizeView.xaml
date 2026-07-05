@@ -11,17 +11,24 @@
   </UserControl.Resources>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel MaxWidth="1080" HorizontalAlignment="Left">
-      <!-- Provider selector for Optimize mode -->
+      <!-- Provider hint (the default provider for this mode is set on the Providers tab) -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-        <ComboBox ItemsSource="{Binding ProvidersVm.Providers}"
-                  SelectedValue="{Binding ProvidersVm.OptimizeProviderId}"
-                  SelectedValuePath="Id"
-                  DisplayMemberPath="Name"
-                  Width="400"
-                  HorizontalAlignment="Left"/>
+        <TextBlock Text="{loc:Str Settings_ProviderHint}"
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+        <ui:HyperlinkButton Content="{loc:Str Settings_ProviderHint_Link}"
+                            Command="{Binding ProvidersVm.GoToProvidersTabCommand}"
+                            HorizontalAlignment="Left"
+                            Margin="0,4,0,0"/>
       </StackPanel>
+
+      <!-- Output section -->
+      <TextBlock Text="{loc:Str Settings_Output_Section}"
+                 FontSize="14"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource TextDefaultBrush}"
+                 Margin="0,0,0,8"/>
 
       <!-- Output Action -->
       <StackPanel Margin="0,0,0,20">

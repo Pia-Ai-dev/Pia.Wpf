@@ -14,17 +14,22 @@
       <TabItem Header="{loc:Str Settings_InnerTab_General}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
-      <!-- Provider selector for Assistant mode -->
+      <!-- Provider hint (the default provider for this mode is set on the Providers tab) -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-        <ComboBox ItemsSource="{Binding ProvidersVm.Providers}"
-                  SelectedValue="{Binding ProvidersVm.AssistantProviderId}"
-                  SelectedValuePath="Id"
-                  DisplayMemberPath="Name"
-                  Width="400"
-                  HorizontalAlignment="Left"/>
+        <TextBlock Text="{loc:Str Settings_ProviderHint}"
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+        <ui:HyperlinkButton Content="{loc:Str Settings_ProviderHint_Link}"
+                            Command="{Binding ProvidersVm.GoToProvidersTabCommand}"
+                            HorizontalAlignment="Left"
+                            Margin="0,4,0,0"/>
       </StackPanel>
+
+      <!-- Assistant behavior -->
+      <TextBlock Text="{loc:Str Settings_Assistant_BehaviorSection}"
+                 Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                 Margin="0,0,0,8"/>
 
       <!-- Default Window Mode -->
       <StackPanel Margin="0,0,0,20">
@@ -42,15 +47,6 @@
         </ComboBox>
         <TextBlock Text="{loc:Str Settings_DefaultWindowMode_Description}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"/>
-      </StackPanel>
-
-      <!-- Todo Panel Toggle -->
-      <StackPanel Margin="0,0,0,20">
-        <CheckBox Content="{loc:Str Settings_ShowTodoPanelButton}"
-                  IsChecked="{Binding ShowTodoPanelButton}"/>
-        <TextBlock Text="{loc:Str Settings_ShowTodoPanelButton_Description}"
-                   Style="{StaticResource PiaSettingsDescriptionStyle}"
-                   Margin="22,4,0,0"/>
       </StackPanel>
 
       <!-- Follow-up Suggestion Chips -->

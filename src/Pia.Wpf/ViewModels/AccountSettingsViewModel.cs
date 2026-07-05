@@ -6,8 +6,6 @@ using Pia.Services.E2EE;
 using Pia.Helpers;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
-using System.Collections.ObjectModel;
-using System.IO;
 using System.Text.Json;
 using System.Threading;
 
@@ -141,10 +139,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         };
     }
 
-    // Inner tab index
-    [ObservableProperty]
-    private int _selectedInnerTabIndex;
-
     // Sync properties
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsServerUrlEditable))]
@@ -230,26 +224,6 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     public bool CanSyncNow => !IsSyncing && !IsE2EEOnboardingRequired;
 
-    // Privacy properties
-    [ObservableProperty]
-    private bool _tokenizationEnabled;
-
-    [ObservableProperty]
-    private ObservableCollection<PiiKeywordEntry> _piiKeywords = new();
-
-    [ObservableProperty]
-    private string _newKeywordInput = string.Empty;
-
-    [ObservableProperty]
-    private string _selectedNewCategory = "Custom";
-
-    public List<string> AvailableCategories { get; } = ["Person", "Nickname", "Email", "Phone", "Address", "Date", "Custom"];
-
-    partial void OnTokenizationEnabledChanged(bool value)
-    {
-        if (!_isLoading) SavePrivacySettingsAsync().SafeFireAndForget(_logger);
-    }
-
     partial void OnIsE2EEEnabledChanged(bool value)
     {
         if (_isLoading) return;
@@ -293,15 +267,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         IsE2EEEnabled = settings.IsE2EEEnabled;
         if (_deviceManagement.IsInitialized())
             DeviceFingerprint = _deviceKeys.GetFingerprint();
-
-        // Privacy settings
-        TokenizationEnabled = settings.Privacy.TokenizationEnabled;
-        foreach (var entry in PiiKeywords)
-            entry.PropertyChanged -= OnPiiKeywordEntryChanged;
-        var entries = settings.Privacy.PiiKeywords;
-        foreach (var entry in entries)
-            entry.PropertyChanged += OnPiiKeywordEntryChanged;
-        PiiKeywords = new ObservableCollection<PiiKeywordEntry>(entries);
 
         _isLoading = false;
     }
@@ -717,79 +682,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         }
     }
 
-    // PII keyword commands
-    [RelayCommand]
-    private async Task AddPiiKeywordAsync()
-    {
-        var keyword = NewKeywordInput?.Trim();
-        if (string.IsNullOrWhiteSpace(keyword) || PiiKeywords.Any(e => string.Equals(e.Keyword, keyword, StringComparison.OrdinalIgnoreCase)))
-            return;
-
-        var entry = new PiiKeywordEntry { Keyword = keyword, Category = SelectedNewCategory };
-        entry.PropertyChanged += OnPiiKeywordEntryChanged;
-        PiiKeywords.Add(entry);
-        NewKeywordInput = string.Empty;
-        await SavePrivacySettingsAsync();
-    }
-
-    [RelayCommand]
-    private async Task RemovePiiKeywordAsync(PiiKeywordEntry entry)
-    {
-        entry.PropertyChanged -= OnPiiKeywordEntryChanged;
-        if (PiiKeywords.Remove(entry))
-            await SavePrivacySettingsAsync();
-    }
-
-    private void OnPiiKeywordEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (!_isLoading && e.PropertyName == nameof(PiiKeywordEntry.Category))
-            SavePrivacySettingsAsync().SafeFireAndForget(_logger);
-    }
-
-    // Reset app data
-    [RelayCommand]
-    private async Task ResetAppDataAsync()
-    {
-        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
-            _localizationService["Settings_ResetAppData_Confirm_Title"],
-            _localizationService["Settings_ResetAppData_Confirm_Message"]);
-
-        if (!confirmed)
-            return;
-
-        try
-        {
-            _syncClientService.StopBackgroundSync();
-
-            var roamingDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
-            var localDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia");
-
-            if (Directory.Exists(roamingDir))
-                Directory.Delete(roamingDir, recursive: true);
-            if (Directory.Exists(localDir))
-                Directory.Delete(localDir, recursive: true);
-
-            var exePath = Environment.ProcessPath;
-            if (exePath is not null)
-            {
-                System.Diagnostics.Process.Start(exePath);
-                Environment.Exit(0);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to reset application data");
-            _snackbarService.Show(
-                _localizationService["Msg_Error"],
-                ex.Message,
-                Wpf.Ui.Controls.ControlAppearance.Danger,
-                null,
-                TimeSpan.FromSeconds(5));
-        }
-    }
-
     private async Task SaveSyncSettingsAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -798,14 +690,6 @@ public partial class AccountSettingsViewModel : ObservableObject
             settings.TrustSelfSignedCertificates = TrustSelfSignedCertificates;
             settings.ServerUrl = ServerUrl;
         }
-        await _settingsService.SaveSettingsAsync(settings);
-    }
-
-    private async Task SavePrivacySettingsAsync()
-    {
-        var settings = await _settingsService.GetSettingsAsync();
-        settings.Privacy.TokenizationEnabled = TokenizationEnabled;
-        settings.Privacy.PiiKeywords = PiiKeywords.Select(e => new PiiKeywordEntry { Keyword = e.Keyword, Category = e.Category }).ToList();
         await _settingsService.SaveSettingsAsync(settings);
     }
 

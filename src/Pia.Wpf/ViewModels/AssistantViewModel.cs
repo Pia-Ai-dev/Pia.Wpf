@@ -476,11 +476,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnMeetingAttendeeOpenSettingsRequested(object? sender, EventArgs e)
     {
         // "Meeting settings" link on the join setup page: deep-link to the Assistant settings tab
-        // (outer 2) → Meeting inner tab (inner 3) — mirrors NavigateToToolPermissions (2, 2). The
-        // overlay is left visible: it's a child of this page, so navigating swaps it out of the frame,
-        // and returning to the assistant restores the join form. The link is only reachable before a
-        // meeting runs, so there is no live session to stop.
-        _navigationService.NavigateTo<SettingsViewModel, (int, int)>((2, 3));
+        // → Meeting inner tab — mirrors NavigateToToolPermissions. The overlay is left visible: it's
+        // a child of this page, so navigating swaps it out of the frame, and returning to the
+        // assistant restores the join form. The link is only reachable before a meeting runs, so
+        // there is no live session to stop.
+        _navigationService.NavigateTo<SettingsViewModel, (int, int)>(
+            ((int)SettingsTab.Assistant, (int)AssistantSettingsInnerTab.Meeting));
     }
 
     private void ExecuteUseSuggestion(string? suggestion)
@@ -993,25 +994,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void ShowNoVoiceLoadedSnackbar()
     {
-        // General tab (outer 3) → Speech inner tab (inner 2) hosts the TTS voice selection UI.
+        // General tab → Speech inner tab hosts the TTS voice selection UI.
         SnackbarActionHelper.ShowWithAction(
             _snackbarService,
             _localizationService["Msg_Warning"],
             _localizationService["Msg_Tts_NoVoiceLoaded"],
             _localizationService["Msg_Tts_NoVoiceLoaded_OpenSettings"],
-            () => _navigationService.NavigateTo<SettingsViewModel, (int, int)>((3, 2)),
+            () => _navigationService.NavigateTo<SettingsViewModel, (int, int)>(
+                ((int)SettingsTab.General, (int)GeneralSettingsInnerTab.Speech)),
             Wpf.Ui.Controls.ControlAppearance.Caution,
             TimeSpan.FromSeconds(8));
     }
 
     /// <summary>
     /// Deep-link from an auto-approved action card's "Manage" affordance to the
-    /// tool-permissions revocation surface: Assistant tab (outer 2) → Tool access
-    /// inner tab (inner 2). SettingsViewModel.OnNavigatedTo maps (2, inner).
+    /// tool-permissions revocation surface: Assistant tab → Tool access inner tab.
+    /// SettingsViewModel.OnNavigatedTo maps (Assistant, inner).
     /// </summary>
     [RelayCommand]
     private void NavigateToToolPermissions()
-        => _navigationService.NavigateTo<SettingsViewModel, (int, int)>((2, 2));
+        => _navigationService.NavigateTo<SettingsViewModel, (int, int)>(
+            ((int)SettingsTab.Assistant, (int)AssistantSettingsInnerTab.ToolAccess));
 
     private async Task SpeakMessageAsync(AssistantMessage message)
     {

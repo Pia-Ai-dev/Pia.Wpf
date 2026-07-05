@@ -200,7 +200,10 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void GoToCloudSync() => _parent.SelectedTabIndex = 4; // Account tab
+    private void GoToCloudSync() => _parent.SelectedTabIndex = (int)SettingsTab.Account;
+
+    [RelayCommand]
+    private void GoToProvidersTab() => _parent.SelectedTabIndex = (int)SettingsTab.Providers;
 
     [RelayCommand]
     private async Task AddProviderAsync()

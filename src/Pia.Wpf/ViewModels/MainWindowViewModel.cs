@@ -231,8 +231,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void NavigateToSettings()
     {
-        // Navigate to Settings with the Providers tab selected (index 0)
-        _navigationService.NavigateTo<SettingsViewModel, int>(0);
+        // Navigate to Settings with the Providers tab selected.
+        _navigationService.NavigateTo<SettingsViewModel, int>((int)SettingsTab.Providers);
     }
 
     [RelayCommand]
@@ -373,7 +373,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void OpenE2EEOnboarding()
     {
-        _navigationService.NavigateTo<SettingsViewModel, int>(4);
+        _navigationService.NavigateTo<SettingsViewModel, int>((int)SettingsTab.Account);
     }
 
     public void Dispose()

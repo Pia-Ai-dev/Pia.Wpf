@@ -5,6 +5,7 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using System.Collections.ObjectModel;
+using System.IO;
 
 namespace Pia.ViewModels;
 
@@ -20,7 +21,10 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IAutostartService _autostartService;
     private readonly IPolicyService _policyService;
+    private readonly ISyncClientService _syncClientService;
     private bool _isLoading;
+
+    public PrivacySettingsViewModel PrivacyVm { get; }
 
     public GeneralSettingsViewModel(
         ILogger<SettingsViewModel> logger,
@@ -32,7 +36,9 @@ public partial class GeneralSettingsViewModel : ObservableObject
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         IAutostartService autostartService,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        PrivacySettingsViewModel privacyVm,
+        ISyncClientService syncClientService)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -44,6 +50,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _autostartService = autostartService;
         _policyService = policyService;
+        _syncClientService = syncClientService;
+        PrivacyVm = privacyVm;
 
         _uiLanguage = _localizationService.CurrentLanguage;
     }
@@ -185,6 +193,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         await LoadTtsVoicesAsync();
 
         _isLoading = false;
+
+        await PrivacyVm.InitializeAsync();
     }
 
     [RelayCommand]
@@ -406,6 +416,50 @@ public partial class GeneralSettingsViewModel : ObservableObject
         {
             _logger.LogError(ex, "Failed to set voice {VoiceKey}", voice.Key);
             _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Settings_VoiceSetFailed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
+        }
+    }
+
+    // Reset app data
+    [RelayCommand]
+    private async Task ResetAppDataAsync()
+    {
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Settings_ResetAppData_Confirm_Title"],
+            _localizationService["Settings_ResetAppData_Confirm_Message"]);
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            _syncClientService.StopBackgroundSync();
+
+            var roamingDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
+            var localDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia");
+
+            if (Directory.Exists(roamingDir))
+                Directory.Delete(roamingDir, recursive: true);
+            if (Directory.Exists(localDir))
+                Directory.Delete(localDir, recursive: true);
+
+            var exePath = Environment.ProcessPath;
+            if (exePath is not null)
+            {
+                System.Diagnostics.Process.Start(exePath);
+                Environment.Exit(0);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reset application data");
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                ex.Message,
+                Wpf.Ui.Controls.ControlAppearance.Danger,
+                null,
+                TimeSpan.FromSeconds(5));
         }
     }
 

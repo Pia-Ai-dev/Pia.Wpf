@@ -342,11 +342,14 @@
   <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>Integriertes Plugin deaktivieren</value></data>
   <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' ist ein integriertes Plugin. Das Deaktivieren beeintr&#228;chtigt die Standardfunktionen des Assistenten. Bist du sicher?</value></data>
   <data name="Settings_InnerTab_General" xml:space="preserve"><value>Allgemein</value></data>
-  <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Darstellung</value></data>
+  <data name="Settings_InnerTab_Application" xml:space="preserve"><value>Anwendung</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Tastenkürzel</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Sprache</value></data>
-  <data name="Settings_InnerTab_CloudSync" xml:space="preserve"><value>Cloud-Synchronisierung</value></data>
   <data name="Settings_InnerTab_Privacy" xml:space="preserve"><value>Datenschutz</value></data>
+  <data name="Settings_ProviderHint" xml:space="preserve"><value>Der KI-Anbieter für diesen Modus wird im Tab „Anbieter" konfiguriert.</value></data>
+  <data name="Settings_ProviderHint_Link" xml:space="preserve"><value>Anbieter öffnen</value></data>
+  <data name="Settings_Output_Section" xml:space="preserve"><value>Ausgabe</value></data>
+  <data name="Settings_Assistant_BehaviorSection" xml:space="preserve"><value>Assistent-Verhalten</value></data>
   <data name="Settings_PrivacyTitle" xml:space="preserve"><value>Datenschutz-Einstellungen</value></data>
   <data name="Settings_Privacy_Tokenization" xml:space="preserve"><value>PII-Tokenisierung</value></data>
   <data name="Settings_Privacy_TokenizationEnabled" xml:space="preserve"><value>Persönliche Daten durch Tokens ersetzen, bevor sie an die KI gesendet werden</value></data>
@@ -409,8 +412,6 @@
   <data name="Settings_MeetingBrowser_Description" xml:space="preserve"><value>Welchen Browser Pia für die Teilnahme an Besprechungen verwendet. Das gebündelte Chromium wird einmalig heruntergeladen und ist die zuverlässigste Wahl. System-Chrome und System-Edge nutzen einen installierten Browser, können aber von Browser-Updates oder Unternehmensrichtlinien beeinträchtigt werden; ist der gewählte Browser nicht verfügbar, weicht Pia auf das gebündelte Chromium aus. „Standardbrowser verwenden“ erkennt Ihren Standardbrowser und verwendet ihn, wenn es Chrome oder Edge ist, andernfalls wird das gebündelte Chromium verwendet.</value></data>
   <data name="Settings_MeetingBrowser_ShowWindow" xml:space="preserve"><value>Besprechungsbrowser-Fenster anzeigen</value></data>
   <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>Wenn deaktiviert (Standard), tritt der Browser unsichtbar bei und die Besprechung wird stummgeschaltet wiedergegeben. Wenn aktiviert, wird das Browserfenster auf dem Bildschirm angezeigt und die Besprechung ist hörbar.</value></data>
-  <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Aufgabenleisten-Schaltfläche anzeigen</value></data>
-  <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Aufgabenleisten-Umschalter in Optimierungs-, Assistenten- und Rechercheansicht anzeigen</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Folgevorschläge anzeigen</value></data>
   <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Nach jeder Antwort des Assistenten 2–4 Folgefragen als Chips vorschlagen. Verursacht eine kleine zusätzliche Anfrage pro Runde.</value></data>
   <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Assistenten-Dateiordner</value></data>
@@ -840,6 +841,7 @@
   <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing bereit</value></data>
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
+  <data name="Flow_Todo_Overdue" xml:space="preserve"><value>Überfällig</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Kürzer</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Ausführlicher</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-fertig</value></data>

@@ -342,11 +342,14 @@
   <data name="Plugins_DisableBuiltIn_Title" xml:space="preserve"><value>D&#233;sactiver une extension int&#233;gr&#233;e</value></data>
   <data name="Plugins_DisableBuiltIn_Message" xml:space="preserve"><value>'{0}' est une extension int&#233;gr&#233;e. La d&#233;sactiver perturbera les fonctionnalit&#233;s par d&#233;faut de l'assistant. &#202;tes-vous s&#251;r ?</value></data>
   <data name="Settings_InnerTab_General" xml:space="preserve"><value>Général</value></data>
-  <data name="Settings_InnerTab_Appearance" xml:space="preserve"><value>Apparence</value></data>
+  <data name="Settings_InnerTab_Application" xml:space="preserve"><value>Application</value></data>
   <data name="Settings_InnerTab_Hotkeys" xml:space="preserve"><value>Raccourcis</value></data>
   <data name="Settings_InnerTab_Speech" xml:space="preserve"><value>Parole</value></data>
-  <data name="Settings_InnerTab_CloudSync" xml:space="preserve"><value>Synchronisation cloud</value></data>
   <data name="Settings_InnerTab_Privacy" xml:space="preserve"><value>Confidentialité</value></data>
+  <data name="Settings_ProviderHint" xml:space="preserve"><value>Le fournisseur d'IA pour ce mode se configure dans l'onglet Fournisseurs.</value></data>
+  <data name="Settings_ProviderHint_Link" xml:space="preserve"><value>Ouvrir Fournisseurs</value></data>
+  <data name="Settings_Output_Section" xml:space="preserve"><value>Sortie</value></data>
+  <data name="Settings_Assistant_BehaviorSection" xml:space="preserve"><value>Comportement de l'assistant</value></data>
   <data name="Settings_PrivacyTitle" xml:space="preserve"><value>Paramètres de confidentialité</value></data>
   <data name="Settings_Privacy_Tokenization" xml:space="preserve"><value>Tokenisation PII</value></data>
   <data name="Settings_Privacy_TokenizationEnabled" xml:space="preserve"><value>Remplacer les données personnelles par des tokens avant l'envoi à l'IA</value></data>
@@ -409,8 +412,6 @@
   <data name="Settings_MeetingBrowser_Description" xml:space="preserve"><value>Le navigateur que Pia pilote pour rejoindre les réunions. Le Chromium intégré est téléchargé une seule fois et constitue le choix le plus fiable. Chrome système et Edge système réutilisent un navigateur installé, mais peuvent être affectés par les mises à jour du navigateur ou par une stratégie d'entreprise ; si le navigateur choisi n'est pas disponible, Pia revient au Chromium intégré. « Utiliser le navigateur par défaut » détecte votre navigateur par défaut et l'utilise s'il s'agit de Chrome ou Edge, sinon il revient au Chromium intégré.</value></data>
   <data name="Settings_MeetingBrowser_ShowWindow" xml:space="preserve"><value>Afficher la fenêtre du navigateur de réunion</value></data>
   <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>Lorsque désactivé (par défaut), le navigateur rejoint la réunion de façon masquée et la réunion est lue en silence. Lorsque activé, la fenêtre du navigateur est affichée à l'écran et la réunion est audible.</value></data>
-  <data name="Settings_ShowTodoPanelButton" xml:space="preserve"><value>Afficher le bouton du panneau des tâches</value></data>
-  <data name="Settings_ShowTodoPanelButton_Description" xml:space="preserve"><value>Afficher le bouton du panneau des tâches dans les vues Optimiser, Assistant et Recherche</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Afficher les suggestions de suivi</value></data>
   <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Après chaque réponse de l'assistant, propose 2 à 4 puces de questions de suivi. Ajoute une petite requête supplémentaire par tour.</value></data>
   <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Dossier de fichiers de l'assistant</value></data>
@@ -840,6 +841,7 @@
   <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing prêt</value></data>
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Échec de l'exécution</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>À échéance sous 24 h</value></data>
+  <data name="Flow_Todo_Overdue" xml:space="preserve"><value>En retard</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Plus court</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Plus détaillé</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Prêt à exporter</value></data>
