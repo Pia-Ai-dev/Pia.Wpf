@@ -67,4 +67,159 @@ public sealed class SpeakerClusterer
         }
         return best.Cut;
     }
+
+    /// <summary>
+    /// Clusters L2-normalized embeddings (caller's contract) by average-linkage AHC and the
+    /// <see cref="ChooseCut"/> policy. <paramref name="previousClusterCount"/> (0 = none) feeds
+    /// the hysteresis — a deliberate call-compatible extension of the spec's §4.3 signature (the
+    /// spec mandates hysteresis toward the previous pass's count; this is how the count gets in).
+    /// Assignments are numbered 0..k-1 in first-appearance order so callers get stable,
+    /// comparable indexes for the same input.
+    /// </summary>
+    public ClusterResult Cluster(IReadOnlyList<float[]> embeddings, int previousClusterCount = 0)
+    {
+        int n = embeddings.Count;
+        if (n == 0) return new ClusterResult(Array.Empty<int>(), 0, CutMin);
+        if (n == 1) return new ClusterResult(new[] { 0 }, 1, CutMin);
+
+        var merges = BuildDendrogram(embeddings);
+
+        // Average linkage is monotonic (reducible), so merge order == sorted order; sort
+        // defensively anyway so ChooseCut's contract is honored under float noise.
+        var sorted = new float[merges.Count];
+        for (int i = 0; i < merges.Count; i++) sorted[i] = merges[i].Distance;
+        Array.Sort(sorted);
+
+        var cut = ChooseCut(sorted, previousClusterCount);
+
+        // Accept merges strictly below the cut via union-find over representative indexes.
+        var parent = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+        int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+
+        int clusters = n;
+        foreach (var m in merges)
+        {
+            if (m.Distance >= cut) continue;
+            var (ra, rb) = (Find(m.A), Find(m.B));
+            if (ra == rb) continue;
+            parent[rb] = ra;
+            clusters--;
+        }
+
+        // Over-segmentation guard: keep merging (cheapest remaining first — merges are already
+        // in ascending order) until the cap is met; the reported cut follows the last merge.
+        if (clusters > MaxClusters)
+        {
+            foreach (var m in merges)
+            {
+                if (clusters <= MaxClusters) break;
+                var (ra, rb) = (Find(m.A), Find(m.B));
+                if (ra == rb) continue;
+                parent[rb] = ra;
+                clusters--;
+                cut = Math.Max(cut, m.Distance);
+            }
+        }
+
+        // Root → 0..k-1 in first-appearance order.
+        var assignment = new int[n];
+        var indexByRoot = new Dictionary<int, int>(clusters);
+        for (int i = 0; i < n; i++)
+        {
+            var root = Find(i);
+            if (!indexByRoot.TryGetValue(root, out var idx))
+            {
+                idx = indexByRoot.Count;
+                indexByRoot[root] = idx;
+            }
+            assignment[i] = idx;
+        }
+
+        return new ClusterResult(assignment, indexByRoot.Count, Math.Clamp(cut, CutMin, CutMax));
+    }
+
+    /// <summary>
+    /// Average-linkage dendrogram via Lance–Williams updates with a per-row nearest-neighbor
+    /// cache (O(n²) average). Returns the n−1 merges in merge order; A/B are representative
+    /// ORIGINAL segment indexes (B folds into A).
+    /// </summary>
+    private static List<(int A, int B, float Distance)> BuildDendrogram(IReadOnlyList<float[]> embeddings)
+    {
+        int n = embeddings.Count;
+        var dist = new float[n][];
+        for (int i = 0; i < n; i++) dist[i] = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            for (int j = i + 1; j < n; j++)
+            {
+                var d = 1f - Dot(embeddings[i], embeddings[j]);
+                dist[i][j] = d;
+                dist[j][i] = d;
+            }
+        }
+
+        var active = new bool[n];
+        Array.Fill(active, true);
+        var size = new int[n];
+        Array.Fill(size, 1);
+        var nn = new int[n];
+        var nnd = new float[n];
+
+        void Refresh(int i)
+        {
+            var best = float.PositiveInfinity;
+            var bi = -1;
+            var row = dist[i];
+            for (int j = 0; j < n; j++)
+            {
+                if (j == i || !active[j]) continue;
+                if (row[j] < best) { best = row[j]; bi = j; }
+            }
+            nn[i] = bi;
+            nnd[i] = best;
+        }
+        for (int i = 0; i < n; i++) Refresh(i);
+
+        var merges = new List<(int A, int B, float Distance)>(n - 1);
+        for (int step = 0; step < n - 1; step++)
+        {
+            var best = float.PositiveInfinity;
+            int a = -1;
+            for (int i = 0; i < n; i++)
+            {
+                if (active[i] && nnd[i] < best) { best = nnd[i]; a = i; }
+            }
+            var b = nn[a];
+            merges.Add((a, b, best));
+
+            // Lance–Williams average linkage: d(k, a∪b) = (|a|·d(k,a) + |b|·d(k,b)) / (|a|+|b|).
+            var (sa, sb) = (size[a], size[b]);
+            for (int k = 0; k < n; k++)
+            {
+                if (!active[k] || k == a || k == b) continue;
+                var d = (sa * dist[a][k] + sb * dist[b][k]) / (sa + sb);
+                dist[a][k] = d;
+                dist[k][a] = d;
+            }
+            size[a] += size[b];
+            active[b] = false;
+
+            // The merged row changed and rows pointing at a or b went stale; averages can only
+            // grow past cached minima, so other caches stay valid.
+            Refresh(a);
+            for (int k = 0; k < n; k++)
+            {
+                if (active[k] && k != a && (nn[k] == a || nn[k] == b)) Refresh(k);
+            }
+        }
+        return merges;
+    }
+
+    private static float Dot(float[] a, float[] b)
+    {
+        float dot = 0;
+        for (int i = 0; i < a.Length; i++) dot += a[i] * b[i];
+        return dot;
+    }
 }

@@ -48,4 +48,93 @@ public class SpeakerClustererTests
         var fresh = SpeakerClusterer.ChooseCut(seq, previousClusterCount: 0);
         Assert.InRange(fresh, SpeakerClusterer.CutMin, 0.32f); // below 0.33 → yields 4 clusters
     }
+
+    // ---- Cluster (geometric end-to-end) ---------------------------------------------------------
+
+    private static float[] Vec(double degrees)
+    {
+        var r = Math.PI * degrees / 180.0;
+        return new[] { (float)Math.Cos(r), (float)Math.Sin(r) };
+    }
+
+    [Fact]
+    public void Cluster_TwoSpeakersSixtyDegreesApart_TwoClusters()
+    {
+        var e = new[] { Vec(0), Vec(2), Vec(4), Vec(60), Vec(62), Vec(64) };
+        var r = new SpeakerClusterer().Cluster(e);
+
+        Assert.Equal(2, r.ClusterCount);
+        Assert.Equal(r.AssignmentPerSegment[0], r.AssignmentPerSegment[1]);
+        Assert.Equal(r.AssignmentPerSegment[0], r.AssignmentPerSegment[2]);
+        Assert.Equal(r.AssignmentPerSegment[3], r.AssignmentPerSegment[4]);
+        Assert.Equal(r.AssignmentPerSegment[3], r.AssignmentPerSegment[5]);
+        Assert.NotEqual(r.AssignmentPerSegment[0], r.AssignmentPerSegment[3]);
+        // First-appearance numbering: segment 0's cluster is 0.
+        Assert.Equal(0, r.AssignmentPerSegment[0]);
+    }
+
+    [Fact]
+    public void Cluster_SingleSpeaker_OneCluster_ReportsCutMin()
+    {
+        var e = new[] { Vec(0), Vec(1), Vec(2), Vec(3) };
+        var r = new SpeakerClusterer().Cluster(e);
+
+        Assert.Equal(1, r.ClusterCount);
+        Assert.All(r.AssignmentPerSegment, a => Assert.Equal(0, a));
+        Assert.Equal(SpeakerClusterer.CutMin, r.CutDistance);
+    }
+
+    [Fact]
+    public void Cluster_ThreeSpeakers_ThreeClusters()
+    {
+        var e = new[] { Vec(0), Vec(2), Vec(55), Vec(57), Vec(115), Vec(117) };
+        var r = new SpeakerClusterer().Cluster(e);
+
+        Assert.Equal(3, r.ClusterCount);
+        Assert.Equal(r.AssignmentPerSegment[0], r.AssignmentPerSegment[1]);
+        Assert.Equal(r.AssignmentPerSegment[2], r.AssignmentPerSegment[3]);
+        Assert.Equal(r.AssignmentPerSegment[4], r.AssignmentPerSegment[5]);
+        Assert.Equal(3, r.AssignmentPerSegment.Distinct().Count());
+    }
+
+    [Fact]
+    public void Cluster_OutlierFirstSegment_StillJoinsItsSpeaker()
+    {
+        // The "poisoned first impression": segment 0 is off-center for speaker A but far from B —
+        // a full re-cluster puts it with A. This is the self-healing property the feature promises.
+        var e = new[] { Vec(10), Vec(0), Vec(2), Vec(4), Vec(60), Vec(62) };
+        var r = new SpeakerClusterer().Cluster(e);
+
+        Assert.Equal(2, r.ClusterCount);
+        Assert.Equal(r.AssignmentPerSegment[1], r.AssignmentPerSegment[0]);
+    }
+
+    [Fact]
+    public void Cluster_MoreClustersThanCap_MergedDownToTwelve()
+    {
+        // 14 mutually-orthogonal one-hot embeddings: every merge distance is 1.0 (out of band)
+        // → fallback cut accepts none → 14 singletons → the cap merges down to 12.
+        var e = Enumerable.Range(0, 14).Select(i =>
+        {
+            var v = new float[14];
+            v[i] = 1f;
+            return v;
+        }).ToArray();
+        var r = new SpeakerClusterer().Cluster(e);
+
+        Assert.Equal(SpeakerClusterer.MaxClusters, r.ClusterCount);
+        Assert.True(r.CutDistance <= SpeakerClusterer.CutMax); // reported cut stays in band
+    }
+
+    [Fact]
+    public void Cluster_EdgeCases_EmptyAndSingle()
+    {
+        var empty = new SpeakerClusterer().Cluster(Array.Empty<float[]>());
+        Assert.Equal(0, empty.ClusterCount);
+        Assert.Empty(empty.AssignmentPerSegment);
+
+        var one = new SpeakerClusterer().Cluster(new[] { Vec(0) });
+        Assert.Equal(1, one.ClusterCount);
+        Assert.Equal(new[] { 0 }, one.AssignmentPerSegment);
+    }
 }
