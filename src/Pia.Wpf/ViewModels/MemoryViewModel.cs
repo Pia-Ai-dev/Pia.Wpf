@@ -107,7 +107,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         SelectMemoryCommand = new RelayCommand<VaultMemoryItem>(ExecuteSelectMemory);
         CopyMarkdownCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteCopyMarkdown);
         ToggleHelpCommand = new RelayCommand(() => IsHelpVisible = !IsHelpVisible);
-        OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.MemoryFolderRoot));
+        OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.VaultRoot));
 
         PropertyChanged += OnPropertyChanged;
     }

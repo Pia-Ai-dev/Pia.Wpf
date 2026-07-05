@@ -39,7 +39,7 @@ public class MemoryService : IMemoryService
         _sectionUpsert = sectionUpsert;
     }
 
-    public string MemoryFolderRoot => Path.Combine(_vaultStore.Root, "memory");
+    public string VaultRoot => _vaultStore.Root;
 
     public async Task<MemoryObject> CreateObjectAsync(string type, string label, string jsonData)
     {

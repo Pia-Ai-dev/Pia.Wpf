@@ -292,8 +292,9 @@
   <data name="Memory_Help_Auto" xml:space="preserve"><value>New memories appear here on their own. You don't have to do anything — Pia uses them to give you answers that fit you better.</value></data>
   <data name="Memory_Help_Control" xml:space="preserve"><value>You stay in control: select a memory to read it, change its text, or delete it so Pia no longer uses it.</value></data>
   <data name="Memory_Help_Search" xml:space="preserve"><value>The search understands meaning, not just exact words — simply describe what you are looking for.</value></data>
-  <data name="Memory_Help_Files" xml:space="preserve"><value>Everything is stored as small text files in one folder on this computer. You can open it any time:</value></data>
-  <data name="Memory_OpenFolder" xml:space="preserve"><value>Open memory folder</value></data>
+  <data name="Memory_Help_Files" xml:space="preserve"><value>Everything is stored in the memory vault — one folder on this computer. Your memories are the small text files in its 'memory' folder.</value></data>
+  <data name="Memory_Help_Sources" xml:space="preserve"><value>Next to it, a 'sources' folder holds original documents Pia keeps for reference — Pia reads them but never changes them. Take a look any time:</value></data>
+  <data name="Memory_OpenFolder" xml:space="preserve"><value>Open memory vault</value></data>
   <data name="Memory_Help_Dismiss" xml:space="preserve"><value>Dismiss</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Reminders</value></data>

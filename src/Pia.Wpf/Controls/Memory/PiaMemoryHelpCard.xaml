@@ -62,6 +62,11 @@
                    TextWrapping="Wrap"
                    Margin="0,4,0,0"
                    Foreground="{DynamicResource TextMutedBrush}"/>
+        <TextBlock Text="{loc:Str Memory_Help_Sources}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Margin="0,4,0,0"
+                   Foreground="{DynamicResource TextMutedBrush}"/>
         <ui:HyperlinkButton Command="{Binding OpenVaultFolderCommand}"
                             HorizontalAlignment="Left"
                             Margin="0,8,0,0">
