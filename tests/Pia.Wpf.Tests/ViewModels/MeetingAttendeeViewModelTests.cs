@@ -779,6 +779,7 @@ public class MeetingAttendeeViewModelTests
 
         public MeetingAttendeeState State { get; private set; } = MeetingAttendeeState.Idle;
         public event EventHandler<MeetingAttendeeState>? StateChanged;
+        public event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned { add { } remove { } }
         public ChannelReader<TranscriptUtterance> Utterances => _channel.Reader;
 
         public IReadOnlyCollection<string> ObservedAttendees { get; set; } = Array.Empty<string>();

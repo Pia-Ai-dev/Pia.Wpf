@@ -1,4 +1,4 @@
-﻿namespace Pia.Models;
+namespace Pia.Models;
 
 public enum OutputAction
 {
@@ -127,6 +127,12 @@ public class AppSettings
     // Per-speaker diarization for the meeting attendee. On by default; degrades to single-bubble
     // behavior if the speaker-embedding model is unavailable. Local-only (no SyncSettings mirror).
     public bool EnableMeetingDiarization { get; set; } = true;
+
+    // Smart auto-detect: continuously re-cluster all voice embeddings during the meeting and
+    // retro-correct earlier speaker assignments. ON by default; when on, the manual tuning knobs
+    // below (threshold / max speakers / min speech) are ignored and hidden in the settings UI.
+    // Local-only (no SyncSettings mirror).
+    public bool MeetingSmartSpeakerDetection { get; set; } = true;
     public float SpeakerEmbeddingThreshold { get; set; } = 0.50f;
     // Caps how many distinct speakers diarization may create in one meeting; 0 = no limit. Local-only.
     public int MeetingMaxSpeakers { get; set; } = 0;

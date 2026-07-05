@@ -108,6 +108,11 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     public event EventHandler<MeetingAttendeeState>? StateChanged;
 
+    public event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned;
+
+    private void OnSpeakersReassigned(object? sender, IReadOnlyList<SpeakerReassignment> changes)
+        => SpeakersReassigned?.Invoke(this, changes);
+
     public ChannelReader<TranscriptUtterance> Utterances => _utterances.Reader;
 
     public IReadOnlyCollection<string> ObservedAttendees
@@ -248,6 +253,9 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             _transcriptionEngine = engine;
             _speakerId = speakerId;
 
+            if (_speakerId is not null)
+                _speakerId.SpeakersReassigned += OnSpeakersReassigned;
+
             // 3) Join. Subscribe to the lobby signal BEFORE joining so InLobby is observable even if it
             //    fires during JoinAsync. Admitted-immediately meetings skip InLobby (Joining → Attending).
             //    A system browser (Chrome/Edge channel) that fails to LAUNCH degrades once to bundled.
@@ -291,7 +299,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             }
 
             startToken.ThrowIfCancellationRequested();
-            var minDiarizationSamples = (int)System.Math.Round(settings.MeetingMinSpeechSeconds * 16000);
+            var minSpeechSeconds = settings.MeetingSmartSpeakerDetection ? 1.5f : settings.MeetingMinSpeechSeconds;
+            var minDiarizationSamples = (int)System.Math.Round(minSpeechSeconds * 16000);
             _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, _speakerId, minDiarizationSamples, startToken)
                 .ConfigureAwait(false);
 
@@ -673,6 +682,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             // (an uncaught native throw would propagate into StopAsync's catch and flip state to Error).
             if (_speakerId is not null)
             {
+                _speakerId.SpeakersReassigned -= OnSpeakersReassigned;
                 try { _speakerId.Dispose(); }
                 catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification dispose threw"); }
                 _speakerId = null;
@@ -729,6 +739,12 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         {
             var speakerModelPath = await LiveTranscriptionModels
                 .EnsureSpeakerEmbeddingAsync(httpClientFactory, logger, cancellationToken, progress).ConfigureAwait(false);
+            if (settings.MeetingSmartSpeakerDetection)
+            {
+                return new AdaptiveSpeakerIdentificationService(
+                    new SherpaEmbeddingExtractor(speakerModelPath),
+                    loggerFactory.CreateLogger<AdaptiveSpeakerIdentificationService>());
+            }
             return new SpeakerIdentificationService(
                 speakerModelPath,
                 settings.SpeakerEmbeddingThreshold,

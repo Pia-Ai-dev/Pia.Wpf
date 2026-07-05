@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
 using Pia.ViewModels.Models;
 
@@ -112,6 +113,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         Bubbles.CollectionChanged += (_, _) => SummarizeWithAssistantCommand.NotifyCanExecuteChanged();
 
         _service.StateChanged += OnServiceStateChanged;
+        _service.SpeakersReassigned += OnSpeakersReassigned;
 
         StatusText = _localizationService["MeetingAttendee_Status_Idle"];
     }
@@ -349,6 +351,9 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     /// <summary>Test seam: exposes the base VM's protected <see cref="TranscriptOverlayViewModel.RelabelSpeaker"/>.</summary>
     internal void RelabelSpeakerForTest(string oldLabel, string newLabel) => RelabelSpeaker(oldLabel, newLabel);
 
+    private void OnSpeakersReassigned(object? sender, IReadOnlyList<SpeakerReassignment> changes)
+        => ApplyReassignments(changes);
+
     // ---- State → status --------------------------------------------------------------------------
 
     private void OnServiceStateChanged(object? sender, MeetingAttendeeState newState)
@@ -407,6 +412,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         // uses ConfigureAwait(false) throughout). A meeting left running would otherwise orphan an
         // invisible chrome.exe tree that survives process exit.
         _service.StateChanged -= OnServiceStateChanged;
+        _service.SpeakersReassigned -= OnSpeakersReassigned;
 
         if (_service.State is not (MeetingAttendeeState.Idle or MeetingAttendeeState.Error))
         {

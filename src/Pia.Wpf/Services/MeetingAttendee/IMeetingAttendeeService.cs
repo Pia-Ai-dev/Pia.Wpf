@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
 
 namespace Pia.Services.MeetingAttendee;
 
@@ -47,6 +48,13 @@ public interface IMeetingAttendeeService
     MeetingAttendeeState State { get; }
 
     event EventHandler<MeetingAttendeeState>? StateChanged;
+
+    /// <summary>
+    /// Forwarded from the per-session adaptive diarizer: retroactive speaker-label corrections
+    /// for already-emitted utterances (by <see cref="TranscriptUtterance.SegmentId"/>). Never
+    /// raised in manual-diarization mode. May fire on a background thread.
+    /// </summary>
+    event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned;
 
     /// <summary>
     /// Reader of the attendee's utterance stream. The reader instance is stable for the lifetime of
