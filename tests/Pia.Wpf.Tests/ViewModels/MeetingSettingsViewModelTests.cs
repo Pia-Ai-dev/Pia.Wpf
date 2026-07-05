@@ -224,4 +224,31 @@ public class MeetingSettingsViewModelTests
         await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
         Assert.True(stored.MeetingAttendeeShowBrowserWindow);
     }
+
+    // ---- smart speaker detection ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Initialize_LoadsSmartSpeakerDetection()
+    {
+        var (sut, _, _) = Create(new AppSettings { MeetingSmartSpeakerDetection = false });
+
+        await sut.InitializeAsync();
+
+        Assert.False(sut.MeetingSmartSpeakerDetection);
+        Assert.True(sut.ShowManualTuning);
+    }
+
+    [Fact]
+    public async Task TogglingSmartSpeakerDetection_PersistsAndFlipsManualTuningVisibility()
+    {
+        var (sut, settings, stored) = Create(new AppSettings { MeetingSmartSpeakerDetection = true });
+        await sut.InitializeAsync();
+        Assert.False(sut.ShowManualTuning);
+
+        sut.MeetingSmartSpeakerDetection = false;
+
+        Assert.True(sut.ShowManualTuning);
+        await settings.Received().SaveSettingsAsync(Arg.Any<AppSettings>());
+        Assert.False(stored.MeetingSmartSpeakerDetection);
+    }
 }

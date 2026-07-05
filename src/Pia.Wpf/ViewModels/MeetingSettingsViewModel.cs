@@ -69,6 +69,19 @@ public partial class MeetingSettingsViewModel : ObservableObject
 
     public IEnumerable<MeetingBrowserSelection> MeetingBrowserSelections => Enum.GetValues<MeetingBrowserSelection>();
 
+    // Smart auto-detect replaces all manual diarization tuning while ON.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowManualTuning))]
+    private bool _meetingSmartSpeakerDetection = true;
+
+    /// <summary>The manual tuning sliders are only shown while smart auto-detect is OFF.</summary>
+    public bool ShowManualTuning => !MeetingSmartSpeakerDetection;
+
+    partial void OnMeetingSmartSpeakerDetectionChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     partial void OnEnableMeetingDiarizationChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
@@ -143,6 +156,7 @@ public partial class MeetingSettingsViewModel : ObservableObject
         MeetingMinSpeechSeconds = SnapMinSpeech(settings.MeetingMinSpeechSeconds);
         MeetingBrowserSelection = settings.MeetingBrowserSelection;
         MeetingAttendeeShowBrowserWindow = settings.MeetingAttendeeShowBrowserWindow;
+        MeetingSmartSpeakerDetection = settings.MeetingSmartSpeakerDetection;
 
         _isLoading = false;
     }
@@ -156,6 +170,7 @@ public partial class MeetingSettingsViewModel : ObservableObject
         settings.MeetingMinSpeechSeconds = MeetingMinSpeechSeconds;
         settings.MeetingBrowserSelection = MeetingBrowserSelection;
         settings.MeetingAttendeeShowBrowserWindow = MeetingAttendeeShowBrowserWindow;
+        settings.MeetingSmartSpeakerDetection = MeetingSmartSpeakerDetection;
         await _settingsService.SaveSettingsAsync(settings);
     }
 }
