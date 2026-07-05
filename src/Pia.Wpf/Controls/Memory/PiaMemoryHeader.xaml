@@ -1,6 +1,7 @@
 <UserControl x:Class="Pia.Controls.Memory.PiaMemoryHeader"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization">
   <Grid>
     <Grid.RowDefinitions>
@@ -18,6 +19,22 @@
                FontWeight="SemiBold"
                Foreground="{DynamicResource TextDefaultBrush}"
                VerticalAlignment="Center"/>
+
+    <StackPanel Grid.Row="0" Grid.Column="1"
+                Orientation="Horizontal"
+                VerticalAlignment="Center">
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding OpenVaultFolderCommand}"
+                 ToolTip="{loc:Str Memory_OpenFolder}"
+                 Margin="0,0,6,0">
+        <ui:SymbolIcon Symbol="FolderOpen24" FontSize="16"/>
+      </ui:Button>
+      <ui:Button Appearance="Secondary"
+                 Command="{Binding ToggleHelpCommand}"
+                 ToolTip="{loc:Str Memory_Help_Tooltip}">
+        <ui:SymbolIcon Symbol="QuestionCircle24" FontSize="16"/>
+      </ui:Button>
+    </StackPanel>
 
     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                Margin="0,8,0,0"

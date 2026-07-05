@@ -65,6 +65,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     [ObservableProperty]
     private int _embeddingDim = 384;
 
+    [ObservableProperty]
+    private bool _isHelpVisible;
+
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> DeleteMemoryCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> EditMemoryCommand { get; }
@@ -74,6 +77,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     public IAsyncRelayCommand RegenerateEmbeddingsCommand { get; }
     public IRelayCommand<VaultMemoryItem> SelectMemoryCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> CopyMarkdownCommand { get; }
+    public IRelayCommand ToggleHelpCommand { get; }
+    public IRelayCommand OpenVaultFolderCommand { get; }
 
     public MemoryViewModel(
         ILogger<MemoryViewModel> logger,
@@ -101,6 +106,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         RegenerateEmbeddingsCommand = new AsyncRelayCommand(ExecuteRegenerateEmbeddings);
         SelectMemoryCommand = new RelayCommand<VaultMemoryItem>(ExecuteSelectMemory);
         CopyMarkdownCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteCopyMarkdown);
+        ToggleHelpCommand = new RelayCommand(() => IsHelpVisible = !IsHelpVisible);
+        OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.MemoryFolderRoot));
 
         PropertyChanged += OnPropertyChanged;
     }

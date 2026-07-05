@@ -82,6 +82,14 @@ public interface IMemoryService
     Task<VaultMemorySnapshot> ListMemoriesAsync();
 
     /// <summary>
+    /// Absolute path of the vault's <c>memory/</c> folder — where the record files shown in the
+    /// memory views live (the vault root also holds <c>sources/</c> and housekeeping docs). Exposed
+    /// here (not via <c>IVaultStore</c>) so ViewModels can surface it — e.g. "open memory folder" —
+    /// without depending on Infrastructure. Tracks folder relocation live.
+    /// </summary>
+    string MemoryFolderRoot { get; }
+
+    /// <summary>
     /// Replace a vault memory's body with <paramref name="newBody"/> (the manual editor's save). A
     /// <c>path#heading</c> <paramref name="reference"/> splices that section's body — frontmatter and
     /// sibling sections are preserved byte-for-byte (§3.1), so list-valued frontmatter keys survive; a
