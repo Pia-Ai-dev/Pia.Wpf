@@ -153,9 +153,15 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         try
         {
             string? speakerLabel = null;
+            long? segmentId = null;
             if (_speakerId is not null && samples.Length >= _minDiarizationSamples)
             {
-                try { speakerLabel = _speakerId.IdentifyOrRegister(samples, 16000); }
+                try
+                {
+                    var seg = _speakerId.IdentifyOrRegisterSegment(samples, 16000);
+                    speakerLabel = seg.Label;
+                    segmentId = seg.SegmentId;
+                }
                 catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
             }
 
@@ -171,7 +177,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 "Engine done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
                 _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
 
-            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel);
+            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel, segmentId);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* shutdown */ }
