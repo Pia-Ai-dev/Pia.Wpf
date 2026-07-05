@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
 using Pia.ViewModels;
 using Xunit;
@@ -263,6 +264,94 @@ public class MeetingAttendeeViewModelTests
         Assert.Single(vm.Bubbles);
         Assert.Equal("hello world", vm.Bubbles[0].Text);
         Assert.Equal(0, vm.Bubbles[0].ColorIndex);
+    }
+
+    // ---- ApplyReassignments (adaptive retro rebuild) ---------------------------------------------
+
+    [Fact]
+    public void ApplyReassignments_MergesBubbles_WhenTwoLabelsCollapse()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 1", SegmentId: 0));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "world", t0.AddSeconds(5), "Speaker 2", SegmentId: 1));
+        Assert.Equal(2, vm.Bubbles.Count);
+
+        vm.ApplyReassignments(new[] { new SpeakerReassignment(1, "Speaker 1") });
+
+        var bubble = Assert.Single(vm.Bubbles);
+        Assert.Equal("Speaker 1", bubble.SpeakerLabel);
+        Assert.Contains("hello", bubble.Text);
+        Assert.Contains("world", bubble.Text);
+    }
+
+    [Fact]
+    public void ApplyReassignments_SplitsABubble_WhenOneUtteranceMovesAway()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 1", SegmentId: 0));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "world", t0.AddSeconds(5), "Speaker 1", SegmentId: 1));
+        Assert.Single(vm.Bubbles);
+
+        vm.ApplyReassignments(new[] { new SpeakerReassignment(1, "Speaker 2") });
+
+        Assert.Equal(2, vm.Bubbles.Count);
+        Assert.Equal("Speaker 1", vm.Bubbles[0].SpeakerLabel);
+        Assert.Equal("Speaker 2", vm.Bubbles[1].SpeakerLabel);
+    }
+
+    [Fact]
+    public void ApplyReassignments_UnknownOrUnchangedSegments_LeaveBubblesUntouched()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 1", SegmentId: 0));
+        var before = Assert.Single(vm.Bubbles);
+
+        vm.ApplyReassignments(new[]
+        {
+            new SpeakerReassignment(0, "Speaker 1"),   // unchanged
+            new SpeakerReassignment(99, "Speaker 3"),  // unknown id
+        });
+
+        Assert.Same(before, Assert.Single(vm.Bubbles)); // no rebuild happened
+    }
+
+    [Fact]
+    public void ApplyReassignments_AfterRename_KeepsTheRenamedLabel()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", t0, "Speaker 1", SegmentId: 0));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "later", t0.AddSeconds(60), "Speaker 2", SegmentId: 1));
+
+        vm.RelabelSpeakerForTest("Speaker 1", "Alice");
+
+        // An unrelated reassignment triggers a rebuild — the rename must survive it.
+        vm.ApplyReassignments(new[] { new SpeakerReassignment(1, "Speaker 3") });
+
+        Assert.Equal("Alice", vm.Bubbles[0].SpeakerLabel);
+        Assert.Equal("Speaker 3", vm.Bubbles[1].SpeakerLabel);
+    }
+
+    [Fact]
+    public void ApplyReassignments_ColorStaysWithTheSpeaker_AcrossRebuild()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "a", t0, "Speaker 1", SegmentId: 0));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "b", t0.AddSeconds(60), "Speaker 2", SegmentId: 1));
+        var color1 = vm.Bubbles[0].ColorIndex;
+        var color2 = vm.Bubbles[1].ColorIndex;
+
+        vm.ApplyReassignments(new[] { new SpeakerReassignment(1, "Speaker 1") });
+        vm.ApplyReassignments(new[] { new SpeakerReassignment(1, "Speaker 2") }); // move it back
+
+        Assert.Equal(color1, vm.Bubbles[0].ColorIndex);
+        Assert.Equal(color2, vm.Bubbles[1].ColorIndex);
     }
 
     // ---- Rename speaker (in-session) -------------------------------------------------------------

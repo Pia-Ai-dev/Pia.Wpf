@@ -138,7 +138,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             // (Save/Summarize stay disabled until a new meeting produces bubbles). The post-meeting page
             // keeps the transcript until the overlay is closed; reopening is a deliberate clean slate.
             _hasAttendedMeeting = false;
-            Bubbles.Clear();
+            ClearTranscript();
             OnPropertyChanged(nameof(IsJoinSetupVisible));
         });
     }
@@ -172,7 +172,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
         DispatchToUi(() =>
         {
-            Bubbles.Clear();
+            ClearTranscript();
             _sessionStart = DateTimeOffset.Now;
             StatusText = _localizationService["MeetingAttendee_Status_Provisioning"];
         });
@@ -345,6 +345,9 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     }
 
     private static bool CanRenameSpeakerLabel(string? oldLabel) => !string.IsNullOrWhiteSpace(oldLabel);
+
+    /// <summary>Test seam: exposes the base VM's protected <see cref="TranscriptOverlayViewModel.RelabelSpeaker"/>.</summary>
+    internal void RelabelSpeakerForTest(string oldLabel, string newLabel) => RelabelSpeaker(oldLabel, newLabel);
 
     // ---- State → status --------------------------------------------------------------------------
 

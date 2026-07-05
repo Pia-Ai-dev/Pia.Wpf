@@ -10,6 +10,7 @@ using Pia.Converters;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
@@ -35,6 +36,11 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     private readonly Dictionary<string, int> _speakerColorIndex = new(StringComparer.Ordinal);
     private int _nextSpeakerColorIndex;
+
+    // Per-utterance retention so adaptive reassignments can rebuild bubbles retroactively.
+    // Comfortably above MaxBubbles; the rebuild trims to MaxBubbles at the end.
+    private const int JournalCap = 1000;
+    private readonly List<UtteranceEntry> _journal = [];
 
     protected readonly ISettingsService _settingsService;
     protected readonly ILocalizationService _localizationService;
@@ -158,6 +164,16 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         {
             try
             {
+                _journal.Add(new UtteranceEntry
+                {
+                    Speaker = utterance.Speaker,
+                    Text = utterance.Text,
+                    Timestamp = utterance.Timestamp,
+                    Label = utterance.SpeakerLabel,
+                    SegmentId = utterance.SegmentId,
+                });
+                if (_journal.Count > JournalCap) _journal.RemoveAt(0);
+
                 var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, utterance.SpeakerLabel, createIfMissing: true);
                 bubble!.Append(utterance.Text, utterance.Timestamp);
                 TrimIfNeeded();
@@ -226,6 +242,64 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     }
 
     /// <summary>
+    /// Applies a batch of adaptive-diarization label corrections: updates the utterance journal
+    /// (keyed by segment id) and, if anything actually changed, rebuilds the bubble collection
+    /// from the journal so merges/splits/relabels all render correctly. Journal and bubbles are
+    /// UI-thread state; the whole batch runs as one dispatcher action.
+    /// </summary>
+    internal void ApplyReassignments(IReadOnlyList<SpeakerReassignment> changes)
+    {
+        if (changes.Count == 0) return;
+        DispatchToUi(() =>
+        {
+            try
+            {
+                var labelBySegment = new Dictionary<long, string>(changes.Count);
+                foreach (var c in changes) labelBySegment[c.SegmentId] = c.NewLabel;
+
+                var any = false;
+                foreach (var entry in _journal)
+                {
+                    if (entry.SegmentId is not long id) continue;
+                    if (!labelBySegment.TryGetValue(id, out var newLabel)) continue;
+                    if (string.Equals(entry.Label, newLabel, StringComparison.Ordinal)) continue;
+                    entry.Label = newLabel;
+                    any = true;
+                }
+                if (any) RebuildBubblesFromJournal();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to apply speaker reassignments");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Replays the journal through the SAME incremental path (<see cref="GetOrCreateBubble"/> +
+    /// Append), so rebuild-vs-incremental equivalence holds by construction. The palette map is
+    /// deliberately NOT reset — speakers keep their colors across rebuilds. Trims in a loop
+    /// (TrimIfNeeded removes at most one batch per call).
+    /// </summary>
+    private void RebuildBubblesFromJournal()
+    {
+        Bubbles.Clear();
+        foreach (var entry in _journal)
+        {
+            var bubble = GetOrCreateBubble(entry.Speaker, entry.Timestamp, entry.Label, createIfMissing: true);
+            bubble!.Append(entry.Text, entry.Timestamp);
+        }
+        while (Bubbles.Count > MaxBubbles) Bubbles.RemoveAt(0);
+    }
+
+    /// <summary>Clears the visible transcript AND its journal — they must never diverge.</summary>
+    protected void ClearTranscript()
+    {
+        Bubbles.Clear();
+        _journal.Clear();
+    }
+
+    /// <summary>
     /// Applies an in-session speaker-label rename to the base-VM state: carries the renamed label's
     /// palette slot over (so the speaker keeps its bubble color and future utterances under the new
     /// label hit the same entry) and retroactively relabels every existing bubble that carried the old
@@ -247,6 +321,12 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
             {
                 if (bubble.SpeakerLabel == oldLabel)
                     bubble.SpeakerLabel = newLabel;
+            }
+
+            foreach (var entry in _journal)
+            {
+                if (entry.Label == oldLabel)
+                    entry.Label = newLabel;
             }
         });
     }
