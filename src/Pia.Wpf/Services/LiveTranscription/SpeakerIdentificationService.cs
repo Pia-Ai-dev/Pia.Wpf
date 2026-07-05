@@ -40,6 +40,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     private readonly Dictionary<string, SpeakerCentroid> _speakers = new();
     private readonly Dictionary<string, string> _displayLabels = new(); // internalId → label
     private int _counter;
+    private long _nextSegmentId;
     private bool _disposed;
 
     public SpeakerIdentificationService(string modelPath, float matchThreshold, int maxSpeakers, ILogger logger)
@@ -64,7 +65,18 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     public string IdentifyOrRegister(float[] segmentSamples, int sampleRate)
         => IdentifyOrRegisterWithEmbedding(segmentSamples, sampleRate).Label;
 
+    public SpeakerSegmentResult IdentifyOrRegisterSegment(float[] segmentSamples, int sampleRate)
+    {
+        var label = IdentifyOrRegister(segmentSamples, sampleRate);
+        var id = Interlocked.Increment(ref _nextSegmentId) - 1;
+        return new SpeakerSegmentResult(id, label);
+    }
+
     public event EventHandler<string>? SpeakerRegistered;
+
+    // Manual mode never revisits a decision, so the event can never fire. Explicit empty
+    // accessors instead of a field avoid the CS0067 unused-event warning.
+    public event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned { add { } remove { } }
 
     public (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate)
     {

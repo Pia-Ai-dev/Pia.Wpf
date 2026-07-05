@@ -23,6 +23,15 @@ public interface ISpeakerIdentificationService : IDisposable
     (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate);
 
     /// <summary>
+    /// Like <see cref="IdentifyOrRegister"/> but also returns the segment id under which the
+    /// (adaptive) implementation journals this segment's embedding, so later
+    /// <see cref="SpeakersReassigned"/> events can retarget the utterance. The manual
+    /// implementation hands out monotonically increasing ids too — they are simply never
+    /// reassigned.
+    /// </summary>
+    SpeakerSegmentResult IdentifyOrRegisterSegment(float[] segmentSamples, int sampleRate);
+
+    /// <summary>
     /// Rename a display label so all subsequent <see cref="IdentifyOrRegister"/> calls for
     /// the same voice return <paramref name="newLabel"/>. Returns true if a label matching
     /// <paramref name="oldLabel"/> existed and was renamed.
@@ -42,4 +51,17 @@ public interface ISpeakerIdentificationService : IDisposable
     /// speaker (which would prevent the utterance pipeline from ever observing the speaker).
     /// </summary>
     event EventHandler<string>? SpeakerRegistered;
+
+    /// <summary>
+    /// Raised after a re-cluster pass changed the label of already-emitted segments. Carries only
+    /// the changed (SegmentId → new Label) pairs. Never raised by the manual implementation.
+    /// Fires on the calling thread, outside the diarization lock.
+    /// </summary>
+    event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned;
 }
+
+/// <summary>Identify-or-register result carrying the journal id for the segment's embedding.</summary>
+public readonly record struct SpeakerSegmentResult(long SegmentId, string Label);
+
+/// <summary>One retroactive label correction produced by an adaptive re-cluster pass.</summary>
+public readonly record struct SpeakerReassignment(long SegmentId, string NewLabel);
