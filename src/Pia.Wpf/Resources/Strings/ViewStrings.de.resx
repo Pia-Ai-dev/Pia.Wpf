@@ -397,6 +397,7 @@
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Legt fest, wie ähnlich zwei Stimmen klingen müssen, um als derselbe Sprecher zu gelten. Höhere Werte trennen Sprecher eher (weniger zusammengeführte Stimmen); niedrigere Werte fassen mehr Stimmen zusammen.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Zuordnungsschwelle: {0}</value></data>
   <data name="Settings_Meeting_Tab" xml:space="preserve"><value>Besprechung</value></data>
+  <data name="Settings_Beta_Badge" xml:space="preserve"><value>Beta</value></data>
   <data name="Settings_Diarization_MaxSpeakers_Label" xml:space="preserve"><value>Anzahl der Sprecher begrenzen</value></data>
   <data name="Settings_Diarization_MaxSpeakers_Description" xml:space="preserve"><value>Begrenzt, wie viele verschiedene Sprecher Pia in einer Besprechung anlegt. Stellen Sie den Wert auf die Anzahl der Teilnehmer ein, damit eine Person nicht in mehrere Stimmen aufgeteilt wird. „Kein Limit“ lässt Pia so viele Sprecher erkennen, wie es hört. Änderungen gelten für die nächste Besprechung, der Sie beitreten.</value></data>
   <data name="Settings_Diarization_MaxSpeakersDisplay" xml:space="preserve"><value>Maximale Sprecheranzahl: {0}</value></data>

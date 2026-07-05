@@ -210,8 +210,23 @@
         </ScrollViewer>
       </TabItem>
 
-      <!-- Meeting tab -->
-      <TabItem Header="{loc:Str Settings_Meeting_Tab}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+      <!-- Meeting tab (beta) -->
+      <TabItem Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock Text="{loc:Str Settings_Meeting_Tab}" VerticalAlignment="Center"/>
+            <Border Background="{DynamicResource WarnSoftBrush}"
+                    CornerRadius="4"
+                    Padding="5,0"
+                    Margin="6,0,0,0"
+                    VerticalAlignment="Center">
+              <TextBlock Text="{loc:Str Settings_Beta_Badge}"
+                         Foreground="{DynamicResource WarnBrush}"
+                         FontSize="9.5"
+                         FontWeight="SemiBold"/>
+            </Border>
+          </StackPanel>
+        </TabItem.Header>
         <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding MeetingVm}">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
             <!-- Per-speaker diarization (meetings) -->

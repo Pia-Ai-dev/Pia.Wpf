@@ -397,6 +397,7 @@
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Tunes how similar two voices must sound to be treated as the same speaker. Higher values split speakers more readily (fewer voices merged); lower values group more voices together.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Match threshold: {0}</value></data>
   <data name="Settings_Meeting_Tab" xml:space="preserve"><value>Meeting</value></data>
+  <data name="Settings_Beta_Badge" xml:space="preserve"><value>Beta</value></data>
   <data name="Settings_Diarization_MaxSpeakers_Label" xml:space="preserve"><value>Limit number of speakers</value></data>
   <data name="Settings_Diarization_MaxSpeakers_Description" xml:space="preserve"><value>Caps how many distinct speakers Pia creates in one meeting. Set it to the number of participants so one person is not split into several voices. 'No limit' lets Pia detect as many speakers as it hears. Changes apply to the next meeting you join.</value></data>
   <data name="Settings_Diarization_MaxSpeakersDisplay" xml:space="preserve"><value>Maximum speakers: {0}</value></data>

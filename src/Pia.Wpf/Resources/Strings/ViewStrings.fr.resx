@@ -397,6 +397,7 @@
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Détermine à quel point deux voix doivent se ressembler pour être considérées comme le même intervenant. Des valeurs plus élevées séparent plus facilement les intervenants (moins de voix fusionnées) ; des valeurs plus faibles regroupent davantage de voix.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Seuil de correspondance : {0}</value></data>
   <data name="Settings_Meeting_Tab" xml:space="preserve"><value>Réunion</value></data>
+  <data name="Settings_Beta_Badge" xml:space="preserve"><value>Bêta</value></data>
   <data name="Settings_Diarization_MaxSpeakers_Label" xml:space="preserve"><value>Limiter le nombre d'intervenants</value></data>
   <data name="Settings_Diarization_MaxSpeakers_Description" xml:space="preserve"><value>Limite le nombre d'intervenants distincts que Pia crée dans une réunion. Réglez-le sur le nombre de participants afin qu'une même personne ne soit pas divisée en plusieurs voix. « Aucune limite » permet à Pia de détecter autant d'intervenants qu'il en entend. Les modifications s'appliquent à la prochaine réunion que vous rejoignez.</value></data>
   <data name="Settings_Diarization_MaxSpeakersDisplay" xml:space="preserve"><value>Nombre maximal d'intervenants : {0}</value></data>
