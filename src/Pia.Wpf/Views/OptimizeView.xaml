@@ -13,6 +13,72 @@
               d:DesignHeight="600" d:DesignWidth="900"
               nav:ViewModelLocator.AutoWireViewModel="True"
               PreviewKeyDown="OptimizeView_PreviewKeyDown">
+  <UserControl.Resources>
+    <!-- Vector flags for the output-language picker (emoji flags don't render on Windows and
+         there are no PNG assets; hand-drawn tricolors keep it dependency-free). -->
+    <DrawingImage x:Key="FlagImageDE">
+      <DrawingImage.Drawing>
+        <DrawingGroup>
+          <GeometryDrawing Brush="#000000"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,30,6"/></GeometryDrawing.Geometry></GeometryDrawing>
+          <GeometryDrawing Brush="#DD0000"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,6,30,6"/></GeometryDrawing.Geometry></GeometryDrawing>
+          <GeometryDrawing Brush="#FFCE00"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,12,30,6"/></GeometryDrawing.Geometry></GeometryDrawing>
+        </DrawingGroup>
+      </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FlagImageFR">
+      <DrawingImage.Drawing>
+        <DrawingGroup>
+          <GeometryDrawing Brush="#0055A4"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,10,20"/></GeometryDrawing.Geometry></GeometryDrawing>
+          <GeometryDrawing Brush="#FFFFFF"><GeometryDrawing.Geometry><RectangleGeometry Rect="10,0,10,20"/></GeometryDrawing.Geometry></GeometryDrawing>
+          <GeometryDrawing Brush="#EF4135"><GeometryDrawing.Geometry><RectangleGeometry Rect="20,0,10,20"/></GeometryDrawing.Geometry></GeometryDrawing>
+        </DrawingGroup>
+      </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FlagImageEN">
+      <DrawingImage.Drawing>
+        <DrawingGroup ClipGeometry="M0,0 L60,0 L60,30 L0,30 Z">
+          <GeometryDrawing Brush="#012169"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,60,30"/></GeometryDrawing.Geometry></GeometryDrawing>
+          <GeometryDrawing>
+            <GeometryDrawing.Pen><Pen Brush="#FFFFFF" Thickness="6"/></GeometryDrawing.Pen>
+            <GeometryDrawing.Geometry>
+              <GeometryGroup>
+                <LineGeometry StartPoint="0,0" EndPoint="60,30"/>
+                <LineGeometry StartPoint="60,0" EndPoint="0,30"/>
+              </GeometryGroup>
+            </GeometryDrawing.Geometry>
+          </GeometryDrawing>
+          <GeometryDrawing>
+            <GeometryDrawing.Pen><Pen Brush="#C8102E" Thickness="2"/></GeometryDrawing.Pen>
+            <GeometryDrawing.Geometry>
+              <GeometryGroup>
+                <LineGeometry StartPoint="0,0" EndPoint="60,30"/>
+                <LineGeometry StartPoint="60,0" EndPoint="0,30"/>
+              </GeometryGroup>
+            </GeometryDrawing.Geometry>
+          </GeometryDrawing>
+          <GeometryDrawing Brush="#FFFFFF">
+            <GeometryDrawing.Geometry>
+              <GeometryGroup>
+                <RectangleGeometry Rect="25,0,10,30"/>
+                <RectangleGeometry Rect="0,10,60,10"/>
+              </GeometryGroup>
+            </GeometryDrawing.Geometry>
+          </GeometryDrawing>
+          <GeometryDrawing Brush="#C8102E">
+            <GeometryDrawing.Geometry>
+              <GeometryGroup>
+                <RectangleGeometry Rect="27,0,6,30"/>
+                <RectangleGeometry Rect="0,12,60,6"/>
+              </GeometryGroup>
+            </GeometryDrawing.Geometry>
+          </GeometryDrawing>
+        </DrawingGroup>
+      </DrawingImage.Drawing>
+    </DrawingImage>
+  </UserControl.Resources>
+
   <Grid x:Name="RootGrid"
         Background="Transparent"
         behaviors:FileDropBehavior.IsEnabled="True"
@@ -58,7 +124,7 @@
                            FontSize="48"
                            HorizontalAlignment="Center"
                            Margin="0,0,0,16"
-                           Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+                           Foreground="{DynamicResource PiaAccentBrush}" />
             <TextBlock Text="{loc:Str Optimize_Title}"
                        FontSize="20"
                        FontWeight="SemiBold"
@@ -156,15 +222,39 @@
                   <!-- Language combo -->
                   <ComboBox ItemsSource="{Binding Languages}"
                             SelectedItem="{Binding SelectedLanguage, UpdateSourceTrigger=PropertyChanged}"
-                            Width="90"
+                            Width="84"
                             Height="36"
                             FontSize="13"
                             Margin="2,0,8,0"
+                            HorizontalContentAlignment="Left"
                             VerticalContentAlignment="Center"
                             ToolTip="{loc:Str Optimize_Language_Tooltip}">
                     <ComboBox.ItemTemplate>
                       <DataTemplate>
-                        <TextBlock Text="{Binding Converter={StaticResource LanguageToFlagConverter}}" />
+                        <!-- Flag glyph; per-item tooltip shows the language name. -->
+                        <Image Width="24" Height="16"
+                               Stretch="Uniform"
+                               SnapsToDevicePixels="True"
+                               RenderOptions.BitmapScalingMode="HighQuality">
+                          <Image.Style>
+                            <Style TargetType="Image">
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding}" Value="EN">
+                                  <Setter Property="Source" Value="{StaticResource FlagImageEN}"/>
+                                  <Setter Property="ToolTip" Value="English"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding}" Value="DE">
+                                  <Setter Property="Source" Value="{StaticResource FlagImageDE}"/>
+                                  <Setter Property="ToolTip" Value="Deutsch"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding}" Value="FR">
+                                  <Setter Property="Source" Value="{StaticResource FlagImageFR}"/>
+                                  <Setter Property="ToolTip" Value="Français"/>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Image.Style>
+                        </Image>
                       </DataTemplate>
                     </ComboBox.ItemTemplate>
                   </ComboBox>
@@ -388,40 +478,6 @@
       </Grid>
     </Grid>
     </Grid>
-
-    <!-- Todo panel toggle button -->
-    <ui:Button HorizontalAlignment="Right"
-               VerticalAlignment="Top"
-               Margin="0,8,12,0"
-               Width="36"
-               Height="36"
-               Padding="0"
-               Appearance="Secondary"
-               ToolTip="{loc:Str Optimize_ToggleTodoPanel_Tooltip}"
-               Command="{Binding DataContext.ToggleTodoPanelCommand, ElementName=OptimizeTodoPanel}"
-               Visibility="{Binding DataContext.IsTodoButtonVisible, ElementName=OptimizeTodoPanel, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <Grid>
-        <ui:SymbolIcon Symbol="TaskListSquareLtr24" FontSize="16" />
-        <TextBlock Text="{Binding DataContext.PendingCount, ElementName=OptimizeTodoPanel}"
-                   FontSize="14"
-                   FontWeight="Bold"
-                   Foreground="{DynamicResource AccentFillColorDefaultBrush}"
-                   HorizontalAlignment="Right"
-                   VerticalAlignment="Top"
-                   Margin="0,-10,-7,0">
-          <TextBlock.Style>
-            <Style TargetType="TextBlock">
-              <Setter Property="Visibility" Value="Visible" />
-              <Style.Triggers>
-                <DataTrigger Binding="{Binding DataContext.PendingCount, ElementName=OptimizeTodoPanel}" Value="0">
-                  <Setter Property="Visibility" Value="Collapsed" />
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </TextBlock.Style>
-        </TextBlock>
-      </Grid>
-    </ui:Button>
 
     <!-- Todo panel overlay (right side) -->
     <local:TodoPanelControl x:Name="OptimizeTodoPanel"

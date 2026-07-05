@@ -56,7 +56,7 @@
                            FontSize="48"
                            HorizontalAlignment="Center"
                            Margin="0,0,0,16"
-                           Foreground="{DynamicResource TextSubtleBrush}"/>
+                           Foreground="{DynamicResource PiaAccentBrush}"/>
             <TextBlock Text="{loc:Str History_EmptyState}"
                        FontSize="14"
                        HorizontalAlignment="Center"

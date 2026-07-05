@@ -47,6 +47,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IWorkingDirectoryService _workingDirectoryService;
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly IMarkdownExportService _markdownExportService;
+    private readonly IDialogService _dialogService;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -179,7 +180,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IChatSessionManager chatSessionManager,
         IWorkingDirectoryService workingDirectoryService,
         IFilesToolHandler filesToolHandler,
-        IMarkdownExportService markdownExportService)
+        IMarkdownExportService markdownExportService,
+        IDialogService dialogService)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -206,6 +208,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _workingDirectoryService = workingDirectoryService;
         _filesToolHandler = filesToolHandler;
         _markdownExportService = markdownExportService;
+        _dialogService = dialogService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
@@ -239,6 +242,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _localizationService,
             _loggerFactory.CreateLogger<ChatTitleChipViewModel>(),
             ResumeChatAsync,
+            DeleteChatFromChipAsync,
             NewChat,
             NavigateToAssistantHistory,
             _chatSessionManager.GetState,
@@ -584,6 +588,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         _ttsService.Stop();
         await _chatSessionManager.ActivateAsync(chatId);
+    }
+
+    /// <summary>Quick-delete a chat from the title-chip flyout: confirm, then delete (ChatsChanged
+    /// refreshes the flyout). Mirrors the history view's confirmation wording.</summary>
+    private async Task DeleteChatFromChipAsync(Guid chatId)
+    {
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Msg_History_ConfirmDeleteTitle"],
+            _localizationService["Msg_History_ConfirmDeleteMessage"]);
+        if (!confirmed) return;
+
+        await _chatService.DeleteAsync(chatId);
+        _logger.LogInformation("Deleted assistant chat {ChatId} from title-chip flyout", chatId);
     }
 
     private void NavigateToAssistantHistory()

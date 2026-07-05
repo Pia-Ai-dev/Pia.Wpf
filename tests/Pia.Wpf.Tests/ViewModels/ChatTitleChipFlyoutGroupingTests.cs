@@ -42,6 +42,7 @@ public class ChatTitleChipFlyoutGroupingTests
             _loc,
             NullLogger<ChatTitleChipViewModel>.Instance,
             _ => Task.CompletedTask,
+            _ => Task.CompletedTask,
             dir => _capturedNewChatDir = dir,
             () => { },
             id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle,

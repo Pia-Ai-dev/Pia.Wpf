@@ -44,13 +44,13 @@ public class PersonaPromptCompositionTests
     }
 
     [Fact]
-    public void BuildIdentityBlock_PiaPersonal_PreservesSeededIdentity()
+    public void BuildIdentityBlock_PiaPersonal_UsesCatalogIdentity()
     {
-        // Behaviour-preserving: Personal-mode users see the same identity wording after the refactor.
+        // Pins the catalog identity line: Personal-mode users see the Pia product name in the block.
         var piaPersonal = BuiltInPersonas.All.First(p => Guid.Parse(p.Id) == BuiltInPersonas.PiaPersonalId);
         var block = AssistantPromptComposer.BuildIdentityBlock(Persona(piaPersonal.SystemPrompt));
 
-        Assert.Contains("You are Pia, the user's warm and upbeat personal assistant.", block);
+        Assert.Contains("You are Pia, the user's personal assistant.", block);
     }
 
     [Fact]

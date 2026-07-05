@@ -62,7 +62,6 @@ public class AppSettings
     public AppTheme Theme { get; set; } = AppTheme.System;
     public bool StartMinimized { get; set; } = false;
     public bool LaunchAtStartup { get; set; } = true;
-    public bool ShowTodoPanelButton { get; set; } = true;
     /// <summary>Whether the Flow rail is pinned as a docked column (design §4). Persisted across restarts.</summary>
     public bool FlowPinned { get; set; } = false;
     public Dictionary<Guid, double> TodoColumnWidths { get; set; } = new();

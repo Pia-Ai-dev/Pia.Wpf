@@ -11,7 +11,7 @@
                      FontSize="36"
                      HorizontalAlignment="Center"
                      Margin="0,0,0,12"
-                     Foreground="{DynamicResource TextSubtleBrush}"/>
+                     Foreground="{DynamicResource PiaAccentBrush}"/>
       <TextBlock Text="{loc:Str History_EmptyInspector_Title}"
                  FontSize="14"
                  FontWeight="SemiBold"

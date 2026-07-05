@@ -178,8 +178,7 @@ public class PolicyServiceTests : IDisposable
             "uiLanguage": "DE",
             "targetLanguage": "DE",
             "targetSpeechLanguage": "DE",
-            "startMinimized": true,
-            "showTodoPanelButton": false
+            "startMinimized": true
           },
           "enforce": {
             "serverUrl": "https://pia-cloud.example.com",
@@ -199,7 +198,6 @@ public class PolicyServiceTests : IDisposable
         Assert.Equal(TargetLanguage.DE, policy.Defaults.TargetLanguage);
         Assert.Equal(TargetSpeechLanguage.DE, policy.Defaults.TargetSpeechLanguage);
         Assert.True(policy.Defaults.StartMinimized);
-        Assert.False(policy.Defaults.ShowTodoPanelButton);
 
         Assert.NotNull(policy.Enforce);
         Assert.Equal("https://pia-cloud.example.com", policy.Enforce!.ServerUrl);

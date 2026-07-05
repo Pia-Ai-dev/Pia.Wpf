@@ -386,6 +386,30 @@
             CornerRadius="8,0,0,8"
             Cursor="Hand"
             Visibility="{Binding IsOpen, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+      <!-- Resting at light transparency; fades to fully opaque on hover so it stays unobtrusive. -->
+      <Border.Style>
+        <Style TargetType="Border">
+          <Setter Property="Opacity" Value="0.55" />
+          <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Trigger.EnterActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15" />
+                  </Storyboard>
+                </BeginStoryboard>
+              </Trigger.EnterActions>
+              <Trigger.ExitActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.55" Duration="0:0:0.2" />
+                  </Storyboard>
+                </BeginStoryboard>
+              </Trigger.ExitActions>
+            </Trigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
       <Border.Effect>
         <DropShadowEffect BlurRadius="14" Direction="180" Opacity="0.18" ShadowDepth="0" Color="#202020" />
       </Border.Effect>

@@ -47,9 +47,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     private bool _isTodoPanelOpen;
 
     [ObservableProperty]
-    private bool _isTodoButtonVisible = true;
-
-    [ObservableProperty]
     private string _newTodoTitle = string.Empty;
 
     [ObservableProperty]
@@ -142,10 +139,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
 
         PropertyChanged += OnPropertyChanged;
         _todoService.TodoChanged += OnTodoChanged;
-        _settingsService.SettingsChanged += OnSettingsChanged;
         _columnService.ColumnsChanged += OnColumnsChanged;
-
-        LoadVisibilitySettingAsync().SafeFireAndForget(_logger);
     }
 
     partial void OnSearchQueryChanged(string value) => ApplySearchFilter();
@@ -232,12 +226,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         }
     }
 
-    private async Task LoadVisibilitySettingAsync()
-    {
-        var settings = await _settingsService.GetSettingsAsync();
-        IsTodoButtonVisible = settings.ShowTodoPanelButton;
-    }
-
     public void OnNavigatedTo(object? parameter) { }
 
     public async Task OnNavigatedToAsync(object? parameter)
@@ -246,15 +234,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     }
 
     public void OnNavigatedFrom() { }
-
-    private void OnSettingsChanged(object? sender, AppSettings settings)
-    {
-        _syncContext.Post(_ => {
-            IsTodoButtonVisible = settings.ShowTodoPanelButton;
-            if (!IsTodoButtonVisible)
-                IsTodoPanelOpen = false;
-        }, null);
-    }
 
     private void OnTodoChanged(object? sender, EventArgs e)
     {
@@ -914,7 +893,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         UnsubscribeAllColumns();
         PropertyChanged -= OnPropertyChanged;
         _todoService.TodoChanged -= OnTodoChanged;
-        _settingsService.SettingsChanged -= OnSettingsChanged;
         _columnService.ColumnsChanged -= OnColumnsChanged;
         GC.SuppressFinalize(this);
     }

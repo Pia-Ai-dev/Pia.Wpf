@@ -7,8 +7,9 @@ using Pia.Services.Interfaces;
 namespace Pia.Services.Flow;
 
 /// <summary>
-/// Surfaces pending todos whose deadline is within 24h as persistent <c>Warning</c> Flow items
-/// (design §7, §8). Reconciles on a periodic timer, on every <see cref="ITodoService.TodoChanged"/>,
+/// Surfaces pending todos whose deadline is within 24h as persistent Flow items (design §7, §8):
+/// <c>Warning</c> while still upcoming, escalated to <c>Error</c> once the due date has passed
+/// (overdue). Reconciles on a periodic timer, on every <see cref="ITodoService.TodoChanged"/>,
 /// and on an immediate first tick at startup — which re-validates durable todo items reloaded from a
 /// previous session (retracting those no longer due). Todos already covered by a linked reminder are
 /// suppressed to avoid surfacing the same deadline twice (design §9).
@@ -88,18 +89,25 @@ public sealed class TodoDeadlineBackgroundService : BackgroundService
             var toShow = due.Where(t => t.LinkedReminderId is null).ToList();
             var dueKeys = toShow.Select(t => t.Id.ToString()).ToHashSet();
 
-            var existingKeys = _flowService.Snapshot
+            var existing = _flowService.Snapshot
                 .Where(i => i.Source == FlowSource.TodoDeadline && i.DedupKey is not null)
-                .Select(i => i.DedupKey!)
-                .ToHashSet();
+                .ToDictionary(i => i.DedupKey!, i => i);
 
             // Retract items whose todo is no longer due (completed / deleted / due moved / reloaded-but-stale).
-            foreach (var staleKey in existingKeys.Where(k => !dueKeys.Contains(k)))
+            foreach (var staleKey in existing.Keys.Where(k => !dueKeys.Contains(k)))
                 _flowService.Retract(staleKey);
 
-            // Publish only newly-due todos; leave already-shown items alone so they don't re-peek or re-mark-unread.
-            foreach (var todo in toShow.Where(t => !existingKeys.Contains(t.Id.ToString())))
-                Publish(todo);
+            // Publish newly-due todos; re-publish an already-shown one only when its severity or body
+            // changed (a passing deadline escalates due-soon → overdue, and the overdue day count ticks
+            // up at each midnight), so the card updates without every reconcile gratuitously re-peeking.
+            foreach (var todo in toShow)
+            {
+                var (severity, body) = Describe(todo);
+                if (existing.TryGetValue(todo.Id.ToString(), out var current)
+                    && current.Severity == severity && current.Body == body)
+                    continue;
+                Publish(todo, severity, body);
+            }
         }
         catch (Exception ex)
         {
@@ -111,14 +119,31 @@ public sealed class TodoDeadlineBackgroundService : BackgroundService
         }
     }
 
-    private void Publish(TodoItem todo)
+    /// <summary>
+    /// Severity + body for a due todo. Overdue (due date before today, local — matching the todo board)
+    /// escalates to <c>Error</c> and reports how many days overdue, counting up to 9 then "9+"; still
+    /// upcoming stays <c>Warning</c> with the generic due-soon line.
+    /// </summary>
+    private (FlowSeverity Severity, string Body) Describe(TodoItem todo)
+    {
+        if (todo.DueDate is { } due && due.Date < DateTime.Today)
+        {
+            var days = (DateTime.Today - due.Date).Days;
+            var daysText = days > 9 ? "9+" : days.ToString();
+            return (FlowSeverity.Error, _localizationService.Format("Flow_Todo_OverdueDays", daysText));
+        }
+
+        return (FlowSeverity.Warning, _localizationService["Flow_Todo_DueSoon"]);
+    }
+
+    private void Publish(TodoItem todo, FlowSeverity severity, string body)
     {
         _flowService.Publish(new FlowItemDraft
         {
-            Severity = FlowSeverity.Warning,
+            Severity = severity,
             Source = FlowSource.TodoDeadline,
             Title = todo.Title,
-            Body = _localizationService["Flow_Todo_DueSoon"],
+            Body = body,
             DedupKey = todo.Id.ToString(),
             Lifetime = FlowLifetime.Persistent,
             Action = new OpenTodoAction(todo.Id, _localizationService["Flow_Action_OpenTodo"]),

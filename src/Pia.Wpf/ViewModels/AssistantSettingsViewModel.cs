@@ -56,9 +56,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
     private WindowMode _defaultWindowMode;
 
     [ObservableProperty]
-    private bool _showTodoPanelButton = true;
-
-    [ObservableProperty]
     private bool _suggestionsEnabled;
 
     // Display-only: the current assistant files folder. Changed via the Change… command (which runs
@@ -89,11 +86,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
     public IEnumerable<WindowMode> WindowModes => Enum.GetValues<WindowMode>();
 
     partial void OnDefaultWindowModeChanged(WindowMode value)
-    {
-        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
-    }
-
-    partial void OnShowTodoPanelButtonChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -145,7 +137,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
 
         var settings = await _settingsService.GetSettingsAsync();
         DefaultWindowMode = settings.DefaultWindowMode;
-        ShowTodoPanelButton = settings.ShowTodoPanelButton;
         SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
         FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
         FileToolsEnabled = settings.AssistantFileToolsEnabled;
@@ -272,7 +263,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
     {
         var settings = await _settingsService.GetSettingsAsync();
         settings.DefaultWindowMode = DefaultWindowMode;
-        settings.ShowTodoPanelButton = ShowTodoPanelButton;
         settings.AssistantSuggestionsEnabled = SuggestionsEnabled;
         // The folder is owned by the relocation move; never clear it here (the vault lives under it).
         if (!string.IsNullOrWhiteSpace(FilesFolder))

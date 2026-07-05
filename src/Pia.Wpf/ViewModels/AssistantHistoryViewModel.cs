@@ -30,6 +30,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     private readonly INavigationService _navigationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly IChatSessionManager _chatSessionManager;
+    private readonly IMarkdownExportService _markdownExportService;
     private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
@@ -79,11 +80,13 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     public ObservableCollection<AiProvider> Providers { get; } = new();
 
     public IAsyncRelayCommand DeleteChatCommand { get; }
+    public IAsyncRelayCommand<AssistantChatRowViewModel> QuickDeleteChatCommand { get; }
     public IAsyncRelayCommand DeleteAllChatsCommand { get; }
     public IAsyncRelayCommand ClearFilterCommand { get; }
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand ResumeChatCommand { get; }
     public IAsyncRelayCommand ExportChatCommand { get; }
+    public IAsyncRelayCommand<AssistantMessage> ExportMessageHtmlCommand { get; }
 
     public AssistantHistoryViewModel(
         ILogger<AssistantHistoryViewModel> logger,
@@ -93,7 +96,8 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         ILocalizationService localizationService,
         INavigationService navigationService,
         Wpf.Ui.ISnackbarService snackbarService,
-        IChatSessionManager chatSessionManager)
+        IChatSessionManager chatSessionManager,
+        IMarkdownExportService markdownExportService)
     {
         _logger = logger;
         _chatService = chatService;
@@ -103,17 +107,20 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         _navigationService = navigationService;
         _snackbarService = snackbarService;
         _chatSessionManager = chatSessionManager;
+        _markdownExportService = markdownExportService;
         _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         StateFilterOptions = BuildStateFilterOptions(localizationService);
         _selectedStateOption = StateFilterOptions[0];
 
         DeleteChatCommand = new AsyncRelayCommand(ExecuteDeleteChatAsync, CanExecuteWithSelection);
+        QuickDeleteChatCommand = new AsyncRelayCommand<AssistantChatRowViewModel>(ExecuteQuickDeleteChatAsync);
         DeleteAllChatsCommand = new AsyncRelayCommand(ExecuteDeleteAllChatsAsync);
         ClearFilterCommand = new AsyncRelayCommand(ExecuteClearFilterAsync);
         RefreshCommand = new AsyncRelayCommand(ExecuteRefreshAsync);
         ResumeChatCommand = new AsyncRelayCommand(ExecuteResumeChatAsync, CanExecuteWithSelection);
         ExportChatCommand = new AsyncRelayCommand(ExecuteExportChatAsync, CanExecuteExport);
+        ExportMessageHtmlCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteExportMessageHtml);
 
         PropertyChanged += OnPropertyChanged;
         _chatService.ChatsChanged += OnChatsChanged;
@@ -351,6 +358,34 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         }
     }
 
+    /// <summary>Per-row quick delete (hover trash icon): deletes the given row rather than the selected one.</summary>
+    private async Task ExecuteQuickDeleteChatAsync(AssistantChatRowViewModel? row)
+    {
+        if (row is null) return;
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Msg_History_ConfirmDeleteTitle"],
+            _localizationService["Msg_History_ConfirmDeleteMessage"]);
+        if (!confirmed) return;
+
+        try
+        {
+            await _chatService.DeleteAsync(row.Id);
+            Chats.Remove(row);
+            if (ReferenceEquals(SelectedChat, row))
+                SelectedChat = null;
+            RebuildGroups();
+            _logger.LogInformation("Quick-deleted assistant chat {ChatId}", row.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete chat {ChatId}", row.Id);
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_History_DeleteSessionFailed", ex.Message));
+        }
+    }
+
     private async Task ExecuteDeleteAllChatsAsync()
     {
         var confirmed = await _dialogService.ShowConfirmationDialogAsync(
@@ -415,6 +450,39 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             await _dialogService.ShowMessageDialogAsync(
                 _localizationService["Msg_Error"],
                 _localizationService.Format("Msg_AssistantHistory_ExportFailed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Per-message export to a static HTML file — the same action offered on live assistant messages,
+    /// so past chats get parity. Adds an "open file" chip to the message and opens it in the browser.
+    /// </summary>
+    private async Task ExecuteExportMessageHtml(AssistantMessage? message)
+    {
+        if (message is null || string.IsNullOrEmpty(message.Content))
+            return;
+
+        try
+        {
+            var fallbackTitle = _localizationService["Msg_Assistant_ExportDefaultTitle"];
+            var path = await _markdownExportService.ExportAsync(
+                message.Content, title: null, fallbackTitle, workingSubpath: null);
+
+            message.AddOrUpgradeFileRef(new FileRef(path, FileRefKind.Exported));
+            ShellLauncher.OpenFile(path);
+
+            _snackbarService.Show(
+                _localizationService["Msg_Assistant_Exported"],
+                _localizationService.Format("Msg_Assistant_ExportedTo", Path.GetFileName(path)),
+                ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export message to HTML");
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService["Msg_Assistant_ExportFailed"],
+                ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
         }
     }
 

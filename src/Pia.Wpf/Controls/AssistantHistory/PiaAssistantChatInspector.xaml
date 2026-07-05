@@ -131,7 +131,8 @@
                                          VerticalAlignment="Top"/>
                   <chat:PiaAssistantMessage Grid.Column="1"
                                             HorizontalAlignment="Left"
-                                            MaxWidth="880"/>
+                                            MaxWidth="880"
+                                            ExportCommand="{Binding DataContext.ExportMessageHtmlCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
                 </Grid>
               </Grid>
             </DataTemplate>

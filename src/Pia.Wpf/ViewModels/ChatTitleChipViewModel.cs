@@ -23,6 +23,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<ChatTitleChipViewModel> _logger;
     private readonly Func<Guid, Task> _resumeChat;
+    private readonly Func<Guid, Task> _deleteChat;
     private readonly Action<string?> _newChat;
     private readonly Action _showAllChats;
     private readonly Func<Guid, ChatState> _resolveState;
@@ -82,6 +83,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     public ObservableCollection<QuickSwitcherMatchViewModel> Matches { get; } = [];
 
     public IAsyncRelayCommand<Guid?> ResumeChatCommand { get; }
+    public IAsyncRelayCommand<ChatChipItemViewModel?> DeleteChatCommand { get; }
     public IRelayCommand NewChatCommand { get; }
     public IRelayCommand ShowAllChatsCommand { get; }
     public IRelayCommand OpenQuickSwitcherCommand { get; }
@@ -94,6 +96,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         ILocalizationService localizationService,
         ILogger<ChatTitleChipViewModel> logger,
         Func<Guid, Task> resumeChat,
+        Func<Guid, Task> deleteChat,
         Action<string?> newChat,
         Action showAllChats,
         Func<Guid, ChatState> resolveState,
@@ -105,6 +108,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         _localizationService = localizationService;
         _logger = logger;
         _resumeChat = resumeChat;
+        _deleteChat = deleteChat;
         _newChat = newChat;
         _showAllChats = showAllChats;
         _resolveState = resolveState;
@@ -122,6 +126,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         CurrentTitle = _localizationService["AssistantChat_TitlePlaceholder_NewChat"];
 
         ResumeChatCommand = new AsyncRelayCommand<Guid?>(ExecuteResumeChat);
+        DeleteChatCommand = new AsyncRelayCommand<ChatChipItemViewModel?>(ExecuteDeleteChat);
         NewChatCommand = new RelayCommand(ExecuteNewChat);
         ShowAllChatsCommand = new RelayCommand(ExecuteShowAllChats);
         OpenQuickSwitcherCommand = new RelayCommand(ExecuteOpenQuickSwitcher);
@@ -296,6 +301,22 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to resume chat {ChatId}", id);
+        }
+    }
+
+    private async Task ExecuteDeleteChat(ChatChipItemViewModel? item)
+    {
+        if (item is null) return;
+        // Collapse the flyout first so it doesn't overlap the host's confirmation dialog.
+        IsFlyoutOpen = false;
+        try
+        {
+            // The host owns confirmation + the actual delete.
+            await _deleteChat(item.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete chat {ChatId} from flyout", item.Id);
         }
     }
 

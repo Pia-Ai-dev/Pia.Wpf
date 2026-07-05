@@ -841,7 +841,7 @@
   <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing ready</value></data>
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Run failed</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Due within 24h</value></data>
-  <data name="Flow_Todo_Overdue" xml:space="preserve"><value>Overdue</value></data>
+  <data name="Flow_Todo_OverdueDays" xml:space="preserve"><value>Overdue · {0}d</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Shorter</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>More detailed</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-ready</value></data>

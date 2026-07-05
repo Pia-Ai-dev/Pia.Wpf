@@ -376,8 +376,10 @@
                                     Command="{Binding DataContext.ResumeChatCommand, ElementName=ChipRoot}"
                                     CommandParameter="{Binding Id}">
                               <!-- time | title | state badge | date; badge State is a
-                                   snapshot read once at flyout build. -->
-                              <ah:PiaAssistantChatRowContent/>
+                                   snapshot read once at flyout build. Hover reveals a quick-delete
+                                   trash (replaces the date) wired to the chip's delete command. -->
+                              <ah:PiaAssistantChatRowContent
+                                  DeleteCommand="{Binding DataContext.DeleteChatCommand, ElementName=ChipRoot}"/>
                             </Button>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>

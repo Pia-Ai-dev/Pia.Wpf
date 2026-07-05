@@ -34,10 +34,24 @@
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
 
-      <TextBlock Grid.Row="0" Grid.Column="0"
-                 Text="{loc:Str MeetingAttendee_Title}"
-                 Style="{StaticResource PiaSettingsPageTitleStyle}"
-                 VerticalAlignment="Center" />
+      <StackPanel Grid.Row="0" Grid.Column="0"
+                  Orientation="Horizontal"
+                  VerticalAlignment="Center">
+        <TextBlock Text="{loc:Str MeetingAttendee_Title}"
+                   Style="{StaticResource PiaSettingsPageTitleStyle}"
+                   VerticalAlignment="Center" />
+        <!-- Beta badge — mirrors the Meeting settings tab (WarnSoft pill). -->
+        <Border Background="{DynamicResource WarnSoftBrush}"
+                CornerRadius="4"
+                Padding="6,1"
+                Margin="10,4,0,0"
+                VerticalAlignment="Center">
+          <TextBlock Text="{loc:Str Settings_Beta_Badge}"
+                     Foreground="{DynamicResource WarnBrush}"
+                     FontSize="10"
+                     FontWeight="SemiBold" />
+        </Border>
+      </StackPanel>
 
       <!-- Close is overlay-specific (the navigable pages have none) and is deliberately kept. -->
       <ui:Button Grid.Row="0" Grid.Column="1"

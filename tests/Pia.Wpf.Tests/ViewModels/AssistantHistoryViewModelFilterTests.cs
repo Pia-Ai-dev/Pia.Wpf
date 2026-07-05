@@ -19,6 +19,7 @@ public class AssistantHistoryViewModelFilterTests
     private readonly INavigationService _nav = Substitute.For<INavigationService>();
     private readonly global::Wpf.Ui.ISnackbarService _snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
     private readonly IChatSessionManager _sessions = Substitute.For<IChatSessionManager>();
+    private readonly IMarkdownExportService _markdownExport = Substitute.For<IMarkdownExportService>();
     private readonly Dictionary<Guid, ChatState> _states = new();
 
     public AssistantHistoryViewModelFilterTests()
@@ -49,7 +50,7 @@ public class AssistantHistoryViewModelFilterTests
 
         return new AssistantHistoryViewModel(
             NullLogger<AssistantHistoryViewModel>.Instance,
-            _chatService, _providers, _dialog, _loc, _nav, _snackbar, _sessions);
+            _chatService, _providers, _dialog, _loc, _nav, _snackbar, _sessions, _markdownExport);
     }
 
     private SyncAssistantChat Chat(string title, ChatState state)

@@ -1,6 +1,8 @@
 <UserControl x:Class="Pia.Controls.AssistantHistory.PiaAssistantChatRowContent"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory"
              xmlns:behaviors="clr-namespace:Pia.Behaviors">
   <!-- Presentation-only row body: time | title | state badge | date. The badge
@@ -8,8 +10,11 @@
        collapses when Idle. Carries no padding, background or selection chrome so
        each host (history list, chat-title flyout) supplies its own. Bound by
        convention to anything exposing UpdatedAt (DateTime), Title (string) and
-       State (ChatState). -->
-  <Grid>
+       State (ChatState).
+
+       When a host sets DeleteCommand, hovering the row reveals a red trash bin that
+       replaces the date (same cell) for a one-click delete. -->
+  <Grid x:Name="ContentRoot" Background="Transparent">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="48"/>
       <ColumnDefinition Width="*"/>
@@ -35,14 +40,61 @@
 
     <ah:PiaChatStateBadge Grid.Column="2" Margin="8,0,0,0"/>
 
-    <TextBlock Grid.Column="3"
-               Text="{Binding UpdatedAt, StringFormat='{}{0:MM-dd}'}"
-               FontSize="10.5"
-               FontFamily="{DynamicResource PiaMonoFont}"
-               Foreground="{DynamicResource TextSubtleBrush}"
-               TextAlignment="Right"
-               MinWidth="42"
-               VerticalAlignment="Center"
-               Margin="10,0,0,0"/>
+    <!-- Date + hover trash share column 3; on hover the date fades out and the trash fades in. -->
+    <Grid Grid.Column="3" Margin="10,0,0,0">
+      <TextBlock x:Name="DateText"
+                 Text="{Binding UpdatedAt, StringFormat='{}{0:MM-dd}'}"
+                 FontSize="10.5"
+                 FontFamily="{DynamicResource PiaMonoFont}"
+                 Foreground="{DynamicResource TextSubtleBrush}"
+                 TextAlignment="Right"
+                 MinWidth="42"
+                 VerticalAlignment="Center">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Opacity" Value="1"/>
+            <Style.Triggers>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
+                  <Condition Binding="{Binding Visibility, ElementName=DeleteHost}" Value="Visible"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Opacity" Value="0"/>
+              </MultiDataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+
+      <Border x:Name="DeleteHost"
+              HorizontalAlignment="Right"
+              VerticalAlignment="Center"
+              Visibility="{Binding DeleteCommand,
+                           RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
+                           Converter={StaticResource NullToVisibilityConverter}}">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True">
+                <Setter Property="Opacity" Value="1"/>
+                <Setter Property="IsHitTestVisible" Value="True"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+        <ui:Button Appearance="Transparent"
+                   Padding="4"
+                   Cursor="Hand"
+                   ToolTip="{loc:Str History_Delete}"
+                   Command="{Binding DeleteCommand,
+                             RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
+                   CommandParameter="{Binding}">
+          <ui:SymbolIcon Symbol="Delete24" FontSize="16"
+                         Foreground="{DynamicResource PiaDangerBrush}"/>
+        </ui:Button>
+      </Border>
+    </Grid>
   </Grid>
 </UserControl>
