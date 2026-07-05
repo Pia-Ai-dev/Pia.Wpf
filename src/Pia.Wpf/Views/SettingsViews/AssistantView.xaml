@@ -224,11 +224,19 @@
               <TextBlock Text="{loc:Str Settings_Diarization_Enable_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          Margin="22,4,0,0"/>
+              <CheckBox Content="{loc:Str Settings_Diarization_SmartAuto}"
+                        IsChecked="{Binding MeetingSmartSpeakerDetection}"
+                        IsEnabled="{Binding EnableMeetingDiarization}"
+                        Margin="0,12,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_SmartAuto_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
             </StackPanel>
 
             <!-- Speaker-matching threshold -->
             <StackPanel Margin="0,0,0,20"
-                        IsEnabled="{Binding EnableMeetingDiarization}">
+                        IsEnabled="{Binding EnableMeetingDiarization}"
+                        Visibility="{Binding ShowManualTuning, Converter={StaticResource BooleanToVisibilityConverter}}">
               <TextBlock Text="{loc:Str Settings_Diarization_Threshold_Label}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <Slider HorizontalAlignment="Left"
@@ -248,7 +256,8 @@
 
             <!-- Max speakers cap -->
             <StackPanel Margin="0,0,0,20"
-                        IsEnabled="{Binding EnableMeetingDiarization}">
+                        IsEnabled="{Binding EnableMeetingDiarization}"
+                        Visibility="{Binding ShowManualTuning, Converter={StaticResource BooleanToVisibilityConverter}}">
               <TextBlock Text="{loc:Str Settings_Diarization_MaxSpeakers_Label}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <Slider HorizontalAlignment="Left"
@@ -268,7 +277,8 @@
 
             <!-- Minimum speech length -->
             <StackPanel Margin="0,0,0,20"
-                        IsEnabled="{Binding EnableMeetingDiarization}">
+                        IsEnabled="{Binding EnableMeetingDiarization}"
+                        Visibility="{Binding ShowManualTuning, Converter={StaticResource BooleanToVisibilityConverter}}">
               <TextBlock Text="{loc:Str Settings_Diarization_MinSpeech_Label}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <Slider HorizontalAlignment="Left"

@@ -391,6 +391,8 @@
   <data name="Settings_Diarization_Section" xml:space="preserve"><value>Sprechertrennung (Besprechungen)</value></data>
   <data name="Settings_Diarization_Enable" xml:space="preserve"><value>Einzelne Sprecher in Besprechungen erkennen</value></data>
   <data name="Settings_Diarization_Enable_Description" xml:space="preserve"><value>Wenn Pia an einer Besprechung teilnimmt, wird das Transkript in separate Sprechblasen pro Sprecher gruppiert. Erfordert einen einmaligen Download eines kleinen Spracherkennungsmodells. Änderungen wirken sich auf die nächste Besprechung aus, der Sie beitreten.</value></data>
+  <data name="Settings_Diarization_SmartAuto" xml:space="preserve"><value>Intelligente Sprechererkennung (automatisch)</value></data>
+  <data name="Settings_Diarization_SmartAuto_Description" xml:space="preserve"><value>Pia bewertet alle Stimmen im Verlauf des Meetings laufend neu und korrigiert frühere Sprecherzuordnungen automatisch. Die manuelle Feinabstimmung ist ausgeblendet, solange diese Option aktiv ist.</value></data>
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Empfindlichkeit der Sprecherzuordnung</value></data>
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Legt fest, wie ähnlich zwei Stimmen klingen müssen, um als derselbe Sprecher zu gelten. Höhere Werte trennen Sprecher eher (weniger zusammengeführte Stimmen); niedrigere Werte fassen mehr Stimmen zusammen.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Zuordnungsschwelle: {0}</value></data>
