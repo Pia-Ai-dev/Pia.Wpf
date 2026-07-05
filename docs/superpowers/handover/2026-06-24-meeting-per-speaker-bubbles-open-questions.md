@@ -349,3 +349,37 @@ functional regression):
 6. **Threshold StackPanel has two consecutive description `TextBlock`s** (`GeneralView.xaml`): the
    value-display and the helper-description stack with only 6 px between them — denser than other sliders.
    Cosmetic. Optional: add a top margin to the second block.
+
+---
+
+## Update (2026-07-05) — the central caveat now has a structural mitigation
+
+**Smart speaker auto-detect (adaptive diarization)** shipped on `feature/meeting_attendee`
+(plan Tasks 1–10, one commit each; see `git log`). It directly targets the fragmentation failure
+mode described in [The central caveat](#the-central-caveat-read-before-shipping) above.
+
+- **Spec:** `docs/superpowers/specs/2026-07-04-smart-speaker-autodetect-design.md`
+- **Plan:** `docs/superpowers/plans/2026-07-04-smart-speaker-autodetect.md`
+
+What changed structurally: a new `AdaptiveSpeakerIdentificationService` (ON by default via
+`AppSettings.MeetingSmartSpeakerDetection`) keeps every segment's embedding for the meeting and
+**periodically re-clusters all of them** (average-linkage AHC with a data-derived cut in
+`SpeakerClusterer`), emitting `SpeakersReassigned` corrections that flow to the transcript VM and
+**retroactively rebuild the bubbles from a per-utterance journal**. A voice that initially
+fragments into several `"Speaker N"` bubbles is expected to self-heal within one pass (≤ ~30 s) as
+evidence accumulates — the first-impression-is-permanent and one-global-threshold problems that
+drove the fragmentation risk are addressed by construction rather than by tuning.
+
+This **supersedes next-step #2 (manual `SpeakerEmbeddingThreshold` tuning)**: in auto mode the
+threshold / max-speakers / min-speech knobs are ignored, and the settings UI hides them (the manual
+path with its sliders remains available by toggling smart detection OFF). The data-derived cut sits
+inside a guardrail band whose 0.50 fallback is never worse than today's default, so manual mode is
+always one toggle away.
+
+**The caveat itself is only mitigated, NOT closed.** This mitigation is build-, test-, and
+unit-verified only (the clustering math, pass-trigger cadence, hysteresis, and retro merge/split
+rebuild are covered by `SpeakerClustererTests` + `AdaptiveSpeakerIdentificationServiceTests` +
+`MeetingAttendeeViewModelTests`). No live multi-speaker meeting on the real mixed downstream
+loopback stream was exercised. Original [next step #1](#concrete-next-steps-for-the-human) (run a
+real meeting; watch a monologue heal to one bubble and two people converge to exactly two stable
+speakers with no slider tuning) remains the gate on claiming the goal is achieved.
