@@ -25,7 +25,7 @@ public class NamingConventionTests
     [Fact]
     public void ServiceClasses_MustFollowNamingConvention()
     {
-        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine", "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner", "Indexer", "Watcher", "Renderer" };
+        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine", "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner", "Indexer", "Watcher", "Renderer", "Clusterer" };
 
         // Domain-named service/helper classes that legitimately do not carry one of the suffixes above.
         // ChromiumProvisioner / TeamsMeetingSession / AudioHopResampler are agent-noun / stateful helpers
@@ -42,6 +42,9 @@ public class NamingConventionTests
             // BrowserLaunchSpec is a launch-description DTO record (how to launch + how to recognise the
             // process), not a service — same category as ChromiumDownloadProgress above.
             "BrowserLaunchSpec",
+            // ClusterResult is a result-DTO record from SpeakerClusterer (assignments + cut distance),
+            // not a service — same category as ChromiumDownloadProgress / BrowserLaunchSpec above.
+            "ClusterResult",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)
