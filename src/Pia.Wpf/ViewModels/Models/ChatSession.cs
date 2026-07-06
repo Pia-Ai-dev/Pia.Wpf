@@ -348,6 +348,7 @@ public sealed class ChatSession : IDisposable
                         break;
 
                     case Finished finished:
+                        assistantMessage.IsProtectedRoute = finished.Protected;
                         ApplyStats(assistantMessage, finished, provider);
                         break;
                 }
