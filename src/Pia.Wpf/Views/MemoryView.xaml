@@ -93,8 +93,8 @@
       <!-- No selection + non-empty vault: composition-by-category overview (inherits the MemoryViewModel
            DataContext, so it binds VaultComposition). -->
       <mem:PiaVaultOverview Grid.Column="2"
-                            Visibility="{Binding IsVaultOverviewVisible,
-                                                 Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                             Visibility="{Binding IsVaultOverviewVisible,
+                                                  Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
       <!-- No selection + empty vault: the plain placeholder. -->
       <mem:PiaInspectorEmptyState Grid.Column="2"

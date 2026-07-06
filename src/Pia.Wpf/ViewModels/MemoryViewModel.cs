@@ -283,22 +283,21 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     }
 
     // Composition-by-category for the Vault Overview: one segment per canonical type present, in the §8
-    // CanonicalGroups order, with Fraction = count / totalDisplayable. `total` is the sum over displayable
-    // types, i.e. identical to CountDisplayable, so the bar and the header total agree by construction.
+    // CanonicalGroups order, with Fraction = count / totalDisplayable. `total` reuses CountDisplayable, so
+    // the bar and the header total agree by construction.
     private void BuildComposition(IReadOnlyList<VaultMemoryItem> items)
     {
-        var byType = items
-            .Where(i => DisplayableTypes.Contains(i.Type))
-            .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
-
-        var total = byType.Values.Sum();
+        var total = CountDisplayable(items);
 
         VaultComposition.Clear();
         if (total == 0)
         {
             return; // Divide-by-zero guard: an empty (or all-foreign-typed) vault emits no segments.
         }
+
+        var byType = items
+            .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
         foreach (var (type, display) in VaultIndexService.CanonicalGroups)
         {
