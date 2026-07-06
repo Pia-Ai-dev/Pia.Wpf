@@ -235,4 +235,116 @@ public class VaultIndexerTests : IDisposable
         await indexer.RemoveFileAsync("memory\\profile.md");
         Assert.Equal(0, CountChunks());
     }
+
+    // ---- ReconcileAsync: additive startup pass over the whole vault (no wipe) ----
+
+    [Fact]
+    public async Task Reconcile_indexes_every_file_without_wiping()
+    {
+        await _store.WriteAtomicAsync("profile.md", ProfileFixture);
+        await _store.WriteAtomicAsync("sources/notes.md", ContactsFixture);
+
+        var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
+        await indexer.ReconcileAsync();
+
+        // Profile has 2 sections, sources/notes has 1 -> 3, incl. the subdir file.
+        Assert.Equal(3, CountChunks());
+        Assert.Equal(1, CountChunksFor("sources/notes.md"));
+    }
+
+    [Fact]
+    public async Task Reconcile_over_unchanged_vault_does_not_reembed()
+    {
+        await _store.WriteAtomicAsync("profile.md", ProfileFixture);
+
+        var embeddings = NewCountingEmbeddings();
+        embeddings.IsModelAvailable.Returns(true); // the substitute defaults bool props to false
+        var indexer = new VaultIndexer(_ctx, _store, _parser, embeddings, NullLogger<VaultIndexer>.Instance);
+
+        await indexer.ReconcileAsync();
+        embeddings.ClearReceivedCalls();
+
+        // Second reconcile over the byte-identical vault: every section's content hash matches.
+        await indexer.ReconcileAsync();
+
+        await embeddings.DidNotReceive().GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Assert.Equal(2, CountChunksFor("profile.md"));
+    }
+
+    [Fact]
+    public async Task Reconcile_prunes_chunks_for_files_deleted_while_closed()
+    {
+        await _store.WriteAtomicAsync("profile.md", ProfileFixture);
+        await _store.WriteAtomicAsync("sources/notes.md", ContactsFixture);
+
+        var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
+        await indexer.ReconcileAsync();
+        Assert.Equal(3, CountChunks());
+
+        // Delete a subdir file directly on disk (as if removed while the app — and its watcher — was off).
+        File.Delete(Path.Combine(_vaultRoot, "sources", "notes.md"));
+
+        await indexer.ReconcileAsync();
+
+        // The gone file's chunks are pruned (path-normalization holds across the sources/ subdir); the
+        // surviving file keeps its rows.
+        Assert.Equal(0, CountChunksFor("sources/notes.md"));
+        Assert.Equal(2, CountChunksFor("profile.md"));
+        Assert.Equal(2, CountChunks());
+    }
+
+    [Fact]
+    public async Task Reconcile_with_empty_enumeration_does_not_prune_existing_chunks()
+    {
+        await _store.WriteAtomicAsync("profile.md", ProfileFixture);
+
+        var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
+        await indexer.ReconcileAsync();
+        Assert.Equal(2, CountChunks());
+
+        // Simulate a transiently-missing/relocating root: EnumerateAsync returns [] when Root is absent.
+        // The prune MUST be skipped — otherwise a momentary missing root would wipe the whole index.
+        Directory.Delete(_vaultRoot, recursive: true);
+
+        await indexer.ReconcileAsync();
+
+        Assert.Equal(2, CountChunks());
+    }
+
+    [Fact]
+    public async Task Indexing_skips_housekeeping_and_archive_but_keeps_records_and_sources()
+    {
+        await _store.WriteAtomicAsync("memory/AGENTS.md", ProfileFixture);          // housekeeping
+        await _store.WriteAtomicAsync("memory/log.md", ProfileFixture);             // housekeeping
+        await _store.WriteAtomicAsync("memory/.archive/old-dupe.md", ProfileFixture); // recoverable snapshot
+        await _store.WriteAtomicAsync("memory/notes/real.md", ProfileFixture);      // real record (2 sections)
+        await _store.WriteAtomicAsync("sources/doc.md", ContactsFixture);           // RAW source (1 section)
+
+        var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
+        await indexer.RebuildAllAsync();
+
+        // Housekeeping + archive contribute nothing to recall; the record and the source do.
+        Assert.Equal(0, CountChunksFor("memory/AGENTS.md"));
+        Assert.Equal(0, CountChunksFor("memory/log.md"));
+        Assert.Equal(0, CountChunksFor("memory/.archive/old-dupe.md"));
+        Assert.Equal(2, CountChunksFor("memory/notes/real.md"));
+        Assert.Equal(1, CountChunksFor("sources/doc.md"));
+        Assert.Equal(3, CountChunks());
+    }
+
+    [Fact]
+    public async Task Reconcile_skipped_when_model_unavailable()
+    {
+        await _store.WriteAtomicAsync("profile.md", ProfileFixture);
+
+        var embeddings = Substitute.For<IEmbeddingService>();
+        embeddings.IsModelAvailable.Returns(false); // model not on disk yet
+        var indexer = new VaultIndexer(_ctx, _store, _parser, embeddings, NullLogger<VaultIndexer>.Instance);
+
+        await indexer.ReconcileAsync();
+
+        // No indexing, and crucially no GenerateEmbeddingAsync call (which would auto-download the model).
+        await embeddings.DidNotReceive().GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Assert.Equal(0, CountChunks());
+    }
 }

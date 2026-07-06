@@ -62,12 +62,74 @@ public class VaultIndexer : IVaultIndexer
     }
 
     /// <inheritdoc />
+    public async Task ReconcileAsync()
+    {
+        // Additive, content-hash-idempotent startup reconcile: index every vault file WITHOUT the wipe
+        // RebuildAllAsync does, so a cold index is repopulated and files created while the app (and its
+        // watcher) were closed get picked up. Must run BEFORE the watcher goes live — the SqliteContext
+        // hands out a single shared connection that is not safe for concurrent use.
+        //
+        // Skipped when the embedding model is not on disk: indexing would call GenerateEmbeddingAsync,
+        // which auto-downloads the model — we must not kick off that (large) download at startup. Once
+        // the model is present (fetched on first real use), a later reconcile populates the index.
+        if (!_embeddings.IsModelAvailable)
+        {
+            _logger.LogInformation("Vault reconcile skipped: embedding model not available yet");
+            return;
+        }
+
+        var files = await _store.EnumerateAsync("*.md");
+
+        foreach (var relativePath in files)
+        {
+            try
+            {
+                await IndexFileAsync(relativePath);
+            }
+            catch (Exception ex)
+            {
+                // One unreadable/unembeddable file must not abort the whole pass. It stays in the
+                // present set below, so its existing chunks (if any) are preserved, not pruned.
+                _logger.LogWarning(ex, "Vault reconcile failed for one file; continuing with the rest");
+                _logger.SensitiveDebug("Vault reconcile failed on {Path}", relativePath);
+            }
+        }
+
+        // Prune chunks for files deleted while the app was closed (the watcher never saw the Deleted
+        // event). GUARD: never prune off an EMPTY enumeration — a transiently missing/relocating root or
+        // a failed scaffold makes EnumerateAsync return [], and pruning against that would wipe the whole
+        // index. Zero files => skip pruning; stale rows for genuinely-deleted files simply linger until
+        // the next add or a RebuildAllAsync.
+        if (files.Count > 0)
+        {
+            var present = new HashSet<string>(files.Select(NormalizeRelativePath), StringComparer.Ordinal);
+            await PruneMissingFilesAsync(present);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Vault reconcile: enumeration returned no files; skipping prune to protect the index");
+        }
+
+        _logger.LogInformation("Reconciled vault index over {FileCount} file(s)", files.Count);
+    }
+
+    /// <inheritdoc />
     public async Task IndexFileAsync(string relativePath)
     {
         // Canonicalize the Chunks key to forward-slash so rebuild-walk paths (native separators,
         // backslash on Windows from Path.GetRelativePath) and watcher paths (already forward-slash)
         // key the SAME file identically — otherwise Windows would form duplicate/orphan chunk rows.
         relativePath = NormalizeRelativePath(relativePath);
+
+        // Pia's housekeeping documents (AGENTS/index/log) and the recoverable .archive/ snapshots must
+        // never surface in recall. Filter centrally here so the watcher, RebuildAllAsync and
+        // ReconcileAsync all agree, and drop any chunks an earlier (unfiltered) pass left for the path.
+        if (!VaultPaths.IsRecallIndexable(relativePath))
+        {
+            await RemoveFileAsync(relativePath);
+            return;
+        }
 
         var doc = await _store.ReadAsync(relativePath);
         if (doc is null)
@@ -222,6 +284,35 @@ public class VaultIndexer : IVaultIndexer
         insertFts.Parameters.AddWithValue("$h", section.Heading);
         insertFts.Parameters.AddWithValue("$b", section.Body);
         await insertFts.ExecuteNonQueryAsync();
+    }
+
+    // Remove every chunk whose owning file is no longer on disk. Callers MUST pass a non-empty present
+    // set built from a successful enumeration (see the guard in ReconcileAsync) — an empty set here
+    // would delete the entire index.
+    private async Task PruneMissingFilesAsync(HashSet<string> presentFiles)
+    {
+        var connection = _context.GetConnection();
+
+        var indexedFiles = new List<string>();
+        using (var select = connection.CreateCommand())
+        {
+            select.CommandText = "SELECT DISTINCT FilePath FROM Chunks;";
+            using var reader = await select.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                indexedFiles.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (var filePath in indexedFiles)
+        {
+            // Chunks keys are canonical forward-slash; presentFiles is normalized the same way.
+            if (!presentFiles.Contains(filePath))
+            {
+                await RemoveFileAsync(filePath);
+                _logger.SensitiveDebug("Vault reconcile pruned chunks for deleted file {Path}", filePath);
+            }
+        }
     }
 
     private static async Task PruneMissingSectionsAsync(

@@ -11,6 +11,14 @@ public interface IVaultIndexer
     /// <summary>Drop and rebuild the entire index from every <c>*.md</c> file in the vault.</summary>
     Task RebuildAllAsync();
 
+    /// <summary>
+    /// Reconcile the index against the vault on disk WITHOUT wiping: (re-)index every <c>*.md</c> file
+    /// (content-hash idempotent, so unchanged sections are not re-embedded) and prune chunks for files
+    /// that were deleted while the app was closed. Repopulates a cold index and picks up files created
+    /// out-of-band. Cheap after the first run; a no-op when the embedding model is not yet on disk.
+    /// </summary>
+    Task ReconcileAsync();
+
     /// <summary>Re-index one vault file: embed only changed sections, prune removed ones.</summary>
     Task IndexFileAsync(string relativePath);
 

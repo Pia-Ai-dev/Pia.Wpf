@@ -1,34 +1,55 @@
 using System.IO;
 using System.Net.Http;
 using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using Microsoft.ML.Tokenizers;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
 
-public partial class EmbeddingService : IEmbeddingService, IDisposable
+public class EmbeddingService : IEmbeddingService, IDisposable
 {
     private const string ModelFileName = "paraphrase-multilingual-MiniLM-L12-v2.onnx";
     private const string TokenizerFileName = "tokenizer.json";
+    private const string SentencePieceFileName = "sentencepiece.bpe.model";
     private const string ModelUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx";
     private const string TokenizerUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json";
-    private const int MaxSequenceLength = 256;
+    private const string SentencePieceUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/sentencepiece.bpe.model";
+    // Matches the tokenizer's own truncation (tokenizer.json truncation.max_length = 128), including the two
+    // framing tokens (<s> … </s>). The model is paraphrase-multilingual-MiniLM-L12-v2, an XLM-RoBERTa
+    // SentencePiece Unigram model — NOT BERT WordPiece.
+    private const int MaxSequenceLength = 128;
     private const int EmbeddingDimension = 384;
+
+    // XLM-RoBERTa special-token ids as they appear in tokenizer.json (the ids the ONNX model expects).
+    // Read from the vocabulary at load time; these are the defaults if a key is somehow missing.
+    private const int DefaultBosId = 0; // <s>
+    private const int DefaultEosId = 2; // </s>
+    private const int DefaultUnkId = 3; // <unk>
 
     private readonly ILogger<EmbeddingService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _modelDirectory;
     private InferenceSession? _session;
+    // The SentencePiece model does the (normalization + Unigram Viterbi) segmentation; _vocabulary maps the
+    // resulting piece strings to the ids the ONNX embedding table expects. tokenizer.json is the id oracle:
+    // its model.vocab is an ARRAY whose index IS the model id, which sidesteps XLM-R's fairseq +1 offset
+    // (the raw sentencepiece.bpe.model numbers pieces differently).
+    private Tokenizer? _tokenizer;
     private Dictionary<string, int>? _vocabulary;
+    private int _bosId = DefaultBosId;
+    private int _eosId = DefaultEosId;
+    private int _unkId = DefaultUnkId;
     private bool _disposed;
 
-    public bool IsModelAvailable => File.Exists(ModelPath) && File.Exists(TokenizerPath);
+    public bool IsModelAvailable =>
+        File.Exists(ModelPath) && File.Exists(TokenizerPath) && File.Exists(SentencePiecePath);
 
     private string ModelPath => Path.Combine(_modelDirectory, ModelFileName);
     private string TokenizerPath => Path.Combine(_modelDirectory, TokenizerFileName);
+    private string SentencePiecePath => Path.Combine(_modelDirectory, SentencePieceFileName);
 
     public EmbeddingService(ILogger<EmbeddingService> logger, IHttpClientFactory httpClientFactory)
     {
@@ -56,11 +77,18 @@ public partial class EmbeddingService : IEmbeddingService, IDisposable
                 await DownloadFileAsync(httpClient, ModelUrl, ModelPath, progress, cancellationToken);
             }
 
-            // Download tokenizer
+            // Download tokenizer (the id oracle: piece string -> model id)
             if (!File.Exists(TokenizerPath))
             {
                 _logger.LogInformation("Downloading tokenizer...");
                 await DownloadFileAsync(httpClient, TokenizerUrl, TokenizerPath, null, cancellationToken);
+            }
+
+            // Download the SentencePiece model (the segmenter)
+            if (!File.Exists(SentencePiecePath))
+            {
+                _logger.LogInformation("Downloading SentencePiece model...");
+                await DownloadFileAsync(httpClient, SentencePieceUrl, SentencePiecePath, null, cancellationToken);
             }
 
             _logger.LogInformation("Embedding model downloaded successfully");
@@ -158,6 +186,16 @@ public partial class EmbeddingService : IEmbeddingService, IDisposable
 
         LoadVocabulary();
 
+        // Load the SentencePiece model purely as a segmenter. We frame <s>/</s> ourselves (per the
+        // tokenizer's TemplateProcessing) and map pieces to ids via _vocabulary, so the beginning/end
+        // tokens the library would otherwise emit (with the SentencePiece model's own numbering) are
+        // suppressed here.
+        using var spStream = File.OpenRead(SentencePiecePath);
+        _tokenizer = SentencePieceTokenizer.Create(
+            spStream,
+            addBeginningOfSentence: false,
+            addEndOfSentence: false);
+
         _logger.LogInformation("Embedding model loaded successfully");
     }
 
@@ -168,84 +206,51 @@ public partial class EmbeddingService : IEmbeddingService, IDisposable
         var tokenizerJson = File.ReadAllText(TokenizerPath);
         var doc = System.Text.Json.JsonDocument.Parse(tokenizerJson);
 
-        _vocabulary = new Dictionary<string, int>();
+        _vocabulary = new Dictionary<string, int>(StringComparer.Ordinal);
 
+        // model.vocab is a Unigram vocabulary: an ARRAY of [token, score] pairs. The array index is the
+        // token's model id, so we ignore the score and use the position.
         if (doc.RootElement.TryGetProperty("model", out var model) &&
-            model.TryGetProperty("vocab", out var vocab))
+            model.TryGetProperty("vocab", out var vocab) &&
+            vocab.ValueKind == System.Text.Json.JsonValueKind.Array)
         {
-            foreach (var entry in vocab.EnumerateObject())
+            var id = 0;
+            foreach (var entry in vocab.EnumerateArray())
             {
-                _vocabulary[entry.Name] = entry.Value.GetInt32();
+                var token = entry[0].GetString();
+                if (token is not null)
+                    _vocabulary[token] = id;
+                id++;
             }
         }
+
+        _bosId = _vocabulary.GetValueOrDefault("<s>", DefaultBosId);
+        _eosId = _vocabulary.GetValueOrDefault("</s>", DefaultEosId);
+        _unkId = _vocabulary.GetValueOrDefault("<unk>", DefaultUnkId);
 
         _logger.LogInformation("Loaded vocabulary with {Count} tokens", _vocabulary.Count);
     }
 
     private long[] Tokenize(string text)
     {
-        if (_vocabulary is null)
-            throw new InvalidOperationException("Vocabulary not loaded");
+        if (_vocabulary is null || _tokenizer is null)
+            throw new InvalidOperationException("Tokenizer not loaded");
 
-        var tokens = new List<long> { GetTokenId("[CLS]") };
+        // The XLM-RoBERTa post-processor frames the sequence as: <s> … </s>. Reserve those two slots so a
+        // full sequence is exactly MaxSequenceLength tokens; break once the content fills the remainder.
+        var tokens = new List<long>(MaxSequenceLength) { _bosId };
 
-        // Simple WordPiece tokenization
-        var words = TokenizeRegex().Split(text.ToLowerInvariant())
-            .Where(w => !string.IsNullOrWhiteSpace(w));
-
-        foreach (var word in words)
+        foreach (var piece in _tokenizer.EncodeToTokens(text, out _))
         {
-            var remaining = word;
-            var isFirst = true;
-
-            while (remaining.Length > 0)
-            {
-                var prefix = isFirst ? "" : "##";
-                var found = false;
-
-                // Try longest matching subword
-                for (var end = remaining.Length; end > 0; end--)
-                {
-                    var subword = prefix + remaining[..end];
-                    if (_vocabulary.ContainsKey(subword))
-                    {
-                        tokens.Add(GetTokenId(subword));
-                        remaining = remaining[end..];
-                        found = true;
-                        isFirst = false;
-                        break;
-                    }
-                }
-
-                if (!found)
-                {
-                    // Unknown token
-                    tokens.Add(GetTokenId("[UNK]"));
-                    break;
-                }
-            }
-
             if (tokens.Count >= MaxSequenceLength - 1)
                 break;
+
+            // Map the SentencePiece piece string to the id the ONNX model expects (tokenizer.json index).
+            tokens.Add(_vocabulary.TryGetValue(piece.Value, out var id) ? id : _unkId);
         }
 
-        tokens.Add(GetTokenId("[SEP]"));
-
-        // Pad or truncate to max sequence length
-        if (tokens.Count > MaxSequenceLength)
-        {
-            tokens.RemoveRange(MaxSequenceLength - 1, tokens.Count - MaxSequenceLength);
-            tokens.Add(GetTokenId("[SEP]"));
-        }
-
+        tokens.Add(_eosId);
         return tokens.ToArray();
-    }
-
-    private long GetTokenId(string token)
-    {
-        if (_vocabulary is not null && _vocabulary.TryGetValue(token, out var id))
-            return id;
-        return _vocabulary?.GetValueOrDefault("[UNK]", 100) ?? 100;
     }
 
     private static float[] MeanPooling(Tensor<float> output, int sequenceLength)
@@ -317,9 +322,6 @@ public partial class EmbeddingService : IEmbeddingService, IDisposable
         fileStream.Close();
         File.Move(tempPath, destinationPath, overwrite: true);
     }
-
-    [GeneratedRegex(@"[\s\p{P}]+")]
-    private static partial Regex TokenizeRegex();
 
     public void Dispose()
     {

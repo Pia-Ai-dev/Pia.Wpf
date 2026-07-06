@@ -152,6 +152,21 @@ public static class Bootstrapper
             bootstrapLogger.LogWarning(ex, "Vault migration failed; legacy memory table remains the fallback");
         }
 
+        // Reconcile the index against the vault on disk BEFORE the watcher goes live. The watcher is
+        // change-only (it never scans existing files), so without this a cold index — e.g. after the
+        // embedding model is first installed — never fills in, and files created while the app was
+        // closed stay invisible to recall. Additive + content-hash idempotent (cheap after the first
+        // run) and must precede Start() because the shared SQLite connection is single-threaded. Never
+        // blocks startup on failure.
+        try
+        {
+            await _serviceProvider.GetRequiredService<IVaultIndexer>().ReconcileAsync();
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Vault reconcile failed; existing files may not be indexed until they change");
+        }
+
         // Start the vault file-watcher on the default root so external edits (and Pia's own writes)
         // flow into the index. Start() creates the root dir if absent, so this never throws on a
         // fresh install; guard anyway so a watcher failure cannot block app startup.

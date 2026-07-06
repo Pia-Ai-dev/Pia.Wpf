@@ -44,4 +44,28 @@ public static class VaultPaths
             && !normalized.StartsWith("memory/.archive/", StringComparison.OrdinalIgnoreCase)
             && !Housekeeping.Contains(normalized);
     }
+
+    /// <summary>
+    /// True iff <paramref name="relativePath"/> is a <c>.md</c> file whose content should surface in
+    /// recall (the <c>Chunks</c>/<c>ChunksFts</c> index): everything EXCEPT Pia's housekeeping documents
+    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>) and the recoverable <c>.archive/</c> snapshots.
+    /// Unlike <see cref="IsRecordFile"/> this KEEPS the <c>sources/</c> RAW layer (ingest deliberately
+    /// made it recallable) and is a denylist — not a <c>memory/</c> allowlist — because records may live
+    /// at the vault root too. Applied centrally in the indexer so the watcher, rebuild, and reconcile
+    /// all agree on what recall contains.
+    /// </summary>
+    public static bool IsRecallIndexable(string relativePath)
+    {
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return false;
+        }
+
+        var normalized = relativePath.Replace('\\', '/');
+
+        return normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+            && !Housekeeping.Contains(normalized)
+            && !normalized.StartsWith(".archive/", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Contains("/.archive/", StringComparison.OrdinalIgnoreCase);
+    }
 }
