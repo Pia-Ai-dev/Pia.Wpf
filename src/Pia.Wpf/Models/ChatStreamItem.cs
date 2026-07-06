@@ -12,4 +12,4 @@ public sealed record TextDelta(string Text) : ChatStreamItem;
 /// field, inline <c>&lt;think&gt;</c> tags) into <c>AssistantMessage.ThinkingContent</c>.</summary>
 public sealed record ReasoningDelta(string Text) : ChatStreamItem;
 
-public sealed record Finished(UsageDetails? Usage, string Model) : ChatStreamItem;
+public sealed record Finished(UsageDetails? Usage, string Model, bool Protected = false) : ChatStreamItem;
