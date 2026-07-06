@@ -254,7 +254,7 @@ public class AiClientService : IAiClientService
                 }
 
                 response = updates.ToChatResponse();
-                if (updates.Any(u => u.AdditionalProperties is { } ap && ap.ContainsKey("guardrail_protected")))
+                if (updates.Any(u => u.AdditionalProperties is { } ap && ap.ContainsKey(GuardrailMarker.AdditionalPropertyKey)))
                     protectedRoute = true;
                 _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}, finishReason={FinishReason}",
                     round + 1, response.Messages.Count, response.Text?.Length ?? 0, response.FinishReason);
@@ -303,7 +303,7 @@ public class AiClientService : IAiClientService
                 }
             }
 
-            if (response.AdditionalProperties is { } respProps && respProps.ContainsKey("guardrail_protected"))
+            if (response.AdditionalProperties is { } respProps && respProps.ContainsKey(GuardrailMarker.AdditionalPropertyKey))
                 protectedRoute = true;
 
             if (response.Usage is { } roundUsage)

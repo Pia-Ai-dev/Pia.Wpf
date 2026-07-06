@@ -10,6 +10,10 @@ using System.Text.Json.Nodes;
 /// </summary>
 public static class GuardrailMarker
 {
+    /// <summary>In-process <c>AdditionalProperties</c> key used to shuttle the flag from
+    /// <c>PiaCloudChatClient</c> up to <c>AiClientService</c>. Not part of the wire contract.</summary>
+    public const string AdditionalPropertyKey = "guardrail_protected";
+
     public static bool IsProtected(JsonNode? envelopeOrChunk) =>
         envelopeOrChunk?["guardrail"]?["protected"] is JsonValue v
         && v.TryGetValue<bool>(out var isProtected)

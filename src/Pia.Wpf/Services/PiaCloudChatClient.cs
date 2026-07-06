@@ -136,7 +136,7 @@ public sealed class PiaCloudChatClient : IChatClient
                 yield return new ChatResponseUpdate
                 {
                     Role = ChatRole.Assistant,
-                    AdditionalProperties = new AdditionalPropertiesDictionary { ["guardrail_protected"] = true }
+                    AdditionalProperties = new AdditionalPropertiesDictionary { [GuardrailMarker.AdditionalPropertyKey] = true }
                 };
             }
 
@@ -534,7 +534,7 @@ public sealed class PiaCloudChatClient : IChatClient
         if (GuardrailMarker.IsProtected(json))
         {
             response.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            response.AdditionalProperties["guardrail_protected"] = true;
+            response.AdditionalProperties[GuardrailMarker.AdditionalPropertyKey] = true;
         }
         return response;
     }
