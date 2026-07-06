@@ -62,6 +62,8 @@
   <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Start a conversation with Pia</value></data>
+  <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protected</value></data>
+  <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>This answer was handled by a protected model.</value></data>
   <data name="Assistant_Suggestion_Reminder1" xml:space="preserve"><value>Remind me to call the dentist tomorrow</value></data>
   <data name="Assistant_Suggestion_Reminder2" xml:space="preserve"><value>Set a daily reminder to drink water</value></data>
   <data name="Assistant_Suggestion_Reminder3" xml:space="preserve"><value>Remind me about the meeting at 3 PM</value></data>

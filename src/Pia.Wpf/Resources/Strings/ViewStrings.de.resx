@@ -62,6 +62,8 @@
   <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Starte eine Unterhaltung mit Pia</value></data>
+  <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Geschützt</value></data>
+  <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>Diese Antwort wurde von einem geschützten Modell verarbeitet.</value></data>
   <data name="Assistant_Suggestion_Reminder1" xml:space="preserve"><value>Erinnere mich morgen den Zahnarzt anzurufen</value></data>
   <data name="Assistant_Suggestion_Reminder2" xml:space="preserve"><value>Erstelle eine tägliche Erinnerung, Wasser zu trinken</value></data>
   <data name="Assistant_Suggestion_Reminder3" xml:space="preserve"><value>Erinnere mich an das Meeting um 15 Uhr</value></data>

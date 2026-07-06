@@ -63,6 +63,31 @@
       </StackPanel>
     </Border>
 
+    <!-- Protected-route indicator: neutral shield shown when the server routed this answer to the
+         protected/private model (guardrail HIT/ERROR). No outcome or model detail is exposed. Placed as a
+         sibling of the bubble (not inside the toolbar) so its visibility depends only on IsProtectedRoute,
+         never on the toolbar's own collapse rules (hidden while streaming / when the answer is empty). -->
+    <Border CornerRadius="9"
+            Padding="6,2"
+            Margin="0,8,0,0"
+            HorizontalAlignment="Left"
+            Background="{DynamicResource SurfaceBrush}"
+            ToolTip="{loc:Str Assistant_ProtectedRoute_Tooltip}"
+            Visibility="{Binding IsProtectedRoute, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <StackPanel Orientation="Horizontal">
+        <ui:SymbolIcon Symbol="ShieldKeyhole24"
+                       FontSize="11"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSubtleBrush}" />
+        <TextBlock Text="{loc:Str Assistant_ProtectedRoute_Label}"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Margin="4,0,0,0"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextSubtleBrush}" />
+      </StackPanel>
+    </Border>
+
     <!-- Sources -->
     <ItemsControl ItemsSource="{Binding Sources}" Margin="0,10,0,0"
                   Visibility="{Binding HasSources, Converter={StaticResource BooleanToVisibilityConverter}}">
