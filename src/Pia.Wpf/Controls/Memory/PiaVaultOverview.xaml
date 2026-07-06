@@ -4,7 +4,7 @@
              xmlns:loc="clr-namespace:Pia.Localization">
   <Border Style="{StaticResource PiaCardStyle}">
     <StackPanel VerticalAlignment="Center"
-                HorizontalAlignment="Center"
+                HorizontalAlignment="Stretch"
                 MaxWidth="560">
       <TextBlock Text="{loc:Str Memory_VaultOverview_Title}"
                  FontSize="14"
