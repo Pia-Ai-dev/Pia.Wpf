@@ -1,11 +1,22 @@
 namespace Pia.Services.Interfaces;
 
+/// <summary>Why an ingest produced no pages; <see cref="Success"/> when it did.</summary>
+public enum IngestOutcome
+{
+    Success,
+    SourceNotFound,
+    NonTextSkipped,
+    EmptySource,
+    NoEntities,
+}
+
 /// <summary>
 /// Outcome of an ingest run. <see cref="SourceRef"/> is the vault-relative source path that was
 /// compiled; <see cref="TouchedPages"/> are the vault-relative <c>memory/topics/&lt;slug&gt;.md</c> pages
 /// created or updated (empty when the source was skipped, e.g. a binary/non-text source).
 /// </summary>
-public record IngestResult(string SourceRef, IReadOnlyList<string> TouchedPages);
+public record IngestResult(
+    string SourceRef, IReadOnlyList<string> TouchedPages, IngestOutcome Outcome = IngestOutcome.Success);
 
 /// <summary>
 /// The ingest pipeline (Task 7.1): a fan-out compiler that reads a RAW source from <c>sources/</c>,

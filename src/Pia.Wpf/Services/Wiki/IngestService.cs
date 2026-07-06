@@ -76,25 +76,37 @@ public sealed class IngestService : IIngestService
 
         // 1. Read the RAW source directly under the vault root (sources/ files are not Pia-managed
         // markdown, so we do NOT parse them through IVaultStore.ReadAsync).
-        var absolute = Path.Combine(_store.Root, sourceRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var rootFull = Path.GetFullPath(_store.Root);
+        var absolute = Path.GetFullPath(
+            Path.Combine(rootFull, sourceRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        // Containment guard: source_ref reaches this service from a model tool call, so refuse any
+        // absolute path or '..' traversal that resolves OUTSIDE the vault — otherwise an injected
+        // prompt could exfiltrate an arbitrary local text file into memory (which syncs).
+        if (!absolute.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.SensitiveDebug("Ingest source escapes the vault {Source}", sourceRef);
+            return new IngestResult(sourceRef, [], IngestOutcome.SourceNotFound);
+        }
+
         if (!File.Exists(absolute))
         {
             _logger.SensitiveDebug("Ingest source not found {Source}", sourceRef);
-            return new IngestResult(sourceRef, []);
+            return new IngestResult(sourceRef, [], IngestOutcome.SourceNotFound);
         }
 
         if (!IsTextSource(sourceRef))
         {
             // Binary handling (PDF/image extraction) is DEFERRED — skip with an empty result.
             _logger.SensitiveDebug("Ingest skipping non-text source {Source}", sourceRef);
-            return new IngestResult(sourceRef, []);
+            return new IngestResult(sourceRef, [], IngestOutcome.NonTextSkipped);
         }
 
         var content = await File.ReadAllTextAsync(absolute, ct);
         if (string.IsNullOrWhiteSpace(content))
         {
             _logger.SensitiveDebug("Ingest source empty {Source}", sourceRef);
-            return new IngestResult(sourceRef, []);
+            return new IngestResult(sourceRef, [], IngestOutcome.EmptySource);
         }
 
         // 2. Summarize + extract.
@@ -130,7 +142,7 @@ public sealed class IngestService : IIngestService
         if (touched.Count == 0)
         {
             _logger.SensitiveDebug("Ingest produced no topic pages for {Source}", sourceRef);
-            return new IngestResult(sourceRef, []);
+            return new IngestResult(sourceRef, [], IngestOutcome.NoEntities);
         }
 
         // 4. Crosslink (best-effort, minimal): if one touched page's body mentions another touched
@@ -229,7 +241,10 @@ public sealed class IngestService : IIngestService
         var fmBody = raw[(open + 4)..(close + 1)]; // keys block, ends with the '\n' before '---'
         var afterFm = raw[(close + 1)..];          // starts at the closing '---' line
 
-        var existing = doc.Frontmatter.TryGetValue("sources", out var current) ? current : null;
+        // Read the existing sources: value from the RAW frontmatter, NOT doc.Frontmatter — the parser
+        // flattens a YAML flow list to its .NET type name, which would round-trip back into the file as
+        // garbage and corrupt the frontmatter (unparseable YAML) on the next ingest.
+        var existing = FindKeyValue(fmBody, "sources:");
         var refs = ParseFlowList(existing);
         if (refs.Contains(sourceRef, StringComparer.Ordinal))
         {
@@ -239,17 +254,10 @@ public sealed class IngestService : IIngestService
         refs.Add(sourceRef);
         var newLine = "sources: [" + string.Join(", ", refs) + "]\n";
 
-        string newFmBody;
-        if (existing is null)
-        {
-            // Append the sources: key at the end of the keys block.
-            newFmBody = fmBody + newLine;
-        }
-        else
-        {
-            // Replace the existing sources: line in place.
-            newFmBody = ReplaceKeyLine(fmBody, "sources:", newLine);
-        }
+        // Append the sources: key when absent, else replace the existing line in place.
+        var newFmBody = existing is null
+            ? fmBody + newLine
+            : ReplaceKeyLine(fmBody, "sources:", newLine);
 
         // afterFm begins with the closing '---' delimiter; newFmBody already supplied the trailing newline.
         var rebuilt = raw[..(open + 4)] + newFmBody + afterFm;
@@ -283,6 +291,20 @@ public sealed class IngestService : IIngestService
         }
 
         return result;
+    }
+
+    // Return the raw value text after a "key:" line in the frontmatter keys block, or null if absent.
+    private static string? FindKeyValue(string fmBody, string keyPrefix)
+    {
+        foreach (var line in fmBody.Split('\n'))
+        {
+            if (line.StartsWith(keyPrefix, StringComparison.Ordinal))
+            {
+                return line[keyPrefix.Length..].Trim();
+            }
+        }
+
+        return null;
     }
 
     private static string ReplaceKeyLine(string fmBody, string keyPrefix, string newLine)

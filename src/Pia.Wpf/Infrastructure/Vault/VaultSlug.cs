@@ -16,6 +16,14 @@ public static class VaultSlug
     private static readonly Regex NonSlugRun = new("[^a-z0-9]+", RegexOptions.Compiled);
 
     /// <summary>
+    /// Reserved slug for the synthetic whole-preamble chunk emitted by <c>VaultIndexer</c>.
+    /// <see cref="Slugify"/> can never produce it (its output alphabet is [a-z0-9-]; '_' collapses
+    /// to '-'), and the parser's collision suffixes ("-2", …) stay in that alphabet too, so it can
+    /// never collide with a real ## section slug.
+    /// </summary>
+    public const string PreambleSlug = "__preamble__";
+
+    /// <summary>
     /// Slugify a heading per spec §6 steps 1-6: NFD normalize, strip combining marks (Mn), invariant
     /// lowercase, collapse non-<c>[a-z0-9]</c> runs to a single hyphen, trim hyphens, and fall back to
     /// <c>section</c> if empty. Step 7 (collision suffix) is the parser's responsibility (it is

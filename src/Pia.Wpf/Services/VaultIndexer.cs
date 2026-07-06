@@ -1,3 +1,4 @@
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
@@ -95,6 +96,29 @@ public class VaultIndexer : IVaultIndexer
             var embeddingBytes = _embeddings.FloatsToBytes(embedding);
             await UpsertChunkAsync(connection, relativePath, section, contentHash, embeddingBytes);
             await RefreshFtsAsync(connection, relativePath, section);
+        }
+
+        // Freeform files (note/project/topic — the format ingest and remember("topic", …) write)
+        // keep their content in the PREAMBLE, not in ## sections, so without this they produce zero
+        // chunks and are invisible to recall. Emit ONE synthetic chunk for a non-empty preamble
+        // under the reserved slug; heading = frontmatter title, else the filename.
+        if (!string.IsNullOrWhiteSpace(doc.Preamble))
+        {
+            var heading = doc.Frontmatter.TryGetValue("title", out var title) && !string.IsNullOrWhiteSpace(title)
+                ? title
+                : Path.GetFileNameWithoutExtension(relativePath);
+            var preambleSection = new VaultSection(heading, VaultSlug.PreambleSlug, doc.Preamble.Trim(), 0, 0);
+
+            presentSlugs.Add(VaultSlug.PreambleSlug);
+            var preambleHash = ComputeContentHash(preambleSection);
+            if (!await IsContentHashUnchangedAsync(connection, relativePath, VaultSlug.PreambleSlug, preambleHash))
+            {
+                var preambleEmbedding = await _embeddings.GenerateEmbeddingAsync(
+                    $"{preambleSection.Heading}\n{preambleSection.Body}");
+                await UpsertChunkAsync(connection, relativePath, preambleSection, preambleHash,
+                    _embeddings.FloatsToBytes(preambleEmbedding));
+                await RefreshFtsAsync(connection, relativePath, preambleSection);
+            }
         }
 
         // Prune sections that no longer exist in the file (renamed/removed headings).

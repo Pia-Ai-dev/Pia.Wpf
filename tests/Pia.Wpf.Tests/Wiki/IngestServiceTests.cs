@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
@@ -78,6 +79,9 @@ public class IngestServiceTests : IDisposable
     private IngestService BuildIngest(IIngestExtractor extractor)
         => new(extractor, BuildMemory(), _store, _index, _log, _embeddings,
             NullLogger<IngestService>.Instance);
+
+    private IngestToolHandler BuildToolHandler()
+        => new(BuildIngest(new StubExtractor()), NullLogger<IngestToolHandler>.Instance);
 
     // Two fixed entities — no API key required.
     private sealed class StubExtractor : IIngestExtractor
@@ -181,6 +185,80 @@ public class IngestServiceTests : IDisposable
         Assert.Contains("sources/sample.txt", acme.RawText);
         Assert.Contains("sources:", john!.RawText);
         Assert.Contains("sources/sample.txt", john.RawText);
+    }
+
+    [Fact]
+    public async Task IngestAsync_refuses_a_traversal_path_that_escapes_the_vault()
+    {
+        // A '..' target that genuinely resolves OUTSIDE the vault root (<tmpDir>/vault -> <tmpDir>).
+        File.WriteAllText(Path.Combine(_tmpDir, "outside.txt"), "Secret data about Acme Corp.");
+        var ingest = BuildIngest(new StubExtractor());
+
+        var result = await ingest.IngestAsync("../outside.txt", new DateOnly(2026, 6, 7),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestOutcome.SourceNotFound, result.Outcome);
+        Assert.Empty(result.TouchedPages);
+        // The guard must stop BEFORE extraction — no topic page is written from the outside file.
+        Assert.Null(await _store.ReadAsync("memory/topics/acme-corp.md"));
+    }
+
+    [Fact]
+    public async Task IngestAsync_refuses_an_absolute_path_outside_the_vault()
+    {
+        var outside = Path.Combine(_tmpDir, "outside-abs.txt");
+        File.WriteAllText(outside, "Secret data about Acme Corp.");
+        var ingest = BuildIngest(new StubExtractor());
+
+        var result = await ingest.IngestAsync(outside, new DateOnly(2026, 6, 7),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestOutcome.SourceNotFound, result.Outcome);
+        Assert.Empty(result.TouchedPages);
+        Assert.Null(await _store.ReadAsync("memory/topics/acme-corp.md"));
+    }
+
+    [Fact]
+    public async Task Ingest_tool_returns_a_readable_success_string()
+    {
+        var handler = BuildToolHandler();
+        var call = new FunctionCallContent("c1", "ingest",
+            new Dictionary<string, object?> { ["source_ref"] = "sources/sample.txt" });
+
+        var result = await handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
+
+        var text = Assert.IsType<string>(result);
+        Assert.Contains("Ingested 'sources/sample.txt' into 2 memory page(s)", text);
+        Assert.Contains("memory/topics/acme-corp.md", text);
+        Assert.Contains("memory/topics/john-smith.md", text);
+    }
+
+    [Fact]
+    public async Task Ingest_tool_normalizes_a_vault_prefixed_source_ref()
+    {
+        var handler = BuildToolHandler();
+        var call = new FunctionCallContent("c1", "ingest",
+            new Dictionary<string, object?> { ["source_ref"] = "Vault/sources/sample.txt" });
+
+        var result = await handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
+
+        var text = Assert.IsType<string>(result);
+        Assert.StartsWith("Ingested 'sources/sample.txt'", text);
+        Assert.NotNull(await _store.ReadAsync("memory/topics/acme-corp.md"));
+    }
+
+    [Fact]
+    public async Task Ingest_tool_reports_a_missing_source_with_the_staging_recipe()
+    {
+        var handler = BuildToolHandler();
+        var call = new FunctionCallContent("c1", "ingest",
+            new Dictionary<string, object?> { ["source_ref"] = "sources/missing.txt" });
+
+        var result = await handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
+
+        var text = Assert.IsType<string>(result);
+        Assert.Contains("not found", text);
+        Assert.Contains("Vault/sources/", text);
     }
 
     // Deterministic stub embedder (mirrors MemoryWriteTests): distinct text -> near-orthogonal vectors.

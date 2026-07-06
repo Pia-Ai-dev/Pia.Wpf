@@ -171,4 +171,61 @@ public class RecallTests : IDisposable
 
         Assert.True(hits.Count <= 1);
     }
+
+    [Fact]
+    public async Task Recall_returns_freeform_topic_content_by_subject()
+    {
+        var service = await SeedAndBuildAsync();
+        await service.RememberAsync("topic", "Acme Corp", "- customer since 2024");
+
+        var indexer = new VaultIndexer(_ctx, _store, _parser, _embeddings, NullLogger<VaultIndexer>.Instance);
+        await indexer.IndexFileAsync("memory/topics/acme-corp.md");
+
+        var hits = await service.RecallAsync("Acme Corp");
+
+        var hit = hits.FirstOrDefault(h => h.FilePath.Replace('\\', '/') == "memory/topics/acme-corp.md");
+        Assert.NotNull(hit);
+        Assert.Equal("Acme Corp", hit!.Heading);
+        Assert.Contains("customer since 2024", hit.Snippet);
+    }
+
+    [Fact]
+    public async Task Freeform_file_with_preamble_and_no_sections_yields_exactly_one_preamble_chunk()
+    {
+        await _store.WriteAtomicAsync("memory/topics/plasma-donation.md",
+            "---\n" +
+            "pia: managed\n" +
+            "id: 6f9c0b3e-7c1a-4f2e-9a8b-000000000003\n" +
+            "type: topic\n" +
+            "title: Plasma Donation\n" +
+            "schemaVersion: 1\n" +
+            "---\n" +
+            "- donors must weigh at least 50 kg\n");
+
+        var indexer = new VaultIndexer(_ctx, _store, _parser, _embeddings, NullLogger<VaultIndexer>.Instance);
+        await indexer.IndexFileAsync("memory/topics/plasma-donation.md");
+
+        var connection = _ctx.GetConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Heading, Slug FROM Chunks WHERE FilePath = 'memory/topics/plasma-donation.md';";
+        using var reader = await cmd.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("Plasma Donation", reader.GetString(0));
+        Assert.Equal(VaultSlug.PreambleSlug, reader.GetString(1));
+        Assert.False(await reader.ReadAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task File_with_empty_preamble_gets_no_preamble_chunk()
+    {
+        await SeedAndBuildAsync(); // memory/profile.md: sections only, empty preamble
+
+        var connection = _ctx.GetConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT COUNT(*) FROM Chunks WHERE FilePath = 'memory/profile.md' AND Slug = $s;";
+        cmd.Parameters.AddWithValue("$s", VaultSlug.PreambleSlug);
+        var count = Convert.ToInt64(await cmd.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0L, count);
+    }
 }

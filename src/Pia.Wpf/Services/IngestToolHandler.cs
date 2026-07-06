@@ -12,7 +12,7 @@ namespace Pia.Services;
 /// tool that compiles a RAW source under <c>sources/</c> into <c>memory/topics/</c> wiki pages by
 /// dispatching to <see cref="IIngestService.IngestAsync"/>. Ingest runs inline — there is no
 /// pending-action / confirmation card — so <see cref="HandleToolCallAsync"/> performs the work and
-/// returns the <see cref="IngestResult"/> directly.
+/// returns a human-readable result string.
 /// </summary>
 public class IngestToolHandler : IIngestToolHandler
 {
@@ -55,16 +55,47 @@ public class IngestToolHandler : IIngestToolHandler
             return "Error: source_ref parameter is required";
         }
 
+        sourceRef = NormalizeSourceRef(sourceRef);
+
         var result = await _ingestService.IngestAsync(
             sourceRef, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
         _logger.SensitiveDebug("Ingest tool compiled {Source} into {Count} page(s)",
             result.SourceRef, result.TouchedPages.Count);
-        return result;
+
+        return result.Outcome switch
+        {
+            IngestOutcome.SourceNotFound =>
+                $"Error: source '{sourceRef}' was not found. Raw files must be inside the vault's sources/ folder. " +
+                "To stage a new file, write it to 'Vault/sources/<name>' with the files tools, then call " +
+                "ingest(\"sources/<name>\").",
+            IngestOutcome.NonTextSkipped =>
+                $"Skipped: '{sourceRef}' is not a text file. Only text sources (e.g. txt, md, csv, json, html, xml, log) can be ingested.",
+            IngestOutcome.EmptySource =>
+                $"Skipped: '{sourceRef}' is empty — nothing to ingest.",
+            IngestOutcome.NoEntities =>
+                $"Ingest ran on '{sourceRef}' but extracted no entities, so no memory pages were written.",
+            _ =>
+                $"Ingested '{sourceRef}' into {result.TouchedPages.Count} memory page(s): " +
+                $"{string.Join(", ", result.TouchedPages)}. The content is now available via recall.",
+        };
     }
 
     [Description("Compile a raw vault source into the memory wiki (one topic page per entity)")]
     private static string IngestSchema(
         [Description("Vault-relative path of the source to ingest, e.g. 'sources/q2-report.txt'")] string source_ref) => "";
+
+    // Model-facing lenience: the files tools address the same file as 'Vault/sources/<name>', so
+    // accept that spelling (any casing) plus stray leading slashes / backslashes, and canonicalize
+    // to the vault-relative form IngestService expects.
+    private static string NormalizeSourceRef(string sourceRef)
+    {
+        var normalized = sourceRef.Trim().Replace('\\', '/').TrimStart('/');
+        if (normalized.StartsWith("vault/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["vault/".Length..];
+        }
+        return normalized;
+    }
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {

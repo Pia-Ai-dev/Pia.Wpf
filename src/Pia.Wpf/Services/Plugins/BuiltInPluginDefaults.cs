@@ -17,10 +17,11 @@ public static class BuiltInPluginDefaults
     // or treated as an unknown server plugin.
     public static readonly Guid ResearchHistoryPluginId = new("10000000-0000-0000-0000-000000000005");
     public static readonly Guid FilesPluginId = new("10000000-0000-0000-0000-000000000006");
+    public static readonly Guid IngestPluginId = new("10000000-0000-0000-0000-000000000007");
 
     public static readonly HashSet<Guid> PreloadedPluginIds = [
         MemoryPluginId, TodoPluginId, ReminderPluginId,
-        ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId];
+        ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId, IngestPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -83,6 +84,18 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"files","defaultEnabled":true,"systemPromptAddition":"You have access to a sandboxed local folder configured by the user under Settings > Assistant. Tools: list_files, read_file, search_files, write_file, delete_file. read_file returns line-numbered content as LINE|CONTENT and accepts optional offset/limit arguments to window large files (read a slice, then request the next slice if needed). search_files scans the folder for a text or regex pattern and returns matching files and lines. write_file shows the user a diff preview and requires their approval before the change is applied. Paths may be RELATIVE to that folder or absolute, but must stay inside the configured folder — the host rejects '..' traversal that escapes the folder and any absolute path that points outside it. If a tool returns an error about the folder not being configured, tell the user to set it in Settings > Assistant. When the user asks to summarize a file, call read_file first and then summarize the returned content in your reply."}""",
             UpdatedAt = new DateTime(2026, 5, 17, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [IngestPluginId] = new SyncPlugin
+        {
+            Id = IngestPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "ingest",
+            Description = "Compile raw documents from the vault's sources folder into recallable memory topic pages.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"ingest","defaultEnabled":true,"systemPromptAddition":"You can compile raw documents into recallable memory. Raw files live in the assistant vault's 'sources/' folder. Call ingest with the vault-relative path (e.g. ingest(\"sources/q2-report.txt\")) to extract the key entities from the file and write one memory topic page per entity — after that the content can be found with recall. To stage a NEW document: use the files tools to write it to 'Vault/sources/<name>' (the vault is the 'Vault' folder inside the assistant files folder), then call ingest(\"sources/<name>\"). Re-ingesting the same source does not create duplicates. Only text files are supported (e.g. txt, md, csv, json, html, xml, log)."}""",
+            UpdatedAt = new DateTime(2026, 7, 6, 0, 0, 0, DateTimeKind.Utc)
         }
     };
 }

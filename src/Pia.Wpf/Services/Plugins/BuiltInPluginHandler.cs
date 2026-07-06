@@ -181,6 +181,23 @@ public class BuiltInPluginHandler : IPluginToolHandler
             isAvailable: () => handler.IsAvailable);
     }
 
+    /// <summary>
+    /// Factory: creates adapter wrapping IIngestToolHandler. Ingest runs inline (no pending-action
+    /// confirmation card): the handler returns a plain result, so handleCall adapts it to a
+    /// (result, no-pending) tuple and executePending is unreachable.
+    /// </summary>
+    public static BuiltInPluginHandler FromIngestHandler(
+        IIngestToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) => (await handler.HandleToolCallAsync(toolCall, ct), (PluginToolCall?)null),
+            _ => throw new InvalidOperationException("The ingest plugin has no pending actions."),
+            GetSystemPromptFromConfig(config.ConfigJson));
+    }
+
     private static string? GetSystemPromptFromConfig(string configJson)
     {
         try

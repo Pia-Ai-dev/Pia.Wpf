@@ -1057,6 +1057,10 @@ public class MemoryService : IMemoryService
         var doc = await _vaultStore.ReadAsync(filePath);
         if (doc is null) return null;
 
+        // Synthetic preamble chunk (VaultIndexer): the "section" is the document preamble, not a
+        // real ## slug — read it back directly, else the hit would be dropped.
+        if (slug == VaultSlug.PreambleSlug) return ToSnippet(doc.Preamble);
+
         VaultSection? section = null;
         foreach (var candidate in doc.Sections)
         {
@@ -1069,10 +1073,15 @@ public class MemoryService : IMemoryService
 
         if (section is null) return null;
 
-        var body = section.Body.Trim();
-        if (body.Length == 0) return null;
+        return ToSnippet(section.Body);
+    }
 
-        return body.Length > 200 ? body[..200] : body;
+    // Trim, drop when empty, and cap at the snippet length shared by every recall hit.
+    private static string? ToSnippet(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0) return null;
+        return trimmed.Length > 200 ? trimmed[..200] : trimmed;
     }
 
     /// <summary>

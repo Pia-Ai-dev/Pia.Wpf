@@ -19,6 +19,7 @@ public class PluginService : IPluginService
     private readonly IReminderToolHandler _reminderToolHandler;
     private readonly IScheduledJobToolHandler _scheduledJobToolHandler;
     private readonly IFilesToolHandler _filesToolHandler;
+    private readonly IIngestToolHandler _ingestToolHandler;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
@@ -44,6 +45,7 @@ public class PluginService : IPluginService
         IReminderToolHandler reminderToolHandler,
         IScheduledJobToolHandler scheduledJobToolHandler,
         IFilesToolHandler filesToolHandler,
+        IIngestToolHandler ingestToolHandler,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
@@ -54,6 +56,7 @@ public class PluginService : IPluginService
         _reminderToolHandler = reminderToolHandler;
         _scheduledJobToolHandler = scheduledJobToolHandler;
         _filesToolHandler = filesToolHandler;
+        _ingestToolHandler = ingestToolHandler;
         _settingsService = settingsService;
         _logger = logger;
         _sqliteContext = sqliteContext;
@@ -80,6 +83,7 @@ public class PluginService : IPluginService
                 "reminder" => BuiltInPluginHandler.FromReminderHandler(_reminderToolHandler, config),
                 "scheduled-research" => BuiltInPluginHandler.FromScheduledJobHandler(_scheduledJobToolHandler, config),
                 "files" => BuiltInPluginHandler.FromFilesHandler(_filesToolHandler, config),
+                "ingest" => BuiltInPluginHandler.FromIngestHandler(_ingestToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 
