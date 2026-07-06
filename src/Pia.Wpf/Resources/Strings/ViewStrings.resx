@@ -288,6 +288,8 @@
   <data name="Memory_Meta_NoRelated" xml:space="preserve"><value>No related memories</value></data>
   <data name="Memory_EmptyInspector_Title" xml:space="preserve"><value>Select a memory</value></data>
   <data name="Memory_EmptyInspector_Hint" xml:space="preserve"><value>Pick a memory from the list to see its details, value and lifecycle.</value></data>
+  <data name="Memory_VaultOverview_Title" xml:space="preserve"><value>Vault at a glance</value></data>
+  <data name="Memory_VaultOverview_Subtitle" xml:space="preserve"><value>Composition by category</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>How memory works</value></data>
   <data name="Memory_Help_Title" xml:space="preserve"><value>How Pia's memory works</value></data>
   <data name="Memory_Help_What" xml:space="preserve"><value>While you chat, Pia automatically remembers useful things — your preferences, people and projects you mention, or important dates.</value></data>

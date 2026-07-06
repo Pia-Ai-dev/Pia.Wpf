@@ -56,6 +56,9 @@
       <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushBg" Kind="Background" />
       <converters:MemoryTypeToBrushConverter x:Key="MemoryTypeToBrushFg" Kind="Foreground" />
+      <converters:VaultCategoryColorConverter x:Key="VaultCategoryBrushBg" Kind="Background" />
+      <converters:VaultCategoryColorConverter x:Key="VaultCategoryBrushFg" Kind="Foreground" />
+      <converters:FractionToWidthConverter x:Key="FractionToWidthConverter" />
       <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushBg" Kind="Background" />
       <converters:ReminderStatusToBrushConverter x:Key="ReminderStatusToBrushFg" Kind="Foreground" />
       <converters:ReminderStatusToLabelConverter x:Key="ReminderStatusToLabelConverter" />

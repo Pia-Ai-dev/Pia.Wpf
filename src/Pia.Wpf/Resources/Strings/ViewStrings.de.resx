@@ -288,6 +288,8 @@
   <data name="Memory_Meta_NoRelated" xml:space="preserve"><value>Keine verknüpften Erinnerungen</value></data>
   <data name="Memory_EmptyInspector_Title" xml:space="preserve"><value>Erinnerung auswählen</value></data>
   <data name="Memory_EmptyInspector_Hint" xml:space="preserve"><value>Wähle eine Erinnerung aus der Liste, um Details, Wert und Lebenszyklus zu sehen.</value></data>
+  <data name="Memory_VaultOverview_Title" xml:space="preserve"><value>Der Speicher auf einen Blick</value></data>
+  <data name="Memory_VaultOverview_Subtitle" xml:space="preserve"><value>Zusammensetzung nach Kategorie</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>So funktioniert das Gedächtnis</value></data>
   <data name="Memory_Help_Title" xml:space="preserve"><value>So funktioniert Pias Gedächtnis</value></data>
   <data name="Memory_Help_What" xml:space="preserve"><value>Während du chattest, merkt sich Pia automatisch nützliche Dinge — deine Vorlieben, Personen und Projekte, die du erwähnst, oder wichtige Termine.</value></data>

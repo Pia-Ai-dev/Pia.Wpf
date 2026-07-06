@@ -288,6 +288,8 @@
   <data name="Memory_Meta_NoRelated" xml:space="preserve"><value>Aucune mémoire associée</value></data>
   <data name="Memory_EmptyInspector_Title" xml:space="preserve"><value>Sélectionner une mémoire</value></data>
   <data name="Memory_EmptyInspector_Hint" xml:space="preserve"><value>Choisissez une mémoire dans la liste pour voir ses détails, sa valeur et son cycle de vie.</value></data>
+  <data name="Memory_VaultOverview_Title" xml:space="preserve"><value>Aperçu du coffre</value></data>
+  <data name="Memory_VaultOverview_Subtitle" xml:space="preserve"><value>Composition par catégorie</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>Comment fonctionne la mémoire</value></data>
   <data name="Memory_Help_Title" xml:space="preserve"><value>Comment fonctionne la mémoire de Pia</value></data>
   <data name="Memory_Help_What" xml:space="preserve"><value>Pendant que vous discutez, Pia retient automatiquement des informations utiles — vos préférences, les personnes et projets que vous mentionnez, ou des dates importantes.</value></data>
