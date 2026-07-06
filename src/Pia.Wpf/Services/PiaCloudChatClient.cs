@@ -130,6 +130,16 @@ public sealed class PiaCloudChatClient : IChatClient
                 };
             }
 
+            // Neutral guardrail marker rides its own choiceless chunk (server emits it first).
+            if (GuardrailMarker.IsProtected(json))
+            {
+                yield return new ChatResponseUpdate
+                {
+                    Role = ChatRole.Assistant,
+                    AdditionalProperties = new AdditionalPropertiesDictionary { ["guardrail_protected"] = true }
+                };
+            }
+
             var choices = json?["choices"]?.AsArray();
             if (choices is null || choices.Count == 0) continue;
             var choice = choices[0];
@@ -514,12 +524,19 @@ public sealed class PiaCloudChatClient : IChatClient
             _ => null
         };
 
-        return new ChatResponse([chatMessage])
+        var response = new ChatResponse([chatMessage])
         {
             ModelId = model,
             FinishReason = chatFinishReason,
             Usage = TryParseUsage(json["usage"])
         };
+        // Neutral guardrail marker: the answer was routed to the protected model. No detail beyond a flag.
+        if (GuardrailMarker.IsProtected(json))
+        {
+            response.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            response.AdditionalProperties["guardrail_protected"] = true;
+        }
+        return response;
     }
 
     private static ChatMessage ParseMessageObject(JsonObject message)
