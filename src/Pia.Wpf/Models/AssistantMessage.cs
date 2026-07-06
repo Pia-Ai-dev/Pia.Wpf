@@ -53,6 +53,11 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private AnswerStats? _stats;
 
+    /// <summary>True when the server routed this answer to the protected/private model (guardrail
+    /// HIT/ERROR). Drives the neutral shield indicator. In-memory only — not persisted (v1).</summary>
+    [ObservableProperty]
+    private bool _isProtectedRoute;
+
     [ObservableProperty]
     private PersonaAttribution? _persona;
 
