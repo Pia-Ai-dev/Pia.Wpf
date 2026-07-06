@@ -131,6 +131,7 @@ public class AiClientService : IAiClientService
         long aggregatedInput = 0;
         long aggregatedOutput = 0;
         bool hasUsage = false;
+        bool protectedRoute = false;
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -253,6 +254,8 @@ public class AiClientService : IAiClientService
                 }
 
                 response = updates.ToChatResponse();
+                if (updates.Any(u => u.AdditionalProperties is { } ap && ap.ContainsKey("guardrail_protected")))
+                    protectedRoute = true;
                 _logger.LogDebug("Round {Round} streaming done: {MsgCount} messages, textLength={TextLen}, finishReason={FinishReason}",
                     round + 1, response.Messages.Count, response.Text?.Length ?? 0, response.FinishReason);
             }
@@ -299,6 +302,9 @@ public class AiClientService : IAiClientService
                     yield return reasoning;
                 }
             }
+
+            if (response.AdditionalProperties is { } respProps && respProps.ContainsKey("guardrail_protected"))
+                protectedRoute = true;
 
             if (response.Usage is { } roundUsage)
             {
@@ -373,12 +379,12 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
-            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput);
+            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute);
             yield break;
         }
 
         _logger.LogWarning("Tool loop exhausted max rounds ({MaxRounds}) without final response", maxToolRounds);
-        yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput);
+        yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute);
     }
 
     public async Task<ChatResponse> GetChatResponseAsync(
@@ -814,7 +820,7 @@ public class AiClientService : IAiClientService
         }
     }
 
-    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput)
+    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput, bool protectedRoute)
     {
         UsageDetails? usage = null;
         if (hasUsage)
@@ -836,7 +842,7 @@ public class AiClientService : IAiClientService
         var modelLabel = !string.IsNullOrWhiteSpace(provider.ModelName)
             ? provider.ModelName
             : provider.Name;
-        return new Finished(usage, modelLabel);
+        return new Finished(usage, modelLabel, protectedRoute);
     }
 
     /// <summary>
