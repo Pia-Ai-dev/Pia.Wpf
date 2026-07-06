@@ -128,6 +128,103 @@ public class MemoryViewModelTests
     }
 
     [Fact]
+    public async Task LoadMemories_builds_full_vault_composition_in_canonical_order()
+    {
+        var items = new[]
+        {
+            Item("memory/notes/z.md", "memory/notes/z.md", "note", "Zebra note"),
+            Item("memory/notes/a.md", "memory/notes/a.md", "note", "Apple note"),
+            Item("memory/contacts.md#John", "memory/contacts.md", "contact_list", "John"),
+            Item("memory/profile.md#Coffee", "memory/profile.md", "personal_profile", "Coffee"),
+            // A foreign-typed record the canonical grouping drops: it must be excluded from BOTH the
+            // composition and the header total, so the bar and header agree.
+            Item("memory/misc.md#Junk", "memory/misc.md", "random", "Junk"),
+        };
+        var (vm, _, _) = Create(items, bytes: 200);
+
+        await vm.OnNavigatedToAsync(null);
+
+        // Segments follow the §8 CanonicalGroups order (profile, contacts, ..., notes); zero-count types
+        // are absent and the foreign "random" type never appears.
+        Assert.Equal(
+            new[] { "personal_profile", "contact_list", "note" },
+            vm.VaultComposition.Select(s => s.Type).ToArray());
+        Assert.Equal(
+            new[] { "Personal Profile", "Contacts", "Notes" },
+            vm.VaultComposition.Select(s => s.DisplayName).ToArray());
+        Assert.Equal(new[] { 1, 1, 2 }, vm.VaultComposition.Select(s => s.Count).ToArray());
+
+        // Bar and header agree by construction, and both exclude the foreign-typed record.
+        Assert.Equal(vm.TotalObjectCount, vm.VaultComposition.Sum(s => s.Count));
+        Assert.Equal(4, vm.TotalObjectCount);
+
+        // Fractions are count / totalDisplayable and sum to 1.0.
+        Assert.Equal(1.0, vm.VaultComposition.Sum(s => s.Fraction), 9);
+        Assert.Equal(2 / 4.0, vm.VaultComposition.Single(s => s.Type == "note").Fraction, 9);
+
+        Assert.True(vm.IsVaultOverviewVisible);
+        Assert.False(vm.IsInspectorPlaceholderVisible);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Empty_vault_shows_placeholder_not_overview()
+    {
+        var (vm, _, _) = Create([], bytes: 0);
+
+        await vm.OnNavigatedToAsync(null);
+
+        Assert.Empty(vm.VaultComposition);
+        Assert.False(vm.IsVaultOverviewVisible);
+        Assert.True(vm.IsInspectorPlaceholderVisible);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Selecting_a_memory_hides_the_overview_and_raises_change()
+    {
+        var item = Item("memory/notes/a.md", "memory/notes/a.md", "note", "Apple note");
+        var (vm, _, _) = Create([item], bytes: 50);
+
+        await vm.OnNavigatedToAsync(null);
+        Assert.True(vm.IsVaultOverviewVisible);
+        Assert.False(vm.IsInspectorPlaceholderVisible);
+
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.SelectedMemory = item;
+
+        Assert.False(vm.IsVaultOverviewVisible);
+        Assert.Contains(nameof(MemoryViewModel.IsVaultOverviewVisible), raised);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Composition_reflects_full_snapshot_during_search()
+    {
+        // Two notes in the vault, but search recalls only one. The composition must still reflect the
+        // FULL snapshot (both notes) rather than collapsing to the single filtered hit.
+        var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "Apple note", body: "apple");
+        var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "Banana note", body: "banana");
+        var (vm, memory, _) = Create([a, b], bytes: 100);
+        memory.RecallAsync("apple", Arg.Any<int>())
+            .Returns([new RecallHit("memory/notes/a.md", "", "apple", 0.9f)]);
+
+        vm.SearchQuery = "apple";
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        // Grouped list is filtered to the one hit, but the composition sees the whole vault.
+        Assert.Equal(2, vm.VaultComposition.Single(s => s.Type == "note").Count);
+        Assert.Equal(2, vm.TotalObjectCount);
+
+        vm.Dispose();
+    }
+
+    [Fact]
     public async Task Search_does_not_crash_on_duplicate_headings()
     {
         // A hand-edited file can carry two identical ## headings -> two items with the SAME reference.

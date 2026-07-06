@@ -7,6 +7,7 @@ using Pia.Models.Vault;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
@@ -33,6 +34,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private ObservableCollection<MemoryGroupViewModel> _memoryGroups = new();
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsVaultOverviewVisible))]
+    [NotifyPropertyChangedFor(nameof(IsInspectorPlaceholderVisible))]
     private VaultMemoryItem? _selectedMemory;
 
     [ObservableProperty]
@@ -42,7 +45,14 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private bool _isLoading;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsVaultOverviewVisible))]
+    [NotifyPropertyChangedFor(nameof(IsInspectorPlaceholderVisible))]
     private int _totalObjectCount;
+
+    // Full-vault composition by canonical category — rebuilt each load from the UNFILTERED snapshot so
+    // the chart stays stable during search (MemoryGroups is filtered to recall hits mid-search).
+    [ObservableProperty]
+    private ObservableCollection<VaultCategorySegment> _vaultComposition = new();
 
     [ObservableProperty]
     private string _storageSizeText = "0 B";
@@ -67,6 +77,12 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
 
     [ObservableProperty]
     private bool _isHelpVisible;
+
+    // Right-pane state machine: overview when nothing is selected and the vault has content; the plain
+    // "select a memory" placeholder only when the vault is genuinely empty. Both notify when either
+    // SelectedMemory or TotalObjectCount changes (see [NotifyPropertyChangedFor] above).
+    public bool IsVaultOverviewVisible => SelectedMemory is null && TotalObjectCount > 0;
+    public bool IsInspectorPlaceholderVisible => SelectedMemory is null && TotalObjectCount == 0;
 
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> DeleteMemoryCommand { get; }
@@ -176,6 +192,10 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             // search filter — so it matches what the unfiltered grouped list shows (no silent divergence).
             TotalObjectCount = CountDisplayable(snapshot.Items);
             StorageSizeText = FormatBytes(snapshot.Bytes);
+
+            // Composition is computed from the UNFILTERED snapshot (not the search-filtered `items`) so the
+            // overview bar always agrees with the header total, even mid-search.
+            BuildComposition(snapshot.Items);
         }
         catch (Exception ex)
         {
@@ -262,6 +282,35 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         return groups;
     }
 
+    // Composition-by-category for the Vault Overview: one segment per canonical type present, in the §8
+    // CanonicalGroups order, with Fraction = count / totalDisplayable. `total` is the sum over displayable
+    // types, i.e. identical to CountDisplayable, so the bar and the header total agree by construction.
+    private void BuildComposition(IReadOnlyList<VaultMemoryItem> items)
+    {
+        var byType = items
+            .Where(i => DisplayableTypes.Contains(i.Type))
+            .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+        var total = byType.Values.Sum();
+
+        VaultComposition.Clear();
+        if (total == 0)
+        {
+            return; // Divide-by-zero guard: an empty (or all-foreign-typed) vault emits no segments.
+        }
+
+        foreach (var (type, display) in VaultIndexService.CanonicalGroups)
+        {
+            if (!byType.TryGetValue(type, out var count) || count == 0)
+            {
+                continue;
+            }
+
+            VaultComposition.Add(new VaultCategorySegment(type, display, count, count / (double)total));
+        }
+    }
+
     private async Task ExecuteDeleteMemory(VaultMemoryItem? memory)
     {
         if (memory is null) return;
@@ -299,6 +348,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             var snapshot = await _memoryService.ListMemoriesAsync();
             TotalObjectCount = CountDisplayable(snapshot.Items);
             StorageSizeText = FormatBytes(snapshot.Bytes);
+            BuildComposition(snapshot.Items);
 
             _snackbarService.Show(_localizationService["Msg_Memory_Deleted"], _localizationService.Format("Msg_Memory_MemoryDeleted", memory.Title),
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
