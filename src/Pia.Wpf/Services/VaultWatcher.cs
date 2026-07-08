@@ -122,7 +122,11 @@ public sealed class VaultWatcher : IDisposable
         _pending[relativePath] = timer;
     }
 
-    private async void Fire(string relativePath, Func<string, Task> action)
+    // Timer callbacks need a void entry point; the async body is fire-and-forget but fully
+    // guarded, so nothing can escape (async void would rethrow onto the ThreadPool and crash).
+    private void Fire(string relativePath, Func<string, Task> action) => _ = FireAsync(relativePath, action);
+
+    private async Task FireAsync(string relativePath, Func<string, Task> action)
     {
         if (_pending.TryRemove(relativePath, out var timer))
         {

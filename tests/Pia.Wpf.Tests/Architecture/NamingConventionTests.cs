@@ -45,6 +45,9 @@ public class NamingConventionTests
             // ClusterResult is a result-DTO record from SpeakerClusterer (assignments + cut distance),
             // not a service — same category as ChromiumDownloadProgress / BrowserLaunchSpec above.
             "ClusterResult",
+            // IngestStateEntry is the row-DTO record of IngestStateStore (hash + outcome + touched
+            // pages), not a service — same category as ClusterResult above.
+            "IngestStateEntry",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)

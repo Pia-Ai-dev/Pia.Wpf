@@ -29,6 +29,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private readonly IClipboardService _clipboardService;
     private readonly IVaultSourcesService _vaultSourcesService;
     private readonly IIngestScheduler _ingestScheduler;
+    private readonly SynchronizationContext? _uiContext;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
 
@@ -151,13 +152,26 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             System.IO.Path.Combine(_memoryService.VaultRoot, "sources")));
 
         PropertyChanged += OnPropertyChanged;
+        // Captured at construction (the navigation service builds VMs on the UI thread) so the
+        // ingest-completed refresh can marshal without referencing System.Windows — ViewModels
+        // must not depend on the Dispatcher (see DependencyInjectionTests).
+        _uiContext = SynchronizationContext.Current;
         _ingestScheduler.IngestCompleted += OnIngestCompleted;
     }
 
     // The scheduler raises on background threads; the VM is scoped while the scheduler is a
     // singleton, so Dispose MUST unsubscribe or this event pins the VM for the app lifetime.
-    private void OnIngestCompleted(object? sender, EventArgs e) =>
-        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => _ = LoadSourcesAsync());
+    private void OnIngestCompleted(object? sender, EventArgs e)
+    {
+        if (_uiContext is not null)
+        {
+            _uiContext.Post(_ => _ = LoadSourcesAsync(), null);
+        }
+        else
+        {
+            _ = LoadSourcesAsync();
+        }
+    }
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)
     {

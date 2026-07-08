@@ -419,7 +419,11 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
         _pending[sourceRef] = timer;
     }
 
-    private async void Fire(string sourceRef)
+    // Timer callbacks need a void entry point; the async body is fire-and-forget but fully
+    // guarded, so nothing can escape (async void would rethrow onto the ThreadPool and crash).
+    private void Fire(string sourceRef) => _ = FireAsync(sourceRef);
+
+    private async Task FireAsync(string sourceRef)
     {
         if (_pending.TryRemove(sourceRef, out var timer))
         {
