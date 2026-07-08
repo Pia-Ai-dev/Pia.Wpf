@@ -40,7 +40,8 @@ public class MemoryViewModelTests
             Substitute.For<global::Wpf.Ui.ISnackbarService>(),
             localization,
             Substitute.For<IClipboardService>(),
-            vaultSources);
+            vaultSources,
+            Substitute.For<IIngestScheduler>());
         return (vm, memory, dialog);
     }
 

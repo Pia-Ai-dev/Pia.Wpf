@@ -68,7 +68,20 @@ public class IngestServiceTests : IDisposable
         => new(extractor, _store, _index, _log, _embeddings, NullLogger<IngestService>.Instance);
 
     private IngestToolHandler BuildToolHandler()
-        => new(BuildIngest(new StubExtractor()), NullLogger<IngestToolHandler>.Instance);
+        => new(new PassthroughScheduler(BuildIngest(new StubExtractor())),
+            NullLogger<IngestToolHandler>.Instance);
+
+    /// <summary>The tool handler routes through the scheduler; here it just forwards inline.</summary>
+    private sealed class PassthroughScheduler(IIngestService inner) : IIngestScheduler
+    {
+        public event EventHandler? IngestCompleted { add { } remove { } }
+
+        public Task<IngestResult> RunAsync(string sourceRef, CancellationToken ct = default)
+            => inner.IngestAsync(sourceRef, DateOnly.FromDateTime(DateTime.UtcNow), ct);
+
+        public Task RemoveAsync(string sourceRef, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
 
     // Two fixed entities — no API key required.
     private sealed class StubExtractor : IIngestExtractor

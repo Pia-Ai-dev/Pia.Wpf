@@ -10,18 +10,19 @@ namespace Pia.Services;
 /// <summary>
 /// Assistant tool surface for the ingest pipeline (Task 7.1). Exposes a single <c>ingest(source_ref)</c>
 /// tool that compiles a RAW source under <c>sources/</c> into <c>memory/topics/</c> wiki pages by
-/// dispatching to <see cref="IIngestService.IngestAsync"/>. Ingest runs inline — there is no
+/// dispatching to <see cref="IIngestScheduler.RunAsync"/> — the same serial queue the auto-ingest
+/// watcher uses, so a manual run can never race an automatic one. Ingest runs inline — there is no
 /// pending-action / confirmation card — so <see cref="HandleToolCallAsync"/> performs the work and
 /// returns a human-readable result string.
 /// </summary>
 public class IngestToolHandler : IIngestToolHandler
 {
-    private readonly IIngestService _ingestService;
+    private readonly IIngestScheduler _scheduler;
     private readonly ILogger<IngestToolHandler> _logger;
 
-    public IngestToolHandler(IIngestService ingestService, ILogger<IngestToolHandler> logger)
+    public IngestToolHandler(IIngestScheduler scheduler, ILogger<IngestToolHandler> logger)
     {
-        _ingestService = ingestService;
+        _scheduler = scheduler;
         _logger = logger;
     }
 
@@ -57,8 +58,7 @@ public class IngestToolHandler : IIngestToolHandler
 
         sourceRef = NormalizeSourceRef(sourceRef);
 
-        var result = await _ingestService.IngestAsync(
-            sourceRef, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        var result = await _scheduler.RunAsync(sourceRef, cancellationToken);
         _logger.SensitiveDebug("Ingest tool compiled {Source} into {Count} page(s)",
             result.SourceRef, result.TouchedPages.Count);
 

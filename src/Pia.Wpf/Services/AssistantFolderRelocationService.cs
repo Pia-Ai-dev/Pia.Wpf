@@ -8,6 +8,7 @@ using Pia.Infrastructure.Vault;    // VaultPathProvider, IVaultWriteGate, SafeDi
 using Pia.Logging;
 using Pia.Models;                  // FolderMoveProgress
 using Pia.Services.Interfaces;
+using Pia.Services.Wiki;         // AutoIngestService
 
 namespace Pia.Services;
 
@@ -21,18 +22,20 @@ public sealed class AssistantFolderRelocationService : IAssistantFolderRelocatio
     private readonly ISettingsService _settings;
     private readonly VaultPathProvider _paths;
     private readonly VaultWatcher _watcher;
+    private readonly AutoIngestService _autoIngest;
     private readonly IVaultIndexer _indexer;
     private readonly IVaultWriteGate _gate;
     private readonly ILogger<AssistantFolderRelocationService> _logger;
 
     public AssistantFolderRelocationService(
         ISettingsService settings, VaultPathProvider paths, VaultWatcher watcher,
-        IVaultIndexer indexer, IVaultWriteGate gate,
+        AutoIngestService autoIngest, IVaultIndexer indexer, IVaultWriteGate gate,
         ILogger<AssistantFolderRelocationService> logger)
     {
         _settings = settings;
         _paths = paths;
         _watcher = watcher;
+        _autoIngest = autoIngest;
         _indexer = indexer;
         _gate = gate;
         _logger = logger;
@@ -79,6 +82,7 @@ public sealed class AssistantFolderRelocationService : IAssistantFolderRelocatio
         try
         {
             _watcher.Stop(); // release the old-root directory handle before any delete
+            _autoIngest.Stop(); // its sources/ FileSystemWatcher holds a handle under the old root too
 
             DirectoryMoveResult move = new(DirectoryMoveOutcome.Success);
             if (!string.IsNullOrWhiteSpace(oldFolder) && Directory.Exists(oldFolder))
@@ -88,11 +92,13 @@ public sealed class AssistantFolderRelocationService : IAssistantFolderRelocatio
             if (move.Outcome == DirectoryMoveOutcome.VerifyFailed)
             {
                 _watcher.Restart(_paths.VaultRoot); // stay on old vault
+                await _autoIngest.RestartAsync(_paths.VaultRoot).ConfigureAwait(false);
                 return new RelocationResult(RelocationOutcome.VerifyFailed, move.Error);
             }
             if (move.Outcome == DirectoryMoveOutcome.CopyFailed)
             {
                 _watcher.Restart(_paths.VaultRoot);
+                await _autoIngest.RestartAsync(_paths.VaultRoot).ConfigureAwait(false);
                 return new RelocationResult(RelocationOutcome.CopyFailed, move.Error);
             }
 
@@ -100,6 +106,7 @@ public sealed class AssistantFolderRelocationService : IAssistantFolderRelocatio
             var newVault = AssistantWorkspace.VaultRootFor(newFull);
             _paths.SetRoot(newVault);
             _watcher.Restart(newVault);
+            await _autoIngest.RestartAsync(newVault).ConfigureAwait(false); // restart order mirrors boot: recall watcher first
             try { await _indexer.RebuildAllAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Reindex after relocation failed; will rebuild next start"); }
         }

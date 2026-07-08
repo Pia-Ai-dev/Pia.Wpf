@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Wiki;
 using Xunit;
 
 namespace Pia.Tests.Vault;
@@ -24,6 +26,8 @@ public class AssistantFolderRelocationServiceTests : IDisposable
     private readonly IVaultIndexer _indexer = Substitute.For<IVaultIndexer>();
     private readonly VaultPathProvider _paths;
     private readonly VaultWatcher _watcher;
+    private readonly RecordingIngestService _ingest = new();
+    private readonly AutoIngestService _autoIngest;
     private readonly AssistantFolderRelocationService _svc;
 
     public AssistantFolderRelocationServiceTests()
@@ -41,15 +45,54 @@ public class AssistantFolderRelocationServiceTests : IDisposable
 
         _paths = new VaultPathProvider(AssistantWorkspace.VaultRootFor(_old));
         _watcher = new VaultWatcher(_indexer, _paths, NullLogger<VaultWatcher>.Instance);
+
+        // AutoIngestService is sealed/concrete, so a REAL instance over a temp-db state store and a
+        // recording ingest stub — the history.db lives at _baseDir root so the move never touches it.
+        var providers = Substitute.For<IProviderService>();
+        providers.GetDefaultProviderAsync().Returns(
+            new AiProvider { Name = "stub", Endpoint = "http://localhost" });
+        _autoIngest = new AutoIngestService(
+            _ingest,
+            new IngestStateStore($"Data Source={Path.Combine(_baseDir, "history.db")}"),
+            new VaultStore(_paths.VaultRoot, new MarkdownVaultParser()),
+            providers,
+            _settingsService,
+            _paths,
+            NullLogger<AutoIngestService>.Instance);
+
         _svc = new AssistantFolderRelocationService(
-            _settingsService, _paths, _watcher, _indexer, new VaultWriteGate(),
+            _settingsService, _paths, _watcher, _autoIngest, _indexer, new VaultWriteGate(),
             NullLogger<AssistantFolderRelocationService>.Instance);
     }
 
     public void Dispose()
     {
+        _autoIngest.Dispose();
         _watcher.Dispose();
         try { Directory.Delete(_baseDir, true); } catch { }
+    }
+
+    /// <summary>Records ingest calls; always succeeds touching one topic page.</summary>
+    private sealed class RecordingIngestService : IIngestService
+    {
+        public List<string> IngestCalls { get; } = [];
+
+        public Task<IngestResult> IngestAsync(
+            string sourceRelativePath, DateOnly date, CancellationToken ct = default)
+        {
+            lock (IngestCalls)
+            {
+                IngestCalls.Add(sourceRelativePath);
+            }
+
+            return Task.FromResult(new IngestResult(
+                sourceRelativePath,
+                [$"memory/topics/{Path.GetFileNameWithoutExtension(sourceRelativePath)}.md"]));
+        }
+
+        public Task RemoveContributionsAsync(
+            string sourceRef, IReadOnlyList<string> pages, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     [Fact]
@@ -63,6 +106,14 @@ public class AssistantFolderRelocationServiceTests : IDisposable
         Assert.Equal(AssistantWorkspace.VaultRootFor(_new), _paths.VaultRoot);
         Assert.Equal(_new, _settings.AssistantFilesFolder);
         await _indexer.Received().RebuildAllAsync();
+
+        // Auto-ingest was stopped for the move and restarted on the NEW root: a file dropped into
+        // <newVault>/sources/ must reach the recording stub (3 s debounce; poll up to 15 s).
+        File.WriteAllText(
+            Path.Combine(AssistantWorkspace.VaultRootFor(_new), "sources", "dropped.txt"), "hello");
+        for (var i = 0; i < 150 && _ingest.IngestCalls.Count == 0; i++)
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+        Assert.Equal(["sources/dropped.txt"], _ingest.IngestCalls);
     }
 
     [Fact]

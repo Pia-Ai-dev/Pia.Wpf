@@ -28,6 +28,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private readonly ILocalizationService _localizationService;
     private readonly IClipboardService _clipboardService;
     private readonly IVaultSourcesService _vaultSourcesService;
+    private readonly IIngestScheduler _ingestScheduler;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
 
@@ -122,7 +123,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         IClipboardService clipboardService,
-        IVaultSourcesService vaultSourcesService)
+        IVaultSourcesService vaultSourcesService,
+        IIngestScheduler ingestScheduler)
     {
         _logger = logger;
         _memoryService = memoryService;
@@ -132,6 +134,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         _localizationService = localizationService;
         _clipboardService = clipboardService;
         _vaultSourcesService = vaultSourcesService;
+        _ingestScheduler = ingestScheduler;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
         DeleteMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteDeleteMemory);
@@ -148,7 +151,13 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             System.IO.Path.Combine(_memoryService.VaultRoot, "sources")));
 
         PropertyChanged += OnPropertyChanged;
+        _ingestScheduler.IngestCompleted += OnIngestCompleted;
     }
+
+    // The scheduler raises on background threads; the VM is scoped while the scheduler is a
+    // singleton, so Dispose MUST unsubscribe or this event pins the VM for the app lifetime.
+    private void OnIngestCompleted(object? sender, EventArgs e) =>
+        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => _ = LoadSourcesAsync());
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)
     {
@@ -597,6 +606,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         _debounceCts?.Cancel();
         _debounceCts?.Dispose();
         PropertyChanged -= OnPropertyChanged;
+        _ingestScheduler.IngestCompleted -= OnIngestCompleted;
 
         GC.SuppressFinalize(this);
     }

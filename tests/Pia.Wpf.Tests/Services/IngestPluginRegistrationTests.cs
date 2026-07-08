@@ -47,8 +47,8 @@ public class IngestPluginRegistrationTests
     [Fact]
     public void FromIngestHandler_ExposesIngestToolAndSystemPrompt()
     {
-        var ingestService = Substitute.For<IIngestService>();
-        var handler = new IngestToolHandler(ingestService, NullLogger<IngestToolHandler>.Instance);
+        var scheduler = Substitute.For<IIngestScheduler>();
+        var handler = new IngestToolHandler(scheduler, NullLogger<IngestToolHandler>.Instance);
 
         var adapter = BuiltInPluginHandler.FromIngestHandler(handler, IngestConfig());
 
