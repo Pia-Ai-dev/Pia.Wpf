@@ -568,8 +568,6 @@ public class MemoryService : IMemoryService
         ["topic"] = "memory/topics",
     };
 
-    private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
-
     /// <inheritdoc />
     public async Task<RememberOutcome> RememberAsync(
         string type, string subject, string content, bool createOnAmbiguous = false)
@@ -786,20 +784,7 @@ public class MemoryService : IMemoryService
     /// Build a fresh frontmatter block (spec §2). <c>id</c> is a NEW lowercase-canonical GUID (§2.1
     /// write rule); <c>created</c>/<c>updated</c> are <see cref="DateTime.UtcNow"/> in the §2.5 format.
     /// </summary>
-    private static string BuildFrontmatter(string type, string title)
-    {
-        var id = Guid.NewGuid().ToString("D").ToLowerInvariant();
-        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
-        return "---\n" +
-               "pia: managed\n" +
-               $"id: {id}\n" +
-               $"type: {type}\n" +
-               $"title: {title}\n" +
-               $"created: {now}\n" +
-               $"updated: {now}\n" +
-               "schemaVersion: 1\n" +
-               "---\n";
-    }
+    private static string BuildFrontmatter(string type, string title) => VaultFrontmatter.Build(type, title);
 
     private static string DisplayTitle(string type) => type switch
     {
@@ -822,7 +807,7 @@ public class MemoryService : IMemoryService
             return;
         }
 
-        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        var now = DateTime.UtcNow.ToString(VaultFrontmatter.TimestampFormat, CultureInfo.InvariantCulture);
         var updated = ReplaceFrontmatterLine(doc.RawText, "updated", now);
         if (updated is not null)
         {
