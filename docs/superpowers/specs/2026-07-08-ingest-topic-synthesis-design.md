@@ -100,9 +100,13 @@ For source X:
    - Contributing sources = existing page frontmatter `sources:` ∪ `{X}`.
    - Read each contributing raw source (same containment/text guards; skip missing).
    - Synthesize T's managed body from all of them.
-   - Write page = **preserved manual preamble** (text above the first managed marker, via the
-     existing `VaultSlug.PreambleSlug` convention) + regenerated managed body; frontmatter carries
-     `type` and the merged `sources:` list.
+   - Write page = **preserved manual preamble** + regenerated managed body, split by a new
+     mandatory `<!-- pia:managed -->` sentinel line (a fresh in-file convention introduced here —
+     note `VaultSlug.PreambleSlug` is unrelated: it is a recall/index *chunk* slug, not an in-file
+     boundary). The preamble is taken from the RAW page text before the sentinel, never from the
+     parser's `doc.Preamble` (which folds a heading-less body into the preamble). Frontmatter is
+     rebuilt identity-preserving (`id`/`created` reused) and carries `type: topic`, `category`, and
+     the merged `sources:` list.
 4. Upsert the categorized index entry (synthesizer's one-line summary).
 5. Append one `ingest` log line naming the source and touched pages.
 
