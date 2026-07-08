@@ -179,6 +179,18 @@ public static class Bootstrapper
             bootstrapLogger.LogWarning(ex, "Failed to start vault watcher; vault edits won't auto-index this session");
         }
 
+        // Auto-ingest starts AFTER the vault watcher: recall indexing of Pia's own page writes happens
+        // only via the live watcher, so ingest-written topic pages must land while it is running. The
+        // reconcile scan runs on the service's own background queue — startup is never blocked on LLM work.
+        try
+        {
+            await _serviceProvider.GetRequiredService<Pia.Services.Wiki.AutoIngestService>().StartAsync();
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Failed to start auto-ingest; sources won't auto-compile this session");
+        }
+
         // Initialize ViewModelLocator with root service provider (fallback for design-time)
         ViewModelLocator.Initialize(_serviceProvider);
     }
@@ -369,6 +381,10 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Wiki.VaultSchemaService>();
         services.AddSingleton<IIngestExtractor, Pia.Services.Wiki.AiIngestExtractionService>();
         services.AddSingleton<IIngestService, Pia.Services.Wiki.IngestService>();
+        services.AddSingleton(sp => new Pia.Services.Wiki.IngestStateStore(
+            sp.GetRequiredService<SqliteContext>().ConnectionString));
+        services.AddSingleton<Pia.Services.Wiki.AutoIngestService>();
+        services.AddSingleton<IIngestScheduler>(sp => sp.GetRequiredService<Pia.Services.Wiki.AutoIngestService>());
         services.AddSingleton<IVaultSourcesService, Pia.Services.Wiki.VaultSourcesService>();
         services.AddSingleton<ILintService, Pia.Services.Wiki.LintService>();
         services.AddSingleton<Pia.Services.Sync.SectionMergeEngine>();
