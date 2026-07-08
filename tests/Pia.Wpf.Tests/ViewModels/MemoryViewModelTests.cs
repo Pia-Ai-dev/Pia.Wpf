@@ -18,10 +18,18 @@ namespace Pia.Tests.ViewModels;
 public class MemoryViewModelTests
 {
     private static (MemoryViewModel Vm, IMemoryService Memory, IDialogService Dialog) Create(
-        VaultMemoryItem[] items, long bytes = 0)
+        VaultMemoryItem[] items, long bytes = 0, VaultSourceItem[]? sources = null)
     {
         var memory = Substitute.For<IMemoryService>();
         memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot(items, bytes));
+
+        var vaultSources = Substitute.For<IVaultSourcesService>();
+        vaultSources.ListSourcesAsync().Returns(sources ?? []);
+
+        var localization = Substitute.For<ILocalizationService>();
+        localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci.ArgAt<string>(0)}:{string.Join(",", ci.ArgAt<object[]>(1))}");
+        localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
 
         var dialog = Substitute.For<IDialogService>();
         var vm = new MemoryViewModel(
@@ -30,10 +38,14 @@ public class MemoryViewModelTests
             Substitute.For<IEmbeddingService>(),
             dialog,
             Substitute.For<global::Wpf.Ui.ISnackbarService>(),
-            Substitute.For<ILocalizationService>(),
-            Substitute.For<IClipboardService>());
+            localization,
+            Substitute.For<IClipboardService>(),
+            vaultSources);
         return (vm, memory, dialog);
     }
+
+    private static VaultSourceItem Source(string name, long bytes = 10, bool isText = true, int pages = 0)
+        => new($"sources/{name}", name, bytes, DateTime.MinValue, isText, pages);
 
     private static VaultMemoryItem Item(string reference, string filePath, string type, string title, string body = "body")
         => new(reference, filePath, type, title, body, null);
@@ -220,6 +232,56 @@ public class MemoryViewModelTests
         // Grouped list is filtered to the one hit, but the composition sees the whole vault.
         Assert.Equal(2, vm.VaultComposition.Single(s => s.Type == "note").Count);
         Assert.Equal(2, vm.TotalObjectCount);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task LoadMemories_builds_source_rows_with_ingest_status()
+    {
+        var sources = new[]
+        {
+            Source("alpha.txt", bytes: 100, pages: 2),
+            Source("beta.txt", bytes: 50),
+            // Bytes kept under 1 KB so the expected size strings avoid culture-dependent decimals.
+            Source("scan.pdf", bytes: 300, isText: false),
+        };
+        var (vm, _, _) = Create([], bytes: 0, sources: sources);
+
+        await vm.OnNavigatedToAsync(null);
+
+        Assert.Equal(3, vm.SourceFileCount);
+        Assert.Equal(
+            new[] { "alpha.txt", "beta.txt", "scan.pdf" },
+            vm.SourceFiles.Select(r => r.Name).ToArray());
+        Assert.Equal(new[] { true, false, false }, vm.SourceFiles.Select(r => r.IsIngested).ToArray());
+
+        // Status lines are localized in the VM: ingested rows carry the page count, raw text rows the
+        // not-ingested key, non-text rows the not-a-text-file key.
+        Assert.Equal("Memory_Sources_IngestedPages:2", vm.SourceFiles[0].StatusText);
+        Assert.Equal("Memory_Sources_NotIngested", vm.SourceFiles[1].StatusText);
+        Assert.Equal("Memory_Sources_NotText", vm.SourceFiles[2].StatusText);
+
+        Assert.Equal("100 B", vm.SourceFiles[0].SizeText);
+        // Summary aggregates count and total size of the RAW layer.
+        Assert.Equal("Memory_Sources_Summary:3,450 B", vm.SourcesSummaryText);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Sources_only_vault_shows_overview_not_placeholder()
+    {
+        var (vm, _, _) = Create([], bytes: 0, sources: [Source("alpha.txt")]);
+
+        await vm.OnNavigatedToAsync(null);
+
+        // No displayable memories, but staged sources: the overview (with its sources section) must
+        // show instead of the "select a memory" placeholder.
+        Assert.Empty(vm.VaultComposition);
+        Assert.Equal(0, vm.TotalObjectCount);
+        Assert.True(vm.IsVaultOverviewVisible);
+        Assert.False(vm.IsInspectorPlaceholderVisible);
 
         vm.Dispose();
     }

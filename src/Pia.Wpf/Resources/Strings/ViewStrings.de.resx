@@ -290,6 +290,13 @@
   <data name="Memory_EmptyInspector_Hint" xml:space="preserve"><value>Wähle eine Erinnerung aus der Liste, um Details, Wert und Lebenszyklus zu sehen.</value></data>
   <data name="Memory_VaultOverview_Title" xml:space="preserve"><value>Der Speicher auf einen Blick</value></data>
   <data name="Memory_VaultOverview_Subtitle" xml:space="preserve"><value>Zusammensetzung nach Kategorie</value></data>
+  <data name="Memory_Sources_Title" xml:space="preserve"><value>Quelldokumente</value></data>
+  <data name="Memory_Sources_Summary" xml:space="preserve"><value>{0} Datei(en) · {1} im Quellenordner</value></data>
+  <data name="Memory_Sources_IngestedPages" xml:space="preserve"><value>In {0} Themenseite(n) übernommen</value></data>
+  <data name="Memory_Sources_NotIngested" xml:space="preserve"><value>Noch nicht übernommen</value></data>
+  <data name="Memory_Sources_NotText" xml:space="preserve"><value>Keine Textdatei — kann nicht übernommen werden</value></data>
+  <data name="Memory_Sources_Empty" xml:space="preserve"><value>Noch keine Quelldokumente. Lege Dateien im sources-Ordner des Speichers ab und bitte Pia, sie ins Gedächtnis zu übernehmen.</value></data>
+  <data name="Memory_Sources_OpenFolder" xml:space="preserve"><value>Quellenordner öffnen</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>So funktioniert das Gedächtnis</value></data>
   <data name="Memory_Help_Title" xml:space="preserve"><value>So funktioniert Pias Gedächtnis</value></data>
   <data name="Memory_Help_What" xml:space="preserve"><value>Während du chattest, merkt sich Pia automatisch nützliche Dinge — deine Vorlieben, Personen und Projekte, die du erwähnst, oder wichtige Termine.</value></data>

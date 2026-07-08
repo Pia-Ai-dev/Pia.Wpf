@@ -27,6 +27,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IClipboardService _clipboardService;
+    private readonly IVaultSourcesService _vaultSourcesService;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
 
@@ -54,6 +55,19 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     [ObservableProperty]
     private ObservableCollection<VaultCategorySegment> _vaultComposition = new();
 
+    // The sources/ RAW layer for the overview's "Source documents" section — display-ready rows (the
+    // status line is localized here, not in XAML) plus the count that gates the overview visibility.
+    [ObservableProperty]
+    private ObservableCollection<VaultSourceRow> _sourceFiles = new();
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsVaultOverviewVisible))]
+    [NotifyPropertyChangedFor(nameof(IsInspectorPlaceholderVisible))]
+    private int _sourceFileCount;
+
+    [ObservableProperty]
+    private string _sourcesSummaryText = string.Empty;
+
     [ObservableProperty]
     private string _storageSizeText = "0 B";
 
@@ -78,11 +92,14 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     [ObservableProperty]
     private bool _isHelpVisible;
 
-    // Right-pane state machine: overview when nothing is selected and the vault has content; the plain
-    // "select a memory" placeholder only when the vault is genuinely empty. Both notify when either
-    // SelectedMemory or TotalObjectCount changes (see [NotifyPropertyChangedFor] above).
-    public bool IsVaultOverviewVisible => SelectedMemory is null && TotalObjectCount > 0;
-    public bool IsInspectorPlaceholderVisible => SelectedMemory is null && TotalObjectCount == 0;
+    // Right-pane state machine: overview when nothing is selected and the vault has content — memories
+    // OR staged source documents (a sources-only vault still has something worth showing); the plain
+    // "select a memory" placeholder only when the vault is genuinely empty. All three inputs notify
+    // (see [NotifyPropertyChangedFor] above).
+    public bool IsVaultOverviewVisible
+        => SelectedMemory is null && (TotalObjectCount > 0 || SourceFileCount > 0);
+    public bool IsInspectorPlaceholderVisible
+        => SelectedMemory is null && TotalObjectCount == 0 && SourceFileCount == 0;
 
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> DeleteMemoryCommand { get; }
@@ -95,6 +112,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     public IAsyncRelayCommand<VaultMemoryItem> CopyMarkdownCommand { get; }
     public IRelayCommand ToggleHelpCommand { get; }
     public IRelayCommand OpenVaultFolderCommand { get; }
+    public IRelayCommand OpenSourcesFolderCommand { get; }
 
     public MemoryViewModel(
         ILogger<MemoryViewModel> logger,
@@ -103,7 +121,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         IDialogService dialogService,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
-        IClipboardService clipboardService)
+        IClipboardService clipboardService,
+        IVaultSourcesService vaultSourcesService)
     {
         _logger = logger;
         _memoryService = memoryService;
@@ -112,6 +131,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _clipboardService = clipboardService;
+        _vaultSourcesService = vaultSourcesService;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
         DeleteMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteDeleteMemory);
@@ -124,6 +144,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         CopyMarkdownCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteCopyMarkdown);
         ToggleHelpCommand = new RelayCommand(() => IsHelpVisible = !IsHelpVisible);
         OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.VaultRoot));
+        OpenSourcesFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(
+            System.IO.Path.Combine(_memoryService.VaultRoot, "sources")));
 
         PropertyChanged += OnPropertyChanged;
     }
@@ -196,6 +218,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             // Composition is computed from the UNFILTERED snapshot (not the search-filtered `items`) so the
             // overview bar always agrees with the header total, even mid-search.
             BuildComposition(snapshot.Items);
+
+            await LoadSourcesAsync();
         }
         catch (Exception ex)
         {
@@ -310,6 +334,27 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         }
     }
 
+    // Rebuild the overview's "Source documents" rows from the sources/ RAW layer. Rows are
+    // display-ready: the ingest-status line and sizes are formatted here so XAML binds plain strings.
+    private async Task LoadSourcesAsync()
+    {
+        var sources = await _vaultSourcesService.ListSourcesAsync();
+
+        SourceFiles.Clear();
+        foreach (var source in sources)
+        {
+            var status = source.IsIngested
+                ? _localizationService.Format("Memory_Sources_IngestedPages", source.TopicPageCount)
+                : _localizationService[source.IsText ? "Memory_Sources_NotIngested" : "Memory_Sources_NotText"];
+            SourceFiles.Add(new VaultSourceRow(
+                source.Name, source.RelativePath, source.IsIngested, status, FormatBytes(source.Bytes)));
+        }
+
+        SourceFileCount = sources.Count;
+        SourcesSummaryText = _localizationService.Format(
+            "Memory_Sources_Summary", sources.Count, FormatBytes(sources.Sum(s => s.Bytes)));
+    }
+
     private async Task ExecuteDeleteMemory(VaultMemoryItem? memory)
     {
         if (memory is null) return;
@@ -348,6 +393,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             TotalObjectCount = CountDisplayable(snapshot.Items);
             StorageSizeText = FormatBytes(snapshot.Bytes);
             BuildComposition(snapshot.Items);
+
+            // Deleting a topic page removes its `sources:` provenance, so the source rows refresh too.
+            await LoadSourcesAsync();
 
             _snackbarService.Show(_localizationService["Msg_Memory_Deleted"], _localizationService.Format("Msg_Memory_MemoryDeleted", memory.Title),
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));

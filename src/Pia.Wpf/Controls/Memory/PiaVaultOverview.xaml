@@ -1,97 +1,186 @@
 <UserControl x:Class="Pia.Controls.Memory.PiaVaultOverview"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization">
   <Border Style="{StaticResource PiaCardStyle}">
-    <StackPanel VerticalAlignment="Center"
-                HorizontalAlignment="Stretch"
-                MaxWidth="560">
-      <TextBlock Text="{loc:Str Memory_VaultOverview_Title}"
-                 FontSize="14"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource TextDefaultBrush}"/>
-      <TextBlock Text="{loc:Str Memory_VaultOverview_Subtitle}"
-                 FontSize="12"
-                 Margin="0,2,0,16"
-                 Foreground="{DynamicResource TextMutedBrush}"/>
+    <!-- The sources list can outgrow the pane; the ScrollViewer sizes to content (still vertically
+         centered when small) and only then scrolls. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalAlignment="Center">
+      <StackPanel HorizontalAlignment="Stretch"
+                  MaxWidth="560">
+        <TextBlock Text="{loc:Str Memory_VaultOverview_Title}"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
 
-      <!-- Proportional segmented bar. Each segment's width = Fraction * host width via the multi-value
-           converter, so it fills the available width exactly (fractions sum to 1.0) and is resize-safe.
-           Rounded corners come from a SizeChanged-driven clip (see code-behind). -->
-      <Grid x:Name="BarHost"
-            Height="16"
-            HorizontalAlignment="Stretch"
-            UseLayoutRounding="False"
-            SnapsToDevicePixels="False"
-            SizeChanged="BarHost_SizeChanged">
-        <ItemsControl ItemsSource="{Binding VaultComposition}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <StackPanel Orientation="Horizontal"/>
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
+        <!-- Composition by category — hidden entirely for a sources-only vault (no displayable
+             memories), where an empty bar strip would just read as a rendering bug. -->
+        <StackPanel Visibility="{Binding VaultComposition.Count, Converter={StaticResource IntToVisibilityConverter}}">
+          <TextBlock Text="{loc:Str Memory_VaultOverview_Subtitle}"
+                     FontSize="12"
+                     Margin="0,2,0,16"
+                     Foreground="{DynamicResource TextMutedBrush}"/>
+
+          <!-- Proportional segmented bar. Each segment's width = Fraction * host width via the multi-value
+               converter, so it fills the available width exactly (fractions sum to 1.0) and is resize-safe.
+               Rounded corners come from a SizeChanged-driven clip (see code-behind). -->
+          <Grid x:Name="BarHost"
+                Height="16"
+                HorizontalAlignment="Stretch"
+                UseLayoutRounding="False"
+                SnapsToDevicePixels="False"
+                SizeChanged="BarHost_SizeChanged">
+            <ItemsControl ItemsSource="{Binding VaultComposition}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Rectangle Height="16"
+                             Fill="{Binding Type, Converter={StaticResource VaultCategoryBrushBg}}">
+                    <Rectangle.Width>
+                      <MultiBinding Converter="{StaticResource FractionToWidthConverter}">
+                        <Binding Path="Fraction"/>
+                        <Binding Path="ActualWidth"
+                                 RelativeSource="{RelativeSource AncestorType={x:Type ItemsControl}}"/>
+                      </MultiBinding>
+                    </Rectangle.Width>
+                  </Rectangle>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Grid>
+
+          <!-- Legend: swatch | name | count | percentage, counts/percentages right-aligned in fixed columns. -->
+          <ItemsControl ItemsSource="{Binding VaultComposition}" Margin="0,16,0,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="0,0,0,8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <Rectangle Grid.Column="0"
+                             Width="10"
+                             Height="10"
+                             RadiusX="3"
+                             RadiusY="3"
+                             Margin="0,0,10,0"
+                             VerticalAlignment="Center"
+                             Fill="{Binding Type, Converter={StaticResource VaultCategoryBrushBg}}"/>
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding DisplayName}"
+                             FontSize="13"
+                             VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource TextDefaultBrush}"/>
+                  <TextBlock Grid.Column="2"
+                             Text="{Binding Count}"
+                             FontSize="13"
+                             MinWidth="40"
+                             Margin="12,0,0,0"
+                             TextAlignment="Right"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextMutedBrush}"/>
+                  <TextBlock Grid.Column="3"
+                             Text="{Binding Fraction, StringFormat=P0}"
+                             FontSize="13"
+                             MinWidth="52"
+                             Margin="12,0,0,0"
+                             TextAlignment="Right"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextMutedBrush}"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Border Height="1"
+                  Background="{DynamicResource SurfaceMutedBrush}"
+                  Margin="0,12,0,0"/>
+        </StackPanel>
+
+        <!-- Source documents: the vault's sources/ RAW layer, each file with its ingest provenance
+             (compiled into N topic pages, from the pages' `sources:` frontmatter). -->
+        <TextBlock Text="{loc:Str Memory_Sources_Title}"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Margin="0,20,0,0"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
+        <TextBlock Text="{Binding SourcesSummaryText}"
+                   FontSize="12"
+                   Margin="0,2,0,14"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   Visibility="{Binding SourceFiles.Count, Converter={StaticResource IntToVisibilityConverter}}"/>
+
+        <TextBlock Text="{loc:Str Memory_Sources_Empty}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Margin="0,6,0,2"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   Visibility="{Binding SourceFiles.Count, Converter={StaticResource ZeroToVisibilityConverter}}"/>
+
+        <ItemsControl ItemsSource="{Binding SourceFiles}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <Rectangle Height="16"
-                         Fill="{Binding Type, Converter={StaticResource VaultCategoryBrushBg}}">
-                <Rectangle.Width>
-                  <MultiBinding Converter="{StaticResource FractionToWidthConverter}">
-                    <Binding Path="Fraction"/>
-                    <Binding Path="ActualWidth"
-                             RelativeSource="{RelativeSource AncestorType={x:Type ItemsControl}}"/>
-                  </MultiBinding>
-                </Rectangle.Width>
-              </Rectangle>
+              <Grid Margin="0,0,0,10" Background="Transparent" ToolTip="{Binding RelativePath}">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Ellipse Grid.Column="0"
+                         Width="8"
+                         Height="8"
+                         Margin="1,5,11,0"
+                         VerticalAlignment="Top">
+                  <Ellipse.Style>
+                    <Style TargetType="Ellipse">
+                      <Setter Property="Fill" Value="{DynamicResource TextSubtleBrush}"/>
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsIngested}" Value="True">
+                          <Setter Property="Fill" Value="{DynamicResource PiaSuccessBrush}"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Ellipse.Style>
+                </Ellipse>
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="{Binding Name}"
+                             FontSize="13"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource TextDefaultBrush}"/>
+                  <TextBlock Text="{Binding StatusText}"
+                             FontSize="11"
+                             Margin="0,1,0,0"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource TextMutedBrush}"/>
+                </StackPanel>
+                <TextBlock Grid.Column="2"
+                           Text="{Binding SizeText}"
+                           FontSize="12"
+                           Margin="12,0,0,0"
+                           VerticalAlignment="Top"
+                           Foreground="{DynamicResource TextMutedBrush}"/>
+              </Grid>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-      </Grid>
 
-      <!-- Legend: swatch | name | count | percentage, counts/percentages right-aligned in fixed columns. -->
-      <ItemsControl ItemsSource="{Binding VaultComposition}" Margin="0,16,0,0">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Grid Margin="0,0,0,8">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-              </Grid.ColumnDefinitions>
-              <Rectangle Grid.Column="0"
-                         Width="10"
-                         Height="10"
-                         RadiusX="3"
-                         RadiusY="3"
-                         Margin="0,0,10,0"
-                         VerticalAlignment="Center"
-                         Fill="{Binding Type, Converter={StaticResource VaultCategoryBrushBg}}"/>
-              <TextBlock Grid.Column="1"
-                         Text="{Binding DisplayName}"
-                         FontSize="13"
-                         VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis"
-                         Foreground="{DynamicResource TextDefaultBrush}"/>
-              <TextBlock Grid.Column="2"
-                         Text="{Binding Count}"
-                         FontSize="13"
-                         MinWidth="40"
-                         Margin="12,0,0,0"
-                         TextAlignment="Right"
-                         VerticalAlignment="Center"
-                         Foreground="{DynamicResource TextMutedBrush}"/>
-              <TextBlock Grid.Column="3"
-                         Text="{Binding Fraction, StringFormat=P0}"
-                         FontSize="13"
-                         MinWidth="52"
-                         Margin="12,0,0,0"
-                         TextAlignment="Right"
-                         VerticalAlignment="Center"
-                         Foreground="{DynamicResource TextMutedBrush}"/>
-            </Grid>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </StackPanel>
+        <ui:HyperlinkButton Content="{loc:Str Memory_Sources_OpenFolder}"
+                            Command="{Binding OpenSourcesFolderCommand}"
+                            FontSize="12"
+                            Padding="0"
+                            Margin="0,4,0,0"
+                            HorizontalAlignment="Left"/>
+      </StackPanel>
+    </ScrollViewer>
   </Border>
 </UserControl>
