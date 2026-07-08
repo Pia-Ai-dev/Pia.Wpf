@@ -175,14 +175,8 @@ public sealed class AiIngestExtractionService : IIngestExtractor
     private static IReadOnlyList<ExtractedEntity> ParseLines(string text)
     {
         var list = new List<ExtractedEntity>();
-        foreach (var raw in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+        foreach (var line in SplitNonEmptyLines(text))
         {
-            var line = raw.TrimStart('-', '*', ' ', '\t').Trim();
-            if (line.Length == 0)
-            {
-                continue;
-            }
-
             var colon = line.IndexOf(':');
             if (colon > 0)
             {
@@ -260,18 +254,25 @@ public sealed class AiIngestExtractionService : IIngestExtractor
     private static IReadOnlyList<ExtractedTopic> ParseTopicLines(string text)
     {
         var list = new List<ExtractedTopic>();
-        foreach (var raw in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+        foreach (var line in SplitNonEmptyLines(text))
         {
-            var line = raw.TrimStart('-', '*', ' ', '\t').Trim();
-            if (line.Length == 0)
-            {
-                continue;
-            }
-
             list.Add(new ExtractedTopic(line, "concept"));
         }
 
         return list;
+    }
+
+    // Normalizes line endings and yields trimmed, non-empty lines with leading bullet markers stripped.
+    private static IEnumerable<string> SplitNonEmptyLines(string text)
+    {
+        foreach (var raw in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+        {
+            var line = raw.TrimStart('-', '*', ' ', '\t').Trim();
+            if (line.Length > 0)
+            {
+                yield return line;
+            }
+        }
     }
 
     private static string Truncate(string content) =>
