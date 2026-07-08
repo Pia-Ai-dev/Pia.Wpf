@@ -35,6 +35,10 @@ public static class SourcesProvenance
     /// </summary>
     public static IReadOnlyList<string> ReadSourceRefs(string rawText)
     {
+        // Frontmatter written by Pia is LF, but externally-edited/synced pages may arrive CRLF —
+        // provenance drives replace/removal now, so both must parse identically.
+        rawText = rawText.Replace("\r\n", "\n");
+
         var open = rawText.IndexOf("---\n", StringComparison.Ordinal);
         if (open != 0)
         {
