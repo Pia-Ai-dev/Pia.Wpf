@@ -356,21 +356,39 @@ public sealed class IngestService : IIngestService
     private static string StripFrontmatter(string raw)
     {
         var s = raw.Replace("\r\n", "\n");
-        var open = s.IndexOf("---\n", StringComparison.Ordinal);
-        if (open != 0)
+        if (!TryFindFrontmatterBlock(s, out _, out var closeStart))
         {
             return s;
         }
 
-        var close = s.IndexOf("\n---", open + 3, StringComparison.Ordinal);
-        if (close < 0)
-        {
-            return s;
-        }
-
-        var afterClose = s[(close + 1)..]; // "---\n<body...>"
+        var afterClose = s[closeStart..]; // "---\n<body...>"
         var nl = afterClose.IndexOf('\n');
         return nl < 0 ? string.Empty : afterClose[(nl + 1)..];
+    }
+
+    // Locates the leading "---\n...\n---" frontmatter block in already LF-normalized text. On success,
+    // fmStart is the index just past the opening delimiter (the start of the keys block) and closeStart
+    // is the index of the closing delimiter line (so text[fmStart..closeStart] is the keys block and
+    // text[closeStart..] starts at "---\n<body...>"). False when there is no leading block.
+    private static bool TryFindFrontmatterBlock(string normalizedRaw, out int fmStart, out int closeStart)
+    {
+        var open = normalizedRaw.IndexOf("---\n", StringComparison.Ordinal);
+        if (open != 0)
+        {
+            fmStart = closeStart = -1;
+            return false;
+        }
+
+        var close = normalizedRaw.IndexOf("\n---", open + 3, StringComparison.Ordinal);
+        if (close < 0)
+        {
+            fmStart = closeStart = -1;
+            return false;
+        }
+
+        fmStart = open + 4;
+        closeStart = close + 1;
+        return true;
     }
 
     // ---- sources: frontmatter maintainer (best-effort YAML flow list) ----
@@ -379,20 +397,13 @@ public sealed class IngestService : IIngestService
     private static string WriteSourcesLine(string content, IReadOnlyList<string> sourceRefs)
     {
         var raw = content.Replace("\r\n", "\n");
-        var open = raw.IndexOf("---\n", StringComparison.Ordinal);
-        if (open != 0)
+        if (!TryFindFrontmatterBlock(raw, out var fmStart, out var closeStart))
         {
             return content;
         }
 
-        var close = raw.IndexOf("\n---", open + 3, StringComparison.Ordinal);
-        if (close < 0)
-        {
-            return content;
-        }
-
-        var fmBody = raw[(open + 4)..(close + 1)]; // keys block, ends with the '\n' before '---'
-        var afterFm = raw[(close + 1)..];          // starts at the closing '---' line
+        var fmBody = raw[fmStart..closeStart]; // keys block, ends with the '\n' before '---'
+        var afterFm = raw[closeStart..];       // starts at the closing '---' line
 
         var newLine = "sources: [" + string.Join(", ", sourceRefs) + "]\n";
         var existing = SourcesProvenance.FindKeyValue(fmBody, "sources:");
@@ -400,7 +411,7 @@ public sealed class IngestService : IIngestService
             ? fmBody + newLine
             : ReplaceKeyLine(fmBody, "sources:", newLine);
 
-        return raw[..(open + 4)] + newFmBody + afterFm;
+        return raw[..fmStart] + newFmBody + afterFm;
     }
 
     private Task RemoveSourceFromFrontmatterAsync(string path, string sourceRef) =>
@@ -418,21 +429,14 @@ public sealed class IngestService : IIngestService
         // Normalize CRLF up front — the whole file is rewritten LF (Pia's native form), and the index
         // math below must not straddle a '\r'.
         var raw = doc.RawText.Replace("\r\n", "\n");
-        var open = raw.IndexOf("---\n", StringComparison.Ordinal);
-        if (open != 0)
+        if (!TryFindFrontmatterBlock(raw, out var fmStart, out var closeStart))
         {
             // No leading frontmatter block — leave the file untouched.
             return;
         }
 
-        var close = raw.IndexOf("\n---", open + 3, StringComparison.Ordinal);
-        if (close < 0)
-        {
-            return;
-        }
-
-        var fmBody = raw[(open + 4)..(close + 1)]; // keys block, ends with the '\n' before '---'
-        var afterFm = raw[(close + 1)..];          // starts at the closing '---' line
+        var fmBody = raw[fmStart..closeStart]; // keys block, ends with the '\n' before '---'
+        var afterFm = raw[closeStart..];       // starts at the closing '---' line
 
         // Read the existing sources: value from the RAW frontmatter, NOT doc.Frontmatter — the parser
         // flattens a YAML flow list to its .NET type name, which would round-trip back into the file as
@@ -455,7 +459,7 @@ public sealed class IngestService : IIngestService
             : ReplaceKeyLine(fmBody, "sources:", newLine);
 
         // afterFm begins with the closing '---' delimiter; newFmBody already supplied the trailing newline.
-        var rebuilt = raw[..(open + 4)] + newFmBody + afterFm;
+        var rebuilt = raw[..fmStart] + newFmBody + afterFm;
         await _store.WriteAtomicAsync(path, rebuilt);
         _logger.SensitiveDebug("Ingest updated sources: frontmatter on page {Path}", path);
     }
