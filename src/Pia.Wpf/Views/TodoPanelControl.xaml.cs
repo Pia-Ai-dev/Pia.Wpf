@@ -17,6 +17,13 @@ public partial class TodoPanelControl : UserControl
     public TodoPanelControl()
     {
         InitializeComponent();
+
+        // Break DataContext inheritance from the hosting view (AssistantView).
+        // The real TodoViewModel is resolved from the window's scoped provider in
+        // OnLoaded; until then a null DataContext keeps the internal bindings from
+        // resolving against — and logging path errors for — the inherited VM.
+        DataContext = null;
+
         Loaded += OnLoaded;
     }
 

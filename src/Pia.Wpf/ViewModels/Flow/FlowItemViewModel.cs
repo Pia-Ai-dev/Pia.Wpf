@@ -53,6 +53,7 @@ public partial class FlowItemViewModel : ObservableObject
 
     public string Title => _item.Title;
     public string Body => _item.Body;
+    public FlowSource Source => _item.Source;
     public FlowSeverity Severity => _item.Severity;
     public DateTimeOffset CreatedAt => _item.CreatedAt;
     public bool IsRead => _item.IsRead;
