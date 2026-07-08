@@ -95,6 +95,10 @@ public class IngestServiceTests : IDisposable
                 new ExtractedEntity("Acme Corp", "- type: customer\n- since: 2024"),
                 new ExtractedEntity("John Smith", "- role: primary contact\n- company: Acme"),
             ]);
+
+        public Task<IReadOnlyList<ExtractedTopic>> DiscoverTopicsAsync(
+            string content, string charter, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ExtractedTopic>>([]);
     }
 
     // Configurable variant for re-ingest scenarios (v2 of a source with changed facts).
@@ -105,6 +109,10 @@ public class IngestServiceTests : IDisposable
 
         public Task<IReadOnlyList<ExtractedEntity>> ExtractEntitiesAsync(string content, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<ExtractedEntity>>(entities);
+
+        public Task<IReadOnlyList<ExtractedTopic>> DiscoverTopicsAsync(
+            string content, string charter, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ExtractedTopic>>([]);
     }
 
     [Fact]

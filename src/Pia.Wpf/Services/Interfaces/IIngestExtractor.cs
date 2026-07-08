@@ -9,6 +9,10 @@ namespace Pia.Services.Interfaces;
 /// </summary>
 public record ExtractedEntity(string Subject, string Facts);
 
+/// <summary>One notable topic discovered in a source: page title + a coarse category
+/// (person/organization/product/concept/regulation/technology/other) used only for index grouping.</summary>
+public record ExtractedTopic(string Subject, string Category);
+
 /// <summary>
 /// The model-backed extraction step of the ingest pipeline (Task 7.1), abstracted so ingest is testable
 /// without an API key (stub this with fixed entities in tests). The production implementation
@@ -26,4 +30,9 @@ public interface IIngestExtractor
     /// nothing is extractable (never <c>null</c>).
     /// </summary>
     Task<IReadOnlyList<ExtractedEntity>> ExtractEntitiesAsync(string content, CancellationToken ct = default);
+
+    /// <summary>Discover the notable topics in <paramref name="content"/>, grounded in
+    /// <paramref name="charter"/> (may be empty). Returns [] when nothing is notable.</summary>
+    Task<IReadOnlyList<ExtractedTopic>> DiscoverTopicsAsync(
+        string content, string charter, CancellationToken ct = default);
 }
