@@ -179,6 +179,41 @@ public static class Bootstrapper
             bootstrapLogger.LogWarning(ex, "Failed to start vault watcher; vault edits won't auto-index this session");
         }
 
+        // One-time migration to the synthesis pipeline: the on-disk topic-page format changed, and the
+        // SQLite-backed ingest state's hash gate would otherwise no-op the re-ingest (deleted pages +
+        // surviving state rows = unchanged hashes = nothing rebuilt). So wipe every topic page and clear
+        // ingest state here, AFTER the watcher is live (it de-indexes the deletions) and BEFORE auto-ingest
+        // reconcile rebuilds every source fresh. Runs once, gated by AppSettings.IngestSchemaVersion.
+        // Guarded so a migration failure never blocks startup.
+        try
+        {
+            var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
+            var settings = await settingsService.GetSettingsAsync();
+            if (settings.IngestSchemaVersion < 1)
+            {
+                var store = _serviceProvider.GetRequiredService<IVaultStore>();
+                var index = _serviceProvider.GetRequiredService<Pia.Services.Wiki.VaultIndexService>();
+                var pages = await store.EnumerateAsync("memory/topics/*.md");
+                foreach (var page in pages)
+                {
+                    var relative = page.Replace('\\', '/');
+                    await store.DeleteAsync(relative);
+                    await index.RemoveEntryAsync(relative);
+                }
+
+                await _serviceProvider.GetRequiredService<Pia.Services.Wiki.IngestStateStore>().ClearAllAsync();
+                settings.IngestSchemaVersion = 1;
+                await settingsService.SaveSettingsAsync(settings);
+                bootstrapLogger.LogInformation(
+                    "Ingest synthesis migration: cleared {Pages} topic page(s) and ingest state; sources will re-synthesize",
+                    pages.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Ingest synthesis migration failed; topic pages may retain the old format until re-ingested");
+        }
+
         // Auto-ingest starts AFTER the vault watcher: recall indexing of Pia's own page writes happens
         // only via the live watcher, so ingest-written topic pages must land while it is running. The
         // reconcile scan runs on the service's own background queue — startup is never blocked on LLM work.

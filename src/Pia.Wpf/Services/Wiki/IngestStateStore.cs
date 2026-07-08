@@ -102,6 +102,16 @@ public sealed class IngestStateStore
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>Drop every state row. Used by the one-time synthesis-pipeline migration so the hash
+    /// gate no longer no-ops the fresh re-ingest of every source.</summary>
+    public async Task ClearAllAsync()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM IngestState";
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static IngestStateEntry ReadEntry(SqliteDataReader reader) => new(
         reader.GetString(0),
         reader.GetString(1),

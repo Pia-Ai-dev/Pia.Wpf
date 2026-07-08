@@ -62,4 +62,17 @@ public class IngestStateStoreTests : IDisposable
         Assert.Null(await _store.GetAsync("sources/a.txt"));
         Assert.Empty(await _store.ListAsync());
     }
+
+    [Fact]
+    public async Task ClearAllAsync_removes_all_rows()
+    {
+        await _store.UpsertAsync(new IngestStateEntry(
+            "sources/a.txt", "HASH1", IngestOutcome.Success, ["memory/topics/x.md"], DateTimeOffset.UtcNow));
+        await _store.UpsertAsync(new IngestStateEntry(
+            "sources/b.txt", "HASH2", IngestOutcome.NoEntities, [], DateTimeOffset.UtcNow));
+
+        await _store.ClearAllAsync();
+
+        Assert.Empty(await _store.ListAsync());
+    }
 }
