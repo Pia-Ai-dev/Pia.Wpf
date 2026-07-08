@@ -37,6 +37,7 @@ public class EmbeddingService : IEmbeddingService, IDisposable
     // resulting piece strings to the ids the ONNX embedding table expects. tokenizer.json is the id oracle:
     // its model.vocab is an ARRAY whose index IS the model id, which sidesteps XLM-R's fairseq +1 offset
     // (the raw sentencepiece.bpe.model numbers pieces differently).
+    private readonly object _loadGate = new();
     private Tokenizer? _tokenizer;
     private Dictionary<string, int>? _vocabulary;
     private int _bosId = DefaultBosId;
@@ -118,10 +119,12 @@ public class EmbeddingService : IEmbeddingService, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             throw new InvalidOperationException("Embedding model is not available and could not be downloaded.");
         }
-        EnsureModelLoaded();
-
         return await Task.Run(() =>
         {
+            // Inside Task.Run so a first-touch load (ONNX session + vocabulary, seconds) blocks a
+            // pool thread, not the caller — vault-watcher timers and UI-driven recall both land here.
+            EnsureModelLoaded();
+
             cancellationToken.ThrowIfCancellationRequested();
 
             var tokenIds = Tokenize(text);
@@ -175,28 +178,38 @@ public class EmbeddingService : IEmbeddingService, IDisposable
 
     private void EnsureModelLoaded()
     {
-        if (_session is not null) return;
+        // The vault watcher fires one timer callback per changed file, so first use is routinely
+        // concurrent. The whole load must be exclusive: an unguarded double-load lets two threads
+        // populate the same _vocabulary Dictionary and permanently corrupt it (and leaks a native
+        // InferenceSession). The lock's acquire fence also publishes the fields to later callers.
+        lock (_loadGate)
+        {
+            if (_session is not null) return;
 
-        if (!IsModelAvailable)
-            throw new InvalidOperationException("Embedding model is not available. Call DownloadModelAsync first.");
+            if (!IsModelAvailable)
+                throw new InvalidOperationException("Embedding model is not available. Call DownloadModelAsync first.");
 
-        var sessionOptions = new SessionOptions();
-        sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
-        _session = new InferenceSession(ModelPath, sessionOptions);
+            var sessionOptions = new SessionOptions();
+            sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
 
-        LoadVocabulary();
+            LoadVocabulary();
 
-        // Load the SentencePiece model purely as a segmenter. We frame <s>/</s> ourselves (per the
-        // tokenizer's TemplateProcessing) and map pieces to ids via _vocabulary, so the beginning/end
-        // tokens the library would otherwise emit (with the SentencePiece model's own numbering) are
-        // suppressed here.
-        using var spStream = File.OpenRead(SentencePiecePath);
-        _tokenizer = SentencePieceTokenizer.Create(
-            spStream,
-            addBeginningOfSentence: false,
-            addEndOfSentence: false);
+            // Load the SentencePiece model purely as a segmenter. We frame <s>/</s> ourselves (per the
+            // tokenizer's TemplateProcessing) and map pieces to ids via _vocabulary, so the beginning/end
+            // tokens the library would otherwise emit (with the SentencePiece model's own numbering) are
+            // suppressed here.
+            using var spStream = File.OpenRead(SentencePiecePath);
+            _tokenizer = SentencePieceTokenizer.Create(
+                spStream,
+                addBeginningOfSentence: false,
+                addEndOfSentence: false);
 
-        _logger.LogInformation("Embedding model loaded successfully");
+            // Assigned last: _session is the loaded-guard, so it must only become non-null once the
+            // tokenizer and vocabulary are fully in place.
+            _session = new InferenceSession(ModelPath, sessionOptions);
+
+            _logger.LogInformation("Embedding model loaded successfully");
+        }
     }
 
     private void LoadVocabulary()

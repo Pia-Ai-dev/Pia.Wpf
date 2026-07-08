@@ -81,6 +81,27 @@ public class EmbeddingServiceSemanticTests
             $"expected cross-lingual translation to score higher than unrelated text, but de={translationScore:F3} unrel={unrelScore:F3}");
     }
 
+    [Fact]
+    public async Task GenerateEmbeddingAsync_ConcurrentFirstUse_DoesNotCorruptVocabulary()
+    {
+        var svc = CreateIfAvailable();
+        if (svc is null) return;
+
+        // The vault watcher fires one callback per changed file, so a multi-file drop hits a FRESH
+        // service concurrently. Before EnsureModelLoaded was locked, two threads populated the same
+        // _vocabulary Dictionary and corrupted it permanently ("Operations that change non-concurrent
+        // collections must have exclusive access"), failing here and on every call after.
+        var tasks = Enumerable.Range(0, 8)
+            .Select(i => Task.Run(() => svc.GenerateEmbeddingAsync($"Concurrent first-use document {i}.")));
+        var vectors = await Task.WhenAll(tasks);
+
+        Assert.All(vectors, v => Assert.Equal(384, v.Length));
+
+        // The corruption outlived the racing calls — a later, uncontended call must also still work.
+        var after = await svc.GenerateEmbeddingAsync("The cat sat on the mat.");
+        Assert.Equal(384, after.Length);
+    }
+
     private sealed class SimpleHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
