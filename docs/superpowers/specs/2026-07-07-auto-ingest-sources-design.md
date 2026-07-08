@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-07
 **Branch:** `feature/meeting_attendee`
-**Status:** Approved (all sections); ready for implementation planning.
+**Status:** Implemented 2026-07-08 (plan: `docs/superpowers/plans/2026-07-08-auto-ingest-sources.md`). Human-gated live smoke test pending.
 
 ---
 
@@ -99,8 +99,9 @@ components share the same serial pipeline:
 
 ## 4. Change-detection state
 
-New `IngestState` table in history.db (created via `SqliteContext.EnsureSchema`, next to the
-chunk index):
+New `IngestState` table in history.db (implementation deviation: created lazily by
+`IngestStateStore` on its own dedicated connection rather than in `SqliteContext.EnsureSchema` —
+the store must work against test databases the shared context never opens; behavior identical):
 
 | Column | Meaning |
 |--------|---------|
