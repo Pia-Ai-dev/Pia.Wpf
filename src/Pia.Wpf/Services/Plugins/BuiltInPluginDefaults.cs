@@ -3,8 +3,12 @@ using Pia.Shared.Models;
 namespace Pia.Services.Plugins;
 
 /// <summary>
-/// Hardcoded defaults for built-in plugins. Used on first launch or offline
-/// when no server data is cached. Well-known GUIDs match server seed data.
+/// Hardcoded defaults for built-in plugins. Used on first launch or offline when no server data is
+/// cached. The GUIDs are well-known and stable, but they do NOT all match server seed data: only
+/// memory/todo/reminder (...001-...003) are seeded server-side. scheduled-research (...004), files
+/// (...006) and ingest (...007) are client-only built-ins with no server plugin row — the server's
+/// sync push tolerates a preference referencing such an unknown plugin id by skipping it, so toggling
+/// a client-only built-in cannot wedge preference sync (SyncService.PushAsync in the Pia server repo).
 /// </summary>
 public static class BuiltInPluginDefaults
 {

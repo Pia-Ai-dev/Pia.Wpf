@@ -39,9 +39,6 @@ namespace Pia.Services.Wiki;
 /// </summary>
 public sealed class IngestService : IIngestService
 {
-    private static readonly string[] TextExtensions =
-        [".txt", ".md", ".markdown", ".text", ".csv", ".json", ".log", ".html", ".htm", ".xml"];
-
     private readonly IIngestExtractor _extractor;
     private readonly IMemoryService _memory;
     private readonly IVaultStore _store;
@@ -95,7 +92,7 @@ public sealed class IngestService : IIngestService
             return new IngestResult(sourceRef, [], IngestOutcome.SourceNotFound);
         }
 
-        if (!IsTextSource(sourceRef))
+        if (!SourcesProvenance.IsTextSource(sourceRef))
         {
             // Binary handling (PDF/image extraction) is DEFERRED — skip with an empty result.
             _logger.SensitiveDebug("Ingest skipping non-text source {Source}", sourceRef);
@@ -244,8 +241,8 @@ public sealed class IngestService : IIngestService
         // Read the existing sources: value from the RAW frontmatter, NOT doc.Frontmatter — the parser
         // flattens a YAML flow list to its .NET type name, which would round-trip back into the file as
         // garbage and corrupt the frontmatter (unparseable YAML) on the next ingest.
-        var existing = FindKeyValue(fmBody, "sources:");
-        var refs = ParseFlowList(existing);
+        var existing = SourcesProvenance.FindKeyValue(fmBody, "sources:");
+        var refs = SourcesProvenance.ParseFlowList(existing);
         if (refs.Contains(sourceRef, StringComparer.Ordinal))
         {
             return; // already recorded
@@ -263,48 +260,6 @@ public sealed class IngestService : IIngestService
         var rebuilt = raw[..(open + 4)] + newFmBody + afterFm;
         await _store.WriteAtomicAsync(path, rebuilt);
         _logger.SensitiveDebug("Ingest recorded source {Source} on page {Path}", sourceRef, path);
-    }
-
-    // Parse a flattened "sources" value back into individual refs. The parser may flatten a YAML list to
-    // either a flow form "[a, b]" or a space/newline-joined scalar; handle both leniently.
-    private static List<string> ParseFlowList(string? value)
-    {
-        var result = new List<string>();
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return result;
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
-        {
-            trimmed = trimmed[1..^1];
-        }
-
-        foreach (var part in trimmed.Split([',', '\n'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            var item = part.Trim().Trim('-').Trim();
-            if (item.Length > 0 && !result.Contains(item, StringComparer.Ordinal))
-            {
-                result.Add(item);
-            }
-        }
-
-        return result;
-    }
-
-    // Return the raw value text after a "key:" line in the frontmatter keys block, or null if absent.
-    private static string? FindKeyValue(string fmBody, string keyPrefix)
-    {
-        foreach (var line in fmBody.Split('\n'))
-        {
-            if (line.StartsWith(keyPrefix, StringComparison.Ordinal))
-            {
-                return line[keyPrefix.Length..].Trim();
-            }
-        }
-
-        return null;
     }
 
     private static string ReplaceKeyLine(string fmBody, string keyPrefix, string newLine)
@@ -328,17 +283,6 @@ public sealed class IngestService : IIngestService
     }
 
     // ---- helpers ----
-
-    private static bool IsTextSource(string sourceRef)
-    {
-        var ext = Path.GetExtension(sourceRef);
-        if (string.IsNullOrEmpty(ext))
-        {
-            return true; // extension-less files are treated as text (best-effort)
-        }
-
-        return TextExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase);
-    }
 
     private static IEnumerable<string> TouchedTargets(IEnumerable<string> touched) =>
         touched.Select(p =>
