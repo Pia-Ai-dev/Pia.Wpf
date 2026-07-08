@@ -87,13 +87,19 @@ public class SafeDirectoryMoveTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(src, "f.txt"), "z", TestContext.Current.CancellationToken);
 
         var phases = new System.Collections.Concurrent.ConcurrentBag<FolderMovePhase>();
-        var progress = new Progress<FolderMoveProgress>(p => phases.Add(p.Phase));
+        // Synchronous IProgress so Report runs inline during MoveAsync — no async-drain race.
+        var progress = new SynchronousProgress(p => phases.Add(p.Phase));
 
         var result = await SafeDirectoryMove.MoveAsync(src, dst, progress, CancellationToken.None);
 
         Assert.Equal(DirectoryMoveOutcome.Success, result.Outcome);
-        // Progress callbacks are async; give them a moment to drain on the captured context.
-        await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.Contains(FolderMovePhase.Copying, phases);
+    }
+
+    private sealed class SynchronousProgress : IProgress<FolderMoveProgress>
+    {
+        private readonly Action<FolderMoveProgress> _handler;
+        public SynchronousProgress(Action<FolderMoveProgress> handler) => _handler = handler;
+        public void Report(FolderMoveProgress value) => _handler(value);
     }
 }
