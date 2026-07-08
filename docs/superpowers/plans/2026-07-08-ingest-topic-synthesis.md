@@ -25,6 +25,8 @@
 
 **Modify:**
 - `src/Pia.Wpf/Services/Interfaces/IIngestExtractor.cs` — `ExtractedEntity(Subject, Facts)` → `ExtractedTopic(Subject, Category)`; drop `SummarizeAsync` usage from ingest (keep or remove per Task 2).
+- `src/Pia.Wpf/Services/Interfaces/IIngestService.cs` — add `IngestOutcome.SynthesisFailed`; update the `RemoveContributionsAsync` xml-doc (it still describes `## Source:` section splicing).
+- `src/Pia.Wpf/Services/Wiki/AutoIngestService.cs` — treat `SynthesisFailed` as transient (record nothing), same as `SourceNotFound` (see Task 5).
 - `src/Pia.Wpf/Services/Wiki/AiIngestExtractionService.cs` — charter-grounded topic discovery; hardened notability prompt; parse `{subject, category}`.
 - `src/Pia.Wpf/Services/Wiki/IngestService.cs` — topic-driven synthesis rewrite; delete `## Source:` machinery; shared `SynthesizePageAsync`; preamble preservation; `category` frontmatter.
 - `src/Pia.Wpf/Infrastructure/Vault/VaultFrontmatter.cs` — `Build` overload that also writes `category:`.
@@ -33,7 +35,7 @@
 - `tests/Pia.Wpf.Tests/Wiki/IngestServiceTests.cs` — rewrite stubs/asserts for the new pipeline.
 - `tests/Pia.Wpf.Tests/Wiki/AutoIngestServiceTests.cs` — adjust any `## Source:`/facts assumptions.
 
-**Unchanged (verify only):** `AutoIngestService` (uses `IngestResult.TouchedPages` diff + `RemoveContributionsAsync` — both contracts preserved), `IngestStateStore`, `IIngestScheduler`, `SourcesProvenance`.
+**Unchanged (verify only):** `IIngestScheduler`, `SourcesProvenance`. (`AutoIngestService`'s `TouchedPages`-diff + `RemoveContributionsAsync` contracts are preserved; its only change is the one-line `SynthesisFailed` guard in Task 5.)
 
 ---
 
@@ -281,6 +283,7 @@ Inject `IIngestSynthesizer` and `VaultCharterService` (add ctor params; update B
   3. `Ingest_preserves_manual_preamble` — pre-write a page with a manual preamble above the `<!-- pia:managed -->` sentinel; ingest twice. The fake synthesizer body MUST contain no `##` heading (the realistic case that would otherwise be mis-parsed as preamble). Assert the preamble survives verbatim and appears exactly once (no accumulation across the two ingests), and the body below the sentinel is the latest synthesis.
   4. `Ingest_touches_only_notable_topics` — extractor returns 2 topics → exactly 2 pages, index has 2 entries.
   5. `Reingest_preserves_id_and_created` — ingest topic T (capture its frontmatter `id` + `created`), then ingest a second source that also mentions T; assert T's `id` and `created` are unchanged and `updated` advanced.
+  6. `Ingest_returns_SynthesisFailed_when_any_synthesis_comes_back_empty` — extractor returns 2 topics, fake synthesizer returns a body for the first and empty for the second → result outcome is `IngestOutcome.SynthesisFailed`, and the first page WAS still written (partial output is kept; the retry re-synthesizes it).
 
 Fake synthesizer example:
 
@@ -309,6 +312,7 @@ if (topics.Count == 0)
     return new IngestResult(sourceRef, [], IngestOutcome.NoEntities);
 
 var touched = new List<string>();
+var synthFailures = 0;
 foreach (var topic in topics)
 {
     if (string.IsNullOrWhiteSpace(topic.Subject)) continue;
@@ -325,10 +329,20 @@ foreach (var topic in topics)
     var category = existing?.Frontmatter.GetValueOrDefault("category") is { Length: > 0 } c ? c : topic.Category;
 
     var summary = await SynthesizePageAsync(path, title, category, sourceRefs, charter, ct);
-    if (summary is null) continue;                       // empty synthesis (no provider) — skip
+    if (summary is null) { synthFailures++; continue; }  // empty synthesis — counted, see below
     touched.Add(path);
     await _index.UpsertEntryAsync(path, summary);
 }
+
+// Transient-failure guard: topics WERE discovered but at least one synthesis call produced nothing
+// (provider died mid-run, model error). Report SynthesisFailed so AutoIngestService records NOTHING
+// for this source — no hash freeze, no shrink-diff wipe of previously-touched pages — and the source
+// is retried on the next change / startup reconcile. Pages that DID synthesize are already written;
+// the retry just re-synthesizes them (idempotent). Skip the journal line too — the clean retry
+// journals. Only a fully clean run returns Success, so NoEntities now unambiguously means "the model
+// looked and found nothing notable" — the only outcome that may shrink-diff.
+if (synthFailures > 0)
+    return new IngestResult(sourceRef, touched, IngestOutcome.SynthesisFailed);
 
 if (touched.Count == 0)
     return new IngestResult(sourceRef, [], IngestOutcome.NoEntities);
@@ -336,6 +350,15 @@ if (touched.Count == 0)
 await _log.AppendAsync("ingest", sourceName + " -> " + string.Join(", ", TouchedTargets(touched)), date);
 return new IngestResult(sourceRef, touched);
 ```
+
+**`AutoIngestService` guard (one line).** In `ExecuteAsync`, widen the existing transient early-out (`AutoIngestService.cs:293`) to:
+
+```csharp
+if (result.Outcome is IngestOutcome.SourceNotFound or IngestOutcome.SynthesisFailed)
+    return result; // transient: record nothing — retried on next change/reconcile
+```
+
+Add a `LogWarning` ("Ingest synthesis failed; source will be retried" — no source name in the release-visible message; the named variant goes through `SensitiveDebug`). Add an `AutoIngestServiceTests` case: stub ingest returns `SynthesisFailed` → no state row is written and `RemoveContributionsAsync` is NOT called. Note: unlike the old pipeline (which froze the hash on any recorded outcome), a source with a persistently-empty synthesis now retries on every startup reconcile — acceptable LLM spend at this vault's scale (serial, one attempt per startup/change); do NOT add retry caps here.
 
 **Page-on-disk layout (fixed).** Every managed topic page is exactly:
 
@@ -418,10 +441,12 @@ Notes for the implementer:
 - [ ] **Step 1: Failing tests:**
   1. `Remove_last_source_deletes_page_and_index` — page with one source; remove it → page + index entry gone.
   2. `Remove_one_of_two_sources_resynthesizes` — page with sources A,B; remove A → page remains, `sources:` == [B], synthesizer re-called with only B's text.
+  3. `Remove_with_empty_synthesis_still_prunes_sources_frontmatter` — page with sources A,B; fake synthesizer returns empty (`SynthesizedPage("", "")`); remove A → page remains, `sources:` == [B] (provenance pruned deterministically), body UNCHANGED (stale is fine), index entry still present.
 - [ ] **Step 2: Run → FAIL.**
-- [ ] **Step 3: Implement.** Rewrite `RemoveContributionsAsync`:
+- [ ] **Step 3: Implement.** Rewrite `RemoveContributionsAsync` as a deterministic step that ALWAYS runs plus a best-effort synthesis step. The old code needed no LLM; the deterministic half keeps that reliability so provenance (`VaultSourcesService` counts, `ScanPagesForSourceAsync`) stays truthful even with no provider:
 
 ```csharp
+var stale = new List<string>();
 foreach (var path in pages)
 {
     var doc = await _store.ReadAsync(path);
@@ -437,15 +462,25 @@ foreach (var path in pages)
         continue;
     }
 
+    // 1. DETERMINISTIC (always, no LLM): prune the ref from the sources: line. Keep the existing
+    //    RemoveSourceFromFrontmatterAsync helper for exactly this — do NOT delete it in Task 5.
+    await RemoveSourceFromFrontmatterAsync(path, sourceRef);
+
+    // 2. BEST-EFFORT: re-synthesize the body from the remaining sources. On empty synthesis (no
+    //    provider / model error) keep the old body — stale, but it SELF-HEALS: the next ingest of any
+    //    remaining source re-synthesizes this page. (SynthesizePageAsync rewrites the sources: line
+    //    again on success — redundant with step 1, same list, harmless.)
     var title = doc.Frontmatter.GetValueOrDefault("title") ?? Path.GetFileNameWithoutExtension(path);
     var category = doc.Frontmatter.GetValueOrDefault("category") ?? "concept";
     var summary = await SynthesizePageAsync(path, title, category, remaining, await _charter.GetCharterAsync(), ct);
     if (summary is not null) await _index.UpsertEntryAsync(path, summary);
+    else stale.Add(path);
 }
-// keep the existing removal log line.
 ```
 
-Delete the old section-splice removal code.
+Journal (user-visible): keep the existing removal log line, but when `stale.Count > 0` extend it, e.g. `removed <name> -> <pages> (<n> page(s) stale — re-synthesis needs an AI provider)`. Support log: `LogWarning` with the count only (page titles are user-named → the named variant goes through `SensitiveDebug`).
+
+Delete the old section-splice removal code. Also update the `RemoveContributionsAsync` xml-doc on `IIngestService` — it still describes `## Source:` section splicing.
 
 - [ ] **Step 4: Run → PASS.**
 - [ ] **Step 5: Commit** — `feat(ingest): re-synthesize pages on source removal`
@@ -494,6 +529,8 @@ Keep the whole rewrite deterministic (entries already ordinal-sorted). Note: rea
 
 **Why a code path:** `IngestStateStore` is SQLite-backed (`Bootstrapper.cs:384`, `SqliteContext.ConnectionString`), so an operator cannot "clear the state file." And the hash gate (`AutoIngestService.cs:248-252`) means that if the old topic pages are deleted but the state rows remain, reconcile sees unchanged hashes and **no-ops** — the fresh re-ingest never happens. So migration must clear state in code.
 
+**Blast-radius decision (2026-07-08):** the wipe deletes *every* `memory/topics/*.md` — including pages created via the memory tool, since `remember` type `topic` maps to the same directory (`MemoryService.cs:568`), and those are NOT rebuilt by reconcile. Accepted as-is: all current vault content is test data; no production vaults exist. If that changes before this ships, scope the deletion to ingest-touched pages only (non-empty `SourcesProvenance.ReadSourceRefs(doc.RawText)`) — and note the migration must then stay exhaustive for those, because any surviving old-format page later re-touched by ingest has no sentinel, so its whole old body (`## Source:` junk included) would be preserved as manual preamble forever.
+
 **Files:**
 - Modify: `src/Pia.Wpf/Services/Wiki/IngestStateStore.cs` — add `Task ClearAllAsync()`.
 - Modify: `src/Pia.Wpf/Models/AppSettings.cs` — add `int IngestSchemaVersion { get; set; } = 0;` (JSON-only, mirrors the `AutoIngestSources` precedent).
@@ -523,6 +560,8 @@ Keep the whole rewrite deterministic (entries already ordinal-sorted). Note: rea
 - **Identity (Task 4/5)** — re-synthesis rewrites the whole page, so it MUST go through `VaultFrontmatter.BuildPreserving` to keep `id`/`created` stable (sync keys on `id`; `VaultWikiTests.cs:74` asserts it). Never call plain `Build` on an existing page.
 - **CRLF:** new `.cs` files must be CRLF (project memory) — convert before the byte-sensitive tests run.
 - **Cost:** ingest now makes 1 discovery call + 1 synthesis call per touched topic (re-reading the union of raw sources each time). Acceptable at this vault's scale; `AutoIngestService` already serializes and hash-gates.
+- **Transient failures must not record state (Task 5):** `SynthesisFailed` (topics found, ≥1 synthesis empty) is treated like `SourceNotFound` in `AutoIngestService` — record nothing, so the hash never freezes and the shrink-diff never wipes a source's contributions off the back of a flaky provider. Only clean `Success`/`NoEntities` runs record and diff.
+- **Removal degrades deterministically (Task 6):** the `sources:` prune always happens (no LLM); only the body re-synthesis is best-effort. A stale body self-heals on the next ingest of any remaining source. The stale case is surfaced in the ingest journal line.
 - **v1 limitation (from spec §8):** cross-source union only covers sources that each independently surface a topic as notable; a future lint pass can broaden it. Do not attempt to solve it here.
 - **Recall indexing (advisory):** a heading-less synthesized body means the whole content region (preamble + sentinel + body) is one `PreambleSlug` recall chunk (`VaultIndexer.cs:172`) — functionally fine, body stays recall-visible. The literal `<!-- pia:managed -->` marker lands in the embedded text; harmless, but optionally strip it from the text handed to the indexer if it ever matters.
 - **`SummarizeAsync` removal:** the old index one-liner fell back to the source summary. The synthesizer now supplies the summary, so `SummarizeAsync` can be deleted from `IIngestExtractor` — verify no other caller (grep) before removing.
