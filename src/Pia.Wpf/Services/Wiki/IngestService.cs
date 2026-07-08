@@ -190,6 +190,7 @@ public sealed class IngestService : IIngestService
     {
         sourceRef = sourceRef.Replace('\\', '/'); // separator-tolerant, matching IngestAsync
 
+        var stale = new List<string>();
         foreach (var path in pages)
         {
             ct.ThrowIfCancellationRequested();
@@ -211,17 +212,49 @@ public sealed class IngestService : IIngestService
                 continue;
             }
 
-            // DETERMINISTIC (no LLM): prune the ref from the sources: line. The body is left as-is
-            // (stale) until the next ingest of any remaining source re-synthesizes it.
+            // 1. DETERMINISTIC (always, no LLM): prune the ref from the sources: line so provenance
+            //    (VaultSourcesService counts, ScanPagesForSourceAsync) stays truthful even with no
+            //    provider configured.
             await RemoveSourceFromFrontmatterAsync(path, sourceRef);
+
+            // 2. BEST-EFFORT: re-synthesize the body from the remaining sources. On empty synthesis
+            //    (no provider / model error) keep the old body — stale, but it SELF-HEALS: the next
+            //    ingest of any remaining source re-synthesizes this page. (SynthesizePageAsync rewrites
+            //    the sources: line again on success — redundant with step 1, same list, harmless.)
+            var title = doc.Frontmatter.GetValueOrDefault("title") ?? Path.GetFileNameWithoutExtension(path);
+            var category = doc.Frontmatter.GetValueOrDefault("category") ?? "concept";
+            var summary = await SynthesizePageAsync(
+                path, title, category, remaining, await _charter.GetCharterAsync(), ct);
+            if (summary is not null)
+            {
+                await _index.UpsertEntryAsync(path, summary);
+            }
+            else
+            {
+                stale.Add(path);
+            }
         }
 
         if (pages.Count > 0)
         {
-            // Removal journals a corresponding ingest log line, mirroring the ingest one.
-            await _log.AppendAsync("ingest",
-                "removed " + Path.GetFileName(sourceRef) + " -> " + string.Join(", ", TouchedTargets(pages)),
-                DateOnly.FromDateTime(DateTime.Now));
+            // Removal journals a corresponding ingest log line, mirroring the ingest one. When a page's
+            // body could not be re-synthesized (no provider), surface the stale count in the journal.
+            var line = "removed " + Path.GetFileName(sourceRef) + " -> " + string.Join(", ", TouchedTargets(pages));
+            if (stale.Count > 0)
+            {
+                line += $" ({stale.Count} page(s) stale — re-synthesis needs an AI provider)";
+            }
+
+            await _log.AppendAsync("ingest", line, DateOnly.FromDateTime(DateTime.Now));
+        }
+
+        if (stale.Count > 0)
+        {
+            // Release-visible: count only (page titles are user-named → SensitiveDebug for the names).
+            _logger.LogWarning(
+                "Ingest removal left {Count} page(s) with a stale body; re-synthesis needs an AI provider",
+                stale.Count);
+            _logger.SensitiveDebug("Stale pages after removal: {Pages}", string.Join(", ", stale));
         }
 
         _logger.LogInformation("Removed ingest contributions from {Count} page(s)", pages.Count);

@@ -38,11 +38,13 @@ public interface IIngestService
     Task<IngestResult> IngestAsync(string sourceRelativePath, DateOnly date, CancellationToken ct = default);
 
     /// <summary>
-    /// Remove <paramref name="sourceRef"/> from every page in <paramref name="pages"/>: prune its
-    /// <c>sources:</c> frontmatter ref deterministically (no LLM). A page left with no remaining sources
-    /// is deleted together with its index entry; a page that still has other sources is kept (its body
-    /// left as-is until the next ingest re-synthesizes it). Missing pages are skipped. Appends one
-    /// <c>ingest</c> journal line when any pages were targeted.
+    /// Remove <paramref name="sourceRef"/> from every page in <paramref name="pages"/>. The
+    /// <c>sources:</c> frontmatter ref is pruned deterministically (no LLM). A page left with no
+    /// remaining sources is deleted together with its index entry. A page that still has other sources
+    /// is kept and its body is re-synthesized best-effort from those remaining sources; if synthesis
+    /// produces nothing (no provider / model error) the old body is kept (stale — it self-heals on the
+    /// next ingest of any remaining source). Missing pages are skipped. Appends one <c>ingest</c>
+    /// journal line when any pages were targeted, noting the stale-page count when applicable.
     /// </summary>
     Task RemoveContributionsAsync(string sourceRef, IReadOnlyList<string> pages, CancellationToken ct = default);
 }

@@ -113,10 +113,14 @@ public class IngestServiceTests : IDisposable
 
         public List<(string Title, int SourceCount)> Calls { get; } = new();
 
+        // Per-call source refs, so tests can assert WHICH sources a (re-)synthesis merged.
+        public List<IReadOnlyList<string>> CallRefs { get; } = new();
+
         public Task<SynthesizedPage> SynthesizeAsync(string title, string category, string charter,
             IReadOnlyList<(string Ref, string Text)> sources, CancellationToken ct = default)
         {
             Calls.Add((title, sources.Count));
+            CallRefs.Add(sources.Select(s => s.Ref).ToList());
             if (_emptyTitles.Contains(title))
             {
                 return Task.FromResult(new SynthesizedPage(string.Empty, string.Empty));
@@ -270,6 +274,85 @@ public class IngestServiceTests : IDisposable
         Assert.Contains("memory/topics/acme-corp.md", result.TouchedPages);
         // The failing topic's page was never written.
         Assert.Null(await _store.ReadAsync("memory/topics/gdpr.md"));
+    }
+
+    [Fact]
+    public async Task Remove_last_source_deletes_page_and_index()
+    {
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
+            new FakeSynthesizer());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(await _store.ReadAsync("memory/topics/acme-corp.md"));
+
+        await ingest.RemoveContributionsAsync("sources/sample.txt",
+            new[] { "memory/topics/acme-corp.md" }, TestContext.Current.CancellationToken);
+
+        // The page's only source is gone → the page and its index entry are deleted.
+        Assert.Null(await _store.ReadAsync("memory/topics/acme-corp.md"));
+        var index = await _store.ReadAsync("memory/index.md");
+        Assert.DoesNotContain("[[topics/acme-corp]]", index?.RawText ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task Remove_one_of_two_sources_resynthesizes()
+    {
+        SeedSource("second.txt", "More context about Acme Corp.");
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
+            new FakeSynthesizer());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+        await ingest.IngestAsync("sources/second.txt", new DateOnly(2026, 7, 9),
+            TestContext.Current.CancellationToken);
+
+        // A fresh synthesizer isolates the removal's re-synthesis call from the ingest calls above.
+        var synth = new FakeSynthesizer();
+        var remover = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")), synth);
+        await remover.RemoveContributionsAsync("sources/sample.txt",
+            new[] { "memory/topics/acme-corp.md" }, TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(acme);
+        // sources: now lists only the remaining source.
+        Assert.Equal(new[] { "sources/second.txt" }, SourcesProvenance.ReadSourceRefs(acme!.RawText));
+
+        // Re-synthesized across ONLY the remaining source (B).
+        var call = Assert.Single(synth.Calls);
+        Assert.Equal("Acme Corp", call.Title);
+        Assert.Equal(1, call.SourceCount);
+        Assert.Equal(new[] { "sources/second.txt" }, synth.CallRefs.Single());
+    }
+
+    [Fact]
+    public async Task Remove_with_empty_synthesis_still_prunes_sources_frontmatter()
+    {
+        SeedSource("second.txt", "More context about Acme Corp.");
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
+            new FakeSynthesizer());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+        await ingest.IngestAsync("sources/second.txt", new DateOnly(2026, 7, 9),
+            TestContext.Current.CancellationToken);
+
+        var before = await _store.ReadAsync("memory/topics/acme-corp.md");
+        var bodyBefore = before!.RawText[before.RawText.IndexOf(ManagedMarker, StringComparison.Ordinal)..];
+
+        // A synthesizer that returns EMPTY for this topic models a dead provider during removal.
+        var remover = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
+            new FakeSynthesizer("Acme Corp"));
+        await remover.RemoveContributionsAsync("sources/sample.txt",
+            new[] { "memory/topics/acme-corp.md" }, TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(acme);
+        // sources: pruned deterministically even though the best-effort synthesis produced nothing.
+        Assert.Equal(new[] { "sources/second.txt" }, SourcesProvenance.ReadSourceRefs(acme!.RawText));
+        // Body is left UNCHANGED (stale is acceptable — it self-heals on the next ingest).
+        var bodyAfter = acme.RawText[acme.RawText.IndexOf(ManagedMarker, StringComparison.Ordinal)..];
+        Assert.Equal(bodyBefore, bodyAfter);
+        // Index entry survives.
+        var index = await _store.ReadAsync("memory/index.md");
+        Assert.Contains("[[topics/acme-corp]]", index!.RawText);
     }
 
     [Fact]
