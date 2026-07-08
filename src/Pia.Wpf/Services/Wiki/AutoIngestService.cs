@@ -290,9 +290,18 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
             }
 
             var result = await _ingest.IngestAsync(sourceRef, DateOnly.FromDateTime(DateTime.Now), ct);
-            if (result.Outcome == IngestOutcome.SourceNotFound)
+            if (result.Outcome is IngestOutcome.SourceNotFound or IngestOutcome.SynthesisFailed)
             {
-                return result; // transient: record nothing (spec §4)
+                // Transient: record nothing — retried on next change/reconcile. SynthesisFailed means
+                // topics were found but ≥1 page's synthesis came back empty (flaky/absent provider);
+                // recording it would freeze the hash and let the shrink-diff wipe good contributions.
+                if (result.Outcome == IngestOutcome.SynthesisFailed)
+                {
+                    _logger.LogWarning("Ingest synthesis failed; source will be retried");
+                    _logger.SensitiveDebug("Ingest synthesis failed for {Source}; source will be retried", sourceRef);
+                }
+
+                return result;
             }
 
             // Without a provider the extractor degrades to NoEntities. Recording THAT would (a)

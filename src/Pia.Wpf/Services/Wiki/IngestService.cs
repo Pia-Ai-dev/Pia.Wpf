@@ -9,50 +9,50 @@ using Pia.Services.Interfaces;
 namespace Pia.Services.Wiki;
 
 /// <summary>
-/// Ingest pipeline (Task 7.1) — a fan-out compiler that turns a RAW source under <c>sources/</c> into
-/// <c>memory/topics/</c> wiki pages and keeps the index / log / per-page provenance current.
+/// Ingest pipeline — a topic-driven synthesis compiler that turns a RAW source under <c>sources/</c>
+/// into <c>memory/topics/</c> wiki pages and keeps the index / log / per-page provenance current.
 ///
-/// <para>Orchestration (mirrors the plan reference):</para>
+/// <para>Orchestration:</para>
 /// <list type="number">
 ///   <item>Read the raw source text directly under <see cref="IVaultStore.Root"/> (<c>sources/</c> is
-///     immutable — read only). Non-text/binary sources are skipped (logged, empty result); binary
-///     handling is deferred.</item>
-///   <item>Summarize + extract entities via <see cref="IIngestExtractor"/>.</item>
-///   <item>For each entity, upsert the machine-managed <c>## Source: &lt;sourceRef&gt;</c> section on
-///     <c>memory/topics/&lt;slug&gt;.md</c>. Re-ingesting the same source REPLACES exactly that
-///     section, so a source's contribution never duplicates and manual content (preamble, other
-///     sections) is never touched. Crosslinks (<c>Related: [[topics/&lt;slug&gt;]]</c> to co-extracted
-///     entities mentioned in the facts) live INSIDE the section so replace/removal takes them along.</item>
+///     immutable — read only). Non-text/binary sources are skipped (logged, empty result).</item>
+///   <item>Discover the NOTABLE topics via <see cref="IIngestExtractor"/>, grounded in the vault
+///     charter (<see cref="VaultCharterService"/>).</item>
+///   <item>For each topic, union this source with whatever sources the page already records and
+///     re-synthesize the whole managed body across ALL of them (<see cref="IIngestSynthesizer"/>).
+///     A manual preamble above the <see cref="ManagedMarker"/> sentinel is preserved verbatim;
+///     page identity (<c>id</c>/<c>created</c>) is kept stable via
+///     <see cref="VaultFrontmatter.BuildPreserving"/>.</item>
 ///   <item>Upsert an index entry per touched page.</item>
 ///   <item>Append one <c>ingest</c> log line naming the source and touched pages.</item>
-///   <item>Record the source in each touched page's <c>sources:</c> frontmatter (best-effort).</item>
 /// </list>
 ///
-/// <para><see cref="RemoveContributionsAsync"/> is the inverse: strip the source's section and
-/// frontmatter ref from each page; pages left with no sections and a whitespace-only preamble are
-/// deleted together with their index entry.</para>
+/// <para><b>Page-on-disk layout.</b> Every managed topic page is exactly
+/// <c>---\n&lt;frontmatter incl. sources: + category:&gt;\n---\n[optional manual preamble]\n&lt;!-- pia:managed --&gt;\n&lt;synthesized body&gt;</c>.
+/// The <see cref="ManagedMarker"/> line is a mandatory sentinel owned by the writer (the synthesizer
+/// returns body text only) and is the single source of truth for the preamble/body split — the split is
+/// done on the RAW text, never <see cref="VaultDocument.Preamble"/> (a heading-less body would otherwise
+/// fold the whole page into the preamble and accumulate it every re-ingest).</para>
 ///
 /// <para><b>sources: round-trip.</b> The frontmatter maintainer reads the RAW <c>sources:</c> line
-/// (never <c>VaultDocument.Frontmatter</c>, whose YAML parser flattens flow lists), so a multi-source
-/// list round-trips cleanly across add/remove edits.</para>
+/// (never <see cref="VaultDocument.Frontmatter"/>, whose YAML parser flattens flow lists), so a
+/// multi-source list round-trips cleanly across add/remove edits.</para>
 ///
-/// <para><b>Deferred:</b> a long-running background-job handle + progress UI — ingest runs inline.</para>
+/// <para><b>Transient failures.</b> When topics are discovered but ≥1 page's synthesis comes back empty
+/// (provider died mid-run), <see cref="IngestAsync"/> returns <see cref="IngestOutcome.SynthesisFailed"/>
+/// so the caller records nothing and retries; pages that DID synthesize are already written.</para>
 /// </summary>
 public sealed class IngestService : IIngestService
 {
-    /// <summary>Heading prefix of the machine-managed per-source section in a topic page.</summary>
-    public const string SourceHeadingPrefix = "Source: ";
-
-    private static string SourceHeading(string sourceRef) => SourceHeadingPrefix + sourceRef;
-
-    private static bool IsSectionFor(VaultSection s, string sourceRef) =>
-        s.Heading.Equals(SourceHeadingPrefix + sourceRef, StringComparison.OrdinalIgnoreCase);
+    /// <summary>Mandatory sentinel splitting the (optional) manual preamble from the synthesized body.</summary>
+    private const string ManagedMarker = "<!-- pia:managed -->";
 
     private readonly IIngestExtractor _extractor;
     private readonly IVaultStore _store;
     private readonly VaultIndexService _index;
     private readonly VaultLogService _log;
-    private readonly IEmbeddingService _embeddings;
+    private readonly IIngestSynthesizer _synth;
+    private readonly VaultCharterService _charter;
     private readonly ILogger<IngestService> _logger;
 
     public IngestService(
@@ -60,14 +60,16 @@ public sealed class IngestService : IIngestService
         IVaultStore store,
         VaultIndexService index,
         VaultLogService log,
-        IEmbeddingService embeddings,
+        IIngestSynthesizer synth,
+        VaultCharterService charter,
         ILogger<IngestService> logger)
     {
         _extractor = extractor;
         _store = store;
         _index = index;
         _log = log;
-        _embeddings = embeddings;
+        _synth = synth;
+        _charter = charter;
         _logger = logger;
     }
 
@@ -78,15 +80,13 @@ public sealed class IngestService : IIngestService
         var sourceName = Path.GetFileName(sourceRef);
 
         // 1. Read the RAW source directly under the vault root (sources/ files are not Pia-managed
-        // markdown, so we do NOT parse them through IVaultStore.ReadAsync).
-        var rootFull = Path.GetFullPath(_store.Root);
-        var absolute = Path.GetFullPath(
-            Path.Combine(rootFull, sourceRelativePath.Replace('/', Path.DirectorySeparatorChar)));
-
+        // markdown, so we do NOT parse them through IVaultStore.ReadAsync). Keep the DISTINCT outcomes
+        // here — the tool + tests rely on SourceNotFound / NonTextSkipped / EmptySource specifically.
         // Containment guard: source_ref reaches this service from a model tool call, so refuse any
         // absolute path or '..' traversal that resolves OUTSIDE the vault — otherwise an injected
         // prompt could exfiltrate an arbitrary local text file into memory (which syncs).
-        if (!absolute.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        var absolute = ResolveContainedSource(sourceRelativePath);
+        if (absolute is null)
         {
             _logger.SensitiveDebug("Ingest source escapes the vault {Source}", sourceRef);
             return new IngestResult(sourceRef, [], IngestOutcome.SourceNotFound);
@@ -112,80 +112,74 @@ public sealed class IngestService : IIngestService
             return new IngestResult(sourceRef, [], IngestOutcome.EmptySource);
         }
 
-        // 2. Summarize + extract.
-        var summary = await _extractor.SummarizeAsync(content, ct);
-        var entities = await _extractor.ExtractEntitiesAsync(content, ct);
-        _logger.SensitiveDebug("Ingest {Source} extracted {Count} entities", sourceRef, entities.Count);
-
-        // 3. Fan out: one machine-managed "## Source: <ref>" section per entity's topic page — replaced
-        // in place on re-ingest, so the same source never duplicates content. Crosslinks are computed up
-        // front from the extracted entity set and written INTO the section body (not appended to the
-        // page) so they are replaced/removed together with the section.
-        var touched = new List<string>();
-        var firstFactBySlug = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var entity in entities)
+        // 2. Discover the notable topics, grounded in the vault charter.
+        var charter = await _charter.GetCharterAsync();
+        var topics = await _extractor.DiscoverTopicsAsync(content, charter, ct);
+        _logger.SensitiveDebug("Ingest {Source} discovered {Count} topics", sourceRef, topics.Count);
+        if (topics.Count == 0)
         {
-            if (string.IsNullOrWhiteSpace(entity.Subject))
+            return new IngestResult(sourceRef, [], IngestOutcome.NoEntities);
+        }
+
+        // 3. Topic-driven synthesis: for each topic, union this source with the page's existing sources
+        // and re-synthesize the whole managed body across all of them.
+        var touched = new List<string>();
+        var synthFailures = 0;
+        foreach (var topic in topics)
+        {
+            if (string.IsNullOrWhiteSpace(topic.Subject))
             {
                 continue;
             }
 
-            var slug = VaultSlug.Slugify(entity.Subject);
+            var slug = VaultSlug.Slugify(topic.Subject);
             var path = $"memory/topics/{slug}.md";
 
-            var body = new StringBuilder(NormalizeFactsToBullets(entity.Facts));
-            foreach (var other in entities)
+            var existing = await _store.ReadAsync(path);
+            var sourceRefs = ReadPageSources(existing);
+            if (!sourceRefs.Contains(sourceRef, StringComparer.OrdinalIgnoreCase))
             {
-                if (ReferenceEquals(other, entity) || string.IsNullOrWhiteSpace(other.Subject))
-                {
-                    continue;
-                }
-
-                var otherSlug = VaultSlug.Slugify(other.Subject);
-                if (otherSlug == slug)
-                {
-                    continue;
-                }
-
-                if (entity.Facts.Contains(other.Subject, StringComparison.OrdinalIgnoreCase))
-                {
-                    body.Append($"Related: [[topics/{otherSlug}]]\n");
-                }
+                sourceRefs.Add(sourceRef);
             }
 
-            await UpsertSourceSectionAsync(path, entity.Subject, sourceRef, body.ToString());
-            if (!touched.Contains(path))
+            var title = existing?.Frontmatter.GetValueOrDefault("title") is { Length: > 0 } t
+                ? t
+                : topic.Subject;
+            var category = existing?.Frontmatter.GetValueOrDefault("category") is { Length: > 0 } c
+                ? c
+                : topic.Category;
+
+            var summary = await SynthesizePageAsync(path, title, category, sourceRefs, charter, ct);
+            if (summary is null)
             {
-                touched.Add(path);
+                synthFailures++;
+                continue;
             }
 
-            firstFactBySlug[slug] = FirstLine(entity.Facts);
+            touched.Add(path);
+            await _index.UpsertEntryAsync(path, summary);
+        }
+
+        // Transient-failure guard: topics WERE discovered but at least one synthesis call produced
+        // nothing (provider died mid-run, model error). Report SynthesisFailed so AutoIngestService
+        // records NOTHING for this source — no hash freeze, no shrink-diff wipe of previously-touched
+        // pages — and the source is retried on the next change / startup reconcile. Pages that DID
+        // synthesize are already written; the retry just re-synthesizes them (idempotent). Skip the
+        // journal line too — the clean retry journals.
+        if (synthFailures > 0)
+        {
+            _logger.LogWarning("Ingest synthesis produced no body for {Count} topic(s); source will be retried",
+                synthFailures);
+            return new IngestResult(sourceRef, touched, IngestOutcome.SynthesisFailed);
         }
 
         if (touched.Count == 0)
         {
-            _logger.SensitiveDebug("Ingest produced no topic pages for {Source}", sourceRef);
             return new IngestResult(sourceRef, [], IngestOutcome.NoEntities);
         }
 
-        // 4. Index entry per touched page (entity first-fact line, else the overall summary).
-        foreach (var path in touched)
-        {
-            var slug = VaultSlug.Slugify(Path.GetFileNameWithoutExtension(path));
-            var oneLine = firstFactBySlug.TryGetValue(slug, out var fact) && !string.IsNullOrWhiteSpace(fact)
-                ? fact
-                : summary;
-            await _index.UpsertEntryAsync(path, oneLine);
-        }
-
-        // 5. Journal one ingest line.
+        // 4. Journal one ingest line.
         await _log.AppendAsync("ingest", sourceName + " -> " + string.Join(", ", TouchedTargets(touched)), date);
-
-        // 6. Provenance: record the source in each touched page's frontmatter (best-effort).
-        foreach (var path in touched)
-        {
-            await EnsureSourceInFrontmatterAsync(path, sourceRef);
-        }
 
         return new IngestResult(sourceRef, touched);
     }
@@ -205,34 +199,26 @@ public sealed class IngestService : IIngestService
                 continue;
             }
 
-            var section = doc.Sections.FirstOrDefault(s => IsSectionFor(s, sourceRef));
-            if (section is not null)
-            {
-                // Splice out the heading LINE + body, so the whole source record disappears.
-                var raw = doc.RawText;
-                var start = HeadingLineStart(raw, section.BodyStart);
-                var rebuilt = raw[..start] + raw[section.BodyEnd..];
-                await _store.WriteAtomicAsync(path, rebuilt);
-                doc = await _store.ReadAsync(path); // re-parse for the emptiness check below
-            }
+            var remaining = ReadPageSources(doc);
+            remaining.RemoveAll(r => r.Equals(sourceRef, StringComparison.OrdinalIgnoreCase));
 
-            if (doc is not null)
+            if (remaining.Count == 0)
             {
-                await RemoveSourceFromFrontmatterAsync(path, sourceRef);
-                doc = await _store.ReadAsync(path);
-            }
-
-            if (doc is not null && doc.Sections.Count == 0 && string.IsNullOrWhiteSpace(doc.Preamble))
-            {
+                // No source contributes any longer — drop the page and its index entry.
                 await _store.DeleteAsync(path);
                 await _index.RemoveEntryAsync(path);
                 _logger.SensitiveDebug("Removed now-empty topic page {Path}", path);
+                continue;
             }
+
+            // DETERMINISTIC (no LLM): prune the ref from the sources: line. The body is left as-is
+            // (stale) until the next ingest of any remaining source re-synthesizes it.
+            await RemoveSourceFromFrontmatterAsync(path, sourceRef);
         }
 
         if (pages.Count > 0)
         {
-            // Spec §5: removal journals a corresponding ingest log line, mirroring the ingest one.
+            // Removal journals a corresponding ingest log line, mirroring the ingest one.
             await _log.AppendAsync("ingest",
                 "removed " + Path.GetFileName(sourceRef) + " -> " + string.Join(", ", TouchedTargets(pages)),
                 DateOnly.FromDateTime(DateTime.Now));
@@ -242,87 +228,147 @@ public sealed class IngestService : IIngestService
         _logger.SensitiveDebug("Removed contributions of {Source}", sourceRef);
     }
 
-    // ---- per-source section upsert ----
+    // ---- shared synthesis writer ----
 
-    private async Task UpsertSourceSectionAsync(string path, string subject, string sourceRef, string body)
+    // Returns the index one-liner, or null when synthesis produced nothing (page left untouched).
+    private async Task<string?> SynthesizePageAsync(
+        string path, string title, string category,
+        List<string> sourceRefs, string charter, CancellationToken ct)
     {
-        var doc = await _store.ReadAsync(path);
-        var sectionText = "## " + SourceHeading(sourceRef) + "\n\n" + body;
-
-        if (doc is null)
+        var sources = new List<(string Ref, string Text)>();
+        foreach (var r in sourceRefs)
         {
-            await _store.WriteAtomicAsync(path, VaultFrontmatter.Build("topic", subject) + "\n" + sectionText);
-            return;
+            var text = await TryReadSourceAsync(r, ct);
+            if (text is not null)
+            {
+                sources.Add((r, text));
+            }
         }
 
-        var existing = doc.Sections.FirstOrDefault(s => IsSectionFor(s, sourceRef));
-        if (existing is null)
+        if (sources.Count == 0)
         {
-            var raw = doc.RawText;
-            var sep = raw.EndsWith('\n') ? "\n" : "\n\n";
-            await _store.WriteAtomicAsync(path, raw + sep + sectionText);
+            return null;
         }
-        else
-        {
-            // Replace only the section body via the store's byte-range splice primitive. BodyStart is
-            // the char right after the heading line's '\n', so the blank separator line belongs to the
-            // body — prepend it to keep first-ingest and re-ingest formatting identical.
-            await _store.SpliceSectionAsync(path, existing.Slug, "\n" + body);
-        }
-    }
 
-    // Normalize an entity's facts blob into "- " bullet lines, one per non-empty input line, with a
-    // trailing '\n' so the section body always ends on a line boundary.
-    private static string NormalizeFactsToBullets(string facts)
-    {
+        var existing = await _store.ReadAsync(path);
+        var page = await _synth.SynthesizeAsync(title, category, charter, sources, ct);
+        if (string.IsNullOrWhiteSpace(page.Body))
+        {
+            return null;
+        }
+
+        // Manual preamble = raw text between the frontmatter close and the sentinel, split on the RAW
+        // text (never doc.Preamble). "" for a new page or one with no manual text above the marker.
+        var preamble = ExtractManualPreamble(existing?.RawText);
+
         var sb = new StringBuilder();
-        foreach (var line in facts.Replace("\r\n", "\n").Split('\n'))
+        sb.Append(VaultFrontmatter.BuildPreserving(existing, title, category)); // preserves id/created
+        sb.Append('\n');
+        if (preamble.Length > 0)
         {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            if (!trimmed.StartsWith('-'))
-            {
-                sb.Append("- ");
-            }
-
-            sb.Append(trimmed).Append('\n');
+            sb.Append(preamble.TrimEnd()).Append("\n\n");
         }
 
-        return sb.ToString();
+        sb.Append(ManagedMarker).Append('\n');
+        sb.Append(page.Body.Trim()).Append('\n');
+
+        var content = WriteSourcesLine(sb.ToString(), sourceRefs); // "sources: [a, b]" into the block
+        await _store.WriteAtomicAsync(path, content);
+        _logger.SensitiveDebug("Ingest synthesized topic page {Path}", path);
+        return page.Summary;
     }
 
-    // Given a section's BodyStart (the byte just after the heading line's '\n' terminator), return the
-    // index of the first byte of that heading line. BodyStart-1 is the heading line's own terminator;
-    // we walk back ONE MORE '\n' (the terminator of the line before the heading) and step past it, or
-    // to 0 when the heading is the file's first line.
-    private static int HeadingLineStart(string raw, int bodyStart)
+    // Resolve a vault-relative source ref to an absolute path under the vault root, or null if it
+    // escapes containment. Shared predicate for the initial guard and the per-topic union reads.
+    private string? ResolveContainedSource(string sourceRelativePath)
     {
-        // Index of the heading line's terminating '\n' (BodyStart-1), if the body started after one.
-        var headingTerminator = bodyStart - 1;
-        if (headingTerminator < 0 || headingTerminator > raw.Length - 1 || raw[headingTerminator] != '\n')
+        var rootFull = Path.GetFullPath(_store.Root);
+        var absolute = Path.GetFullPath(
+            Path.Combine(rootFull, sourceRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        return absolute.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            ? absolute
+            : null;
+    }
+
+    // Per-topic union read: containment + IsTextSource + exists, else null (silently skipped).
+    private async Task<string?> TryReadSourceAsync(string sourceRef, CancellationToken ct)
+    {
+        var absolute = ResolveContainedSource(sourceRef);
+        if (absolute is null || !File.Exists(absolute) || !SourcesProvenance.IsTextSource(sourceRef))
         {
-            // No trailing '\n' on the heading line (heading is the file's last line); scan from end.
-            headingTerminator = raw.Length;
+            return null;
         }
 
-        var lineBefore = raw.LastIndexOf('\n', Math.Max(headingTerminator - 1, 0));
-        return lineBefore < 0 ? 0 : lineBefore + 1;
+        return await File.ReadAllTextAsync(absolute, ct);
+    }
+
+    private static List<string> ReadPageSources(VaultDocument? doc)
+        => doc is null ? new() : SourcesProvenance.ReadSourceRefs(doc.RawText).ToList();
+
+    // Everything after the closing '---' line and before the sentinel; "" if no sentinel or no such text.
+    private static string ExtractManualPreamble(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return string.Empty;
+        }
+
+        var body = StripFrontmatter(raw);
+        var marker = body.IndexOf(ManagedMarker, StringComparison.Ordinal);
+        var preamble = marker < 0 ? body : body[..marker]; // no sentinel (user page) → all of it is manual
+        return preamble.Trim();
+    }
+
+    // The content after the closing '---' delimiter line, or "" when there is no leading frontmatter.
+    private static string StripFrontmatter(string raw)
+    {
+        var s = raw.Replace("\r\n", "\n");
+        var open = s.IndexOf("---\n", StringComparison.Ordinal);
+        if (open != 0)
+        {
+            return s;
+        }
+
+        var close = s.IndexOf("\n---", open + 3, StringComparison.Ordinal);
+        if (close < 0)
+        {
+            return s;
+        }
+
+        var afterClose = s[(close + 1)..]; // "---\n<body...>"
+        var nl = afterClose.IndexOf('\n');
+        return nl < 0 ? string.Empty : afterClose[(nl + 1)..];
     }
 
     // ---- sources: frontmatter maintainer (best-effort YAML flow list) ----
 
-    private Task EnsureSourceInFrontmatterAsync(string path, string sourceRef) =>
-        RewriteSourcesFrontmatterAsync(path, refs =>
+    // Set the sources: line on an in-memory page's frontmatter block (used by the synthesis writer).
+    private static string WriteSourcesLine(string content, IReadOnlyList<string> sourceRefs)
+    {
+        var raw = content.Replace("\r\n", "\n");
+        var open = raw.IndexOf("---\n", StringComparison.Ordinal);
+        if (open != 0)
         {
-            if (!refs.Contains(sourceRef, StringComparer.OrdinalIgnoreCase))
-            {
-                refs.Add(sourceRef);
-            }
-        });
+            return content;
+        }
+
+        var close = raw.IndexOf("\n---", open + 3, StringComparison.Ordinal);
+        if (close < 0)
+        {
+            return content;
+        }
+
+        var fmBody = raw[(open + 4)..(close + 1)]; // keys block, ends with the '\n' before '---'
+        var afterFm = raw[(close + 1)..];          // starts at the closing '---' line
+
+        var newLine = "sources: [" + string.Join(", ", sourceRefs) + "]\n";
+        var existing = SourcesProvenance.FindKeyValue(fmBody, "sources:");
+        var newFmBody = existing is null
+            ? fmBody + newLine
+            : ReplaceKeyLine(fmBody, "sources:", newLine);
+
+        return raw[..(open + 4)] + newFmBody + afterFm;
+    }
 
     private Task RemoveSourceFromFrontmatterAsync(string path, string sourceRef) =>
         RewriteSourcesFrontmatterAsync(path, refs =>
@@ -414,24 +460,4 @@ public sealed class IngestService : IIngestService
 
             return n.EndsWith(".md", StringComparison.Ordinal) ? n[..^3] : n;
         });
-
-    private static string FirstLine(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return string.Empty;
-        }
-
-        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
-        foreach (var line in normalized.Split('\n'))
-        {
-            var trimmed = line.TrimStart('-', '*', ' ', '\t').Trim();
-            if (trimmed.Length > 0)
-            {
-                return trimmed;
-            }
-        }
-
-        return string.Empty;
-    }
 }

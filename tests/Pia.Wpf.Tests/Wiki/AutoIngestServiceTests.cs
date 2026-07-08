@@ -177,6 +177,28 @@ public class AutoIngestServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SynthesisFailed_records_nothing_and_does_not_remove()
+    {
+        var sourceRef = Seed("a.txt", "v1");
+        // A prior clean run recorded a touched page.
+        _ingest.ResultFor = _ => new IngestResult(sourceRef, ["memory/topics/x.md"]);
+        using var svc = Build();
+        await svc.RunAsync(sourceRef, TestContext.Current.CancellationToken);
+        _ingest.RemoveCalls.Clear();
+
+        // A subsequent flaky run reports SynthesisFailed — transient: record nothing, prune nothing.
+        Seed("a.txt", "v2");
+        _ingest.ResultFor = _ => new IngestResult(sourceRef, ["memory/topics/x.md"], IngestOutcome.SynthesisFailed);
+        await svc.RunAsync(sourceRef, TestContext.Current.CancellationToken);
+
+        Assert.Empty(_ingest.RemoveCalls); // no shrink-diff wipe off the back of a flaky provider
+        // The state row is unchanged from the clean run (Success), so the hash never froze on failure.
+        var state = await _state.GetAsync(sourceRef);
+        Assert.Equal(IngestOutcome.Success, state!.Outcome);
+        Assert.Equal(["memory/topics/x.md"], state.TouchedPages);
+    }
+
+    [Fact]
     public async Task StartAsync_with_setting_off_does_not_watch_or_reconcile()
     {
         Seed("a.txt", "v1");
