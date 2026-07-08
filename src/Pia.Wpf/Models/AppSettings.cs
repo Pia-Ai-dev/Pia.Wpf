@@ -145,6 +145,12 @@ public class AppSettings
     // roster snapshots entirely. Best-effort: a roster miss never affects the meeting. Local-only.
     public int MeetingAttendeeRosterSnapshotMinutes { get; set; } = 2;
 
+    // Automatically ingest documents in the vault's sources/ folder (watcher + startup reconcile).
+    // Each ingest costs two LLM calls to the default provider and writes synced memory pages, so this
+    // is the consent gate. Gates only the automatic triggers — the chat ingest tool always works.
+    // JSON-only (no settings UI), like MeetingAttendeeRosterSnapshotMinutes.
+    public bool AutoIngestSources { get; set; } = true;
+
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 
