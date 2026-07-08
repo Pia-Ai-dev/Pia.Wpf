@@ -98,6 +98,7 @@ public class VaultWikiTests : IDisposable
             "- [[notes/q2]] — Q2 offsite notes.\n" +
             "\n" +
             "## Topics\n" +
+            "### Other\n" +
             "- [[topics/acme]] — Acme Corp: customer since 2024.\n" +
             "- [[topics/john-smith]] — Primary contact at Acme.\n";
 

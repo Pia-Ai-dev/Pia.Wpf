@@ -37,6 +37,20 @@ public sealed class VaultIndexService
         ("topic", "Topics"),
     ];
 
+    // §8 canonical category order + display headings for sub-grouping the `## Topics` group. Mirrors
+    // the ingest extractor's category vocabulary; any page whose `category` is missing/unrecognized
+    // falls under "Other".
+    private static readonly (string Category, string Display)[] TopicCategories =
+    [
+        ("person", "People"),
+        ("organization", "Organizations"),
+        ("product", "Products"),
+        ("concept", "Concepts"),
+        ("regulation", "Regulations"),
+        ("technology", "Technology"),
+        ("other", "Other"),
+    ];
+
     private readonly IVaultStore _store;
     private readonly ILogger<VaultIndexService> _logger;
 
@@ -167,13 +181,73 @@ public sealed class VaultIndexService
 
             sb.Append('\n');
             sb.Append("## ").Append(display).Append('\n');
-            foreach (var (target, summary) in group)
+
+            if (type == "topic")
             {
-                sb.Append("- [[").Append(target).Append("]] — ").Append(summary).Append('\n');
+                await AppendTopicSubGroupsAsync(sb, group);
+            }
+            else
+            {
+                foreach (var (target, summary) in group)
+                {
+                    AppendEntry(sb, target, summary);
+                }
             }
         }
 
         await _store.WriteAtomicAsync(IndexPath, sb.ToString());
+    }
+
+    // §8: within the path-derived `## Topics` group, sub-group entries by each page's frontmatter
+    // `category` under canonically-ordered `### ...` headings, reading the page at rewrite time. Pages
+    // with a missing/unknown category land under `### Other`. Reading N pages per rewrite is acceptable
+    // (ingest is serial/background; topic count is small).
+    private async Task AppendTopicSubGroupsAsync(StringBuilder sb, List<KeyValuePair<string, string>> group)
+    {
+        var byCategory = new Dictionary<string, List<KeyValuePair<string, string>>>(StringComparer.Ordinal);
+        foreach (var entry in group)
+        {
+            var category = await CategoryForTargetAsync(entry.Key);
+            (byCategory.TryGetValue(category, out var bucket) ? bucket : byCategory[category] = []).Add(entry);
+        }
+
+        foreach (var (category, display) in TopicCategories)
+        {
+            if (!byCategory.TryGetValue(category, out var bucket))
+            {
+                continue;
+            }
+
+            sb.Append("### ").Append(display).Append('\n');
+            foreach (var (target, summary) in bucket)
+            {
+                AppendEntry(sb, target, summary);
+            }
+        }
+    }
+
+    private static void AppendEntry(StringBuilder sb, string target, string summary) =>
+        sb.Append("- [[").Append(target).Append("]] — ").Append(summary).Append('\n');
+
+    // Reads the topic page's frontmatter `category`, normalized to a known key; missing/unknown → "other".
+    private async Task<string> CategoryForTargetAsync(string target)
+    {
+        var doc = await _store.ReadAsync("memory/" + target + ".md");
+        if (doc is not null
+            && doc.Frontmatter.TryGetValue("category", out var category)
+            && !string.IsNullOrWhiteSpace(category))
+        {
+            var normalized = category.Trim().ToLowerInvariant();
+            foreach (var (known, _) in TopicCategories)
+            {
+                if (known == normalized)
+                {
+                    return normalized;
+                }
+            }
+        }
+
+        return "other";
     }
 
     // Frontmatter keys Pia owns on index.md; everything else is a user/Obsidian addition we must
