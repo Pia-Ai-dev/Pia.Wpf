@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure.Vault;
@@ -37,6 +38,8 @@ public sealed class VaultIndexService
         ("topic", "Topics"),
     ];
 
+    private const string DefaultCategory = "other";
+
     // §8 canonical category order + display headings for sub-grouping the `## Topics` group. Mirrors
     // the ingest extractor's category vocabulary; any page whose `category` is missing/unrecognized
     // falls under "Other".
@@ -48,8 +51,11 @@ public sealed class VaultIndexService
         ("concept", "Concepts"),
         ("regulation", "Regulations"),
         ("technology", "Technology"),
-        ("other", "Other"),
+        (DefaultCategory, "Other"),
     ];
+
+    private static readonly HashSet<string> KnownCategories =
+        new(TopicCategories.Select(c => c.Category), StringComparer.Ordinal);
 
     private readonly IVaultStore _store;
     private readonly ILogger<VaultIndexService> _logger;
@@ -238,16 +244,13 @@ public sealed class VaultIndexService
             && !string.IsNullOrWhiteSpace(category))
         {
             var normalized = category.Trim().ToLowerInvariant();
-            foreach (var (known, _) in TopicCategories)
+            if (KnownCategories.Contains(normalized))
             {
-                if (known == normalized)
-                {
-                    return normalized;
-                }
+                return normalized;
             }
         }
 
-        return "other";
+        return DefaultCategory;
     }
 
     // Frontmatter keys Pia owns on index.md; everything else is a user/Obsidian addition we must
