@@ -25,4 +25,10 @@ public class AiIngestExtractionServiceTests
         var topics = AiIngestExtractionService.ParseTopics("""[{"subject":"WPF"}]""");
         Assert.Equal("concept", topics[0].Category);
     }
+
+    [Fact]
+    public void ParseTopics_returns_empty_for_empty_json_array()
+    {
+        Assert.Empty(AiIngestExtractionService.ParseTopics("[]"));
+    }
 }

@@ -242,10 +242,9 @@ public sealed class AiIngestExtractionService : IIngestExtractor
                         list.Add(new ExtractedTopic(subject.Trim(), category.Trim()));
                     }
 
-                    if (list.Count > 0)
-                    {
-                        return list;
-                    }
+                    // A parsed array is authoritative even when empty ("[]" means
+                    // "nothing notable"); only non-JSON output falls through.
+                    return list;
                 }
             }
             catch (JsonException)
