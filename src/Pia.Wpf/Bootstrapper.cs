@@ -380,6 +380,7 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Wiki.VaultLogService>();
         services.AddSingleton<Pia.Services.Wiki.VaultSchemaService>();
         services.AddSingleton<IIngestExtractor, Pia.Services.Wiki.AiIngestExtractionService>();
+        services.AddSingleton<IIngestSynthesizer, Pia.Services.Wiki.AiIngestSynthesisService>();
         services.AddSingleton<IIngestService, Pia.Services.Wiki.IngestService>();
         services.AddSingleton(sp => new Pia.Services.Wiki.IngestStateStore(
             sp.GetRequiredService<SqliteContext>().ConnectionString));
