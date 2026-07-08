@@ -508,11 +508,15 @@ public sealed class PiaCloudChatClient : IChatClient
         var json = JsonNode.Parse(responseJson)
             ?? throw new InvalidOperationException("Invalid response from Pia Cloud");
 
-        var message = json["message"]?.AsObject()
+        // The server's non-streaming chat returns the raw upstream OpenAI-compatible envelope
+        // (choices[0].message / finish_reason — Pia.Server AiProxyEndpoints "Return raw upstream
+        // JSON"). The flat { message, finishReason } shape stays as a fallback for older envelopes.
+        var choice = (json["choices"] as JsonArray)?.FirstOrDefault() as JsonObject;
+        var message = (choice?["message"] ?? json["message"])?.AsObject()
             ?? throw new InvalidOperationException("Response missing 'message' field");
 
-        var model = json["model"]?.GetValue<string>() ?? "pia-cloud";
-        var finishReason = json["finishReason"]?.GetValue<string>();
+        var model = ReadString(json["model"]) ?? "pia-cloud";
+        var finishReason = ReadString(choice?["finish_reason"]) ?? ReadString(json["finishReason"]);
 
         var chatMessage = ParseMessageObject(message);
 

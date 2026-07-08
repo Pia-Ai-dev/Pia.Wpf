@@ -56,6 +56,23 @@ public class PiaCloudChatClientReasoningTests
     }
 
     [Fact]
+    public async Task NonStreaming_ParsesOpenAiEnvelope_FromChoicesArray()
+    {
+        // The real Pia.Server non-streaming chat endpoint returns the raw upstream OpenAI-compatible
+        // envelope (choices[0].message / finish_reason — AiProxyEndpoints "Return raw upstream JSON").
+        // Interactive chat streams, so only SendRequestAsync callers (e.g. ingest) hit this path.
+        var json = """{"model":"gpt-x","choices":[{"message":{"role":"assistant","content":"Answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}""";
+        var client = CreateClient(json, "application/json");
+
+        var response = await client.GetResponseAsync(new[] { new ChatMessage(ChatRole.User, "hi") });
+
+        Assert.Equal("Answer", response.Text);
+        Assert.Equal("gpt-x", response.ModelId);
+        Assert.Equal(ChatFinishReason.Stop, response.FinishReason);
+        Assert.Equal(8, response.Usage!.TotalTokenCount);
+    }
+
+    [Fact]
     public async Task Streaming_ContentAsArrayOfTextParts_IsConcatenated()
     {
         // Some providers (e.g. Mistral reasoning chunks) emit delta.content as an array of
