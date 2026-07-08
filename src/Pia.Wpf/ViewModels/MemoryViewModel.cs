@@ -163,14 +163,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     // singleton, so Dispose MUST unsubscribe or this event pins the VM for the app lifetime.
     private void OnIngestCompleted(object? sender, EventArgs e)
     {
-        if (_uiContext is not null)
-        {
-            _uiContext.Post(_ => _ = LoadSourcesAsync(), null);
-        }
-        else
-        {
-            _ = LoadSourcesAsync();
-        }
+        // No context means we were constructed off the UI thread — refreshing here would mutate
+        // ObservableCollections cross-thread, so skip; the next navigation reloads anyway.
+        _uiContext?.Post(_ => _ = LoadSourcesAsync(), null);
     }
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)

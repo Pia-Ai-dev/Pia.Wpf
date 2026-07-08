@@ -32,10 +32,9 @@ namespace Pia.Services.Wiki;
 /// frontmatter ref from each page; pages left with no sections and a whitespace-only preamble are
 /// deleted together with their index entry.</para>
 ///
-/// <para><b>sources: round-trip limitation.</b> The frontmatter maintainer writes/extends a YAML flow
-/// list (<c>sources: [sources/a, sources/b]</c>). Because the parser flattens YAML lists to a single
-/// string (same root cause as the index.md §2.3 limitation), multi-source round-trip across edits is
-/// best-effort.</para>
+/// <para><b>sources: round-trip.</b> The frontmatter maintainer reads the RAW <c>sources:</c> line
+/// (never <c>VaultDocument.Frontmatter</c>, whose YAML parser flattens flow lists), so a multi-source
+/// list round-trips cleanly across add/remove edits.</para>
 ///
 /// <para><b>Deferred:</b> a long-running background-job handle + progress UI — ingest runs inline.</para>
 /// </summary>
