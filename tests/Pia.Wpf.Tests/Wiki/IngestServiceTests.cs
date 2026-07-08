@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -17,22 +16,18 @@ namespace Pia.Tests.Wiki;
 
 /// <summary>
 /// Task 7.1 ingest pipeline tests for <see cref="IngestService"/>: a real temp
-/// <see cref="SqliteContext"/> + <see cref="VaultStore"/> + real <see cref="MemoryService"/> (over a
-/// real <see cref="SectionUpsertService"/> + a deterministic stub embedder) + real
-/// <see cref="VaultIndexService"/>/<see cref="VaultLogService"/>, with a STUB
-/// <see cref="IIngestExtractor"/> returning two fixed entities so the pipeline is exercised without an
-/// API key. The source <c>sources/sample.txt</c> is seeded directly under the vault root.
+/// <see cref="VaultStore"/> + real <see cref="VaultIndexService"/>/<see cref="VaultLogService"/> (over
+/// a deterministic stub embedder), with a STUB <see cref="IIngestExtractor"/> returning two fixed
+/// entities so the pipeline is exercised without an API key. The source <c>sources/sample.txt</c> is
+/// seeded directly under the vault root.
 /// </summary>
 public class IngestServiceTests : IDisposable
 {
     private readonly string _tmpDir;
     private readonly string _vaultRoot;
-    private readonly SqliteContext _ctx;
     private readonly MarkdownVaultParser _parser = new();
     private readonly VaultStore _store;
     private readonly StubEmbeddingService _embeddings = new();
-    private readonly SyncDeleteTrackerService _deleteTracker;
-    private readonly SectionUpsertService _upsert;
     private readonly VaultIndexService _index;
     private readonly VaultLogService _log;
 
@@ -42,10 +37,7 @@ public class IngestServiceTests : IDisposable
         Directory.CreateDirectory(_tmpDir);
         _vaultRoot = Path.Combine(_tmpDir, "vault");
         Directory.CreateDirectory(_vaultRoot);
-        _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
         _store = new VaultStore(_vaultRoot, _parser);
-        _deleteTracker = new SyncDeleteTrackerService(_tmpDir, NullLogger<SyncDeleteTrackerService>.Instance);
-        _upsert = new SectionUpsertService(_embeddings);
         _index = new VaultIndexService(_store, NullLogger<VaultIndexService>.Instance);
         _log = new VaultLogService(_store, NullLogger<VaultLogService>.Instance);
 
@@ -59,7 +51,6 @@ public class IngestServiceTests : IDisposable
 
     public void Dispose()
     {
-        _ctx.Dispose();
         try
         {
             if (Directory.Exists(_tmpDir))
@@ -73,12 +64,8 @@ public class IngestServiceTests : IDisposable
         }
     }
 
-    private MemoryService BuildMemory()
-        => new(_ctx, NullLogger<MemoryService>.Instance, _embeddings, _deleteTracker, _store, _upsert);
-
     private IngestService BuildIngest(IIngestExtractor extractor)
-        => new(extractor, BuildMemory(), _store, _index, _log, _embeddings,
-            NullLogger<IngestService>.Instance);
+        => new(extractor, _store, _index, _log, _embeddings, NullLogger<IngestService>.Instance);
 
     private IngestToolHandler BuildToolHandler()
         => new(BuildIngest(new StubExtractor()), NullLogger<IngestToolHandler>.Instance);
@@ -95,6 +82,16 @@ public class IngestServiceTests : IDisposable
                 new ExtractedEntity("Acme Corp", "- type: customer\n- since: 2024"),
                 new ExtractedEntity("John Smith", "- role: primary contact\n- company: Acme"),
             ]);
+    }
+
+    // Configurable variant for re-ingest scenarios (v2 of a source with changed facts).
+    private sealed class FixedExtractor(params ExtractedEntity[] entities) : IIngestExtractor
+    {
+        public Task<string> SummarizeAsync(string content, CancellationToken ct = default)
+            => Task.FromResult("Fixed summary.");
+
+        public Task<IReadOnlyList<ExtractedEntity>> ExtractEntitiesAsync(string content, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ExtractedEntity>>(entities);
     }
 
     [Fact]
@@ -185,6 +182,102 @@ public class IngestServiceTests : IDisposable
         Assert.Contains("sources/sample.txt", acme.RawText);
         Assert.Contains("sources:", john!.RawText);
         Assert.Contains("sources/sample.txt", john.RawText);
+    }
+
+    [Fact]
+    public async Task IngestAsync_writes_facts_into_a_source_section()
+    {
+        var ingest = BuildIngest(new StubExtractor());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(acme);
+        var section = Assert.Single(acme!.Sections);
+        Assert.Equal("Source: sources/sample.txt", section.Heading);
+        Assert.Contains("customer", section.Body);
+    }
+
+    [Fact]
+    public async Task Reingest_replaces_the_source_section_not_appends()
+    {
+        var ingest = BuildIngest(new StubExtractor());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        // v2 of the source: same entity, different fact.
+        var ingest2 = BuildIngest(new FixedExtractor(
+            new ExtractedEntity("Acme Corp", "- type: former customer")));
+        await ingest2.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 9),
+            TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        var section = Assert.Single(acme!.Sections.Where(s => s.Heading == "Source: sources/sample.txt"));
+        Assert.Contains("former customer", section.Body);
+        Assert.DoesNotContain("since: 2024", acme.RawText); // old fact replaced, not kept
+    }
+
+    [Fact]
+    public async Task Reingest_preserves_manual_preamble_and_foreign_sections()
+    {
+        var ingest = BuildIngest(new StubExtractor());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        // Simulate a manual remember (preamble) and another source's section. The created page reads
+        // "---\n\n## Source: ..." (VaultFrontmatter.Build ends with "---\n", then the "\n" separator) —
+        // the pattern below must match that exact shape or the Replace is a silent no-op.
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        var withExtras = acme!.RawText.Replace("---\n\n## ", "---\n- manually remembered fact\n\n## ")
+            + "\n## Source: sources/other.txt\n\n- from another source\n";
+        Assert.Contains("manually remembered fact", withExtras); // guard: the pattern matched
+        await _store.WriteAtomicAsync("memory/topics/acme-corp.md", withExtras);
+
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 9),
+            TestContext.Current.CancellationToken);
+
+        var after = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.Contains("manually remembered fact", after!.RawText);
+        Assert.Contains("from another source", after.RawText);
+        Assert.Equal(2, after.Sections.Count(s => s.Heading.StartsWith("Source: ")));
+    }
+
+    [Fact]
+    public async Task RemoveContributionsAsync_removes_section_and_deletes_empty_pages()
+    {
+        var ingest = BuildIngest(new StubExtractor());
+        var result = await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        await ingest.RemoveContributionsAsync("sources/sample.txt", result.TouchedPages,
+            TestContext.Current.CancellationToken);
+
+        // Pages had ONLY this source's section -> deleted.
+        Assert.Null(await _store.ReadAsync("memory/topics/acme-corp.md"));
+        Assert.Null(await _store.ReadAsync("memory/topics/john-smith.md"));
+    }
+
+    [Fact]
+    public async Task RemoveContributionsAsync_keeps_pages_with_other_content()
+    {
+        var ingest = BuildIngest(new StubExtractor());
+        var result = await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        await _store.WriteAtomicAsync("memory/topics/acme-corp.md",
+            acme!.RawText + "\n## Source: sources/other.txt\n\n- other fact\n");
+
+        await ingest.RemoveContributionsAsync("sources/sample.txt", result.TouchedPages,
+            TestContext.Current.CancellationToken);
+
+        var after = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(after); // survives — another source still contributes
+        Assert.DoesNotContain("Source: sources/sample.txt", after!.RawText);
+        Assert.Contains("other fact", after.RawText);
+        // Frontmatter ref pruned:
+        Assert.DoesNotContain("sources/sample.txt",
+            string.Join(",", SourcesProvenance.ReadSourceRefs(after.RawText)));
     }
 
     [Fact]

@@ -21,12 +21,21 @@ public record IngestResult(
 /// <summary>
 /// The ingest pipeline (Task 7.1): a fan-out compiler that reads a RAW source from <c>sources/</c>,
 /// summarizes/extracts entities from it (via <see cref="IIngestExtractor"/>), and fans the entities out
-/// into <c>memory/topics/</c> wiki pages through <see cref="IMemoryService.RememberAsync"/> — keeping
-/// the index, log and per-page provenance up to date. Re-ingesting the same source must NOT create
-/// duplicate topic pages/sections (dedup is delegated to the deterministic remember/upsert path).
-/// Ingest runs inline; a background-job handle + progress UI is deferred.
+/// into <c>memory/topics/</c> wiki pages — keeping the index, log and per-page provenance up to date.
+/// Each source's facts live in a machine-managed <c>## Source: &lt;sourceRef&gt;</c> section per topic
+/// page; re-ingesting the same source replaces exactly that section (never duplicates, never touches
+/// manual content). Ingest runs inline; a background-job handle + progress UI is deferred.
 /// </summary>
 public interface IIngestService
 {
     Task<IngestResult> IngestAsync(string sourceRelativePath, DateOnly date, CancellationToken ct = default);
+
+    /// <summary>
+    /// Remove everything <paramref name="sourceRef"/> contributed: its <c>## Source:</c> section and
+    /// its <c>sources:</c> frontmatter ref on every page in <paramref name="pages"/>; pages left with
+    /// no sections and a whitespace-only preamble are deleted (with their index entry). Missing pages
+    /// are skipped; pages without the section still get their frontmatter ref pruned (and the
+    /// empty-page check). Appends one <c>ingest</c> journal line when any pages were targeted.
+    /// </summary>
+    Task RemoveContributionsAsync(string sourceRef, IReadOnlyList<string> pages, CancellationToken ct = default);
 }
