@@ -14,26 +14,18 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <mem:PiaMemoryHeader Grid.Row="0" Margin="24,20,24,14"/>
 
-    <!-- Capped like the MeetingAttendeeOverlay requirements card — an unconstrained
-         full-width strip of 12px prose reads wrong on a wide window. -->
-    <mem:PiaMemoryHelpCard Grid.Row="1"
-                           Margin="24,0,24,14"
-                           MaxWidth="560"
-                           HorizontalAlignment="Left"
-                           Visibility="{Binding IsHelpVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-
-    <mem:PiaMemorySearchBar Grid.Row="2"
+    <mem:PiaMemorySearchBar Grid.Row="1"
                             Margin="24,0,24,14"
-                            Query="{Binding SearchQuery, Mode=TwoWay}"/>
+                            Query="{Binding SearchQuery, Mode=TwoWay}"
+                            IsBusy="{Binding IsLoading}"/>
 
-    <Grid Grid.Row="3" Margin="24,0,24,14">
+    <Grid Grid.Row="2" Margin="24,0,24,14">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="420"/>
         <ColumnDefinition Width="14"/>
@@ -42,13 +34,6 @@
 
       <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
         <Grid>
-          <ui:ProgressRing IsIndeterminate="True"
-                           Width="40" Height="40"
-                           VerticalAlignment="Top"
-                           HorizontalAlignment="Center"
-                           Margin="0,60,0,0"
-                           Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-
           <StackPanel HorizontalAlignment="Center"
                       VerticalAlignment="Top"
                       Margin="0,60,0,0"
@@ -102,6 +87,6 @@
                                                        Converter={StaticResource BooleanToVisibilityConverter}}"/>
     </Grid>
 
-    <mem:PiaMemoryStatusBar Grid.Row="4"/>
+    <mem:PiaMemoryStatusBar Grid.Row="3"/>
   </Grid>
 </UserControl>

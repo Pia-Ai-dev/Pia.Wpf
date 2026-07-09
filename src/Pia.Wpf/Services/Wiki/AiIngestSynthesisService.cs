@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services.Wiki;
@@ -25,15 +26,21 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
 
     private readonly IAiClientService _aiClient;
     private readonly IProviderService _providers;
+    private readonly Func<ITokenMapService> _tokenMapFactory;
+    private readonly ISettingsService _settings;
     private readonly ILogger<AiIngestSynthesisService> _logger;
 
     public AiIngestSynthesisService(
         IAiClientService aiClient,
         IProviderService providers,
+        Func<ITokenMapService> tokenMapFactory,
+        ISettingsService settings,
         ILogger<AiIngestSynthesisService> logger)
     {
         _aiClient = aiClient;
         _providers = providers;
+        _tokenMapFactory = tokenMapFactory;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -52,17 +59,62 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
             (string.IsNullOrWhiteSpace(charter) ? "" : "Knowledge base context:\n" + charter + "\n\n") +
             $"Write a concise wiki page for the topic \"{title}\" (category: {category}). Synthesize a SINGLE " +
             "coherent explanation across ALL the sources below — merge overlapping facts, reconcile them, and " +
-            "note contradictions explicitly. Start with a one-sentence definition, then short prose or bullets. " +
-            "Link related topics inline using [[topics/<slug>]] where <slug> is the lowercase-hyphen form of the " +
-            "topic name. Do NOT include a title heading or frontmatter. First output a line " +
-            "'SUMMARY: <one sentence>' then a blank line then the page body.\n\n" +
+            "note contradictions explicitly. If the sources name this topic by multiple aliases, abbreviations, " +
+            "or expanded forms, treat them as the SAME entity and describe it once under its canonical name — " +
+            "do NOT restate it as if it were several distinct things. Start with a one-sentence definition, then " +
+            "short prose or bullets. Link related topics inline using [[topics/<slug>]] where <slug> is the " +
+            "lowercase-hyphen form of the topic name. Preserve any bracketed placeholder tokens (e.g. " +
+            "[Person_1], [Email_2]) EXACTLY as written — never lowercase, translate, rephrase, or invent them. " +
+            "Do NOT include a title heading or frontmatter. First output a line 'SUMMARY: <one sentence>' then a " +
+            "blank line then the page body.\n\n" +
             string.Join("\n\n", sources.Select(s => $"--- SOURCE: {s.Ref} ---\n{Truncate(s.Text)}"));
 
-        var result = await _aiClient.SendRequestAsync(provider, prompt, ct);
+        var result = await SendWithReidentificationAsync(provider, prompt, ct);
         var page = ParseSynthesis(result.Text);
         _logger.SensitiveDebug(
             "Ingest synthesized page for {Title} ({BodyLength} body chars)", title, page.Body.Length);
         return page;
+    }
+
+    // Ingest runs off any chat turn, so no TokenMapAmbient is set. Without one, the TokenizingAiClientService
+    // decorator has no per-turn map to re-identify against, and any PII placeholder the model emits in its
+    // REWRITTEN prose would be persisted to the topic page verbatim (a privacy leak of masked-then-unmasked
+    // intent). We publish THIS run's map as the ambient turn map around the call (so the decorator tokenizes
+    // the prompt / detokenizes the response against it), then run a mangle-tolerant re-identification pass on
+    // the result to recover tokens the decorator's strict regex missed (the model may lowercase or re-punctuate
+    // a token, e.g. [person-1], when weaving it into prose). No-op when tokenization is disabled.
+    private async Task<AiCompletionResult> SendWithReidentificationAsync(
+        AiProvider provider, string prompt, CancellationToken ct)
+    {
+        var settings = await _settings.GetSettingsAsync();
+        if (!settings.Privacy.TokenizationEnabled)
+        {
+            return await _aiClient.SendRequestAsync(provider, prompt, ct);
+        }
+
+        var tokenMap = _tokenMapFactory();
+        try
+        {
+            await tokenMap.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize token map for ingest synthesis");
+        }
+
+        var previousAmbient = TokenMapAmbient.Current;
+        TokenMapAmbient.Current = tokenMap;
+        AiCompletionResult result;
+        try
+        {
+            result = await _aiClient.SendRequestAsync(provider, prompt, ct);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = previousAmbient;
+        }
+
+        return result with { Text = tokenMap.DetokenizeLoose(result.Text) };
     }
 
     // Split the model output into (Summary, Body). First "SUMMARY:" line → Summary, remainder → Body;

@@ -93,6 +93,14 @@ public class DialogService : IDialogService
             });
     }
 
+    public async Task ShowMemoryHelpDialogAsync(string vaultRoot)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new MemoryHelpContentDialog(dialogHost, vaultRoot);
+        await dialog.ShowAsync();
+    }
+
     public async Task ShowRecoveryCodeDialogAsync(string recoveryCode)
     {
         var dialogHost = _contentDialogService.GetDialogHostEx()

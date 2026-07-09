@@ -24,13 +24,19 @@
                 Orientation="Horizontal"
                 VerticalAlignment="Center">
       <ui:Button Appearance="Secondary"
+                 Command="{Binding GoHomeCommand}"
+                 ToolTip="{loc:Str Memory_Home}"
+                 Margin="0,0,6,0">
+        <ui:SymbolIcon Symbol="Home24" FontSize="16"/>
+      </ui:Button>
+      <ui:Button Appearance="Secondary"
                  Command="{Binding OpenVaultFolderCommand}"
                  ToolTip="{loc:Str Memory_OpenFolder}"
                  Margin="0,0,6,0">
         <ui:SymbolIcon Symbol="FolderOpen24" FontSize="16"/>
       </ui:Button>
       <ui:Button Appearance="Secondary"
-                 Command="{Binding ToggleHelpCommand}"
+                 Command="{Binding ShowHelpCommand}"
                  ToolTip="{loc:Str Memory_Help_Tooltip}">
         <ui:SymbolIcon Symbol="QuestionCircle24" FontSize="16"/>
       </ui:Button>

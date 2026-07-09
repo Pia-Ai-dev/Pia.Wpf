@@ -949,6 +949,12 @@ public class MemoryService : IMemoryService
 
             var type = ResolveItemType(doc, filePath);
             var updated = ParseFrontmatterUpdated(doc);
+            // Topic pages carry a frontmatter `category` the Memory view groups on (null otherwise). Read
+            // it BEFORE the section split so a topic whose synthesized body has `##` headings — which
+            // pushes it down the structured branch — still carries its category on every section item.
+            var category = doc.Frontmatter.TryGetValue("category", out var c) && !string.IsNullOrWhiteSpace(c)
+                ? c
+                : null;
 
             if (doc.Sections.Count > 0)
             {
@@ -956,7 +962,8 @@ public class MemoryService : IMemoryService
                 foreach (var section in doc.Sections)
                 {
                     items.Add(new VaultMemoryItem(
-                        $"{filePath}#{section.Heading}", filePath, type, section.Heading, section.Body, updated));
+                        $"{filePath}#{section.Heading}", filePath, type, section.Heading, section.Body,
+                        updated, category));
                 }
             }
             else
@@ -965,7 +972,7 @@ public class MemoryService : IMemoryService
                 var title = doc.Frontmatter.TryGetValue("title", out var t) && !string.IsNullOrWhiteSpace(t)
                     ? t
                     : Path.GetFileNameWithoutExtension(filePath);
-                items.Add(new VaultMemoryItem(filePath, filePath, type, title, doc.Preamble, updated));
+                items.Add(new VaultMemoryItem(filePath, filePath, type, title, doc.Preamble, updated, category));
             }
         }
 

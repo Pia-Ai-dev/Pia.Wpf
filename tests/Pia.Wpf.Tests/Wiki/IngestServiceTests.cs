@@ -6,7 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Infrastructure.Vault;
+using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
@@ -70,8 +72,46 @@ public class IngestServiceTests : IDisposable
     private void SeedSource(string name, string content)
         => File.WriteAllText(Path.Combine(_vaultRoot, "sources", name), content);
 
-    private IngestService BuildIngest(IIngestExtractor extractor, IIngestSynthesizer synth)
-        => new(extractor, _store, _index, _log, synth, _charter, NullLogger<IngestService>.Instance);
+    // Default: tokenization DISABLED (the factory throws if ever invoked, proving disabled ingest
+    // never builds a map) so the existing tests exercise the unchanged pass-through behavior. The
+    // re-identification tests pass an explicit enabled-settings fake + a factory over a seeded map.
+    private IngestService BuildIngest(
+        IIngestExtractor extractor,
+        IIngestSynthesizer synth,
+        Func<ITokenMapService>? tokenMapFactory = null,
+        ISettingsService? settings = null)
+        => new(extractor, _store, _index, _log, synth, _charter,
+            tokenMapFactory ?? (() => throw new InvalidOperationException(
+                "token map factory must not be invoked when tokenization is disabled")),
+            settings ?? Settings(tokenizationEnabled: false),
+            NullLogger<IngestService>.Instance);
+
+    private static ISettingsService Settings(bool tokenizationEnabled)
+    {
+        var settings = Substitute.For<ISettingsService>();
+        var app = new AppSettings();
+        app.Privacy.TokenizationEnabled = tokenizationEnabled;
+        settings.GetSettingsAsync().Returns(app);
+        return settings;
+    }
+
+    // A real TokenMapService (not a mock) pre-seeded with value->token pairs, so the re-identify
+    // path is exercised end-to-end against the production tokenizer. Empty PII/memory mocks make
+    // InitializeAsync() a no-op that preserves the seeded tokens.
+    private static TokenMapService SeededTokenMap(
+        ISettingsService settings, params (string Value, string Category)[] seed)
+    {
+        var pii = Substitute.For<IPiiDetector>();
+        var memory = Substitute.For<IMemoryService>();
+        memory.GetObjectsByTypeAsync(Arg.Any<string>()).Returns(new List<MemoryObject>());
+        var map = new TokenMapService(pii, memory, settings);
+        foreach (var (value, category) in seed)
+        {
+            map.Tokenize(value, category);
+        }
+
+        return map;
+    }
 
     private IngestToolHandler BuildToolHandler()
         => new(new PassthroughScheduler(BuildIngest(
@@ -128,6 +168,37 @@ public class IngestServiceTests : IDisposable
 
             return Task.FromResult(new SynthesizedPage(
                 $"{title} is a synthesized topic from {sources.Count} source(s).", $"{title} summary"));
+        }
+    }
+
+    // Records TokenMapAmbient.Current at the moment DiscoverTopicsAsync is entered — the point where
+    // the real TokenizingAiClientService decorator would read the ambient map. Used to prove ingest
+    // publishes its own run map as the ambient around extraction.
+    private sealed class AmbientRecordingExtractor(params ExtractedTopic[] topics) : IIngestExtractor
+    {
+        public ITokenMapService? AmbientDuringCall { get; private set; }
+
+        public Task<IReadOnlyList<ExtractedTopic>> DiscoverTopicsAsync(
+            string content, string charter, CancellationToken ct = default)
+        {
+            AmbientDuringCall = TokenMapAmbient.Current;
+            return Task.FromResult<IReadOnlyList<ExtractedTopic>>(topics);
+        }
+    }
+
+    // Records TokenMapAmbient.Current at the moment SynthesizeAsync is entered — used to prove the
+    // extraction-scoped ambient is ALREADY CLOSED by the time synthesis runs (non-interference).
+    private sealed class AmbientRecordingSynthesizer : IIngestSynthesizer
+    {
+        public ITokenMapService? AmbientDuringCall { get; private set; }
+        public bool WasCalled { get; private set; }
+
+        public Task<SynthesizedPage> SynthesizeAsync(string title, string category, string charter,
+            IReadOnlyList<(string Ref, string Text)> sources, CancellationToken ct = default)
+        {
+            AmbientDuringCall = TokenMapAmbient.Current;
+            WasCalled = true;
+            return Task.FromResult(new SynthesizedPage($"{title} body.", $"{title} summary"));
         }
     }
 
@@ -429,5 +500,112 @@ public class IngestServiceTests : IDisposable
         var text = Assert.IsType<string>(result);
         Assert.Contains("not found", text);
         Assert.Contains("Vault/sources/", text);
+    }
+
+    // --- PII re-identification of extraction subjects (issue 8, title/slug half) ---
+
+    [Fact]
+    public async Task Ingest_reidentifies_a_bare_mangled_subject_into_the_title_and_slug()
+    {
+        var settings = Settings(tokenizationEnabled: true);
+        var map = SeededTokenMap(settings, ("John Smith", "Person")); // "John Smith" -> [Person_1]
+
+        // Precondition — the observed real leak: the extractor bracket-STRIPPED the placeholder to the
+        // bare "Person_1", which neither the strict nor the loose bracketed detokenize can recover.
+        Assert.Equal("Person_1", map.Detokenize("Person_1"));
+        Assert.Equal("Person_1", map.DetokenizeLoose("Person_1"));
+
+        var ingest = BuildIngest(
+            new FakeExtractor(new ExtractedTopic("Person_1", "person")),
+            new FakeSynthesizer(),
+            () => map, settings);
+
+        var result = await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestOutcome.Success, result.Outcome);
+        // The filename/slug is the re-identified name — the leaked placeholder page is never written.
+        Assert.Contains("memory/topics/john-smith.md", result.TouchedPages);
+        Assert.Null(await _store.ReadAsync("memory/topics/person-1.md"));
+
+        var page = await _store.ReadAsync("memory/topics/john-smith.md");
+        Assert.NotNull(page);
+        Assert.Equal("John Smith", page!.Frontmatter["title"]);
+
+        // ZERO placeholder residue in the page or the index (title, slug, links, summary).
+        Assert.DoesNotContain("Person_1", page.RawText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("person-1", page.RawText, StringComparison.OrdinalIgnoreCase);
+        var index = await _store.ReadAsync("memory/index.md");
+        Assert.Contains("[[topics/john-smith]]", index!.RawText);
+        Assert.DoesNotContain("Person_1", index.RawText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("person-1", index.RawText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Ingest_reidentifies_a_bracketed_mangled_subject_into_the_title_and_slug()
+    {
+        var settings = Settings(tokenizationEnabled: true);
+        var map = SeededTokenMap(settings, ("John Smith", "Person")); // "John Smith" -> [Person_1]
+
+        // The model lowercased + hyphenated the bracketed token; the strict detokenize misses it.
+        Assert.Equal("[person-1]", map.Detokenize("[person-1]"));
+
+        var ingest = BuildIngest(
+            new FakeExtractor(new ExtractedTopic("[person-1]", "person")),
+            new FakeSynthesizer(),
+            () => map, settings);
+
+        var result = await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("memory/topics/john-smith.md", result.TouchedPages);
+        var page = await _store.ReadAsync("memory/topics/john-smith.md");
+        Assert.NotNull(page);
+        Assert.Equal("John Smith", page!.Frontmatter["title"]);
+        Assert.DoesNotContain("person-1", page.RawText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Ingest_publishes_the_run_map_as_ambient_during_extraction_and_restores_it()
+    {
+        var settings = Settings(tokenizationEnabled: true);
+        var map = SeededTokenMap(settings, ("John Smith", "Person"));
+
+        var extractor = new AmbientRecordingExtractor(new ExtractedTopic("Person_1", "person"));
+        var synth = new AmbientRecordingSynthesizer();
+        var ingest = BuildIngest(extractor, synth, () => map, settings);
+
+        var sentinel = TokenMapAmbient.Current; // whatever surrounded this test turn (null)
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        // (a) The ingest run's own map was ambient DURING extraction, so the decorator would use it.
+        Assert.Same(map, extractor.AmbientDuringCall);
+
+        // (b) The extraction-scoped ambient is ALREADY CLOSED by the time synthesis runs — proving
+        // the two ambient scopes never overlap (synthesis owns its ambient independently).
+        Assert.True(synth.WasCalled);
+        Assert.NotSame(map, synth.AmbientDuringCall);
+
+        // (c) The ambient is restored to the pre-ingest value after IngestAsync returns (no leak).
+        Assert.Same(sentinel, TokenMapAmbient.Current);
+    }
+
+    [Fact]
+    public async Task Ingest_leaves_the_subject_untouched_when_tokenization_disabled()
+    {
+        // Default BuildIngest = tokenization disabled + a factory that throws if ever invoked.
+        var ingest = BuildIngest(
+            new FakeExtractor(new ExtractedTopic("Person_1", "person")),
+            new FakeSynthesizer());
+
+        var result = await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestOutcome.Success, result.Outcome);
+        // Unchanged legacy behavior: the raw subject is slugged verbatim and the factory is never
+        // invoked (it would throw), so no map is built and no re-identification happens.
+        Assert.Contains("memory/topics/person-1.md", result.TouchedPages);
+        Assert.Null(await _store.ReadAsync("memory/topics/john-smith.md"));
     }
 }

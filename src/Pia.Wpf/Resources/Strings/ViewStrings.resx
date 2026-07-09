@@ -298,6 +298,7 @@
   <data name="Memory_Sources_Empty" xml:space="preserve"><value>No source documents yet. Drop files into the vault's sources folder and ask Pia to ingest them into memory.</value></data>
   <data name="Memory_Sources_OpenFolder" xml:space="preserve"><value>Open sources folder</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>How memory works</value></data>
+  <data name="Memory_Home" xml:space="preserve"><value>Vault overview</value></data>
   <data name="Memory_Help_Title" xml:space="preserve"><value>How Pia's memory works</value></data>
   <data name="Memory_Help_What" xml:space="preserve"><value>While you chat, Pia automatically remembers useful things — your preferences, people and projects you mention, or important dates.</value></data>
   <data name="Memory_Help_Auto" xml:space="preserve"><value>New memories appear here on their own. You don't have to do anything — Pia uses them to give you answers that fit you better.</value></data>
@@ -306,7 +307,6 @@
   <data name="Memory_Help_Files" xml:space="preserve"><value>Everything is stored in the memory vault — one folder on this computer. Your memories are the small text files in its 'memory' folder.</value></data>
   <data name="Memory_Help_Sources" xml:space="preserve"><value>Next to it, a 'sources' folder holds original documents Pia keeps for reference — Pia reads them but never changes them. Take a look any time:</value></data>
   <data name="Memory_OpenFolder" xml:space="preserve"><value>Open memory vault</value></data>
-  <data name="Memory_Help_Dismiss" xml:space="preserve"><value>Dismiss</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Reminders</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Refresh</value></data>

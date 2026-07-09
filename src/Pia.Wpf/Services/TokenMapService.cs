@@ -161,6 +161,47 @@ public partial class TokenMapService : ITokenMapService
         });
     }
 
+    public string DetokenizeLoose(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        return LooseTokenRegex().Replace(text, match =>
+        {
+            // Rebuild the canonical [Category_number] form; _tokenToValue is OrdinalIgnoreCase, so a
+            // lowercased category still resolves. Unknown tokens (or non-token brackets that happen to
+            // match the shape, e.g. "[Chapter 1]") are absent from the map and pass through untouched.
+            var canonical = $"[{match.Groups[1].Value}_{match.Groups[2].Value}]";
+            return _tokenToValue.TryGetValue(canonical, out var realValue)
+                ? realValue
+                : match.Value;
+        });
+    }
+
+    [GeneratedRegex(@"\[([A-Za-z]+)[ _\-]?(\d+)\]")]
+    private static partial Regex LooseTokenRegex();
+
+    public string DetokenizeBare(string text)
+    {
+        if (string.IsNullOrEmpty(text) || _tokenToValue.Count == 0)
+            return text;
+
+        // Recover the BRACKET-LESS token shape a generative rewrite sometimes leaves in a short
+        // title/subject (e.g. "Person_1" instead of "[Person_1]") — the bracketed forms are already
+        // handled by Detokenize/DetokenizeLoose. Only KNOWN tokens are reversed; unknown bare shapes
+        // pass through (mirroring the bracketed passes). Iterate longest token first and anchor each
+        // match on \b word boundaries so "Person_1" cannot partially match inside "Person_11". The
+        // "_" separator also matches a "-" the model may have substituted; case-insensitive.
+        foreach (var (token, value) in _tokenToValue.OrderByDescending(kvp => kvp.Key.Length))
+        {
+            var bare = token.Trim('[', ']');
+            var pattern = @"\b" + Regex.Escape(bare).Replace("_", "[_-]") + @"\b";
+            text = Regex.Replace(text, pattern, _ => value, RegexOptions.IgnoreCase);
+        }
+
+        return text;
+    }
+
     public string? GetToken(string value, string category)
     {
         return _valueToToken.TryGetValue(value, out var token) ? token : null;

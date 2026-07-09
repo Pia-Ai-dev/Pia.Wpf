@@ -59,6 +59,10 @@ public sealed class AiIngestExtractionService : IIngestExtractor
             "organizations, products, named concepts, technologies, or regulations that carry meaning for this " +
             "knowledge base. DO NOT include generic dictionary/legal-boilerplate terms (e.g. \"Use\", " +
             "\"Software\", \"Documentation\", \"Agreement\", \"Scope\"), generic verbs, or section labels. " +
+            "Emit exactly ONE topic per real-world entity: merge aliases, abbreviations, and expanded forms of " +
+            "the same thing into a single entry, and use its canonical common short name as the subject (e.g. " +
+            "\"Pia\", not \"Pia (Personal Intelligent Assistant)\" and not a separate \"Personal Intelligent " +
+            "Assistant\" entry). Do NOT put parenthetical aliases, expansions, or descriptions in the subject. " +
             "Respond with a JSON array of objects, each {\"subject\": name, \"category\": one of " +
             "person|organization|product|concept|regulation|technology|other}. JSON only.\n\n" +
             Truncate(content);

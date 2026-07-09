@@ -20,6 +20,12 @@ public interface IDialogService
     Task<string?> ShowInputDialogAsync(string title, string prompt);
 
     /// <summary>
+    /// Shows the Memory-vault help as a modal dialog overlay (rather than an inline card that reflows
+    /// the page). <paramref name="vaultRoot"/> backs the dialog's "open memory vault" affordance.
+    /// </summary>
+    Task ShowMemoryHelpDialogAsync(string vaultRoot);
+
+    /// <summary>
     /// Shows a determinate folder-move progress dialog driven by <paramref name="progress"/> while
     /// <paramref name="work"/> runs, then closes it. Used by the assistant-folder relocation flow.
     /// </summary>

@@ -11,12 +11,34 @@
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
 
-      <ui:SymbolIcon Grid.Column="0"
-                     Symbol="Search24"
-                     FontSize="16"
-                     Margin="14,0,8,0"
-                     VerticalAlignment="Center"
-                     Foreground="{DynamicResource TextSubtleBrush}"/>
+      <Grid Grid.Column="0"
+            Width="16"
+            Height="16"
+            Margin="14,0,8,0"
+            VerticalAlignment="Center">
+        <ui:SymbolIcon Symbol="Search24"
+                       FontSize="16"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSubtleBrush}">
+          <ui:SymbolIcon.Style>
+            <Style TargetType="ui:SymbolIcon">
+              <Setter Property="Visibility" Value="Visible"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsBusy, ElementName=Root}" Value="True">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </ui:SymbolIcon.Style>
+        </ui:SymbolIcon>
+        <ui:ProgressRing IsIndeterminate="True"
+                         Width="16"
+                         Height="16"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         Visibility="{Binding IsBusy, ElementName=Root, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+      </Grid>
 
       <TextBox Grid.Column="1"
                Text="{Binding Query, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

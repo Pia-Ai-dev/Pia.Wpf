@@ -91,9 +91,6 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     [ObservableProperty]
     private int _embeddingDim = 384;
 
-    [ObservableProperty]
-    private bool _isHelpVisible;
-
     // Right-pane state machine: overview when nothing is selected and the vault has content — memories
     // OR staged source documents (a sources-only vault still has something worth showing); the plain
     // "select a memory" placeholder only when the vault is genuinely empty. All three inputs notify
@@ -112,7 +109,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     public IAsyncRelayCommand RegenerateEmbeddingsCommand { get; }
     public IRelayCommand<VaultMemoryItem> SelectMemoryCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> CopyMarkdownCommand { get; }
-    public IRelayCommand ToggleHelpCommand { get; }
+    public IAsyncRelayCommand ShowHelpCommand { get; }
+    public IRelayCommand GoHomeCommand { get; }
     public IRelayCommand OpenVaultFolderCommand { get; }
     public IRelayCommand OpenSourcesFolderCommand { get; }
 
@@ -146,7 +144,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         RegenerateEmbeddingsCommand = new AsyncRelayCommand(ExecuteRegenerateEmbeddings);
         SelectMemoryCommand = new RelayCommand<VaultMemoryItem>(ExecuteSelectMemory);
         CopyMarkdownCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteCopyMarkdown);
-        ToggleHelpCommand = new RelayCommand(() => IsHelpVisible = !IsHelpVisible);
+        ShowHelpCommand = new AsyncRelayCommand(ExecuteShowHelp);
+        GoHomeCommand = new RelayCommand(ExecuteGoHome);
         OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.VaultRoot));
         OpenSourcesFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(
             System.IO.Path.Combine(_memoryService.VaultRoot, "sources")));
@@ -210,7 +209,7 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             var snapshot = await _memoryService.ListMemoriesAsync();
             var items = string.IsNullOrWhiteSpace(SearchQuery)
                 ? snapshot.Items
-                : ProjectRecallHits(snapshot.Items, await _memoryService.RecallAsync(SearchQuery));
+                : FilterBySearch(snapshot.Items, await _memoryService.RecallAsync(SearchQuery), SearchQuery);
 
             var groups = BuildGroups(items);
 
@@ -248,6 +247,42 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             IsLoading = false;
         }
     }
+
+    // Search combines two matchers so topic content is reachable: (1) the semantic recall over indexed
+    // ## sections (structured docs), and (2) a plain case-insensitive substring match over every item's
+    // title, category and BODY — freeform topic pages are not chunked by the indexer, so recall alone
+    // never surfaces them (that was the reported bug). Results are unioned and de-duplicated by reference.
+    private static IReadOnlyList<VaultMemoryItem> FilterBySearch(
+        IReadOnlyList<VaultMemoryItem> all, IReadOnlyList<RecallHit> hits, string query)
+    {
+        var trimmed = query.Trim();
+        var results = new List<VaultMemoryItem>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var item in ProjectRecallHits(all, hits))
+        {
+            if (seen.Add(item.Reference))
+            {
+                results.Add(item);
+            }
+        }
+
+        foreach (var item in all)
+        {
+            if ((ContainsIgnoreCase(item.Title, trimmed)
+                    || ContainsIgnoreCase(item.Body, trimmed)
+                    || ContainsIgnoreCase(item.Category, trimmed))
+                && seen.Add(item.Reference))
+            {
+                results.Add(item);
+            }
+        }
+
+        return results;
+    }
+
+    private static bool ContainsIgnoreCase(string? haystack, string needle)
+        => haystack is not null && haystack.Contains(needle, StringComparison.CurrentCultureIgnoreCase);
 
     // Project semantic-search hits (RecallAsync indexes ## sections) back to the full VaultMemoryItem
     // (real type/body/updated) by reference. Hits whose section has since changed are dropped; freeform
@@ -307,21 +342,55 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 continue;
             }
 
-            var ordered = groupItems
-                .OrderBy(i => i.Title, StringComparer.CurrentCultureIgnoreCase)
-                .ToList();
-
-            groups.Add(new MemoryGroupViewModel
+            // Topics are too coarse under a single "Topics" heading (every ingested source lands there):
+            // elevate each page's frontmatter `category` to a top-level group, mirroring the index's
+            // sub-grouping order/display names, with an "Other" bucket for missing/unknown categories.
+            if (type == "topic")
             {
-                Type = type,
-                DisplayName = display,
-                Items = new ObservableCollection<VaultMemoryItem>(ordered),
-                ItemCount = ordered.Count,
-                LastUpdated = ordered.Max(i => i.Updated) ?? DateTime.MinValue,
-            });
+                AddTopicCategoryGroups(groups, groupItems);
+                continue;
+            }
+
+            groups.Add(BuildGroup(type, display, groupItems));
         }
 
         return groups;
+    }
+
+    // Split the topic items into one group per canonical category (in VaultIndexService.TopicCategories
+    // order), keying each group's Type on the category so the card headers read "People"/"Products"/…
+    // rather than a single "Topics".
+    private static void AddTopicCategoryGroups(
+        List<MemoryGroupViewModel> groups, IReadOnlyList<VaultMemoryItem> topics)
+    {
+        var byCategory = topics
+            .GroupBy(i => VaultIndexService.NormalizeTopicCategory(i.Category), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        foreach (var (category, display) in VaultIndexService.TopicCategories)
+        {
+            if (byCategory.TryGetValue(category, out var categoryItems))
+            {
+                groups.Add(BuildGroup(category, display, categoryItems));
+            }
+        }
+    }
+
+    private static MemoryGroupViewModel BuildGroup(
+        string type, string display, IReadOnlyList<VaultMemoryItem> groupItems)
+    {
+        var ordered = groupItems
+            .OrderBy(i => i.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        return new MemoryGroupViewModel
+        {
+            Type = type,
+            DisplayName = display,
+            Items = new ObservableCollection<VaultMemoryItem>(ordered),
+            ItemCount = ordered.Count,
+            LastUpdated = ordered.Max(i => i.Updated) ?? DateTime.MinValue,
+        };
     }
 
     // Composition-by-category for the Vault Overview: one segment per canonical type present, in the §8
@@ -486,6 +555,18 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             SelectedMemory = memory;
         }
     }
+
+    // Home: return to the "vault at a glance" overview by clearing the current selection (and any edit).
+    // The search query is intentionally left intact — the overview reappears from the null-selection state.
+    private void ExecuteGoHome()
+    {
+        SelectedMemory = null;
+        IsEditing = false;
+    }
+
+    // Help is a dialog overlay (not an inline card that reflows the page); the vault root feeds its
+    // "open folder" affordance.
+    private Task ExecuteShowHelp() => _dialogService.ShowMemoryHelpDialogAsync(_memoryService.VaultRoot);
 
     private async Task ExecuteDownloadEmbeddingModel()
     {

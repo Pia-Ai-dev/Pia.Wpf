@@ -53,6 +53,8 @@ public sealed class IngestService : IIngestService
     private readonly VaultLogService _log;
     private readonly IIngestSynthesizer _synth;
     private readonly VaultCharterService _charter;
+    private readonly Func<ITokenMapService> _tokenMapFactory;
+    private readonly ISettingsService _settings;
     private readonly ILogger<IngestService> _logger;
 
     public IngestService(
@@ -62,6 +64,8 @@ public sealed class IngestService : IIngestService
         VaultLogService log,
         IIngestSynthesizer synth,
         VaultCharterService charter,
+        Func<ITokenMapService> tokenMapFactory,
+        ISettingsService settings,
         ILogger<IngestService> logger)
     {
         _extractor = extractor;
@@ -70,6 +74,8 @@ public sealed class IngestService : IIngestService
         _log = log;
         _synth = synth;
         _charter = charter;
+        _tokenMapFactory = tokenMapFactory;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -114,7 +120,15 @@ public sealed class IngestService : IIngestService
 
         // 2. Discover the notable topics, grounded in the vault charter.
         var charter = await _charter.GetCharterAsync();
-        var topics = await _extractor.DiscoverTopicsAsync(content, charter, ct);
+
+        // PII re-identification: ingest runs off any chat turn, so TokenMapAmbient is unset. Build ONE
+        // map for this run (when tokenization is enabled), publish it as the ambient turn map around the
+        // extraction call ONLY so the TokenizingAiClientService decorator tokenizes the prompt and
+        // detokenizes discovered subjects against it, then HOLD it to re-identify each subject below
+        // BEFORE it becomes a slug/title. The synthesizer manages its OWN ambient internally, so this
+        // scope is deliberately closed before synthesis — the two never overlap. No-op when disabled.
+        var tokenMap = await CreateIngestTokenMapAsync();
+        var topics = await DiscoverTopicsAsync(tokenMap, content, charter, ct);
         _logger.SensitiveDebug("Ingest {Source} discovered {Count} topics", sourceRef, topics.Count);
         if (topics.Count == 0)
         {
@@ -125,14 +139,26 @@ public sealed class IngestService : IIngestService
         // and re-synthesize the whole managed body across all of them.
         var touched = new List<string>();
         var synthFailures = 0;
+        var reidentifiedSubjects = 0;
         foreach (var topic in topics)
         {
-            if (string.IsNullOrWhiteSpace(topic.Subject))
+            // Re-identify the subject BEFORE it becomes a slug/title. The extraction model may have
+            // mangled a PII placeholder past the decorator's strict detokenize — bracket-stripped to a
+            // bare "Person_1", or lowercased/re-punctuated to "[person-1]" — which would otherwise be
+            // written as the page filename ("person-1.md") and title. No-op when tokenization is off.
+            var subject = Reidentify(tokenMap, topic.Subject);
+            if (!string.Equals(subject, topic.Subject, StringComparison.Ordinal))
+            {
+                reidentifiedSubjects++;
+                _logger.SensitiveDebug("Ingest re-identified a residual placeholder subject {Subject}", subject);
+            }
+
+            if (string.IsNullOrWhiteSpace(subject))
             {
                 continue;
             }
 
-            var slug = VaultSlug.Slugify(topic.Subject);
+            var slug = VaultSlug.Slugify(subject);
             var path = $"memory/topics/{slug}.md";
 
             var existing = await _store.ReadAsync(path);
@@ -144,7 +170,7 @@ public sealed class IngestService : IIngestService
 
             var title = existing?.Frontmatter.GetValueOrDefault("title") is { Length: > 0 } t
                 ? t
-                : topic.Subject;
+                : subject;
             var category = existing?.Frontmatter.GetValueOrDefault("category") is { Length: > 0 } c
                 ? c
                 : topic.Category;
@@ -158,6 +184,15 @@ public sealed class IngestService : IIngestService
 
             touched.Add(path);
             await _index.UpsertEntryAsync(path, summary);
+        }
+
+        if (reidentifiedSubjects > 0)
+        {
+            // Release-visible privacy signal (count only — the subject values are user PII → SensitiveDebug
+            // above): the extraction model mangled ≥1 placeholder so it slipped past the strict decorator.
+            _logger.LogWarning(
+                "Ingest re-identified {Count} residual placeholder subject(s) the extraction model mangled",
+                reidentifiedSubjects);
         }
 
         // Transient-failure guard: topics WERE discovered but at least one synthesis call produced
@@ -259,6 +294,68 @@ public sealed class IngestService : IIngestService
 
         _logger.LogInformation("Removed ingest contributions from {Count} page(s)", pages.Count);
         _logger.SensitiveDebug("Removed contributions of {Source}", sourceRef);
+    }
+
+    // ---- PII re-identification (extraction subjects) ----
+
+    // Build ONE token map for this ingest run, or null when tokenization is disabled. The decorator
+    // will NOT initialize an ambient map it did not create (its _initialized latch), so we initialize
+    // it here — mirroring AiIngestSynthesisService.
+    private async Task<ITokenMapService?> CreateIngestTokenMapAsync()
+    {
+        var settings = await _settings.GetSettingsAsync();
+        if (!settings.Privacy.TokenizationEnabled)
+        {
+            return null;
+        }
+
+        var map = _tokenMapFactory();
+        try
+        {
+            await map.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize token map for ingest extraction");
+        }
+
+        return map;
+    }
+
+    // Run topic discovery with this run's map published as the ambient turn map, restoring the previous
+    // ambient afterwards. Scoped to the extraction call ONLY (the synthesizer manages its own ambient),
+    // so it can never interfere with synthesis. Straight pass-through when the map is null (disabled).
+    private async Task<IReadOnlyList<ExtractedTopic>> DiscoverTopicsAsync(
+        ITokenMapService? tokenMap, string content, string charter, CancellationToken ct)
+    {
+        if (tokenMap is null)
+        {
+            return await _extractor.DiscoverTopicsAsync(content, charter, ct);
+        }
+
+        var previousAmbient = TokenMapAmbient.Current;
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            return await _extractor.DiscoverTopicsAsync(content, charter, ct);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = previousAmbient;
+        }
+    }
+
+    // Re-identify a topic subject before it becomes a slug/title. Recovers BOTH the bracketed-loose
+    // form ([person-1], [Person_1]) via DetokenizeLoose AND the bare title-leak shape (Person_1) via
+    // DetokenizeBare. No-op when the map is null (tokenization disabled).
+    private static string Reidentify(ITokenMapService? tokenMap, string subject)
+    {
+        if (tokenMap is null || string.IsNullOrEmpty(subject))
+        {
+            return subject;
+        }
+
+        return tokenMap.DetokenizeBare(tokenMap.DetokenizeLoose(subject));
     }
 
     // ---- shared synthesis writer ----

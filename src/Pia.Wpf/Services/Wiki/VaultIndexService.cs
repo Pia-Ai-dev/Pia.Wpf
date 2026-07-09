@@ -38,12 +38,15 @@ public sealed class VaultIndexService
         ("topic", "Topics"),
     ];
 
-    private const string DefaultCategory = "other";
+    // The bucket for topics whose frontmatter `category` is missing or unrecognized. Public so the
+    // Memory view uses the same fallback key when it elevates category to a top-level group.
+    public const string DefaultCategory = "other";
 
     // §8 canonical category order + display headings for sub-grouping the `## Topics` group. Mirrors
     // the ingest extractor's category vocabulary; any page whose `category` is missing/unrecognized
-    // falls under "Other".
-    private static readonly (string Category, string Display)[] TopicCategories =
+    // falls under "Other". Public so the Memory view groups topics by the same authoritative
+    // order/display names rather than re-deriving them.
+    public static readonly (string Category, string Display)[] TopicCategories =
     [
         ("person", "People"),
         ("organization", "Organizations"),
@@ -56,6 +59,25 @@ public sealed class VaultIndexService
 
     private static readonly HashSet<string> KnownCategories =
         new(TopicCategories.Select(c => c.Category), StringComparer.Ordinal);
+
+    /// <summary>
+    /// Normalizes a raw frontmatter <c>category</c> value to one of the known <see cref="TopicCategories"/>
+    /// keys, falling back to <see cref="DefaultCategory"/> when missing or unrecognized. Shared with the
+    /// Memory view so its top-level topic grouping mirrors the index sub-grouping.
+    /// </summary>
+    public static string NormalizeTopicCategory(string? category)
+    {
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            var normalized = category.Trim().ToLowerInvariant();
+            if (KnownCategories.Contains(normalized))
+            {
+                return normalized;
+            }
+        }
+
+        return DefaultCategory;
+    }
 
     private readonly IVaultStore _store;
     private readonly ILogger<VaultIndexService> _logger;
@@ -239,18 +261,8 @@ public sealed class VaultIndexService
     private async Task<string> CategoryForTargetAsync(string target)
     {
         var doc = await _store.ReadAsync("memory/" + target + ".md");
-        if (doc is not null
-            && doc.Frontmatter.TryGetValue("category", out var category)
-            && !string.IsNullOrWhiteSpace(category))
-        {
-            var normalized = category.Trim().ToLowerInvariant();
-            if (KnownCategories.Contains(normalized))
-            {
-                return normalized;
-            }
-        }
-
-        return DefaultCategory;
+        var category = doc is not null && doc.Frontmatter.TryGetValue("category", out var raw) ? raw : null;
+        return NormalizeTopicCategory(category);
     }
 
     // Frontmatter keys Pia owns on index.md; everything else is a user/Obsidian addition we must

@@ -15,5 +15,15 @@ public partial class PiaMemorySearchBar : UserControl
         set => SetValue(QueryProperty, value);
     }
 
+    public static readonly DependencyProperty IsBusyProperty =
+        DependencyProperty.Register(nameof(IsBusy), typeof(bool), typeof(PiaMemorySearchBar),
+            new FrameworkPropertyMetadata(false));
+
+    public bool IsBusy
+    {
+        get => (bool)GetValue(IsBusyProperty);
+        set => SetValue(IsBusyProperty, value);
+    }
+
     public PiaMemorySearchBar() => InitializeComponent();
 }
