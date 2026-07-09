@@ -70,6 +70,29 @@ public class AutoIngestServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_raises_IngestStarted_and_publishes_CurrentSourceRef()
+    {
+        var sourceRef = Seed("started.txt", "v1");
+        using var svc = Build();
+
+        string? startedRef = null;
+        string? refWhileRunning = null;
+        svc.IngestStarted += (_, r) =>
+        {
+            startedRef = r;
+            refWhileRunning = svc.CurrentSourceRef; // authoritative while the compile runs
+        };
+
+        Assert.Null(svc.CurrentSourceRef); // idle before
+
+        await svc.RunAsync(sourceRef, TestContext.Current.CancellationToken);
+
+        Assert.Equal(sourceRef, startedRef);
+        Assert.Equal(sourceRef, refWhileRunning);
+        Assert.Null(svc.CurrentSourceRef); // cleared when done — no stuck "Ingesting…"
+    }
+
+    [Fact]
     public async Task RunAsync_ingests_and_records_state()
     {
         var sourceRef = Seed("a.txt", "v1");

@@ -82,7 +82,7 @@ public class IngestToolHandler : IIngestToolHandler
 
     [Description("Compile a raw vault source into the memory wiki (one topic page per entity)")]
     private static string IngestSchema(
-        [Description("Vault-relative path of the source to ingest, e.g. 'sources/q2-report.txt'")] string source_ref) => "";
+        [Description("Vault-relative path of the source to ingest. Must be under the sources/ folder, e.g. 'sources/q2-report.txt'; paths elsewhere in the vault (memory/, notes/, …) are refused.")] string source_ref) => "";
 
     // Model-facing lenience: the files tools address the same file as 'Vault/sources/<name>', so
     // accept that spelling (any casing) plus stray leading slashes / backslashes, and canonicalize

@@ -46,7 +46,8 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
 
     public async Task<SynthesizedPage> SynthesizeAsync(
         string title, string category, string charter,
-        IReadOnlyList<(string Ref, string Text)> sources, CancellationToken ct = default)
+        IReadOnlyList<(string Ref, string Text)> sources,
+        IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
     {
         var provider = await _providers.GetDefaultProviderAsync();
         if (provider is null)
@@ -55,6 +56,9 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
             return new SynthesizedPage(string.Empty, string.Empty);
         }
 
+        var settings = await _settings.GetSettingsAsync();
+        var tokenizationEnabled = settings.Privacy.TokenizationEnabled;
+
         var prompt =
             (string.IsNullOrWhiteSpace(charter) ? "" : "Knowledge base context:\n" + charter + "\n\n") +
             $"Write a concise wiki page for the topic \"{title}\" (category: {category}). Synthesize a SINGLE " +
@@ -62,14 +66,15 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
             "note contradictions explicitly. If the sources name this topic by multiple aliases, abbreviations, " +
             "or expanded forms, treat them as the SAME entity and describe it once under its canonical name — " +
             "do NOT restate it as if it were several distinct things. Start with a one-sentence definition, then " +
-            "short prose or bullets. Link related topics inline using [[topics/<slug>]] where <slug> is the " +
-            "lowercase-hyphen form of the topic name. Preserve any bracketed placeholder tokens (e.g. " +
+            "short prose or bullets. " +
+            BuildLinkInstruction(knownSlugs, tokenizationEnabled) +
+            "Preserve any bracketed placeholder tokens (e.g. " +
             "[Person_1], [Email_2]) EXACTLY as written — never lowercase, translate, rephrase, or invent them. " +
             "Do NOT include a title heading or frontmatter. First output a line 'SUMMARY: <one sentence>' then a " +
             "blank line then the page body.\n\n" +
             string.Join("\n\n", sources.Select(s => $"--- SOURCE: {s.Ref} ---\n{Truncate(s.Text)}"));
 
-        var result = await SendWithReidentificationAsync(provider, prompt, ct);
+        var result = await SendWithReidentificationAsync(provider, prompt, tokenizationEnabled, ct);
         var page = ParseSynthesis(result.Text);
         _logger.SensitiveDebug(
             "Ingest synthesized page for {Title} ({BodyLength} body chars)", title, page.Body.Length);
@@ -84,10 +89,9 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
     // the result to recover tokens the decorator's strict regex missed (the model may lowercase or re-punctuate
     // a token, e.g. [person-1], when weaving it into prose). No-op when tokenization is disabled.
     private async Task<AiCompletionResult> SendWithReidentificationAsync(
-        AiProvider provider, string prompt, CancellationToken ct)
+        AiProvider provider, string prompt, bool tokenizationEnabled, CancellationToken ct)
     {
-        var settings = await _settings.GetSettingsAsync();
-        if (!settings.Privacy.TokenizationEnabled)
+        if (!tokenizationEnabled)
         {
             return await _aiClient.SendRequestAsync(provider, prompt, ct);
         }
@@ -142,6 +146,34 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
 
         var firstNonEmpty = lines.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l))?.Trim() ?? string.Empty;
         return new SynthesizedPage(text, firstNonEmpty);
+    }
+
+    // Grounded link instruction: the model may link ONLY to topic pages that exist (or will by the end of
+    // this run), using the exact slug. This curbs invented dead links at generation time; WikiLinkReconciler
+    // is the deterministic backstop. With no known slugs there is nothing to link, so forbid links outright.
+    //
+    // Privacy: the slug list is derived from page titles (often person names) in a hyphenated form the PII
+    // tokenizer CANNOT mask — it matches whole values ("Aylin Demir"), not slugs ("aylin-demir") — and it
+    // spans the WHOLE vault, not just this source, so embedding it would ship a roster-wide cleartext leak
+    // past tokenization. When tokenization is on we therefore withhold the explicit list and fall back to a
+    // generic instruction; WikiLinkReconciler still guarantees zero dead links either way.
+    private static string BuildLinkInstruction(IReadOnlyCollection<string> knownSlugs, bool tokenizationEnabled)
+    {
+        if (knownSlugs.Count == 0)
+        {
+            return "Do NOT output any [[...]] wiki-links — no linkable topic pages exist. ";
+        }
+
+        if (tokenizationEnabled)
+        {
+            return "Link related topics inline using [[topics/<slug>]], where <slug> is the lowercase-hyphen " +
+                "form of the topic name, but ONLY for topics that plausibly have their own page. ";
+        }
+
+        return "Link related topics inline ONLY when the topic's slug appears in the list below, using that " +
+            "EXACT slug: [[topics/<slug>]] (optionally [[topics/<slug>|display text]]). NEVER invent a link " +
+            "to a topic whose slug is not in the list. Known topic slugs: " +
+            string.Join(", ", knownSlugs) + ". ";
     }
 
     private static string Truncate(string content) =>

@@ -15,8 +15,12 @@ public record SynthesizedPage(string Body, string Summary);
 public interface IIngestSynthesizer
 {
     /// <summary>Write the topic page body for <paramref name="title"/> by synthesizing across ALL
-    /// <paramref name="sources"/> (each a (ref, rawText) pair). Empty body ⇒ caller skips the page.</summary>
+    /// <paramref name="sources"/> (each a (ref, rawText) pair). Empty body ⇒ caller skips the page.
+    /// <paramref name="knownSlugs"/> is the set of topic-page slugs that exist (or will exist by the end of
+    /// this run); the model is instructed to link ONLY to those, so it stops inventing dead links. This is
+    /// best-effort grounding — <c>WikiLinkReconciler</c> is the deterministic guarantee.</summary>
     Task<SynthesizedPage> SynthesizeAsync(
         string title, string category, string charter,
-        IReadOnlyList<(string Ref, string Text)> sources, CancellationToken ct = default);
+        IReadOnlyList<(string Ref, string Text)> sources,
+        IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default);
 }

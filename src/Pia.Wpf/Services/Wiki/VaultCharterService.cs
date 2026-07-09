@@ -10,8 +10,9 @@ namespace Pia.Services.Wiki;
 /// <summary>
 /// Resolves the vault "charter" — a short statement of what this vault is about — fed into ingest
 /// extraction so only topics notable to the vault's purpose become pages. Resolution order:
-/// memory/charter.md → memory/profile.md → empty. Returns the page BODY (preamble + sections), not
-/// frontmatter. Never throws; a missing/empty vault yields "".
+/// memory/charter.md → empty. (memory/profile.md is deliberately NOT a fallback: it is the user's
+/// personal profile, and feeding it here caused personal facts to bleed into topic pages.) Returns
+/// the page BODY (preamble + sections), not frontmatter. Never throws; a missing/empty vault yields "".
 /// </summary>
 public sealed class VaultCharterService
 {
@@ -26,7 +27,7 @@ public sealed class VaultCharterService
 
     public async Task<string> GetCharterAsync()
     {
-        foreach (var path in new[] { "memory/charter.md", "memory/profile.md" })
+        foreach (var path in new[] { "memory/charter.md" })
         {
             var doc = await _store.ReadAsync(path);
             var body = BodyOf(doc);

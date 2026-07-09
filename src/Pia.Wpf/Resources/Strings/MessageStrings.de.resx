@@ -151,6 +151,11 @@
   <data name="Msg_Memory_RegenerateEmbeddingsTitle" xml:space="preserve"><value>Embeddings neu generieren</value></data>
   <data name="Msg_Memory_RegenerateFailed" xml:space="preserve"><value>Neugenerierung der Embeddings fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_Saved" xml:space="preserve"><value>Gespeichert</value></data>
+  <data name="Msg_Memory_SourcesAdded" xml:space="preserve"><value>Zu Quellen hinzugefügt</value></data>
+  <data name="Msg_Memory_SourcesAddedDetail" xml:space="preserve"><value>{0} Datei(en) hinzugefügt – Verarbeitung gestartet</value></data>
+  <data name="Msg_Memory_SourcesNoTextTitle" xml:space="preserve"><value>Keine Textdateien</value></data>
+  <data name="Msg_Memory_SourcesNoText" xml:space="preserve"><value>Nur Textdateien können zu den Quellen hinzugefügt werden.</value></data>
+  <data name="Msg_Memory_SourcesAddFailed" xml:space="preserve"><value>Die abgelegten Dateien konnten nicht hinzugefügt werden: {0}</value></data>
   <data name="Msg_Memory_SaveFailed" xml:space="preserve"><value>Speichern der Erinnerung fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_StaleDeleted" xml:space="preserve"><value>{0} veraltete Erinnerungen gelöscht.</value></data>
   <data name="Msg_Memory_StaleFound" xml:space="preserve"><value>{0} Erinnerungen gefunden, auf die seit über 90 Tagen nicht zugegriffen wurde:</value></data>

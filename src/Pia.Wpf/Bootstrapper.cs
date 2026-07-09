@@ -179,17 +179,20 @@ public static class Bootstrapper
             bootstrapLogger.LogWarning(ex, "Failed to start vault watcher; vault edits won't auto-index this session");
         }
 
-        // One-time migration to the synthesis pipeline: the on-disk topic-page format changed, and the
-        // SQLite-backed ingest state's hash gate would otherwise no-op the re-ingest (deleted pages +
-        // surviving state rows = unchanged hashes = nothing rebuilt). So wipe every topic page and clear
-        // ingest state here, AFTER the watcher is live (it de-indexes the deletions) and BEFORE auto-ingest
-        // reconcile rebuilds every source fresh. Runs once, gated by AppSettings.IngestSchemaVersion.
+        // One-time ingest migration: wipe every topic page + clear ingest state, then let reconcile rebuild
+        // fresh. The hash gate would otherwise no-op the re-ingest (deleted pages + surviving state rows =
+        // unchanged hashes = nothing rebuilt). Runs AFTER the watcher is live (it de-indexes the deletions)
+        // and BEFORE auto-ingest reconcile. Runs once per bump, gated by AppSettings.IngestSchemaVersion.
         // Guarded so a migration failure never blocks startup.
+        //   v1: initial synthesis-pipeline topic-page format.
+        //   v2: scope tightening — charter no longer feeds memory/profile.md and ingest is sources/-only,
+        //       so re-synthesis strips personal/profile content that had leaked into topic bodies.
+        const int currentIngestSchemaVersion = 2;
         try
         {
             var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
             var settings = await settingsService.GetSettingsAsync();
-            if (settings.IngestSchemaVersion < 1)
+            if (settings.IngestSchemaVersion < currentIngestSchemaVersion)
             {
                 var store = _serviceProvider.GetRequiredService<IVaultStore>();
                 var index = _serviceProvider.GetRequiredService<Pia.Services.Wiki.VaultIndexService>();
@@ -202,7 +205,7 @@ public static class Bootstrapper
                 }
 
                 await _serviceProvider.GetRequiredService<Pia.Services.Wiki.IngestStateStore>().ClearAllAsync();
-                settings.IngestSchemaVersion = 1;
+                settings.IngestSchemaVersion = currentIngestSchemaVersion;
                 await settingsService.SaveSettingsAsync(settings);
                 bootstrapLogger.LogInformation(
                     "Ingest synthesis migration: cleared {Pages} topic page(s) and ingest state; sources will re-synthesize",

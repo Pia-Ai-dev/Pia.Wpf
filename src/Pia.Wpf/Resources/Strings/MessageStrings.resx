@@ -153,6 +153,11 @@
   <data name="Msg_Memory_RegenerateEmbeddingsTitle" xml:space="preserve"><value>Regenerate Embeddings</value></data>
   <data name="Msg_Memory_RegenerateFailed" xml:space="preserve"><value>Failed to regenerate embeddings: {0}</value></data>
   <data name="Msg_Memory_Saved" xml:space="preserve"><value>Saved</value></data>
+  <data name="Msg_Memory_SourcesAdded" xml:space="preserve"><value>Added to sources</value></data>
+  <data name="Msg_Memory_SourcesAddedDetail" xml:space="preserve"><value>{0} file(s) added — ingest started</value></data>
+  <data name="Msg_Memory_SourcesNoTextTitle" xml:space="preserve"><value>No text files</value></data>
+  <data name="Msg_Memory_SourcesNoText" xml:space="preserve"><value>Only text files can be added to your sources.</value></data>
+  <data name="Msg_Memory_SourcesAddFailed" xml:space="preserve"><value>Could not add the dropped files: {0}</value></data>
   <data name="Msg_Memory_SaveFailed" xml:space="preserve"><value>Failed to save memory: {0}</value></data>
   <data name="Msg_Memory_StaleDeleted" xml:space="preserve"><value>Deleted {0} stale memories.</value></data>
   <data name="Msg_Memory_StaleFound" xml:space="preserve"><value>Found {0} memories not accessed in over 90 days:</value></data>

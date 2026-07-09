@@ -150,6 +150,11 @@
   <data name="Msg_Memory_RegenerateEmbeddingsTitle" xml:space="preserve"><value>Régénérer les embeddings</value></data>
   <data name="Msg_Memory_RegenerateFailed" xml:space="preserve"><value>Échec de la régénération des embeddings : {0}</value></data>
   <data name="Msg_Memory_Saved" xml:space="preserve"><value>Enregistré</value></data>
+  <data name="Msg_Memory_SourcesAdded" xml:space="preserve"><value>Ajouté aux sources</value></data>
+  <data name="Msg_Memory_SourcesAddedDetail" xml:space="preserve"><value>{0} fichier(s) ajouté(s) — ingestion démarrée</value></data>
+  <data name="Msg_Memory_SourcesNoTextTitle" xml:space="preserve"><value>Aucun fichier texte</value></data>
+  <data name="Msg_Memory_SourcesNoText" xml:space="preserve"><value>Seuls les fichiers texte peuvent être ajoutés à vos sources.</value></data>
+  <data name="Msg_Memory_SourcesAddFailed" xml:space="preserve"><value>Impossible d'ajouter les fichiers déposés : {0}</value></data>
   <data name="Msg_Memory_SaveFailed" xml:space="preserve"><value>Échec de l'enregistrement de la mémoire : {0}</value></data>
   <data name="Msg_Memory_StaleDeleted" xml:space="preserve"><value>{0} mémoires obsolètes supprimées.</value></data>
   <data name="Msg_Memory_StaleFound" xml:space="preserve"><value>{0} mémoires non consultées depuis plus de 90 jours trouvées :</value></data>

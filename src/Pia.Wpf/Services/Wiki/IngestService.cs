@@ -91,6 +91,15 @@ public sealed class IngestService : IIngestService
         // Containment guard: source_ref reaches this service from a model tool call, so refuse any
         // absolute path or '..' traversal that resolves OUTSIDE the vault — otherwise an injected
         // prompt could exfiltrate an arbitrary local text file into memory (which syncs).
+        // Scope guard: only the immutable RAW layer (sources/) is ingestable. The tool reaches the model,
+        // and containment alone would let an ingest("memory/preferences.md") pull Pia's OWN memory back
+        // into topic synthesis. Refuse anything outside sources/ before touching the filesystem.
+        if (!IsSourcesRef(sourceRef))
+        {
+            _logger.SensitiveDebug("Ingest source outside sources/ {Source}", sourceRef);
+            return new IngestResult(sourceRef, [], IngestOutcome.SourceNotFound);
+        }
+
         var absolute = ResolveContainedSource(sourceRelativePath);
         if (absolute is null)
         {
@@ -137,8 +146,11 @@ public sealed class IngestService : IIngestService
 
         // 3. Topic-driven synthesis: for each topic, union this source with the page's existing sources
         // and re-synthesize the whole managed body across all of them.
-        var touched = new List<string>();
-        var synthFailures = 0;
+        //
+        // Pre-pass: re-identify + slugify EVERY subject up front so the known-slug set is complete before
+        // any page is synthesized. That makes a within-run forward reference safe — topic A's page (written
+        // first) may link to topic B's page (written later in the loop), and B's slug is already known.
+        var prepared = new List<(ExtractedTopic Topic, string Subject, string Slug)>();
         var reidentifiedSubjects = 0;
         foreach (var topic in topics)
         {
@@ -158,7 +170,30 @@ public sealed class IngestService : IIngestService
                 continue;
             }
 
-            var slug = VaultSlug.Slugify(subject);
+            prepared.Add((topic, subject, VaultSlug.Slugify(subject)));
+        }
+
+        if (reidentifiedSubjects > 0)
+        {
+            // Release-visible privacy signal (count only — the subject values are user PII → SensitiveDebug
+            // above): the extraction model mangled ≥1 placeholder so it slipped past the strict decorator.
+            _logger.LogWarning(
+                "Ingest re-identified {Count} residual placeholder subject(s) the extraction model mangled",
+                reidentifiedSubjects);
+        }
+
+        // The link vocabulary for BOTH grounding (synthesizer prompt) and reconciliation (deterministic
+        // backstop): slugs already on disk ∪ slugs this run will create.
+        var knownSlugs = await BuildKnownTopicSlugsAsync();
+        foreach (var p in prepared)
+        {
+            knownSlugs.Add(p.Slug);
+        }
+
+        var touched = new List<string>();
+        var synthFailures = 0;
+        foreach (var (topic, subject, slug) in prepared)
+        {
             var path = $"memory/topics/{slug}.md";
 
             var existing = await _store.ReadAsync(path);
@@ -175,7 +210,7 @@ public sealed class IngestService : IIngestService
                 ? c
                 : topic.Category;
 
-            var summary = await SynthesizePageAsync(path, title, category, sourceRefs, charter, ct);
+            var summary = await SynthesizePageAsync(path, title, category, sourceRefs, charter, knownSlugs, ct);
             if (summary is null)
             {
                 synthFailures++;
@@ -184,15 +219,6 @@ public sealed class IngestService : IIngestService
 
             touched.Add(path);
             await _index.UpsertEntryAsync(path, summary);
-        }
-
-        if (reidentifiedSubjects > 0)
-        {
-            // Release-visible privacy signal (count only — the subject values are user PII → SensitiveDebug
-            // above): the extraction model mangled ≥1 placeholder so it slipped past the strict decorator.
-            _logger.LogWarning(
-                "Ingest re-identified {Count} residual placeholder subject(s) the extraction model mangled",
-                reidentifiedSubjects);
         }
 
         // Transient-failure guard: topics WERE discovered but at least one synthesis call produced
@@ -224,6 +250,11 @@ public sealed class IngestService : IIngestService
         string sourceRef, IReadOnlyList<string> pages, CancellationToken ct = default)
     {
         sourceRef = sourceRef.Replace('\\', '/'); // separator-tolerant, matching IngestAsync
+
+        // Same grounding + reconciliation vocabulary as IngestAsync so re-synthesis on removal is equally
+        // guarded. Built once up front: a page fully removed in this batch stays in the set, so a link to
+        // it could survive — benign and self-healing (the next ingest re-synthesizes and re-reconciles).
+        var knownSlugs = await BuildKnownTopicSlugsAsync();
 
         var stale = new List<string>();
         foreach (var path in pages)
@@ -259,7 +290,7 @@ public sealed class IngestService : IIngestService
             var title = doc.Frontmatter.GetValueOrDefault("title") ?? Path.GetFileNameWithoutExtension(path);
             var category = doc.Frontmatter.GetValueOrDefault("category") ?? "concept";
             var summary = await SynthesizePageAsync(
-                path, title, category, remaining, await _charter.GetCharterAsync(), ct);
+                path, title, category, remaining, await _charter.GetCharterAsync(), knownSlugs, ct);
             if (summary is not null)
             {
                 await _index.UpsertEntryAsync(path, summary);
@@ -363,7 +394,7 @@ public sealed class IngestService : IIngestService
     // Returns the index one-liner, or null when synthesis produced nothing (page left untouched).
     private async Task<string?> SynthesizePageAsync(
         string path, string title, string category,
-        List<string> sourceRefs, string charter, CancellationToken ct)
+        List<string> sourceRefs, string charter, IReadOnlySet<string> knownSlugs, CancellationToken ct)
     {
         var sources = new List<(string Ref, string Text)>();
         foreach (var r in sourceRefs)
@@ -381,11 +412,16 @@ public sealed class IngestService : IIngestService
         }
 
         var existing = await _store.ReadAsync(path);
-        var page = await _synth.SynthesizeAsync(title, category, charter, sources, ct);
+        var page = await _synth.SynthesizeAsync(title, category, charter, sources, knownSlugs, ct);
         if (string.IsNullOrWhiteSpace(page.Body))
         {
             return null;
         }
+
+        // Deterministic backstop: rewrite kept links to their canonical on-disk slug and strip any dangling
+        // link to plain text, so the body that lands on disk carries ONLY wikilinks that resolve — clearing
+        // dead links in the stored source after creation, independent of what the model emitted.
+        var body = WikiLinkReconciler.Reconcile(page.Body, knownSlugs);
 
         // Manual preamble = raw text between the frontmatter close and the sentinel, split on the RAW
         // text (never doc.Preamble). "" for a new page or one with no manual text above the marker.
@@ -400,12 +436,31 @@ public sealed class IngestService : IIngestService
         }
 
         sb.Append(ManagedMarker).Append('\n');
-        sb.Append(page.Body.Trim()).Append('\n');
+        sb.Append(body.Trim()).Append('\n');
 
         var content = WriteSourcesLine(sb.ToString(), sourceRefs); // "sources: [a, b]" into the block
         await _store.WriteAtomicAsync(path, content);
         _logger.SensitiveDebug("Ingest synthesized topic page {Path}", path);
         return page.Summary;
+    }
+
+    // The slug of every topic page currently on disk, canonicalized through VaultSlug.Slugify so set
+    // membership is tested on the same canonical form the reconciler computes from a link target. In-app
+    // filenames are already canonical lowercase slugs (so this is a no-op for them); it only hardens the
+    // rare hand-added page. Ordinal set: both sides are now guaranteed canonical, so no case folding.
+    private async Task<HashSet<string>> BuildKnownTopicSlugsAsync()
+    {
+        var slugs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var path in await _store.EnumerateAsync("memory/topics/*.md"))
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            if (!string.IsNullOrEmpty(name))
+            {
+                slugs.Add(VaultSlug.Slugify(name));
+            }
+        }
+
+        return slugs;
     }
 
     // Resolve a vault-relative source ref to an absolute path under the vault root, or null if it
@@ -424,13 +479,21 @@ public sealed class IngestService : IIngestService
     private async Task<string?> TryReadSourceAsync(string sourceRef, CancellationToken ct)
     {
         var absolute = ResolveContainedSource(sourceRef);
-        if (absolute is null || !File.Exists(absolute) || !SourcesProvenance.IsTextSource(sourceRef))
+        if (absolute is null || !IsSourcesRef(sourceRef) || !File.Exists(absolute)
+            || !SourcesProvenance.IsTextSource(sourceRef))
         {
+            // IsSourcesRef also drops any stale non-sources/ ref that a pre-guard page may still list in
+            // its `sources:` frontmatter, so it never re-contributes to a union merge.
             return null;
         }
 
         return await File.ReadAllTextAsync(absolute, ct);
     }
+
+    // True only for refs under the immutable RAW layer. Separator-tolerant to match IngestAsync, which
+    // normalizes '\\' → '/' before calling.
+    private static bool IsSourcesRef(string sourceRef)
+        => sourceRef.Replace('\\', '/').StartsWith("sources/", StringComparison.OrdinalIgnoreCase);
 
     private static List<string> ReadPageSources(VaultDocument? doc)
         => doc is null ? new() : SourcesProvenance.ReadSourceRefs(doc.RawText).ToList();

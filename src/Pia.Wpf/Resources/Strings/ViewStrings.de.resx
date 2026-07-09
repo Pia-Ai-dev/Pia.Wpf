@@ -298,6 +298,9 @@
   <data name="Memory_Sources_NotText" xml:space="preserve"><value>Keine Textdatei — kann nicht übernommen werden</value></data>
   <data name="Memory_Sources_Empty" xml:space="preserve"><value>Noch keine Quelldokumente. Lege Dateien im sources-Ordner des Speichers ab und bitte Pia, sie ins Gedächtnis zu übernehmen.</value></data>
   <data name="Memory_Sources_OpenFolder" xml:space="preserve"><value>Quellenordner öffnen</value></data>
+  <data name="Memory_Sources_Ingesting" xml:space="preserve"><value>Wird verarbeitet…</value></data>
+  <data name="Memory_Refresh" xml:space="preserve"><value>Aktualisieren</value></data>
+  <data name="Memory_DropSources_Hint" xml:space="preserve"><value>Textdateien hier ablegen, um sie zu den Quellen hinzuzufügen</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>So funktioniert das Gedächtnis</value></data>
   <data name="Memory_Home" xml:space="preserve"><value>Übersicht des Speichers</value></data>
   <data name="Memory_Back" xml:space="preserve"><value>Zurück</value></data>

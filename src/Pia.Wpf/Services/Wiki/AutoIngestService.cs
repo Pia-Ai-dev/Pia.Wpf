@@ -38,6 +38,9 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
     private string? _sourcesDir;
     private bool _disposed;
 
+    public string? CurrentSourceRef { get; private set; }
+
+    public event EventHandler<string>? IngestStarted;
     public event EventHandler? IngestCompleted;
 
     public AutoIngestService(
@@ -289,6 +292,11 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
                 knownHash = gate;
             }
 
+            // Past the gates: real LLM work starts now. Publish the running ref (authoritative, read by
+            // views that open mid-ingest) and signal subscribers before the two-call synthesis begins.
+            CurrentSourceRef = sourceRef;
+            RaiseIngestStarted(sourceRef);
+
             var result = await _ingest.IngestAsync(sourceRef, DateOnly.FromDateTime(DateTime.Now), ct);
             if (result.Outcome is IngestOutcome.SourceNotFound or IngestOutcome.SynthesisFailed)
             {
@@ -339,8 +347,23 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
         }
         finally
         {
+            // Clear BEFORE raising so a subscriber's reload reads the idle state (no stuck "Ingesting…").
+            CurrentSourceRef = null;
             _serial.Release();
             RaiseIngestCompleted();
+        }
+    }
+
+    private void RaiseIngestStarted(string sourceRef)
+    {
+        try
+        {
+            IngestStarted?.Invoke(this, sourceRef);
+        }
+        catch (Exception ex)
+        {
+            // A throwing subscriber must not abort the ingest we are about to run.
+            _logger.LogWarning(ex, "IngestStarted subscriber threw");
         }
     }
 

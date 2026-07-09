@@ -14,6 +14,18 @@ public interface IIngestScheduler
     /// <summary>Queue removal of everything <paramref name="sourceRef"/> contributed.</summary>
     Task RemoveAsync(string sourceRef, CancellationToken ct = default);
 
+    /// <summary>
+    /// The source ref currently being compiled, or <c>null</c> when the queue is idle. The scheduler
+    /// owns this truth so a view opened mid-ingest (e.g. during the startup reconcile) can show the
+    /// running indicator without having observed the <see cref="IngestStarted"/> event. Set before the
+    /// real ingest work begins and cleared when it ends. Read from any thread.
+    /// </summary>
+    string? CurrentSourceRef { get; }
+
+    /// <summary>Raised when real ingest work begins for a source (payload = the source ref); paired with
+    /// <see cref="IngestCompleted"/>. Skipped for hash-gated no-ops. May fire on any thread.</summary>
+    event EventHandler<string>? IngestStarted;
+
     /// <summary>Raised after each completed ingest or removal (any outcome). May fire on any thread.</summary>
     event EventHandler? IngestCompleted;
 }

@@ -1,4 +1,7 @@
+using System;
+using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -78,6 +81,146 @@ public class MemoryViewModelTests
 
     private static VaultMemoryItem Item(string reference, string filePath, string type, string title, string body = "body")
         => new(reference, filePath, type, title, body, null);
+
+    [Fact]
+    public async Task AddSourceFiles_copies_only_text_files_into_sources_and_starts_ingest()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"pia-memvm-{Guid.NewGuid()}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var textFile = Path.Combine(tempRoot, "note.txt");
+            var binaryFile = Path.Combine(tempRoot, "image.png");
+            File.WriteAllText(textFile, "hello");
+            File.WriteAllBytes(binaryFile, [1, 2, 3]);
+
+            var memory = Substitute.For<IMemoryService>();
+            memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([], 0));
+            memory.VaultRoot.Returns(tempRoot);
+
+            var vaultSources = Substitute.For<IVaultSourcesService>();
+            vaultSources.ListSourcesAsync().Returns([]);
+
+            var localization = Substitute.For<ILocalizationService>();
+            localization.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => ci.ArgAt<string>(0));
+            localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
+
+            var scheduler = Substitute.For<IIngestScheduler>();
+            scheduler.RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(new IngestResult("x", []));
+
+            var vm = new MemoryViewModel(
+                NullLogger<MemoryViewModel>.Instance,
+                memory,
+                Substitute.For<IEmbeddingService>(),
+                Substitute.For<IDialogService>(),
+                Substitute.For<global::Wpf.Ui.ISnackbarService>(),
+                localization,
+                Substitute.For<IClipboardService>(),
+                vaultSources,
+                scheduler);
+
+            await vm.AddSourceFilesCommand.ExecuteAsync(new[] { textFile, binaryFile });
+
+            var sourcesDir = Path.Combine(tempRoot, "sources");
+            Assert.True(File.Exists(Path.Combine(sourcesDir, "note.txt")));   // text copied
+            Assert.False(File.Exists(Path.Combine(sourcesDir, "image.png"))); // binary skipped
+            await scheduler.Received(1).RunAsync("sources/note.txt", Arg.Any<CancellationToken>());
+            await scheduler.DidNotReceive().RunAsync("sources/image.png", Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AddSourceFiles_uniquifies_name_collision_without_clobbering()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"pia-memvm-{Guid.NewGuid()}");
+        var sourcesDir = Path.Combine(tempRoot, "sources");
+        Directory.CreateDirectory(sourcesDir);
+        try
+        {
+            // A source already staged under sources/note.txt, and a different file with the same name
+            // dropped from elsewhere — the collision must not clobber the staged one.
+            File.WriteAllText(Path.Combine(sourcesDir, "note.txt"), "existing");
+            var dropDir = Path.Combine(tempRoot, "drop");
+            Directory.CreateDirectory(dropDir);
+            var dropped = Path.Combine(dropDir, "note.txt");
+            File.WriteAllText(dropped, "dropped");
+
+            var memory = Substitute.For<IMemoryService>();
+            memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([], 0));
+            memory.VaultRoot.Returns(tempRoot);
+
+            var vaultSources = Substitute.For<IVaultSourcesService>();
+            vaultSources.ListSourcesAsync().Returns([]);
+
+            var localization = Substitute.For<ILocalizationService>();
+            localization.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => ci.ArgAt<string>(0));
+            localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
+
+            var scheduler = Substitute.For<IIngestScheduler>();
+            scheduler.RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(new IngestResult("x", []));
+
+            var vm = new MemoryViewModel(
+                NullLogger<MemoryViewModel>.Instance,
+                memory,
+                Substitute.For<IEmbeddingService>(),
+                Substitute.For<IDialogService>(),
+                Substitute.For<global::Wpf.Ui.ISnackbarService>(),
+                localization,
+                Substitute.For<IClipboardService>(),
+                vaultSources,
+                scheduler);
+
+            await vm.AddSourceFilesCommand.ExecuteAsync(new[] { dropped });
+
+            Assert.Equal("existing", File.ReadAllText(Path.Combine(sourcesDir, "note.txt")));   // untouched
+            Assert.True(File.Exists(Path.Combine(sourcesDir, "note (1).txt")));                 // uniquified
+            Assert.Equal("dropped", File.ReadAllText(Path.Combine(sourcesDir, "note (1).txt")));
+            await scheduler.Received(1).RunAsync("sources/note (1).txt", Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadSources_marks_only_the_scheduler_running_ref_as_ingesting()
+    {
+        var memory = Substitute.For<IMemoryService>();
+        memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([], 0));
+
+        var vaultSources = Substitute.For<IVaultSourcesService>();
+        vaultSources.ListSourcesAsync().Returns(new[] { Source("running.txt"), Source("idle.txt") });
+
+        var localization = Substitute.For<ILocalizationService>();
+        localization.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => ci.ArgAt<string>(0));
+        localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
+
+        var scheduler = Substitute.For<IIngestScheduler>();
+        scheduler.CurrentSourceRef.Returns("sources/running.txt"); // an ingest is already in flight
+
+        var vm = new MemoryViewModel(
+            NullLogger<MemoryViewModel>.Instance,
+            memory,
+            Substitute.For<IEmbeddingService>(),
+            Substitute.For<IDialogService>(),
+            Substitute.For<global::Wpf.Ui.ISnackbarService>(),
+            localization,
+            Substitute.For<IClipboardService>(),
+            vaultSources,
+            scheduler);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.True(vm.SourceFiles.Single(r => r.RelativePath == "sources/running.txt").IsIngesting);
+        Assert.False(vm.SourceFiles.Single(r => r.RelativePath == "sources/idle.txt").IsIngesting);
+    }
 
     [Fact]
     public async Task LoadMemories_groups_in_canonical_order_with_items_alpha_and_wires_stats()

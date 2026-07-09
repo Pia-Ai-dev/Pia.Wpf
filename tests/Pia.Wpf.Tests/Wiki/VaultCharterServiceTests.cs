@@ -9,9 +9,9 @@ using Xunit;
 namespace Pia.Tests.Wiki;
 
 /// <summary>
-/// Tests for <see cref="VaultCharterService"/>: resolves the vault charter body (charter.md →
-/// profile.md → empty) over a real temp <see cref="VaultStore"/>, mirroring the setup shape of
-/// <see cref="IngestServiceTests"/>.
+/// Tests for <see cref="VaultCharterService"/>: resolves the vault charter body (charter.md → empty)
+/// over a real temp <see cref="VaultStore"/>, mirroring the setup shape of
+/// <see cref="IngestServiceTests"/>. profile.md is deliberately NOT a fallback.
 /// </summary>
 public class VaultCharterServiceTests : IDisposable
 {
@@ -54,13 +54,20 @@ public class VaultCharterServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Falls_back_to_profile_then_empty()
+    public async Task Empty_when_no_charter_file()
     {
         var svc = new VaultCharterService(_store, NullLogger<VaultCharterService>.Instance);
-        Assert.Equal(string.Empty, await svc.GetCharterAsync()); // neither file present
+        Assert.Equal(string.Empty, await svc.GetCharterAsync()); // no charter.md present
+    }
 
+    [Fact]
+    public async Task Does_not_fall_back_to_profile()
+    {
+        // profile.md is the user's personal profile; feeding it into ingest leaked personal facts into
+        // topic pages. Only charter.md counts — a lone profile.md must yield an empty charter.
         await _store.WriteAtomicAsync("memory/profile.md",
             VaultFrontmatter.Build("personal_profile", "Profile") + "\nOwner is a solo dev.");
-        Assert.Contains("solo dev", await svc.GetCharterAsync());
+        var svc = new VaultCharterService(_store, NullLogger<VaultCharterService>.Instance);
+        Assert.Equal(string.Empty, await svc.GetCharterAsync());
     }
 }

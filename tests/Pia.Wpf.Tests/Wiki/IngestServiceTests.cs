@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure.Vault;
 using Pia.Models;
+using Pia.Models.Vault;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
@@ -124,6 +125,9 @@ public class IngestServiceTests : IDisposable
     /// <summary>The tool handler routes through the scheduler; here it just forwards inline.</summary>
     private sealed class PassthroughScheduler(IIngestService inner) : IIngestScheduler
     {
+        public string? CurrentSourceRef => null;
+
+        public event EventHandler<string>? IngestStarted { add { } remove { } }
         public event EventHandler? IngestCompleted { add { } remove { } }
 
         public Task<IngestResult> RunAsync(string sourceRef, CancellationToken ct = default)
@@ -156,18 +160,29 @@ public class IngestServiceTests : IDisposable
         // Per-call source refs, so tests can assert WHICH sources a (re-)synthesis merged.
         public List<IReadOnlyList<string>> CallRefs { get; } = new();
 
+        // Per-call known-slug set, so tests can assert the pre-pass union reached the synthesizer.
+        public List<IReadOnlyCollection<string>> CallKnownSlugs { get; } = new();
+
+        // Optional per-title body overrides — lets a test drive a specific wikilink body through the
+        // pipeline. When a title is absent, the default source-count body is used.
+        public Dictionary<string, string> Bodies { get; } = new(StringComparer.Ordinal);
+
         public Task<SynthesizedPage> SynthesizeAsync(string title, string category, string charter,
-            IReadOnlyList<(string Ref, string Text)> sources, CancellationToken ct = default)
+            IReadOnlyList<(string Ref, string Text)> sources,
+            IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
         {
             Calls.Add((title, sources.Count));
             CallRefs.Add(sources.Select(s => s.Ref).ToList());
+            CallKnownSlugs.Add(knownSlugs.ToList()); // snapshot: the caller mutates the live set between calls
             if (_emptyTitles.Contains(title))
             {
                 return Task.FromResult(new SynthesizedPage(string.Empty, string.Empty));
             }
 
-            return Task.FromResult(new SynthesizedPage(
-                $"{title} is a synthesized topic from {sources.Count} source(s).", $"{title} summary"));
+            var body = Bodies.TryGetValue(title, out var custom)
+                ? custom
+                : $"{title} is a synthesized topic from {sources.Count} source(s).";
+            return Task.FromResult(new SynthesizedPage(body, $"{title} summary"));
         }
     }
 
@@ -194,7 +209,8 @@ public class IngestServiceTests : IDisposable
         public bool WasCalled { get; private set; }
 
         public Task<SynthesizedPage> SynthesizeAsync(string title, string category, string charter,
-            IReadOnlyList<(string Ref, string Text)> sources, CancellationToken ct = default)
+            IReadOnlyList<(string Ref, string Text)> sources,
+            IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
         {
             AmbientDuringCall = TokenMapAmbient.Current;
             WasCalled = true;
@@ -460,6 +476,49 @@ public class IngestServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task IngestAsync_refuses_a_memory_path_even_when_it_exists()
+    {
+        // Pia's own memory is NOT ingestable — feeding it back into synthesis leaked personal facts into
+        // topics. The file genuinely exists and is contained, so only the sources/ scope guard can refuse it.
+        await _store.WriteAtomicAsync("memory/preferences.md",
+            VaultFrontmatter.Build("preference", "Preferences") + "\n## Style\n- codeReviewStyle: concise");
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
+            new FakeSynthesizer());
+
+        var result = await ingest.IngestAsync("memory/preferences.md", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestOutcome.SourceNotFound, result.Outcome);
+        Assert.Empty(result.TouchedPages);
+        Assert.Null(await _store.ReadAsync("memory/topics/acme-corp.md"));
+    }
+
+    [Fact]
+    public async Task Ingest_ignores_a_stale_non_sources_ref_in_page_frontmatter()
+    {
+        // A page written before the scope guard may still list a memory/ ref in its `sources:`. On the next
+        // merge that ref must be skipped, never re-read into the synthesis, so leaked content cannot revive.
+        await _store.WriteAtomicAsync("memory/preferences.md",
+            VaultFrontmatter.Build("preference", "Preferences") + "\n- secret: leaked personal fact");
+        // Frontmatter must carry the sources: line INSIDE the --- fences for ReadSourceRefs to see it.
+        await _store.WriteAtomicAsync("memory/topics/acme-corp.md",
+            "---\npia: managed\ntype: topic\ntitle: Acme Corp\n"
+            + "sources: [sources/sample.txt, memory/preferences.md]\n---\n"
+            + ManagedMarker + "\nAcme Corp is a synthesized topic from 2 source(s).\n");
+
+        var synth = new FakeSynthesizer();
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")), synth);
+
+        var result = await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IngestOutcome.Success, result.Outcome);
+        // The re-synthesis merged ONLY the sources/ ref — the stale memory/ ref was filtered out.
+        var merged = Assert.Single(synth.CallRefs);
+        Assert.Equal(new[] { "sources/sample.txt" }, merged);
+    }
+
+    [Fact]
     public async Task Ingest_tool_returns_a_readable_success_string()
     {
         var handler = BuildToolHandler();
@@ -500,6 +559,104 @@ public class IngestServiceTests : IDisposable
         var text = Assert.IsType<string>(result);
         Assert.Contains("not found", text);
         Assert.Contains("Vault/sources/", text);
+    }
+
+    // --- dangling-wikilink reconciliation (deterministic backstop) ---
+
+    private static string ManagedBody(VaultDocument doc)
+        => doc.RawText[(doc.RawText.IndexOf(ManagedMarker, StringComparison.Ordinal) + ManagedMarker.Length)..];
+
+    [Fact]
+    public async Task Ingest_strips_a_dangling_wikilink_from_the_written_body()
+    {
+        var synth = new FakeSynthesizer();
+        // The synthesized body links a topic that no page exists (or will exist) for.
+        synth.Bodies["Acme Corp"] = "Acme Corp partners with [[topics/globex]] on logistics.";
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")), synth);
+
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(acme);
+        var body = ManagedBody(acme!);
+        // The dead link is gone but the words survive as plain text.
+        Assert.DoesNotContain("[[", body);
+        Assert.Contains("Acme Corp partners with Globex on logistics.", body);
+    }
+
+    [Fact]
+    public async Task Ingest_keeps_a_within_run_forward_reference_link()
+    {
+        var synth = new FakeSynthesizer();
+        // "Acme Corp" is synthesized (and written) BEFORE "John Smith", yet may link forward to it.
+        synth.Bodies["Acme Corp"] = "Acme Corp employs [[topics/john-smith]] as primary contact.";
+        var ingest = BuildIngest(
+            new FakeExtractor(
+                new ExtractedTopic("Acme Corp", "organization"),
+                new ExtractedTopic("John Smith", "person")),
+            synth);
+
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(acme);
+        // The co-discovered target's slug is in the known set (pre-pass), so the link survives.
+        Assert.Contains("[[topics/john-smith]]", ManagedBody(acme!));
+
+        // The pre-pass union reached the synthesizer's grounding set too.
+        var acmeCall = synth.Calls.FindIndex(c => c.Title == "Acme Corp");
+        Assert.Contains("john-smith", synth.CallKnownSlugs[acmeCall]);
+    }
+
+    [Fact]
+    public async Task Ingest_canonicalizes_a_slug_drifted_link_to_the_existing_page()
+    {
+        var synth = new FakeSynthesizer();
+        // The model emitted an accented, non-canonical slug for a co-discovered page (file: cafe.md).
+        synth.Bodies["Acme Corp"] = "Acme Corp meets at [[topics/Café]] downtown.";
+        var ingest = BuildIngest(
+            new FakeExtractor(
+                new ExtractedTopic("Acme Corp", "organization"),
+                new ExtractedTopic("Café", "location")),
+            synth);
+
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(acme);
+        var body = ManagedBody(acme!);
+        // Drift is fixed to the real on-disk filename slug so the link resolves at click time.
+        Assert.Contains("[[topics/cafe]]", body);
+        Assert.DoesNotContain("Café", body);
+        Assert.NotNull(await _store.ReadAsync("memory/topics/cafe.md"));
+    }
+
+    [Fact]
+    public async Task Remove_reconciles_dangling_links_in_the_resynthesized_body()
+    {
+        SeedSource("second.txt", "More context about Acme Corp.");
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
+            new FakeSynthesizer());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+        await ingest.IngestAsync("sources/second.txt", new DateOnly(2026, 7, 9),
+            TestContext.Current.CancellationToken);
+
+        // On removal the re-synthesis emits a link to a topic no page exists for.
+        var synth = new FakeSynthesizer();
+        synth.Bodies["Acme Corp"] = "Acme Corp once worked with [[topics/ghost-partner]].";
+        var remover = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")), synth);
+        await remover.RemoveContributionsAsync("sources/sample.txt",
+            new[] { "memory/topics/acme-corp.md" }, TestContext.Current.CancellationToken);
+
+        var acme = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.NotNull(acme);
+        var body = ManagedBody(acme!);
+        Assert.DoesNotContain("[[", body);
+        Assert.Contains("Acme Corp once worked with Ghost Partner.", body);
     }
 
     // --- PII re-identification of extraction subjects (issue 8, title/slug half) ---

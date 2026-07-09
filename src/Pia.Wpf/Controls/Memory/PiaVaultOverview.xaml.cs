@@ -7,7 +7,9 @@ namespace Pia.Controls.Memory;
 /// <summary>
 /// Vault Overview: a composition-by-category visualization (proportional segmented bar + legend) shown
 /// in the Memory right pane when nothing is selected and the vault is non-empty. Inherits the
-/// <c>MemoryViewModel</c> DataContext and binds <c>VaultComposition</c>.
+/// <c>MemoryViewModel</c> DataContext and binds <c>VaultComposition</c>. File drops are handled
+/// declaratively by <c>FileDropBehavior</c> in XAML (routed to <c>AddSourceFilesCommand</c>), so there
+/// is no drag-and-drop code-behind.
 /// </summary>
 public partial class PiaVaultOverview : UserControl
 {

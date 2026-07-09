@@ -151,9 +151,11 @@ public class AppSettings
     // JSON-only (no settings UI), like MeetingAttendeeRosterSnapshotMinutes.
     public bool AutoIngestSources { get; set; } = true;
 
-    // Schema version for the ingest pipeline. Bumped when the on-disk topic-page format changes so a
-    // one-time startup migration can wipe stale pages + ingest state and force a fresh re-synthesis.
-    // JSON-only (no settings UI), like AutoIngestSources. 0 = pre-synthesis pipeline.
+    // Schema version for the ingest pipeline. Bumped when the on-disk topic-page format changes OR when
+    // topic content must be rebuilt, so a one-time startup migration can wipe stale pages + ingest state
+    // and force a fresh re-synthesis. JSON-only (no settings UI), like AutoIngestSources.
+    // 0 = pre-synthesis pipeline. 1 = synthesis pipeline. 2 = scope tightening (charter no longer feeds
+    // profile.md + ingest restricted to sources/), rebuilds topics free of leaked personal content.
     public int IngestSchemaVersion { get; set; } = 0;
 
     // Assistant suggestions (follow-up chips)

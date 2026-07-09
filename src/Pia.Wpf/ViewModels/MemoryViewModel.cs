@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -120,7 +121,7 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
     public IAsyncRelayCommand ShowHelpCommand { get; }
     public IRelayCommand GoHomeCommand { get; }
     public IRelayCommand OpenVaultFolderCommand { get; }
-    public IRelayCommand OpenSourcesFolderCommand { get; }
+    public IAsyncRelayCommand<IReadOnlyList<string>> AddSourceFilesCommand { get; }
 
     public MemoryViewModel(
         ILogger<MemoryViewModel> logger,
@@ -157,21 +158,36 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
         ShowHelpCommand = new AsyncRelayCommand(ExecuteShowHelp);
         GoHomeCommand = new RelayCommand(ExecuteGoHome);
         OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.VaultRoot));
-        OpenSourcesFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(
-            System.IO.Path.Combine(_memoryService.VaultRoot, "sources")));
+        AddSourceFilesCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteAddSourceFiles);
 
         PropertyChanged += OnPropertyChanged;
+        _ingestScheduler.IngestStarted += OnIngestStarted;
         _ingestScheduler.IngestCompleted += OnIngestCompleted;
     }
 
     // The scheduler raises on background threads; the VM is scoped while the scheduler is a
-    // singleton, so Dispose MUST unsubscribe or this event pins the VM for the app lifetime.
+    // singleton, so Dispose MUST unsubscribe or these events pin the VM for the app lifetime.
     private void OnIngestCompleted(object? sender, EventArgs e)
     {
         // No context means we were constructed off the UI thread — refreshing here would mutate
         // ObservableCollections cross-thread, so skip; the next navigation reloads anyway.
         if (HasUiContext)
             Post(() => _ = LoadSourcesAsync());
+    }
+
+    // Ingest just started for a source: flip that row's spinner on WITHOUT a disk reload (cheap, so an
+    // N-file reconcile doesn't rescan topic pages per item). The matching OnIngestCompleted does the
+    // full reload, which clears the flag by reading the now-idle CurrentSourceRef.
+    private void OnIngestStarted(object? sender, string sourceRef)
+    {
+        if (!HasUiContext)
+            return;
+        Post(() =>
+        {
+            foreach (var row in SourceFiles)
+                row.IsIngesting =
+                    string.Equals(row.RelativePath, sourceRef, StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)
@@ -439,6 +455,10 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
     {
         var sources = await _vaultSourcesService.ListSourcesAsync();
 
+        // Authoritative running ref, so a view opened DURING an ingest (e.g. the startup reconcile)
+        // shows the spinner even though it never observed the IngestStarted event.
+        var running = _ingestScheduler.CurrentSourceRef;
+
         SourceFiles.Clear();
         foreach (var source in sources)
         {
@@ -446,12 +466,99 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
                 ? _localizationService.Format("Memory_Sources_IngestedPages", source.TopicPageCount)
                 : _localizationService[source.IsText ? "Memory_Sources_NotIngested" : "Memory_Sources_NotText"];
             SourceFiles.Add(new VaultSourceRow(
-                source.Name, source.RelativePath, source.IsIngested, status, FormatBytes(source.Bytes)));
+                source.Name, source.RelativePath, source.IsIngested, status, FormatBytes(source.Bytes))
+            {
+                IsIngesting = string.Equals(source.RelativePath, running, StringComparison.OrdinalIgnoreCase),
+            });
         }
 
         SourceFileCount = sources.Count;
         SourcesSummaryText = _localizationService.Format(
             "Memory_Sources_Summary", sources.Count, FormatBytes(sources.Sum(s => s.Bytes)));
+    }
+
+    // Drag-and-drop entry point (the overview is the drop target): copy each dropped TEXT file into the
+    // vault's sources/ folder, surface the new rows immediately, then kick a manual ingest per file. The
+    // manual RunAsync always executes (unlike the hash-gated watcher) and, being on the same serial queue,
+    // never races the watcher's auto-run of the same copy — whichever wins records the hash and the other
+    // no-ops. Non-text files are silently skipped (the drop target already discourages them).
+    private async Task ExecuteAddSourceFiles(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0)
+            return;
+
+        var sourcesDir = Path.Combine(_memoryService.VaultRoot, "sources");
+
+        IReadOnlyList<string> added;
+        try
+        {
+            // File copies can be multi-MB (a .log/.csv), so never run them on the drop (UI) thread.
+            added = await Task.Run(() => CopyTextSources(paths, sourcesDir));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to stage dropped source files");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_SourcesAddFailed", ex.Message));
+            return;
+        }
+
+        if (added.Count == 0)
+        {
+            // Everything dropped was a folder or a non-text file — say so rather than silently no-op.
+            _snackbarService.Show(
+                _localizationService["Msg_Memory_SourcesNoTextTitle"],
+                _localizationService["Msg_Memory_SourcesNoText"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
+            return;
+        }
+
+        // Show the staged files as not-yet-ingested rows before the (slower) LLM compile begins.
+        await LoadSourcesAsync();
+
+        foreach (var sourceRef in added)
+            _ingestScheduler.RunAsync(sourceRef).SafeFireAndForget(_logger);
+
+        _snackbarService.Show(
+            _localizationService["Msg_Memory_SourcesAdded"],
+            _localizationService.Format("Msg_Memory_SourcesAddedDetail", added.Count),
+            Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+    }
+
+    // Copy the text-typed dropped files into sources/, returning the vault-relative refs of what landed.
+    // Directories and non-text files are skipped; a name that already exists is uniquified rather than
+    // overwritten so a drop can never clobber a previously staged source.
+    private static IReadOnlyList<string> CopyTextSources(IReadOnlyList<string> paths, string sourcesDir)
+    {
+        Directory.CreateDirectory(sourcesDir);
+        var added = new List<string>();
+        foreach (var path in paths)
+        {
+            if (!File.Exists(path) || !SourcesProvenance.IsTextSource(path))
+                continue;
+
+            var dest = UniqueDestination(sourcesDir, Path.GetFileName(path));
+            File.Copy(path, dest);
+            added.Add("sources/" + Path.GetFileName(dest));
+        }
+        return added;
+    }
+
+    private static string UniqueDestination(string dir, string fileName)
+    {
+        var dest = Path.Combine(dir, fileName);
+        if (!File.Exists(dest))
+            return dest;
+
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        var ext = Path.GetExtension(fileName);
+        for (var i = 1; ; i++)
+        {
+            var candidate = Path.Combine(dir, $"{stem} ({i}){ext}");
+            if (!File.Exists(candidate))
+                return candidate;
+        }
     }
 
     private async Task ExecuteDeleteMemory(VaultMemoryItem? memory)
@@ -847,6 +954,7 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
         _debounceCts?.Cancel();
         _debounceCts?.Dispose();
         PropertyChanged -= OnPropertyChanged;
+        _ingestScheduler.IngestStarted -= OnIngestStarted;
         _ingestScheduler.IngestCompleted -= OnIngestCompleted;
 
         GC.SuppressFinalize(this);

@@ -47,7 +47,7 @@ public class AiIngestSynthesisServiceTests
 
         var page = await svc.SynthesizeAsync(
             "Pia", "product", "charter",
-            [("sources/a.md", "some raw text")]);
+            [("sources/a.md", "some raw text")], []);
 
         Assert.Equal(string.Empty, page.Body);
         Assert.Equal(string.Empty, page.Summary);
@@ -81,7 +81,7 @@ public class AiIngestSynthesisServiceTests
 
         var page = await svc.SynthesizeAsync(
             "Alice", "person", "charter",
-            [("sources/a.md", "Alice Anderson leads the project.")]);
+            [("sources/a.md", "Alice Anderson leads the project.")], []);
 
         Assert.Equal("About Alice Anderson.", page.Summary);
         Assert.Equal("Alice Anderson leads the project.", page.Body);
@@ -101,9 +101,64 @@ public class AiIngestSynthesisServiceTests
 
         var page = await svc.SynthesizeAsync(
             "Alice", "person", "charter",
-            [("sources/a.md", "Alice Anderson leads the project.")]);
+            [("sources/a.md", "Alice Anderson leads the project.")], []);
 
         Assert.Equal("Plain body about Alice Anderson.", page.Body);
+    }
+
+    [Fact]
+    public async Task SynthesizeAsync_grounds_the_prompt_in_the_known_slugs()
+    {
+        var aiClient = new StubAiClient("SUMMARY: s.\n\nbody");
+        var svc = new AiIngestSynthesisService(
+            aiClient, new SingleProviderService(), NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: false),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync("Acme", "organization", "charter",
+            [("sources/a.md", "raw")], ["acme-corp", "globex-inc"]);
+
+        // The exact slugs are embedded and the model is told to link ONLY to them.
+        Assert.Contains("acme-corp", aiClient.LastPrompt!);
+        Assert.Contains("globex-inc", aiClient.LastPrompt!);
+        Assert.Contains("ONLY when the topic's slug appears in the list", aiClient.LastPrompt!);
+        Assert.DoesNotContain("lowercase-hyphen form", aiClient.LastPrompt!); // old freeform instruction gone
+    }
+
+    [Fact]
+    public async Task SynthesizeAsync_forbids_links_when_no_known_slugs()
+    {
+        var aiClient = new StubAiClient("SUMMARY: s.\n\nbody");
+        var svc = new AiIngestSynthesisService(
+            aiClient, new SingleProviderService(), NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: false),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync("Acme", "organization", "charter",
+            [("sources/a.md", "raw")], []);
+
+        Assert.Contains("Do NOT output any [[...]]", aiClient.LastPrompt!);
+    }
+
+    [Fact]
+    public async Task SynthesizeAsync_withholds_the_slug_list_when_tokenization_enabled()
+    {
+        // Privacy: slugs are name-derived and the PII tokenizer can't mask the hyphenated form, so the
+        // explicit roster must NOT be embedded when tokenization is on. The reconciler still guarantees
+        // link integrity, so a generic (list-free) instruction is used instead.
+        var aiClient = new StubAiClient("SUMMARY: s.\n\nbody");
+        var svc = new AiIngestSynthesisService(
+            aiClient, new SingleProviderService(), NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: true),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync("Acme", "organization", "charter",
+            [("sources/a.md", "raw")], ["aylin-demir", "marco-altmann"]);
+
+        Assert.DoesNotContain("aylin-demir", aiClient.LastPrompt!);
+        Assert.DoesNotContain("marco-altmann", aiClient.LastPrompt!);
+        Assert.DoesNotContain("Known topic slugs", aiClient.LastPrompt!);
+        Assert.Contains("lowercase-hyphen form", aiClient.LastPrompt!); // generic instruction instead
     }
 
     [Fact]
@@ -188,8 +243,13 @@ public class AiIngestSynthesisServiceTests
         private readonly string _response;
         public StubAiClient(string response) => _response = response;
 
+        public string? LastPrompt { get; private set; }
+
         public Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AiCompletionResult(_response, 0));
+        {
+            LastPrompt = prompt;
+            return Task.FromResult(new AiCompletionResult(_response, 0));
+        }
 
         public IAsyncEnumerable<string> StreamChatCompletionAsync(IList<ChatMessage> messages, AiProvider provider, string? mode = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();

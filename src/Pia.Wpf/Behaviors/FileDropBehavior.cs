@@ -41,6 +41,16 @@ public static class FileDropBehavior
     public static bool GetIsDragOver(DependencyObject obj) => (bool)obj.GetValue(IsDragOverProperty);
     private static void SetIsDragOver(DependencyObject obj, bool value) => obj.SetValue(IsDragOverPropertyKey, value);
 
+    // DragEnter/DragLeave fire for every child element too. Balancing them with a counter
+    // is more reliable than a bounds check, which misses edge-of-window exits (the cursor
+    // reports a position still inside ActualWidth/Height, leaving the overlay stuck).
+    private static readonly DependencyProperty DragCounterProperty =
+        DependencyProperty.RegisterAttached("DragCounter", typeof(int), typeof(FileDropBehavior),
+            new PropertyMetadata(0));
+
+    private static int GetDragCounter(DependencyObject obj) => (int)obj.GetValue(DragCounterProperty);
+    private static void SetDragCounter(DependencyObject obj, int value) => obj.SetValue(DragCounterProperty, value);
+
     private static void OnIsEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not UIElement element) return;
@@ -59,6 +69,7 @@ public static class FileDropBehavior
             element.PreviewDragOver -= OnDragOver;
             element.PreviewDragLeave -= OnDragLeave;
             element.PreviewDrop -= OnDrop;
+            SetDragCounter(element, 0);
             SetIsDragOver(element, false);
         }
     }
@@ -66,6 +77,8 @@ public static class FileDropBehavior
     private static void OnDragEnter(object sender, DragEventArgs e)
     {
         if (sender is not DependencyObject target) return;
+
+        SetDragCounter(target, GetDragCounter(target) + 1);
 
         if (TryAcceptDrag(target, e))
             SetIsDragOver(target, true);
@@ -81,24 +94,19 @@ public static class FileDropBehavior
     {
         if (sender is not DependencyObject target) return;
 
-        // DragLeave fires for child elements too; only clear if we've actually left the target bounds.
-        if (sender is IInputElement inputElement)
-        {
-            var pos = e.GetPosition(inputElement);
-            if (sender is FrameworkElement fe &&
-                pos.X >= 0 && pos.Y >= 0 && pos.X <= fe.ActualWidth && pos.Y <= fe.ActualHeight)
-            {
-                return;
-            }
-        }
-
-        SetIsDragOver(target, false);
+        // DragEnter/DragLeave fire for child elements too; only clear once every enter
+        // has been matched by a leave (i.e. the drag has truly left the target).
+        var count = Math.Max(0, GetDragCounter(target) - 1);
+        SetDragCounter(target, count);
+        if (count == 0)
+            SetIsDragOver(target, false);
     }
 
     private static void OnDrop(object sender, DragEventArgs e)
     {
         if (sender is not DependencyObject target) return;
 
+        SetDragCounter(target, 0);
         SetIsDragOver(target, false);
 
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
