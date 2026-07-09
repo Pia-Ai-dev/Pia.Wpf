@@ -397,11 +397,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var personas = await _personaService.GetPersonasAsync();
             var active = await _personaService.ResolveActiveAsync(WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
 
-            AvailablePersonas.Clear();
-            foreach (var persona in personas)
-                AvailablePersonas.Add(persona);
+            // PersonasChanged can arrive on a background thread (the sync pull loop calls
+            // Add/Update/DeletePersonaAsync), so marshal the bound-collection mutation to the UI
+            // thread. Awaited before the finally so _isLoadingPersonas is still set when the lambda
+            // assigns ActivePersona (OnActivePersonaChanged relies on that guard).
+            await App.Current.Dispatcher.InvokeAsync(() =>
+            {
+                AvailablePersonas.Clear();
+                foreach (var persona in personas)
+                    AvailablePersonas.Add(persona);
 
-            ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
+                ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
+            });
         }
         finally
         {

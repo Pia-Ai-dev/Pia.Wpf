@@ -7,6 +7,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
+using System.Threading;
 
 namespace Pia.ViewModels;
 
@@ -22,6 +23,11 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     private readonly IPolicyService _policyService;
     private readonly ISyncClientService? _syncClientService;
     private bool _isLoading;
+
+    // UI SynchronizationContext captured at construction. ProvidersChanged / SyncCompleted can be
+    // raised on a background thread (the sync pull loop), so the bound-collection refresh must
+    // marshal back to it (ViewModels must not reference System.Windows — see the architecture test).
+    private readonly SynchronizationContext? _sync;
 
     private readonly SettingsViewModel _parent;
 
@@ -46,6 +52,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _policyService = policyService;
         _syncClientService = syncClientService;
+        _sync = SynchronizationContext.Current;
 
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
@@ -155,33 +162,24 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     public async Task InitializeAsync()
     {
-        _isLoading = true;
-
         // Repair stale mode-default Ids BEFORE we read them, so a Guid that no
         // longer points to an existing provider (e.g. after sync reassignment)
         // is replaced with a sensible fallback rather than showing as "nothing
         // selected" in the dropdown.
         await _providerService.RepairModeDefaultsAsync();
 
-        Providers.Clear();
         var providersList = await _providerService.GetProvidersAsync();
-        foreach (var provider in providersList)
-            Providers.Add(provider);
-
         var settings = await _settingsService.GetSettingsAsync();
-        UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
-        OptimizeProviderId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
-        AssistantProviderId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
+        var optimizeId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
+        var assistantId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
+        var displayItems = await BuildProviderDisplayItemsAsync(providersList, optimizeId, assistantId);
 
-        IsSyncLoggedIn = _authService.IsLoggedIn;
-
-        await RefreshProviderDisplayItemsAsync();
+        await ApplyProvidersAsync(providersList, settings.UseSameProviderForAllModes, optimizeId, assistantId,
+            displayItems, _authService.IsLoggedIn);
 
         _logger.LogInformation(
             "Settings page initialized: providers={Count}, modeDefaults Optimize={OptId} Assistant={AsstId}, useSame={UseSame}",
-            providersList.Count, OptimizeProviderId, AssistantProviderId, UseSameProviderForAllModes);
-
-        _isLoading = false;
+            providersList.Count, optimizeId, assistantId, settings.UseSameProviderForAllModes);
     }
 
     private static Guid? ResolveOrDefault(
@@ -318,32 +316,64 @@ public partial class ProvidersSettingsViewModel : ObservableObject
 
     public async Task RefreshProvidersAsync()
     {
-        _isLoading = true;
-        Providers.Clear();
+        // Reachable from OnProvidersChanged / OnSyncCompleted / OnLoginStateChanged, which the sync
+        // loop can raise on a background thread. Fetch and compute everything off-thread, then
+        // marshal all VM-state mutation onto the captured UI context via ApplyProviders.
         var providersList = await _providerService.GetProvidersAsync();
-        foreach (var provider in providersList)
-            Providers.Add(provider);
 
         // Re-resolve through ResolveOrDefault rather than restoring the previous
         // in-memory Ids — those may now be stale (e.g. just reassigned by a sync
         // pull that called ReassignProviderIdAsync under us).
         var settings = await _settingsService.GetSettingsAsync();
-        UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
-        OptimizeProviderId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
-        AssistantProviderId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
-        _isLoading = false;
+        var optimizeId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
+        var assistantId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
+        var displayItems = await BuildProviderDisplayItemsAsync(providersList, optimizeId, assistantId);
 
-        await RefreshProviderDisplayItemsAsync();
+        await ApplyProvidersAsync(providersList, settings.UseSameProviderForAllModes, optimizeId, assistantId,
+            displayItems, IsSyncLoggedIn);
     }
 
-    private async Task RefreshProviderDisplayItemsAsync()
+    // Marshals every VM-state mutation onto the UI thread in one batch. _isLoading brackets the
+    // observable-property assignments so their change handlers skip the debounced save during a
+    // refresh (as before); the bound-collection mutations must run here to avoid the cross-thread
+    // CollectionView exception.
+    private Task ApplyProvidersAsync(
+        IReadOnlyList<AiProvider> providersList, bool useSameProviderForAllModes,
+        Guid? optimizeId, Guid? assistantId, IReadOnlyList<ProviderDisplayItem> displayItems,
+        bool isSyncLoggedIn) => PostAsync(() =>
     {
+        _isLoading = true;
+
+        Providers.Clear();
+        foreach (var provider in providersList)
+            Providers.Add(provider);
+
         ProviderDisplayItems.Clear();
-        foreach (var provider in Providers)
+        foreach (var item in displayItems)
+            ProviderDisplayItems.Add(item);
+
+        // Set the SelectedValue-bound ids AFTER ItemsSource is populated. Setting a ComboBox's
+        // SelectedValue (SelectedValuePath=Id) while its items are empty leaves it unmatched, and a
+        // two-way binding then writes null back onto the property — the original ordering avoided this.
+        UseSameProviderForAllModes = useSameProviderForAllModes;
+        OptimizeProviderId = optimizeId;
+        AssistantProviderId = assistantId;
+        IsSyncLoggedIn = isSyncLoggedIn;
+
+        _isLoading = false;
+    });
+
+    // Computes the display-item list off any thread (does IO via IsProviderActiveAsync) from the
+    // supplied provider list — NOT the bound Providers collection, which must not be read while a
+    // background refresh may be mutating it. The caller marshals the actual mutation via Post.
+    private async Task<List<ProviderDisplayItem>> BuildProviderDisplayItemsAsync(
+        IReadOnlyList<AiProvider> providers, Guid? optimizeId, Guid? assistantId)
+    {
+        var items = new List<ProviderDisplayItem>();
+        foreach (var provider in providers)
         {
             var isActive = await _providerService.IsProviderActiveAsync(provider);
-            var isDefault = OptimizeProviderId == provider.Id
-                || AssistantProviderId == provider.Id;
+            var isDefault = optimizeId == provider.Id || assistantId == provider.Id;
 
             string? failReason = null;
             if (!isActive && isDefault)
@@ -353,7 +383,7 @@ public partial class ProvidersSettingsViewModel : ObservableObject
                     : _localizationService["Providers_NotConfigured"];
             }
 
-            ProviderDisplayItems.Add(new ProviderDisplayItem
+            items.Add(new ProviderDisplayItem
             {
                 Provider = provider,
                 IsActive = isActive,
@@ -361,6 +391,28 @@ public partial class ProvidersSettingsViewModel : ObservableObject
                 FailReason = failReason,
             });
         }
+        return items;
+    }
+
+    // Marshal an action onto the UI SynchronizationContext and await its completion, or run it
+    // inline when no context was captured (e.g. unit tests). Awaitable (unlike FlowViewModel.Post)
+    // so callers that read the refreshed state right after `await Refresh...` see it applied — the
+    // command handlers here immediately look the just-saved provider up in Providers.
+    private Task PostAsync(Action action)
+    {
+        if (_sync is null)
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        var tcs = new TaskCompletionSource();
+        _sync.Post(_ =>
+        {
+            try { action(); tcs.SetResult(); }
+            catch (Exception ex) { tcs.SetException(ex); }
+        }, null);
+        return tcs.Task;
     }
 
     private async Task SaveProviderSettingsAsync()
