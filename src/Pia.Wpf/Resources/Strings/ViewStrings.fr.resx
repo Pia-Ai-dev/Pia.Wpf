@@ -273,6 +273,7 @@
   <data name="Memory_Filter_Today" xml:space="preserve"><value>Aujourd'hui</value></data>
   <data name="Memory_CopyJson" xml:space="preserve"><value>Copier le JSON</value></data>
   <data name="Memory_Copied" xml:space="preserve"><value>Copié dans le presse-papiers</value></data>
+  <data name="Memory_LinkNotFound" xml:space="preserve"><value>Aucune page mémoire trouvée pour «&#160;{0}&#160;»</value></data>
   <data name="Memory_SourcePrefix" xml:space="preserve"><value>Source ·</value></data>
   <data name="Memory_OpenConversation" xml:space="preserve"><value>Ouvrir la conversation →</value></data>
   <data name="Memory_Meta_Lifecycle" xml:space="preserve"><value>CYCLE DE VIE</value></data>
@@ -299,6 +300,7 @@
   <data name="Memory_Sources_OpenFolder" xml:space="preserve"><value>Ouvrir le dossier sources</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>Comment fonctionne la mémoire</value></data>
   <data name="Memory_Home" xml:space="preserve"><value>Vue d'ensemble du coffre</value></data>
+  <data name="Memory_Back" xml:space="preserve"><value>Retour</value></data>
   <data name="Memory_Help_Title" xml:space="preserve"><value>Comment fonctionne la mémoire de Pia</value></data>
   <data name="Memory_Help_What" xml:space="preserve"><value>Pendant que vous discutez, Pia retient automatiquement des informations utiles — vos préférences, les personnes et projets que vous mentionnez, ou des dates importantes.</value></data>
   <data name="Memory_Help_Auto" xml:space="preserve"><value>Les nouvelles mémoires apparaissent ici d'elles-mêmes. Vous n'avez rien à faire — Pia les utilise pour vous donner des réponses plus personnalisées.</value></data>

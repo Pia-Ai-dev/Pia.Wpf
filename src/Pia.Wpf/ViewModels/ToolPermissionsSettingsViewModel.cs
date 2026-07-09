@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -16,12 +15,11 @@ namespace Pia.ViewModels;
 /// fields are readonly (MVVM guardrail). Grant rows are built synchronously from
 /// <see cref="IToolPermissionService.List"/> so no async initialization is needed.
 /// </summary>
-public partial class ToolPermissionsSettingsViewModel : ObservableObject
+public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
 {
     private readonly IToolPermissionService _permissions;
     private readonly IPluginService _pluginService;
     private readonly ILogger<SettingsViewModel> _logger;
-    private readonly SynchronizationContext? _syncContext;
 
     public ObservableCollection<ToolGrantRow> Grants { get; } = [];
 
@@ -36,22 +34,15 @@ public partial class ToolPermissionsSettingsViewModel : ObservableObject
         _permissions = permissions;
         _pluginService = pluginService;
         _logger = logger;
-        // Captured on the construction thread (the UI thread in production). The
-        // grant store's Changed may fire off-thread (external SettingsChanged from a
-        // background sync save), so the bound-collection rebuild is marshalled back.
-        _syncContext = SynchronizationContext.Current;
 
         _permissions.Changed += OnPermissionsChanged;
         RefreshGrants();
     }
 
-    private void OnPermissionsChanged(object? sender, EventArgs e)
-    {
-        if (_syncContext is not null && _syncContext != SynchronizationContext.Current)
-            _syncContext.Post(_ => RefreshGrants(), null);
-        else
-            RefreshGrants();
-    }
+    // The grant store's Changed may fire off-thread (external SettingsChanged from a
+    // background sync save), so the bound-collection rebuild is marshalled back —
+    // PostOrRun runs inline when already on (or lacking) the captured UI context.
+    private void OnPermissionsChanged(object? sender, EventArgs e) => PostOrRun(RefreshGrants);
 
     private void RefreshGrants()
     {

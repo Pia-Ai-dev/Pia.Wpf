@@ -11,7 +11,7 @@ using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
-public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
+public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
 {
     private const int RecentLimit = 10;
     private const int DebounceMs = 300;
@@ -29,7 +29,6 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     private readonly Func<Guid, ChatState> _resolveState;
     private readonly Action<string?> _setActiveWorkingDirectory;
     private readonly Func<string?> _getActiveWorkingDirectory;
-    private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _quickSwitcherCts;
     private List<SyncAssistantChat> _quickSwitcherCandidates = [];
@@ -103,6 +102,7 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
         IWorkingDirectoryService workingDirectoryService,
         Action<string?> setActiveWorkingDirectory,
         Func<string?> getActiveWorkingDirectory)
+        : base(requireUiThread: true)
     {
         _chatService = chatService;
         _localizationService = localizationService;
@@ -117,11 +117,6 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
 
         WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectoryService);
         WorkingDirectoryPicker.WorkingDirectoryChosen += OnWorkingDirectoryChosen;
-        // Captured on the UI thread (this VM is constructed there) so off-thread
-        // ChatsChanged (e.g. the retention BackgroundService raising it from a
-        // thread-pool thread) can be marshalled back before touching bound collections.
-        _syncContext = SynchronizationContext.Current
-            ?? throw new InvalidOperationException("ChatTitleChipViewModel must be created on the UI thread");
 
         CurrentTitle = _localizationService["AssistantChat_TitlePlaceholder_NewChat"];
 
@@ -213,11 +208,11 @@ public partial class ChatTitleChipViewModel : ObservableObject, IDisposable
     {
         // ChatsChanged can fire off the UI thread (retention BackgroundService). Marshal
         // before reloading — LoadRecentChatsAsync mutates the bound Groups collection.
-        _syncContext.Post(_ =>
+        Post(() =>
         {
             if (IsFlyoutOpen)
                 LoadRecentChatsAsync().SafeFireAndForget(_logger);
-        }, null);
+        });
     }
 
     private void DebounceReload()

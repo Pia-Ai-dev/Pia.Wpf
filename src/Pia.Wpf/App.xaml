@@ -51,6 +51,7 @@
       <converters:DateTimeOffsetToShortTimeConverter x:Key="DateTimeOffsetToShortTimeConverter" />
       <converters:BoolToAngleConverter x:Key="BoolToAngleConverter" />
       <converters:SingleLineConverter x:Key="SingleLineConverter" />
+      <converters:WikiLinkConverter x:Key="WikiLinkConverter" />
       <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
       <converters:BoolToReflowMarginConverter x:Key="BoolToReflowMarginConverter" />
       <converters:MemoryTypeToLabelConverter x:Key="MemoryTypeToLabelConverter" />

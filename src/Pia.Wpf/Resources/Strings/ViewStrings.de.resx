@@ -273,6 +273,7 @@
   <data name="Memory_Filter_Today" xml:space="preserve"><value>Heute</value></data>
   <data name="Memory_CopyJson" xml:space="preserve"><value>JSON kopieren</value></data>
   <data name="Memory_Copied" xml:space="preserve"><value>In Zwischenablage kopiert</value></data>
+  <data name="Memory_LinkNotFound" xml:space="preserve"><value>Keine Speicherseite für „{0}“ gefunden</value></data>
   <data name="Memory_SourcePrefix" xml:space="preserve"><value>Quelle ·</value></data>
   <data name="Memory_OpenConversation" xml:space="preserve"><value>Konversation öffnen →</value></data>
   <data name="Memory_Meta_Lifecycle" xml:space="preserve"><value>LEBENSZYKLUS</value></data>
@@ -299,6 +300,7 @@
   <data name="Memory_Sources_OpenFolder" xml:space="preserve"><value>Quellenordner öffnen</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>So funktioniert das Gedächtnis</value></data>
   <data name="Memory_Home" xml:space="preserve"><value>Übersicht des Speichers</value></data>
+  <data name="Memory_Back" xml:space="preserve"><value>Zurück</value></data>
   <data name="Memory_Help_Title" xml:space="preserve"><value>So funktioniert Pias Gedächtnis</value></data>
   <data name="Memory_Help_What" xml:space="preserve"><value>Während du chattest, merkt sich Pia automatisch nützliche Dinge — deine Vorlieben, Personen und Projekte, die du erwähnst, oder wichtige Termine.</value></data>
   <data name="Memory_Help_Auto" xml:space="preserve"><value>Neue Erinnerungen erscheinen hier von selbst. Du musst nichts tun — Pia nutzt sie, um dir passendere Antworten zu geben.</value></data>

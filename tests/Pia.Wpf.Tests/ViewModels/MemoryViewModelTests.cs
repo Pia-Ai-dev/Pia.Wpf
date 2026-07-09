@@ -45,6 +45,34 @@ public class MemoryViewModelTests
         return (vm, memory, dialog);
     }
 
+    private static (MemoryViewModel Vm, IMemoryService Memory, global::Wpf.Ui.ISnackbarService Snackbar) CreateWithSnackbar(
+        VaultMemoryItem[] items, long bytes = 0)
+    {
+        var memory = Substitute.For<IMemoryService>();
+        memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot(items, bytes));
+
+        var vaultSources = Substitute.For<IVaultSourcesService>();
+        vaultSources.ListSourcesAsync().Returns([]);
+
+        var localization = Substitute.For<ILocalizationService>();
+        localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci.ArgAt<string>(0)}:{string.Join(",", ci.ArgAt<object[]>(1))}");
+        localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
+
+        var snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
+        var vm = new MemoryViewModel(
+            NullLogger<MemoryViewModel>.Instance,
+            memory,
+            Substitute.For<IEmbeddingService>(),
+            Substitute.For<IDialogService>(),
+            snackbar,
+            localization,
+            Substitute.For<IClipboardService>(),
+            vaultSources,
+            Substitute.For<IIngestScheduler>());
+        return (vm, memory, snackbar);
+    }
+
     private static VaultSourceItem Source(string name, long bytes = 10, bool isText = true, int pages = 0)
         => new($"sources/{name}", name, bytes, DateTime.MinValue, isText, pages);
 
@@ -283,6 +311,252 @@ public class MemoryViewModelTests
         Assert.Equal(0, vm.TotalObjectCount);
         Assert.True(vm.IsVaultOverviewVisible);
         Assert.False(vm.IsInspectorPlaceholderVisible);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task NavigateToLink_selects_the_topic_page_by_target()
+    {
+        // A wikilink target `topics/foo` maps to the bare-path reference `memory/topics/foo.md`.
+        var foo = Item("memory/topics/foo.md", "memory/topics/foo.md", "topic", "Foo", "foo body");
+        var bar = Item("memory/topics/bar.md", "memory/topics/bar.md", "topic", "Bar", "bar body");
+        var (vm, _, _) = Create([foo, bar]);
+
+        await vm.OnNavigatedToAsync(null);
+        await vm.NavigateToLinkCommand.ExecuteAsync("topics/foo");
+
+        Assert.NotNull(vm.SelectedMemory);
+        Assert.Equal("memory/topics/foo.md", vm.SelectedMemory!.Reference);
+        Assert.False(vm.IsEditing);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task NavigateToLink_tolerates_extension_and_slashes_in_target()
+    {
+        var foo = Item("memory/topics/foo.md", "memory/topics/foo.md", "topic", "Foo", "foo body");
+        var (vm, _, _) = Create([foo]);
+
+        await vm.OnNavigatedToAsync(null);
+        // Obsidian may emit the extension and/or a leading slash; both must still resolve.
+        await vm.NavigateToLinkCommand.ExecuteAsync("/topics/foo.md");
+
+        Assert.Equal("memory/topics/foo.md", vm.SelectedMemory!.Reference);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task NavigateToLink_to_structured_topic_selects_first_section()
+    {
+        // A topic whose synthesized body has `## sections` yields one item per section; the link resolves
+        // to the first (alpha-ordered) section rather than dead-ending.
+        var alpha = Item("memory/topics/foo.md#Alpha", "memory/topics/foo.md", "topic", "Alpha", "a");
+        var beta = Item("memory/topics/foo.md#Beta", "memory/topics/foo.md", "topic", "Beta", "b");
+        var (vm, _, _) = Create([beta, alpha]);
+
+        await vm.OnNavigatedToAsync(null);
+        await vm.NavigateToLinkCommand.ExecuteAsync("topics/foo");
+
+        Assert.NotNull(vm.SelectedMemory);
+        Assert.StartsWith("memory/topics/foo.md#", vm.SelectedMemory!.Reference);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task NavigateToLink_unresolved_target_keeps_selection_null_and_warns()
+    {
+        var foo = Item("memory/topics/foo.md", "memory/topics/foo.md", "topic", "Foo", "foo body");
+        var (vm, _, snackbar) = CreateWithSnackbar([foo]);
+
+        await vm.OnNavigatedToAsync(null);
+        await vm.NavigateToLinkCommand.ExecuteAsync("topics/missing");
+
+        Assert.Null(vm.SelectedMemory);
+        snackbar.ReceivedWithAnyArgs(1).Show(default!, default!, default, default!, default);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task NavigateToLink_resolves_a_slug_drifted_target_to_the_canonical_file()
+    {
+        // Topic FILES are named via VaultSlug.Slugify(subject); the LLM-authored inline link is only the
+        // informal "lowercase-hyphen form", so `topics/Node.js` must still reach `memory/topics/node-js.md`.
+        var nodejs = Item("memory/topics/node-js.md", "memory/topics/node-js.md", "topic", "Node.js", "js runtime");
+        var (vm, _, _) = Create([nodejs]);
+
+        await vm.OnNavigatedToAsync(null);
+        await vm.NavigateToLinkCommand.ExecuteAsync("topics/Node.js");
+
+        Assert.Equal("memory/topics/node-js.md", vm.SelectedMemory!.Reference);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task NavigateToLink_clears_active_search_to_reach_a_filtered_out_target()
+    {
+        var foo = Item("memory/topics/foo.md", "memory/topics/foo.md", "topic", "Foo", "foo body");
+        var bar = Item("memory/topics/bar.md", "memory/topics/bar.md", "topic", "Bar", "bar body");
+        var (vm, memory, _) = Create([foo, bar]);
+        memory.RecallAsync("foo", Arg.Any<int>()).Returns([]);
+
+        vm.SearchQuery = "foo";
+        await vm.RefreshCommand.ExecuteAsync(null);
+        // Only the matching page is shown; the target is filtered out.
+        Assert.DoesNotContain(vm.MemoryGroups.SelectMany(g => g.Items), i => i.Reference == "memory/topics/bar.md");
+
+        await vm.NavigateToLinkCommand.ExecuteAsync("topics/bar");
+
+        Assert.Equal(string.Empty, vm.SearchQuery);
+        Assert.Equal("memory/topics/bar.md", vm.SelectedMemory!.Reference);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task GoBack_returns_to_the_previous_page_and_does_not_re_record()
+    {
+        var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "A");
+        var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "B");
+        var (vm, _, _) = Create([a, b]);
+
+        await vm.OnNavigatedToAsync(null);
+        Assert.False(vm.GoBackCommand.CanExecute(null));
+
+        vm.SelectedMemory = a; // null -> a: not recorded
+        vm.SelectedMemory = b; // a -> b: records a
+        Assert.True(vm.GoBackCommand.CanExecute(null));
+
+        await vm.GoBackCommand.ExecuteAsync(null);
+
+        Assert.Equal("memory/notes/a.md", vm.SelectedMemory!.Reference);
+        // Back itself must not push 'b' — the stack is now empty.
+        Assert.False(vm.GoBackCommand.CanExecute(null));
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task History_caps_at_ten_dropping_the_oldest()
+    {
+        var items = Enumerable.Range(0, 12)
+            .Select(i => Item($"memory/notes/p{i}.md", $"memory/notes/p{i}.md", "note", $"P{i:00}"))
+            .ToArray();
+        var (vm, _, _) = Create(items);
+
+        await vm.OnNavigatedToAsync(null);
+        foreach (var item in items)
+        {
+            vm.SelectedMemory = item; // 11 transitions push p0..p10; cap drops p0
+        }
+
+        var backs = 0;
+        while (vm.GoBackCommand.CanExecute(null) && backs <= 20)
+        {
+            await vm.GoBackCommand.ExecuteAsync(null);
+            backs++;
+        }
+
+        Assert.Equal(10, backs);
+        // p0 was evicted by the cap, so the earliest reachable page is p1.
+        Assert.Equal("memory/notes/p1.md", vm.SelectedMemory!.Reference);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task OnNavigatedTo_clears_the_back_history()
+    {
+        var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "A");
+        var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "B");
+        var (vm, _, _) = Create([a, b]);
+
+        await vm.OnNavigatedToAsync(null);
+        vm.SelectedMemory = a;
+        vm.SelectedMemory = b;
+        Assert.True(vm.GoBackCommand.CanExecute(null));
+
+        await vm.OnNavigatedToAsync(null);
+
+        Assert.False(vm.GoBackCommand.CanExecute(null));
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Search_that_hides_the_selection_does_not_record_history()
+    {
+        var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "Apple", body: "apple");
+        var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "Banana", body: "banana");
+        var (vm, memory, _) = Create([a, b]);
+        memory.RecallAsync("banana", Arg.Any<int>()).Returns([]);
+
+        await vm.OnNavigatedToAsync(null);
+        vm.SelectedMemory = a; // null -> a: not recorded
+        Assert.False(vm.GoBackCommand.CanExecute(null));
+
+        vm.SearchQuery = "banana";
+        await vm.RefreshCommand.ExecuteAsync(null); // filter hides 'a' -> silent deselect
+
+        Assert.Null(vm.SelectedMemory);
+        // A reload-driven deselection is not a navigation, so Back stays disabled.
+        Assert.False(vm.GoBackCommand.CanExecute(null));
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Deleting_a_page_purges_it_from_the_back_history()
+    {
+        var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "A");
+        var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "B");
+        var (vm, memory, dialog) = Create([a, b]);
+        dialog.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        await vm.OnNavigatedToAsync(null);
+        vm.SelectedMemory = a; // null -> a: not recorded
+        vm.SelectedMemory = b; // a -> b: records a, stack [a], current b
+        Assert.True(vm.GoBackCommand.CanExecute(null));
+
+        // Delete 'a' — it is in history but is not the currently-viewed page.
+        memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([b], 0));
+        await vm.DeleteMemoryCommand.ExecuteAsync(a);
+
+        // 'a' was the only back entry and is now purged, so Back is disabled (no dead target remains).
+        Assert.False(vm.GoBackCommand.CanExecute(null));
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task GoBack_still_skips_an_unresolvable_entry_and_lands_on_an_earlier_one()
+    {
+        // Defense-in-depth for the pop-until-resolves loop: even if an entry cannot resolve (e.g. removed
+        // by a path the purge did not cover), Back walks past it to the next valid page.
+        var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "A");
+        var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "B");
+        var c = Item("memory/notes/c.md", "memory/notes/c.md", "note", "C");
+        var (vm, memory, dialog) = Create([a, b, c]);
+        dialog.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        await vm.OnNavigatedToAsync(null);
+        vm.SelectedMemory = a;
+        vm.SelectedMemory = b; // records a
+        vm.SelectedMemory = c; // records b -> stack [a, b]
+
+        // Remove b from the loaded set WITHOUT going through the purge (simulates an out-of-band removal):
+        // reload the groups so b is gone but the back stack still references it.
+        memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([a, c], 0));
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        await vm.GoBackCommand.ExecuteAsync(null); // pops b (unresolvable) then a
+
+        Assert.Equal("memory/notes/a.md", vm.SelectedMemory!.Reference);
 
         vm.Dispose();
     }

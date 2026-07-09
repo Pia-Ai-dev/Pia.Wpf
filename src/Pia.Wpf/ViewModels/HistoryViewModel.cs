@@ -10,10 +10,9 @@ using Pia.Services.Interfaces;
 namespace Pia.ViewModels;
 
 
-public partial class HistoryViewModel : ObservableObject, IDisposable, INavigationAware
+public partial class HistoryViewModel : UiThreadViewModel, IDisposable, INavigationAware
 {
     private readonly ILogger<HistoryViewModel> _logger;
-    private readonly SynchronizationContext _syncContext;
     private bool _disposed;
     private readonly IHistoryService _historyService;
     private readonly ITemplateService _templateService;
@@ -78,6 +77,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         IOutputService outputService,
         IDialogService dialogService,
         ILocalizationService localizationService)
+        : base(requireUiThread: true)
     {
         _logger = logger;
         _historyService = historyService;
@@ -86,7 +86,6 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
         _outputService = outputService;
         _dialogService = dialogService;
         _localizationService = localizationService;
-        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         CopyOriginalCommand = new AsyncRelayCommand(ExecuteCopyOriginal, CanExecuteAction);
         CopyOptimizedCommand = new AsyncRelayCommand(ExecuteCopyOptimized, CanExecuteAction);
@@ -408,7 +407,7 @@ public partial class HistoryViewModel : ObservableObject, IDisposable, INavigati
 
     private void OnSessionsChanged(object? sender, EventArgs e)
     {
-        _syncContext.Post(_ => LoadSessionsAsync(0, 50).SafeFireAndForget(_logger), null);
+        Post(() => LoadSessionsAsync(0, 50).SafeFireAndForget(_logger));
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

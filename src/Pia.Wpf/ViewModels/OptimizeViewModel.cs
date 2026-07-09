@@ -12,7 +12,7 @@ using Pia.Navigation;
 
 namespace Pia.ViewModels;
 
-public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDisposable, IOptimizeFastPathHandle
+public partial class OptimizeViewModel : UiThreadViewModel, INavigationAware, IDisposable, IOptimizeFastPathHandle
 {
     private bool _disposed;
     public event EventHandler? FocusInputRequested;
@@ -34,7 +34,6 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
     private readonly IWindowTrackingService _windowTrackingService;
     private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
-    private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _optimizationCancellationToken;
     private readonly TaskCompletionSource<bool> _readyTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -120,6 +119,7 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         ILocalizationService localizationService,
         IVoiceInputService voiceInputService,
         Wpf.Ui.ISnackbarService snackbarService)
+        : base(requireUiThread: true)
     {
         _logger = logger;
         _textOptimizationService = textOptimizationService;
@@ -147,8 +147,6 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
         ClearInputCommand = new RelayCommand(ExecuteClearInput);
         SendToModeCommand = new RelayCommand<string>(ExecuteSendToMode);
         HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
-
-        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         _settingsService.SettingsChanged += OnSettingsChanged;
         _templateService.TemplatesChanged += OnTemplatesChanged;
@@ -489,21 +487,21 @@ public partial class OptimizeViewModel : ObservableObject, INavigationAware, IDi
 
             if (shouldFollowDefault)
             {
-                _syncContext.Post(_ =>
+                Post(() =>
                 {
                     SelectedTemplateId = settings.DefaultTemplateId.Value;
                     UpdateSelectedTemplateAsync().SafeFireAndForget(_logger);
-                }, null);
+                });
             }
         }
     }
 
     private void OnTemplatesChanged(object? sender, EventArgs e)
     {
-        _syncContext.Post(_ =>
+        Post(() =>
         {
             ExecuteLoadTemplates().SafeFireAndForget(_logger);
-        }, null);
+        });
     }
 
     private void DebounceSaveDraft()

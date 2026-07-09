@@ -35,7 +35,10 @@
                width, lays out to zero height and renders blank. Disabled constrains its width so the
                body wraps and the vertical scrollbar engages for long content. -->
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <controls:MarkdownMessageControl MarkdownText="{Binding Body}"/>
+            <!-- WikiLinkConverter rewrites [[target]] wikilinks into clickable pia-memory: links (read-only,
+                 display-only — the stored Body and the edit/copy paths keep the raw Obsidian syntax). -->
+            <controls:MarkdownMessageControl x:Name="BodyMarkdown"
+                                             MarkdownText="{Binding Body, Converter={StaticResource WikiLinkConverter}}"/>
           </ScrollViewer>
         </Border>
 

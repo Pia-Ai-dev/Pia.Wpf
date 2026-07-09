@@ -7,11 +7,10 @@ using Pia.Helpers;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using System.Text.Json;
-using System.Threading;
 
 namespace Pia.ViewModels;
 
-public partial class AccountSettingsViewModel : ObservableObject
+public partial class AccountSettingsViewModel : UiThreadViewModel
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ISettingsService _settingsService;
@@ -24,7 +23,6 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IDeviceKeyService _deviceKeys;
     private readonly IMemoryService _memoryService;
     private readonly IPolicyService _policyService;
-    private readonly SynchronizationContext _syncContext;
     private bool _isLoading;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
@@ -42,6 +40,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         IMemoryService memoryService,
         IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel)
+        : base(requireUiThread: true)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -54,7 +53,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         _deviceKeys = deviceKeys;
         _memoryService = memoryService;
         _policyService = policyService;
-        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         OnboardingViewModel = onboardingViewModel;
 
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>
@@ -85,24 +83,24 @@ public partial class AccountSettingsViewModel : ObservableObject
 
         _syncClientService.E2EEOnboardingRequired += (_, _) =>
         {
-            _syncContext.Post(_ =>
+            Post(() =>
             {
                 IsE2EEOnboardingRequired = true;
-            }, null);
+            });
         };
 
         _syncClientService.E2EEOnboardingCleared += (_, _) =>
         {
-            _syncContext.Post(_ =>
+            Post(() =>
             {
                 IsE2EEOnboardingRequired = false;
-            }, null);
+            });
         };
 
         _authService.LoginStateChanged += (_, isLoggedIn) =>
         {
             if (isLoggedIn) return;
-            _syncContext.Post(_ =>
+            Post(() =>
             {
                 IsE2EEOnboardingRequired = false;
                 _isLoading = true;
@@ -110,18 +108,18 @@ public partial class AccountSettingsViewModel : ObservableObject
                 _isLoading = false;
                 DeviceFingerprint = string.Empty;
                 UpdateSyncState();
-            }, null);
+            });
         };
 
         _syncClientService.PendingDeviceDetected += (_, args) =>
         {
-            _syncContext.Post(_ =>
-                HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger), null);
+            Post(() =>
+                HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger));
         };
 
         _syncClientService.CurrentDeviceRevoked += (_, _) =>
         {
-            _syncContext.Post(async _ =>
+            Post(async () =>
             {
                 _isLoading = true;
                 IsE2EEEnabled = false;
@@ -135,7 +133,7 @@ public partial class AccountSettingsViewModel : ObservableObject
                 _snackbarService.Show("E2EE Disabled",
                     "This device was removed from E2EE. Encryption has been disabled.",
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(8));
-            }, null);
+            });
         };
     }
 

@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -13,11 +12,11 @@ namespace Pia.ViewModels.Flow;
 /// <summary>
 /// Per-window presenter VM for the Flow rail (design §7). Mirrors the singleton store into an observable
 /// collection, exposes the badge count and expand/pin state, and executes a card's <see cref="FlowAction"/>.
-/// Store events arrive on background threads and are marshalled to the UI via the captured
-/// <see cref="SynchronizationContext"/> (ViewModels must not reference System.Windows). Unsubscribes on
+/// Store events arrive on background threads and are marshalled to the UI via the base
+/// <see cref="UiThreadViewModel"/> (ViewModels must not reference System.Windows). Unsubscribes on
 /// dispose so the singleton store never pins a closed window's VM alive.
 /// </summary>
-public partial class FlowViewModel : ObservableObject, IDisposable
+public partial class FlowViewModel : UiThreadViewModel, IDisposable
 {
     private readonly IFlowService _flow;
     private readonly IWindowManagerService _windowManager;
@@ -27,7 +26,6 @@ public partial class FlowViewModel : ObservableObject, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<FlowViewModel> _logger;
     private readonly ILogger<FlowItemViewModel> _itemLogger;
-    private readonly SynchronizationContext? _sync;
     private bool _disposed;
 
     public FlowViewModel(
@@ -48,7 +46,6 @@ public partial class FlowViewModel : ObservableObject, IDisposable
         _localizationService = localizationService;
         _logger = logger;
         _itemLogger = itemLogger;
-        _sync = SynchronizationContext.Current;
 
         _flow.Changed += OnFlowChanged;
         _flow.ItemArrived += OnFlowItemArrived;
@@ -114,14 +111,6 @@ public partial class FlowViewModel : ObservableObject, IDisposable
         var wrapper = Items.FirstOrDefault(w => w.Item.Id == item.Id) ?? CreateWrapper(item);
         ItemArrived?.Invoke(this, wrapper);
     });
-
-    private void Post(Action action)
-    {
-        if (_sync is not null)
-            _sync.Post(_ => action(), null);
-        else
-            action();
-    }
 
     // Id-keyed in-place sync of the snapshot into the wrapper collection (design §5). NEVER clear+re-add:
     // that would tear down a wrapper mid-decision and lose its in-flight IsBusy/re-entrancy guard. Reuse

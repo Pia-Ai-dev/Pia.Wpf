@@ -7,10 +7,9 @@ using System.Reflection;
 
 namespace Pia.ViewModels;
 
-public partial class MainWindowViewModel : ObservableObject, IDisposable
+public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<MainWindowViewModel> _logger;
-    private readonly SynchronizationContext _syncContext;
     private bool _disposed;
     private readonly Navigation.INavigationService _navigationService;
     private readonly Services.Interfaces.ISettingsService _settingsService;
@@ -90,9 +89,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         Pia.Services.Interfaces.IProviderService providerService,
         Pia.Services.Interfaces.IAuthService authService,
         Pia.Services.Interfaces.ISyncClientService syncClientService)
+        : base(requireUiThread: true)
     {
         _logger = logger;
-        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
         _navigationService = navigationService;
         _settingsService = settingsService;
         _themeService = themeService;
@@ -122,7 +121,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Poll for update readiness (background download is fire-and-forget)
         _updateTimer = new Timer(_ =>
         {
-            _syncContext.Post(_ =>
+            Post(() =>
             {
                 if (_updateService.IsUpdateReady && !IsUpdateReady)
                 {
@@ -131,7 +130,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 }
                 if (IsUpdateReady)
                     _updateTimer?.Dispose();
-            }, null);
+            });
         }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
@@ -175,23 +174,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnProvidersChanged(object? sender, EventArgs e)
     {
-        _syncContext.Post(_ =>
+        Post(() =>
         {
             _ = RefreshSetupRequiredAsync();
-        }, null);
+        });
     }
 
     private void OnLoginStateChanged(object? sender, bool isLoggedIn)
     {
-        _syncContext.Post(_ =>
+        Post(() =>
         {
             _ = RefreshSetupRequiredAsync();
-        }, null);
+        });
     }
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
-        _syncContext.Post(_ =>
+        Post(() =>
         {
             if (settings.Theme != Theme)
             {
@@ -203,7 +202,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
             // Provider defaults may have changed — re-check setup state
             _ = RefreshSetupRequiredAsync();
-        }, null);
+        });
     }
 
     private void UpdateHotkeyHints(AppSettings settings)
@@ -350,12 +349,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnE2EEOnboardingRequired(object? sender, EventArgs e)
     {
-        _syncContext.Post(_ => IsE2EEOnboardingRequired = true, null);
+        Post(() => IsE2EEOnboardingRequired = true);
     }
 
     private void OnE2EEOnboardingCleared(object? sender, EventArgs e)
     {
-        _syncContext.Post(_ => IsE2EEOnboardingRequired = false, null);
+        Post(() => IsE2EEOnboardingRequired = false);
     }
 
     [RelayCommand]

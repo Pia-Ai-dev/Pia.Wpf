@@ -86,4 +86,38 @@ public class VaultIndexServiceTests : IDisposable
         Assert.Contains("### Regulations\n- [[topics/gdpr]] — GDPR summary", text);
         Assert.Contains("### Other\n- [[topics/mystery]] — Mystery summary", text);
     }
+
+    [Fact]
+    public void WikiTargetReferences_maps_a_bare_target_to_the_vault_reference()
+    {
+        Assert.Equal(["memory/topics/acme.md"], VaultIndexService.WikiTargetReferences("topics/acme"));
+    }
+
+    [Fact]
+    public void WikiTargetReferences_tolerates_leading_slash_and_md_extension()
+    {
+        Assert.Equal(["memory/topics/acme.md"], VaultIndexService.WikiTargetReferences("/topics/acme.md"));
+    }
+
+    [Fact]
+    public void WikiTargetReferences_adds_a_slug_normalized_candidate_when_the_target_drifts()
+    {
+        // The write path names files VaultSlug.Slugify(subject); a drifted inline slug resolves via the
+        // second candidate.
+        var refs = VaultIndexService.WikiTargetReferences("topics/Node.js");
+        Assert.Equal(["memory/topics/Node.js.md", "memory/topics/node-js.md"], refs);
+    }
+
+    [Fact]
+    public void WikiTargetReferences_keeps_a_heading_and_does_not_slug_it()
+    {
+        Assert.Equal(["memory/contacts.md#John"], VaultIndexService.WikiTargetReferences("contacts#John"));
+    }
+
+    [Fact]
+    public void WikiTargetReferences_returns_empty_for_a_pathless_target()
+    {
+        Assert.Empty(VaultIndexService.WikiTargetReferences("   "));
+        Assert.Empty(VaultIndexService.WikiTargetReferences("#Heading"));
+    }
 }

@@ -79,6 +79,52 @@ public sealed class VaultIndexService
         return DefaultCategory;
     }
 
+    /// <summary>
+    /// The candidate vault references (most-specific first) a §5 wikilink <paramref name="target"/> denotes,
+    /// for the Memory view to resolve an in-app <c>[[...]]</c> link to a loaded item. The primary mapping is
+    /// the inverse of <see cref="LinkTarget"/>: <c>memory/&lt;target&gt;.md</c>, preserving any
+    /// <c>#heading</c>. For a headingless page link a second candidate re-slugs the final path segment
+    /// through <see cref="VaultSlug"/> — the SAME algorithm the write path (<c>IngestService</c>) names topic
+    /// files with — so an inline link whose slug only informally matches the on-disk filename (synthesized
+    /// links are the "lowercase-hyphen form of the topic name", not the canonical slug) still resolves.
+    /// Returns empty when the target has no path component.
+    /// </summary>
+    public static IReadOnlyList<string> WikiTargetReferences(string? target)
+    {
+        var trimmed = (target ?? string.Empty).Trim().Trim('/');
+        var hashIndex = trimmed.IndexOf('#');
+        var path = hashIndex >= 0 ? trimmed[..hashIndex] : trimmed;
+        var heading = hashIndex >= 0 ? trimmed[(hashIndex + 1)..] : null;
+        if (path.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        {
+            path = path[..^3];
+        }
+        if (path.Length == 0)
+        {
+            return [];
+        }
+
+        var suffix = heading is null ? string.Empty : "#" + heading;
+        var primary = $"memory/{path}.md{suffix}";
+        var results = new List<string> { primary };
+
+        // Slug-tolerant fallback only for a bare page path (a `#heading` link addresses an existing section
+        // verbatim; slugging would corrupt the heading).
+        if (heading is null)
+        {
+            var slashIndex = path.LastIndexOf('/');
+            var folder = slashIndex >= 0 ? path[..(slashIndex + 1)] : string.Empty;
+            var name = slashIndex >= 0 ? path[(slashIndex + 1)..] : path;
+            var slugged = $"memory/{folder}{VaultSlug.Slugify(name)}.md";
+            if (!string.Equals(slugged, primary, StringComparison.OrdinalIgnoreCase))
+            {
+                results.Add(slugged);
+            }
+        }
+
+        return results;
+    }
+
     private readonly IVaultStore _store;
     private readonly ILogger<VaultIndexService> _logger;
 

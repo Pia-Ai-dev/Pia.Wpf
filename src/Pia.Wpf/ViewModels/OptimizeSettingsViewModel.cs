@@ -6,11 +6,10 @@ using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
-using System.Threading;
 
 namespace Pia.ViewModels;
 
-public partial class OptimizeSettingsViewModel : ObservableObject
+public partial class OptimizeSettingsViewModel : UiThreadViewModel
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ITemplateService _templateService;
@@ -23,11 +22,6 @@ public partial class OptimizeSettingsViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly ProvidersSettingsViewModel _providersVm;
     private bool _isLoading;
-
-    // UI SynchronizationContext captured at construction. TemplatesChanged can be raised on a
-    // background thread (the sync pull loop), so the bound-collection refresh must marshal back
-    // to it (ViewModels must not reference System.Windows — see the architecture test).
-    private readonly SynchronizationContext? _sync;
 
     public OptimizeSettingsViewModel(
         ProvidersSettingsViewModel providersVm,
@@ -52,7 +46,6 @@ public partial class OptimizeSettingsViewModel : ObservableObject
         _policyService = policyService;
         _authService = authService;
         Templates = new ObservableCollection<OptimizationTemplate>();
-        _sync = SynchronizationContext.Current;
 
         _templateService.TemplatesChanged += OnTemplatesChanged;
         _authService.LoginStateChanged += OnLoginStateChanged;
@@ -222,26 +215,6 @@ public partial class OptimizeSettingsViewModel : ObservableObject
             foreach (var template in templatesList)
                 Templates.Add(template);
         });
-    }
-
-    // Marshal an action onto the UI SynchronizationContext and await its completion, or run it
-    // inline when no context was captured (e.g. unit tests). Awaitable so `await RefreshTemplatesAsync()`
-    // callers observe the collection updated on return (matches the pre-fix synchronous contract).
-    private Task PostAsync(Action action)
-    {
-        if (_sync is null)
-        {
-            action();
-            return Task.CompletedTask;
-        }
-
-        var tcs = new TaskCompletionSource();
-        _sync.Post(_ =>
-        {
-            try { action(); tcs.SetResult(); }
-            catch (Exception ex) { tcs.SetException(ex); }
-        }, null);
-        return tcs.Task;
     }
 
     private async Task SaveSettingsAsync()

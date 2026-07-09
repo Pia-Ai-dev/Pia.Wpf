@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -14,7 +13,7 @@ namespace Pia.ViewModels;
 /// Manages personas in settings (list / add / edit / delete / duplicate-a-built-in). Built-ins are
 /// shown read-only. Mirrors <see cref="OptimizeSettingsViewModel"/>.
 /// </summary>
-public partial class PersonaSettingsViewModel : ObservableObject
+public partial class PersonaSettingsViewModel : UiThreadViewModel
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly IPersonaService _personaService;
@@ -24,11 +23,6 @@ public partial class PersonaSettingsViewModel : ObservableObject
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IAuthService _authService;
-
-    // UI SynchronizationContext captured at construction. PersonasChanged can be raised on a
-    // background thread (the sync pull loop), so the bound-collection refresh must marshal back
-    // to it (ViewModels must not reference System.Windows — see the architecture test).
-    private readonly SynchronizationContext? _sync;
 
     [ObservableProperty]
     private ObservableCollection<Persona> _personas;
@@ -52,7 +46,6 @@ public partial class PersonaSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _authService = authService;
         Personas = new ObservableCollection<Persona>();
-        _sync = SynchronizationContext.Current;
 
         _personaService.PersonasChanged += OnPersonasChanged;
         _authService.LoginStateChanged += OnLoginStateChanged;
@@ -157,25 +150,5 @@ public partial class PersonaSettingsViewModel : ObservableObject
             foreach (var persona in personas)
                 Personas.Add(persona);
         });
-    }
-
-    // Marshal an action onto the UI SynchronizationContext and await its completion, or run it
-    // inline when no context was captured (e.g. unit tests). Awaitable so `await RefreshPersonasAsync()`
-    // callers observe the collection updated on return (matches the pre-fix synchronous contract).
-    private Task PostAsync(Action action)
-    {
-        if (_sync is null)
-        {
-            action();
-            return Task.CompletedTask;
-        }
-
-        var tcs = new TaskCompletionSource();
-        _sync.Post(_ =>
-        {
-            try { action(); tcs.SetResult(); }
-            catch (Exception ex) { tcs.SetException(ex); }
-        }, null);
-        return tcs.Task;
     }
 }

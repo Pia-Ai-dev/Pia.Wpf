@@ -7,11 +7,10 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
-using System.Threading;
 
 namespace Pia.ViewModels;
 
-public partial class ProvidersSettingsViewModel : ObservableObject
+public partial class ProvidersSettingsViewModel : UiThreadViewModel
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly IProviderService _providerService;
@@ -23,11 +22,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
     private readonly IPolicyService _policyService;
     private readonly ISyncClientService? _syncClientService;
     private bool _isLoading;
-
-    // UI SynchronizationContext captured at construction. ProvidersChanged / SyncCompleted can be
-    // raised on a background thread (the sync pull loop), so the bound-collection refresh must
-    // marshal back to it (ViewModels must not reference System.Windows — see the architecture test).
-    private readonly SynchronizationContext? _sync;
 
     private readonly SettingsViewModel _parent;
 
@@ -52,7 +46,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _policyService = policyService;
         _syncClientService = syncClientService;
-        _sync = SynchronizationContext.Current;
 
         Providers = new ObservableCollection<AiProvider>();
         Providers.CollectionChanged += (_, _) =>
@@ -392,27 +385,6 @@ public partial class ProvidersSettingsViewModel : ObservableObject
             });
         }
         return items;
-    }
-
-    // Marshal an action onto the UI SynchronizationContext and await its completion, or run it
-    // inline when no context was captured (e.g. unit tests). Awaitable (unlike FlowViewModel.Post)
-    // so callers that read the refreshed state right after `await Refresh...` see it applied — the
-    // command handlers here immediately look the just-saved provider up in Providers.
-    private Task PostAsync(Action action)
-    {
-        if (_sync is null)
-        {
-            action();
-            return Task.CompletedTask;
-        }
-
-        var tcs = new TaskCompletionSource();
-        _sync.Post(_ =>
-        {
-            try { action(); tcs.SetResult(); }
-            catch (Exception ex) { tcs.SetException(ex); }
-        }, null);
-        return tcs.Task;
     }
 
     private async Task SaveProviderSettingsAsync()

@@ -7,7 +7,7 @@ using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
 
-public partial class PluginsSettingsViewModel : ObservableObject
+public partial class PluginsSettingsViewModel : UiThreadViewModel
 {
     private readonly SettingsViewModel _parent;
     private readonly ILogger<SettingsViewModel> _logger;
@@ -18,7 +18,6 @@ public partial class PluginsSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly IPluginIconLoader _pluginIconLoader;
-    private readonly SynchronizationContext _uiContext;
 
     [ObservableProperty]
     private ObservableCollection<PluginItemViewModel> _plugins = [];
@@ -39,6 +38,7 @@ public partial class PluginsSettingsViewModel : ObservableObject
         ILocalizationService localizationService,
         Wpf.Ui.ISnackbarService snackbarService,
         IPluginIconLoader pluginIconLoader)
+        : base(requireUiThread: true)
     {
         _parent = parent;
         _logger = logger;
@@ -49,8 +49,6 @@ public partial class PluginsSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _snackbarService = snackbarService;
         _pluginIconLoader = pluginIconLoader;
-        _uiContext = SynchronizationContext.Current
-            ?? throw new InvalidOperationException("PluginsSettingsViewModel must be created on the UI thread");
 
         _isCloudConnected = _authService.IsLoggedIn;
         _authService.LoginStateChanged += OnLoginStateChanged;
@@ -92,12 +90,12 @@ public partial class PluginsSettingsViewModel : ObservableObject
                 })
                 .ToList();
 
-            _uiContext.Post(_ =>
+            Post(() =>
             {
                 Plugins.Clear();
                 foreach (var item in items)
                     Plugins.Add(item);
-            }, null);
+            });
         }
         catch (Exception ex)
         {

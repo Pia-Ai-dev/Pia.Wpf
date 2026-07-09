@@ -1,6 +1,8 @@
+using System;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Pia.Helpers;
 using Pia.Models.Vault;
 using Pia.ViewModels;
@@ -56,7 +58,45 @@ public partial class PiaMemoryCategoryCard : UserControl
         else if (!ReferenceEquals(ItemList.SelectedItem, match))
         {
             ItemList.SelectedItem = match;
+            ScrollToSelected(match);
         }
+    }
+
+    // Reveal the just-selected row in the outer scroll viewer (used for link/back navigation where the row
+    // is off-screen; a manual click leaves SelectedItem unchanged here, so it does not re-scroll). No-ops
+    // via SmoothScrollIntoView when the row is already visible.
+    private void ScrollToSelected(VaultMemoryItem match)
+    {
+        // A collapsed group has no realized row to reveal — expand it first.
+        if (DataContext is MemoryGroupViewModel { IsExpanded: false } group)
+        {
+            group.IsExpanded = true;
+        }
+
+        // Defer past the layout pass that realizes the container (and un-collapses the list).
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            var container = ItemList.ItemContainerGenerator.ContainerFromItem(match) as ListBoxItem;
+            if (container is null)
+            {
+                ItemList.UpdateLayout();
+                container = ItemList.ItemContainerGenerator.ContainerFromItem(match) as ListBoxItem;
+            }
+            if (container is null)
+            {
+                return;
+            }
+
+            var scroll = this.FindAncestor<ScrollViewer>();
+            if (scroll is not null)
+            {
+                scroll.SmoothScrollIntoView(container);
+            }
+            else
+            {
+                container.BringIntoView();
+            }
+        }));
     }
 
     private void ItemList_SelectionChanged(object sender, SelectionChangedEventArgs e)

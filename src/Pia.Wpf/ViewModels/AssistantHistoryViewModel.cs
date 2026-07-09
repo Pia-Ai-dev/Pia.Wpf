@@ -17,7 +17,7 @@ using Wpf.Ui.Controls;
 
 namespace Pia.ViewModels;
 
-public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, INavigationAware
+public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable, INavigationAware
 {
     private const int PageSize = 50;
     private const int DebounceMs = 300;
@@ -31,7 +31,6 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IMarkdownExportService _markdownExportService;
-    private readonly SynchronizationContext _syncContext;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
     private bool _initialized;
@@ -98,6 +97,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         Wpf.Ui.ISnackbarService snackbarService,
         IChatSessionManager chatSessionManager,
         IMarkdownExportService markdownExportService)
+        : base(requireUiThread: true)
     {
         _logger = logger;
         _chatService = chatService;
@@ -108,7 +108,6 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
         _snackbarService = snackbarService;
         _chatSessionManager = chatSessionManager;
         _markdownExportService = markdownExportService;
-        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         StateFilterOptions = BuildStateFilterOptions(localizationService);
         _selectedStateOption = StateFilterOptions[0];
@@ -275,7 +274,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
     private void OnSessionStateChanged(object? sender, SessionStateChangedEventArgs e)
     {
         if (e.ChatId is not { } chatId) return;
-        _syncContext.Post(_ =>
+        Post(() =>
         {
             var row = Chats.FirstOrDefault(r => r.Id == chatId);
             if (row is null) return;
@@ -284,7 +283,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
             // re-apply it. Date grouping itself is unaffected by state.
             if (SelectedStateOption?.State is not null)
                 RebuildGroups();
-        }, null);
+        });
     }
 
     private static HistoryDateBucket Classify(DateTime updatedLocal, DateTime today, DateTime startOfWeek, DateTime startOfMonth)
@@ -546,7 +545,7 @@ public partial class AssistantHistoryViewModel : ObservableObject, IDisposable, 
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
-        _syncContext.Post(_ => LoadChatsAsync().SafeFireAndForget(_logger), null);
+        Post(() => LoadChatsAsync().SafeFireAndForget(_logger));
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

@@ -18,7 +18,7 @@ namespace Pia.ViewModels;
 /// (<see cref="IMemoryService.UpdateSectionAsync"/> / <see cref="IMemoryService.ForgetAsync"/>) and the
 /// vault watcher owns embedding reindex, so this view never generates embeddings.
 /// </summary>
-public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisposable
+public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDisposable
 {
     private readonly ILogger<MemoryViewModel> _logger;
     private readonly IMemoryService _memoryService;
@@ -29,9 +29,15 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     private readonly IClipboardService _clipboardService;
     private readonly IVaultSourcesService _vaultSourcesService;
     private readonly IIngestScheduler _ingestScheduler;
-    private readonly SynchronizationContext? _uiContext;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
+
+    // Browser-style back history of visited page references (most-recent last), capped at MaxHistory.
+    // Recorded on every page change in OnSelectedMemoryChanged; GoBack pops it. _suppressHistory guards the
+    // programmatic re-selection GoBack itself performs so it does not re-record.
+    private const int MaxHistory = 10;
+    private readonly List<string> _backStack = new();
+    private bool _suppressHistory;
 
     [ObservableProperty]
     private ObservableCollection<MemoryGroupViewModel> _memoryGroups = new();
@@ -108,6 +114,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     public IAsyncRelayCommand DownloadEmbeddingModelCommand { get; }
     public IAsyncRelayCommand RegenerateEmbeddingsCommand { get; }
     public IRelayCommand<VaultMemoryItem> SelectMemoryCommand { get; }
+    public IAsyncRelayCommand<string> NavigateToLinkCommand { get; }
+    public IAsyncRelayCommand GoBackCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> CopyMarkdownCommand { get; }
     public IAsyncRelayCommand ShowHelpCommand { get; }
     public IRelayCommand GoHomeCommand { get; }
@@ -143,6 +151,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
         DownloadEmbeddingModelCommand = new AsyncRelayCommand(ExecuteDownloadEmbeddingModel);
         RegenerateEmbeddingsCommand = new AsyncRelayCommand(ExecuteRegenerateEmbeddings);
         SelectMemoryCommand = new RelayCommand<VaultMemoryItem>(ExecuteSelectMemory);
+        NavigateToLinkCommand = new AsyncRelayCommand<string>(ExecuteNavigateToLink);
+        GoBackCommand = new AsyncRelayCommand(ExecuteGoBack, () => _backStack.Count > 0);
         CopyMarkdownCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteCopyMarkdown);
         ShowHelpCommand = new AsyncRelayCommand(ExecuteShowHelp);
         GoHomeCommand = new RelayCommand(ExecuteGoHome);
@@ -151,10 +161,6 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             System.IO.Path.Combine(_memoryService.VaultRoot, "sources")));
 
         PropertyChanged += OnPropertyChanged;
-        // Captured at construction (the navigation service builds VMs on the UI thread) so the
-        // ingest-completed refresh can marshal without referencing System.Windows — ViewModels
-        // must not depend on the Dispatcher (see DependencyInjectionTests).
-        _uiContext = SynchronizationContext.Current;
         _ingestScheduler.IngestCompleted += OnIngestCompleted;
     }
 
@@ -164,7 +170,8 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     {
         // No context means we were constructed off the UI thread — refreshing here would mutate
         // ObservableCollections cross-thread, so skip; the next navigation reloads anyway.
-        _uiContext?.Post(_ => _ = LoadSourcesAsync(), null);
+        if (HasUiContext)
+            Post(() => _ = LoadSourcesAsync());
     }
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)
@@ -191,6 +198,9 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
     {
         SelectedMemory = null;
         IsEditing = false;
+        // History is per view-entry — stale references must not linger across navigations.
+        _backStack.Clear();
+        GoBackCommand.NotifyCanExecuteChanged();
         IsEmbeddingModelAvailable = _embeddingService.IsModelAvailable;
         await LoadMemoriesAsync();
     }
@@ -219,11 +229,13 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
                 MemoryGroups.Add(group);
             }
 
-            // Keep the inspector on the selected memory only if it is still present (by reference).
+            // Keep the inspector on the selected memory only if it is still present (by reference). A
+            // reload that drops the selection (e.g. a search filter hid it) is not a user navigation, so it
+            // must not be recorded in the back history.
             if (SelectedMemory is not null &&
                 !MemoryGroups.Any(g => g.Items.Any(m => m.Reference == SelectedMemory.Reference)))
             {
-                SelectedMemory = null;
+                SetSelectedMemorySilently(null);
                 IsEditing = false;
             }
 
@@ -472,8 +484,19 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
 
             if (SelectedMemory == memory)
             {
-                SelectedMemory = null;
+                // Deleting the viewed page returns to the overview; a deleted page is not a valid Back
+                // target, so don't record it.
+                SetSelectedMemorySilently(null);
                 IsEditing = false;
+            }
+
+            // Purge any history entries pointing at the deleted page (and its sections) so Back never
+            // targets a dead reference (which would otherwise trigger a surprising search-clear + reload).
+            if (_backStack.RemoveAll(r =>
+                    string.Equals(r, memory.Reference, StringComparison.OrdinalIgnoreCase)
+                    || r.StartsWith(memory.Reference + "#", StringComparison.OrdinalIgnoreCase)) > 0)
+            {
+                GoBackCommand.NotifyCanExecuteChanged();
             }
 
             var snapshot = await _memoryService.ListMemoriesAsync();
@@ -555,6 +578,134 @@ public partial class MemoryViewModel : ObservableObject, INavigationAware, IDisp
             SelectedMemory = memory;
         }
     }
+
+    // Follow an in-app wikilink (rewritten from `[[target]]` in the inspector) to its vault page. The target
+    // is a §5 link target (path-without-ext, e.g. `topics/foo`); VaultIndexService maps it to candidate
+    // references, including a slug-normalized one so a synthesized link whose slug drifts from the on-disk
+    // filename still resolves. A structured topic (with `## sections`) resolves to its first section. If an
+    // active search has filtered the target out, the search is cleared and the full vault reloaded before
+    // retrying; a target with no page on disk (an unresolved Obsidian link) surfaces a snackbar.
+    private async Task ExecuteNavigateToLink(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return;
+        }
+
+        // A programmatic navigation supersedes a search the user typed but hasn't committed — cancel the
+        // pending debounce so it can't re-filter and silently revert this navigation ~500ms later.
+        _debounceCts?.Cancel();
+
+        var match = await EnsureLoadedAsync(() => ResolveWikiTarget(target));
+        if (match is null)
+        {
+            _snackbarService.Show(
+                _localizationService.Format("Memory_LinkNotFound", target.Trim().Trim('/')), string.Empty,
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
+            return;
+        }
+
+        IsEditing = false;
+        SelectedMemory = match;
+    }
+
+    // Browser-style Back: pop the most-recent history entries until one resolves to a loaded (or reloadable)
+    // page, then select it WITHOUT re-recording. Entries whose page has since been deleted are skipped.
+    private async Task ExecuteGoBack()
+    {
+        // As with link navigation, an in-flight uncommitted search must not revert where Back lands.
+        _debounceCts?.Cancel();
+
+        while (_backStack.Count > 0)
+        {
+            var reference = _backStack[^1];
+            _backStack.RemoveAt(_backStack.Count - 1);
+
+            // Resolve WITHOUT holding suppression across the await: only the final selection is silent, so a
+            // user action during the (rare) search-clear reload is still recorded normally rather than lost.
+            var match = await EnsureLoadedAsync(() => FindByReference(reference));
+            if (match is not null)
+            {
+                IsEditing = false;
+                SetSelectedMemorySilently(match);
+                break;
+            }
+        }
+
+        GoBackCommand.NotifyCanExecuteChanged();
+    }
+
+    // Record browser-style history on every page change (link click, list click, or Home → overview),
+    // except the programmatic re-selection GoBack performs. Recording page → overview too means Back after
+    // Home returns to the page you left.
+    partial void OnSelectedMemoryChanged(VaultMemoryItem? oldValue, VaultMemoryItem? newValue)
+    {
+        if (_suppressHistory || oldValue is null || oldValue.Reference == newValue?.Reference)
+        {
+            return;
+        }
+
+        _backStack.Add(oldValue.Reference);
+        if (_backStack.Count > MaxHistory)
+        {
+            _backStack.RemoveAt(0);
+        }
+        GoBackCommand.NotifyCanExecuteChanged();
+    }
+
+    // Change the selection without recording history — for programmatic (reload/delete) deselections that
+    // are not user navigations. Re-entrant-safe: restores the prior suppression state so it composes with
+    // GoBack's broader suppression.
+    private void SetSelectedMemorySilently(VaultMemoryItem? value)
+    {
+        var previous = _suppressHistory;
+        _suppressHistory = true;
+        try
+        {
+            SelectedMemory = value;
+        }
+        finally
+        {
+            _suppressHistory = previous;
+        }
+    }
+
+    // Resolve via the supplied resolver against the loaded groups; if the target is hidden by an active
+    // search filter, clear the search and reload the full vault, then resolve again.
+    private async Task<VaultMemoryItem?> EnsureLoadedAsync(Func<VaultMemoryItem?> resolve)
+    {
+        var match = resolve();
+        if (match is null && !string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            SearchQuery = string.Empty;
+            _debounceCts?.Cancel();
+            await LoadMemoriesAsync();
+            match = resolve();
+        }
+        return match;
+    }
+
+    // First loaded item matching any candidate reference for the wikilink target (exact or slug-normalized).
+    private VaultMemoryItem? ResolveWikiTarget(string target)
+    {
+        foreach (var reference in VaultIndexService.WikiTargetReferences(target))
+        {
+            var match = FindByReference(reference);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+        return null;
+    }
+
+    // First loaded item whose reference is the bare page path or one of its `path#heading` sections.
+    private VaultMemoryItem? FindByReference(string reference) =>
+        MemoryGroups
+            .SelectMany(g => g.Items)
+            .FirstOrDefault(i =>
+                string.Equals(i.Reference, reference, StringComparison.OrdinalIgnoreCase)
+                || i.Reference.StartsWith(reference + "#", StringComparison.OrdinalIgnoreCase));
 
     // Home: return to the "vault at a glance" overview by clearing the current selection (and any edit).
     // The search query is intentionally left intact — the overview reappears from the null-selection state.

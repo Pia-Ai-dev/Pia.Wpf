@@ -16,6 +16,13 @@ public partial class MarkdownMessageControl : UserControl
 {
     public event EventHandler<PiiKeywordRequest>? AddToPiiRequested;
 
+    /// <summary>
+    /// Raised when the user clicks an in-app wikilink (a <see cref="WikiLinkScheme"/> URI). The argument is
+    /// the vault-relative link target (e.g. <c>topics/foo</c>). Only surfaces where the content was rewritten
+    /// by <c>WikiLinkConverter</c>; other markdown never produces this scheme, so this stays silent elsewhere.
+    /// </summary>
+    public event EventHandler<string>? WikiLinkNavigate;
+
     private readonly DispatcherTimer _debounceTimer;
     private string? _pendingMarkdown;
 
@@ -151,6 +158,15 @@ public partial class MarkdownMessageControl : UserControl
 
     private void OnRequestNavigate(object sender, RequestNavigateEventArgs e)
     {
+        e.Handled = true;
+
+        // In-app wikilinks navigate within the app (the Memory view), NOT the browser.
+        if (WikiLinkScheme.TryGetTarget(e.Uri, out var target))
+        {
+            WikiLinkNavigate?.Invoke(this, target);
+            return;
+        }
+
         try
         {
             Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
@@ -159,6 +175,5 @@ public partial class MarkdownMessageControl : UserControl
         {
             // Ignore failures to open links
         }
-        e.Handled = true;
     }
 }

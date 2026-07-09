@@ -11,7 +11,7 @@ using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
-public partial class TodoViewModel : ObservableObject, INavigationAware, IDisposable
+public partial class TodoViewModel : UiThreadViewModel, INavigationAware, IDisposable
 {
     private readonly ILogger<TodoViewModel> _logger;
     private readonly ITodoService _todoService;
@@ -23,7 +23,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
     private readonly IVoiceInputService _voiceInputService;
     private readonly IKanbanColumnService _columnService;
     private readonly ICollectionViewService _collectionViewService;
-    private readonly SynchronizationContext _syncContext;
     private bool _disposed;
     private bool _isRefreshing;
     private bool _suppressTodoChanged;
@@ -110,6 +109,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         IVoiceInputService voiceInputService,
         IKanbanColumnService columnService,
         ICollectionViewService collectionViewService)
+        : base(requireUiThread: true)
     {
         _logger = logger;
         _todoService = todoService;
@@ -121,7 +121,6 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         _voiceInputService = voiceInputService;
         _columnService = columnService;
         _collectionViewService = collectionViewService;
-        _syncContext = SynchronizationContext.Current ?? throw new InvalidOperationException("Must be created on UI thread");
 
         RefreshCommand = new AsyncRelayCommand(LoadTodosAsync);
         AddTodoCommand = new AsyncRelayCommand(ExecuteAddTodoAsync, CanAddTodo);
@@ -240,7 +239,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         if (_isRefreshing || _suppressTodoChanged)
             return;
 
-        _syncContext.Post(_ => LoadTodosAsync().SafeFireAndForget(_logger), null);
+        Post(() => LoadTodosAsync().SafeFireAndForget(_logger));
     }
 
     private void OnColumnsChanged(object? sender, EventArgs e)
@@ -248,7 +247,7 @@ public partial class TodoViewModel : ObservableObject, INavigationAware, IDispos
         if (_isRefreshing || _suppressTodoChanged)
             return;
 
-        _syncContext.Post(_ => LoadTodosAsync().SafeFireAndForget(_logger), null);
+        Post(() => LoadTodosAsync().SafeFireAndForget(_logger));
     }
 
     public async Task LoadTodosAsync()
