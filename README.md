@@ -6,8 +6,8 @@
 <p align="center"><strong>Personal Intelligent Assistant</strong></p>
 
 <p align="center">
-  An AI-powered Windows desktop assistant that optimizes your text, chats with you,<br/>
-  and conducts deep research &mdash; only one hotkey away.
+  An AI-powered Windows desktop assistant that optimizes your text<br/>
+  and chats with you &mdash; only one hotkey away.
 </p>
 
 <p align="center">
@@ -20,15 +20,14 @@
 
 ## What is Pia?
 
-Pia sits in your system tray and activates instantly with a global hotkey. Select text in any app, press **Ctrl+Alt+O**, and Pia optimizes it on the spot. Need more? Switch to Assistant mode for a full AI chat, or use Research mode to deep-dive into any topic.
+Pia sits in your system tray and activates instantly with a global hotkey. Select text in any app, press **Ctrl+Alt+O**, and Pia optimizes it on the spot. Need more? Switch to Assistant mode for a full AI chat.
 
-### Three Modes -  only one hotkey away
+### Two Modes -  only one hotkey away
 
 | Mode | What it does | Default Hotkey |
 |------|-------------|----------------|
 | **Optimize** | Transform text using templates &mdash; make an email professional, rewrite for clarity, adjust tone | `Ctrl+Alt+O` |
 | **Assistant** | Chat with an AI that remembers your preferences, manages todos and reminders, and stores knowledge in a personal memory | `Ctrl+Alt+P` |
-| **Research** | Conduct deep analysis on any topic with synthesized, comprehensive results | `Ctrl+Alt+R` |
 
 ### Key Features
 
@@ -84,7 +83,7 @@ On first run, a setup wizard walks you through everything:
 1. **Welcome** &mdash; Meet Pia and see what it can do
 2. **Account Setup** &mdash; Optionally sign in and set up a recovery code for E2EE sync
 3. **Provider Setup** &mdash; Configure an AI provider (shown only when needed)
-4. **Modes Overview** &mdash; Learn about Optimize, Assistant, and Research modes
+4. **Modes Overview** &mdash; Learn about Optimize and Assistant modes
 5. **Your Profile** &mdash; Optionally tell Pia your name and preferred tone (Personal or Business)
 6. **Ready** &mdash; Quick-start tips so you can be productive immediately
 
