@@ -40,9 +40,7 @@ If no policy file is found, an Information-level entry is written to `%LocalAppD
   "enforce": {
     "serverUrl": "https://pia.corp.example.com",
     "trustSelfSignedCertificates": false,
-    "privacy": {
-      "tokenizationEnabled": true
-    },
+    "allowedSyncProviders": ["entraid"],
     "autoUpdateEnabled": true
   }
 }
@@ -69,17 +67,26 @@ All properties from `AppSettings` can be used in both `defaults` and `enforce`. 
 | `serverUrl` | string | Pia Cloud server URL |
 | `trustSelfSignedCertificates` | bool | Allow self-signed TLS certificates |
 | `syncEnabled` | bool | Enable cloud sync |
+| `allowedSyncProviders` | string[] | Allow-list of sign-in providers: `"local"`, `"google"`, `"microsoft"`, `"entraid"` (case-insensitive). Null/empty = all allowed. Disallowed providers are hidden in the first-run wizard and account settings. Use to force a single corporate identity (e.g. `["entraid"]`). |
 | `autoUpdateEnabled` | bool | Enable automatic updates |
 | `theme` | "System" / "Dark" / "Light" | Application theme |
 | `uiLanguage` | "EN" / "DE" / "FR" | UI language |
 | `targetLanguage` | "EN" / "DE" / "FR" | Default output language |
 | `launchAtStartup` | bool | Start Pia with Windows |
 | `startMinimized` | bool | Start minimized to tray |
-| `privacy.tokenizationEnabled` | bool | Enable PII tokenization |
+| `privacy` | object | PII settings. Supplying this replaces the **entire** privacy object (see note below). `privacy.tokenizationEnabled` (bool) toggles PII tokenization. |
 | `defaultOutputAction` | "CopyToClipboard" / "AutoType" / "PasteToPreviousWindow" | Default output action |
 | `useSameProviderForAllModes` | bool | Use same AI provider for all modes |
 | `ttsEnabled` | bool | Enable text-to-speech |
-| `whisperModel` | "Tiny" / "Base" / "Small" / "Medium" / "Large" | Speech-to-text model size |
+| `sttBackend` | "Whisper" / "Parakeet" | Speech-to-text engine (default `Parakeet`) |
+| `whisperModel` | "Tiny" / "Base" / "Small" / "Medium" / "Large" | Whisper model size (used when `sttBackend` is `Whisper`) |
+| `assistantFileToolsEnabled` | bool | Allow the assistant to read/write/delete files in its sandbox folder |
+| `autoIngestSources` | bool | Auto-ingest documents dropped in the vault's `sources/` folder (each ingest makes LLM calls and writes synced memory) |
+| `chatHistoryEnabled` | bool | Persist assistant chat history |
+| `chatHistoryRetentionDays` | int | Days to retain chat history before auto-deletion |
+| `alwaysAllowedTools` | ToolGrant[] | Standing "always allow" tool-permission grants |
+
+> **Note — nested objects are replaced wholesale.** The policy engine diffs and applies *top-level* `AppSettings` properties only. Object-typed settings such as `privacy` are matched by reference, so supplying `privacy` in a policy overwrites the **entire** `PrivacySettings` object — including clearing the user's `piiKeywords` list. There is no per-sub-field merge; include every sub-field you want to keep.
 
 ## Deployment Methods
 

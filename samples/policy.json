@@ -7,14 +7,16 @@
     "autoUpdateEnabled": true,
     "ttsEnabled": false,
     "startMinimized": false,
-    "launchAtStartup": true
+    "launchAtStartup": true,
+    "chatHistoryEnabled": true,
+    "chatHistoryRetentionDays": 30
   },
   "enforce": {
     "serverUrl": "https://pia.corp.example.com",
     "trustSelfSignedCertificates": false,
-    "privacy": {
-      "tokenizationEnabled": true
-    },
-    "autoUpdateEnabled": true
+    "allowedSyncProviders": ["entraid"],
+    "autoUpdateEnabled": true,
+    "assistantFileToolsEnabled": false,
+    "autoIngestSources": false
   }
 }
