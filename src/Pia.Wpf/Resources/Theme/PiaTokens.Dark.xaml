@@ -53,6 +53,14 @@
   <Color x:Key="CodeNumberColor">#FFF5A872</Color>
   <Color x:Key="CodeCommentColor">#FF6B7790</Color>
 
+  <!-- Diff palette (GitHub-style write_file diff card — do NOT reuse status colors) -->
+  <Color x:Key="DiffAddedColor">#FF3FB950</Color>
+  <Color x:Key="DiffAddedSoftColor">#262EA043</Color>
+  <Color x:Key="DiffRemovedColor">#FFF85149</Color>
+  <Color x:Key="DiffRemovedSoftColor">#26F85149</Color>
+  <Color x:Key="DiffGutterBgColor">#FF0E1626</Color>
+  <Color x:Key="DiffSeparatorBgColor">#1F5B8DEF</Color>
+
   <!-- Brushes -->
   <SolidColorBrush x:Key="PiaInkBrush"          Color="{StaticResource PiaInkColor}"/>
   <SolidColorBrush x:Key="PiaAccentBrush"       Color="{StaticResource PiaAccentColor}"/>
@@ -78,6 +86,13 @@
 
   <SolidColorBrush x:Key="CodeBlockBgBrush"     Color="{StaticResource CodeBlockBgColor}"/>
   <SolidColorBrush x:Key="CodeFgBrush"          Color="{StaticResource CodeFgColor}"/>
+
+  <SolidColorBrush x:Key="DiffAddedBrush"        Color="{StaticResource DiffAddedColor}"/>
+  <SolidColorBrush x:Key="DiffAddedSoftBrush"    Color="{StaticResource DiffAddedSoftColor}"/>
+  <SolidColorBrush x:Key="DiffRemovedBrush"      Color="{StaticResource DiffRemovedColor}"/>
+  <SolidColorBrush x:Key="DiffRemovedSoftBrush"  Color="{StaticResource DiffRemovedSoftColor}"/>
+  <SolidColorBrush x:Key="DiffGutterBgBrush"     Color="{StaticResource DiffGutterBgColor}"/>
+  <SolidColorBrush x:Key="DiffSeparatorBgBrush"  Color="{StaticResource DiffSeparatorBgColor}"/>
 
   <SolidColorBrush x:Key="SurfaceSunkBrush"     Color="{StaticResource SurfaceSunkColor}"/>
 

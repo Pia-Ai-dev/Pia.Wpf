@@ -166,6 +166,12 @@ public class AppSettings
     // separate AssistantFileToolsEnabled flag (clearing the folder no longer disables the tools).
     public string? AssistantFilesFolder { get; set; }
 
+    // Relative subpath (forward slashes) under AssistantFilesFolder that new assistant chats
+    // adopt as their working directory. Device-independent (a relative path, not the machine
+    // path), so it is synced. Auto-created under the files folder when applied. Empty = sandbox
+    // root. Default "Playground".
+    public string AssistantDefaultWorkingDirectory { get; set; } = "Playground";
+
     // True when the assistant's file tools (read/write/delete/list/search) are exposed over
     // AssistantFilesFolder. The folder is always set (the vault lives under it), so file-tool
     // enablement is a distinct flag rather than "clear the folder to disable".

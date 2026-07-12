@@ -257,6 +257,37 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Always mirror a live session so send/cancel never null-ref on a fresh
         // window. GetOrCreateActiveForNewChat raises ActiveChanged → AttachToActiveSession.
         _chatSessionManager.GetOrCreateActiveForNewChat();
+
+        // Pin the initial chat to the configured default working directory (e.g. "Playground").
+        // Done off the ctor (fire-and-forget, mirroring LoadPersonasAsync) so the synchronous
+        // settings-load + folder-create never stalls window-open on the UI thread. It cascades to
+        // "+ New chat" and Clear for free — the chip re-seeds its pending folder from the active
+        // chat's dir on flyout-open.
+        ApplyDefaultWorkingDirectoryAsync().SafeFireAndForget(_logger);
+    }
+
+    /// <summary>
+    /// Resolves the configured default working directory (creating the folder if needed) and pins
+    /// it onto the initial, still-empty chat. Skips the pin if the user has already started a turn,
+    /// re-pointed the folder, or a resumed chat became active in the interim — so it never clobbers
+    /// a chat that already has a working directory of its own.
+    /// </summary>
+    private async Task ApplyDefaultWorkingDirectoryAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        var dir = _workingDirectoryService.EnsureSubfolder(settings.AssistantDefaultWorkingDirectory);
+        if (string.IsNullOrEmpty(dir)) return; // unusable or root — leave the chat at root
+
+        await App.Current.Dispatcher.InvokeAsync(() =>
+        {
+            var session = _chatSessionManager.ActiveSession;
+            if (session is null || session.Messages.Count > 0 || !string.IsNullOrEmpty(session.WorkingDirectory))
+                return;
+
+            session.SetWorkingDirectory(dir);
+            ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
+            _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
+        });
     }
 
     private void OnActiveSessionChanged(object? sender, ChatSession? session)

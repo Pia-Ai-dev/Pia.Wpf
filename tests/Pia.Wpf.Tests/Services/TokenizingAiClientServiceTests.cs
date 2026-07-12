@@ -87,6 +87,65 @@ public class TokenizingAiClientServiceTests
         Assert.Contains(items.OfType<TextDelta>(), t => t.Text.Contains("the answer"));
     }
 
+    [Fact]
+    public async Task GetChatCompletionWithTools_ObjectToolResult_IsSerializedAndTokenized()
+    {
+        // Regression: WrapToolHandler used to tokenize only STRING tool results, so an object result
+        // (recall's RecallResult, a read_topic body, a raw read_source transcript) was JSON-serialized
+        // downstream with REAL PII. It must now serialize the object to its wire JSON and tokenize it.
+        Func<FunctionCallContent, Task<object?>>? capturedHandler = null;
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                capturedHandler = ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3);
+                return Stream(new Finished(null, "gpt-5"));
+            });
+
+        var tokenMap = Substitute.For<ITokenMapService>();
+        tokenMap.TokenizeStructuredResult(Arg.Any<string>())
+            .Returns(ci => ((string)ci[0]).Replace("John Smith", "[Person_1]"));
+        tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            Func<FunctionCallContent, Task<object?>> objectResultHandler =
+                _ => Task.FromResult<object?>(new { Name = "John Smith", Note = "topic hit" });
+
+            await foreach (var _ in sut.GetChatCompletionWithToolsAsync(
+                new List<ChatMessage> { new(ChatRole.User, "hi") },
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                tools: null,
+                toolHandler: objectResultHandler))
+            {
+            }
+
+            Assert.NotNull(capturedHandler);
+            var toolResult = await capturedHandler!(
+                new FunctionCallContent("id", "recall", new Dictionary<string, object?>()));
+
+            // The object was serialized to JSON and tokenized — a string, PII masked.
+            var str = Assert.IsType<string>(toolResult);
+            Assert.Contains("[Person_1]", str);
+            Assert.DoesNotContain("John Smith", str);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+    }
+
     private static async IAsyncEnumerable<ChatStreamItem> Stream(params ChatStreamItem[] items)
     {
         foreach (var item in items)

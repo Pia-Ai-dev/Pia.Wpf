@@ -11,7 +11,9 @@ namespace Pia.Services.Wiki;
 /// <summary>
 /// The auto-ingest pipeline (spec: docs/superpowers/specs/2026-07-07-auto-ingest-sources-design.md).
 /// One serial queue for ALL ingest work — a <c>sources/</c> FileSystemWatcher (any extension; the
-/// vault watcher only sees *.md), the startup reconcile scan, and manual tool runs via
+/// vault watcher's *.md files under <c>sources/</c> are excluded from recall by
+/// <see cref="Pia.Infrastructure.Vault.VaultPaths.IsRecallIndexable"/>, so a <c>.md</c> source is only
+/// ingested into topic pages, never also embedded raw), the startup reconcile scan, and manual tool runs via
 /// <see cref="IIngestScheduler"/>. Automatic triggers are hash-gated against
 /// <see cref="IngestStateStore"/> and gated on the AutoIngestSources setting + a configured AI
 /// provider; the manual path always executes. After every ingest the previous touched-set is

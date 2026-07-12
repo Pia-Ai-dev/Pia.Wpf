@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -9,14 +8,11 @@ namespace Pia.Controls;
 
 public partial class AutocompletePopup : UserControl
 {
-    public ObservableCollection<AutocompleteSuggestion> Suggestions { get; } = [];
-
     public event EventHandler<AutocompleteSuggestion>? SuggestionSelected;
 
     public AutocompletePopup()
     {
         InitializeComponent();
-        SuggestionList.ItemsSource = Suggestions;
         SuggestionList.PreviewMouseLeftButtonUp += OnItemClicked;
     }
 
@@ -55,23 +51,27 @@ public partial class AutocompletePopup : UserControl
 
     public void UpdateSuggestions(IReadOnlyList<AutocompleteSuggestion> items)
     {
-        Suggestions.Clear();
-        foreach (var item in items)
-            Suggestions.Add(item);
+        // Swap the whole list in one shot rather than clearing + adding item-by-item. The
+        // @Files picker can return up to the handler's 500-item hard cap; a per-item
+        // ObservableCollection rebuild would fan out ~500 CollectionChanged notifications on
+        // every (debounced) keystroke. The ListBox is UI-virtualized, so only the visible
+        // containers are realized regardless of list length.
+        SuggestionList.ItemsSource = items;
 
-        if (Suggestions.Count > 0)
+        if (items.Count > 0)
             SuggestionList.SelectedIndex = 0;
     }
 
     public void MoveSelection(int delta)
     {
-        if (Suggestions.Count == 0)
+        int count = SuggestionList.Items.Count;
+        if (count == 0)
             return;
 
         int newIndex = SuggestionList.SelectedIndex + delta;
         if (newIndex < 0)
-            newIndex = Suggestions.Count - 1;
-        else if (newIndex >= Suggestions.Count)
+            newIndex = count - 1;
+        else if (newIndex >= count)
             newIndex = 0;
 
         SuggestionList.SelectedIndex = newIndex;

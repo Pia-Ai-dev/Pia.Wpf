@@ -289,12 +289,20 @@ public class TokenizingAiClientService : IAiClientService
             }
 
             var result = await handler(toolCall);
+            if (result is null)
+                return null;
 
-            // Tokenize string results so the AI sees tokens, not real values
+            // Tokenize the result the model will see so real PII never reaches the provider. A string result
+            // tokenizes directly; a structured OBJECT result (recall hits, a read_topic body, a raw
+            // read_source transcript, a query_* list) is serialized to the SAME wire JSON PiaCloudChatClient
+            // would emit, then tokenized — returning that tokenized JSON string is wire-equivalent, since the
+            // serializer passes strings through. Without this branch, object results bypassed tokenization
+            // entirely (read_source returns never-synthesized primary text — the sharpest PII exposure).
             if (result is string resultStr)
                 return TryGetTokenMapService()!.TokenizeStructuredResult(resultStr);
 
-            return result;
+            var resultJson = System.Text.Json.JsonSerializer.Serialize(result);
+            return TryGetTokenMapService()!.TokenizeStructuredResult(resultJson);
         };
     }
 

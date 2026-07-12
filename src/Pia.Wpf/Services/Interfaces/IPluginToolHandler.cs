@@ -11,7 +11,8 @@ public record PluginToolCall(
     string Description,
     string? Details,
     Func<Task<object?>> Execute,
-    IReadOnlyList<DiffLine>? DiffPreview = null);
+    IReadOnlyList<DiffLine>? DiffPreview = null,
+    string? TargetPath = null);
 
 public interface IPluginToolHandler
 {

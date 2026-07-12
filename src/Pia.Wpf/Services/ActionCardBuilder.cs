@@ -63,10 +63,12 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             details = new ObservableCollection<ActionCardDetail>(DetokenizeDetails(parsed, detokenize));
         }
 
+        // Use a `with` expression so detokenizing the text preserves OldLineNumber/NewLineNumber —
+        // a positional `new DiffLine(d.Kind, …)` would silently drop them (only in PII-detokenize mode).
         var diffLines = isFilesDiff
             ? new ObservableCollection<DiffLine>(
                 pendingAction.DiffPreview!.Select(d =>
-                    new DiffLine(d.Kind, detokenize ? _tokenMapService.Detokenize(d.Text) : d.Text)))
+                    detokenize ? d with { Text = _tokenMapService.Detokenize(d.Text) } : d))
             : new ObservableCollection<DiffLine>();
 
         var title = FormatToolTitle(pendingAction.ToolName, category);
@@ -84,6 +86,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             WarningText = warningText,
             Details = details,
             DiffLines = diffLines,
+            FilePath = Detokenize(pendingAction.TargetPath ?? "", detokenize),
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", title),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", title),
             AutoApprovedStatusText = _localizationService.Format("ActionCard_AutoApproved", title),
@@ -93,10 +96,12 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         };
 
         // [ObservableProperty]-generated State is not init-settable; the auto-approved
-        // bypass card is returned pre-resolved (design §4/§7).
+        // bypass card is returned pre-resolved (design §4/§7). A bypass card renders its diff
+        // collapsed (re-expandable) — nobody asked to review it, so don't show a full-height diff.
         if (autoApproved)
         {
             card.State = ActionCardState.Accepted;
+            card.IsDiffExpanded = false;
         }
 
         return card;

@@ -445,6 +445,9 @@
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Browse…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Clear</value></data>
   <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Folder where the assistant keeps your files and its memory vault. The assistant is restricted to this folder and cannot access files outside it. Use the toggle below to enable or disable the file tools.</value></data>
+  <data name="Settings_Assistant_DefaultWorkingDirectory" xml:space="preserve"><value>Default working directory for new chats</value></data>
+  <data name="Settings_Assistant_DefaultWorkingDirectory_Description" xml:space="preserve"><value>New chats start in this subfolder of the files folder. Pick an existing folder or type a new one — it will be created for you. Leave empty to start at the files folder root.</value></data>
+  <data name="Settings_Assistant_DefaultWorkingDirectory_Invalid" xml:space="preserve"><value>That folder is not valid. The working directory must be a subfolder of the assistant files folder.</value></data>
   <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Change…</value></data>
   <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Allow the assistant to read and write files in this folder</value></data>
   <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Memory vault: {0}</value></data>
@@ -753,6 +756,8 @@
   <data name="ActionCard_Action_Write" xml:space="preserve"><value>Write</value></data>
   <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Done</value></data>
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Declined</value></data>
+  <data name="ActionCard_Diff_UnchangedLines" xml:space="preserve"><value>{0} unchanged lines</value></data>
+  <data name="ActionCard_Diff_TruncatedNotice" xml:space="preserve"><value>Diff truncated — remaining lines not shown</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copy to Clipboard</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Type</value></data>

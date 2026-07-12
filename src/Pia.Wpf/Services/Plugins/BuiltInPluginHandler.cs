@@ -174,7 +174,7 @@ public class BuiltInPluginHandler : IPluginToolHandler
                 if (pending is null) return (result, null);
                 return (null, new PluginToolCall(
                     pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute,
-                    pending.DiffPreview));
+                    pending.DiffPreview, pending.TargetPath));
             },
             async pluginCall => await pluginCall.Execute(),
             GetSystemPromptFromConfig(config.ConfigJson),

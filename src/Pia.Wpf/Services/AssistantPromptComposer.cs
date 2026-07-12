@@ -141,7 +141,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
                  - YES → Use Todo tools. NOT a todo: "Remember my WiFi password" (information = memory).
                  - NO → Continue to step 3.
               3. Does the request involve STORING, RECALLING, or UPDATING personal information?
-                 - YES → Use Memory tools. To store/update, call remember(type, subject, content) — it automatically finds-or-creates the right record (you do NOT need to recall first). Use recall to look something up, and forget to remove a record. NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
+                 - YES → Use Memory tools. To store/update, call remember(type, subject, content) — it automatically finds-or-creates the right record (you do NOT need to recall first); use forget to remove one. To look something up, run the knowledge loop rather than answering from the recall snippet alone: recall to find relevant pages → read_topic(reference) on a topic hit (tier=topic) for its full synthesis and the sources it cites → read_source(reference) for the primary text when the topic's summary is insufficient → browse_index to orient when recall misses. NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder).
                  - NO → Continue to step 4.
               4. Does the request involve reading, searching, or editing CODE or FILES in the configured folder?
                  - YES → Use the file tools: search_files to locate files or text, read_file to inspect content (request a windowed slice with offset/limit for large files), and write_file to apply edits (the user approves a diff before any change is written).
@@ -171,7 +171,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         Pia.Models.AtCommandDomain.Memory => (
             "memory entry",
             "recall",
-            (IReadOnlyList<string>)["recall", "remember", "forget"]),
+            (IReadOnlyList<string>)["recall", "browse_index", "read_topic", "read_source", "remember", "forget"]),
         Pia.Models.AtCommandDomain.Todo => (
             "todo",
             "query_todos",

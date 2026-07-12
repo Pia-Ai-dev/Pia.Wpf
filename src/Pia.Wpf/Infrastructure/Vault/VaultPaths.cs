@@ -48,11 +48,17 @@ public static class VaultPaths
     /// <summary>
     /// True iff <paramref name="relativePath"/> is a <c>.md</c> file whose content should surface in
     /// recall (the <c>Chunks</c>/<c>ChunksFts</c> index): everything EXCEPT Pia's housekeeping documents
-    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>) and the recoverable <c>.archive/</c> snapshots.
-    /// Unlike <see cref="IsRecordFile"/> this KEEPS the <c>sources/</c> RAW layer (ingest deliberately
-    /// made it recallable) and is a denylist — not a <c>memory/</c> allowlist — because records may live
-    /// at the vault root too. Applied centrally in the indexer so the watcher, rebuild, and reconcile
-    /// all agree on what recall contains.
+    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the recoverable <c>.archive/</c> snapshots, and
+    /// the immutable <c>sources/</c> RAW layer. Unlike <see cref="IsRecordFile"/> this is a denylist — not
+    /// a <c>memory/</c> allowlist — because records may live at the vault root too.
+    ///
+    /// <para>The <c>sources/</c> layer is excluded so raw ingest inputs are never embedded directly: only
+    /// the LLM-synthesized topic pages under <c>memory/topics/</c> reach recall. This also keeps <c>.md</c>
+    /// sources symmetric with non-<c>.md</c> sources — otherwise a <c>sources/foo.md</c> would be both
+    /// embedded raw (via the vault watcher) AND synthesized into topic pages, duplicating it in recall.</para>
+    ///
+    /// <para>Applied centrally in the indexer so the watcher, rebuild, and reconcile all agree on what
+    /// recall contains.</para>
     /// </summary>
     public static bool IsRecallIndexable(string relativePath)
     {
@@ -65,6 +71,7 @@ public static class VaultPaths
 
         return normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
             && !Housekeeping.Contains(normalized)
+            && !normalized.StartsWith("sources/", StringComparison.OrdinalIgnoreCase)
             && !normalized.StartsWith(".archive/", StringComparison.OrdinalIgnoreCase)
             && !normalized.Contains("/.archive/", StringComparison.OrdinalIgnoreCase);
     }

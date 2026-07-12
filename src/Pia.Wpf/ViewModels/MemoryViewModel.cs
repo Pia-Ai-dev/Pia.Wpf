@@ -352,16 +352,20 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
     private static int CountDisplayable(IReadOnlyList<VaultMemoryItem> items)
         => items.Count(i => DisplayableTypes.Contains(i.Type));
 
-    // Group by the §8 canonical type order with the spec's display names; within a group, items sort
-    // alphabetically by title (D3: frontmatter `updated` is document-level, so per-item recency is
-    // meaningless). The group timestamp is the newest document `updated` among its items.
-    private static List<MemoryGroupViewModel> BuildGroups(IReadOnlyList<VaultMemoryItem> items)
+    // The single canonical grouping walk shared by the left grouped list and the Vault Overview
+    // composition, so the two can never drift (the overview once lumped all topics under one row while
+    // the list already exploded them — this walk is the fix, and the fix against a recurrence). Yields
+    // groups in §8 CanonicalGroups order, exploding the `topic` type into one group per frontmatter
+    // `category` (TopicCategories order, "Other" bucket for missing/unknown). `Key` is the group's
+    // identity: a canonical type for the fixed groups, or the topic category (e.g. "person") for an
+    // exploded one — it also drives the overview swatch color (VaultCategoryColorConverter).
+    private static IEnumerable<(string Key, string DisplayName, List<VaultMemoryItem> Items)>
+        EnumerateDisplayGroups(IReadOnlyList<VaultMemoryItem> items)
     {
         // Case-insensitive so a case-drifted frontmatter `type` (e.g. "Note") still lands in its group.
         var byType = items
             .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
-        var groups = new List<MemoryGroupViewModel>();
 
         foreach (var (type, display) in VaultIndexService.CanonicalGroups)
         {
@@ -370,38 +374,39 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
                 continue;
             }
 
-            // Topics are too coarse under a single "Topics" heading (every ingested source lands there):
-            // elevate each page's frontmatter `category` to a top-level group, mirroring the index's
-            // sub-grouping order/display names, with an "Other" bucket for missing/unknown categories.
             if (type == "topic")
             {
-                AddTopicCategoryGroups(groups, groupItems);
+                var byCategory = groupItems
+                    .GroupBy(i => VaultIndexService.NormalizeTopicCategory(i.Category), StringComparer.Ordinal)
+                    .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+                foreach (var (category, categoryDisplay) in VaultIndexService.TopicCategories)
+                {
+                    if (byCategory.TryGetValue(category, out var categoryItems))
+                    {
+                        yield return (category, categoryDisplay, categoryItems);
+                    }
+                }
+
                 continue;
             }
 
-            groups.Add(BuildGroup(type, display, groupItems));
+            yield return (type, display, groupItems);
+        }
+    }
+
+    // Group by the §8 canonical type order with the spec's display names; within a group, items sort
+    // alphabetically by title (D3: frontmatter `updated` is document-level, so per-item recency is
+    // meaningless). The group timestamp is the newest document `updated` among its items.
+    private static List<MemoryGroupViewModel> BuildGroups(IReadOnlyList<VaultMemoryItem> items)
+    {
+        var groups = new List<MemoryGroupViewModel>();
+        foreach (var (key, display, groupItems) in EnumerateDisplayGroups(items))
+        {
+            groups.Add(BuildGroup(key, display, groupItems));
         }
 
         return groups;
-    }
-
-    // Split the topic items into one group per canonical category (in VaultIndexService.TopicCategories
-    // order), keying each group's Type on the category so the card headers read "People"/"Products"/…
-    // rather than a single "Topics".
-    private static void AddTopicCategoryGroups(
-        List<MemoryGroupViewModel> groups, IReadOnlyList<VaultMemoryItem> topics)
-    {
-        var byCategory = topics
-            .GroupBy(i => VaultIndexService.NormalizeTopicCategory(i.Category), StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
-
-        foreach (var (category, display) in VaultIndexService.TopicCategories)
-        {
-            if (byCategory.TryGetValue(category, out var categoryItems))
-            {
-                groups.Add(BuildGroup(category, display, categoryItems));
-            }
-        }
     }
 
     private static MemoryGroupViewModel BuildGroup(
@@ -421,9 +426,12 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
         };
     }
 
-    // Composition-by-category for the Vault Overview: one segment per canonical type present, in the §8
-    // CanonicalGroups order, with Fraction = count / totalDisplayable. `total` reuses CountDisplayable, so
-    // the bar and the header total agree by construction.
+    // Composition-by-category for the Vault Overview: one segment per group in the shared
+    // EnumerateDisplayGroups walk, so the legend rows are the exact same set/order/counts as the left
+    // group headers (topics exploded per category, not merged into one "Topics" row). Fraction = count /
+    // totalDisplayable; `total` reuses CountDisplayable, so the bar and the header total agree by
+    // construction. The segment's Type is the group Key (canonical type, or topic category) — the swatch
+    // color derives from it (canonical → theme brush, topic category → cycled palette color).
     private void BuildComposition(IReadOnlyList<VaultMemoryItem> items)
     {
         var total = CountDisplayable(items);
@@ -434,18 +442,10 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
             return; // Divide-by-zero guard: an empty (or all-foreign-typed) vault emits no segments.
         }
 
-        var byType = items
-            .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (type, display) in VaultIndexService.CanonicalGroups)
+        foreach (var (key, display, groupItems) in EnumerateDisplayGroups(items))
         {
-            if (!byType.TryGetValue(type, out var count) || count == 0)
-            {
-                continue;
-            }
-
-            VaultComposition.Add(new VaultCategorySegment(type, display, count, count / (double)total));
+            var count = groupItems.Count;
+            VaultComposition.Add(new VaultCategorySegment(key, display, count, count / (double)total));
         }
     }
 

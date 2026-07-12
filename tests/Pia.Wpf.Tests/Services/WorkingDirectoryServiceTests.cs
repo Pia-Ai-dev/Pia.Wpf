@@ -78,4 +78,70 @@ public class WorkingDirectoryServiceTests : IDisposable
     {
         Assert.Empty(_service.ListSubfolders("../../"));
     }
+
+    [Fact]
+    public void EnsureSubfolder_CreatesFolderAndReturnsNormalizedRelative()
+    {
+        var result = _service.EnsureSubfolder("Playground");
+
+        Assert.Equal("Playground", result);
+        Assert.True(Directory.Exists(Path.Combine(_root, "Playground")));
+    }
+
+    [Fact]
+    public void EnsureSubfolder_NestedPath_NormalizesToForwardSlashes()
+    {
+        var result = _service.EnsureSubfolder(@"Playground\Notes");
+
+        Assert.Equal("Playground/Notes", result);
+        Assert.True(Directory.Exists(Path.Combine(_root, "Playground", "Notes")));
+    }
+
+    [Fact]
+    public void EnsureSubfolder_ExistingFolder_IsIdempotent()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "Existing"));
+
+        Assert.Equal("Existing", _service.EnsureSubfolder("Existing"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void EnsureSubfolder_EmptyInput_ReturnsRoot(string? input)
+    {
+        Assert.Equal(string.Empty, _service.EnsureSubfolder(input));
+    }
+
+    [Fact]
+    public void EnsureSubfolder_EscapingPath_ReturnsNull()
+    {
+        Assert.Null(_service.EnsureSubfolder(@"..\..\escape"));
+    }
+
+    [Fact]
+    public void EnsureSubfolder_RootedPath_ReturnsNull()
+    {
+        Assert.Null(_service.EnsureSubfolder(@"C:\Windows"));
+    }
+
+    [Fact]
+    public void EnsureSubfolder_VaultFolder_ReturnsNull()
+    {
+        Assert.Null(_service.EnsureSubfolder("Vault"));
+        Assert.Null(_service.EnsureSubfolder("Vault/topics"));
+        // The vault must not have been created as a side effect of the rejected call.
+        Assert.False(Directory.Exists(Path.Combine(_root, "Vault", "topics")));
+    }
+
+    [Fact]
+    public void EnsureSubfolder_NoSandboxConfigured_ReturnsNull()
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = null });
+        var service = new WorkingDirectoryService(settings);
+
+        Assert.Null(service.EnsureSubfolder("Playground"));
+    }
 }

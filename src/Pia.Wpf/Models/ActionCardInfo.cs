@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pia.Controls.Cards;
@@ -27,11 +28,19 @@ public enum DiffLineKind
 {
     Context,
     Added,
-    Removed
+    Removed,
+
+    /// <summary>A synthetic "diff truncated" marker row (no old/new line number, non-collapsible).</summary>
+    TruncationNotice
 }
 
-/// <summary>One rendered line of a write-file old→new diff (LCS-based).</summary>
-public record DiffLine(DiffLineKind Kind, string Text)
+/// <summary>
+/// One rendered line of a write-file old→new diff (LCS-based). <see cref="OldLineNumber"/> /
+/// <see cref="NewLineNumber"/> carry the 1-based source/target line for the dual gutter; a side that
+/// does not exist for the row (added → no old, removed → no new, truncation notice → neither) is null.
+/// The trailing optional numbers keep every existing 2-arg construction site compiling.
+/// </summary>
+public record DiffLine(DiffLineKind Kind, string Text, int? OldLineNumber = null, int? NewLineNumber = null)
 {
     /// <summary>
     /// A unified-diff gutter marker so the add/remove distinction survives the loss of color
@@ -76,13 +85,36 @@ public partial class ActionCardInfo : ObservableObject
 
     /// <summary>
     /// Line-level old→new diff for write_file cards. Populated only for the files category;
-    /// when present the card renders this colour-coded block instead of the Label/Value rows.
+    /// when present the card renders the first-class <c>FileDiffCard</c> instead of the Label/Value rows.
     /// </summary>
     public ObservableCollection<DiffLine> DiffLines { get; init; } = [];
+
+    /// <summary>The detokenized, sandbox-relative target path shown in the diff card header. UI-only.</summary>
+    public string FilePath { get; init; } = "";
 
     public bool HasDetails => Details.Count > 0;
     public bool HasOldValueDetails => OldValueDetails.Count > 0;
     public bool HasDiff => DiffLines.Count > 0;
+
+    /// <summary>Added/removed line tallies for the diff header's +N/−N stats (the truncation marker counts as neither).</summary>
+    public int AddedCount => DiffLines.Count(d => d.Kind == DiffLineKind.Added);
+    public int RemovedCount => DiffLines.Count(d => d.Kind == DiffLineKind.Removed);
+
+    private ObservableCollection<object>? _diffRows;
+
+    /// <summary>
+    /// The hunk-collapsed view rows (a mix of <see cref="DiffLine"/> and <c>CollapsedDiffRun</c>) rendered
+    /// by the diff card. Built lazily from the already-detokenized <see cref="DiffLines"/>, so the
+    /// PII detokenization applied at build time is preserved for free.
+    /// </summary>
+    public ObservableCollection<object> DiffRows => _diffRows ??= DiffHunkBuilder.Build(DiffLines);
+
+    /// <summary>
+    /// Whether the diff card body is expanded. Independent of the decision <see cref="IsExpanded"/>:
+    /// a pending diff shows expanded; resolving auto-collapses it, and it stays re-expandable afterwards.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isDiffExpanded = true;
 
     [ObservableProperty]
     private ActionCardState _state = ActionCardState.Pending;
@@ -187,6 +219,7 @@ public partial class ActionCardInfo : ObservableObject
         if (State != ActionCardState.Pending) return;
         State = ActionCardState.Accepted;
         IsExpanded = false;
+        IsDiffExpanded = false;
         _tcs.TrySetResult(ToolDecision.AllowOnce);
     }
 
@@ -196,6 +229,7 @@ public partial class ActionCardInfo : ObservableObject
         if (State != ActionCardState.Pending) return;
         State = ActionCardState.Accepted;
         IsExpanded = false;
+        IsDiffExpanded = false;
         _tcs.TrySetResult(ToolDecision.AlwaysAllow);
     }
 
@@ -205,6 +239,7 @@ public partial class ActionCardInfo : ObservableObject
         if (State != ActionCardState.Pending) return;
         State = ActionCardState.Declined;
         IsExpanded = false;
+        IsDiffExpanded = false;
         _tcs.TrySetResult(ToolDecision.Decline);
     }
 
@@ -214,6 +249,7 @@ public partial class ActionCardInfo : ObservableObject
         if (State != ActionCardState.Pending) return;
         State = ActionCardState.Declined;
         IsExpanded = false;
+        IsDiffExpanded = false;
         _tcs.TrySetCanceled();
     }
 
@@ -223,4 +259,11 @@ public partial class ActionCardInfo : ObservableObject
         if (IsPending)
             IsExpanded = !IsExpanded;
     }
+
+    /// <summary>
+    /// Toggles the diff card body. Deliberately has no <see cref="IsPending"/> gate — the diff stays
+    /// reviewable (and re-expandable) after the decision is resolved.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleDiffExpand() => IsDiffExpanded = !IsDiffExpanded;
 }

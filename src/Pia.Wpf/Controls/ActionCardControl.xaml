@@ -7,317 +7,362 @@
              xmlns:cards="clr-namespace:Pia.Controls.Cards"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
              xmlns:models="clr-namespace:Pia.Models">
-  <Border x:Name="CardBorder"
-          Padding="12,10"
-          Margin="0,4,0,0">
-    <Border.Style>
-      <Style TargetType="Border" BasedOn="{StaticResource PiaCardStyle}">
-        <Style.Triggers>
-          <DataTrigger Binding="{Binding IsDestructive}" Value="True">
-            <Setter Property="BorderBrush" Value="{DynamicResource PiaDangerBrush}" />
-            <Setter Property="Background" Value="#1AC42B1C" />
-          </DataTrigger>
-        </Style.Triggers>
-      </Style>
-    </Border.Style>
-    <Grid>
-      <!-- Pending state -->
-      <StackPanel>
-        <StackPanel.Style>
-          <Style TargetType="StackPanel">
-            <Setter Property="Visibility" Value="Visible" />
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding IsResolved}" Value="True">
-                <Setter Property="Visibility" Value="Collapsed" />
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </StackPanel.Style>
+  <!-- Two mutually exclusive layouts switched on HasDiff (which never changes after build):
+       the generic action card (memory/todo/reminder/delete_file) and the first-class write_file
+       diff (a persistent FileDiffCard + a separate slim decision strip). -->
+  <Grid>
 
-        <!-- Header row -->
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-
-          <Border Grid.Column="0"
-                  Style="{StaticResource PiaIconChipStyle}"
-                  Margin="0,0,10,0"
-                  VerticalAlignment="Center">
-            <ui:SymbolIcon FontSize="13"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource PiaAccentBrush}">
-              <ui:SymbolIcon.Style>
-                <Style TargetType="ui:SymbolIcon">
-                  <Setter Property="Symbol" Value="BrainCircuit24" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Todo}">
-                      <Setter Property="Symbol" Value="TaskListSquareLtr24" />
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Reminder}">
-                      <Setter Property="Symbol" Value="Alert24" />
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Files}">
-                      <Setter Property="Symbol" Value="Document24" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </ui:SymbolIcon.Style>
-            </ui:SymbolIcon>
-          </Border>
-
-          <StackPanel Grid.Column="1"
-                      Orientation="Vertical"
-                      VerticalAlignment="Center">
-            <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Title}"
-                       FontSize="13"
-                       FontWeight="SemiBold"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Summary}"
-                       FontSize="12"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                       TextTrimming="CharacterEllipsis" />
-          </StackPanel>
-
-          <ui:Button Grid.Column="2"
-                     Appearance="Transparent"
-                     Padding="4"
-                     Command="{Binding ToggleExpandCommand}"
-                     VerticalAlignment="Center">
-            <ui:SymbolIcon FontSize="12">
-              <ui:SymbolIcon.Style>
-                <Style TargetType="ui:SymbolIcon">
-                  <Setter Property="Symbol" Value="ChevronDown24" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsExpanded}" Value="True">
-                      <Setter Property="Symbol" Value="ChevronUp24" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </ui:SymbolIcon.Style>
-            </ui:SymbolIcon>
-          </ui:Button>
-        </Grid>
-
-        <!-- Expandable details -->
-        <StackPanel Margin="0,6,0,0">
+    <!-- ================= Generic action card (non-diff) ================= -->
+    <Border x:Name="CardBorder"
+            Padding="12,10"
+            Margin="0,4,0,0"
+            Visibility="{Binding HasDiff, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+      <Border.Style>
+        <Style TargetType="Border" BasedOn="{StaticResource PiaCardStyle}">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding IsDestructive}" Value="True">
+              <Setter Property="BorderBrush" Value="{DynamicResource PiaDangerBrush}" />
+              <Setter Property="Background" Value="#1AC42B1C" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+      <Grid>
+        <!-- Pending state -->
+        <StackPanel>
           <StackPanel.Style>
             <Style TargetType="StackPanel">
-              <Setter Property="Visibility" Value="Collapsed" />
+              <Setter Property="Visibility" Value="Visible" />
               <Style.Triggers>
-                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
-                  <Setter Property="Visibility" Value="Visible" />
+                <DataTrigger Binding="{Binding IsResolved}" Value="True">
+                  <Setter Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
               </Style.Triggers>
             </Style>
           </StackPanel.Style>
 
-          <!-- Warning text for destructive operations -->
-          <TextBlock Text="{Binding WarningText}"
-                     FontSize="12"
-                     Foreground="#C42B1C"
-                     TextWrapping="Wrap"
-                     Margin="0,0,0,4">
-            <TextBlock.Style>
-              <Style TargetType="TextBlock">
-                <Setter Property="Visibility" Value="Collapsed" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding IsDestructive}" Value="True">
-                    <Setter Property="Visibility" Value="Visible" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </TextBlock.Style>
-          </TextBlock>
+          <!-- Header row -->
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-          <!-- Line-level diff (write_file) -->
-          <ItemsControl ItemsSource="{Binding DiffLines}"
-                        Margin="0,0,0,4">
-            <ItemsControl.Style>
-              <Style TargetType="ItemsControl">
-                <Setter Property="Visibility" Value="Collapsed" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding HasDiff}" Value="True">
-                    <Setter Property="Visibility" Value="Visible" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </ItemsControl.Style>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <Border Padding="6,0">
-                  <Border.Style>
-                    <Style TargetType="Border">
-                      <Setter Property="Background" Value="Transparent" />
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Added}">
-                          <Setter Property="Background" Value="#1A2EA043" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Removed}">
-                          <Setter Property="Background" Value="#1AC42B1C" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Border.Style>
-                  <TextBlock FontFamily="Consolas, Cascadia Code, Courier New, monospace"
-                             FontSize="12"
-                             TextWrapping="Wrap">
-                    <TextBlock.Style>
-                      <Style TargetType="TextBlock">
-                        <Setter Property="Text" Value="{Binding Display}" />
-                        <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
-                        <Style.Triggers>
-                          <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Added}">
-                            <Setter Property="Foreground" Value="#2EA043" />
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:DiffLineKind.Removed}">
-                            <Setter Property="Foreground" Value="#C42B1C" />
-                          </DataTrigger>
-                        </Style.Triggers>
-                      </Style>
-                    </TextBlock.Style>
-                  </TextBlock>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+            <Border Grid.Column="0"
+                    Style="{StaticResource PiaIconChipStyle}"
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center">
+              <ui:SymbolIcon FontSize="13"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource PiaAccentBrush}">
+                <ui:SymbolIcon.Style>
+                  <Style TargetType="ui:SymbolIcon">
+                    <Setter Property="Symbol" Value="BrainCircuit24" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Todo}">
+                        <Setter Property="Symbol" Value="TaskListSquareLtr24" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Reminder}">
+                        <Setter Property="Symbol" Value="Alert24" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Files}">
+                        <Setter Property="Symbol" Value="Document24" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:SymbolIcon.Style>
+              </ui:SymbolIcon>
+            </Border>
 
-          <!-- Old values (for updates) -->
-          <StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Vertical"
+                        VerticalAlignment="Center">
+              <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Title}"
+                         FontSize="13"
+                         FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock behaviors:EmojiTextBehavior.Text="{Binding Summary}"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+
+            <ui:Button Grid.Column="2"
+                       Appearance="Transparent"
+                       Padding="4"
+                       Command="{Binding ToggleExpandCommand}"
+                       VerticalAlignment="Center">
+              <ui:SymbolIcon FontSize="12">
+                <ui:SymbolIcon.Style>
+                  <Style TargetType="ui:SymbolIcon">
+                    <Setter Property="Symbol" Value="ChevronDown24" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                        <Setter Property="Symbol" Value="ChevronUp24" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:SymbolIcon.Style>
+              </ui:SymbolIcon>
+            </ui:Button>
+          </Grid>
+
+          <!-- Expandable details -->
+          <StackPanel Margin="0,6,0,0">
             <StackPanel.Style>
               <Style TargetType="StackPanel">
                 <Setter Property="Visibility" Value="Collapsed" />
                 <Style.Triggers>
-                  <DataTrigger Binding="{Binding HasOldValueDetails}" Value="True">
+                  <DataTrigger Binding="{Binding IsExpanded}" Value="True">
                     <Setter Property="Visibility" Value="Visible" />
                   </DataTrigger>
                 </Style.Triggers>
               </Style>
             </StackPanel.Style>
-            <TextBlock Text="{loc:Str ActionCard_CurrentValue}"
-                       FontSize="11"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                       Margin="0,0,0,2" />
-            <ItemsControl ItemsSource="{Binding OldValueDetails}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <StackPanel Orientation="Horizontal" Margin="8,1,0,1">
-                    <TextBlock Text="{Binding Label}"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Margin="0,0,6,0" />
-                    <TextBlock Text="{Binding Value}"
-                               FontSize="12"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
 
-          <!-- New/current values -->
-          <StackPanel>
-            <StackPanel.Style>
-              <Style TargetType="StackPanel">
-                <Setter Property="Visibility" Value="Collapsed" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding HasDetails}" Value="True">
-                    <Setter Property="Visibility" Value="Visible" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </StackPanel.Style>
-            <TextBlock FontSize="11"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}"
-                       Margin="0,4,0,2">
+            <!-- Warning text for destructive operations -->
+            <TextBlock Text="{Binding WarningText}"
+                       FontSize="12"
+                       Foreground="#C42B1C"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,4">
               <TextBlock.Style>
                 <Style TargetType="TextBlock">
-                  <Setter Property="Text" Value="{loc:Str ActionCard_NewValue}" />
+                  <Setter Property="Visibility" Value="Collapsed" />
                   <Style.Triggers>
-                    <DataTrigger Binding="{Binding OldValueDetails.Count}" Value="0">
-                      <Setter Property="Visibility" Value="Collapsed" />
+                    <DataTrigger Binding="{Binding IsDestructive}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>
               </TextBlock.Style>
             </TextBlock>
-            <ItemsControl ItemsSource="{Binding Details}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <StackPanel Orientation="Horizontal" Margin="8,1,0,1">
-                    <TextBlock Text="{Binding Label}"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Margin="0,0,6,0" />
-                    <TextBlock Text="{Binding Value}"
-                               FontSize="12"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+
+            <!-- Old values (for updates) -->
+            <StackPanel>
+              <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding HasOldValueDetails}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </StackPanel.Style>
+              <TextBlock Text="{loc:Str ActionCard_CurrentValue}"
+                         FontSize="11"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         Margin="0,0,0,2" />
+              <ItemsControl ItemsSource="{Binding OldValueDetails}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Margin="8,1,0,1">
+                      <TextBlock Text="{Binding Label}"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"
+                                 Margin="0,0,6,0" />
+                      <TextBlock Text="{Binding Value}"
+                                 FontSize="12"
+                                 TextWrapping="Wrap" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <!-- New/current values -->
+            <StackPanel>
+              <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding HasDetails}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </StackPanel.Style>
+              <TextBlock FontSize="11"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         Margin="0,4,0,2">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Text" Value="{loc:Str ActionCard_NewValue}" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding OldValueDetails.Count}" Value="0">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding Details}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Margin="8,1,0,1">
+                      <TextBlock Text="{Binding Label}"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"
+                                 Margin="0,0,6,0" />
+                      <TextBlock Text="{Binding Value}"
+                                 FontSize="12"
+                                 TextWrapping="Wrap" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
           </StackPanel>
+
+          <!-- Accept/Decline buttons (shared CardDecisionBar — design §6) -->
+          <cards:CardDecisionBar ItemsSource="{Binding Decisions}"
+                                 HorizontalAlignment="Right"
+                                 Margin="0,8,0,0" />
         </StackPanel>
 
-        <!-- Accept/Decline buttons (shared CardDecisionBar — design §6) -->
-        <cards:CardDecisionBar ItemsSource="{Binding Decisions}"
-                               HorizontalAlignment="Right"
-                               Margin="0,8,0,0" />
-      </StackPanel>
-
-      <!-- Resolved state -->
-      <StackPanel Orientation="Horizontal"
-                  VerticalAlignment="Center">
-        <StackPanel.Style>
-          <Style TargetType="StackPanel">
-            <Setter Property="Visibility" Value="Collapsed" />
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding IsResolved}" Value="True">
-                <Setter Property="Visibility" Value="Visible" />
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </StackPanel.Style>
-        <ui:SymbolIcon FontSize="12"
-                       Margin="0,0,6,0">
-          <ui:SymbolIcon.Style>
-            <Style TargetType="ui:SymbolIcon">
-              <Setter Property="Symbol" Value="Dismiss24" />
-              <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
+        <!-- Resolved state -->
+        <StackPanel Orientation="Horizontal"
+                    VerticalAlignment="Center">
+          <StackPanel.Style>
+            <Style TargetType="StackPanel">
+              <Setter Property="Visibility" Value="Collapsed" />
               <Style.Triggers>
-                <DataTrigger Binding="{Binding State}" Value="{x:Static models:ActionCardState.Accepted}">
-                  <Setter Property="Symbol" Value="Checkmark24" />
-                  <Setter Property="Foreground" Value="#0F7B0F" />
-                </DataTrigger>
-                <!-- Auto-approved (standing grant): a distinct shield-checkmark, accent-coloured. -->
-                <DataTrigger Binding="{Binding IsAutoApproved}" Value="True">
-                  <Setter Property="Symbol" Value="ShieldCheckmark24" />
-                  <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+                <DataTrigger Binding="{Binding IsResolved}" Value="True">
+                  <Setter Property="Visibility" Value="Visible" />
                 </DataTrigger>
               </Style.Triggers>
             </Style>
-          </ui:SymbolIcon.Style>
-        </ui:SymbolIcon>
-        <TextBlock Text="{Binding ResolvedStatusText}"
-                   FontSize="12"
-                   FontStyle="Italic"
-                   VerticalAlignment="Center"
-                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-        <!-- Manage affordance: deep-links to the tool-permissions revocation surface.
-             Bound to the hosting message's ManageToolPermissionsCommand; only shown for
-             auto-approved (standing-grant) cards. -->
-        <ui:HyperlinkButton Content="{loc:Str ActionCard_Manage}"
-                            FontSize="12"
-                            Padding="6,0,0,0"
-                            VerticalAlignment="Center"
-                            Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
-                            Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
-      </StackPanel>
-    </Grid>
-  </Border>
+          </StackPanel.Style>
+          <ui:SymbolIcon FontSize="12"
+                         Margin="0,0,6,0">
+            <ui:SymbolIcon.Style>
+              <Style TargetType="ui:SymbolIcon">
+                <Setter Property="Symbol" Value="Dismiss24" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding State}" Value="{x:Static models:ActionCardState.Accepted}">
+                    <Setter Property="Symbol" Value="Checkmark24" />
+                    <Setter Property="Foreground" Value="#0F7B0F" />
+                  </DataTrigger>
+                  <!-- Auto-approved (standing grant): a distinct shield-checkmark, accent-coloured. -->
+                  <DataTrigger Binding="{Binding IsAutoApproved}" Value="True">
+                    <Setter Property="Symbol" Value="ShieldCheckmark24" />
+                    <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:SymbolIcon.Style>
+          </ui:SymbolIcon>
+          <TextBlock Text="{Binding ResolvedStatusText}"
+                     FontSize="12"
+                     FontStyle="Italic"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          <!-- Manage affordance: deep-links to the tool-permissions revocation surface.
+               Bound to the hosting message's ManageToolPermissionsCommand; only shown for
+               auto-approved (standing-grant) cards. -->
+          <ui:HyperlinkButton Content="{loc:Str ActionCard_Manage}"
+                              FontSize="12"
+                              Padding="6,0,0,0"
+                              VerticalAlignment="Center"
+                              Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ================= write_file diff card (split) ================= -->
+    <StackPanel Visibility="{Binding HasDiff, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <!-- First-class diff view — persists after the decision is resolved. -->
+      <cards:FileDiffCard />
+
+      <!-- Slim decision strip below the diff. -->
+      <Border Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource BorderStrongBrush}"
+              BorderThickness="1"
+              CornerRadius="{StaticResource SmallRadius}"
+              Padding="10,6"
+              Margin="0,6,0,0">
+        <Grid>
+          <!-- Pending: summary + decision bar -->
+          <Grid>
+            <Grid.Style>
+              <Style TargetType="Grid">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsResolved}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Grid.Style>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       behaviors:EmojiTextBehavior.Text="{Binding Summary}"
+                       FontSize="12"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+            <cards:CardDecisionBar Grid.Column="1"
+                                   ItemsSource="{Binding Decisions}"
+                                   Margin="8,0,0,0" />
+          </Grid>
+
+          <!-- Resolved: status one-liner (+ Manage for standing grants) -->
+          <StackPanel Orientation="Horizontal"
+                      VerticalAlignment="Center">
+            <StackPanel.Style>
+              <Style TargetType="StackPanel">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsResolved}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </StackPanel.Style>
+            <ui:SymbolIcon FontSize="12"
+                           Margin="0,0,6,0">
+              <ui:SymbolIcon.Style>
+                <Style TargetType="ui:SymbolIcon">
+                  <Setter Property="Symbol" Value="Dismiss24" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding State}" Value="{x:Static models:ActionCardState.Accepted}">
+                      <Setter Property="Symbol" Value="Checkmark24" />
+                      <Setter Property="Foreground" Value="#0F7B0F" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsAutoApproved}" Value="True">
+                      <Setter Property="Symbol" Value="ShieldCheckmark24" />
+                      <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:SymbolIcon.Style>
+            </ui:SymbolIcon>
+            <TextBlock Text="{Binding ResolvedStatusText}"
+                       FontSize="12"
+                       FontStyle="Italic"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+            <ui:HyperlinkButton Content="{loc:Str ActionCard_Manage}"
+                                FontSize="12"
+                                Padding="6,0,0,0"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </StackPanel>
+
+  </Grid>
 </UserControl>

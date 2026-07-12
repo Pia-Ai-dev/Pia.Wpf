@@ -158,4 +158,23 @@ public class AutocompleteServiceTests
         Assert.Equal("src/app/main.cs", results[0].DisplayText);
         _files.Received(1).ListRelativeFiles("main", Arg.Any<int>());
     }
+
+    [Fact]
+    public async Task Tier2_Files_NotClampedToPreviewCount()
+    {
+        // Unlike the other tier-2 domains (capped at 8), @Files surfaces every match so the user
+        // can arrow-key through the whole list. The handler owns the only hard cap (500), so the
+        // service must ask it for well beyond the 8-item preview count and pass the results through
+        // untruncated. (The other tests use Arg.Any<int>(), so they wouldn't catch a regression to
+        // the old 8-item clamp.)
+        var paths = Enumerable.Range(0, 20).Select(i => $"dir/file{i:D2}.md").ToArray();
+        _files.ListRelativeFiles(null, Arg.Any<int>()).Returns(paths);
+
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(AtCommandDomain.Files, filter: null);
+
+        Assert.Equal(20, results.Count);
+        _files.Received(1).ListRelativeFiles(null, Arg.Is<int>(max => max >= 500));
+    }
 }

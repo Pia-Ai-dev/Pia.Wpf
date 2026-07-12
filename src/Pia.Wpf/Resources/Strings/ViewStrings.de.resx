@@ -445,6 +445,9 @@
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Durchsuchen…</value></data>
   <data name="Settings_AssistantFilesFolder_Clear" xml:space="preserve"><value>Leeren</value></data>
   <data name="Settings_AssistantFilesFolder_Description" xml:space="preserve"><value>Ordner, in dem der Assistent Ihre Dateien und seinen Speicher-Tresor ablegt. Der Assistent ist auf diesen Ordner beschränkt und kann nicht auf Dateien außerhalb davon zugreifen. Mit dem Schalter unten aktivieren oder deaktivieren Sie die Datei-Tools.</value></data>
+  <data name="Settings_Assistant_DefaultWorkingDirectory" xml:space="preserve"><value>Standard-Arbeitsverzeichnis für neue Chats</value></data>
+  <data name="Settings_Assistant_DefaultWorkingDirectory_Description" xml:space="preserve"><value>Neue Chats starten in diesem Unterordner des Dateiordners. Wählen Sie einen vorhandenen Ordner oder geben Sie einen neuen ein – er wird für Sie erstellt. Leer lassen, um im Stammverzeichnis des Dateiordners zu starten.</value></data>
+  <data name="Settings_Assistant_DefaultWorkingDirectory_Invalid" xml:space="preserve"><value>Dieser Ordner ist ungültig. Das Arbeitsverzeichnis muss ein Unterordner des Assistent-Dateiordners sein.</value></data>
   <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Ändern…</value></data>
   <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Dem Assistenten erlauben, Dateien in diesem Ordner zu lesen und zu schreiben</value></data>
   <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Speicher-Tresor: {0}</value></data>
@@ -753,6 +756,8 @@
   <data name="ActionCard_Action_Write" xml:space="preserve"><value>Schreiben</value></data>
   <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Erledigt</value></data>
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Abgelehnt</value></data>
+  <data name="ActionCard_Diff_UnchangedLines" xml:space="preserve"><value>{0} unveränderte Zeilen</value></data>
+  <data name="ActionCard_Diff_TruncatedNotice" xml:space="preserve"><value>Diff gekürzt – restliche Zeilen nicht angezeigt</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>In Zwischenablage kopieren</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Tippen</value></data>

@@ -5,7 +5,60 @@ namespace Pia.Services.Interfaces;
 
 public record MemorySummary(Guid Id, string Type, string Label);
 
-public record RecallHit(string FilePath, string Heading, string Snippet, float Score);
+public record RecallHit(string FilePath, string Heading, string Snippet, float Score)
+{
+    /// <summary>
+    /// The navigation tier of this hit, derived from its path: <c>"topic"</c> for a synthesized topic
+    /// page under <c>memory/topics/</c> (expandable to its full body + cited sources via
+    /// <c>read_topic</c>), else <c>"record"</c>. Binary on purpose — the recall pool holds notes and
+    /// projects too (only <c>sources/</c> is excluded), so this is topic-vs-record, NOT the §7 record
+    /// type. Get-only so <see cref="System.Text.Json"/> emits it to the model with no construction-site
+    /// churn.
+    /// </summary>
+    public string Tier =>
+        FilePath.StartsWith("memory/topics/", StringComparison.OrdinalIgnoreCase) ? "topic" : "record";
+}
+
+/// <summary>One topic/record in the <c>browse_index</c> orientation map: a display <see cref="Title"/>
+/// plus the vault-relative <see cref="Ref"/> handle (e.g. <c>memory/topics/foo.md</c>) that chains
+/// straight into <c>read_topic</c>.</summary>
+public record BrowseEntry(string Title, string Ref);
+
+/// <summary>A category group in the <c>browse_index</c> map (a §8 canonical type, or a topic category
+/// such as <c>person</c>), with its display heading and its entries.</summary>
+public record BrowseCategory(string Category, string Display, IReadOnlyList<BrowseEntry> Entries);
+
+/// <summary>The vault's category → topic/record map, built programmatically (never by reading
+/// <c>index.md</c>) — the orient rung of the navigation loop.</summary>
+public record BrowseIndexResult(IReadOnlyList<BrowseCategory> Categories);
+
+/// <summary>
+/// The read rung: a topic page's full body plus its cited <see cref="Sources"/> refs and resolvable
+/// outbound <see cref="Wikilinks"/> (both are <c>read_source</c>/<c>read_topic</c> handles). <see cref="Sources"/>
+/// is surfaced even when empty so a topic with stale/missing provenance fails visibly. On a rejected ref
+/// (outside the vault, or not recall-visible) or a miss, <see cref="Found"/> is <c>false</c> and
+/// <see cref="Error"/> explains why.
+/// </summary>
+public record TopicRead(
+    bool Found, string Ref, string Title, string Body,
+    IReadOnlyList<string> Sources, IReadOnlyList<string> Wikilinks, string? Error);
+
+/// <summary>
+/// The drill rung: a raw primary source's text, reached only via a topic's cited ref (traversal-only).
+/// <see cref="Truncated"/> is set when the source exceeded the line window / output cap. On a rejected
+/// ref (outside <c>sources/</c>, escapes containment, non-text, or missing) <see cref="Found"/> is
+/// <c>false</c> and <see cref="Error"/> explains why.
+/// </summary>
+public record SourceRead(bool Found, string Ref, string Text, bool Truncated, string? Error);
+
+/// <summary>
+/// The <c>recall</c> tool's result shape: the ranked <see cref="Hits"/> plus a standing <see cref="Note"/>
+/// telling the model topic hits are summaries expandable via <c>read_topic</c>/<c>read_source</c>. This
+/// wrapper lives only at the tool boundary — <see cref="IMemoryService.RecallAsync"/> still returns the
+/// bare hit list, which the Memory view consumes directly. (A result-DTO record, co-located with
+/// <see cref="RecallHit"/> under Services.Interfaces — the sanctioned home for return-shape carriers.)
+/// </summary>
+public record RecallResult(IReadOnlyList<RecallHit> Hits, string Note);
 
 /// <summary>
 /// Outcome of <see cref="IMemoryService.RememberAsync"/> (vault write path). <see cref="Reference"/>
@@ -39,6 +92,34 @@ public interface IMemoryService
     Task<IReadOnlyList<MemoryObject>> VectorSearchAsync(float[] queryEmbedding, int topK = 5, float threshold = 0.3f);
     Task<IReadOnlyList<MemoryObject>> HybridSearchAsync(string query, float[]? queryEmbedding = null, int topK = 10);
     Task<IReadOnlyList<RecallHit>> RecallAsync(string query, int topK = 10);
+
+    /// <summary>
+    /// Orient rung of the vault navigation loop: the category → topic/record map, grouped by §8
+    /// <see cref="Pia.Services.Wiki.VaultIndexService.CanonicalGroups"/> (topics sub-grouped by
+    /// <see cref="Pia.Services.Wiki.VaultIndexService.TopicCategories"/>), each entry carrying a
+    /// <c>read_topic</c> handle. Built from <see cref="ListMemoriesAsync"/> — never by reading
+    /// <c>index.md</c> (which is recall-denylisted).
+    /// </summary>
+    Task<BrowseIndexResult> BrowseIndexAsync();
+
+    /// <summary>
+    /// Read rung: the full body of the recall-visible page at <paramref name="reference"/> (the same
+    /// <see cref="RecallHit.FilePath"/> handle recall emits) plus its cited <c>sources:</c> refs and
+    /// resolvable outbound wikilinks. Guarded by BOTH containment (stays inside the vault) AND
+    /// <see cref="Pia.Infrastructure.Vault.VaultPaths.IsRecallIndexable"/> (recall-visible: excludes
+    /// <c>sources/</c>, <c>.archive/</c>, and housekeeping). A rejected/missing ref returns
+    /// <see cref="TopicRead.Found"/> = <c>false</c>.
+    /// </summary>
+    Task<TopicRead> ReadTopicAsync(string reference);
+
+    /// <summary>
+    /// Drill rung: read a raw primary source under <c>sources/</c> (traversal-only — the ref comes from a
+    /// topic's <c>sources:</c> provenance). Guarded by containment + a <c>sources/</c>-scope assertion.
+    /// Bounded by a 1&#160;MB input ceiling and an <paramref name="offset"/>/<paramref name="limit"/> line
+    /// window (default 500, max 2000) for chunking large logs. A rejected/missing/non-text ref returns
+    /// <see cref="SourceRead.Found"/> = <c>false</c>.
+    /// </summary>
+    Task<SourceRead> ReadSourceAsync(string reference, int? offset = null, int? limit = null);
 
     /// <summary>
     /// Write a memory into the on-disk vault (format spec v1). Maps <paramref name="type"/> to its

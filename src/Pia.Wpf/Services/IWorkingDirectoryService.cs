@@ -14,4 +14,19 @@ public interface IWorkingDirectoryService
     /// list on any error / missing folder / unconfigured sandbox.
     /// </summary>
     IReadOnlyList<string> ListSubfolders(string relativeParent);
+
+    /// <summary>
+    /// Validates <paramref name="relativePath"/> as a sandbox-contained subfolder, CREATES it if
+    /// missing, and returns the normalized relative path (forward slashes). Used both to resolve
+    /// the configured default working directory for new chats and to validate the value typed into
+    /// the settings picker.
+    /// <list type="bullet">
+    /// <item>null / whitespace input =&gt; <c>""</c> (the sandbox root; nothing is created).</item>
+    /// <item>a valid, contained, non-sensitive relative path =&gt; the folder is created and its
+    /// normalized relative path returned.</item>
+    /// <item><c>null</c> when the input is rooted/UNC, escapes the sandbox via <c>..</c>, resolves
+    /// to a blocked/sensitive folder, the sandbox is unconfigured, or creation fails.</item>
+    /// </list>
+    /// </summary>
+    string? EnsureSubfolder(string? relativePath);
 }

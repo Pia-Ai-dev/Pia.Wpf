@@ -36,7 +36,26 @@ public class MemoryToolHandler : IMemoryToolHandler
                 "Search the user's memory vault using a natural language query. " +
                 "Use this to recall information when the user asks about something personal, " +
                 "or to check whether a memory already exists before remembering something new. " +
-                "Returns matching memory sections (file#heading + snippet + relevance score)."),
+                "Returns matching sections (each with a tier, file#heading, snippet, and relevance score). " +
+                "Hits are only SUMMARIES — the vault is a browsable knowledge base: call read_topic for a " +
+                "topic hit's full page and its cited sources, read_source for the primary text a topic cites, " +
+                "and browse_index to see the whole map when a search misses."),
+
+            AIFunctionFactory.Create(BrowseIndexSchema, "browse_index",
+                "Orient in the memory vault: returns its category → topic/record map (titles plus a ref for " +
+                "each), built from the vault's own index. Use it when recall misses or you need to see what " +
+                "topics exist. Each entry's ref feeds read_topic."),
+
+            AIFunctionFactory.Create(ReadTopicSchema, "read_topic",
+                "Read a whole memory page. Given a ref from recall (a hit's FilePath) or browse_index " +
+                "(e.g. 'memory/topics/foo.md'), returns the full page body plus the source documents it cites " +
+                "and its outbound topic links. Use this after recall when a topic summary is not enough. The " +
+                "returned source refs feed read_source."),
+
+            AIFunctionFactory.Create(ReadSourceSchema, "read_source",
+                "Read a raw primary source document (reached only via a topic's cited source refs from " +
+                "read_topic). Returns the source text; for a large log or transcript, page through it with " +
+                "offset/limit. Use this when a topic's summary is insufficient and you need the original wording."),
 
             AIFunctionFactory.Create(RememberSchema, "remember",
                 "Store or update a memory in the user's vault. " +
@@ -64,6 +83,9 @@ public class MemoryToolHandler : IMemoryToolHandler
         var (result, pending) = toolCall.Name switch
         {
             "recall" => (await HandleRecall(args, cancellationToken), (MemoryToolCall?)null),
+            "browse_index" => (await HandleBrowseIndex(), (MemoryToolCall?)null),
+            "read_topic" => (await HandleReadTopic(args), (MemoryToolCall?)null),
+            "read_source" => (await HandleReadSource(args), (MemoryToolCall?)null),
             "remember" => await HandleRemember(args),
             "forget" => ((object?)null, HandleForget(args)),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (MemoryToolCall?)null)
@@ -91,6 +113,14 @@ public class MemoryToolHandler : IMemoryToolHandler
         }
     }
 
+    // The recall Note is the standing, per-call nudge that turns recall from a terminal answer into the
+    // entry point of an orient → read → drill loop. It ships in every recall result, so the model is
+    // reminded — right where the hits are — that topic summaries are expandable.
+    private const string RecallNote =
+        "Hits with tier=topic are SUMMARIES from synthesized topic pages. For a topic's full page and the " +
+        "sources it cites, call read_topic(reference) with that hit's FilePath. To read a cited primary " +
+        "source, call read_source(reference). Call browse_index to see the whole map when a search misses.";
+
     private async Task<object?> HandleRecall(IDictionary<string, object?> args, CancellationToken cancellationToken)
     {
         var query = GetStringArg(args, "query");
@@ -99,7 +129,38 @@ public class MemoryToolHandler : IMemoryToolHandler
 
         var hits = await _memoryService.RecallAsync(query);
         _logger.LogInformation("Recall returned {Count} hit(s)", hits.Count);
-        return hits;
+        _logger.SensitiveDebug("Recall query: {Query}", query);
+        // Wrap here (never in RecallAsync — MemoryViewModel consumes the service's list directly).
+        return new RecallResult(hits, RecallNote);
+    }
+
+    private async Task<object?> HandleBrowseIndex()
+    {
+        var index = await _memoryService.BrowseIndexAsync();
+        _logger.LogInformation("browse_index returned {Count} categor(y/ies)", index.Categories.Count);
+        return index;
+    }
+
+    private async Task<object?> HandleReadTopic(IDictionary<string, object?> args)
+    {
+        var reference = GetStringArg(args, "reference");
+        if (string.IsNullOrWhiteSpace(reference))
+            return "Error: reference parameter is required";
+
+        _logger.SensitiveDebug("read_topic reference: {Ref}", reference);
+        return await _memoryService.ReadTopicAsync(reference);
+    }
+
+    private async Task<object?> HandleReadSource(IDictionary<string, object?> args)
+    {
+        var reference = GetStringArg(args, "reference");
+        if (string.IsNullOrWhiteSpace(reference))
+            return "Error: reference parameter is required";
+
+        var offset = GetOptionalIntArg(args, "offset");
+        var limit = GetOptionalIntArg(args, "limit");
+        _logger.SensitiveDebug("read_source reference: {Ref}", reference);
+        return await _memoryService.ReadSourceAsync(reference, offset, limit);
     }
 
     private async Task<(object? Result, MemoryToolCall? PendingAction)> HandleRemember(
@@ -160,6 +221,19 @@ public class MemoryToolHandler : IMemoryToolHandler
     private static string RecallSchema(
         [Description("Natural language query to search for in the memory vault")] string query) => "";
 
+    [Description("Return the memory vault's category → topic/record map to orient")]
+    private static string BrowseIndexSchema() => "";
+
+    [Description("Read a whole memory page (full body + cited sources + outbound links) by reference")]
+    private static string ReadTopicSchema(
+        [Description("Vault-relative page ref from recall or browse_index, e.g. 'memory/topics/foo.md'")] string reference) => "";
+
+    [Description("Read a raw primary source under sources/, reached via a topic's cited source refs")]
+    private static string ReadSourceSchema(
+        [Description("Vault-relative source ref, e.g. 'sources/meeting-notes.txt' (from a topic's cited sources)")] string reference,
+        [Description("Optional 1-based line to start from, for paging through a large source")] int? offset = null,
+        [Description("Optional max lines to return (default 500, max 2000)")] int? limit = null) => "";
+
     [Description("Store or update a memory in the vault; matching subjects are merged to avoid duplicates")]
     private static string RememberSchema(
         [Description("Memory type: personal_profile, contact_list, preference, note, project, topic")] string type,
@@ -181,5 +255,25 @@ public class MemoryToolHandler : IMemoryToolHandler
             return value?.ToString() ?? string.Empty;
         }
         return string.Empty;
+    }
+
+    private static int? GetOptionalIntArg(IDictionary<string, object?> args, string key)
+    {
+        if (!args.TryGetValue(key, out var value) || value is null)
+            return null;
+
+        if (value is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var n))
+                return n;
+            if (element.ValueKind == JsonValueKind.String && int.TryParse(element.GetString(), out var s))
+                return s;
+            return null;
+        }
+
+        if (value is int i)
+            return i;
+
+        return int.TryParse(value.ToString(), out var parsed) ? parsed : null;
     }
 }

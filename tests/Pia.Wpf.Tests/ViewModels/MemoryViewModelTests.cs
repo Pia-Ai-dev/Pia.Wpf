@@ -353,6 +353,47 @@ public class MemoryViewModelTests
     }
 
     [Fact]
+    public async Task Composition_explodes_topics_per_category_matching_the_left_grouping()
+    {
+        var items = new[]
+        {
+            Item("memory/notes/a.md", "memory/notes/a.md", "note", "A note"),
+            new VaultMemoryItem("memory/topics/acme.md", "memory/topics/acme.md", "topic", "Acme", "body", null, "organization"),
+            new VaultMemoryItem("memory/topics/jane.md", "memory/topics/jane.md", "topic", "Jane", "body", null, "person"),
+            new VaultMemoryItem("memory/topics/john.md", "memory/topics/john.md", "topic", "John", "body", null, "person"),
+            // Missing/unknown category falls into the "Other" bucket.
+            new VaultMemoryItem("memory/topics/misc.md", "memory/topics/misc.md", "topic", "Misc", "body", null, "not-a-category"),
+        };
+        var (vm, _, _) = Create(items, bytes: 200);
+
+        await vm.OnNavigatedToAsync(null);
+
+        // Topics are exploded into per-category segments (People/Organizations/Other in TopicCategories
+        // order), never merged into a single "Topics" row — Notes precedes them in §8 order.
+        Assert.Equal(
+            new[] { "Notes", "People", "Organizations", "Other" },
+            vm.VaultComposition.Select(s => s.DisplayName).ToArray());
+        Assert.Equal(new[] { 1, 2, 1, 1 }, vm.VaultComposition.Select(s => s.Count).ToArray());
+
+        // Each topic category carries its own category key (drives a distinct palette swatch), never a
+        // shared "topic" key.
+        Assert.Equal(
+            new[] { "note", "person", "organization", "other" },
+            vm.VaultComposition.Select(s => s.Type).ToArray());
+
+        // The real contract: the overview legend rows are the exact same set/order/counts as the left
+        // group headers — the two grouping walks can no longer drift.
+        Assert.Equal(
+            vm.MemoryGroups.Select(g => g.DisplayName).ToArray(),
+            vm.VaultComposition.Select(s => s.DisplayName).ToArray());
+        Assert.Equal(
+            vm.MemoryGroups.Select(g => g.ItemCount).ToArray(),
+            vm.VaultComposition.Select(s => s.Count).ToArray());
+
+        vm.Dispose();
+    }
+
+    [Fact]
     public async Task Empty_vault_shows_placeholder_not_overview()
     {
         var (vm, _, _) = Create([], bytes: 0);

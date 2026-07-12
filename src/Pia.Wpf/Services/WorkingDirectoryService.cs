@@ -65,6 +65,46 @@ public sealed class WorkingDirectoryService : IWorkingDirectoryService
         return names;
     }
 
+    public string? EnsureSubfolder(string? relativePath)
+    {
+        // Empty/whitespace means the sandbox root — always valid, nothing to create.
+        if (string.IsNullOrWhiteSpace(relativePath))
+            return string.Empty;
+
+        var root = GetSandboxRoot();
+        if (root is null) return null;
+
+        // Relative-only containment: rejects rooted (C:\...), UNC, and "..\" escapes so the
+        // default working directory can never point outside the assistant files folder.
+        if (!SafeFolderPath.TryResolveInside(root, relativePath, out var resolved))
+            return null;
+
+        // Never surface a sensitive/protected folder — mirrors ListSubfolders. Note the memory
+        // vault is deliberately NOT in SensitivePathGuard (file tools need vault access), so it is
+        // rejected explicitly below: a chat must not root its working directory at the vault.
+        if (SensitivePathGuard.IsBlocked(resolved, out _))
+            return null;
+
+        var vaultRoot = AssistantWorkspace.VaultRootFor(root);
+        var vaultWithSep = SafeFolderPath.WithTrailingSeparator(vaultRoot);
+        if (resolved.Equals(vaultRoot, StringComparison.OrdinalIgnoreCase)
+            || resolved.StartsWith(vaultWithSep, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        try
+        {
+            Directory.CreateDirectory(resolved);
+        }
+        catch
+        {
+            return null;
+        }
+
+        // Normalize to a forward-slash relative path derived from the resolved absolute path.
+        var relative = Path.GetRelativePath(root, resolved).Replace('\\', '/').Trim('/');
+        return string.IsNullOrEmpty(relative) ? string.Empty : relative;
+    }
+
     private string? GetSandboxRoot()
     {
         try

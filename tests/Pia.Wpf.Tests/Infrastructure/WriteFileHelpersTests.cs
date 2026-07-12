@@ -102,6 +102,119 @@ public class WriteFileHelpersTests
         Assert.Equal(2, diff.Count);
     }
 
+    // ---- LineDiff line numbers (dual gutter) ----
+
+    [Fact]
+    public void LineDiff_Context_NumbersLockstep()
+    {
+        var diff = LineDiff.Compute("a\nb\nc", "a\nb\nc");
+        Assert.Equal(3, diff.Count);
+        Assert.All(diff, d => Assert.Equal(DiffLineKind.Context, d.Kind));
+        Assert.Equal((1, 1), (diff[0].OldLineNumber, diff[0].NewLineNumber));
+        Assert.Equal((2, 2), (diff[1].OldLineNumber, diff[1].NewLineNumber));
+        Assert.Equal((3, 3), (diff[2].OldLineNumber, diff[2].NewLineNumber));
+    }
+
+    [Fact]
+    public void LineDiff_Removed_HasOldNumberOnly()
+    {
+        // 'b' is dropped: old advances past it while new does not.
+        var diff = LineDiff.Compute("a\nb\nc", "a\nc");
+        var removed = Assert.Single(diff, d => d.Kind == DiffLineKind.Removed);
+        Assert.Equal("b", removed.Text);
+        Assert.Equal(2, removed.OldLineNumber);
+        Assert.Null(removed.NewLineNumber);
+
+        // Trailing context keeps advancing both cursors: 'c' is old line 3, new line 2.
+        var c = Assert.Single(diff, d => d.Kind == DiffLineKind.Context && d.Text == "c");
+        Assert.Equal((3, 2), (c.OldLineNumber, c.NewLineNumber));
+    }
+
+    [Fact]
+    public void LineDiff_Added_HasNewNumberOnly()
+    {
+        var diff = LineDiff.Compute("a\nc", "a\nb\nc");
+        var added = Assert.Single(diff, d => d.Kind == DiffLineKind.Added);
+        Assert.Equal("b", added.Text);
+        Assert.Null(added.OldLineNumber);
+        Assert.Equal(2, added.NewLineNumber);
+    }
+
+    [Fact]
+    public void LineDiff_NewFile_NumbersAllAddedFromOne()
+    {
+        var diff = LineDiff.Compute(null, "one\ntwo\nthree");
+        Assert.Equal(3, diff.Count);
+        for (int i = 0; i < diff.Count; i++)
+        {
+            Assert.Equal(DiffLineKind.Added, diff[i].Kind);
+            Assert.Null(diff[i].OldLineNumber);
+            Assert.Equal(i + 1, diff[i].NewLineNumber);
+        }
+    }
+
+    [Fact]
+    public void LineDiff_SmallEditInLargeFile_DiffsAsSingleChange_NotFullReplacement()
+    {
+        // 3000 identical lines except line 1500 differs. Without prefix/suffix stripping, 3000*3000 =
+        // 9,000,000 > 4M would take the plain-replace fallback and render the whole file as changed.
+        // Stripping keeps the differing middle tiny, so the real change surfaces with its true number.
+        var oldLines = Enumerable.Range(0, 3000).Select(i => $"line{i}").ToArray();
+        var newLines = (string[])oldLines.Clone();
+        newLines[1500] = "CHANGED";
+
+        var diff = LineDiff.Compute(string.Join("\n", oldLines), string.Join("\n", newLines));
+
+        var removed = Assert.Single(diff, d => d.Kind == DiffLineKind.Removed);
+        Assert.Equal("line1500", removed.Text);
+        Assert.Equal(1501, removed.OldLineNumber);
+
+        var added = Assert.Single(diff, d => d.Kind == DiffLineKind.Added);
+        Assert.Equal("CHANGED", added.Text);
+        Assert.Equal(1501, added.NewLineNumber);
+
+        // LineDiff does not truncate — folding/limiting is the display layer's job (DiffHunkBuilder).
+        Assert.DoesNotContain(diff, d => d.Kind == DiffLineKind.TruncationNotice);
+    }
+
+    [Fact]
+    public void LineDiff_HugeDifferentFile_FallbackNumbersBothSides_NoTruncation()
+    {
+        // 2001 * 2001 > 4,000,000 with no common prefix/suffix → the O(n*m) LCS is skipped for the
+        // plain replace fallback. LineDiff emits the full diff (both sides, numbered) and never truncates.
+        var old = string.Join("\n", Enumerable.Range(0, 2001).Select(i => $"o{i}"));
+        var @new = string.Join("\n", Enumerable.Range(0, 2001).Select(i => $"x{i}"));
+
+        var diff = LineDiff.Compute(old, @new);
+
+        Assert.DoesNotContain(diff, d => d.Kind == DiffLineKind.TruncationNotice);
+        Assert.Equal(4002, diff.Count);
+
+        Assert.Equal(DiffLineKind.Removed, diff[0].Kind);
+        Assert.Equal(1, diff[0].OldLineNumber);
+        Assert.Null(diff[0].NewLineNumber);
+
+        Assert.Equal(DiffLineKind.Added, diff[^1].Kind);
+        Assert.Equal(2001, diff[^1].NewLineNumber);
+        Assert.Null(diff[^1].OldLineNumber);
+    }
+
+    [Fact]
+    public void LineDiff_FullReplacement_EmitsAllRemovedThenAllAdded_NoTruncation()
+    {
+        // Two 500-line files with no common lines: product 250k < 4M, so the real LCS runs and emits
+        // all removals before all additions. Both sides are present; LineDiff itself never truncates.
+        var old = string.Join("\n", Enumerable.Range(0, 500).Select(i => $"o{i}"));
+        var @new = string.Join("\n", Enumerable.Range(0, 500).Select(i => $"n{i}"));
+
+        var diff = LineDiff.Compute(old, @new);
+
+        Assert.DoesNotContain(diff, d => d.Kind == DiffLineKind.TruncationNotice);
+        Assert.Equal(1000, diff.Count);
+        Assert.Contains(diff, d => d.Kind == DiffLineKind.Removed);
+        Assert.Contains(diff, d => d.Kind == DiffLineKind.Added);
+    }
+
     // ---- AtomicTextWriter ----
 
     [Fact]

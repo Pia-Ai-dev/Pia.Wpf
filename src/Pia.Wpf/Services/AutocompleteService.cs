@@ -23,6 +23,13 @@ public class AutocompleteService : IAutocompleteService
 
     private const int MaxResults = 8;
 
+    // @Files is deliberately NOT truncated to the tier-2 preview count (MaxResults): the picker
+    // surfaces every match so the user can arrow-key through the whole list. The result is still
+    // bounded by the handler's own hard listing cap (FilesToolHandler.MaxListEntries = 500);
+    // int.MaxValue just means "no additional cap on the service side." The popup list is
+    // UI-virtualized, so rendering a full 500-item result stays cheap.
+    private const int AllFileResults = int.MaxValue;
+
     private readonly IMemoryService _memoryService;
     private readonly ITodoService _todoService;
     private readonly IReminderService _reminderService;
@@ -155,7 +162,7 @@ public class AutocompleteService : IAutocompleteService
     // resolution + containment/blocklist filtering. The path enumeration is synchronous.
     private IReadOnlyList<AutocompleteSuggestion> GetFileSuggestions(string? filter)
     {
-        return _filesToolHandler.ListRelativeFiles(filter, MaxResults)
+        return _filesToolHandler.ListRelativeFiles(filter, AllFileResults)
             .Select(path => new AutocompleteSuggestion
             {
                 DisplayText = path,

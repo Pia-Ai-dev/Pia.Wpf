@@ -44,30 +44,33 @@ public class VaultPathsTests
         Assert.False(VaultPaths.IsRecordFile(@"memory\AGENTS.md"));
     }
 
-    // Recall must NOT index Pia's housekeeping documents nor the recoverable .archive/ snapshots.
+    // Recall must NOT index Pia's housekeeping documents, the recoverable .archive/ snapshots, nor the
+    // raw sources/ layer — raw ingest inputs (any extension, including .md) reach recall only via their
+    // synthesized memory/topics/ pages, so a sources/*.md is not embedded raw or duplicated.
     [Theory]
     [InlineData("memory/AGENTS.md")]
     [InlineData("memory/index.md")]
     [InlineData("memory/log.md")]
     [InlineData("memory/.archive/note.md")]
     [InlineData(@"memory\.archive\note.md")]
+    [InlineData("sources/business plan.md")]
+    [InlineData("sources/refs/spec.md")]
+    [InlineData(@"sources\refs\spec.md")]
     [InlineData("memory/profile.txt")] // not markdown
-    public void IsRecallIndexable_is_false_for_housekeeping_archive_and_non_md(string relativePath)
+    public void IsRecallIndexable_is_false_for_housekeeping_archive_sources_and_non_md(string relativePath)
     {
         Assert.False(VaultPaths.IsRecallIndexable(relativePath));
     }
 
-    // Recall DOES index memory records AND the sources/ RAW layer (ingest made it recallable) — unlike
-    // IsRecordFile, which excludes sources/. Records may also sit at the vault root.
+    // Recall DOES index memory records; unlike IsRecordFile these may also sit at the vault root.
     [Theory]
     [InlineData("memory/profile.md")]
     [InlineData("memory/notes/foo.md")]
-    [InlineData("sources/business plan.md")]
-    [InlineData("sources/refs/spec.md")]
+    [InlineData("memory/topics/widgets.md")]
     [InlineData("profile.md")] // a record at the vault root
     // A user note whose heading slugifies to "index" is a record, not the catalog (exact-path match).
     [InlineData("memory/notes/index.md")]
-    public void IsRecallIndexable_is_true_for_records_and_sources(string relativePath)
+    public void IsRecallIndexable_is_true_for_records(string relativePath)
     {
         Assert.True(VaultPaths.IsRecallIndexable(relativePath));
     }

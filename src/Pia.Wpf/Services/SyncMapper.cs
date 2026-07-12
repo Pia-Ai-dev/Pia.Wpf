@@ -701,6 +701,7 @@ public class SyncMapper
             sync.ModePersonaDefaults = settings.ModePersonaDefaults.ToDictionary(
                 kvp => (int)kvp.Key, kvp => kvp.Value);
             sync.UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
+            sync.AssistantDefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
         }
 
         return sync;
@@ -738,7 +739,8 @@ public class SyncMapper
             settings.ModeProviderDefaults.ToDictionary(kvp => (int)kvp.Key, kvp => kvp.Value)),
         ModePersonaDefaults = new SortedDictionary<int, Guid>(
             settings.ModePersonaDefaults.ToDictionary(kvp => (int)kvp.Key, kvp => kvp.Value)),
-        settings.UseSameProviderForAllModes
+        settings.UseSameProviderForAllModes,
+        settings.AssistantDefaultWorkingDirectory
     };
 
     /// <summary>
@@ -786,6 +788,9 @@ public class SyncMapper
             MergeModeProviderDefaults(decrypted.ModeProviderDefaults, target);
             MergeModePersonaDefaults(decrypted.ModePersonaDefaults, target);
             target.UseSameProviderForAllModes = decrypted.UseSameProviderForAllModes;
+            // Null = the peer predates this field; keep the local value rather than wiping it to root.
+            if (decrypted.AssistantDefaultWorkingDirectory is not null)
+                target.AssistantDefaultWorkingDirectory = decrypted.AssistantDefaultWorkingDirectory;
             return;
         }
 
@@ -801,6 +806,9 @@ public class SyncMapper
         MergeModeProviderDefaults(sync.ModeProviderDefaults, target);
         MergeModePersonaDefaults(sync.ModePersonaDefaults, target);
         target.UseSameProviderForAllModes = sync.UseSameProviderForAllModes;
+        // Null = the peer predates this field; keep the local value rather than wiping it to root.
+        if (sync.AssistantDefaultWorkingDirectory is not null)
+            target.AssistantDefaultWorkingDirectory = sync.AssistantDefaultWorkingDirectory;
     }
 
     // Per-mode merge with Guid.Empty tombstones.

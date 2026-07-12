@@ -27,6 +27,14 @@ public class SyncSettings
     /// </summary>
     public Dictionary<int, Guid> ModePersonaDefaults { get; set; } = new();
     public bool UseSameProviderForAllModes { get; set; } = true;
+
+    /// <summary>
+    /// Relative subpath (forward slashes) new assistant chats default their working directory to.
+    /// A device-independent relative path (not a machine path), so it syncs. Null from a peer that
+    /// predates this field — the apply side must not clobber the local value on null.
+    /// </summary>
+    public string? AssistantDefaultWorkingDirectory { get; set; }
+
     public DateTime ModifiedAt { get; set; }
 
     /// <summary>

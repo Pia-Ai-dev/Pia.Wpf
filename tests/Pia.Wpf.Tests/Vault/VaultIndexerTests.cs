@@ -242,14 +242,14 @@ public class VaultIndexerTests : IDisposable
     public async Task Reconcile_indexes_every_file_without_wiping()
     {
         await _store.WriteAtomicAsync("profile.md", ProfileFixture);
-        await _store.WriteAtomicAsync("sources/notes.md", ContactsFixture);
+        await _store.WriteAtomicAsync("memory/notes/notes.md", ContactsFixture);
 
         var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
         await indexer.ReconcileAsync();
 
-        // Profile has 2 sections, sources/notes has 1 -> 3, incl. the subdir file.
+        // Profile has 2 sections, memory/notes/notes has 1 -> 3, incl. the subdir file.
         Assert.Equal(3, CountChunks());
-        Assert.Equal(1, CountChunksFor("sources/notes.md"));
+        Assert.Equal(1, CountChunksFor("memory/notes/notes.md"));
     }
 
     [Fact]
@@ -275,20 +275,20 @@ public class VaultIndexerTests : IDisposable
     public async Task Reconcile_prunes_chunks_for_files_deleted_while_closed()
     {
         await _store.WriteAtomicAsync("profile.md", ProfileFixture);
-        await _store.WriteAtomicAsync("sources/notes.md", ContactsFixture);
+        await _store.WriteAtomicAsync("memory/notes/notes.md", ContactsFixture);
 
         var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
         await indexer.ReconcileAsync();
         Assert.Equal(3, CountChunks());
 
         // Delete a subdir file directly on disk (as if removed while the app — and its watcher — was off).
-        File.Delete(Path.Combine(_vaultRoot, "sources", "notes.md"));
+        File.Delete(Path.Combine(_vaultRoot, "memory", "notes", "notes.md"));
 
         await indexer.ReconcileAsync();
 
-        // The gone file's chunks are pruned (path-normalization holds across the sources/ subdir); the
+        // The gone file's chunks are pruned (path-normalization holds across the subdir); the
         // surviving file keeps its rows.
-        Assert.Equal(0, CountChunksFor("sources/notes.md"));
+        Assert.Equal(0, CountChunksFor("memory/notes/notes.md"));
         Assert.Equal(2, CountChunksFor("profile.md"));
         Assert.Equal(2, CountChunks());
     }
@@ -312,24 +312,25 @@ public class VaultIndexerTests : IDisposable
     }
 
     [Fact]
-    public async Task Indexing_skips_housekeeping_and_archive_but_keeps_records_and_sources()
+    public async Task Indexing_skips_housekeeping_archive_and_sources_but_keeps_records()
     {
         await _store.WriteAtomicAsync("memory/AGENTS.md", ProfileFixture);          // housekeeping
         await _store.WriteAtomicAsync("memory/log.md", ProfileFixture);             // housekeeping
         await _store.WriteAtomicAsync("memory/.archive/old-dupe.md", ProfileFixture); // recoverable snapshot
         await _store.WriteAtomicAsync("memory/notes/real.md", ProfileFixture);      // real record (2 sections)
-        await _store.WriteAtomicAsync("sources/doc.md", ContactsFixture);           // RAW source (1 section)
+        await _store.WriteAtomicAsync("sources/doc.md", ContactsFixture);           // RAW source — NOT embedded raw
 
         var indexer = new VaultIndexer(_ctx, _store, _parser, new StubEmbeddingService(), NullLogger<VaultIndexer>.Instance);
         await indexer.RebuildAllAsync();
 
-        // Housekeeping + archive contribute nothing to recall; the record and the source do.
+        // Housekeeping, archive, AND the raw sources/ layer contribute nothing to recall; only the record
+        // does. Raw sources reach recall solely via their synthesized memory/topics/ pages.
         Assert.Equal(0, CountChunksFor("memory/AGENTS.md"));
         Assert.Equal(0, CountChunksFor("memory/log.md"));
         Assert.Equal(0, CountChunksFor("memory/.archive/old-dupe.md"));
+        Assert.Equal(0, CountChunksFor("sources/doc.md"));
         Assert.Equal(2, CountChunksFor("memory/notes/real.md"));
-        Assert.Equal(1, CountChunksFor("sources/doc.md"));
-        Assert.Equal(3, CountChunks());
+        Assert.Equal(2, CountChunks());
     }
 
     [Fact]

@@ -62,6 +62,35 @@ public class SyncMapperModeDefaultsMergeTests
     }
 
     [Fact]
+    public void DefaultWorkingDirectory_round_trips_through_sync()
+    {
+        var mapper = Make();
+        var target = new AppSettings { AssistantDefaultWorkingDirectory = "root-value" };
+
+        var sync = BaseSync();
+        sync.AssistantDefaultWorkingDirectory = "Projects/App";
+
+        mapper.ApplySyncSettings(sync, target);
+
+        Assert.Equal("Projects/App", target.AssistantDefaultWorkingDirectory);
+    }
+
+    [Fact]
+    public void Null_DefaultWorkingDirectory_preserves_local_value()
+    {
+        // A peer predating the field sends null; the local default must survive.
+        var mapper = Make();
+        var target = new AppSettings { AssistantDefaultWorkingDirectory = "Playground" };
+
+        var sync = BaseSync();
+        sync.AssistantDefaultWorkingDirectory = null;
+
+        mapper.ApplySyncSettings(sync, target);
+
+        Assert.Equal("Playground", target.AssistantDefaultWorkingDirectory);
+    }
+
+    [Fact]
     public void Tombstone_value_removes_local_mode()
     {
         var mapper = Make();

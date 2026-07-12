@@ -1,9 +1,11 @@
+using System.Collections.ObjectModel;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
@@ -16,6 +18,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
     private readonly IAssistantFolderRelocationService _relocationService;
+    private readonly IWorkingDirectoryService _workingDirectoryService;
     private bool _isLoading;
 
     public ProvidersSettingsViewModel ProvidersVm { get; }
@@ -37,7 +40,8 @@ public partial class AssistantSettingsViewModel : ObservableObject
         IAssistantChatService chatService,
         IDialogService dialogService,
         ILocalizationService localizationService,
-        IAssistantFolderRelocationService relocationService)
+        IAssistantFolderRelocationService relocationService,
+        IWorkingDirectoryService workingDirectoryService)
     {
         ProvidersVm = providersVm;
         PersonasVm = personasVm;
@@ -49,6 +53,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         _dialogService = dialogService;
         _localizationService = localizationService;
         _relocationService = relocationService;
+        _workingDirectoryService = workingDirectoryService;
         _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(RetentionDaysDisplay));
     }
 
@@ -69,6 +74,15 @@ public partial class AssistantSettingsViewModel : ObservableObject
     // "<folder>\Vault" — shown beneath the folder so the user sees where memory lives.
     [ObservableProperty]
     private string? _vaultLocationDisplay;
+
+    // Relative subpath new chats default their working directory to (forward slashes; empty = root).
+    // Bound to an editable combo — the user can type a new folder or pick an existing one. Validated
+    // for sandbox containment (and auto-created) on change; invalid input reverts to the saved value.
+    [ObservableProperty]
+    private string? _defaultWorkingDirectory;
+
+    // Existing top-level folders under the files folder, offered as the combo's dropdown items.
+    public ObservableCollection<string> AvailableWorkingDirectories { get; } = [];
 
     [ObservableProperty]
     private bool _chatHistoryEnabled = true;
@@ -108,6 +122,58 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnDefaultWorkingDirectoryChanged(string? value)
+    {
+        if (_isLoading) return;
+        HandleDefaultWorkingDirectoryChangeAsync(value).SafeFireAndForget(_logger);
+    }
+
+    /// <summary>
+    /// Validates the typed/picked default working directory, creates the folder if needed, persists
+    /// the normalized value, and refreshes the dropdown. On invalid input (rooted/escaping/blocked)
+    /// reverts the field to the saved value and surfaces an error.
+    /// </summary>
+    private async Task HandleDefaultWorkingDirectoryChangeAsync(string? value)
+    {
+        var normalized = _workingDirectoryService.EnsureSubfolder(value);
+        if (normalized is null)
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            _isLoading = true;
+            DefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
+            _isLoading = false;
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService["Settings_Assistant_DefaultWorkingDirectory_Invalid"]);
+            return;
+        }
+
+        if (!string.Equals(normalized, value, StringComparison.Ordinal))
+        {
+            _isLoading = true;
+            DefaultWorkingDirectory = normalized;
+            _isLoading = false;
+        }
+
+        await SaveSettingsAsync();
+        RefreshAvailableWorkingDirectories();
+    }
+
+    private void RefreshAvailableWorkingDirectories()
+    {
+        var current = AvailableWorkingDirectories.ToList();
+        // The vault is a valid file-tool target but must never be offered as a chat working
+        // directory (EnsureSubfolder also rejects it on save) — filter it out of the picker.
+        var next = _workingDirectoryService.ListSubfolders(string.Empty)
+            .Where(name => !string.Equals(name, Pia.Infrastructure.AssistantWorkspace.VaultSubfolderName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (current.SequenceEqual(next)) return;
+
+        AvailableWorkingDirectories.Clear();
+        foreach (var name in next)
+            AvailableWorkingDirectories.Add(name);
+    }
+
     partial void OnChatHistoryEnabledChanged(bool value)
     {
         if (_isLoading) return;
@@ -140,6 +206,8 @@ public partial class AssistantSettingsViewModel : ObservableObject
         SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
         FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
         FileToolsEnabled = settings.AssistantFileToolsEnabled;
+        DefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
+        RefreshAvailableWorkingDirectories();
         ChatHistoryEnabled = settings.ChatHistoryEnabled;
         ChatHistoryRetentionDays = Math.Clamp(settings.ChatHistoryRetentionDays, 1, 365);
         ChatAutoTitleEnabled = settings.ChatAutoTitleEnabled;
@@ -268,6 +336,8 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(FilesFolder))
             settings.AssistantFilesFolder = FilesFolder;
         settings.AssistantFileToolsEnabled = FileToolsEnabled;
+        if (DefaultWorkingDirectory is not null)
+            settings.AssistantDefaultWorkingDirectory = DefaultWorkingDirectory;
         settings.ChatHistoryEnabled = ChatHistoryEnabled;
         settings.ChatHistoryRetentionDays = ChatHistoryRetentionDays;
         settings.ChatAutoTitleEnabled = ChatAutoTitleEnabled;

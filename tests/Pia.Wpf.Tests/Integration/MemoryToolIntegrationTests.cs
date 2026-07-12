@@ -137,10 +137,211 @@ public class MemoryToolIntegrationTests : IDisposable
 
         var (result, recallPending) = await handler.HandleToolCallAsync(recallCall, TestContext.Current.CancellationToken);
 
-        // recall is immediate: a result object, never a pending action.
+        // recall is immediate: a result object, never a pending action. The tool now wraps the hits in a
+        // RecallResult that carries the standing "topic hits are expandable" Note (the drill nudge); the
+        // bare hit list stays on IMemoryService.RecallAsync for the Memory view.
         Assert.Null(recallPending);
         Assert.NotNull(result);
-        Assert.IsAssignableFrom<IReadOnlyList<RecallHit>>(result);
+        var recallResult = Assert.IsType<RecallResult>(result);
+        Assert.NotNull(recallResult.Hits);
+        Assert.False(string.IsNullOrWhiteSpace(recallResult.Note));
+    }
+
+    private void SeedFile(string relativePath, string content)
+    {
+        var full = Path.Combine(_vaultRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, content);
+    }
+
+    // A topic page whose `sources:` provenance cites a raw source, plus that source. The revenue figure
+    // lives ONLY in the source and is merely alluded to in the topic — the drill scenario in miniature.
+    private void SeedAcmeTopicAndSource()
+    {
+        SeedFile("memory/topics/acme-corp.md",
+            "---\ntype: topic\ncategory: organization\ntitle: Acme Corp\n"
+            + "sources: [sources/acme-notes.txt]\nupdated: 2026-07-12T00:00:00Z\n---\n"
+            + "<!-- pia:managed -->\nAcme Corp is a global supplier.\n\n"
+            + "The exact revenue figure lives in the cited source.\n");
+        SeedFile("sources/acme-notes.txt", "Acme revenue in 2025 was 4.2 billion USD.\n");
+    }
+
+    private static FunctionCallContent NavCall(string name, IDictionary<string, object?>? args = null)
+        => new(
+            callId: Guid.NewGuid().ToString(),
+            name: name,
+            arguments: args ?? new Dictionary<string, object?>());
+
+    // browse_index (orient rung) returns the category map, and each entry carries a read_topic HANDLE —
+    // the vault-relative path — not just a title, so the model can chain it straight into read_topic.
+    [Fact]
+    public async Task BrowseIndex_ReturnsCategoriesWithTopicHandles()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            NavCall("browse_index"), TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        var index = Assert.IsType<BrowseIndexResult>(result);
+        var entries = index.Categories.SelectMany(c => c.Entries).ToList();
+        Assert.Contains(entries, e => e.Ref == "memory/topics/acme-corp.md");
+    }
+
+    // A synthesized topic with ## subheadings must surface as ONE orient-map entry for the page, not one
+    // per subheading (which would clutter the map and hide the topic title).
+    [Fact]
+    public async Task BrowseIndex_SubheadedTopic_CollapsesToOnePageEntry()
+    {
+        SeedFile("memory/topics/widget.md",
+            "---\ntype: topic\ncategory: product\ntitle: Widget\n---\n<!-- pia:managed -->\nIntro.\n\n"
+            + "## History\nStuff.\n\n## Design\nMore.\n");
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("browse_index"), TestContext.Current.CancellationToken);
+
+        var index = Assert.IsType<BrowseIndexResult>(result);
+        var widgetEntries = index.Categories
+            .SelectMany(c => c.Entries)
+            .Where(e => e.Ref == "memory/topics/widget.md")
+            .ToList();
+        Assert.Single(widgetEntries);
+    }
+
+    // read_topic (read rung) returns the FULL body (frontmatter + managed sentinel stripped) and surfaces
+    // the source refs the page cites — the handles read_source consumes.
+    [Fact]
+    public async Task ReadTopic_ReturnsFullBodyAndCitedSources()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_topic", new Dictionary<string, object?> { ["reference"] = "memory/topics/acme-corp.md" }),
+            TestContext.Current.CancellationToken);
+
+        var topic = Assert.IsType<TopicRead>(result);
+        Assert.True(topic.Found);
+        Assert.Contains("global supplier", topic.Body);
+        Assert.DoesNotContain("pia:managed", topic.Body);   // sentinel stripped
+        Assert.DoesNotContain("type: topic", topic.Body);   // frontmatter stripped
+        Assert.Contains("sources/acme-notes.txt", topic.Sources);
+    }
+
+    // A topic with no `sources:` frontmatter must surface an EMPTY ref list (visible fail) — never a
+    // silent dead-end — so the model can fall back to browse_index.
+    [Fact]
+    public async Task ReadTopic_NoProvenance_SurfacesEmptySources()
+    {
+        SeedFile("memory/topics/orphan.md",
+            "---\ntype: topic\ncategory: concept\ntitle: Orphan\n---\n<!-- pia:managed -->\nNo sources frontmatter here.\n");
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_topic", new Dictionary<string, object?> { ["reference"] = "memory/topics/orphan.md" }),
+            TestContext.Current.CancellationToken);
+
+        var topic = Assert.IsType<TopicRead>(result);
+        Assert.True(topic.Found);
+        Assert.Empty(topic.Sources);
+    }
+
+    // The policy guard (IsRecallIndexable) — distinct from containment — rejects a sources/ path from
+    // read_topic: raw sources are reached only through read_source.
+    [Fact]
+    public async Task ReadTopic_SourcesPath_RejectedByPolicyGuard()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_topic", new Dictionary<string, object?> { ["reference"] = "sources/acme-notes.txt" }),
+            TestContext.Current.CancellationToken);
+
+        var topic = Assert.IsType<TopicRead>(result);
+        Assert.False(topic.Found);
+    }
+
+    // read_source (drill rung) reads the raw primary text the topic only summarized.
+    [Fact]
+    public async Task ReadSource_ReadsRawText()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_source", new Dictionary<string, object?> { ["reference"] = "sources/acme-notes.txt" }),
+            TestContext.Current.CancellationToken);
+
+        var source = Assert.IsType<SourceRead>(result);
+        Assert.True(source.Found);
+        Assert.Contains("4.2 billion", source.Text);
+    }
+
+    // Containment guard: a ../ escape that stays under a sources/ prefix (so it passes the scope check) is
+    // still rejected because it resolves outside the vault.
+    [Fact]
+    public async Task ReadSource_PathTraversal_RejectedByContainment()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_source", new Dictionary<string, object?> { ["reference"] = "sources/../../secret.txt" }),
+            TestContext.Current.CancellationToken);
+
+        var source = Assert.IsType<SourceRead>(result);
+        Assert.False(source.Found);
+    }
+
+    // Scope guard: only sources/ is readable — a memory/ ref is rejected before any read.
+    [Fact]
+    public async Task ReadSource_NonSourcesRef_RejectedByScope()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_source", new Dictionary<string, object?> { ["reference"] = "memory/topics/acme-corp.md" }),
+            TestContext.Current.CancellationToken);
+
+        var source = Assert.IsType<SourceRead>(result);
+        Assert.False(source.Found);
+    }
+
+    // Guard-bypass regression: a ../ ref that STAYS inside the vault but resolves under sources/ must not
+    // read a raw source through read_topic. The policy check runs on the canonical path, not the literal
+    // "memory/..." prefix.
+    [Fact]
+    public async Task ReadTopic_TraversalIntoSources_RejectedByPolicy()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_topic", new Dictionary<string, object?> { ["reference"] = "memory/../sources/acme-notes.txt" }),
+            TestContext.Current.CancellationToken);
+
+        var topic = Assert.IsType<TopicRead>(result);
+        Assert.False(topic.Found);
+    }
+
+    // Guard-bypass regression: a ../ ref under a sources/ prefix that resolves into memory/ must not read a
+    // non-source through read_source. The scope check runs on the canonical path, not the literal
+    // "sources/..." prefix.
+    [Fact]
+    public async Task ReadSource_TraversalIntoMemory_RejectedByScope()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_source", new Dictionary<string, object?> { ["reference"] = "sources/../memory/topics/acme-corp.md" }),
+            TestContext.Current.CancellationToken);
+
+        var source = Assert.IsType<SourceRead>(result);
+        Assert.False(source.Found);
     }
 
     // forget returns a pending action whose Execute removes the addressed section.

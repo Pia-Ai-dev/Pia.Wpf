@@ -3,15 +3,18 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.Models.Vault;
 using Pia.Services.Interfaces;
 using Pia.Services.Search;
 using Pia.Services.Similarity;
+using Pia.Services.Wiki;
 
 namespace Pia.Services;
 
@@ -548,6 +551,380 @@ public class MemoryService : IMemoryService
         }
 
         return hits.AsReadOnly();
+    }
+
+    // ---- Vault navigation (orient → read → drill): three read-only tiers exposed as tools ----
+
+    // Read-window caps for read_source, mirroring FilesToolHandler's regime (values, not its LINE|CONTENT
+    // formatter — this is a read surface): a 1 MB raw-byte input ceiling, an offset/limit line window, and
+    // an output-char cap. Kept local so a source log never returns unbounded text to the model.
+    private const long MaxSourceReadBytes = 1 * 1024 * 1024;
+    private const int DefaultSourceReadLimit = 500;
+    private const int MaxSourceReadLimit = 2000;
+    private const int MaxSourceOutputChars = 100 * 1024;
+
+    private const string ManagedMarker = "<!-- pia:managed -->";
+
+    // Match Obsidian-style [[target]] / [[target|label]] tokens (targets stop at ] / | / newline so a
+    // single-bracket PII placeholder like [Person_1] never matches). Rewrite-free scan; unlike
+    // WikiLinkReconciler.Pattern we don't need code-region awareness here (we only collect resolvable
+    // handles, never mutate the body).
+    private static readonly Regex WikiLinkPattern = new(
+        @"\[\[\s*(?<target>[^\]|\r\n]+?)\s*(?:\|[^\]\r\n]*)?\]\]",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <inheritdoc />
+    public async Task<BrowseIndexResult> BrowseIndexAsync()
+    {
+        var snapshot = await ListMemoriesAsync();
+        var categories = new List<BrowseCategory>();
+
+        foreach (var (key, display, groupItems) in EnumerateBrowseGroups(snapshot.Items))
+        {
+            categories.Add(new BrowseCategory(key, display, BuildEntries(groupItems)));
+        }
+
+        _logger.LogInformation("browse_index returned {Count} categor(y/ies)", categories.Count);
+        return new BrowseIndexResult(categories);
+    }
+
+    // One BrowseEntry per meaningful unit: a topic PAGE collapses to a single entry (a synthesized topic
+    // with ## subheadings otherwise splits into one section-item per heading — cluttering the orient map and
+    // hiding the topic title), while structured records (contacts/preferences) keep one entry per section so
+    // the individual people/settings stay visible. Every entry carries a read_topic handle (the FilePath).
+    private static List<BrowseEntry> BuildEntries(List<VaultMemoryItem> groupItems)
+    {
+        var pageItemCount = groupItems
+            .GroupBy(i => i.FilePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+        var entries = new List<BrowseEntry>();
+        var seenTopicPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in groupItems)
+        {
+            if (item.FilePath.StartsWith("memory/topics/", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!seenTopicPages.Add(item.FilePath))
+                {
+                    continue; // already emitted this topic page
+                }
+
+                // A freeform topic (one item) keeps its frontmatter title; a subheaded topic (many items)
+                // carries no page-level title on its section items, so recover a readable one from the slug.
+                var title = pageItemCount[item.FilePath] == 1
+                    ? item.Title
+                    : PrettifySlug(Path.GetFileNameWithoutExtension(item.FilePath));
+                entries.Add(new BrowseEntry(title, item.FilePath));
+            }
+            else
+            {
+                entries.Add(new BrowseEntry(item.Title, item.FilePath));
+            }
+        }
+
+        return entries;
+    }
+
+    // Title-case a hyphen slug ("acme-corp" → "Acme Corp"), mirroring WikiLinkReconciler's display form.
+    private static string PrettifySlug(string slug)
+    {
+        var words = slug.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length == 0
+            ? slug
+            : string.Join(' ', words.Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
+    }
+
+    // The vault-relative path of an already-contained absolute path, computed against the CANONICALIZED
+    // vault root — SafeFolderPath returns a canonicalized `abs`, so a junction / 8.3 / redirected raw root
+    // would otherwise inject spurious ".." segments and false-reject every read.
+    private string ToVaultRelative(string abs)
+    {
+        string root;
+        try
+        {
+            root = Directory.Exists(VaultRoot) ? SafeFolderPath.Canonicalize(VaultRoot) : Path.GetFullPath(VaultRoot);
+        }
+        catch
+        {
+            root = Path.GetFullPath(VaultRoot);
+        }
+
+        return Path.GetRelativePath(root, abs).Replace('\\', '/');
+    }
+
+    /// <inheritdoc />
+    public async Task<TopicRead> ReadTopicAsync(string reference)
+    {
+        var reqRef = (reference ?? string.Empty).Trim().Replace('\\', '/');
+        // recall emits a bare path, but be lenient if a #heading slipped in.
+        var hashIdx = reqRef.IndexOf('#');
+        var pathRef = hashIdx >= 0 ? reqRef[..hashIdx] : reqRef;
+
+        if (string.IsNullOrWhiteSpace(pathRef))
+            return new TopicRead(false, reqRef, "", "", [], [], "Error: a topic reference is required.");
+
+        // Guard 1 — containment: resolve inside the vault (symlink-aware, collapses ../). Capture the
+        // resolved path so the policy guard below runs on the CANONICAL relative path, not the raw ref —
+        // otherwise "memory/../sources/x" would pass the recall-visible check on its literal prefix while
+        // actually resolving under sources/.
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(VaultRoot, pathRef, out var abs))
+        {
+            _logger.LogWarning("read_topic rejected: reference outside the vault");
+            _logger.SensitiveDebug("read_topic rejected ref: {Ref}", pathRef);
+            return new TopicRead(false, pathRef, "", "", [], [], "Error: reference is outside the memory vault.");
+        }
+
+        // The canonical vault-relative path (../ collapsed) is the authoritative subject of the policy
+        // check AND the read, so a traversal ref can't spoof the prefix.
+        var rel = ToVaultRelative(abs);
+
+        // Guard 2 — policy: must be recall-visible (excludes sources/, .archive/, and housekeeping). This is
+        // NOT a containment check; both guards are required.
+        if (!VaultPaths.IsRecallIndexable(rel))
+        {
+            _logger.LogWarning("read_topic rejected: reference is not recall-visible");
+            _logger.SensitiveDebug("read_topic rejected non-indexable ref: {Ref}", rel);
+            return new TopicRead(false, rel, "", "", [], [],
+                "Error: not a readable topic/record. Raw sources are reached with read_source; index/AGENTS/log are not readable here.");
+        }
+
+        var doc = await _vaultStore.ReadAsync(rel);
+        if (doc is null)
+            return new TopicRead(false, rel, "", "", [], [],
+                "Error: no page found at that reference. Call browse_index to see what exists.");
+
+        var title = doc.Frontmatter.TryGetValue("title", out var t) && !string.IsNullOrWhiteSpace(t)
+            ? t
+            : Path.GetFileNameWithoutExtension(rel);
+        var body = FullBody(doc);
+        // Surface the cited refs even when empty so stale/missing provenance fails visibly (the caller can
+        // fall back to browse_index) instead of dead-ending.
+        var sources = SourcesProvenance.ReadSourceRefs(doc.RawText);
+        var wikilinks = await ResolveWikilinksAsync(body);
+
+        _logger.LogInformation(
+            "read_topic returned a page with {SourceCount} cited source(s), {LinkCount} link(s)",
+            sources.Count, wikilinks.Count);
+        _logger.SensitiveDebug("read_topic ref: {Ref}", rel);
+        return new TopicRead(true, rel, title, body, sources, wikilinks, null);
+    }
+
+    /// <inheritdoc />
+    public async Task<SourceRead> ReadSourceAsync(string reference, int? offset = null, int? limit = null)
+    {
+        var reqRef = (reference ?? string.Empty).Trim().Replace('\\', '/').TrimStart('/');
+
+        if (string.IsNullOrWhiteSpace(reqRef))
+            return new SourceRead(false, reqRef, "", false, "Error: a source reference is required.");
+
+        // Containment first: resolve inside the vault, collapsing ../ and rejecting any escape (symlink-
+        // aware). We assert the sources/ scope on the RESOLVED path below, not the raw ref — otherwise
+        // "sources/../memory/x" would pass a literal-prefix scope check yet resolve outside sources/.
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(VaultRoot, reqRef, out var abs))
+        {
+            _logger.LogWarning("read_source rejected: reference outside the vault");
+            _logger.SensitiveDebug("read_source rejected ref: {Ref}", reqRef);
+            return new SourceRead(false, reqRef, "", false, "Error: reference is outside the memory vault.");
+        }
+
+        // Scope — traversal-only: only the immutable sources/ RAW layer is reachable, asserted on the
+        // canonical relative path (mirrors IngestService.IsSourcesRef). The ref should come from a topic's
+        // cited sources via read_topic.
+        var rel = ToVaultRelative(abs);
+        if (!rel.StartsWith("sources/", StringComparison.OrdinalIgnoreCase))
+            return new SourceRead(false, rel, "", false,
+                "Error: only files under 'sources/' are readable here. Get a ref from a topic's cited sources via read_topic.");
+
+        // Defense-in-depth: never read a protected system/app-data path even if the vault is broadly configured.
+        if (SensitivePathGuard.IsBlocked(abs, out var blockReason))
+            return new SourceRead(false, rel, "", false, $"Error: refusing to read here — {blockReason}.");
+
+        if (!SourcesProvenance.IsTextSource(rel))
+            return new SourceRead(false, rel, "", false, "Error: that source is not a readable text file.");
+
+        if (!File.Exists(abs))
+            return new SourceRead(false, rel, "", false, "Error: source file not found.");
+
+        var info = new FileInfo(abs);
+        if (info.Length > MaxSourceReadBytes)
+            return new SourceRead(false, rel, "", false,
+                $"Error: source is too large to read ({info.Length} bytes, max {MaxSourceReadBytes}). Ask a narrower question or read the summarizing topic instead.");
+
+        string text;
+        try
+        {
+            text = await File.ReadAllTextAsync(abs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "read_source failed to read file");
+            return new SourceRead(false, rel, "", false, $"Error: could not read source ({ex.Message}).");
+        }
+
+        var (windowed, truncated) = WindowSourceText(text, offset, limit);
+        _logger.LogInformation("read_source returned {Chars} char(s) (truncated={Truncated})",
+            windowed.Length, truncated);
+        _logger.SensitiveDebug("read_source ref: {Ref}", rel);
+        return new SourceRead(true, rel, windowed, truncated, null);
+    }
+
+    // Mirrors MemoryViewModel.EnumerateDisplayGroups so browse_index and the Memory view can't drift:
+    // §8 CanonicalGroups order, exploding the `topic` type into one group per frontmatter `category`
+    // (TopicCategories order, "Other" bucket for missing/unknown).
+    private static IEnumerable<(string Key, string Display, List<VaultMemoryItem> Items)>
+        EnumerateBrowseGroups(IReadOnlyList<VaultMemoryItem> items)
+    {
+        var byType = items
+            .GroupBy(i => i.Type, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (type, display) in VaultIndexService.CanonicalGroups)
+        {
+            if (!byType.TryGetValue(type, out var groupItems))
+            {
+                continue;
+            }
+
+            if (type == "topic")
+            {
+                var byCategory = groupItems
+                    .GroupBy(i => VaultIndexService.NormalizeTopicCategory(i.Category), StringComparer.Ordinal)
+                    .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+                foreach (var (category, categoryDisplay) in VaultIndexService.TopicCategories)
+                {
+                    if (byCategory.TryGetValue(category, out var categoryItems))
+                    {
+                        yield return (category, categoryDisplay, categoryItems);
+                    }
+                }
+
+                continue;
+            }
+
+            yield return (type, display, groupItems);
+        }
+    }
+
+    // The full page body as the model should read it: frontmatter stripped and the internal
+    // <!-- pia:managed --> sentinel dropped (mirrors VaultMemoryItem.DisplayBody), preserving the page's
+    // own ## headings verbatim. A freeform page has no ## sections, so this is simply its preamble.
+    private static string FullBody(VaultDocument doc)
+        => StripManagedMarker(StripFrontmatter(doc.RawText)).Trim();
+
+    // Everything after the closing '---' fence; the input unchanged when it has no leading frontmatter.
+    private static string StripFrontmatter(string rawText)
+    {
+        var text = rawText.Replace("\r\n", "\n");
+        if (!text.StartsWith("---\n", StringComparison.Ordinal))
+        {
+            return text;
+        }
+
+        var close = text.IndexOf("\n---", 3, StringComparison.Ordinal);
+        if (close < 0)
+        {
+            return text;
+        }
+
+        var lineEnd = text.IndexOf('\n', close + 1);
+        return lineEnd < 0 ? string.Empty : text[(lineEnd + 1)..];
+    }
+
+    private static string StripManagedMarker(string body)
+    {
+        if (!body.Contains(ManagedMarker, StringComparison.Ordinal))
+        {
+            return body;
+        }
+
+        var kept = body.Split('\n').Where(line => line.Trim() != ManagedMarker);
+        return string.Join('\n', kept);
+    }
+
+    // Extract [[target]] tokens and keep only those resolving to an existing topic page, returned as
+    // read_topic handles (memory/topics/<slug>.md). Normalization mirrors WikiLinkReconciler (strip a
+    // leading topics/, then VaultSlug.Slugify). Best-effort: an empty list is fine — Sources is the
+    // load-bearing field.
+    private async Task<IReadOnlyList<string>> ResolveWikilinksAsync(string body)
+    {
+        var matches = WikiLinkPattern.Matches(body);
+        if (matches.Count == 0)
+        {
+            return [];
+        }
+
+        var topicFiles = await _vaultStore.EnumerateAsync("memory/topics/*.md");
+        var knownSlugs = new HashSet<string>(
+            topicFiles.Select(f => Path.GetFileNameWithoutExtension(f)), StringComparer.OrdinalIgnoreCase);
+
+        var handles = new List<string>();
+        foreach (Match m in matches)
+        {
+            var target = m.Groups["target"].Value.Trim().Trim('/');
+            if (target.StartsWith("topics/", StringComparison.OrdinalIgnoreCase))
+            {
+                target = target["topics/".Length..];
+            }
+
+            var slug = VaultSlug.Slugify(target);
+            if (slug.Length == 0 || !knownSlugs.Contains(slug))
+            {
+                continue;
+            }
+
+            var handle = $"memory/topics/{slug}.md";
+            if (!handles.Contains(handle, StringComparer.OrdinalIgnoreCase))
+            {
+                handles.Add(handle);
+            }
+        }
+
+        return handles;
+    }
+
+    // Content-oriented windowing (NOT FilesToolHandler's LINE|CONTENT edit format): an offset/limit line
+    // window plus an output-char cap, with a marker appended when more remains so the model can page.
+    private static (string Text, bool Truncated) WindowSourceText(string text, int? offset, int? limit)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var total = lines.Length;
+
+        var start = Math.Max(0, (offset ?? 1) - 1);
+        var take = Math.Clamp(limit ?? DefaultSourceReadLimit, 1, MaxSourceReadLimit);
+
+        if (start >= total)
+        {
+            return ($"(no lines: offset {start + 1} is past end of source; total_lines={total})", false);
+        }
+
+        var window = lines.Skip(start).Take(take).ToList();
+        var end = start + window.Count; // exclusive, 0-based
+        var body = string.Join("\n", window);
+
+        var truncated = false;
+        if (body.Length > MaxSourceOutputChars)
+        {
+            // Cut on a UTF-16 boundary: if the cap lands between a surrogate pair (an emoji/CJK char in a
+            // log), back off one so we never emit a lone surrogate the JSON serializer would choke on.
+            var cut = MaxSourceOutputChars;
+            if (char.IsHighSurrogate(body[cut - 1]))
+            {
+                cut--;
+            }
+
+            body = body[..cut]
+                + $"\n\n... (truncated at output cap; narrow with a smaller 'limit' or page with 'offset'. total_lines={total})";
+            truncated = true;
+        }
+        else if (end < total)
+        {
+            body += $"\n\n... ({total - end} more line(s); read the next chunk with offset={end + 1}. total_lines={total})";
+            truncated = true;
+        }
+
+        return (body, truncated);
     }
 
     // ---- Vault write path (format spec v1 §2/§4/§6/§7) ----

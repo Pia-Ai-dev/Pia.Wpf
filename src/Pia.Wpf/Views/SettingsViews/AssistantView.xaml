@@ -88,6 +88,20 @@
                    Margin="22,4,0,0"/>
       </StackPanel>
 
+      <!-- Default working directory for new chats (relative to the files folder) -->
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{loc:Str Settings_Assistant_DefaultWorkingDirectory}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+        <ComboBox Width="400"
+                  HorizontalAlignment="Left"
+                  IsEditable="True"
+                  Text="{Binding DefaultWorkingDirectory, UpdateSourceTrigger=LostFocus}"
+                  ItemsSource="{Binding AvailableWorkingDirectories}"/>
+        <TextBlock Text="{loc:Str Settings_Assistant_DefaultWorkingDirectory_Description}"
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                   Margin="0,6,0,0"/>
+      </StackPanel>
+
       <!-- Chat history -->
       <TextBlock Text="{loc:Str Settings_Chat_Section}"
                  Style="{StaticResource PiaSettingsSectionLabelStyle}"

@@ -2,6 +2,7 @@ using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Navigation;
@@ -50,7 +51,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IPersonaService personaService,
         IAssistantChatService assistantChatService,
         IToolPermissionService toolPermissionService,
-        IAssistantFolderRelocationService folderRelocationService)
+        IAssistantFolderRelocationService folderRelocationService,
+        IWorkingDirectoryService workingDirectoryService)
     {
         _logger = logger;
 
@@ -62,7 +64,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService);
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService);
