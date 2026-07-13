@@ -161,6 +161,10 @@ public class AppSettings
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 
+    // Rotating watermark hints in the composer + the "Did you know?" tip on the empty-chat screen.
+    // Discovery aids for newer features; on by default, disable to quiet the empty-state.
+    public bool AssistantHintsEnabled { get; set; } = true;
+
     // Sandboxed folder the assistant's file tool may read/write/delete in. The memory vault lives
     // under it (<folder>\Vault), so it is always set after first run; file-tool enablement is the
     // separate AssistantFileToolsEnabled flag (clearing the folder no longer disables the tools).

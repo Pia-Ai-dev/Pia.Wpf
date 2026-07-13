@@ -58,6 +58,15 @@
                    Margin="22,4,0,0"/>
       </StackPanel>
 
+      <!-- Rotating tips & hints (watermark + did-you-know) -->
+      <StackPanel Margin="0,0,0,20">
+        <CheckBox Content="{loc:Str Settings_AssistantHints}"
+                  IsChecked="{Binding HintsEnabled}"/>
+        <TextBlock Text="{loc:Str Settings_AssistantHints_Description}"
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                   Margin="22,4,0,0"/>
+      </StackPanel>
+
       <!-- Files Folder (sandboxed) + nested memory vault -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_AssistantFilesFolder}"

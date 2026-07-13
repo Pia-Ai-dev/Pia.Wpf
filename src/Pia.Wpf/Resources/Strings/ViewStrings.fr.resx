@@ -79,6 +79,46 @@
   <data name="Assistant_Suggestion_Memory3" xml:space="preserve"><value>Retiens que je suis allergique aux arachides</value></data>
   <data name="Assistant_Suggestion_Memory4" xml:space="preserve"><value>Change ma langue préférée en français</value></data>
   <data name="Assistant_Suggestion_Memory5" xml:space="preserve"><value>Retiens que mon partenaire s'appelle Alex</value></data>
+  <data name="Assistant_Suggestion_Files1" xml:space="preserve"><value>Résume le fichier que je viens de déposer</value></data>
+  <data name="Assistant_Suggestion_Files2" xml:space="preserve"><value>Trouve mes fichiers qui mentionnent des factures</value></data>
+  <data name="Assistant_Suggestion_Files3" xml:space="preserve"><value>Rédige un fichier texte avec des notes de réunion</value></data>
+  <data name="Assistant_Suggestion_Files4" xml:space="preserve"><value>Lis mes notes et donne-moi l'essentiel</value></data>
+  <data name="Assistant_Suggestion_Research1" xml:space="preserve"><value>Recherche les nouveautés sur les voitures électriques</value></data>
+  <data name="Assistant_Suggestion_Research2" xml:space="preserve"><value>Compare les meilleurs gestionnaires de mots de passe</value></data>
+  <data name="Assistant_Suggestion_Research3" xml:space="preserve"><value>Fais-moi un point sur l'informatique quantique</value></data>
+  <data name="Assistant_Suggestion_Research4" xml:space="preserve"><value>Quoi de neuf en IA cette semaine ?</value></data>
+  <data name="Assistant_Suggestion_Scheduled1" xml:space="preserve"><value>Chaque lundi, résume mes tâches en cours</value></data>
+  <data name="Assistant_Suggestion_Scheduled2" xml:space="preserve"><value>Envoie-moi un résumé d'actualités à 8 h chaque jour</value></data>
+  <data name="Assistant_Suggestion_Scheduled3" xml:space="preserve"><value>Chaque matin, fais le point sur ma journée</value></data>
+  <data name="Assistant_Suggestion_Scheduled4" xml:space="preserve"><value>Fais un bilan hebdomadaire de mes objectifs</value></data>
+  <data name="Assistant_Suggestion_Knowledge1" xml:space="preserve"><value>Transforme mes notes en page de connaissances</value></data>
+  <data name="Assistant_Suggestion_Knowledge2" xml:space="preserve"><value>Que disent mes documents sur les prix ?</value></data>
+  <data name="Assistant_Suggestion_Knowledge3" xml:space="preserve"><value>Crée une page wiki à partir de ce rapport</value></data>
+  <data name="Assistant_Suggestion_Knowledge4" xml:space="preserve"><value>Organise mes sources enregistrées par thèmes</value></data>
+  <data name="Assistant_Hint1" xml:space="preserve"><value>Demande-moi de rechercher un sujet sur le web…</value></data>
+  <data name="Assistant_Hint2" xml:space="preserve"><value>Tape @ pour référencer mémoires, tâches et fichiers</value></data>
+  <data name="Assistant_Hint3" xml:space="preserve"><value>Dépose un fichier et pose-moi des questions dessus…</value></data>
+  <data name="Assistant_Hint4" xml:space="preserve"><value>Essaie : rappelle-moi d'appeler Alex à 16 h</value></data>
+  <data name="Assistant_Hint5" xml:space="preserve"><value>Demande-moi de planifier une tâche récurrente…</value></data>
+  <data name="Assistant_Hint6" xml:space="preserve"><value>Dis-moi quelque chose à retenir sur toi…</value></data>
+  <data name="Assistant_Hint7" xml:space="preserve"><value>Transforme tes notes en page de connaissances…</value></data>
+  <data name="Assistant_Hint8" xml:space="preserve"><value>Ajoute une tâche ou demande ce qui est dû cette semaine</value></data>
+  <data name="Assistant_Tip1" xml:space="preserve"><value>Le saviez-vous ? Tapez @ pour intégrer mémoires, tâches, fichiers et recherche.</value></data>
+  <data name="Assistant_Tip2" xml:space="preserve"><value>Astuce : déposez un fichier dans le chat et Pia peut le lire et le résumer.</value></data>
+  <data name="Assistant_Tip3" xml:space="preserve"><value>Le saviez-vous ? Pia peut rechercher des sujets sur le web — demandez.</value></data>
+  <data name="Assistant_Tip4" xml:space="preserve"><value>Astuce : demandez à Pia de planifier des tâches récurrentes.</value></data>
+  <data name="Assistant_Tip5" xml:space="preserve"><value>Le saviez-vous ? Pia retient des faits sur vous dans chaque chat.</value></data>
+  <data name="Assistant_Tip6" xml:space="preserve"><value>Astuce : Pia transforme vos documents en pages de connaissances consultables.</value></data>
+  <data name="Assistant_Tips_Button_Tooltip" xml:space="preserve"><value>Astuces — ce que vous pouvez faire avec Pia</value></data>
+  <data name="Assistant_Tips_Header" xml:space="preserve"><value>Que peut faire Pia ?</value></data>
+  <data name="Assistant_Tips_Memory" xml:space="preserve"><value>Retenir des faits, contacts et préférences vous concernant</value></data>
+  <data name="Assistant_Tips_Todo" xml:space="preserve"><value>Gérer des tâches avec priorités et échéances</value></data>
+  <data name="Assistant_Tips_Reminder" xml:space="preserve"><value>Définir des rappels uniques ou récurrents</value></data>
+  <data name="Assistant_Tips_Files" xml:space="preserve"><value>Lire, rechercher et écrire des fichiers dans votre dossier</value></data>
+  <data name="Assistant_Tips_Research" xml:space="preserve"><value>Rechercher des sujets sur le web avec des sources</value></data>
+  <data name="Assistant_Tips_Scheduled" xml:space="preserve"><value>Planifier des tâches qui s'exécutent automatiquement</value></data>
+  <data name="Assistant_Tips_Knowledge" xml:space="preserve"><value>Transformer des documents en pages de connaissances consultables</value></data>
+  <data name="Assistant_Tips_AtCommand" xml:space="preserve"><value>Tapez @ pour intégrer directement tout cela</value></data>
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Tapez un message...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Copier</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Lire à voix haute</value></data>
@@ -440,6 +480,8 @@
   <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>Lorsque désactivé (par défaut), le navigateur rejoint la réunion de façon masquée et la réunion est lue en silence. Lorsque activé, la fenêtre du navigateur est affichée à l'écran et la réunion est audible.</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Afficher les suggestions de suivi</value></data>
   <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Après chaque réponse de l'assistant, propose 2 à 4 puces de questions de suivi. Ajoute une petite requête supplémentaire par tour.</value></data>
+  <data name="Settings_AssistantHints" xml:space="preserve"><value>Afficher les astuces et conseils rotatifs</value></data>
+  <data name="Settings_AssistantHints_Description" xml:space="preserve"><value>Fait défiler des conseils utiles dans la zone de message et affiche une astuce « Le saviez-vous ? » sur l'écran de chat vide.</value></data>
   <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Dossier de fichiers de l'assistant</value></data>
   <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>Aucun dossier sélectionné</value></data>
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Parcourir…</value></data>

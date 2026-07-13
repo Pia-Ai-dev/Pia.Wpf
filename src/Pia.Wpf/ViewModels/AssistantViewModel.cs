@@ -86,14 +86,24 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isMeetingAttendeeVisible;
 
-    [ObservableProperty]
-    private string _suggestionReminder = string.Empty;
+    /// <summary>Feature-spanning example prompts shown as chips on the empty-chat screen. Re-rolled on
+    /// every new chat / navigation by <see cref="RandomizeSuggestions"/> so the chips rotate across all
+    /// of Pia's capabilities (memory, todos, reminders, files, research, scheduling, knowledge).</summary>
+    public ObservableCollection<string> EmptyStateSuggestions { get; } = new();
 
+    /// <summary>Rotating watermark hint shown in the composer placeholder; switches on each new chat.
+    /// Falls back to the neutral placeholder when <see cref="HintsEnabled"/> is off.</summary>
     [ObservableProperty]
-    private string _suggestionTodo = string.Empty;
+    private string _inputPlaceholder = string.Empty;
 
+    /// <summary>Rotating "Did you know?" tip shown under the empty-chat icon (only when <see cref="HintsEnabled"/>).</summary>
     [ObservableProperty]
-    private string _suggestionMemory = string.Empty;
+    private string _didYouKnowTip = string.Empty;
+
+    /// <summary>User setting (<c>AssistantHintsEnabled</c>): whether the rotating watermark hint and the
+    /// did-you-know tip are shown. The lightbulb tips flyout and example chips are always available.</summary>
+    [ObservableProperty]
+    private bool _hintsEnabled = true;
 
     /// <summary>The persona shown in the picker chip. Changing it persists the per-mode selection
     /// (synced via SyncSettings); the new persona applies from the next turn.</summary>
@@ -102,25 +112,34 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private bool _isLoadingPersonas;
 
-    private static readonly string[] SuggestionReminderKeys =
+    // Each inner array is one feature category. RandomizeSuggestions shuffles the categories,
+    // takes VisibleSuggestionCount of them, and shows one random example from each — so the
+    // empty-state chips span all of Pia's capabilities and rotate for discoverability.
+    private static readonly string[][] SuggestionCategories =
     [
-        "Assistant_Suggestion_Reminder1", "Assistant_Suggestion_Reminder2",
-        "Assistant_Suggestion_Reminder3", "Assistant_Suggestion_Reminder4",
-        "Assistant_Suggestion_Reminder5"
+        ["Assistant_Suggestion_Reminder1", "Assistant_Suggestion_Reminder2", "Assistant_Suggestion_Reminder3", "Assistant_Suggestion_Reminder4", "Assistant_Suggestion_Reminder5"],
+        ["Assistant_Suggestion_Todo1", "Assistant_Suggestion_Todo2", "Assistant_Suggestion_Todo3", "Assistant_Suggestion_Todo4", "Assistant_Suggestion_Todo5"],
+        ["Assistant_Suggestion_Memory1", "Assistant_Suggestion_Memory2", "Assistant_Suggestion_Memory3", "Assistant_Suggestion_Memory4", "Assistant_Suggestion_Memory5"],
+        ["Assistant_Suggestion_Files1", "Assistant_Suggestion_Files2", "Assistant_Suggestion_Files3", "Assistant_Suggestion_Files4"],
+        ["Assistant_Suggestion_Research1", "Assistant_Suggestion_Research2", "Assistant_Suggestion_Research3", "Assistant_Suggestion_Research4"],
+        ["Assistant_Suggestion_Scheduled1", "Assistant_Suggestion_Scheduled2", "Assistant_Suggestion_Scheduled3", "Assistant_Suggestion_Scheduled4"],
+        ["Assistant_Suggestion_Knowledge1", "Assistant_Suggestion_Knowledge2", "Assistant_Suggestion_Knowledge3", "Assistant_Suggestion_Knowledge4"],
     ];
 
-    private static readonly string[] SuggestionTodoKeys =
+    private const int VisibleSuggestionCount = 4;
+
+    // Rotating composer watermark hints (short, placeholder-style prompts).
+    private static readonly string[] HintKeys =
     [
-        "Assistant_Suggestion_Todo1", "Assistant_Suggestion_Todo2",
-        "Assistant_Suggestion_Todo3", "Assistant_Suggestion_Todo4",
-        "Assistant_Suggestion_Todo5"
+        "Assistant_Hint1", "Assistant_Hint2", "Assistant_Hint3", "Assistant_Hint4",
+        "Assistant_Hint5", "Assistant_Hint6", "Assistant_Hint7", "Assistant_Hint8"
     ];
 
-    private static readonly string[] SuggestionMemoryKeys =
+    // Rotating "Did you know?" tips shown under the empty-chat icon.
+    private static readonly string[] TipKeys =
     [
-        "Assistant_Suggestion_Memory1", "Assistant_Suggestion_Memory2",
-        "Assistant_Suggestion_Memory3", "Assistant_Suggestion_Memory4",
-        "Assistant_Suggestion_Memory5"
+        "Assistant_Tip1", "Assistant_Tip2", "Assistant_Tip3",
+        "Assistant_Tip4", "Assistant_Tip5", "Assistant_Tip6"
     ];
 
     public IAutocompleteService AutocompleteService => _autocompleteService;
@@ -264,6 +283,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // "+ New chat" and Clear for free — the chip re-seeds its pending folder from the active
         // chat's dir on flyout-open.
         ApplyDefaultWorkingDirectoryAsync().SafeFireAndForget(_logger);
+
+        // Seed the empty-state chips, watermark hint and did-you-know tip so they are populated
+        // before the first navigation renders the view. HintsEnabled is refreshed from settings
+        // in OnNavigatedToAsync (which updates the watermark via OnHintsEnabledChanged if it differs).
+        RandomizeSuggestions();
     }
 
     /// <summary>
@@ -620,6 +644,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
         _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
         InputText = string.Empty;
+
+        // Fresh chat → fresh example chips, watermark hint and did-you-know tip.
+        RandomizeSuggestions();
     }
 
     private async Task ResumeChatAsync(Guid chatId)
@@ -807,12 +834,46 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
+    /// <summary>Re-rolls the empty-state example chips, the composer watermark hint, and the
+    /// did-you-know tip. Called on navigation to the view and on every new chat, so all three
+    /// rotate for feature discovery.</summary>
     private void RandomizeSuggestions()
     {
-        SuggestionReminder = _localizationService[SuggestionReminderKeys[RandomNumberGenerator.GetInt32(SuggestionReminderKeys.Length)]];
-        SuggestionTodo = _localizationService[SuggestionTodoKeys[RandomNumberGenerator.GetInt32(SuggestionTodoKeys.Length)]];
-        SuggestionMemory = _localizationService[SuggestionMemoryKeys[RandomNumberGenerator.GetInt32(SuggestionMemoryKeys.Length)]];
+        // Shuffle category order (Fisher–Yates) and take the first VisibleSuggestionCount, so which
+        // capabilities are showcased rotates from one chat to the next.
+        var order = new int[SuggestionCategories.Length];
+        for (var i = 0; i < order.Length; i++) order[i] = i;
+        for (var i = order.Length - 1; i > 0; i--)
+        {
+            var j = RandomNumberGenerator.GetInt32(i + 1);
+            (order[i], order[j]) = (order[j], order[i]);
+        }
+
+        EmptyStateSuggestions.Clear();
+        var take = Math.Min(VisibleSuggestionCount, order.Length);
+        for (var k = 0; k < take; k++)
+        {
+            var category = SuggestionCategories[order[k]];
+            var key = category[RandomNumberGenerator.GetInt32(category.Length)];
+            EmptyStateSuggestions.Add(_localizationService[key]);
+        }
+
+        DidYouKnowTip = _localizationService[TipKeys[RandomNumberGenerator.GetInt32(TipKeys.Length)]];
+        ApplyWatermarkHint();
     }
+
+    /// <summary>Sets the composer placeholder to a random feature hint when hints are enabled,
+    /// otherwise to the neutral placeholder. Kept separate from <see cref="RandomizeSuggestions"/>
+    /// so toggling the setting can refresh the watermark without re-rolling the chips.</summary>
+    private void ApplyWatermarkHint()
+    {
+        InputPlaceholder = HintsEnabled
+            ? _localizationService[HintKeys[RandomNumberGenerator.GetInt32(HintKeys.Length)]]
+            : _localizationService["Assistant_InputPlaceholder"];
+    }
+
+    // Reflect a settings-toggle change on the currently-open composer immediately.
+    partial void OnHintsEnabledChanged(bool value) => ApplyWatermarkHint();
 
     public void OnNavigatedTo(object? parameter)
     {
@@ -844,6 +905,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var settings = await _settingsService.GetSettingsAsync();
             IsTtsEnabled = settings.TtsEnabled;
             _suggestionsEnabled = settings.AssistantSuggestionsEnabled;
+            // Setting the property fires OnHintsEnabledChanged, which refreshes the watermark if it differs.
+            HintsEnabled = settings.AssistantHintsEnabled;
 
             // Initialize TTS so HasVoiceLoaded becomes true for voice mode button
             if (!_ttsService.HasVoiceLoaded)

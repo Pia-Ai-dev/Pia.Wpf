@@ -79,6 +79,46 @@
   <data name="Assistant_Suggestion_Memory3" xml:space="preserve"><value>Remember that I'm allergic to peanuts</value></data>
   <data name="Assistant_Suggestion_Memory4" xml:space="preserve"><value>Update my preferred language to French</value></data>
   <data name="Assistant_Suggestion_Memory5" xml:space="preserve"><value>Remember my partner's name is Alex</value></data>
+  <data name="Assistant_Suggestion_Files1" xml:space="preserve"><value>Summarize the file I just dropped in</value></data>
+  <data name="Assistant_Suggestion_Files2" xml:space="preserve"><value>Find my files that mention invoices</value></data>
+  <data name="Assistant_Suggestion_Files3" xml:space="preserve"><value>Draft a text file with meeting notes</value></data>
+  <data name="Assistant_Suggestion_Files4" xml:space="preserve"><value>Read my notes and give me the gist</value></data>
+  <data name="Assistant_Suggestion_Research1" xml:space="preserve"><value>Research the latest on electric cars</value></data>
+  <data name="Assistant_Suggestion_Research2" xml:space="preserve"><value>Compare the top password managers</value></data>
+  <data name="Assistant_Suggestion_Research3" xml:space="preserve"><value>Give me a briefing on quantum computing</value></data>
+  <data name="Assistant_Suggestion_Research4" xml:space="preserve"><value>What's new in AI this week?</value></data>
+  <data name="Assistant_Suggestion_Scheduled1" xml:space="preserve"><value>Every Monday, summarize my open todos</value></data>
+  <data name="Assistant_Suggestion_Scheduled2" xml:space="preserve"><value>Send me a daily news digest at 8 AM</value></data>
+  <data name="Assistant_Suggestion_Scheduled3" xml:space="preserve"><value>Each morning, brief me on my day</value></data>
+  <data name="Assistant_Suggestion_Scheduled4" xml:space="preserve"><value>Run a weekly review of my goals</value></data>
+  <data name="Assistant_Suggestion_Knowledge1" xml:space="preserve"><value>Turn my notes into a knowledge page</value></data>
+  <data name="Assistant_Suggestion_Knowledge2" xml:space="preserve"><value>What do my documents say about pricing?</value></data>
+  <data name="Assistant_Suggestion_Knowledge3" xml:space="preserve"><value>Build a wiki page from this report</value></data>
+  <data name="Assistant_Suggestion_Knowledge4" xml:space="preserve"><value>Organize my saved sources into topics</value></data>
+  <data name="Assistant_Hint1" xml:space="preserve"><value>Ask me to research any topic on the web…</value></data>
+  <data name="Assistant_Hint2" xml:space="preserve"><value>Type @ to reference memories, todos and files</value></data>
+  <data name="Assistant_Hint3" xml:space="preserve"><value>Drop in a file and ask me about it…</value></data>
+  <data name="Assistant_Hint4" xml:space="preserve"><value>Try: remind me to call Alex at 4 PM</value></data>
+  <data name="Assistant_Hint5" xml:space="preserve"><value>Ask me to schedule a task that repeats…</value></data>
+  <data name="Assistant_Hint6" xml:space="preserve"><value>Tell me something to remember about you…</value></data>
+  <data name="Assistant_Hint7" xml:space="preserve"><value>Turn your notes into a knowledge page…</value></data>
+  <data name="Assistant_Hint8" xml:space="preserve"><value>Add a todo, or ask what's due this week</value></data>
+  <data name="Assistant_Tip1" xml:space="preserve"><value>Did you know? Type @ to pull in memories, todos, files and research.</value></data>
+  <data name="Assistant_Tip2" xml:space="preserve"><value>Tip: Drop a file into the chat and Pia can read and summarize it.</value></data>
+  <data name="Assistant_Tip3" xml:space="preserve"><value>Did you know? Pia can research topics on the web — just ask.</value></data>
+  <data name="Assistant_Tip4" xml:space="preserve"><value>Tip: Ask Pia to schedule tasks that run on a recurring basis.</value></data>
+  <data name="Assistant_Tip5" xml:space="preserve"><value>Did you know? Pia remembers facts about you across every chat.</value></data>
+  <data name="Assistant_Tip6" xml:space="preserve"><value>Tip: Pia can turn your documents into searchable knowledge pages.</value></data>
+  <data name="Assistant_Tips_Button_Tooltip" xml:space="preserve"><value>Tips — what you can do with Pia</value></data>
+  <data name="Assistant_Tips_Header" xml:space="preserve"><value>What can Pia do?</value></data>
+  <data name="Assistant_Tips_Memory" xml:space="preserve"><value>Remember facts, contacts and preferences about you</value></data>
+  <data name="Assistant_Tips_Todo" xml:space="preserve"><value>Manage todos with priorities and due dates</value></data>
+  <data name="Assistant_Tips_Reminder" xml:space="preserve"><value>Set one-time or recurring reminders</value></data>
+  <data name="Assistant_Tips_Files" xml:space="preserve"><value>Read, search and write files in your folder</value></data>
+  <data name="Assistant_Tips_Research" xml:space="preserve"><value>Research topics on the web with sources</value></data>
+  <data name="Assistant_Tips_Scheduled" xml:space="preserve"><value>Schedule tasks that run automatically</value></data>
+  <data name="Assistant_Tips_Knowledge" xml:space="preserve"><value>Turn documents into searchable knowledge pages</value></data>
+  <data name="Assistant_Tips_AtCommand" xml:space="preserve"><value>Type @ to reference any of these directly</value></data>
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Type a message...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Copy</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Read aloud</value></data>
@@ -440,6 +480,8 @@
   <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>When off (default), the browser joins hidden and the meeting plays silently. When on, the browser window is shown on screen and the meeting is audible.</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Show follow-up suggestions</value></data>
   <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>After each assistant reply, generate 2–4 follow-up question chips. Adds a small extra request per turn.</value></data>
+  <data name="Settings_AssistantHints" xml:space="preserve"><value>Show rotating tips and hints</value></data>
+  <data name="Settings_AssistantHints_Description" xml:space="preserve"><value>Rotate helpful hints in the message box and show a "Did you know?" tip on the empty chat screen.</value></data>
   <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Assistant files folder</value></data>
   <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>No folder selected</value></data>
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Browse…</value></data>

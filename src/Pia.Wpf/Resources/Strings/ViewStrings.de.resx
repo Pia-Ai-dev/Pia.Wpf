@@ -79,6 +79,46 @@
   <data name="Assistant_Suggestion_Memory3" xml:space="preserve"><value>Merk dir, dass ich eine Erdnussallergie habe</value></data>
   <data name="Assistant_Suggestion_Memory4" xml:space="preserve"><value>Ändere meine bevorzugte Sprache auf Französisch</value></data>
   <data name="Assistant_Suggestion_Memory5" xml:space="preserve"><value>Merk dir, dass mein Partner Alex heißt</value></data>
+  <data name="Assistant_Suggestion_Files1" xml:space="preserve"><value>Fasse die Datei zusammen, die ich abgelegt habe</value></data>
+  <data name="Assistant_Suggestion_Files2" xml:space="preserve"><value>Finde meine Dateien, die Rechnungen erwähnen</value></data>
+  <data name="Assistant_Suggestion_Files3" xml:space="preserve"><value>Erstelle eine Textdatei mit Besprechungsnotizen</value></data>
+  <data name="Assistant_Suggestion_Files4" xml:space="preserve"><value>Lies meine Notizen und fass sie kurz zusammen</value></data>
+  <data name="Assistant_Suggestion_Research1" xml:space="preserve"><value>Recherchiere Neues zu Elektroautos</value></data>
+  <data name="Assistant_Suggestion_Research2" xml:space="preserve"><value>Vergleiche die besten Passwort-Manager</value></data>
+  <data name="Assistant_Suggestion_Research3" xml:space="preserve"><value>Gib mir einen Überblick über Quantencomputing</value></data>
+  <data name="Assistant_Suggestion_Research4" xml:space="preserve"><value>Was gibt es Neues bei KI diese Woche?</value></data>
+  <data name="Assistant_Suggestion_Scheduled1" xml:space="preserve"><value>Fasse jeden Montag meine offenen Aufgaben zusammen</value></data>
+  <data name="Assistant_Suggestion_Scheduled2" xml:space="preserve"><value>Schick mir täglich um 8 Uhr eine Nachrichten-Übersicht</value></data>
+  <data name="Assistant_Suggestion_Scheduled3" xml:space="preserve"><value>Brief mich jeden Morgen über meinen Tag</value></data>
+  <data name="Assistant_Suggestion_Scheduled4" xml:space="preserve"><value>Führe eine wöchentliche Zielkontrolle durch</value></data>
+  <data name="Assistant_Suggestion_Knowledge1" xml:space="preserve"><value>Mach aus meinen Notizen eine Wissensseite</value></data>
+  <data name="Assistant_Suggestion_Knowledge2" xml:space="preserve"><value>Was sagen meine Dokumente zu Preisen?</value></data>
+  <data name="Assistant_Suggestion_Knowledge3" xml:space="preserve"><value>Erstelle eine Wiki-Seite aus diesem Bericht</value></data>
+  <data name="Assistant_Suggestion_Knowledge4" xml:space="preserve"><value>Sortiere meine gespeicherten Quellen nach Themen</value></data>
+  <data name="Assistant_Hint1" xml:space="preserve"><value>Bitte mich, ein Thema im Web zu recherchieren…</value></data>
+  <data name="Assistant_Hint2" xml:space="preserve"><value>Tippe @, um Erinnerungen, Aufgaben und Dateien einzubinden</value></data>
+  <data name="Assistant_Hint3" xml:space="preserve"><value>Leg eine Datei ab und frag mich danach…</value></data>
+  <data name="Assistant_Hint4" xml:space="preserve"><value>Probier: erinnere mich um 16 Uhr, Alex anzurufen</value></data>
+  <data name="Assistant_Hint5" xml:space="preserve"><value>Bitte mich, eine wiederkehrende Aufgabe zu planen…</value></data>
+  <data name="Assistant_Hint6" xml:space="preserve"><value>Sag mir etwas, das ich mir über dich merken soll…</value></data>
+  <data name="Assistant_Hint7" xml:space="preserve"><value>Mach aus deinen Notizen eine Wissensseite…</value></data>
+  <data name="Assistant_Hint8" xml:space="preserve"><value>Füge eine Aufgabe hinzu oder frag, was diese Woche fällig ist</value></data>
+  <data name="Assistant_Tip1" xml:space="preserve"><value>Wusstest du? Tippe @, um Erinnerungen, Aufgaben, Dateien und Recherche einzubinden.</value></data>
+  <data name="Assistant_Tip2" xml:space="preserve"><value>Tipp: Leg eine Datei in den Chat und Pia liest und fasst sie zusammen.</value></data>
+  <data name="Assistant_Tip3" xml:space="preserve"><value>Wusstest du? Pia kann Themen im Web recherchieren – frag einfach.</value></data>
+  <data name="Assistant_Tip4" xml:space="preserve"><value>Tipp: Bitte Pia, Aufgaben wiederkehrend auszuführen.</value></data>
+  <data name="Assistant_Tip5" xml:space="preserve"><value>Wusstest du? Pia merkt sich Fakten über dich in jedem Chat.</value></data>
+  <data name="Assistant_Tip6" xml:space="preserve"><value>Tipp: Pia macht aus deinen Dokumenten durchsuchbare Wissensseiten.</value></data>
+  <data name="Assistant_Tips_Button_Tooltip" xml:space="preserve"><value>Tipps – was du mit Pia machen kannst</value></data>
+  <data name="Assistant_Tips_Header" xml:space="preserve"><value>Was kann Pia?</value></data>
+  <data name="Assistant_Tips_Memory" xml:space="preserve"><value>Fakten, Kontakte und Vorlieben über dich merken</value></data>
+  <data name="Assistant_Tips_Todo" xml:space="preserve"><value>Aufgaben mit Prioritäten und Fälligkeiten verwalten</value></data>
+  <data name="Assistant_Tips_Reminder" xml:space="preserve"><value>Einmalige oder wiederkehrende Erinnerungen setzen</value></data>
+  <data name="Assistant_Tips_Files" xml:space="preserve"><value>Dateien in deinem Ordner lesen, durchsuchen und schreiben</value></data>
+  <data name="Assistant_Tips_Research" xml:space="preserve"><value>Themen im Web mit Quellen recherchieren</value></data>
+  <data name="Assistant_Tips_Scheduled" xml:space="preserve"><value>Aufgaben planen, die automatisch laufen</value></data>
+  <data name="Assistant_Tips_Knowledge" xml:space="preserve"><value>Dokumente in durchsuchbare Wissensseiten verwandeln</value></data>
+  <data name="Assistant_Tips_AtCommand" xml:space="preserve"><value>Tippe @, um all das direkt einzubinden</value></data>
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Nachricht eingeben...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Kopieren</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Vorlesen</value></data>
@@ -440,6 +480,8 @@
   <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>Wenn deaktiviert (Standard), tritt der Browser unsichtbar bei und die Besprechung wird stummgeschaltet wiedergegeben. Wenn aktiviert, wird das Browserfenster auf dem Bildschirm angezeigt und die Besprechung ist hörbar.</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Folgevorschläge anzeigen</value></data>
   <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>Nach jeder Antwort des Assistenten 2–4 Folgefragen als Chips vorschlagen. Verursacht eine kleine zusätzliche Anfrage pro Runde.</value></data>
+  <data name="Settings_AssistantHints" xml:space="preserve"><value>Wechselnde Tipps und Hinweise anzeigen</value></data>
+  <data name="Settings_AssistantHints_Description" xml:space="preserve"><value>Zeigt wechselnde Hinweise im Nachrichtenfeld und einen „Wusstest du?"-Tipp auf dem leeren Chat-Bildschirm.</value></data>
   <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Assistenten-Dateiordner</value></data>
   <data name="Settings_AssistantFilesFolder_Placeholder" xml:space="preserve"><value>Kein Ordner ausgewählt</value></data>
   <data name="Settings_AssistantFilesFolder_Browse" xml:space="preserve"><value>Durchsuchen…</value></data>

@@ -63,6 +63,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _suggestionsEnabled;
 
+    [ObservableProperty]
+    private bool _hintsEnabled = true;
+
     // Display-only: the current assistant files folder. Changed via the Change… command (which runs
     // the validated copy/verify/delete move), not by free-text editing.
     [ObservableProperty]
@@ -105,6 +108,11 @@ public partial class AssistantSettingsViewModel : ObservableObject
     }
 
     partial void OnSuggestionsEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnHintsEnabledChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -204,6 +212,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         var settings = await _settingsService.GetSettingsAsync();
         DefaultWindowMode = settings.DefaultWindowMode;
         SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
+        HintsEnabled = settings.AssistantHintsEnabled;
         FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
         FileToolsEnabled = settings.AssistantFileToolsEnabled;
         DefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
@@ -332,6 +341,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         var settings = await _settingsService.GetSettingsAsync();
         settings.DefaultWindowMode = DefaultWindowMode;
         settings.AssistantSuggestionsEnabled = SuggestionsEnabled;
+        settings.AssistantHintsEnabled = HintsEnabled;
         // The folder is owned by the relocation move; never clear it here (the vault lives under it).
         if (!string.IsNullOrWhiteSpace(FilesFolder))
             settings.AssistantFilesFolder = FilesFolder;

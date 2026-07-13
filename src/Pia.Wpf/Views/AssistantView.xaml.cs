@@ -217,4 +217,10 @@ public partial class AssistantView : UserControl
         if (ViewModel?.HandleFilesDroppedCommand.CanExecute(files) == true)
             ViewModel.HandleFilesDroppedCommand.Execute(files);
     }
+
+    // Opens the "what can Pia do?" tips flyout. StaysOpen="False" dismisses it on outside click.
+    private void TipsButton_Click(object sender, RoutedEventArgs e)
+    {
+        TipsPopup.IsOpen = !TipsPopup.IsOpen;
+    }
 }
