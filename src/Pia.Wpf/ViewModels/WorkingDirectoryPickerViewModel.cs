@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pia.Services;
@@ -32,8 +33,24 @@ public sealed partial class WorkingDirectoryPickerViewModel : ObservableObject
     [ObservableProperty]
     private bool _isEmpty;
 
+    /// <summary>True while the inline "new folder" input row is shown.</summary>
+    [ObservableProperty]
+    private bool _isCreatingFolder;
+
+    /// <summary>Text bound to the inline "new folder" input.</summary>
+    [ObservableProperty]
+    private string _newFolderName = string.Empty;
+
+    /// <summary>Leaf name of the folder created by the last successful
+    /// <see cref="ConfirmCreateFolderCommand"/> — the view reads it once to select/scroll the new
+    /// row into view. Not observable; navigation does not clear it.</summary>
+    public string? LastCreatedFolder { get; private set; }
+
     public IRelayCommand<string> EnterCommand { get; }
     public IRelayCommand<int> JumpToCrumbCommand { get; }
+    public IRelayCommand BeginCreateFolderCommand { get; }
+    public IRelayCommand ConfirmCreateFolderCommand { get; }
+    public IRelayCommand CancelCreateFolderCommand { get; }
 
     /// <summary>Raised with the new relative path (forward slashes; <c>""</c> = root) when the chosen directory changes.</summary>
     public event EventHandler<string>? WorkingDirectoryChosen;
@@ -43,6 +60,9 @@ public sealed partial class WorkingDirectoryPickerViewModel : ObservableObject
         _service = service;
         EnterCommand = new RelayCommand<string>(ExecuteEnter);
         JumpToCrumbCommand = new RelayCommand<int>(ExecuteJumpToCrumb);
+        BeginCreateFolderCommand = new RelayCommand(ExecuteBeginCreateFolder);
+        ConfirmCreateFolderCommand = new RelayCommand(ExecuteConfirmCreateFolder, CanConfirmCreateFolder);
+        CancelCreateFolderCommand = new RelayCommand(ExecuteCancelCreateFolder);
         // NOTE: do NOT enumerate here. This VM is constructed on the UI thread during the
         // chat-title chip's construction; ListSubfolders synchronously blocks on
         // ISettingsService.GetSettingsAsync (an async load), which would risk a UI-thread
@@ -58,6 +78,7 @@ public sealed partial class WorkingDirectoryPickerViewModel : ObservableObject
     /// </summary>
     public void InitializeFrom(string? relativePath)
     {
+        CancelFolderCreation();
         CurrentRelativePath = Normalize(relativePath);
         Refresh();
     }
@@ -101,9 +122,68 @@ public sealed partial class WorkingDirectoryPickerViewModel : ObservableObject
 
     private void Choose(string relativePath)
     {
+        // Navigating (drill/ascend/jump) abandons any in-progress folder creation.
+        CancelFolderCreation();
         CurrentRelativePath = relativePath;
         Refresh();
         WorkingDirectoryChosen?.Invoke(this, relativePath);
+    }
+
+    private void ExecuteBeginCreateFolder()
+    {
+        LastCreatedFolder = null;
+        NewFolderName = string.Empty;
+        IsCreatingFolder = true;
+    }
+
+    private void ExecuteCancelCreateFolder() => CancelFolderCreation();
+
+    private void CancelFolderCreation()
+    {
+        IsCreatingFolder = false;
+        NewFolderName = string.Empty;
+    }
+
+    private bool CanConfirmCreateFolder() => IsValidLeafName(NewFolderName);
+
+    private void ExecuteConfirmCreateFolder()
+    {
+        var name = NewFolderName?.Trim();
+        if (!IsValidLeafName(name)) return;
+
+        var relative = string.IsNullOrEmpty(CurrentRelativePath) ? name! : CurrentRelativePath + "/" + name;
+
+        // EnsureSubfolder validates sandbox containment / sensitive paths, is idempotent, and
+        // returns null on a blocked or failed create. Keep the input open on failure so the user
+        // can amend the name; creating never re-points the active chat (no WorkingDirectoryChosen).
+        var created = _service.EnsureSubfolder(relative);
+        if (created is null) return;
+
+        IsCreatingFolder = false;
+        NewFolderName = string.Empty;
+        Refresh();
+        // Highlight the new row. Match the actual on-disk entry — its casing can differ from what
+        // was typed on a case-insensitive volume (an idempotent re-create doesn't rename), and the
+        // view selects by ordinal string equality, so mismatched casing would silently no-op the
+        // highlight. Fall back to the typed leaf. Set after Refresh so a navigation-triggered reset
+        // can't clear it.
+        var leaf = SplitSegments(created) is { Length: > 0 } parts ? parts[^1] : name;
+        LastCreatedFolder = Entries.FirstOrDefault(e => string.Equals(e, leaf, StringComparison.OrdinalIgnoreCase)) ?? leaf;
+    }
+
+    partial void OnNewFolderNameChanged(string value) =>
+        ConfirmCreateFolderCommand.NotifyCanExecuteChanged();
+
+    /// <summary>A single sandbox-relative folder segment: non-empty, no path separators, no
+    /// invalid filename chars, and not <c>.</c>/<c>..</c>. Deeper containment and sensitive-path
+    /// checks are enforced by <see cref="IWorkingDirectoryService.EnsureSubfolder"/>.</summary>
+    private static bool IsValidLeafName(string? name)
+    {
+        var trimmed = name?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return false;
+        if (trimmed is "." or "..") return false;
+        if (trimmed.Contains('/') || trimmed.Contains('\\')) return false;
+        return trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
     }
 
     private void RebuildCrumbs()

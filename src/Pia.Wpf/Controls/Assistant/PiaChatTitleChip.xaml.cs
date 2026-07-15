@@ -34,6 +34,106 @@ public partial class PiaChatTitleChip : UserControl
     private void WorkingDirPopup_Opened(object? sender, EventArgs e) =>
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(FocusFirstEntry));
 
+    // Header "+ folder" button: toggle the inline creation row. Opening it moves focus into the
+    // name box; the second click (while creating) cancels.
+    private void NewFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ChatTitleChipViewModel vm) return;
+        var picker = vm.WorkingDirectoryPicker;
+        if (picker.IsCreatingFolder)
+        {
+            picker.CancelCreateFolderCommand.Execute(null);
+            return;
+        }
+
+        picker.BeginCreateFolderCommand.Execute(null);
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            NewFolderTextBox.Focus();
+            Keyboard.Focus(NewFolderTextBox);
+        }));
+    }
+
+    // Enter confirms (when the name is valid), Escape cancels. Both may collapse the input row, so
+    // focus is parked on the header button FIRST (see ParkFocusThenSettle) — never left on a
+    // collapsing element, which would dismiss the StaysOpen=False popup.
+    private void NewFolderTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (DataContext is not ChatTitleChipViewModel vm) return;
+        var picker = vm.WorkingDirectoryPicker;
+
+        switch (e.Key)
+        {
+            case Key.Enter:
+                if (picker.ConfirmCreateFolderCommand.CanExecute(null))
+                    ParkFocusThenSettle(() => picker.ConfirmCreateFolderCommand.Execute(null), selectCreated: true);
+                e.Handled = true;
+                break;
+
+            case Key.Escape:
+                ParkFocusThenSettle(() => picker.CancelCreateFolderCommand.Execute(null), selectCreated: false);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    // Click fires BEFORE the bound command runs (WPF raises Click, then executes the command), so
+    // parking focus on the header button here moves it off the ✓/✕ button before the command
+    // collapses the row. Then settle focus (failure → back to the textbox; success → highlight).
+    private void ConfirmCreateFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        NewFolderButton.Focus();
+        SettleFocusAfterCreate(selectCreated: true);
+    }
+
+    private void CancelCreateFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        NewFolderButton.Focus();
+        SettleFocusAfterCreate(selectCreated: false);
+    }
+
+    // Park focus on the always-visible header button, THEN run the state change, THEN settle. Doing
+    // the focus move synchronously before the command means the input row (textbox/✓/✕) never holds
+    // focus while it collapses — the collapse-time focus gap is what would dismiss the popup.
+    private void ParkFocusThenSettle(Action stateChange, bool selectCreated)
+    {
+        NewFolderButton.Focus();
+        stateChange();
+        SettleFocusAfterCreate(selectCreated);
+    }
+
+    // Runs after the command has applied. On a rejected create the VM keeps the row open, so return
+    // focus to the textbox for amending; otherwise the row collapsed and focus stays on the header
+    // button (already parked), and a created folder is selected/scrolled into view.
+    private void SettleFocusAfterCreate(bool selectCreated)
+    {
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            if (DataContext is not ChatTitleChipViewModel vm) return;
+            var picker = vm.WorkingDirectoryPicker;
+
+            if (picker.IsCreatingFolder)
+            {
+                // Create was rejected (service returned null): keep the user in the name box.
+                NewFolderTextBox.Focus();
+                Keyboard.Focus(NewFolderTextBox);
+                return;
+            }
+
+            if (selectCreated && picker.LastCreatedFolder is { } leaf)
+            {
+                WorkingDirEntries.UpdateLayout();
+                WorkingDirEntries.SelectedItem = leaf;
+                if (WorkingDirEntries.SelectedItem is not null)
+                    WorkingDirEntries.ScrollIntoView(WorkingDirEntries.SelectedItem);
+            }
+
+            // Belt-and-suspenders: focus was parked here synchronously before the collapse; re-assert
+            // it in case selection/layout shifted it.
+            NewFolderButton.Focus();
+        }));
+    }
+
     // Enter/Space drills into the highlighted folder; Backspace ascends one level; Escape closes
     // the picker. Arrow keys fall through to the ListBox's own selection navigation.
     private void WorkingDirEntries_PreviewKeyDown(object sender, KeyEventArgs e)
