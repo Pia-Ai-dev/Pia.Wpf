@@ -879,4 +879,5 @@
   <data name="Assistant_RegenerateOptions_Tooltip" xml:space="preserve"><value>Régénérer avec options</value></data>
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exporter</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Ouvrir le dossier contenant</value></data>
+  <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Ouvrir dans VS Code</value></data>
 </root>
