@@ -34,20 +34,33 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             "todo" => ActionCardCategory.Todo,
             "reminder" => ActionCardCategory.Reminder,
             "files" => ActionCardCategory.Files,
+            "git" => ActionCardCategory.Git,
             _ => ActionCardCategory.Memory
         };
 
+        // Destructive is TOOLNAME-based, not the "delete" substring: git_switch/git_restore/git_stash
+        // carry no "delete" yet can shed uncommitted changes, and each needs its OWN warning. (git_stash
+        // "list" runs inline and never reaches a card, so marking the tool destructive here is safe.)
         var isDelete = pendingAction.ToolName.Contains("delete", StringComparison.OrdinalIgnoreCase)
             || pendingAction.ToolName == "forget";
+        var isGitDestructive = pendingAction.ToolName is "git_switch" or "git_restore" or "git_stash";
+        var isDestructive = isDelete || isGitDestructive;
 
-        var warningText = isDelete ? pendingAction.PluginName switch
+        var warningText = pendingAction.ToolName switch
         {
-            "memory" => _localizationService["Msg_Assistant_PermanentDeleteMemory"],
-            "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
-            "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
-            "files" => _localizationService["Msg_Assistant_PermanentDeleteFile"],
+            "git_switch" => _localizationService["Msg_Assistant_GitSwitchWarning"],
+            "git_restore" => _localizationService["Msg_Assistant_GitRestoreWarning"],
+            "git_stash" => _localizationService["Msg_Assistant_GitStashWarning"],
+            _ when isDelete => pendingAction.PluginName switch
+            {
+                "memory" => _localizationService["Msg_Assistant_PermanentDeleteMemory"],
+                "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
+                "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
+                "files" => _localizationService["Msg_Assistant_PermanentDeleteFile"],
+                _ => null
+            },
             _ => null
-        } : null;
+        };
 
         // Files write_file carries a true line-level diff preview that bypasses the Label/Value
         // ParseKeyValueText path used for every other plugin. The card renders DiffLines instead.
@@ -82,7 +95,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             PluginId = pendingAction.PluginId,
             IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName),
             IsAutoApproved = autoApproved,
-            IsDestructive = isDelete,
+            IsDestructive = isDestructive,
             WarningText = warningText,
             Details = details,
             DiffLines = diffLines,
@@ -121,6 +134,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "complete_todo" => _localizationService["Msg_Assistant_StatusCompletingTodo"],
         "update_todo" => _localizationService["Msg_Assistant_StatusUpdatingTodo"],
         "delete_todo" => _localizationService["Msg_Assistant_StatusDeletingTodo"],
+        var t when t.StartsWith("git_", StringComparison.Ordinal) => _localizationService["Msg_Assistant_StatusRunningGit"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
 
@@ -129,6 +143,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "memory" => _localizationService["Msg_Assistant_MemoryUpdated"],
         "todo" => _localizationService["Msg_Assistant_TodoUpdated"],
         "reminder" => _localizationService["Msg_Assistant_ReminderUpdated"],
+        "git" => _localizationService["Msg_Assistant_GitUpdated"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
 
@@ -140,6 +155,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ActionCardCategory.Todo => "ActionCard_Category_Todo",
             ActionCardCategory.Reminder => "ActionCard_Category_Reminder",
             ActionCardCategory.Files => "ActionCard_Category_File",
+            ActionCardCategory.Git => "ActionCard_Category_Git",
             _ => "ActionCard_Category_Memory"
         };
 
@@ -150,6 +166,12 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             "forget" or "delete_todo" or "delete_reminder" or "delete_file" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
             "write_file" => "ActionCard_Action_Write",
+            "git_init" => "ActionCard_Action_Initialize",
+            "git_add" => "ActionCard_Action_Stage",
+            "git_commit" => "ActionCard_Action_Commit",
+            "git_switch" => "ActionCard_Action_Switch",
+            "git_restore" => "ActionCard_Action_Restore",
+            "git_stash" => "ActionCard_Action_Stash",
             _ => "ActionCard_Action_Create"
         };
 

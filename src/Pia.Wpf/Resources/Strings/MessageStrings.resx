@@ -68,6 +68,11 @@
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>This will permanently delete this reminder.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>This will permanently delete this todo.</value></data>
   <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>This will permanently delete this file.</value></data>
+  <data name="Msg_Assistant_GitSwitchWarning" xml:space="preserve"><value>Switching branches may discard or overlay uncommitted changes.</value></data>
+  <data name="Msg_Assistant_GitRestoreWarning" xml:space="preserve"><value>This discards changes and cannot be undone.</value></data>
+  <data name="Msg_Assistant_GitStashWarning" xml:space="preserve"><value>Stashing or popping moves uncommitted changes and may hide or overlay them.</value></data>
+  <data name="Msg_Assistant_StatusRunningGit" xml:space="preserve"><value>Running git...</value></data>
+  <data name="Msg_Assistant_GitUpdated" xml:space="preserve"><value>Git Updated</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Reminder Updated</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>Response generation was cancelled.</value></data>
   <data name="Msg_Assistant_ResponseTimedOut" xml:space="preserve"><value>Provider '{0}' did not respond within {1} seconds.</value></data>

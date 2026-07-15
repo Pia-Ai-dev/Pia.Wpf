@@ -182,6 +182,33 @@ public class BuiltInPluginHandler : IPluginToolHandler
     }
 
     /// <summary>
+    /// Factory: creates adapter wrapping IGitToolHandler. Like the files plugin, the git plugin is only
+    /// exposed when it is available (git installed + enabled + a sandbox folder configured) — when
+    /// unavailable, both <c>GetTools</c> and the system-prompt addition are suppressed. Read-only git
+    /// tools run inline; mutating ones return a pending action carrying a <c>Details</c> string (no diff
+    /// preview), so this mirrors the todo/reminder factory shape.
+    /// </summary>
+    public static BuiltInPluginHandler FromGitHandler(
+        IGitToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) =>
+            {
+                var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
+                if (pending is null) return (result, null);
+                return (null, new PluginToolCall(
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details, pending.Execute,
+                    DiffPreview: null, TargetPath: pending.TargetPath));
+            },
+            async pluginCall => await pluginCall.Execute(),
+            GetSystemPromptFromConfig(config.ConfigJson),
+            isAvailable: () => handler.IsAvailable);
+    }
+
+    /// <summary>
     /// Factory: creates adapter wrapping IIngestToolHandler. Ingest runs inline (no pending-action
     /// confirmation card): the handler returns a plain result, so handleCall adapts it to a
     /// (result, no-pending) tuple and executePending is unreachable.

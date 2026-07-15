@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -178,6 +179,16 @@ public partial class App : Application
 
         // Pre-download embedding model in background
         _ = EnsureEmbeddingModelAsync();
+
+        // Warm the git-installed probe and VS Code detection off the UI thread (both spawn where.exe /
+        // read the registry). Both cache their result, so the git-tools settings toggle and the first
+        // file chip render without first-use latency.
+        _ = Task.Run(() =>
+        {
+            _ = GitLocator.IsAvailable;
+            _ = VsCodeLauncher.IsAvailable;
+            VsCodeLauncher.TryGetIcon();
+        });
     }
 
     private async Task StartPeriodicUpdateCheckAsync()

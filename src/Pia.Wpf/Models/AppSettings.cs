@@ -177,6 +177,11 @@ public class AppSettings
     // enablement is a distinct flag rather than "clear the folder to disable".
     public bool AssistantFileToolsEnabled { get; set; } = true;
 
+    // True when the assistant's git tools (status/log/diff/branch/show/init/add/commit/switch/restore/stash)
+    // are exposed over repositories inside AssistantFilesFolder. Inert when git is not installed (the
+    // handler's IsAvailable also requires GitLocator.IsAvailable); the settings toggle is greyed out then.
+    public bool AssistantGitToolsEnabled { get; set; } = true;
+
     // Layout-migration marker, distinct from VaultVersion (SQLite->vault). 0 = pre-nesting
     // (legacy vault at %LOCALAPPDATA%\Pia\Vault, sibling of workdir); 1 = vault nested under
     // AssistantFilesFolder. Set once the in-place nesting migration completes on this device.

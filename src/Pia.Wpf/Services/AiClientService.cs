@@ -165,6 +165,13 @@ public class AiClientService : IAiClientService
         {
             _logger.LogDebug("Tool round {Round}/{MaxRounds} starting, path={Path}",
                 round + 1, maxToolRounds, provider.SupportsStreaming ? "streaming" : "non-streaming");
+
+            // The server decides the guardrail route (and emits the protected marker) per request, so it is
+            // re-evaluated every tool round. Reset the flag each round so the badge reflects the round that
+            // produced the FINAL answer — not a transient intermediate round (e.g. a classifier ERROR that
+            // fail-closed to the protected model but recovered to the normal model on the next round). A
+            // genuine HIT keeps marking every round because the offending content stays in workingMessages.
+            protectedRoute = false;
             ChatResponse response;
 
             if (provider.SupportsStreaming)

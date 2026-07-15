@@ -450,6 +450,8 @@
   <data name="Settings_Assistant_DefaultWorkingDirectory_Invalid" xml:space="preserve"><value>That folder is not valid. The working directory must be a subfolder of the assistant files folder.</value></data>
   <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Change…</value></data>
   <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Allow the assistant to read and write files in this folder</value></data>
+  <data name="Settings_AssistantGitToolsEnabled" xml:space="preserve"><value>Allow the assistant to run git commands in this folder</value></data>
+  <data name="Settings_AssistantGitToolsUnavailable" xml:space="preserve"><value>Git is not installed</value></data>
   <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Memory vault: {0}</value></data>
   <data name="Settings_FolderMove_Confirm" xml:space="preserve"><value>Move your assistant files and memory to {0}? This copies, verifies, then removes the old location.</value></data>
   <data name="Settings_FolderMove_OutsideProfile" xml:space="preserve"><value>Choose a folder inside your user profile folder.</value></data>
@@ -758,6 +760,13 @@
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Declined</value></data>
   <data name="ActionCard_Diff_UnchangedLines" xml:space="preserve"><value>{0} unchanged lines</value></data>
   <data name="ActionCard_Diff_TruncatedNotice" xml:space="preserve"><value>Diff truncated — remaining lines not shown</value></data>
+  <data name="ActionCard_Category_Git" xml:space="preserve"><value>Git</value></data>
+  <data name="ActionCard_Action_Initialize" xml:space="preserve"><value>Initialize</value></data>
+  <data name="ActionCard_Action_Stage" xml:space="preserve"><value>Stage</value></data>
+  <data name="ActionCard_Action_Commit" xml:space="preserve"><value>Commit</value></data>
+  <data name="ActionCard_Action_Switch" xml:space="preserve"><value>Switch</value></data>
+  <data name="ActionCard_Action_Restore" xml:space="preserve"><value>Restore</value></data>
+  <data name="ActionCard_Action_Stash" xml:space="preserve"><value>Stash</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copy to Clipboard</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Type</value></data>

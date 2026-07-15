@@ -39,6 +39,10 @@ public static partial class VsCodeLauncher
         ".md", ".markdown", ".txt", ".csv", ".log", ".gitignore", ".dockerfile",
     };
 
+    // Guards the lazy detection/icon caches. Since the startup prewarm resolves these on a background
+    // thread, a UI-thread reader must not observe the "_resolved = true" flag before "_executable" is
+    // published (which would return a false "VS Code absent" that sticks). Mirrors GitLocator's _gate.
+    private static readonly object _gate = new();
     private static bool _resolved;
     private static string? _executable;
 
@@ -83,38 +87,44 @@ public static partial class VsCodeLauncher
     /// </summary>
     public static ImageSource? TryGetIcon()
     {
-        if (_iconResolved) return _icon;
-        _iconResolved = true;
-
-        var exe = ResolveExecutable();
-        if (exe is null) return _icon = null;
-
-        var large = new IntPtr[1];
-        try
+        lock (_gate)
         {
-            var count = ExtractIconEx(exe, 0, large, null, 1);
-            if (count == 0 || large[0] == IntPtr.Zero) return _icon = null;
+            if (_iconResolved) return _icon;
+            _iconResolved = true;
 
-            var source = Imaging.CreateBitmapSourceFromHIcon(
-                large[0], Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            source.Freeze();
-            return _icon = source;
-        }
-        catch
-        {
-            return _icon = null;
-        }
-        finally
-        {
-            if (large[0] != IntPtr.Zero) DestroyIcon(large[0]);
+            var exe = ResolveExecutable(); // reentrant on _gate
+            if (exe is null) return _icon = null;
+
+            var large = new IntPtr[1];
+            try
+            {
+                var count = ExtractIconEx(exe, 0, large, null, 1);
+                if (count == 0 || large[0] == IntPtr.Zero) return _icon = null;
+
+                var source = Imaging.CreateBitmapSourceFromHIcon(
+                    large[0], Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                source.Freeze();
+                return _icon = source;
+            }
+            catch
+            {
+                return _icon = null;
+            }
+            finally
+            {
+                if (large[0] != IntPtr.Zero) DestroyIcon(large[0]);
+            }
         }
     }
 
     private static string? ResolveExecutable()
     {
-        if (_resolved) return _executable;
-        _resolved = true;
-        return _executable = ProbeExecutable();
+        lock (_gate)
+        {
+            if (_resolved) return _executable;
+            _resolved = true;
+            return _executable = ProbeExecutable();
+        }
     }
 
     private static string? ProbeExecutable()
