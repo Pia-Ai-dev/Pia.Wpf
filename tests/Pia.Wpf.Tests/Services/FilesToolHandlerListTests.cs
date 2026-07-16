@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -150,6 +151,109 @@ public class FilesToolHandlerListTests : IDisposable
         var result = _handler.ListRelativeFiles(filter: null, max: 50);
 
         Assert.Contains("a.txt", result);
+    }
+
+    [Fact]
+    public void ListRelativeFiles_ExcludesDefaultIgnoredDirectories()
+    {
+        // The @Files picker must not surface VCS/build/dependency noise — especially .git now that the
+        // sandbox may be a git working tree. This is the core feature guard for the ignore migration.
+        WriteFile("keep.txt");
+        WriteFile(Path.Combine(".git", "config"));
+        WriteFile(Path.Combine("bin", "app.dll"));
+        WriteFile(Path.Combine("obj", "tmp.o"));
+        WriteFile(Path.Combine("node_modules", "pkg", "index.js"));
+
+        var result = _handler.ListRelativeFiles(filter: null, max: 50);
+
+        Assert.Contains("keep.txt", result);
+        Assert.DoesNotContain(result, r => r.Contains(".git", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, r => r.StartsWith("bin/", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, r => r.StartsWith("obj/", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result, r => r.Contains("node_modules", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ListRelativeFiles_DoesNotExcludeSubstringLookalikeDirectories()
+    {
+        // "cabinet" contains "bin" and "objects" contains "obj" as substrings — real folders that must
+        // still be listed. Guards against a substring (rather than path-segment) ignore match.
+        WriteFile(Path.Combine("cabinet", "note.txt"));
+        WriteFile(Path.Combine("objects", "data.txt"));
+
+        var result = _handler.ListRelativeFiles(filter: null, max: 50);
+
+        Assert.Contains("cabinet/note.txt", result);
+        Assert.Contains("objects/data.txt", result);
+    }
+
+    [Fact]
+    public void ListRelativeFiles_HonorsPiaIgnoreFile()
+    {
+        WriteFile("keep.md");
+        WriteFile("secret.txt");
+        WriteFile(".piaignore", "secret.txt\n");
+
+        var result = _handler.ListRelativeFiles(filter: null, max: 50);
+
+        Assert.Contains("keep.md", result);
+        Assert.DoesNotContain("secret.txt", result);
+    }
+
+    [Fact]
+    public void ListRelativeFiles_PiaIgnoreNegation_ReincludesFile()
+    {
+        WriteFile("keep.log");
+        WriteFile("skip.log");
+        WriteFile(".piaignore", "*.log\n!keep.log\n");
+
+        var result = _handler.ListRelativeFiles(filter: null, max: 50);
+
+        Assert.Contains("keep.log", result);
+        Assert.DoesNotContain("skip.log", result);
+    }
+
+    [Fact]
+    public async Task ListFilesTool_RejectsPathBearingPattern()
+    {
+        WriteFile(Path.Combine("docs", "a.md"));
+
+        var call = new FunctionCallContent("c1", "list_files",
+            new Dictionary<string, object?> { ["pattern"] = "docs/*.md" });
+        var (result, action) = await _handler.HandleToolCallAsync(call);
+
+        Assert.Null(action);
+        Assert.Contains("must be a file-name glob", (string)result!);
+    }
+
+    [Fact]
+    public void ListRelativeFiles_NegationCannotResurfaceSensitivePathGuardBlockedPath()
+    {
+        // Invariant: SensitivePathGuard is applied independently of the ignore matcher, so a broad
+        // ".piaignore" negation ("!**") must NOT surface a guard-blocked path. Uses a sandbox under
+        // %LOCALAPPDATA%\Pia (a blocked root, outside the workdir carve-out) — every file there is
+        // guard-blocked regardless of the ignore matcher.
+        var blockedRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Pia", "pia-guard-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(blockedRoot);
+        try
+        {
+            File.WriteAllText(Path.Combine(blockedRoot, "secret.txt"), "x");
+            File.WriteAllText(Path.Combine(blockedRoot, ".piaignore"), "!**\n"); // try to re-include everything
+
+            var settings = Substitute.For<ISettingsService>();
+            settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = blockedRoot });
+            var handler = new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
+
+            var result = handler.ListRelativeFiles(filter: null, max: 50);
+
+            Assert.DoesNotContain("secret.txt", result); // guard wins over the negation
+        }
+        finally
+        {
+            try { Directory.Delete(blockedRoot, recursive: true); } catch { /* best effort */ }
+        }
     }
 
     [Fact]

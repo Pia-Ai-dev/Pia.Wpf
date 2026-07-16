@@ -1,0 +1,25 @@
+# Default ignore patterns for the assistant file tools and the @Files picker.
+# Uses .gitignore syntax. These ship with Pia; to add or override entries, drop a
+# .piaignore (or .gitignore) in the chat's working directory (the folder being browsed) —
+# its patterns are applied after these, so "!pattern" can re-include something ignored here.
+
+# Version control
+.git/
+.svn/
+.hg/
+
+# Build output
+bin/
+obj/
+
+# Dependencies
+node_modules/
+
+# IDE / editor metadata
+.vs/
+.idea/
+.vscode/
+
+# OS clutter
+Thumbs.db
+.DS_Store

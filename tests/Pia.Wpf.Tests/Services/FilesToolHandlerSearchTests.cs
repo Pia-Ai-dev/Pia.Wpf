@@ -94,6 +94,22 @@ public class FilesToolHandlerSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_HonorsFileLevelIgnorePatterns()
+    {
+        // A file hidden via .piaignore must be hidden from search too (parity with list_files/@Files),
+        // otherwise its contents leak through search results despite being "ignored".
+        Write("keep.txt", "TARGET keep");
+        Write("secret.txt", "TARGET secret");
+        Write(".piaignore", "secret.txt\n");
+
+        var result = await SearchAsync("TARGET", mode: "files");
+
+        Assert.Contains("keep.txt", result);
+        Assert.DoesNotContain("secret.txt", result);
+        Assert.Contains("matches=1", result);
+    }
+
+    [Fact]
     public async Task Search_IgnoreSet_MatchesBySegmentNotSubstring()
     {
         // "cabinet" contains "bin" and "object.txt" contains "obj" as substrings, but they

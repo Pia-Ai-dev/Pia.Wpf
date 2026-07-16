@@ -124,7 +124,7 @@ public class FilesToolHandler : IFilesToolHandler
         return
         [
             AIFunctionFactory.Create(ListFilesSchema, "list_files",
-                "List text files inside the user's assistant files folder. Returns relative paths the other file tools accept."),
+                "List text files inside the user's assistant files folder. Returns relative paths the other file tools accept. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore entries in the folder) are omitted."),
 
             AIFunctionFactory.Create(ReadFileSchema, "read_file",
                 "Read the contents of a text file inside the assistant files folder. Use this before summarizing or updating a file."),
@@ -217,13 +217,22 @@ public class FilesToolHandler : IFilesToolHandler
     {
         var pattern = GetOptionalStringArg(args, "pattern");
 
+        // The pattern is a file-name glob applied per directory during the walk. A path-bearing
+        // pattern (e.g. "docs/*.md") would make the per-directory enumeration throw where the
+        // component is absent AND could re-enter an ignore-pruned directory (e.g. "bin/*.dll"),
+        // so reject it with guidance rather than silently mis-listing.
+        if (!string.IsNullOrEmpty(pattern) && (pattern.Contains('/') || pattern.Contains('\\')))
+            return "Error: 'pattern' must be a file-name glob (e.g. '*.md' or 'notes*'), not a path. " +
+                   "Omit it to list all files, or use search_files with a 'path' to scope a subdirectory.";
+
         List<string> rels;
         try
         {
             rels = CollectRelativeFiles(
                 root,
                 string.IsNullOrWhiteSpace(pattern) ? "*" : pattern!,
-                MaxListEntries);
+                MaxListEntries,
+                SandboxIgnore.ForRoot(root));
         }
         catch (Exception ex)
         {
@@ -241,31 +250,50 @@ public class FilesToolHandler : IFilesToolHandler
     }
 
     /// <summary>
-    /// Shared sandbox file enumeration for <c>list_files</c> and the <c>@Files</c> picker.
-    /// Walks <paramref name="root"/> recursively and applies the identical filtering both
-    /// consumers must agree on: canonical-containment (discard anything that resolves outside
-    /// root via junction/symlink) and the sensitive-path blocklist. Returns sandbox-relative
-    /// paths (native separators, derived from the enumerated path) capped at <paramref name="max"/>.
-    /// Throws on enumeration failure (e.g. an invalid glob pattern) — callers translate that into
-    /// their own error surface.
+    /// Shared sandbox file enumeration for <c>list_files</c> and the <c>@Files</c> picker. Walks
+    /// <paramref name="root"/> depth-first, pruning directories matched by <paramref name="ignore"/>
+    /// BEFORE descending — so <c>.git</c>/<c>bin</c>/<c>obj</c>/<c>node_modules</c> (and any user-
+    /// ignored tree) never consume the listing cap or the walk budget — and applies the filtering both
+    /// consumers must agree on: canonical-containment (discard anything that resolves outside root via
+    /// junction/symlink), the sensitive-path blocklist, and the ignore matcher on files. Returns
+    /// sandbox-relative paths (native separators, derived from the enumerated path) capped at
+    /// <paramref name="max"/>. Throws on enumeration failure (e.g. an invalid glob pattern) — callers
+    /// translate that into their own error surface.
     /// </summary>
-    private static List<string> CollectRelativeFiles(string root, string searchPattern, int max)
+    private static List<string> CollectRelativeFiles(string root, string searchPattern, int max, GitignoreMatcher ignore)
     {
-        var entries = Directory.EnumerateFiles(root, searchPattern, SearchOption.AllDirectories);
-
         var rels = new List<string>();
-        foreach (var full in entries)
+        var stack = new Stack<string>();
+        stack.Push(root);
+
+        while (stack.Count > 0)
         {
-            // Canonicalizing safety net: discard anything that, after junction/symlink
-            // resolution, isn't inside root. (Supersedes the old lexical StartsWith net.)
-            if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out var canon)) continue;
-            // Don't list protected system/app-data files even inside a broad sandbox (symmetric
-            // with read/search/write/delete — the blocklist applies regardless of sandbox scope).
-            if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
-            // Display path is derived from the (already lexically-under-root) enumerated path,
-            // not the junction-resolved one.
-            rels.Add(SafeRelative(root, full));
-            if (rels.Count >= max) break;
+            var dir = stack.Pop();
+
+            foreach (var sub in Directory.EnumerateDirectories(dir))
+            {
+                // Prune ignored directories before descending (skips the whole subtree) and discard
+                // anything that, after junction/symlink resolution, escapes root.
+                var relDir = NormalizeSeparators(SafeRelative(root, sub));
+                if (ignore.IsIgnored(relDir, isDirectory: true)) continue;
+                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, sub, out _)) continue;
+                stack.Push(sub);
+            }
+
+            foreach (var full in Directory.EnumerateFiles(dir, searchPattern))
+            {
+                // Canonicalizing safety net: discard anything that, after junction/symlink
+                // resolution, isn't inside root. (Supersedes the old lexical StartsWith net.)
+                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out var canon)) continue;
+                // Don't list protected system/app-data files even inside a broad sandbox (symmetric
+                // with read/search/write/delete — the blocklist applies regardless of sandbox scope).
+                if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
+                // Display path is derived from the (already lexically-under-root) enumerated path.
+                var rel = SafeRelative(root, full);
+                if (ignore.IsIgnored(NormalizeSeparators(rel), isDirectory: false)) continue;
+                rels.Add(rel);
+                if (rels.Count >= max) return rels;
+            }
         }
         return rels;
     }
@@ -286,7 +314,7 @@ public class FilesToolHandler : IFilesToolHandler
         {
             // Collect the full (capped) listing first, then filter — capping before the
             // substring filter would only ever search the first N enumerated files.
-            all = CollectRelativeFiles(root, "*", MaxListEntries);
+            all = CollectRelativeFiles(root, "*", MaxListEntries, SandboxIgnore.ForRoot(root));
         }
         catch (Exception ex)
         {
@@ -314,19 +342,15 @@ public class FilesToolHandler : IFilesToolHandler
     private static string NormalizeSeparators(string relativePath)
         => relativePath.Replace('\\', '/');
 
-    private static readonly HashSet<string> SearchIgnoredDirs = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git", "bin", "obj", "node_modules"
-    };
-
     private static readonly TimeSpan SearchRegexTimeout = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Hand-rolled, in-process, synchronous regex search over the sandbox. Walks the tree with a
-    /// manual stack (pruning the minimal ignore set before descending so we never spend the scan
-    /// budget on .git/bin/obj/node_modules), matches each line against the user regex (guarded by a
-    /// match timeout against catastrophic backtracking), and emits a diagnostics block followed by a
-    /// results body. Read-only: the caller wraps the return as (result, null) — no action card.
+    /// manual stack (pruning directories matched by the ignore matcher before descending so we never
+    /// spend the scan budget on .git/bin/obj/node_modules or the user's ignored trees), matches each
+    /// line against the user regex (guarded by a match timeout against catastrophic backtracking), and
+    /// emits a diagnostics block followed by a results body. Read-only: the caller wraps the return as
+    /// (result, null) — no action card.
     /// </summary>
     private object HandleSearchFiles(string root, IDictionary<string, object?> args)
     {
@@ -337,6 +361,10 @@ public class FilesToolHandler : IFilesToolHandler
         var mode = NormalizeSearchMode(GetOptionalStringArg(args, "mode"));
         var offset = Math.Max(1, GetOptionalIntArg(args, "offset", 1));
         var limit = Math.Clamp(GetOptionalIntArg(args, "limit", 100), 1, MaxMatches);
+
+        // Ignore matcher for this sandbox root (shipped defaults + folder .gitignore/.piaignore). Dir
+        // paths are matched relative to root, so the same matcher works from a scoped searchRoot below.
+        var ignore = SandboxIgnore.ForRoot(root);
 
         // Resolve the search root. A missing/empty/"." path means the whole sandbox; the
         // permissive resolver rejects the root itself, so special-case it rather than route it.
@@ -356,7 +384,7 @@ public class FilesToolHandler : IFilesToolHandler
             // Path-not-found: offer similar-name suggestions (best effort) instead of crashing.
             _logger.LogInformation("search_files path not found under sandbox");
             _logger.SensitiveDebug("search_files unresolved path: {Path}", requestedPath);
-            var suggestions = SuggestSimilarDirectories(root, requestedPath!);
+            var suggestions = SuggestSimilarDirectories(root, requestedPath!, ignore);
             var msg = $"Error: Path '{requestedPath}' was not found inside the assistant files folder.";
             return suggestions.Count > 0
                 ? msg + " Did you mean: " + string.Join(", ", suggestions) + "?"
@@ -405,8 +433,12 @@ public class FilesToolHandler : IFilesToolHandler
                 catch { subDirs = []; }
                 foreach (var sub in subDirs)
                 {
-                    var name = Path.GetFileName(sub);
-                    if (SearchIgnoredDirs.Contains(name)) continue; // prune by segment, not substring
+                    // Prune by ignore pattern (matched against the root-relative path), not substring.
+                    var relDir = NormalizeSeparators(SafeRelative(root, sub));
+                    if (ignore.IsIgnored(relDir, isDirectory: true)) continue;
+                    // Containment net on directories too (parity with CollectRelativeFiles) — don't
+                    // descend a junction/symlink that resolves outside the sandbox base.
+                    if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, sub, out _)) continue;
                     stack.Push(sub);
                 }
 
@@ -425,6 +457,11 @@ public class FilesToolHandler : IFilesToolHandler
                     if (!canon.StartsWith(canonRootWithSep, StringComparison.OrdinalIgnoreCase)) continue;
                     // Don't surface contents of protected system/app-data files even inside a broad sandbox.
                     if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
+                    // Honor file-level ignore patterns so search agrees with list_files/@Files on which
+                    // files exist (e.g. a user's ".piaignore" "secret.txt" or the default "*.log" is not
+                    // scanned and its contents are not surfaced). Directory-level pruning above only
+                    // skips ignored trees; a file-granular rule must be applied here too.
+                    if (ignore.IsIgnored(NormalizeSeparators(SafeRelative(root, full)), isDirectory: false)) continue;
 
                     string[] lines;
                     try
@@ -572,28 +609,44 @@ public class FilesToolHandler : IFilesToolHandler
 
     /// <summary>
     /// Best-effort similar-name suggestions for a not-found <paramref name="requestedPath"/>: returns
-    /// up to three sandbox subdirectory names that share the leaf name's prefix or substring.
+    /// up to three sandbox subdirectory names that share the leaf name's prefix or substring. Walks with
+    /// a manual stack so directories matched by <paramref name="ignore"/> are pruned before descending
+    /// (same pruning the search itself uses — a suggestion should never point at an ignored tree).
     /// </summary>
-    private static List<string> SuggestSimilarDirectories(string root, string requestedPath)
+    private static List<string> SuggestSimilarDirectories(string root, string requestedPath, GitignoreMatcher ignore)
     {
         var leaf = Path.GetFileName(requestedPath.Replace('/', Path.DirectorySeparatorChar).TrimEnd(Path.DirectorySeparatorChar));
         if (string.IsNullOrEmpty(leaf)) return [];
 
         var rootWithSep = SafeFolderPath.WithTrailingSeparator(root);
         var hits = new List<string>();
+        var stack = new Stack<string>();
+        stack.Push(root);
         try
         {
-            foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
+            while (stack.Count > 0 && hits.Count < 3)
             {
-                var name = Path.GetFileName(dir);
-                if (SearchIgnoredDirs.Contains(name)) continue;
-                if (name.Contains(leaf, StringComparison.OrdinalIgnoreCase) ||
-                    leaf.Contains(name, StringComparison.OrdinalIgnoreCase))
+                var dir = stack.Pop();
+                IEnumerable<string> subDirs;
+                try { subDirs = Directory.EnumerateDirectories(dir); }
+                catch { subDirs = []; }
+
+                foreach (var sub in subDirs)
                 {
-                    var rel = dir.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase)
-                        ? dir.Substring(rootWithSep.Length) : name;
-                    hits.Add(rel);
-                    if (hits.Count >= 3) break;
+                    var relDir = NormalizeSeparators(SafeRelative(root, sub));
+                    if (ignore.IsIgnored(relDir, isDirectory: true)) continue; // don't descend/suggest ignored trees
+                    if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, sub, out _)) continue; // stay inside the sandbox
+                    stack.Push(sub);
+
+                    var name = Path.GetFileName(sub);
+                    if (name.Contains(leaf, StringComparison.OrdinalIgnoreCase) ||
+                        leaf.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var rel = sub.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase)
+                            ? sub.Substring(rootWithSep.Length) : name;
+                        hits.Add(rel);
+                        if (hits.Count >= 3) break;
+                    }
                 }
             }
         }
@@ -1206,9 +1259,9 @@ public class FilesToolHandler : IFilesToolHandler
     }
 
     // Schema methods — signatures only, used by AIFunctionFactory for tool metadata
-    [Description("List text files in the assistant files folder")]
+    [Description("List text files in the assistant files folder. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore entries in the folder) are omitted.")]
     private static string ListFilesSchema(
-        [Description("Optional glob pattern, e.g. '*.md'. Defaults to all files.")] string? pattern = null) => "";
+        [Description("Optional file-name glob, e.g. '*.md' or 'notes*' (matched against file names at any depth). Must not contain a path separator. Defaults to all files.")] string? pattern = null) => "";
 
     [Description("Read the contents of a text file in the assistant files folder. Output is line-numbered as LINE|CONTENT (1-indexed), windowed by offset/limit, and prefixed with total_lines.")]
     private static string ReadFileSchema(
@@ -1225,7 +1278,7 @@ public class FilesToolHandler : IFilesToolHandler
     private static string DeleteFileSchema(
         [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path) => "";
 
-    [Description("Search text files in the assistant files folder for a regular-expression pattern. Read-only. .git/bin/obj/node_modules are skipped.")]
+    [Description("Search text files in the assistant files folder for a regular-expression pattern. Read-only. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore in the folder) are skipped.")]
     private static string SearchFilesSchema(
         [Description("Regular expression to search for, applied per line.")] string pattern,
         [Description("Optional subdirectory (relative to the assistant files folder) to scope the search. Defaults to the whole folder.")] string? path = null,
