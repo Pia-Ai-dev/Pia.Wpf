@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
@@ -34,7 +35,7 @@ public sealed class ChatSessionGoldenTranscriptTests
     private ChatSession CreateSession(bool active = true) => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => active);
 
-    private static ChatTurnRequest BuildRequest(ChatSession session, bool supportsTools = false, bool webSearchActive = false)
+    private static ChatTurnRequest BuildRequest(ChatSession session, bool supportsTools = false, bool webSearchActive = false, bool tokenizationEnabled = false)
     {
         var user = new AssistantMessage(ChatRole.User, "hi");
         var assistant = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
@@ -47,7 +48,7 @@ public sealed class ChatSessionGoldenTranscriptTests
             Provider = new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
             TurnSetup = new AssistantTurnSetup("system", null, SupportsTools: supportsTools, WebSearchActive: webSearchActive),
             AtCommands = [],
-            TokenizationEnabled = false,
+            TokenizationEnabled = tokenizationEnabled,
         };
     }
 
@@ -259,5 +260,39 @@ public sealed class ChatSessionGoldenTranscriptTests
         Assert.Contains("example.com", msg.Sources[0].Url);
         Assert.DoesNotContain("https://example.com/page", msg.Content); // link rewritten to a citation marker
         Assert.Equal(ChatState.Idle, session.State);
+    }
+
+    /// <summary>
+    /// R11/R4 golden: with TokenizationEnabled=true the extracted <c>CleanupPerExchange</c> must still run
+    /// its safety-net PII detokenization on the final content and restore the ambient token-map/task
+    /// context. The other golden cases run tokenization off, so this is the only guard on that leg — a
+    /// regression that dropped it would leak tokenized PII into the (syncing) transcript or leave a stale
+    /// ambient bleeding into the next turn.
+    /// </summary>
+    [Fact]
+    public async Task TokenizationEnabled_SafetyNetDetokenizes_AndRestoresAmbients()
+    {
+        // The AI substitute is the RAW client (not the tokenizing decorator), so no mid-stream
+        // detokenization happens — the ONLY detokenize is the finally-time safety net in CleanupPerExchange.
+        _tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("<PII_1>", "Alice"));
+        ReturnsStream(() => Stream(new TextDelta("Hello <PII_1>"), new Finished(null, "m")));
+        var session = CreateSession();
+
+        // Ambients are clean before the turn; RunTurnAsync sets them and CleanupPerExchange must restore them.
+        var ambientBefore = TokenMapAmbient.Current;
+        var taskBefore = TaskAmbient.Current;
+        Assert.Null(ambientBefore);
+        Assert.Null(taskBefore);
+
+        await session.RunTurnAsync(BuildRequest(session, tokenizationEnabled: true), CancellationToken.None);
+
+        var msg = session.Messages.Last(m => !m.IsUser);
+        Assert.Equal("Hello Alice", msg.Content);            // safety-net detokenize ran on the final content
+        _tokenMap.Received().Detokenize(Arg.Any<string>());
+        Assert.Equal(ambientBefore, TokenMapAmbient.Current); // token-map ambient restored (no leak)
+        Assert.Equal(taskBefore, TaskAmbient.Current);        // task ambient restored (no leak)
+        Assert.Equal(ChatState.Idle, session.State);
+        Assert.False(session.IsStreaming);
+        Assert.Null(session.Cts);
     }
 }
