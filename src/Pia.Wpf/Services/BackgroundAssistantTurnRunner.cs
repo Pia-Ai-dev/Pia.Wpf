@@ -27,6 +27,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     private readonly IChatTitleService _titleService;
     private readonly ISettingsService _settingsService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
+    private readonly IAgentRunService _runService;
     private readonly ILogger<BackgroundAssistantTurnRunner> _logger;
 
     public BackgroundAssistantTurnRunner(
@@ -38,6 +39,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         IChatTitleService titleService,
         ISettingsService settingsService,
         Func<ITokenMapService> tokenMapFactory,
+        IAgentRunService runService,
         ILogger<BackgroundAssistantTurnRunner> logger)
     {
         _aiClient = aiClient;
@@ -48,14 +50,48 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         _titleService = titleService;
         _settingsService = settingsService;
         _tokenMapFactory = tokenMapFactory;
+        _runService = runService;
         _logger = logger;
     }
 
     public async Task<BackgroundTurnResult> RunAsync(BackgroundTurnRequest request, CancellationToken ct)
     {
         var chatId = Guid.NewGuid();
+        AgentRun? run = null;
         try
         {
+            // R1: the AgentRuns FK requires its AssistantChats parent row to exist first, and FK
+            // enforcement is ON. Persist a minimal stub chat up front so the FK target exists (it is
+            // finalized by the full SaveAsync on success, and left in place on empty/error so a Failed
+            // run's ChatId still resolves). Only then create the run. The stub save is the FK
+            // prerequisite, so — unlike the run bookkeeping below — it is allowed to propagate.
+            var stubTime = DateTime.UtcNow;
+            await _chatService.SaveAsync(new SyncAssistantChat
+            {
+                Id = chatId,
+                SchemaVersion = 1,
+                Title = request.Title,
+                CreatedAt = stubTime,
+                UpdatedAt = stubTime,
+                LastAccessedAt = stubTime,
+                WindowMode = WindowMode.Assistant.ToString(),
+                ProviderId = request.Provider.Id,
+                Messages = [],
+            }, ct);
+
+            // Run bookkeeping is best-effort and never fails the turn (§12.5). If creation is
+            // swallowed, every later run call is guarded by a null check so the turn proceeds run-less.
+            try
+            {
+                run = await _runService.CreateAsync(new AgentRunCreateRequest(
+                    chatId, RunShape.SingleTurn, request.Trigger,
+                    request.TriggerRef, request.OwnerDeviceId, Goal: request.Prompt), ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Run bookkeeping (create) failed for chat {ChatId}", chatId);
+            }
+
             var settings = await _settingsService.GetSettingsAsync();
             var tokenizationEnabled = settings.Privacy.TokenizationEnabled;
 
@@ -116,6 +152,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                             {
                                 var total = (int)((usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
                                 if (total > 0) tokens = total;
+                                if (run is not null)
+                                {
+                                    try { await _runService.AddUsageAsync(run.Id, stepId: null, usage, ct); }
+                                    catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (usage) failed for {RunId}", run.Id); }
+                                }
                             }
                             model = finished.Model;
                             break;
@@ -138,10 +179,18 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             if (string.IsNullOrWhiteSpace(visible))
             {
                 _logger.LogWarning("Background turn {ChatId} produced empty content", chatId);
+                if (run is not null)
+                {
+                    try { await _runService.FailAsync(run.Id, "Empty response", ct: ct); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail/empty) failed for {RunId}", run.Id); }
+                }
                 return new BackgroundTurnResult(chatId, false, "Empty response");
             }
 
             var now = DateTime.UtcNow;
+            // R3: these stable message Ids delimit the run's transcript slice (First/LastMessageId).
+            var userMsgId = Guid.NewGuid();
+            var assistantMsgId = Guid.NewGuid();
             var chat = new SyncAssistantChat
             {
                 Id = chatId,
@@ -156,14 +205,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 [
                     new SyncAssistantChatMessage
                     {
-                        Id = Guid.NewGuid(),
+                        Id = userMsgId,
                         Role = "user",
                         Content = request.Prompt,
                         Timestamp = now,
                     },
                     new SyncAssistantChatMessage
                     {
-                        Id = Guid.NewGuid(),
+                        Id = assistantMsgId,
                         Role = "assistant",
                         Content = visible,
                         ThinkingContent = string.IsNullOrEmpty(thinking) ? null : thinking,
@@ -189,15 +238,35 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 chatId, chat.Messages.Count);
             _logger.SensitiveDebug("Background chat {ChatId} title: {Title}", chatId, chat.Title);
 
+            if (run is not null)
+            {
+                try
+                {
+                    await _runService.SetRunMessageRangeAsync(run.Id, userMsgId, assistantMsgId, ct);
+                    await _runService.CompleteAsync(run.Id, ct: ct);
+                }
+                catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (complete) failed for {RunId}", run.Id); }
+            }
+
             return new BackgroundTurnResult(chatId, true, null);
         }
         catch (OperationCanceledException)
         {
+            if (run is not null)
+            {
+                try { await _runService.FailAsync(run.Id, null, cancelled: true, CancellationToken.None); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (cancel) failed for {RunId}", run.Id); }
+            }
             throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Background assistant turn {ChatId} failed", chatId);
+            if (run is not null)
+            {
+                try { await _runService.FailAsync(run.Id, ex.Message, ct: CancellationToken.None); }
+                catch (Exception bk) { _logger.LogWarning(bk, "Run bookkeeping (fail) failed for {RunId}", run.Id); }
+            }
             return new BackgroundTurnResult(chatId, false, ex.Message);
         }
     }

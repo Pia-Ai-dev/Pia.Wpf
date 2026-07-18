@@ -22,6 +22,15 @@ public sealed record BackgroundTurnRequest
 
     /// <summary>Optional initial chat title; when null the runner auto-titles / derives one.</summary>
     public string? Title { get; init; }
+
+    /// <summary>Run provenance (defaults to <see cref="AgentRunTrigger.User"/>); NOT the persist discriminator (§16 R14).</summary>
+    public AgentRunTrigger Trigger { get; init; } = AgentRunTrigger.User;
+
+    /// <summary>Correlating entity for the trigger, e.g. the <c>ScheduledJob.Id</c> when scheduled.</summary>
+    public Guid? TriggerRef { get; init; }
+
+    /// <summary>Owner device for this run (mirrors <c>ScheduledJob.OwnerDeviceId</c>).</summary>
+    public Guid? OwnerDeviceId { get; init; }
 }
 
 /// <summary>Outcome of a background turn. <see cref="ChatId"/> is allocated even on failure.</summary>

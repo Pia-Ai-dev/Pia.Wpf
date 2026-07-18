@@ -166,6 +166,9 @@ public class ScheduledJobBackgroundService : BackgroundService
                     Provider = provider,
                     GrantedWriteTools = job.GrantedTools,
                     Title = job.Name,
+                    Trigger = AgentRunTrigger.Schedule,
+                    TriggerRef = job.Id,
+                    OwnerDeviceId = job.OwnerDeviceId,
                 }, ct);
             }
             catch (OperationCanceledException)
