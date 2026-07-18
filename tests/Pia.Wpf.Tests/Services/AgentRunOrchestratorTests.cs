@@ -1,4 +1,6 @@
 using System.IO;
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Models;
@@ -20,6 +22,8 @@ public sealed class AgentRunOrchestratorTests
     private static AiProvider Provider() => new() { Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
 
     private static StepTurnResult Ok(string text = "done") => new(true, false, null, text, null, Guid.NewGuid(), Guid.NewGuid());
+    private static StepTurnResult OkUsage(long input, long output) =>
+        new(true, false, null, "done", new UsageDetails { InputTokenCount = input, OutputTokenCount = output }, Guid.NewGuid(), Guid.NewGuid());
     private static StepTurnResult Fail(string err) => new(false, false, err, string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
     private static StepTurnResult Cancel() => new(false, true, "cancelled", string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
 
@@ -71,6 +75,41 @@ public sealed class AgentRunOrchestratorTests
             FallbackCalled = true;
             return Task.FromResult(Ok("fallback"));
         }
+
+        public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, CancellationToken ct)
+        {
+            EndCalled = true; EndCancelled = cancelled;
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Executor whose <see cref="ExecuteStepAsync"/> models a real blocking step-turn: it cancels the
+    /// SESSION-level source the orchestrator's run CTS is linked from (as <c>ChatSession.Cancel()</c>
+    /// would), then honors the linked token by blocking on it. Without the R13 linkage the delay would
+    /// never observe the cancel and the run would hang — so a green test proves the link propagates.
+    /// </summary>
+    private sealed class CancellingExecutor : IAgentTurnExecutor
+    {
+        private readonly CancellationTokenSource _sessionCts;
+        public List<string> Executed { get; } = new();
+        public bool EndCalled { get; private set; }
+        public bool EndCancelled { get; private set; }
+
+        public CancellingExecutor(CancellationTokenSource sessionCts) => _sessionCts = sessionCts;
+
+        public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) => Task.CompletedTask;
+
+        public async Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
+        {
+            Executed.Add(step.Intent ?? step.Title);
+            _sessionCts.Cancel(); // ChatSession.Cancel() fires mid-step
+            await Task.Delay(Timeout.Infinite, ct); // linked run CTS must cancel this in-flight step
+            return Ok(); // unreachable
+        }
+
+        public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct)
+            => Task.FromResult(Ok());
 
         public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, CancellationToken ct)
         {
@@ -237,5 +276,69 @@ public sealed class AgentRunOrchestratorTests
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.Empty(final.Plan);
+    }
+
+    [Fact]
+    public async Task Run_WallClockExhausted_CompletedTruncated_WallClockReason()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        // A zero wall-clock budget trips WallClockExceeded on the very first loop iteration, before
+        // any step is dispatched — the OTHER §16 R5 branch from the step-cap test above.
+        var profile = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.Zero);
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), profile, TestContext.Current.CancellationToken);
+
+        Assert.Empty(exec.Executed); // wall-clock exhausted before dispatching any step
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State); // never a silent clean Completed
+        Assert.Contains("truncated", final.ExtraJson ?? string.Empty);
+        Assert.Contains("wall-clock", final.ExtraJson ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task Run_SessionCancelDuringStep_LinkedCts_CancelsInFlightStep_Cancelled()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2")), false));
+
+        // sessionCts stands in for ChatSession.Cts; RunAsync links its run CTS from this token (R13).
+        using var sessionCts = new CancellationTokenSource();
+        var exec = new CancellingExecutor(sessionCts);
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, sessionCts.Token);
+
+        Assert.Equal(new[] { "s1" }, exec.Executed); // cancel landed on the in-flight step; s2 never dispatched
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.True(exec.EndCalled);
+        Assert.True(exec.EndCancelled);
+    }
+
+    [Fact]
+    public async Task Run_PerStepUsage_AccruesLedgerThroughLoop()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2")), false));
+        var exec = new RecordingExecutor(_ => OkUsage(10, 5)); // each step carries usage (R16 ledger)
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.NotNull(final.LedgerJson);
+
+        using var doc = JsonDocument.Parse(final.LedgerJson!);
+        var root = doc.RootElement;
+        Assert.Equal(20, root.GetProperty("inputTokens").GetInt64());  // 2 × 10
+        Assert.Equal(10, root.GetProperty("outputTokens").GetInt64()); // 2 × 5
+        Assert.Equal(2, root.GetProperty("perStep").GetArrayLength());  // per-step ledger entries
     }
 }

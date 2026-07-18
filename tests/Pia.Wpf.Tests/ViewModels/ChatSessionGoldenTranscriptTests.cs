@@ -34,7 +34,7 @@ public sealed class ChatSessionGoldenTranscriptTests
     private ChatSession CreateSession(bool active = true) => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => active);
 
-    private static ChatTurnRequest BuildRequest(ChatSession session)
+    private static ChatTurnRequest BuildRequest(ChatSession session, bool supportsTools = false, bool webSearchActive = false)
     {
         var user = new AssistantMessage(ChatRole.User, "hi");
         var assistant = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
@@ -45,7 +45,7 @@ public sealed class ChatSessionGoldenTranscriptTests
             UserMessage = user,
             AssistantMessage = assistant,
             Provider = new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
-            TurnSetup = new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false),
+            TurnSetup = new AssistantTurnSetup("system", null, SupportsTools: supportsTools, WebSearchActive: webSearchActive),
             AtCommands = [],
             TokenizationEnabled = false,
         };
@@ -66,6 +66,33 @@ public sealed class ChatSessionGoldenTranscriptTests
             yield return item;
             await Task.Yield();
         }
+    }
+
+    /// <summary>
+    /// Sets up the AI stream to first drive the passed-in tool handler (the
+    /// <c>supportsTools ? HandleToolCallWithStatus : null</c> wiring inside RunModelExchangeAsync)
+    /// with one <see cref="FunctionCallContent"/> round, then stream the final answer.
+    /// </summary>
+    private void ReturnsToolThenText(string toolName, string finalText)
+    {
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var handler = ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3);
+                return ToolThenTextStream(handler, toolName, finalText);
+            });
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> ToolThenTextStream(
+        Func<FunctionCallContent, Task<object?>>? handler, string toolName, string finalText)
+    {
+        if (handler is not null)
+            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>()));
+        yield return new TextDelta(finalText);
+        yield return new Finished(null, "m");
+        await Task.Yield();
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> ThrowingStream(Exception ex, [EnumeratorCancellation] CancellationToken ct = default)
@@ -186,5 +213,51 @@ public sealed class ChatSessionGoldenTranscriptTests
 
         Assert.Equal(ChatState.Completed, session.State);
         Assert.Equal("done", session.Messages.Last(m => !m.IsUser).Content);
+    }
+
+    /// <summary>
+    /// R11/R4 golden: SupportsTools=true wires the tool handler into the extracted
+    /// RunModelExchangeAsync. A tool round must invoke the handler + run the status path, then the
+    /// final content still settles Idle — a regression that dropped the handler would break this.
+    /// </summary>
+    [Fact]
+    public async Task SupportsTools_ToolRound_InvokesHandler_StatusPathRuns_SettlesIdle()
+    {
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("Reading file…");
+        ReturnsToolThenText("read_file", "final answer");
+        var session = CreateSession();
+
+        await session.RunTurnAsync(BuildRequest(session, supportsTools: true), CancellationToken.None);
+
+        // The tool handler ran (RunModelExchangeAsync wired supportsTools → HandleToolCallWithStatus).
+        await _plugins.Received().RouteToolCallAsync(
+            Arg.Is<FunctionCallContent>(c => c.Name == "read_file"), Arg.Any<CancellationToken>());
+        _cards.Received().ResolveStatusText("read_file"); // status/action-card path executed
+        var msg = session.Messages.Last(m => !m.IsUser);
+        Assert.Equal("final answer", msg.Content);
+        Assert.Equal(ChatState.Idle, session.State);
+        Assert.False(session.IsStreaming);
+    }
+
+    /// <summary>
+    /// R11/R4 golden: WebSearchActive=true runs the ApplyWebCitations post-process moved into
+    /// RunModelExchangeAsync. Citations must be extracted from the final content into Sources and the
+    /// raw URL rewritten to a marker — a regression that dropped the post-process would break this.
+    /// </summary>
+    [Fact]
+    public async Task WebSearchActive_ExtractsCitations_FromFinalContent()
+    {
+        ReturnsStream(() => Stream(
+            new TextDelta("See [Example](https://example.com/page) for details."),
+            new Finished(null, "m")));
+        var session = CreateSession();
+
+        await session.RunTurnAsync(BuildRequest(session, webSearchActive: true), CancellationToken.None);
+
+        var msg = session.Messages.Last(m => !m.IsUser);
+        Assert.Single(msg.Sources); // ApplyWebCitations ran on the final content
+        Assert.Contains("example.com", msg.Sources[0].Url);
+        Assert.DoesNotContain("https://example.com/page", msg.Content); // link rewritten to a citation marker
+        Assert.Equal(ChatState.Idle, session.State);
     }
 }
