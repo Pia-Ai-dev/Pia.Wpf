@@ -282,83 +282,12 @@ public sealed class ChatSession : IDisposable
                     chatMessages.Add(msg.ToChatMessage());
             }
 
-            var rawBuffer = new StringBuilder();
-            // Reasoning reaches us via two channels that never overlap for a given provider:
-            // a separate ReasoningDelta stream (TextReasoningContent / OpenRouter `reasoning`)
-            // and inline <think> tags parsed out of the visible text. Merge both into ThinkingContent.
-            var reasoningBuffer = new StringBuilder();
-            var tagThinking = string.Empty;
-
-            void UpdateThinking()
-            {
-                var separate = reasoningBuffer.ToString().Trim();
-                var combined = (separate.Length > 0, tagThinking.Length > 0) switch
-                {
-                    (true, true) => $"{separate}\n\n{tagThinking}",
-                    (true, false) => separate,
-                    (false, true) => tagThinking,
-                    _ => string.Empty,
-                };
-                if (!string.IsNullOrEmpty(combined))
-                    assistantMessage.ThinkingContent = combined;
-            }
-
-            // Time the "thinking" phase: from the first reasoning token to the first answer
-            // token (or stream end), surfaced as a localized "Thought for Ns" chip.
-            DateTime? reasoningStartedAt = null;
-            var reasoningTimed = false;
-
-            void StopReasoningTimer()
-            {
-                if (reasoningStartedAt is { } startedAt && !reasoningTimed)
-                {
-                    reasoningTimed = true;
-                    var seconds = Math.Max(1, (int)Math.Round((DateTime.Now - startedAt).TotalSeconds));
-                    var duration = seconds < 60 ? $"{seconds}s" : $"{seconds / 60}m {seconds % 60}s";
-                    assistantMessage.ReasoningDurationLabel =
-                        _localizationService.Format("Assistant_ThoughtForDuration", duration);
-                }
-            }
-
-            await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
-                chatMessages, provider, tools,
-                supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled) : null,
-                nameof(WindowMode.Assistant),
-                token))
-            {
-                switch (item)
-                {
-                    case TextDelta td:
-                        rawBuffer.Append(td.Text);
-                        var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
-
-                        if (!string.IsNullOrEmpty(thinking))
-                            reasoningStartedAt ??= DateTime.Now; // inline <think> reasoning
-                        if (!string.IsNullOrEmpty(visible))
-                            StopReasoningTimer(); // first answer token ends the thinking phase (set label first)
-                        assistantMessage.Content = visible;
-                        tagThinking = thinking;
-                        UpdateThinking();
-                        break;
-
-                    case ReasoningDelta rd:
-                        reasoningStartedAt ??= DateTime.Now;
-                        reasoningBuffer.Append(rd.Text);
-                        UpdateThinking();
-                        break;
-
-                    case Finished finished:
-                        assistantMessage.IsProtectedRoute = finished.Protected;
-                        ApplyStats(assistantMessage, finished, provider);
-                        break;
-                }
-            }
-
-            // Reasoning-only / no-visible-answer turns: close the timer at stream end.
-            StopReasoningTimer();
-
-            if (webSearchActive)
-                ApplyWebCitations(assistantMessage);
+            // Stream consumption + tool loop (§13.5 step 1) — extracted so the Planned
+            // step path (RunStepTurnAsync) can reuse the identical exchange body. It throws
+            // on every provider/exception type; RunTurnAsync keeps today's catches verbatim.
+            // The returned usage is discarded here (the single-turn path has no step ledger).
+            await RunModelExchangeAsync(assistantMessage, chatMessages, provider, tools,
+                supportsTools, webSearchActive, tokenizationEnabled, token);
 
             // Reached the end of the turn without an exception — matches today's
             // "followups run as the last line of try" gate.
@@ -439,29 +368,12 @@ public sealed class ChatSession : IDisposable
         }
         finally
         {
-            var emptyResponse = false;
-            // Don't fabricate empty-response text when the message pair was removed
-            // (vision rejection) or the turn was cancelled (C1) — a cancelled turn must
-            // not also report "empty" and raise a second snackbar over the Cancelled one.
-            if (Messages.Contains(assistantMessage) && string.IsNullOrEmpty(assistantMessage.Content)
-                && !token.IsCancellationRequested)
-            {
-                _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
-                assistantMessage.Content = _localizationService["Msg_Assistant_EmptyResponse"];
-                emptyResponse = true;
-            }
+            // Per-exchange cleanup (§13.5 step 2), shared with RunStepTurnAsync: empty-response
+            // synthesis + IsStreaming=false + safety-net PII detokenize + ambient restore.
+            var emptyResponse = CleanupPerExchange(assistantMessage, tokenizationEnabled,
+                token.IsCancellationRequested, previousAmbient, previousTask);
 
-            assistantMessage.IsStreaming = false;
-
-            // Final full-pass de-tokenization as safety net (own map).
-            if (tokenizationEnabled && !string.IsNullOrEmpty(assistantMessage.Content))
-                assistantMessage.Content = TokenMap.Detokenize(assistantMessage.Content);
-
-            // Restore the previous ambient map before the terminal decision (must be
-            // restored on the same logical async flow — done synchronously here).
-            TokenMapAmbient.Current = previousAmbient;
-            TaskAmbient.Current = previousTask;
-
+            // Per-run terminal finalize (§13.5 step 2) — stays inline in RunTurnAsync only.
             Cts?.Dispose();
             Cts = null;
 
@@ -493,6 +405,291 @@ public sealed class ChatSession : IDisposable
             // for follow-up purposes (mirrors today: empty content skipped followups).
             TurnCompleted?.Invoke(this, new TurnCompletedEventArgs { Succeeded = succeeded && !emptyResponse });
         }
+    }
+
+    /// <summary>
+    /// The shared model-exchange body (§13.5 step 1): stream consumption + the tool loop +
+    /// reasoning-timer + web-citation post-process. Both <see cref="RunTurnAsync"/> and
+    /// <see cref="RunStepTurnAsync"/> call it. It <b>throws</b> on every exception type the
+    /// callers catch — the catch handlers are NOT part of this body (§16 R4). Returns the last
+    /// <see cref="Finished"/> usage so the step path can populate its ledger; the single-turn
+    /// path discards it (it already applies stats via <see cref="ApplyStats"/>).
+    /// </summary>
+    private async Task<UsageDetails?> RunModelExchangeAsync(
+        AssistantMessage assistantMessage,
+        IList<ChatMessage> chatMessages,
+        AiProvider provider,
+        IList<AITool>? tools,
+        bool supportsTools,
+        bool webSearchActive,
+        bool tokenizationEnabled,
+        CancellationToken token)
+    {
+        var rawBuffer = new StringBuilder();
+        // Reasoning reaches us via two channels that never overlap for a given provider:
+        // a separate ReasoningDelta stream (TextReasoningContent / OpenRouter `reasoning`)
+        // and inline <think> tags parsed out of the visible text. Merge both into ThinkingContent.
+        var reasoningBuffer = new StringBuilder();
+        var tagThinking = string.Empty;
+
+        void UpdateThinking()
+        {
+            var separate = reasoningBuffer.ToString().Trim();
+            var combined = (separate.Length > 0, tagThinking.Length > 0) switch
+            {
+                (true, true) => $"{separate}\n\n{tagThinking}",
+                (true, false) => separate,
+                (false, true) => tagThinking,
+                _ => string.Empty,
+            };
+            if (!string.IsNullOrEmpty(combined))
+                assistantMessage.ThinkingContent = combined;
+        }
+
+        // Time the "thinking" phase: from the first reasoning token to the first answer
+        // token (or stream end), surfaced as a localized "Thought for Ns" chip.
+        DateTime? reasoningStartedAt = null;
+        var reasoningTimed = false;
+
+        void StopReasoningTimer()
+        {
+            if (reasoningStartedAt is { } startedAt && !reasoningTimed)
+            {
+                reasoningTimed = true;
+                var seconds = Math.Max(1, (int)Math.Round((DateTime.Now - startedAt).TotalSeconds));
+                var duration = seconds < 60 ? $"{seconds}s" : $"{seconds / 60}m {seconds % 60}s";
+                assistantMessage.ReasoningDurationLabel =
+                    _localizationService.Format("Assistant_ThoughtForDuration", duration);
+            }
+        }
+
+        UsageDetails? usage = null;
+
+        await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
+            chatMessages, provider, tools,
+            supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled) : null,
+            nameof(WindowMode.Assistant),
+            token))
+        {
+            switch (item)
+            {
+                case TextDelta td:
+                    rawBuffer.Append(td.Text);
+                    var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
+
+                    if (!string.IsNullOrEmpty(thinking))
+                        reasoningStartedAt ??= DateTime.Now; // inline <think> reasoning
+                    if (!string.IsNullOrEmpty(visible))
+                        StopReasoningTimer(); // first answer token ends the thinking phase (set label first)
+                    assistantMessage.Content = visible;
+                    tagThinking = thinking;
+                    UpdateThinking();
+                    break;
+
+                case ReasoningDelta rd:
+                    reasoningStartedAt ??= DateTime.Now;
+                    reasoningBuffer.Append(rd.Text);
+                    UpdateThinking();
+                    break;
+
+                case Finished finished:
+                    assistantMessage.IsProtectedRoute = finished.Protected;
+                    usage = finished.Usage;
+                    ApplyStats(assistantMessage, finished, provider);
+                    break;
+            }
+        }
+
+        // Reasoning-only / no-visible-answer turns: close the timer at stream end.
+        StopReasoningTimer();
+
+        if (webSearchActive)
+            ApplyWebCitations(assistantMessage);
+
+        return usage;
+    }
+
+    /// <summary>
+    /// The shared per-exchange cleanup (§13.5 step 2): empty-response synthesis, IsStreaming=false,
+    /// safety-net PII detokenization, and ambient restore. Both <see cref="RunTurnAsync"/> and
+    /// <see cref="RunStepTurnAsync"/> run it. The per-run terminal finalize (Cts dispose / terminal
+    /// state decision / empty snackbar / TurnCompleted) is NOT here — it stays inline in
+    /// <see cref="RunTurnAsync"/> and is mirrored by the live executor's EndRunAsync (§16 R4).
+    /// Returns whether the empty-response placeholder was synthesized.
+    /// </summary>
+    private bool CleanupPerExchange(
+        AssistantMessage assistantMessage,
+        bool tokenizationEnabled,
+        bool cancelled,
+        ITokenMapService? previousAmbient,
+        TaskContext? previousTask)
+    {
+        var emptyResponse = false;
+        // Don't fabricate empty-response text when the message pair was removed
+        // (vision rejection) or the turn was cancelled (C1) — a cancelled turn must
+        // not also report "empty" and raise a second snackbar over the Cancelled one.
+        if (Messages.Contains(assistantMessage) && string.IsNullOrEmpty(assistantMessage.Content)
+            && !cancelled)
+        {
+            _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
+            assistantMessage.Content = _localizationService["Msg_Assistant_EmptyResponse"];
+            emptyResponse = true;
+        }
+
+        assistantMessage.IsStreaming = false;
+
+        // Final full-pass de-tokenization as safety net (own map).
+        if (tokenizationEnabled && !string.IsNullOrEmpty(assistantMessage.Content))
+            assistantMessage.Content = TokenMap.Detokenize(assistantMessage.Content);
+
+        // Restore the previous ambient map before the terminal decision (must be
+        // restored on the same logical async flow — done synchronously here).
+        TokenMapAmbient.Current = previousAmbient;
+        TaskAmbient.Current = previousTask;
+
+        return emptyResponse;
+    }
+
+    /// <summary>
+    /// Runs one act step-turn of a <see cref="RunShape.Planned"/> run (§13.7, §16 R4/R9). Builds
+    /// context from the visible transcript + an EPHEMERAL User-role step instruction (never added
+    /// to <see cref="Messages"/> / persisted), creates a persona-attributed target
+    /// <see cref="AssistantMessage"/>, runs <see cref="RunModelExchangeAsync"/> + the shared
+    /// per-exchange cleanup, and returns the result. Exceptions become
+    /// <c>StepTurnResult(Succeeded=false, …)</c> — no <see cref="ChatState.Error"/>, no RunFailed
+    /// snackbar, and NO per-run finalize (the orchestrator's EndRunAsync owns that). The run stays
+    /// <see cref="ChatState.Running"/> across steps; a mid-step tool-approval WaitingForTool flap
+    /// inside <see cref="HandleToolCall"/> is the one exception and is R12-correct (§13.5.5).
+    /// </summary>
+    internal async Task<StepTurnResult> RunStepTurnAsync(StepTurnSpec spec, RunContext ctx, CancellationToken ct)
+    {
+        // Persona-attributed VISIBLE target message — one assistant message per step (§13.7).
+        var assistantMessage = new AssistantMessage(ChatRole.Assistant)
+        {
+            IsStreaming = true,
+            Persona = spec.Persona,
+        };
+        Messages.Add(assistantMessage);
+
+        // Per-step ambients (§16 R9): TaskId = run-STABLE spec.RunId, but the TaskContext OBJECT is
+        // re-set per step so the touch sink targets THIS step's message. Token map ambient re-set too.
+        var previousAmbient = TokenMapAmbient.Current;
+        TokenMapAmbient.Current = TokenMap;
+        var previousTask = TaskAmbient.Current;
+        TaskAmbient.Current = new TaskContext(spec.RunId, WorkingDirectory, touch =>
+            assistantMessage.AddOrUpgradeFileRef(new FileRef(touch.AbsolutePath, touch.Kind switch
+            {
+                FileTouchKind.Created => FileRefKind.Created,
+                FileTouchKind.Updated => FileRefKind.Updated,
+                _ => FileRefKind.Read,
+            })));
+
+        var succeeded = false;
+        var cancelled = false;
+        string? error = null;
+        UsageDetails? usage = null;
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var chatMessages = BuildStepChatMessages(spec, ctx, assistantMessage);
+            usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
+                spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct);
+            succeeded = true;
+        }
+        catch (Pia.Services.Exceptions.LlmTimeoutException ex)
+        {
+            _logger.LogError(ex, "Agent step AI response timed out (seconds={Seconds})", ex.TimeoutSeconds);
+            error = _localizationService.Format("Msg_Assistant_ResponseTimedOut", ex.ProviderName, ex.TimeoutSeconds);
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+                assistantMessage.Content = error;
+        }
+        catch (Pia.Services.Exceptions.LlmTruncatedException ex)
+        {
+            _logger.LogWarning(ex, "Agent step AI response truncated by token cap (partialChars={PartialChars})", ex.PartialLength);
+            var notice = _localizationService.Format("Msg_Assistant_ResponseTruncated", ex.ProviderName);
+            assistantMessage.Content = string.IsNullOrEmpty(assistantMessage.Content)
+                ? notice
+                : assistantMessage.Content + "\n\n" + notice;
+            error = notice;
+        }
+        catch (OperationCanceledException)
+        {
+            cancelled = true;
+            error = "cancelled";
+        }
+        catch (Exception ex) when (ex.Message.Contains("EnableVision is false", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Provider rejected image attachment (vision disabled) in agent step");
+            error = _localizationService["Msg_Assistant_ProviderNoVision"];
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+                assistantMessage.Content = error;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Agent step failed to get AI response");
+            error = ex.Message;
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+                assistantMessage.Content = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            // Shared per-exchange cleanup — clears IsStreaming + detokenizes PII + restores ambients (§16 R4).
+            // NO per-run finalize (no Cts dispose, no terminal state decision, no snackbar, no TurnCompleted).
+            var empty = CleanupPerExchange(assistantMessage, spec.TokenizationEnabled,
+                ct.IsCancellationRequested, previousAmbient, previousTask);
+            if (empty)
+            {
+                succeeded = false;
+                error ??= _localizationService["Msg_Assistant_EmptyResponse"];
+            }
+        }
+
+        // Stable Guid Id (AssistantMessage ctor self-assigns) → the R3 transcript slice.
+        var id = assistantMessage.Id;
+        return new StepTurnResult(
+            Succeeded: succeeded && error is null,
+            Cancelled: cancelled,
+            Error: error,
+            VisibleText: assistantMessage.Content ?? string.Empty,
+            Usage: usage,
+            FirstMessageId: id,
+            LastMessageId: id);
+    }
+
+    /// <summary>
+    /// Builds the model context for a step exchange: the system prompt + the full visible transcript
+    /// so far (excluding the streaming target) + one trailing EPHEMERAL User-role step instruction.
+    /// The instruction message is a local — it is never added to <see cref="Messages"/> / persisted (§13.7).
+    /// </summary>
+    private List<ChatMessage> BuildStepChatMessages(StepTurnSpec spec, RunContext ctx, AssistantMessage assistantMessage)
+    {
+        var chatMessages = new List<ChatMessage>
+        {
+            new(ChatRole.System, spec.SystemPrompt),
+        };
+
+        foreach (var msg in Messages)
+        {
+            if (msg == assistantMessage)
+                continue;
+            chatMessages.Add(msg.ToChatMessage());
+        }
+
+        string instruction;
+        if (spec.UseGoalVerbatim)
+        {
+            instruction = ctx.Goal;
+        }
+        else
+        {
+            instruction = $"Execute step {spec.Ordinal + 1}: {spec.Intent}.";
+            if (!string.IsNullOrEmpty(spec.ExpectedArtifact))
+                instruction += $" Expected: {spec.ExpectedArtifact}";
+        }
+
+        chatMessages.Add(new ChatMessage(ChatRole.User, instruction));
+        return chatMessages;
     }
 
     private async Task<object?> HandleToolCallWithStatus(FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled)
