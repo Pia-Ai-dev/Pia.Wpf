@@ -52,6 +52,35 @@ public class AssistantChatServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchAsync_ExcludesMessageLessStubChats()
+    {
+        // Real chat with messages — should appear.
+        var real = MakeChat(title: "Real chat", body: "has content");
+        await _service.SaveAsync(real, TestContext.Current.CancellationToken);
+        _createdIds.Add(real.Id);
+
+        // Message-less stub (as left by a failed/empty headless turn per §16 R1) — should be hidden.
+        var now = DateTime.UtcNow;
+        var stub = new SyncAssistantChat
+        {
+            Id = Guid.NewGuid(),
+            SchemaVersion = 1,
+            Title = "Stub chat",
+            CreatedAt = now,
+            UpdatedAt = now,
+            LastAccessedAt = now,
+            WindowMode = "Assistant",
+            Messages = [],
+        };
+        await _service.SaveAsync(stub, TestContext.Current.CancellationToken);
+        _createdIds.Add(stub.Id);
+
+        var all = await _service.SearchAsync(ct: TestContext.Current.CancellationToken);
+        Assert.Contains(all, c => c.Id == real.Id);
+        Assert.DoesNotContain(all, c => c.Id == stub.Id);
+    }
+
+    [Fact]
     public async Task SearchAsync_FindsByPrefix_PartialToken()
     {
         var chat = MakeChat(title: "Microservices design", body: "Discussion of Kubernetes");

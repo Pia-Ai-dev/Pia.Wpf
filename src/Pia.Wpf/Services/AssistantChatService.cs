@@ -146,6 +146,15 @@ public class AssistantChatService : IAssistantChatService
         using var command = connection.CreateCommand();
 
         var conditions = new List<string>();
+
+        // Hide message-less chats from the history list. A failed/empty headless turn leaves a
+        // stub AssistantChats row up front (the FK target its AgentRun needs — §16 R1) that never
+        // receives messages; such stubs should not clutter history. Real chats always have ≥1
+        // message. The stub stays reachable via its run (FlowAction.OpenRun, milestone 1.4).
+        conditions.Add("""
+            EXISTS (SELECT 1 FROM AssistantChatMessages WHERE AssistantChatMessages.ChatId = AssistantChats.Id)
+            """);
+
         if (fromDate.HasValue)
         {
             conditions.Add("UpdatedAt >= @FromDate");
