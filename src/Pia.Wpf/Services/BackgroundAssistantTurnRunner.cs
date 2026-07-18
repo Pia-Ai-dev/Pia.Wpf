@@ -121,10 +121,6 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
             var grantedWrites = new HashSet<string>(request.GrantedWriteTools, StringComparer.OrdinalIgnoreCase);
 
-            var textBuffer = new StringBuilder();
-            int? tokens = null;
-            string? model = null;
-
             var tokenMap = _tokenMapFactory();
             var previousAmbient = TokenMapAmbient.Current;
             if (tokenizationEnabled)
@@ -134,47 +130,39 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 TokenMapAmbient.Current = tokenMap;
             }
 
+            // Set the task ambient around the run so the file tools key per-run state against a real
+            // task id (the deferred-from-1.1 fix — headless writes were previously scoped to
+            // Guid.Empty). TaskId = run.Id when bookkeeping created the run, else the chatId. §13.6.
+            var previousTask = TaskAmbient.Current;
+            TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, WorkingSubpath: null, OnFileTouched: null);
+
+            // Accrue per-round usage into the run ledger (best-effort — §12.5), exactly as before.
+            Func<UsageDetails, Task>? onUsage = null;
+            if (run is { } createdRun)
+            {
+                onUsage = async u =>
+                {
+                    try { await _runService.AddUsageAsync(createdRun.Id, stepId: null, u, ct); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (usage) failed for {RunId}", createdRun.Id); }
+                };
+            }
+
+            ExchangeResult exchange;
             try
             {
-                await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
-                    messages, provider,
-                    turnSetup.SupportsTools ? turnSetup.Tools : null,
-                    turnSetup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites) : null,
-                    nameof(WindowMode.Assistant), ct))
-                {
-                    switch (item)
-                    {
-                        case TextDelta td:
-                            textBuffer.Append(td.Text);
-                            break;
-                        case Finished finished:
-                            if (finished.Usage is { } usage)
-                            {
-                                var total = (int)((usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
-                                if (total > 0) tokens = total;
-                                if (run is not null)
-                                {
-                                    try { await _runService.AddUsageAsync(run.Id, stepId: null, usage, ct); }
-                                    catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (usage) failed for {RunId}", run.Id); }
-                                }
-                            }
-                            model = finished.Model;
-                            break;
-                    }
-                }
+                exchange = await RunExchangeAsync(messages, provider, turnSetup, grantedWrites, ct, onUsage);
             }
             finally
             {
                 // Restore on the same logical async flow before persisting.
                 TokenMapAmbient.Current = previousAmbient;
+                TaskAmbient.Current = previousTask;
             }
 
-            var (visible, thinking) = StreamThinkTagParser.Parse(textBuffer.ToString());
-            if (turnSetup.WebSearchActive)
-            {
-                var (cleaned, _) = WebCitationExtractor.Extract(visible);
-                visible = cleaned;
-            }
+            var visible = exchange.Visible;
+            var thinking = exchange.Thinking;
+            var tokens = exchange.Tokens;
+            var model = exchange.Model;
 
             if (string.IsNullOrWhiteSpace(visible))
             {
@@ -270,6 +258,66 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             return new BackgroundTurnResult(chatId, false, ex.Message);
         }
     }
+
+    /// <summary>
+    /// The reusable single-exchange engine (§13.6): build → <see cref="IAiClientService.GetChatCompletionWithToolsAsync"/>
+    /// → post-process (think-tag split + web-citation strip). Run-service-free and ambient-free — the
+    /// caller owns the token-map/task ambients and any run bookkeeping. The single-turn
+    /// <see cref="RunAsync"/> calls it once; <c>HeadlessTurnExecutor</c> calls it per step, accumulating
+    /// messages across steps. <paramref name="onUsage"/> is awaited on each round's <see cref="Finished"/>
+    /// (preserves the single-turn per-round ledger accrual); null for step turns (the orchestrator records
+    /// the step usage from the returned <see cref="ExchangeResult.Usage"/>).
+    /// </summary>
+    public async Task<ExchangeResult> RunExchangeAsync(
+        List<ChatMessage> messages,
+        AiProvider provider,
+        AssistantTurnSetup setup,
+        HashSet<string> grantedWrites,
+        CancellationToken ct,
+        Func<UsageDetails, Task>? onUsage = null)
+    {
+        var textBuffer = new StringBuilder();
+        int? tokens = null;
+        string? model = null;
+        UsageDetails? usage = null;
+
+        await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
+            messages, provider,
+            setup.SupportsTools ? setup.Tools : null,
+            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites) : null,
+            nameof(WindowMode.Assistant), ct))
+        {
+            switch (item)
+            {
+                case TextDelta td:
+                    textBuffer.Append(td.Text);
+                    break;
+                case Finished finished:
+                    if (finished.Usage is { } u)
+                    {
+                        usage = u;
+                        var total = (int)((u.InputTokenCount ?? 0) + (u.OutputTokenCount ?? 0));
+                        if (total > 0) tokens = total;
+                        if (onUsage is not null)
+                            await onUsage(u);
+                    }
+                    model = finished.Model;
+                    break;
+            }
+        }
+
+        var (visible, thinking) = StreamThinkTagParser.Parse(textBuffer.ToString());
+        if (setup.WebSearchActive)
+        {
+            var (cleaned, _) = WebCitationExtractor.Extract(visible);
+            visible = cleaned;
+        }
+
+        return new ExchangeResult(visible, string.IsNullOrEmpty(thinking) ? null : thinking, usage, model, tokens);
+    }
+
+    /// <summary>The post-processed output of one <see cref="RunExchangeAsync"/> call.</summary>
+    public sealed record ExchangeResult(string Visible, string? Thinking, UsageDetails? Usage, string? Model, int? Tokens);
 
     /// <summary>
     /// Headless tool dispatch: reads (tools that return an immediate result) always run;

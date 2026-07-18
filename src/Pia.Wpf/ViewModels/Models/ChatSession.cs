@@ -136,6 +136,12 @@ public sealed class ChatSession : IDisposable
     /// <summary>Surface a pre-turn failure (e.g. no provider configured) as a <see cref="RunFailed"/> event.</summary>
     internal void RaiseRunFailed(RunFailedEventArgs args) => RunFailed?.Invoke(this, args);
 
+    /// <summary>
+    /// Raise <see cref="TurnCompleted"/> from a Planned run's per-run finalize (the live executor's
+    /// EndRunAsync mirror) — the single-turn path raises it inline in <see cref="RunTurnAsync"/>'s finally.
+    /// </summary>
+    internal void RaiseTurnCompleted(TurnCompletedEventArgs args) => TurnCompleted?.Invoke(this, args);
+
     /// <summary>Single funnel for state writes — no-ops on unchanged value, raises <see cref="StateChanged"/>.</summary>
     internal void SetState(ChatState next)
     {
