@@ -60,15 +60,18 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
         PostAsync(() => _session.RunStepTurnAsync(BuildSpec(run, 0, ctx.Goal, null, useGoalVerbatim: true), ctx, ct));
 
-    public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, CancellationToken ct) =>
+    public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct) =>
         PostAsync(() =>
         {
             // Per-run terminal finalize mirror (§13.5 step 2 / §16 R4): dispose the session CTS, settle
             // terminal state, raise TurnCompleted — the equivalents RunTurnAsync runs inline per turn.
             _session.DisposeCts();
 
+            // A cancelled OR failed run never counts as producing content: a Failed step's catch handler
+            // writes error text (e.g. "Error: boom") into its assistant message, so keying purely off the
+            // last message's Content would settle a Failed run as Completed/Succeeded (§13.5.2/§16 R4).
             var lastAssistant = _session.Messages.LastOrDefault(m => !m.IsUser);
-            var producedContent = !cancelled && !string.IsNullOrEmpty(lastAssistant?.Content);
+            var producedContent = !cancelled && !failed && !string.IsNullOrEmpty(lastAssistant?.Content);
             if (_session.State != ChatState.Error)
             {
                 _session.SetState(producedContent && !_isActive(_session)

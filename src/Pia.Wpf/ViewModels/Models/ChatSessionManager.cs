@@ -472,6 +472,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         if (planned)
         {
+            // The pre-added empty streaming assistant placeholder is for the single-turn path; a Planned
+            // run's transcript is [user: goal] + one assistant message per step. Remove it BEFORE the persist
+            // below so the stored chat never carries a stray empty assistant message (visible in history if
+            // the app crashes mid-run). LiveTurnExecutor.BeginRunAsync also removes it defensively (§13.7).
+            session.Messages.Remove(assistantMessage);
+
             // R1/FK: the AgentRuns FK needs the AssistantChats parent row. AWAIT a persist first —
             // the interactive first-turn persist below is fire-and-forget and not safe before CreateAsync.
             await PersistAsync(session);

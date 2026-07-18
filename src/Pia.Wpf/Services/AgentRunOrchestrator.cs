@@ -80,7 +80,7 @@ public sealed class AgentRunOrchestrator
                         await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, cts.Token).ConfigureAwait(false);
                     await SafeComplete(run.Id, cts.Token).ConfigureAwait(false); // clean; zero steps recorded
                 }
-                await SafeEndRun(executor, run, ctx, cancelled).ConfigureAwait(false);
+                await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
                 return;
             }
 
@@ -96,7 +96,7 @@ public sealed class AgentRunOrchestrator
                     await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice on a truncated run
                     await SafeComplete(run.Id, cts.Token, truncated: true,
                         reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
-                    await SafeEndRun(executor, run, ctx, cancelled).ConfigureAwait(false);
+                    await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
                     return;
                 }
 
@@ -151,21 +151,27 @@ public sealed class AgentRunOrchestrator
             {
                 await PinRange().ConfigureAwait(false);
                 await SafeSetState(run.Id, AgentRunState.Verifying, cts.Token).ConfigureAwait(false); // no-op pass-through (R12)
+                // §13.2 order: END the run (Live: settle terminal state; Headless: persist the chat) BEFORE
+                // marking it Completed — so no crash / RunChanged consumer observes a Completed run whose chat
+                // is not yet persisted (headless persists only in EndRunAsync).
+                await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
                 await SafeComplete(run.Id, cts.Token).ConfigureAwait(false);
             }
-
-            await SafeEndRun(executor, run, ctx, cancelled).ConfigureAwait(false);
+            else
+            {
+                await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
             await SafeFail(run.Id, null, cancelled: true).ConfigureAwait(false);
-            await SafeEndRun(executor, run, ctx, cancelled: true).ConfigureAwait(false);
+            await SafeEndRun(executor, run, ctx, cancelled: true, failed: false).ConfigureAwait(false);
         }
         catch (Exception ex) // planner-cannot-plan (threw) / executor crash — critical path, fail the run
         {
             _logger.LogError(ex, "Agent run {RunId} failed", run.Id);
             await SafeFail(run.Id, ex.Message, cancelled: false).ConfigureAwait(false);
-            await SafeEndRun(executor, run, ctx, cancelled: false).ConfigureAwait(false);
+            await SafeEndRun(executor, run, ctx, cancelled: false, failed: true).ConfigureAwait(false);
         }
     }
 
@@ -237,10 +243,10 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail) failed for {RunId}", runId); }
     }
 
-    private async Task SafeEndRun(IAgentTurnExecutor executor, AgentRun run, RunContext ctx, bool cancelled)
+    private async Task SafeEndRun(IAgentTurnExecutor executor, AgentRun run, RunContext ctx, bool cancelled, bool failed)
     {
         // Executor cleanup is not allowed to flip an already-terminal run — swallow + log.
-        try { await executor.EndRunAsync(run, ctx, cancelled, CancellationToken.None).ConfigureAwait(false); }
+        try { await executor.EndRunAsync(run, ctx, cancelled, failed, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Executor EndRun failed for run {RunId}", run.Id); }
     }
 }

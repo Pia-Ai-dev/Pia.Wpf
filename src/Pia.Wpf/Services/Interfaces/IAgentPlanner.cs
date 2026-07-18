@@ -9,7 +9,9 @@ namespace Pia.Services;
 /// </summary>
 public sealed record PlanResult(IReadOnlyList<AgentStep> Steps, bool FallBackToSingleTurn)
 {
-    public static PlanResult Fallback => new(Array.Empty<AgentStep>(), true);
+    // A single shared instance — the fallback carries no per-call state (empty steps + the flag), so
+    // re-allocating it on every access would be pure churn on the planner degrade path.
+    public static readonly PlanResult Fallback = new(Array.Empty<AgentStep>(), true);
 }
 
 /// <summary>

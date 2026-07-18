@@ -67,6 +67,11 @@ public interface IAgentTurnExecutor
     /// <summary>Planner-degrade fallback (§16 R10): run the goal as one ordinary turn, no degenerate plan recorded.</summary>
     Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct);
 
-    /// <summary>Run-end bracket (Live: per-run terminal finalize mirror; Headless: persist the accumulated chat once).</summary>
-    Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, CancellationToken ct);
+    /// <summary>
+    /// Run-end bracket (Live: per-run terminal finalize mirror; Headless: persist the accumulated chat once).
+    /// <paramref name="failed"/> lets the live executor distinguish a genuinely-successful run from one whose
+    /// last assistant message merely carries a step catch-handler's error text — so a Failed Planned run never
+    /// settles <c>ChatState.Completed</c> / raises <c>TurnCompleted(Succeeded=true)</c> (§13.5.2/§16 R4).
+    /// </summary>
+    Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct);
 }

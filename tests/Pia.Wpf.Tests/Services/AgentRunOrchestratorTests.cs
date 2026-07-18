@@ -58,6 +58,7 @@ public sealed class AgentRunOrchestratorTests
         public bool BeginCalled { get; private set; }
         public bool EndCalled { get; private set; }
         public bool EndCancelled { get; private set; }
+        public bool EndFailed { get; private set; }
         public bool FallbackCalled { get; private set; }
 
         public RecordingExecutor(Func<AgentStep, StepTurnResult> result) => _result = result;
@@ -76,9 +77,9 @@ public sealed class AgentRunOrchestratorTests
             return Task.FromResult(Ok("fallback"));
         }
 
-        public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, CancellationToken ct)
+        public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
         {
-            EndCalled = true; EndCancelled = cancelled;
+            EndCalled = true; EndCancelled = cancelled; EndFailed = failed;
             return Task.CompletedTask;
         }
     }
@@ -111,7 +112,7 @@ public sealed class AgentRunOrchestratorTests
         public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct)
             => Task.FromResult(Ok());
 
-        public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, CancellationToken ct)
+        public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
         {
             EndCalled = true; EndCancelled = cancelled;
             return Task.CompletedTask;
@@ -221,6 +222,30 @@ public sealed class AgentRunOrchestratorTests
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Failed, final!.State);
         Assert.Contains(final.Plan, s => s.Title == "A" && s.Status == AgentStepStatus.Done);
+    }
+
+    [Fact]
+    public async Task Run_ReplanItselfDegradesToFallback_Fails_NoSingleTurn_DoneStepsPreserved()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2fail")), false));
+        // Replans queue left empty → ReplanAsync returns PlanResult.Fallback (the replan itself degrades).
+        var exec = new RecordingExecutor(step => step.Intent == "s2fail" ? Fail("orig-error") : Ok());
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, planner.ReplanCalls);
+        // R10 replan-degrade: fails with the original step error — it does NOT run a single-turn fallback
+        // (that fallback is only for the INITIAL plan degrade, not a mid-run replan degrade).
+        Assert.False(exec.FallbackCalled);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Failed, final!.State);
+        Assert.Contains(final.Plan, s => s.Title == "A" && s.Status == AgentStepStatus.Done); // Done step preserved
+        Assert.True(exec.EndCalled);
+        Assert.True(exec.EndFailed);        // EndRunAsync told the run failed (§13.5.2 / D-fix)
+        Assert.False(exec.EndCancelled);
     }
 
     [Fact]

@@ -40,8 +40,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private bool _tokenizationEnabled;
     private Guid _chatId;
     private Guid _runId;
-    private Guid? _firstMessageId;
-    private Guid? _lastMessageId;
 
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
@@ -117,8 +115,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Content = ctx.Goal,
             Timestamp = DateTime.UtcNow,
         });
-        _firstMessageId = goalMsgId;
-        _lastMessageId = goalMsgId;
     }
 
     public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct) =>
@@ -144,20 +140,20 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             TokenMapAmbient.Current = _tokenMap;
         TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null);
 
-        BackgroundAssistantTurnRunner.ExchangeResult ex;
+        BackgroundAssistantTurnRunner.ExchangeResult exchange;
         try
         {
-            ex = await _engine.RunExchangeAsync(exchangeMessages, _provider, _setup, _grantedWrites, ct)
+            exchange = await _engine.RunExchangeAsync(exchangeMessages, _provider, _setup, _grantedWrites, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             return new StepTurnResult(false, true, "cancelled", string.Empty, null, Guid.Empty, Guid.Empty);
         }
-        catch (Exception exc)
+        catch (Exception ex)
         {
-            _logger.LogError(exc, "Headless step exchange failed for chat {ChatId}", _chatId);
-            return new StepTurnResult(false, false, exc.Message, string.Empty, null, Guid.Empty, Guid.Empty);
+            _logger.LogError(ex, "Headless step exchange failed for chat {ChatId}", _chatId);
+            return new StepTurnResult(false, false, ex.Message, string.Empty, null, Guid.Empty, Guid.Empty);
         }
         finally
         {
@@ -165,35 +161,34 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             TaskAmbient.Current = previousTask;
         }
 
-        var succeeded = !string.IsNullOrWhiteSpace(ex.Visible);
+        var succeeded = !string.IsNullOrWhiteSpace(exchange.Visible);
         var assistantMsgId = Guid.NewGuid();
 
         // The visible reply IS persisted and IS carried forward as context for later steps.
-        _messages.Add(new ChatMessage(ChatRole.Assistant, ex.Visible));
+        _messages.Add(new ChatMessage(ChatRole.Assistant, exchange.Visible));
         _persisted.Add(new SyncAssistantChatMessage
         {
             Id = assistantMsgId,
             Role = "assistant",
-            Content = ex.Visible,
-            ThinkingContent = ex.Thinking,
+            Content = exchange.Visible,
+            ThinkingContent = exchange.Thinking,
             Timestamp = DateTime.UtcNow,
-            Tokens = ex.Tokens,
-            ModelName = ex.Model,
+            Tokens = exchange.Tokens,
+            ModelName = exchange.Model,
             Persona = new SyncMessagePersona { Id = _persona.Id, Name = _persona.Name, Emoji = _persona.Emoji },
         });
-        _lastMessageId = assistantMsgId;
 
         return new StepTurnResult(
             Succeeded: succeeded,
             Cancelled: false,
             Error: succeeded ? null : "Empty response",
-            VisibleText: ex.Visible,
-            Usage: ex.Usage,
+            VisibleText: exchange.Visible,
+            Usage: exchange.Usage,
             FirstMessageId: assistantMsgId,
             LastMessageId: assistantMsgId);
     }
 
-    public async Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, CancellationToken ct)
+    public async Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
     {
         try
         {
@@ -236,10 +231,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
         // Ambients are set + restored per step (RunExchangeStepAsync); nothing to restore here.
     }
-
-    /// <summary>Stable message Ids delimiting the accumulated transcript slice (goal → last reply).</summary>
-    public (Guid First, Guid Last)? MessageRange =>
-        _firstMessageId is { } f && _lastMessageId is { } l ? (f, l) : null;
 
     private static string BuildInstruction(int ordinal, string intent, string? expectedArtifact)
     {
