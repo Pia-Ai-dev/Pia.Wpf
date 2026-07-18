@@ -463,6 +463,7 @@ public static class Bootstrapper
         services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IAssistantChatService, AssistantChatService>();
+        services.AddSingleton<IAgentRunService, AgentRunService>();
         // Assistant turn collaborators (extracted from AssistantViewModel).
         services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
         services.AddTransient<IChatTitleService, ChatTitleService>();

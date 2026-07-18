@@ -247,6 +247,55 @@ public class SqliteContext : IDisposable
 
             CREATE INDEX IF NOT EXISTS IX_AssistantChatMessages_ChatId_Ordinal
                 ON AssistantChatMessages(ChatId, Ordinal);
+
+            CREATE TABLE IF NOT EXISTS AgentRuns (
+                Id                  TEXT PRIMARY KEY,
+                SchemaVersion       INTEGER NOT NULL DEFAULT 1,
+                ChatId              TEXT    NOT NULL,
+                RunShape            INTEGER NOT NULL,
+                State               INTEGER NOT NULL,
+                TriggerKind         INTEGER NOT NULL,
+                TriggerRef          TEXT    NULL,
+                ParentRunId         TEXT    NULL,
+                OwnerDeviceId       TEXT    NULL,
+                Goal                TEXT    NULL,
+                FirstMessageId      TEXT    NULL,
+                LastMessageId       TEXT    NULL,
+                PolicyJson          TEXT    NULL,
+                LedgerJson          TEXT    NULL,
+                CreatedAt           TEXT    NOT NULL,
+                UpdatedAt           TEXT    NOT NULL,
+                StartedAt           TEXT    NULL,
+                CompletedAt         TEXT    NULL,
+                ExtraJson           TEXT    NULL,
+                FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AgentRuns_ChatId     ON AgentRuns(ChatId);
+            CREATE INDEX IF NOT EXISTS IX_AgentRuns_State      ON AgentRuns(State);
+            CREATE INDEX IF NOT EXISTS IX_AgentRuns_UpdatedAt  ON AgentRuns(UpdatedAt);
+            CREATE INDEX IF NOT EXISTS IX_AgentRuns_TriggerRef ON AgentRuns(TriggerRef);
+
+            CREATE TABLE IF NOT EXISTS AgentSteps (
+                Id                  TEXT PRIMARY KEY,
+                RunId               TEXT    NOT NULL,
+                Ordinal             INTEGER NOT NULL,
+                Title               TEXT    NOT NULL,
+                Intent              TEXT    NULL,
+                Status              INTEGER NOT NULL,
+                ExpectedArtifact    TEXT    NULL,
+                AssignedPersonaId   TEXT    NULL,
+                DependsOnJson       TEXT    NULL,
+                ReRunnable          INTEGER NOT NULL DEFAULT 1,
+                FirstMessageId      TEXT    NULL,
+                LastMessageId       TEXT    NULL,
+                CreatedAt           TEXT    NOT NULL,
+                UpdatedAt           TEXT    NOT NULL,
+                ExtraJson           TEXT    NULL,
+                FOREIGN KEY (RunId) REFERENCES AgentRuns(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AgentSteps_RunId ON AgentSteps(RunId, Ordinal);
             """;
         command.ExecuteNonQuery();
 
