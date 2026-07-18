@@ -45,6 +45,15 @@ public sealed class AgentRunOrchestrator
         Guid? runFirst = null;
         var runLast = Guid.Empty;
 
+        // R3: pin the run-level transcript slice off the STABLE step message Ids accrued so far.
+        // Shared by every terminal path (success, truncation, cancel, fail) so a run that executed
+        // steps never keeps a null range — symmetric with the clean-success path.
+        async Task PinRange()
+        {
+            if (runFirst is { } first)
+                await SafeRange(run.Id, first, runLast, cts.Token).ConfigureAwait(false);
+        }
+
         try
         {
             await executor.BeginRunAsync(run, ctx, cts.Token).ConfigureAwait(false);
@@ -59,9 +68,16 @@ public sealed class AgentRunOrchestrator
                     cancelled = true;
                     await SafeFail(run.Id, fr.Error, cancelled: true).ConfigureAwait(false);
                 }
+                else if (!fr.Succeeded)
+                {
+                    // R5/R10: a failed fallback turn is never presented as a clean Completed run.
+                    failed = true;
+                    await SafeFail(run.Id, fr.Error, cancelled: false).ConfigureAwait(false);
+                }
                 else
                 {
-                    await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, cts.Token).ConfigureAwait(false);
+                    if (fr.FirstMessageId != Guid.Empty)
+                        await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, cts.Token).ConfigureAwait(false);
                     await SafeComplete(run.Id, cts.Token).ConfigureAwait(false); // clean; zero steps recorded
                 }
                 await SafeEndRun(executor, run, ctx, cancelled).ConfigureAwait(false);
@@ -77,6 +93,7 @@ public sealed class AgentRunOrchestrator
             {
                 if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
                 {
+                    await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice on a truncated run
                     await SafeComplete(run.Id, cts.Token, truncated: true,
                         reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
                     await SafeEndRun(executor, run, ctx, cancelled).ConfigureAwait(false);
@@ -89,12 +106,15 @@ public sealed class AgentRunOrchestrator
                 var r = await executor.ExecuteStepAsync(run, step, ctx, cts.Token).ConfigureAwait(false); // critical path
                 await SafeRecordStep(step.Id, r, cts.Token).ConfigureAwait(false); // R16 ledger + R3 slice
                 ctx.RecordStep(step, r);
-                runFirst ??= r.FirstMessageId;
-                runLast = r.LastMessageId;
+                // Track only valid (non-empty) message Ids so a step that produced no transcript
+                // (e.g. a cancelled step) never poisons the run-level range with Guid.Empty.
+                if (r.FirstMessageId != Guid.Empty) runFirst ??= r.FirstMessageId;
+                if (r.LastMessageId != Guid.Empty) runLast = r.LastMessageId;
 
                 if (r.Cancelled)
                 {
                     cancelled = true;
+                    await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
                     await SafeFail(run.Id, r.Error, cancelled: true).ConfigureAwait(false);
                     break;
                 }
@@ -107,6 +127,7 @@ public sealed class AgentRunOrchestrator
                         if (revised.FallBackToSingleTurn)
                         {
                             failed = true;
+                            await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
                             await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
                             break;
                         }
@@ -120,6 +141,7 @@ public sealed class AgentRunOrchestrator
                     }
 
                     failed = true;
+                    await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
                     await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
                     break;
                 }
@@ -127,8 +149,7 @@ public sealed class AgentRunOrchestrator
 
             if (!cancelled && !failed)
             {
-                if (runFirst is { } first)
-                    await SafeRange(run.Id, first, runLast, cts.Token).ConfigureAwait(false);
+                await PinRange().ConfigureAwait(false);
                 await SafeSetState(run.Id, AgentRunState.Verifying, cts.Token).ConfigureAwait(false); // no-op pass-through (R12)
                 await SafeComplete(run.Id, cts.Token).ConfigureAwait(false);
             }

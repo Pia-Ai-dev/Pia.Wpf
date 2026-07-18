@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Flow;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
@@ -39,7 +40,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IBackgroundChatNotifier _backgroundChatNotifier;
     private readonly IFlowService _flowService;
     private readonly IFilesToolHandler _filesToolHandler;
-    private readonly Pia.Services.AgentRunOrchestrator _agentRunOrchestrator;
+    private readonly AgentRunOrchestrator _agentRunOrchestrator;
     private readonly IAgentRunService _agentRunService;
     private readonly SynchronizationContext _syncContext;
 
@@ -89,7 +90,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IBackgroundChatNotifier backgroundChatNotifier,
         IFlowService flowService,
         IFilesToolHandler filesToolHandler,
-        Pia.Services.AgentRunOrchestrator agentRunOrchestrator,
+        AgentRunOrchestrator agentRunOrchestrator,
         IAgentRunService agentRunService)
     {
         _logger = logger;
@@ -341,7 +342,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // (already in history). Drives the persist-on-first-message below.
         var isFirstTurn = session.Id is null;
 
-        var atCommands = Pia.Services.AtCommandParser.ExtractAllCommands(userText);
+        var atCommands = AtCommandParser.ExtractAllCommands(userText);
 
         var userMessage = new AssistantMessage(ChatRole.User, userText)
         {
@@ -482,11 +483,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // per step (R13). The orchestrator links the run CTS from session.Cts.Token below, so
             // ChatSession.Cancel() propagates to the run + in-flight step. Constructed on the UI thread
             // so the LiveTurnExecutor captures the UI SynchronizationContext.
-            var live = new Pia.Services.LiveTurnExecutor(session, IsSessionActive,
+            var live = new LiveTurnExecutor(session, IsSessionActive,
                 PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled);
 
             _agentRunOrchestrator
-                .RunAsync(run, live, persona, request.Provider, Pia.Services.RunProfile.Interactive, session.Cts!.Token)
+                .RunAsync(run, live, persona, request.Provider, RunProfile.Interactive, session.Cts!.Token)
                 .SafeFireAndForget(_logger);
             return;
         }
@@ -555,7 +556,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             _logger.LogInformation(
                 "@Files injected {Count} file(s); {Dropped} additional tagged file(s) left to the file tools", previews.Count, dropped);
 
-        var block = Pia.Services.AssistantPromptComposer.BuildFileContextBlock(previews, supportsTools);
+        var block = AssistantPromptComposer.BuildFileContextBlock(previews, supportsTools);
         return string.IsNullOrEmpty(block) ? null : block;
     }
 
