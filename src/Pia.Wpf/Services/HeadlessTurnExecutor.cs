@@ -37,10 +37,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private Persona _persona = default!;
     private AiProvider _provider = default!;
     private ITokenMapService? _tokenMap;
-    private ITokenMapService? _previousAmbient;
-    private TaskContext? _previousTask;
     private bool _tokenizationEnabled;
     private Guid _chatId;
+    private Guid _runId;
     private Guid? _firstMessageId;
     private Guid? _lastMessageId;
 
@@ -91,19 +90,18 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
         _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled);
 
-        // Token-map ambient for the whole run (per-run bracket — §13.6).
+        // Initialize the run's token map. NOTE: the ambients are set PER STEP (in RunExchangeStepAsync),
+        // not here — an AsyncLocal set after an await inside BeginRunAsync would NOT propagate into the
+        // separately-awaited ExecuteStepAsync (ExecutionContext flows down, not back out), so a run-scoped
+        // bracket here would leave the exchange with no ambient. Setting it around each exchange keeps the
+        // run-stable TaskId live where it is read (§16 R9).
+        _runId = run.Id;
         _tokenMap = _tokenMapFactory();
-        _previousAmbient = TokenMapAmbient.Current;
         if (_tokenizationEnabled)
         {
             try { await _tokenMap.InitializeAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to initialize token map for headless run {RunId}", run.Id); }
-            TokenMapAmbient.Current = _tokenMap;
         }
-
-        // Run-stable task ambient (§16 R9): TaskId = run.Id; no file-chip sink (headless has no message UI).
-        _previousTask = TaskAmbient.Current;
-        TaskAmbient.Current = new TaskContext(run.Id, WorkingSubpath: null, OnFileTouched: null);
 
         // Seed the accumulating transcript: system + the goal as the opening user message.
         _messages.Clear();
@@ -138,6 +136,14 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             new(ChatRole.User, instruction),
         };
 
+        // Per-step ambient bracket (§16 R9): run-stable TaskId, no file-chip sink (headless has no UI).
+        // Set here — not in BeginRunAsync — so the AsyncLocal is live inside THIS exchange's flow.
+        var previousAmbient = TokenMapAmbient.Current;
+        var previousTask = TaskAmbient.Current;
+        if (_tokenizationEnabled)
+            TokenMapAmbient.Current = _tokenMap;
+        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null);
+
         BackgroundAssistantTurnRunner.ExchangeResult ex;
         try
         {
@@ -152,6 +158,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         {
             _logger.LogError(exc, "Headless step exchange failed for chat {ChatId}", _chatId);
             return new StepTurnResult(false, false, exc.Message, string.Empty, null, Guid.Empty, Guid.Empty);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = previousAmbient;
+            TaskAmbient.Current = previousTask;
         }
 
         var succeeded = !string.IsNullOrWhiteSpace(ex.Visible);
@@ -223,11 +234,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         {
             _logger.LogWarning(ex, "Failed to persist headless run {RunId} chat {ChatId}", run.Id, _chatId);
         }
-        finally
-        {
-            TokenMapAmbient.Current = _previousAmbient;
-            TaskAmbient.Current = _previousTask;
-        }
+        // Ambients are set + restored per step (RunExchangeStepAsync); nothing to restore here.
     }
 
     /// <summary>Stable message Ids delimiting the accumulated transcript slice (goal → last reply).</summary>

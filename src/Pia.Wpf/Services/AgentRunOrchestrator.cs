@@ -41,6 +41,7 @@ public sealed class AgentRunOrchestrator
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
         var ctx = new RunContext(run.Goal ?? string.Empty, profile);
         var cancelled = false;
+        var failed = false;
         Guid? runFirst = null;
         var runLast = Guid.Empty;
 
@@ -105,6 +106,7 @@ public sealed class AgentRunOrchestrator
                         var revised = await _planner.ReplanAsync(ctx, r.Error, persona, provider, cts.Token).ConfigureAwait(false);
                         if (revised.FallBackToSingleTurn)
                         {
+                            failed = true;
                             await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
                             break;
                         }
@@ -117,12 +119,13 @@ public sealed class AgentRunOrchestrator
                         continue; // re-query picks up the revised steps (R2)
                     }
 
+                    failed = true;
                     await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
                     break;
                 }
             }
 
-            if (!cancelled && !IsFailed(run.Id))
+            if (!cancelled && !failed)
             {
                 if (runFirst is { } first)
                     await SafeRange(run.Id, first, runLast, cts.Token).ConfigureAwait(false);
@@ -161,24 +164,6 @@ public sealed class AgentRunOrchestrator
         for (var i = 0; i < done.Count; i++)
             done[i].Ordinal = i;
         return done;
-    }
-
-    private bool IsFailed(Guid runId)
-    {
-        // A step that recorded Cancelled/Failed already called FailAsync + broke the loop; the
-        // `cancelled` flag covers cancellation, and a non-cancelled failed break leaves the loop
-        // WITHOUT reaching here with pending work. This guard is belt-and-suspenders for the
-        // failed-break path so a Failed run is never overwritten with Completed.
-        try
-        {
-            var run = _runService.GetAsync(runId).GetAwaiter().GetResult();
-            return run?.State is AgentRunState.Failed or AgentRunState.Cancelled;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "IsFailed: failed to read run {RunId}", runId);
-            return false;
-        }
     }
 
     // ---- Failure-isolated bookkeeping (§12.5/§13.10): never fail the run ----
