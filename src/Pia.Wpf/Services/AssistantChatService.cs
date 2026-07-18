@@ -10,12 +10,14 @@ namespace Pia.Services;
 public class AssistantChatService : IAssistantChatService
 {
     private readonly SqliteContext _context;
+    private readonly IAgentRunService _runService;
 
     public event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
-    public AssistantChatService(SqliteContext context)
+    public AssistantChatService(SqliteContext context, IAgentRunService runService)
     {
         _context = context;
+        _runService = runService;
     }
 
     private void OnChatsChanged(Guid id, AssistantChatChangeKind kind) =>
@@ -304,6 +306,18 @@ public class AssistantChatService : IAssistantChatService
             using var reader = await select.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
                 evictedIds.Add(Guid.Parse(reader.GetString(0)));
+        }
+
+        // §16 R17 / §2.4: keep chats that bear a Planned agent run (a durable, resumable run must
+        // outlive stale-chat eviction). Runs outside the delete transaction; the returned list then
+        // contains only actually-deleted ids so the retention sync never deletes a skipped chat.
+        if (evictedIds.Count > 0)
+        {
+            var retained = new List<Guid>(evictedIds.Count);
+            foreach (var id in evictedIds)
+                if (!await _runService.ChatHasPlannedRunAsync(id, ct))
+                    retained.Add(id);
+            evictedIds = retained;
         }
 
         if (evictedIds.Count == 0) return evictedIds.AsReadOnly();

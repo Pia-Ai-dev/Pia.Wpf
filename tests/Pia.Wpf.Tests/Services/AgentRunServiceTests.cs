@@ -32,8 +32,8 @@ public sealed class AgentRunServiceTests : IDisposable
         Directory.CreateDirectory(_tmpDir);
         _dbPath = Path.Combine(_tmpDir, "history.db");
         _ctx = new SqliteContext(_dbPath);
-        _chats = new AssistantChatService(_ctx);
         _service = new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance);
+        _chats = new AssistantChatService(_ctx, _service);
     }
 
     [Fact]

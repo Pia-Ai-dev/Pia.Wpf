@@ -111,8 +111,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         var tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmpDir);
         using var ctx = new SqliteContext(Path.Combine(tmpDir, "history.db"));
-        var chats = new AssistantChatService(ctx);
         using var runs = new AgentRunService(ctx, NullLogger<AgentRunService>.Instance);
+        var chats = new AssistantChatService(ctx, runs);
 
         try
         {
@@ -166,8 +166,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         var tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmpDir);
         using var ctx = new SqliteContext(Path.Combine(tmpDir, "history.db"));
-        var chats = new AssistantChatService(ctx);
         using var runs = new AgentRunService(ctx, NullLogger<AgentRunService>.Instance);
+        var chats = new AssistantChatService(ctx, runs);
 
         try
         {
@@ -200,8 +200,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         var tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmpDir);
         using var ctx = new SqliteContext(Path.Combine(tmpDir, "history.db"));
-        var chats = new AssistantChatService(ctx);
         using var runs = new AgentRunService(ctx, NullLogger<AgentRunService>.Instance);
+        var chats = new AssistantChatService(ctx, runs);
 
         try
         {

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -20,7 +21,7 @@ public class AssistantChatServiceTests : IDisposable
         _tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tmpDir);
         _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
-        _service = new AssistantChatService(_ctx);
+        _service = new AssistantChatService(_ctx, new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance));
     }
 
     [Fact]

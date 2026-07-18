@@ -39,6 +39,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IBackgroundChatNotifier _backgroundChatNotifier;
     private readonly IFlowService _flowService;
     private readonly IFilesToolHandler _filesToolHandler;
+    private readonly Pia.Services.AgentRunOrchestrator _agentRunOrchestrator;
+    private readonly IAgentRunService _agentRunService;
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -86,7 +88,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         Func<ITokenMapService> tokenMapFactory,
         IBackgroundChatNotifier backgroundChatNotifier,
         IFlowService flowService,
-        IFilesToolHandler filesToolHandler)
+        IFilesToolHandler filesToolHandler,
+        Pia.Services.AgentRunOrchestrator agentRunOrchestrator,
+        IAgentRunService agentRunService)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -105,6 +109,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _backgroundChatNotifier = backgroundChatNotifier;
         _flowService = flowService;
         _filesToolHandler = filesToolHandler;
+        _agentRunOrchestrator = agentRunOrchestrator;
+        _agentRunService = agentRunService;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
     }
@@ -319,8 +325,16 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return session;
     }
 
+    /// <summary>
+    /// Programmatic entry point for a <see cref="RunShape.Planned"/> agent run (§13.11). In 1.2 this
+    /// is reachable only programmatically (tests / debug); the user-facing Chat/Agent lever is 1.3.
+    /// </summary>
+    internal Task StartPlannedTurnAsync(ChatSession session, string goal) =>
+        StartTurnAsync(session, goal, attachment: null, regenerationInstruction: null, planned: true);
+
     public async Task StartTurnAsync(
-        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null)
+        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
+        bool planned = false)
     {
         // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
         // so this marks the first turn (never persisted) vs. a resumed/continuing chat
@@ -365,12 +379,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         session.SetState(ChatState.Running);
 
         ChatTurnRequest request;
+        Persona persona;
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
             var tokenizationEnabled = settings.Privacy.TokenizationEnabled;
 
-            var persona = await _personaService.ResolveActiveAsync(
+            persona = await _personaService.ResolveActiveAsync(
                 WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
             assistantMessage.Persona = PersonaAttribution.From(persona);
 
@@ -451,6 +466,28 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 Message = _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message),
             });
             await FinalizeFailedSetupAsync(session);
+            return;
+        }
+
+        if (planned)
+        {
+            // R1/FK: the AgentRuns FK needs the AssistantChats parent row. AWAIT a persist first —
+            // the interactive first-turn persist below is fire-and-forget and not safe before CreateAsync.
+            await PersistAsync(session);
+
+            var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
+                session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText));
+
+            // BeginTurn() above already created session.Cts; the Planned branch does NOT call BeginTurn
+            // per step (R13). The orchestrator links the run CTS from session.Cts.Token below, so
+            // ChatSession.Cancel() propagates to the run + in-flight step. Constructed on the UI thread
+            // so the LiveTurnExecutor captures the UI SynchronizationContext.
+            var live = new Pia.Services.LiveTurnExecutor(session, IsSessionActive,
+                PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled);
+
+            _agentRunOrchestrator
+                .RunAsync(run, live, persona, request.Provider, Pia.Services.RunProfile.Interactive, session.Cts!.Token)
+                .SafeFireAndForget(_logger);
             return;
         }
 

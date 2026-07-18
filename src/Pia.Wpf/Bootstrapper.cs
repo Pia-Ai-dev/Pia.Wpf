@@ -471,6 +471,12 @@ public static class Bootstrapper
         // fresh scope by the scheduled-job service) so its transient AI-client decorator
         // doesn't cache tokenization state across runs.
         services.AddTransient<IBackgroundAssistantTurnRunner, BackgroundAssistantTurnRunner>();
+        // Agent orchestration loop (1.2, §13.10). Planner + orchestrator are transient/stateless per
+        // call; the headless executor is resolved inside a fresh per-run DI scope. The live executor
+        // is NOT registered — ChatSessionManager new's it on the UI thread bound to the session.
+        services.AddTransient<IAgentPlanner, AgentPlanner>();
+        services.AddTransient<AgentRunOrchestrator>();
+        services.AddTransient<HeadlessTurnExecutor>();
         services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
         services.AddSingleton<IMarkdownExportService, MarkdownExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();

@@ -44,7 +44,8 @@ public interface IChatSessionManager
     /// regeneration (e.g. "make it shorter") without changing the displayed user bubble.
     /// </summary>
     Task StartTurnAsync(
-        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null);
+        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
+        bool planned = false);
 
     /// <summary>Live state for <paramref name="chatId"/>, or <see cref="ChatState.Idle"/> if not live.</summary>
     ChatState GetState(Guid chatId);

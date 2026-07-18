@@ -39,12 +39,17 @@ public class ChatSessionManagerTests
         if (SynchronizationContext.Current is null)
             SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
+        var runService = Substitute.For<Pia.Services.Interfaces.IAgentRunService>();
+        var orchestrator = new Pia.Services.AgentRunOrchestrator(
+            runService, Substitute.For<Pia.Services.IAgentPlanner>(),
+            NullLogger<Pia.Services.AgentRunOrchestrator>.Instance);
+
         return new ChatSessionManager(
             NullLogger<ChatSessionManager>.Instance,
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files);
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, runService);
     }
 
     [Fact]
