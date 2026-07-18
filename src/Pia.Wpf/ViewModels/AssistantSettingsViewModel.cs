@@ -71,6 +71,15 @@ public partial class AssistantSettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _fileToolsEnabled = true;
 
+    [ObservableProperty]
+    private bool _gitToolsEnabled = true;
+
+    // Whether git is installed on this machine. Set once from GitLocator on load; drives the git-tools
+    // toggle's enabled state (greyed out when git is absent). The stored bool is inert when git is
+    // absent because GitToolHandler.IsAvailable also requires GitLocator.IsAvailable.
+    [ObservableProperty]
+    private bool _gitToolsAvailable;
+
     // "<folder>\Vault" — shown beneath the folder so the user sees where memory lives.
     [ObservableProperty]
     private string? _vaultLocationDisplay;
@@ -118,6 +127,11 @@ public partial class AssistantSettingsViewModel : ObservableObject
     }
 
     partial void OnFileToolsEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnGitToolsEnabledChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -206,6 +220,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
         SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
         FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
         FileToolsEnabled = settings.AssistantFileToolsEnabled;
+        GitToolsEnabled = settings.AssistantGitToolsEnabled;
+        GitToolsAvailable = GitLocator.IsAvailable; // decided at startup (prewarmed), cached
+
         DefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
         RefreshAvailableWorkingDirectories();
         ChatHistoryEnabled = settings.ChatHistoryEnabled;
@@ -336,6 +353,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(FilesFolder))
             settings.AssistantFilesFolder = FilesFolder;
         settings.AssistantFileToolsEnabled = FileToolsEnabled;
+        settings.AssistantGitToolsEnabled = GitToolsEnabled;
         if (DefaultWorkingDirectory is not null)
             settings.AssistantDefaultWorkingDirectory = DefaultWorkingDirectory;
         settings.ChatHistoryEnabled = ChatHistoryEnabled;

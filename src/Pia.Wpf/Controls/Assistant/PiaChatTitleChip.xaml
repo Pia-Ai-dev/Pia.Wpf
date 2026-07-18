@@ -218,12 +218,17 @@
               <Grid>
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Breadcrumb header -->
-                <ItemsControl Grid.Row="0"
-                              Margin="4,2,4,6"
+                <!-- Breadcrumb header + New-folder trigger (creates a subfolder in the current folder). -->
+                <Grid Grid.Row="0" Margin="4,2,4,6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                <ItemsControl Grid.Column="0"
                               ItemsSource="{Binding Crumbs}">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -262,12 +267,80 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                  <Button Grid.Column="1"
+                          x:Name="NewFolderButton"
+                          Style="{StaticResource UnstyledButton}"
+                          Cursor="Hand"
+                          Padding="4,2"
+                          VerticalAlignment="Center"
+                          Click="NewFolderButton_Click"
+                          ToolTip="{loc:Str AssistantChat_WorkingDir_NewFolder_Tooltip}">
+                    <ui:SymbolIcon Symbol="FolderAdd24"
+                                   FontSize="15"
+                                   Foreground="{DynamicResource PiaAccentBrush}" />
+                  </Button>
+                </Grid>
+
+                <!-- Inline new-folder input row — shown while creating; creates a subfolder in the
+                     current picker folder. Enter/Checkmark confirm, Escape/Dismiss cancel. Focus is
+                     moved back onto the header button on close (see code-behind) so collapsing the
+                     row can't dismiss the StaysOpen=False popup. -->
+                <Border Grid.Row="1"
+                        Margin="4,0,4,6"
+                        Visibility="{Binding IsCreatingFolder, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:SymbolIcon Grid.Column="0"
+                                   Symbol="Folder24"
+                                   FontSize="15"
+                                   Margin="6,0,8,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <ui:TextBox Grid.Column="1"
+                                x:Name="NewFolderTextBox"
+                                Text="{Binding NewFolderName, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="{loc:Str AssistantChat_WorkingDir_NewFolder_Placeholder}"
+                                PlaceholderEnabled="True"
+                                PreviewKeyDown="NewFolderTextBox_PreviewKeyDown" />
+                    <Button Grid.Column="2"
+                            Style="{StaticResource UnstyledButton}"
+                            Cursor="Hand"
+                            Padding="6,2"
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Command="{Binding ConfirmCreateFolderCommand}"
+                            Click="ConfirmCreateFolderButton_Click"
+                            ToolTip="{loc:Str AssistantChat_WorkingDir_NewFolder_Confirm}">
+                      <ui:SymbolIcon Symbol="Checkmark24"
+                                     FontSize="15"
+                                     Foreground="{DynamicResource PiaAccentBrush}" />
+                    </Button>
+                    <Button Grid.Column="3"
+                            Style="{StaticResource UnstyledButton}"
+                            Cursor="Hand"
+                            Padding="6,2"
+                            VerticalAlignment="Center"
+                            Command="{Binding CancelCreateFolderCommand}"
+                            Click="CancelCreateFolderButton_Click"
+                            ToolTip="{loc:Str AssistantChat_WorkingDir_NewFolder_Cancel}">
+                      <ui:SymbolIcon Symbol="Dismiss24"
+                                     FontSize="14"
+                                     Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </Button>
+                  </Grid>
+                </Border>
+
                 <!-- Immediate child folders + empty state. ListBox gives arrow-key navigation
                      and a selection highlight; the popup's Opened handler moves focus here so
                      Up/Down stay in the picker instead of falling through to the chat list.
                      Activation (Enter/Space/click), Backspace (ascend) and Escape are handled
                      in code-behind. Virtualization off keeps container lookup synchronous. -->
-                <Grid Grid.Row="1">
+                <Grid Grid.Row="2">
                   <TextBlock Margin="10,8"
                              FontSize="12"
                              Foreground="{DynamicResource TextMutedBrush}"

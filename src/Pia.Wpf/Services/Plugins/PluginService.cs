@@ -20,6 +20,7 @@ public class PluginService : IPluginService
     private readonly IScheduledJobToolHandler _scheduledJobToolHandler;
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly IIngestToolHandler _ingestToolHandler;
+    private readonly IGitToolHandler _gitToolHandler;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
@@ -46,6 +47,7 @@ public class PluginService : IPluginService
         IScheduledJobToolHandler scheduledJobToolHandler,
         IFilesToolHandler filesToolHandler,
         IIngestToolHandler ingestToolHandler,
+        IGitToolHandler gitToolHandler,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
@@ -57,6 +59,7 @@ public class PluginService : IPluginService
         _scheduledJobToolHandler = scheduledJobToolHandler;
         _filesToolHandler = filesToolHandler;
         _ingestToolHandler = ingestToolHandler;
+        _gitToolHandler = gitToolHandler;
         _settingsService = settingsService;
         _logger = logger;
         _sqliteContext = sqliteContext;
@@ -84,6 +87,7 @@ public class PluginService : IPluginService
                 "scheduled-research" => BuiltInPluginHandler.FromScheduledJobHandler(_scheduledJobToolHandler, config),
                 "files" => BuiltInPluginHandler.FromFilesHandler(_filesToolHandler, config),
                 "ingest" => BuiltInPluginHandler.FromIngestHandler(_ingestToolHandler, config),
+                "git" => BuiltInPluginHandler.FromGitHandler(_gitToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

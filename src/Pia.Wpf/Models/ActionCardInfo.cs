@@ -18,7 +18,8 @@ public enum ActionCardCategory
     Memory,
     Todo,
     Reminder,
-    Files
+    Files,
+    Git
 }
 
 public record ActionCardDetail(string Label, string Value);

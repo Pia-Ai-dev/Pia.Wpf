@@ -21,6 +21,9 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\Fonts\BricolageGrotesque-Variable.woff2" />
+    <!-- Default file-tool / @Files ignore patterns. LogicalName is fixed so SandboxIgnore can load
+         it by a stable manifest name instead of the namespace-derived default. -->
+    <EmbeddedResource Include="Resources\FileTools\default.piaignore" LogicalName="Pia.DefaultFileIgnore" />
   </ItemGroup>
 
   <ItemGroup>

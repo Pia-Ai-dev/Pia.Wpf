@@ -449,6 +449,8 @@ public static class Bootstrapper
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
         services.AddSingleton<IFileStalenessStore, FileStalenessStore>();
         services.AddSingleton<IFilesToolHandler, FilesToolHandler>();
+        services.AddSingleton<Pia.Helpers.IGitProcessRunner, Pia.Helpers.GitProcessRunner>();
+        services.AddSingleton<IGitToolHandler, GitToolHandler>();
         services.AddSingleton<IWorkingDirectoryService, WorkingDirectoryService>();
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();

@@ -70,6 +70,9 @@
                       <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Files}">
                         <Setter Property="Symbol" Value="Document24" />
                       </DataTrigger>
+                      <DataTrigger Binding="{Binding Category}" Value="{x:Static models:ActionCardCategory.Git}">
+                        <Setter Property="Symbol" Value="BranchFork24" />
+                      </DataTrigger>
                     </Style.Triggers>
                   </Style>
                 </ui:SymbolIcon.Style>

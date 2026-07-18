@@ -176,4 +176,171 @@ public class WorkingDirectoryPickerViewModelTests
         Assert.True(sut.IsEmpty);
         Assert.Empty(sut.Entries);
     }
+
+    [Fact]
+    public void BeginCreateFolder_ShowsInput_WithEmptyName()
+    {
+        var sut = CreateSut();
+
+        sut.BeginCreateFolderCommand.Execute(null);
+
+        Assert.True(sut.IsCreatingFolder);
+        Assert.Equal(string.Empty, sut.NewFolderName);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_AtRoot_CreatesUnderRoot_RefreshesAndSelects()
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "Reports";
+        _service.EnsureSubfolder("Reports").Returns("Reports");
+        // The post-create refresh should now surface the new folder.
+        _service.ListSubfolders("").Returns(new[] { "docs", "projects", "Reports" });
+
+        sut.ConfirmCreateFolderCommand.Execute(null);
+
+        _service.Received().EnsureSubfolder("Reports");
+        Assert.False(sut.IsCreatingFolder);
+        Assert.Equal("Reports", sut.LastCreatedFolder);
+        Assert.Contains("Reports", sut.Entries);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_Nested_CreatesUnderCurrentPath()
+    {
+        var sut = CreateSut();
+        sut.EnterCommand.Execute("projects");
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "Sub";
+        _service.EnsureSubfolder("projects/Sub").Returns("projects/Sub");
+
+        sut.ConfirmCreateFolderCommand.Execute(null);
+
+        _service.Received().EnsureSubfolder("projects/Sub");
+        Assert.Equal("Sub", sut.LastCreatedFolder);
+        Assert.False(sut.IsCreatingFolder);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_TrimsName_BeforeCreating()
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "  Spaced  ";
+        _service.EnsureSubfolder("Spaced").Returns("Spaced");
+
+        sut.ConfirmCreateFolderCommand.Execute(null);
+
+        _service.Received().EnsureSubfolder("Spaced");
+        Assert.Equal("Spaced", sut.LastCreatedFolder);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_UsesOnDiskCasing_ForLastCreatedFolder()
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "reports"; // user types lowercase
+        // The service echoes the typed (lexical) casing, but the folder already exists on disk as
+        // "Reports"; the post-create refresh surfaces the on-disk name.
+        _service.EnsureSubfolder("reports").Returns("reports");
+        _service.ListSubfolders("").Returns(new[] { "docs", "projects", "Reports" });
+
+        sut.ConfirmCreateFolderCommand.Execute(null);
+
+        // LastCreatedFolder must match the on-disk entry so the view's ordinal select/scroll hits.
+        Assert.Equal("Reports", sut.LastCreatedFolder);
+        Assert.Contains("Reports", sut.Entries);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("a/b")]
+    [InlineData("a\\b")]
+    [InlineData("a:b")]
+    public void ConfirmCreateFolder_InvalidName_CannotExecute_AndDoesNothing(string name)
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = name;
+
+        Assert.False(sut.ConfirmCreateFolderCommand.CanExecute(null));
+
+        // Even if invoked directly, the internal guard prevents any create + keeps the input open.
+        sut.ConfirmCreateFolderCommand.Execute(null);
+        _service.DidNotReceive().EnsureSubfolder(Arg.Any<string>());
+        Assert.True(sut.IsCreatingFolder);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_ServiceRejects_StaysInCreateMode()
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "Blocked";
+        _service.EnsureSubfolder("Blocked").Returns((string?)null);
+
+        sut.ConfirmCreateFolderCommand.Execute(null);
+
+        Assert.True(sut.IsCreatingFolder);
+        Assert.Null(sut.LastCreatedFolder);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_DoesNotRepointWorkingDirectory()
+    {
+        var sut = CreateSut();
+        var raised = false;
+        sut.WorkingDirectoryChosen += (_, _) => raised = true;
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "New";
+        _service.EnsureSubfolder("New").Returns("New");
+
+        sut.ConfirmCreateFolderCommand.Execute(null);
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void CancelCreateFolder_ClearsInput()
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "temp";
+
+        sut.CancelCreateFolderCommand.Execute(null);
+
+        Assert.False(sut.IsCreatingFolder);
+        Assert.Equal(string.Empty, sut.NewFolderName);
+    }
+
+    [Fact]
+    public void Navigating_CancelsInProgressCreation()
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "temp";
+
+        sut.EnterCommand.Execute("projects");
+
+        Assert.False(sut.IsCreatingFolder);
+        Assert.Equal(string.Empty, sut.NewFolderName);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_CanExecute_TracksNameValidity()
+    {
+        var sut = CreateSut();
+        sut.BeginCreateFolderCommand.Execute(null);
+
+        Assert.False(sut.ConfirmCreateFolderCommand.CanExecute(null)); // empty
+        sut.NewFolderName = "ok";
+        Assert.True(sut.ConfirmCreateFolderCommand.CanExecute(null));
+        sut.NewFolderName = "bad/name";
+        Assert.False(sut.ConfirmCreateFolderCommand.CanExecute(null));
+    }
 }

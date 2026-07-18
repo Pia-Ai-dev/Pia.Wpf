@@ -6,9 +6,9 @@ namespace Pia.Services.Plugins;
 /// Hardcoded defaults for built-in plugins. Used on first launch or offline when no server data is
 /// cached. The GUIDs are well-known and stable, but they do NOT all match server seed data: only
 /// memory/todo/reminder (...001-...003) are seeded server-side. scheduled-research (...004), files
-/// (...006) and ingest (...007) are client-only built-ins with no server plugin row — the server's
-/// sync push tolerates a preference referencing such an unknown plugin id by skipping it, so toggling
-/// a client-only built-in cannot wedge preference sync (SyncService.PushAsync in the Pia server repo).
+/// (...006), ingest (...007) and git (...008) are client-only built-ins with no server plugin row — the
+/// server's sync push tolerates a preference referencing such an unknown plugin id by skipping it, so
+/// toggling a client-only built-in cannot wedge preference sync (SyncService.PushAsync in the Pia server repo).
 /// </summary>
 public static class BuiltInPluginDefaults
 {
@@ -22,10 +22,11 @@ public static class BuiltInPluginDefaults
     public static readonly Guid ResearchHistoryPluginId = new("10000000-0000-0000-0000-000000000005");
     public static readonly Guid FilesPluginId = new("10000000-0000-0000-0000-000000000006");
     public static readonly Guid IngestPluginId = new("10000000-0000-0000-0000-000000000007");
+    public static readonly Guid GitPluginId = new("10000000-0000-0000-0000-000000000008");
 
     public static readonly HashSet<Guid> PreloadedPluginIds = [
         MemoryPluginId, TodoPluginId, ReminderPluginId,
-        ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId, IngestPluginId];
+        ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId, IngestPluginId, GitPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -100,6 +101,18 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"ingest","defaultEnabled":true,"systemPromptAddition":"You can compile raw documents into recallable memory. Raw files live in the assistant vault's 'sources/' folder. Call ingest with the vault-relative path (e.g. ingest(\"sources/q2-report.txt\")) to extract the key entities from the file and write one memory topic page per entity — after that the content can be found with recall. To stage a NEW document: use the files tools to write it to 'Vault/sources/<name>' (the vault is the 'Vault' folder inside the assistant files folder), then call ingest(\"sources/<name>\"). Re-ingesting the same source does not create duplicates. Only text files are supported (e.g. txt, md, csv, json, html, xml, log)."}""",
             UpdatedAt = new DateTime(2026, 7, 6, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [GitPluginId] = new SyncPlugin
+        {
+            Id = GitPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "git",
+            Description = "Run local git operations (status, log, diff, branch, show, init, add, commit, switch, restore, stash) on the repository in the working directory.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"git","defaultEnabled":true,"systemPromptAddition":"You can run local git operations on the repository in the active chat's working directory (inside the assistant files folder). Read-only tools (run inline): git_status, git_log, git_diff, git_branch, git_show. Mutating tools (each asks the user to approve before it runs): git_init, git_add, git_commit, git_switch, git_restore, git_stash. There are NO network operations: you cannot push, pull, fetch, or clone. If the working directory is not a git repository yet, call git_init to create one there, then retry. Prefer git_status and git_diff to review changes before you git_commit. Switch branches with git_switch (git_switch with create=true to make a new branch); never rely on a raw checkout. Discard changes with git_restore. All paths must stay inside the assistant files folder."}""",
+            UpdatedAt = new DateTime(2026, 7, 15, 0, 0, 0, DateTimeKind.Utc)
         }
     };
 }

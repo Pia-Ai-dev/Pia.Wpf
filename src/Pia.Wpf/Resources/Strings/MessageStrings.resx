@@ -68,6 +68,11 @@
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>This will permanently delete this reminder.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>This will permanently delete this todo.</value></data>
   <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>This will permanently delete this file.</value></data>
+  <data name="Msg_Assistant_GitSwitchWarning" xml:space="preserve"><value>Switching branches may discard or overlay uncommitted changes.</value></data>
+  <data name="Msg_Assistant_GitRestoreWarning" xml:space="preserve"><value>This discards changes and cannot be undone.</value></data>
+  <data name="Msg_Assistant_GitStashWarning" xml:space="preserve"><value>Stashing or popping moves uncommitted changes and may hide or overlay them.</value></data>
+  <data name="Msg_Assistant_StatusRunningGit" xml:space="preserve"><value>Running git...</value></data>
+  <data name="Msg_Assistant_GitUpdated" xml:space="preserve"><value>Git Updated</value></data>
   <data name="Msg_Assistant_ReminderUpdated" xml:space="preserve"><value>Reminder Updated</value></data>
   <data name="Msg_Assistant_ResponseCancelled" xml:space="preserve"><value>Response generation was cancelled.</value></data>
   <data name="Msg_Assistant_ResponseTimedOut" xml:space="preserve"><value>Provider '{0}' did not respond within {1} seconds.</value></data>
@@ -103,6 +108,10 @@
   <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Working folder for this chat</value></data>
   <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>All files</value></data>
   <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>No subfolders here.</value></data>
+  <data name="AssistantChat_WorkingDir_NewFolder_Tooltip" xml:space="preserve"><value>New folder</value></data>
+  <data name="AssistantChat_WorkingDir_NewFolder_Placeholder" xml:space="preserve"><value>Folder name</value></data>
+  <data name="AssistantChat_WorkingDir_NewFolder_Confirm" xml:space="preserve"><value>Create folder</value></data>
+  <data name="AssistantChat_WorkingDir_NewFolder_Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="AssistantChat_QuickSwitcher_Placeholder" xml:space="preserve"><value>Search chats…</value></data>
   <data name="AssistantChat_QuickSwitcher_NoMatches" xml:space="preserve"><value>No matches</value></data>
   <data name="AssistantChat_QuickSwitcher_Hint" xml:space="preserve"><value>↑↓ to navigate · Enter to resume · Esc to close</value></data>
