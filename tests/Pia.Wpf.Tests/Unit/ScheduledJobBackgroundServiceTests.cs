@@ -55,6 +55,33 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task ExecuteOnceAsync_Success_PassesScheduleProvenanceToRunner()
+    {
+        // The scheduled path must wire Trigger=Schedule, TriggerRef=job.Id, and OwnerDeviceId=
+        // job.OwnerDeviceId into the BackgroundTurnRequest handed to the runner.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.OwnerDeviceId = Guid.NewGuid();
+        jobs.SeedDue(due);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner));
+        var providers = new FakeProviderResolver(NewProvider());
+        var notifications = new FakeNotificationSurface();
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, scopeFactory, providers, notifications,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.NotNull(runner.LastRequest);
+        Assert.Equal(AgentRunTrigger.Schedule, runner.LastRequest!.Trigger);
+        Assert.Equal(due.Id, runner.LastRequest.TriggerRef);
+        Assert.Equal(due.OwnerDeviceId, runner.LastRequest.OwnerDeviceId);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_RunnerReturnsFailure_MarksFailedAndNotifies()
     {
         var jobs = new FakeJobService();
@@ -263,10 +290,12 @@ public class ScheduledJobBackgroundServiceTests
         public int RunCount { get; private set; }
         public BackgroundTurnResult Result { get; set; } = new(Guid.NewGuid(), true, null);
         public string? ThrowMessage { get; set; }
+        public BackgroundTurnRequest? LastRequest { get; private set; }
 
         public Task<BackgroundTurnResult> RunAsync(BackgroundTurnRequest request, CancellationToken ct)
         {
             RunCount++;
+            LastRequest = request;
             if (ThrowMessage is not null)
                 throw new InvalidOperationException(ThrowMessage);
             return Task.FromResult(Result);

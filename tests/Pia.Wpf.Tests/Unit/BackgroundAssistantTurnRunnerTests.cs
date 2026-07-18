@@ -33,9 +33,11 @@ public class BackgroundAssistantTurnRunnerTests
         public IAssistantChatService Chats = Substitute.For<IAssistantChatService>();
         public IChatTitleService Titles = Substitute.For<IChatTitleService>();
         public ISettingsService Settings = Substitute.For<ISettingsService>();
+        public IAgentRunService Runs = Substitute.For<IAgentRunService>();
 
         public List<(string Tool, object? Returned)> HandlerResults = new();
         public SyncAssistantChat? Saved;
+        public readonly List<SyncAssistantChat> AllSaved = new();
 
         public BackgroundAssistantTurnRunner Build(IReadOnlyList<FunctionCallContent> toolCalls, string answer = "ANSWER")
         {
@@ -46,8 +48,17 @@ public class BackgroundAssistantTurnRunnerTests
                 .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
             Titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns((string?)null);
-            Chats.SaveAsync(Arg.Do<SyncAssistantChat>(c => Saved = c), Arg.Any<CancellationToken>())
+            Chats.SaveAsync(Arg.Do<SyncAssistantChat>(c => { Saved = c; AllSaved.Add(c); }), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
+
+            Runs.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+                .Returns(ci => Task.FromResult(new AgentRun
+                {
+                    Id = Guid.NewGuid(),
+                    ChatId = ci.Arg<AgentRunCreateRequest>().ChatId,
+                    RunShape = RunShape.SingleTurn,
+                    State = AgentRunState.Running,
+                }));
 
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
@@ -58,7 +69,7 @@ public class BackgroundAssistantTurnRunnerTests
 
             return new BackgroundAssistantTurnRunner(
                 Ai, Plugins, Composer, Personas, Chats, Titles, Settings,
-                TokenMapFactory, NullLogger<BackgroundAssistantTurnRunner>.Instance);
+                TokenMapFactory, Runs, NullLogger<BackgroundAssistantTurnRunner>.Instance);
         }
 
         private async IAsyncEnumerable<ChatStreamItem> Drive(
@@ -196,14 +207,22 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
-    public async Task EmptyAnswer_ReturnsFailure_AndDoesNotPersist()
+    public async Task EmptyAnswer_ReturnsFailure_ButPersistsStubChat()
     {
+        // R1: even the empty path now leaves a stub AssistantChats row up front so the run's FK
+        // target (and thus a Failed run's ChatId) resolves. No assistant/user messages are written.
         var h = new Harness();
         var runner = h.Build([], answer: "");
 
         var result = await runner.RunAsync(new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
 
         Assert.False(result.Succeeded);
-        Assert.Null(h.Saved);
+        Assert.NotNull(h.Saved);
+        Assert.Equal(result.ChatId, h.Saved!.Id);
+        Assert.Empty(h.Saved.Messages);
+        // Exactly one save: the stub (the full 2-message chat is never reached on the empty path).
+        Assert.Single(h.AllSaved);
+        // The empty path marks the run Failed so a resolvable (stub) chat still carries a Failed run.
+        await h.Runs.Received().FailAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
 }
