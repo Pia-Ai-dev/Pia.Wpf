@@ -496,4 +496,31 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(3, root.GetProperty("outputTokens").GetInt64());
         Assert.Equal(0, root.GetProperty("perStep").GetArrayLength()); // verify accrues run-level (stepId null)
     }
+
+    [Fact]
+    public async Task Run_SessionCancelDuringVerify_PropagatesCancelled_RangePinned()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+
+        // The step produces a transcript slice (Ok() carries non-empty message Ids); a user cancel then
+        // lands DURING verify. Guardrail 1: SafeVerify rethrows a genuine run cancel (never degrade-to-
+        // accept), so the run settles Cancelled — not a spurious Completed. R3: the executed-so-far slice
+        // is still pinned even though the cancel surfaced after the clean drain.
+        using var sessionCts = new CancellationTokenSource();
+        var verifier = new FakeVerifier { CancelSessionOnVerify = sessionCts };
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, sessionCts.Token);
+
+        Assert.Equal(1, verifier.VerifyCalls);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Cancelled, final!.State); // cancel during verify propagates — NOT accepted
+        Assert.True(exec.EndCalled);
+        Assert.True(exec.EndCancelled);
+        Assert.NotNull(final.FirstMessageId);                 // R3: transcript slice pinned on cancel-during-verify
+        Assert.NotEqual(Guid.Empty, final.FirstMessageId!.Value);
+    }
 }

@@ -210,6 +210,11 @@ public sealed class AgentRunOrchestrator
         }
         catch (OperationCanceledException)
         {
+            // R3: a cancel can now surface here from the in-flight verify turn (SafeVerify rethrows a
+            // genuine run cancel) — after the steps drained but before the terminal-settle PinRange. Pin
+            // the executed-so-far slice first so a transcript-producing run never settles Cancelled with a
+            // null range (mirrors the step-cancel path above; SetRunMessageRange ignores the cancelled ct).
+            await PinRange().ConfigureAwait(false);
             await SafeFail(run.Id, null, cancelled: true).ConfigureAwait(false);
             await SafeEndRun(executor, run, ctx, cancelled: true, failed: false).ConfigureAwait(false);
         }
