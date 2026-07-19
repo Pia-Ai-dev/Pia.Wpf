@@ -42,8 +42,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         // Destructive is TOOLNAME-based, not the "delete" substring: git_switch/git_restore/git_stash
         // carry no "delete" yet can shed uncommitted changes, and each needs its OWN warning. (git_stash
         // "list" runs inline and never reaches a card, so marking the tool destructive here is safe.)
-        var isDelete = pendingAction.ToolName.Contains("delete", StringComparison.OrdinalIgnoreCase)
-            || pendingAction.ToolName == "forget";
+        var isDelete = ToolPermissionService.IsDeleteLike(pendingAction.ToolName);
         var isGitDestructive = pendingAction.ToolName is "git_switch" or "git_restore" or "git_stash";
         var isDestructive = isDelete || isGitDestructive;
 
@@ -58,7 +57,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
                 "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
                 "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
                 "files" => _localizationService["Msg_Assistant_PermanentDeleteFile"],
-                _ => null
+                // A destructive external (MCP) tool: generic warning (we can't know its exact effect).
+                _ => _localizationService["Msg_Assistant_PermanentDeleteExternal"]
             },
             _ => null
         };
@@ -97,8 +97,10 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             PluginId = pendingAction.PluginId,
             // MCP tools are grantable as a class: they aren't in the built-in safe allowlist, but an
             // external tool is a specific named capability the user may choose to "always allow" per tool
-            // (unlike the catch-all write_file, which stays never-auto-approvable). The gate re-checks this.
-            IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName) || category == ActionCardCategory.Mcp,
+            // (unlike the catch-all write_file, which stays never-auto-approvable). A DESTRUCTIVE external
+            // tool is excluded — no one-click standing grant on a delete. The gate re-checks all of this.
+            IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName)
+                || (category == ActionCardCategory.Mcp && !isDestructive),
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,

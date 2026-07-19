@@ -98,6 +98,35 @@ public class ActionCardBuilderTests
     }
 
     [Fact]
+    public void Build_McpTool_IsExternalCategory_Grantable_AndParsesJsonArgs()
+    {
+        var builder = CreateBuilder(out _);
+
+        // A non-built-in plugin name → external (MCP) tool. IsAutoApproveEligible is not stubbed for it
+        // (defaults false), so grantability here comes purely from the MCP-as-a-class branch.
+        var card = builder.Build(Call("search_issues", "linear", "linear: search_issues", "{\"query\":\"bug\"}"), detokenize: false);
+
+        Assert.Equal(ActionCardCategory.Mcp, card.Category);
+        Assert.Equal("ActionCard_Category_Mcp", card.Title);
+        Assert.True(card.IsAutoApprovable);   // external tools are grantable as a class ("always allow")
+        Assert.False(card.IsDestructive);
+        Assert.NotEmpty(card.Details);        // JSON args parsed for display
+    }
+
+    [Fact]
+    public void Build_DestructiveMcpTool_IsNotGrantable_AndWarns()
+    {
+        var builder = CreateBuilder(out _);
+
+        var card = builder.Build(Call("delete_issue", "linear", "linear: delete_issue"), detokenize: false);
+
+        Assert.Equal(ActionCardCategory.Mcp, card.Category);
+        Assert.True(card.IsDestructive);
+        Assert.False(card.IsAutoApprovable);  // no one-click standing grant on a destructive external tool
+        Assert.Equal("Msg_Assistant_PermanentDeleteExternal", card.WarningText);
+    }
+
+    [Fact]
     public void Build_WhenDetokenizeFalse_DoesNotTouchTokenMap()
     {
         var builder = CreateBuilder(out var tokenMap);

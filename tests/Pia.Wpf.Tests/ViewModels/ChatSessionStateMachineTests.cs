@@ -383,6 +383,51 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public async Task McpTool_Ungranted_IsGated_ShownNotAutoRun_ThenAlwaysAllowPersistsGrant()
+    {
+        // Phase-2 MCP gate: an interactive MCP call is NOT auto-run — it shows a card and waits. Because
+        // MCP is grantable as a class, "Always allow" persists a standing grant (unlike write_file).
+        var executed = false;
+        var mcpPluginId = Guid.NewGuid();
+        var pending = new PluginToolCall(
+            ToolName: "mcp_search",
+            PluginId: mcpPluginId,
+            PluginName: "linear",
+            Description: "linear: mcp_search",
+            Details: null,
+            Execute: () => { executed = true; return Task.FromResult<object?>("done"); });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+        _plugins.IsMcpTool("mcp_search").Returns(true);        // external tool → grantable
+        _permissions.IsAutoApproveEligible("mcp_search").Returns(false); // not a built-in
+        _permissions.IsGranted(mcpPluginId, "mcp_search").Returns(false); // no standing grant yet
+
+        var card = NewCard("mcp_search", mcpPluginId);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+
+        var session = CreateSession();
+        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
+
+        await WaitUntilAsync(() => card.IsPending);
+        Assert.False(executed);   // gated — MCP is not auto-run; waiting on the user
+        Assert.Equal(ChatState.WaitingForTool, session.State);
+
+        card.AlwaysAllowCommand.Execute(null);
+        await run;
+
+        await _permissions.Received().GrantAsync(mcpPluginId, "mcp_search"); // MCP grantable → grant persisted
+        Assert.True(executed);
+    }
+
+    [Fact]
     public async Task AllowOnce_Executes_ButDoesNotGrant()
     {
         var executed = false;

@@ -792,9 +792,12 @@ public sealed class ChatSession : IDisposable
             var pluginId = pendingAction.PluginId;
             var tool = pendingAction.ToolName;
             // Eligibility comes from the SERVICE, never the card — the gate re-checks it so a
-            // forged/stale grant on an ineligible tool (e.g. write_file) cannot auto-bypass. MCP tools are
-            // grantable as a class (external, server-defined; the user may "always allow" per tool).
-            var eligible = _permissions.IsAutoApproveEligible(tool) || _pluginService.IsMcpTool(tool);
+            // forged/stale grant on an ineligible tool (e.g. write_file, or a destructive MCP tool) cannot
+            // auto-bypass. MCP tools are grantable as a class (external, server-defined; the user may
+            // "always allow" per tool) EXCEPT destructive ones — a delete-like external tool never gets a
+            // standing grant, matching the built-in delete stance.
+            var eligible = _permissions.IsAutoApproveEligible(tool)
+                || (_pluginService.IsMcpTool(tool) && !ToolPermissionService.IsDeleteLike(tool));
 
             // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
             // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.

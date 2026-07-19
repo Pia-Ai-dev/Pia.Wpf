@@ -68,6 +68,7 @@
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>This will permanently delete this reminder.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>This will permanently delete this todo.</value></data>
   <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>This will permanently delete this file.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteExternal" xml:space="preserve"><value>This external tool may permanently change or delete data. Review it carefully.</value></data>
   <data name="Msg_Assistant_GitSwitchWarning" xml:space="preserve"><value>Switching branches may discard or overlay uncommitted changes.</value></data>
   <data name="Msg_Assistant_GitRestoreWarning" xml:space="preserve"><value>This discards changes and cannot be undone.</value></data>
   <data name="Msg_Assistant_GitStashWarning" xml:space="preserve"><value>Stashing or popping moves uncommitted changes and may hide or overlay them.</value></data>

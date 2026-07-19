@@ -67,6 +67,7 @@
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Ce rappel sera définitivement supprimé.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Cette tâche sera définitivement supprimée.</value></data>
   <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>Ce fichier sera définitivement supprimé.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteExternal" xml:space="preserve"><value>Cet outil externe peut modifier ou supprimer des données de façon permanente. À vérifier attentivement.</value></data>
   <data name="Msg_Assistant_GitSwitchWarning" xml:space="preserve"><value>Changer de branche peut supprimer ou masquer des modifications non validées.</value></data>
   <data name="Msg_Assistant_GitRestoreWarning" xml:space="preserve"><value>Cette action supprime des modifications et est irréversible.</value></data>
   <data name="Msg_Assistant_GitStashWarning" xml:space="preserve"><value>Remiser ou dépiler déplace les modifications non validées et peut les masquer ou les superposer.</value></data>

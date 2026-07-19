@@ -50,6 +50,16 @@ public class ToolPermissionService : IToolPermissionService
     public bool IsAutoApproveEligible(string toolName)
         => toolName is not null && AutoApproveAllowlist.Contains(toolName);
 
+    /// <summary>
+    /// Name heuristic for a delete/destructive tool, shared by the card builder and the gate so a
+    /// destructive external (MCP) tool is treated the same in both: never auto-approvable, even though MCP
+    /// is otherwise grantable-as-a-class. Deliberately conservative (a "delete" substring) — the built-in
+    /// destructive tools are already excluded by the allowlist regardless.
+    /// </summary>
+    public static bool IsDeleteLike(string? toolName)
+        => toolName is not null
+           && (toolName.Contains("delete", StringComparison.OrdinalIgnoreCase) || toolName == "forget");
+
     public bool IsGranted(Guid pluginId, string toolName)
     {
         lock (_lock)
