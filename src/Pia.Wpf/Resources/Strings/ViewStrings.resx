@@ -892,7 +892,6 @@
   <data name="Agent_Warn_ChooseProvider" xml:space="preserve"><value>Choose provider…</value></data>
   <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Stay in Chat</value></data>
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Stopped at budget</value></data>
-  <data name="Run_Working" xml:space="preserve"><value>Working…</value></data>
   <data name="Run_State_Planning" xml:space="preserve"><value>Planning</value></data>
   <data name="Run_State_Running" xml:space="preserve"><value>Running</value></data>
   <data name="Run_State_Completed" xml:space="preserve"><value>Completed</value></data>

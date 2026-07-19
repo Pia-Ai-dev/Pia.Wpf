@@ -481,17 +481,24 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
                 ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
 
-                // Seed the Chat/Agent lever from the persisted global default (R15). Guarded so the
-                // seed itself never re-persists via OnAgentModeEnabledChanged.
-                _isLoadingAgentMode = true;
-                try { AgentModeEnabled = settings.AssistantAgentModeDefault; }
-                finally { _isLoadingAgentMode = false; }
+                // Seed the Chat/Agent lever from the persisted global default (R15).
+                SeedAgentModeFromSettings(settings);
             });
         }
         finally
         {
             _isLoadingPersonas = false;
         }
+    }
+
+    /// <summary>Seeds the Chat/Agent lever from the persisted global default (R15), guarded so the
+    /// seed itself never re-persists via <see cref="OnAgentModeEnabledChanged"/>. Internal seam so the
+    /// seed-guard + reopen-restore can be exercised without spinning the whole persona-load path.</summary>
+    internal void SeedAgentModeFromSettings(AppSettings settings)
+    {
+        _isLoadingAgentMode = true;
+        try { AgentModeEnabled = settings.AssistantAgentModeDefault; }
+        finally { _isLoadingAgentMode = false; }
     }
 
     partial void OnActivePersonaChanged(Persona? value)
@@ -1168,7 +1175,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     /// <summary>Warning-first evaluation (§14.4): shows the subtle adorner/banner when the active provider
     /// is not Capable of tool calling. Non-blocking — a Weak provider still runs Planned (R10).</summary>
-    private async Task EvaluateProviderWarningAsync()
+    internal async Task EvaluateProviderWarningAsync()
     {
         var provider = await ResolveActiveProviderAsync();
         if (provider is null)
@@ -1464,7 +1471,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.TurnCompleted -= OnActiveSessionTurnCompleted;
             session.ToolSucceeded -= OnActiveSessionToolSucceeded;
             session.RunFailed -= OnActiveSessionRunFailed;
+            session.ActiveRunChanged -= OnActiveRunChanged;
         }
+        _runProgress?.Dispose(); // unsubscribes the last RunChanged handler off the singleton
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
 
         ChatTitleChip.Dispose();

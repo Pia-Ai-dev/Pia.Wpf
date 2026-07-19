@@ -32,11 +32,12 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         UsageDetails? usage = null,
         string answer = "ANSWER",
         bool throwMidStream = false,
-        bool throwMidStreamCanceled = false)
+        bool throwMidStreamCanceled = false,
+        IAssistantPromptComposer? composer = null)
     {
         var ai = Substitute.For<IAiClientService>();
         var plugins = Substitute.For<IPluginService>();
-        var composer = Substitute.For<IAssistantPromptComposer>();
+        composer ??= Substitute.For<IAssistantPromptComposer>();
         var personas = Substitute.For<IPersonaService>();
         var titles = Substitute.For<IChatTitleService>();
         var settings = Substitute.For<ISettingsService>();
@@ -75,6 +76,26 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         yield return new TextDelta("partial");
         if (canceled) throw new OperationCanceledException("stream canceled");
         throw new InvalidOperationException("stream boom");
+    }
+
+    [Fact]
+    public async Task HeadlessTurn_NeverMarksSuggestAgentModeEligible()
+    {
+        // R7/§14.3: the headless BackgroundAssistantTurnRunner must never inject suggest_agent_mode —
+        // it has no chip-render surface. PrepareTurn must be called with suggestAgentModeEligible:false only.
+        var chats = Substitute.For<IAssistantChatService>();
+        chats.SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var runs = new ThrowingAgentRunService(throwOnCreate: false);
+        var composer = Substitute.For<IAssistantPromptComposer>();
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: false, WebSearchActive: false));
+
+        var runner = BuildRunner(chats, runs, new UsageDetails { InputTokenCount = 3, OutputTokenCount = 1 }, composer: composer);
+        await runner.RunAsync(new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        composer.DidNotReceive().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), suggestAgentModeEligible: true);
     }
 
     [Fact]

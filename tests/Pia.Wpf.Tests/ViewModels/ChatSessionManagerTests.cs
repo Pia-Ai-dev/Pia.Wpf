@@ -437,6 +437,104 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task StartTurnAsync_Planned_WeakProvider_StillCreatesRun()
+    {
+        // R10 never-blocks contract at the consumer: a Weak/Unknown provider surfaces the banner in the
+        // VM but must NOT gate the Planned send — the run is still created and stamped onto the session.
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Local", Endpoint = "https://example.test", SupportsToolCalling = false });
+        _capability.GetPlanningCapabilityAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
+            .Returns(PlanningCapability.Weak);
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, true, false));
+
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new AgentRun { Id = runId, ChatId = session.Id ?? Guid.Empty, RunShape = RunShape.Planned });
+
+        await sut.StartTurnAsync(session, "plan my week", null, planned: true);
+
+        Assert.Equal(runId, session.ActiveRunId);
+        await _runService.Received(1).CreateAsync(
+            Arg.Is<AgentRunCreateRequest>(r => r.Shape == RunShape.Planned), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ChatTurn_CapableProvider_MarksSuggestEligible()
+    {
+        // §14.3/R7: only an interactive Chat turn on a tool-Capable provider offers suggest_agent_mode.
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test", SupportsToolCalling = true });
+        _capability.GetPlanningCapabilityAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
+            .Returns(PlanningCapability.Capable);
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, true, false));
+
+        await sut.StartTurnAsync(session, "plan my whole week end to end", null, planned: false);
+
+        _composer.Received().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), suggestAgentModeEligible: true);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ChatTurn_WeakProvider_NotSuggestEligible()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Local", Endpoint = "https://example.test", SupportsToolCalling = false });
+        _capability.GetPlanningCapabilityAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
+            .Returns(PlanningCapability.Weak);
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, true, false));
+
+        await sut.StartTurnAsync(session, "hi", null, planned: false);
+
+        _composer.Received().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), suggestAgentModeEligible: false);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_PlannedTurn_NeverSuggestEligible()
+    {
+        // A Planned dispatch must never inject suggest_agent_mode, even on a Capable provider.
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test", SupportsToolCalling = true });
+        _capability.GetPlanningCapabilityAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
+            .Returns(PlanningCapability.Capable);
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, true, false));
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new AgentRun { Id = Guid.NewGuid(), ChatId = session.Id ?? Guid.Empty, RunShape = RunShape.Planned });
+
+        await sut.StartTurnAsync(session, "plan my week", null, planned: true);
+
+        _composer.Received().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), suggestAgentModeEligible: false);
+    }
+
+    [Fact]
     public void Reaper_OverCap_DropsOldestIdle_KeepsRecentAndActive()
     {
         var sut = CreateSut();

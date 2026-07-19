@@ -86,4 +86,21 @@ public sealed class AgentRunNotificationSurfaceTests
 
         _flow.DidNotReceive().Publish(Arg.Any<FlowItemDraft>());
     }
+
+    [Fact]
+    public async Task SecondTerminalEvent_SameRun_CarriesIdenticalDedupKey()
+    {
+        // §15.5: a redundant terminal RunChanged for the same run must collapse to one durable Flow
+        // item. The surface delegates dedup to FlowService via DedupKey, so both Publish drafts must
+        // carry the SAME key (== run id) for the store to reconcile them onto a single item.
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+        var surface = Create();
+
+        await surface.HandleTerminalAsync(runId, AgentRunState.Completed);
+        await surface.HandleTerminalAsync(runId, AgentRunState.Completed);
+
+        _flow.Received(2).Publish(Arg.Is<FlowItemDraft>(d => d.DedupKey == runId.ToString()));
+    }
 }
