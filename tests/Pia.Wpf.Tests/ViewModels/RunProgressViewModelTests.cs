@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
@@ -23,6 +24,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     private readonly SqliteContext _ctx;
     private readonly AssistantChatService _chats;
     private readonly AgentRunService _runs;
+    private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
 
     public RunProgressViewModelTests()
     {
@@ -31,6 +33,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
         _runs = new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance);
         _chats = new AssistantChatService(_ctx, _runs);
+        _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]); // echo the key so activity text is assertable
     }
 
     /// <summary>Runs Post callbacks inline so the projection is observable synchronously in tests.</summary>
@@ -61,7 +64,32 @@ public sealed class RunProgressViewModelTests : IDisposable
     private RunProgressViewModel CreateVm(Guid runId)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
-        return new RunProgressViewModel(_runs, runId, NullLogger.Instance);
+        return new RunProgressViewModel(_runs, runId, _loc, NullLogger.Instance);
+    }
+
+    [Fact]
+    public async Task CurrentActivity_PlanningShowsNote_RunningShowsStepTitle_TerminalHides()
+    {
+        var run = await NewPlannedRunAsync();
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "Read notes", Status = AgentStepStatus.Pending };
+        await _runs.ReplaceStepsAsync(run.Id, new[] { step });
+
+        var vm = CreateVm(run.Id);
+        await vm.RefreshAsync();
+        Assert.Equal("Run_Activity_Planning", vm.CurrentActivity); // Planning note (fake echoes the loc key)
+        Assert.True(vm.HasCurrentActivity);
+
+        await _runs.SetStateAsync(run.Id, AgentRunState.Running);
+        await _runs.SetStepStatusAsync(step.Id, AgentStepStatus.Running);
+        await vm.RefreshAsync();
+        Assert.Equal("Read notes", vm.CurrentActivity); // active step title
+
+        await _runs.CompleteAsync(run.Id);
+        await vm.RefreshAsync();
+        Assert.Null(vm.CurrentActivity); // terminal → line hidden
+        Assert.False(vm.HasCurrentActivity);
+
+        vm.Dispose();
     }
 
     [Fact]

@@ -29,6 +29,13 @@
                    Text="{Binding LedgerSummary}" />
       </Grid>
 
+      <!-- Current-activity line (D1): the active step / a planning note. Quiet by design — the dense
+           step list + ledger is the one signature element. Live per-tool status stays in the transcript. -->
+      <TextBlock Text="{Binding CurrentActivity}" Margin="0,0,0,6"
+                 TextTrimming="CharacterEllipsis" FontSize="12" FontStyle="Italic"
+                 Foreground="{DynamicResource TextSubtleBrush}"
+                 Visibility="{Binding HasCurrentActivity, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
       <!-- Step list -->
       <ItemsControl ItemsSource="{Binding Steps}">
         <ItemsControl.ItemTemplate>

@@ -35,6 +35,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly IAgentRunService _runService;
     private readonly Guid _runId;
     private readonly SynchronizationContext _uiContext;
+    private readonly ILocalizationService _localization;
     private readonly ILogger _logger;
     private bool _disposed;
 
@@ -45,6 +46,19 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isTruncated;
+
+    /// <summary>
+    /// The current-activity line (design D1): the running step's title while Running, or a "building a
+    /// plan" note while Planning; null (line hidden) otherwise. The live per-tool micro-status
+    /// (<c>StatusText</c>) stays on the adjacent streaming transcript by design — this panel is
+    /// plan-level, the transcript is token-level. Step title is SENSITIVE — bound to UI only, never logged.
+    /// </summary>
+    [ObservableProperty]
+    private string? _currentActivity;
+
+    public bool HasCurrentActivity => !string.IsNullOrEmpty(CurrentActivity);
+
+    partial void OnCurrentActivityChanged(string? value) => OnPropertyChanged(nameof(HasCurrentActivity));
 
     public ObservableCollection<StepRowViewModel> Steps { get; } = [];
 
@@ -63,10 +77,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     public string LedgerSummary => FormatLedger();
 
-    public RunProgressViewModel(IAgentRunService runService, Guid runId, ILogger logger)
+    public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization, ILogger logger)
     {
         _runService = runService;
         _runId = runId;
+        _localization = localization;
         _logger = logger;
         // Captured on the construction (UI) thread; may be null in a headless test → run inline.
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
@@ -92,6 +107,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         (State, IsTruncated) = MapState(run);
         SyncSteps(run.Plan);
+        CurrentActivity = ComputeActivity(run);
 
         var ledger = TryParseLedger(run.LedgerJson);
         if (ledger is not null)
@@ -117,6 +133,18 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             ? (RunProgressState.TruncatedCompleted, true)
             : (RunProgressState.Completed, false),
         _ => (RunProgressState.Running, false), // Verifying/WaitingForInput/Paused — not rendered in Phase 1
+    };
+
+    // Current-activity line (D1): the active step's title while Running (falls back to a generic
+    // "working" note if no step is marked Running yet), a "building a plan" note while Planning, and
+    // nothing on a terminal state (the header state chip already carries it).
+    private string? ComputeActivity(AgentRun run) => run.State switch
+    {
+        AgentRunState.Planning => _localization["Run_Activity_Planning"],
+        AgentRunState.Running =>
+            run.Plan.FirstOrDefault(s => s.Status == AgentStepStatus.Running)?.Title
+            ?? _localization["Run_Activity_Working"],
+        _ => null,
     };
 
     // Truncated-Completed marker lives in ExtraJson as {truncated:true,reason} (IAgentRunService.CompleteAsync).
