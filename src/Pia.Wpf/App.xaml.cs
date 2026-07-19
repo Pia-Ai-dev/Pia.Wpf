@@ -142,6 +142,23 @@ public partial class App : Application
         // Attach the agent-run notification surface eagerly so it subscribes to RunChanged at startup.
         _ = Bootstrapper.ServiceProvider.GetRequiredService<IAgentRunNotificationSurface>();
 
+        // G-4: settle any agent run left non-terminal by a crash / forced-exit BEFORE the scheduler can
+        // start new headless runs, so nothing dangles Running across sessions. Then sweep orphaned/aged
+        // run workspaces (decision c) in the background so startup is not blocked on disk I/O. Failure-
+        // isolated — recovery never blocks app startup.
+        try
+        {
+            var agentRunService = Bootstrapper.ServiceProvider.GetRequiredService<IAgentRunService>();
+            await agentRunService.FailInterruptedRunsAsync(CancellationToken.None);
+
+            var headlessRunLauncher = Bootstrapper.ServiceProvider.GetRequiredService<IHeadlessRunLauncher>();
+            _ = headlessRunLauncher.RunStartupSweepAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Headless run startup recovery failed: {ex.Message}");
+        }
+
         // Load persisted durable Flow items before the pollers run (the todo poller re-validates against them).
         var flowService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.IFlowService>();
         await flowService.LoadAsync();
@@ -302,6 +319,10 @@ public partial class App : Application
 
         var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
         await chatSyncService.StopAsync(CancellationToken.None);
+
+        // G-4: cancel + bounded-await in-flight headless runs so none is left Running at exit.
+        var headlessRunLauncher = Bootstrapper.ServiceProvider.GetRequiredService<IHeadlessRunLauncher>();
+        await headlessRunLauncher.StopAsync(CancellationToken.None);
 
         var windowManager = Bootstrapper.ServiceProvider.GetRequiredService<IWindowManagerService>();
         windowManager.CloseAndDisposeAll();

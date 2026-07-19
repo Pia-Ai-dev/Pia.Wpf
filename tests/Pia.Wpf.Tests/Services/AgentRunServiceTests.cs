@@ -192,6 +192,38 @@ public sealed class AgentRunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FailInterruptedRunsAsync_SettlesNonTerminalRuns_LeavesTerminalUntouched()
+    {
+        // G-4: a crash / forced-exit leaves runs non-terminal (Planning/Running/Verifying/...); the startup
+        // sweep settles exactly those to Cancelled and never touches already-terminal runs.
+        var ct = TestContext.Current.CancellationToken;
+
+        var planning = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        var running = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.SetStateAsync(running.Id, AgentRunState.Running, ct);
+        var verifying = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.SetStateAsync(verifying.Id, AgentRunState.Verifying, ct);
+
+        var completed = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.CompleteAsync(completed.Id, ct: ct);
+        var failed = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.SingleTurn, AgentRunTrigger.User), ct);
+        await _service.FailAsync(failed.Id, "boom", ct: ct);
+
+        var settled = await _service.FailInterruptedRunsAsync(ct);
+
+        Assert.Equal(3, settled);
+        Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(planning.Id, ct))!.State);
+        Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(running.Id, ct))!.State);
+        Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(verifying.Id, ct))!.State);
+        Assert.NotNull((await _service.GetAsync(planning.Id, ct))!.CompletedAt);
+        Assert.Equal(AgentRunState.Completed, (await _service.GetAsync(completed.Id, ct))!.State);
+        Assert.Equal(AgentRunState.Failed, (await _service.GetAsync(failed.Id, ct))!.State);
+
+        // Idempotent: a second sweep settles nothing (all runs are now terminal).
+        Assert.Equal(0, await _service.FailInterruptedRunsAsync(ct));
+    }
+
+    [Fact]
     public async Task CreateAsync_BeforeChatRow_ThrowsFkConstraint()
     {
         // R1: FK enforcement is ON — a run row cannot precede its AssistantChats parent.

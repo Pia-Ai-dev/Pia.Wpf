@@ -265,6 +265,31 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.CompletedTask;
     }
 
+    public Task<int> FailInterruptedRunsAsync(CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(0);
+
+            using var cmd = Connection().CreateCommand();
+            // States 0..4 (Planning/Running/Verifying/WaitingForInput/Paused) are non-terminal; Completed(5)/
+            // Failed(6)/Cancelled(7) are terminal. Anything below the terminal floor is a crash leftover — settle
+            // it to Cancelled. No per-row RunChanged: these are not live transitions (the Flow surface would
+            // otherwise re-publish stale terminal items at startup).
+            cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now WHERE State < @Terminal";
+            cmd.Parameters.AddWithValue("@State", (int)AgentRunState.Cancelled);
+            cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
+            cmd.Parameters.AddWithValue("@Terminal", (int)AgentRunState.Completed);
+            affected = cmd.ExecuteNonQuery();
+        }
+
+        if (affected > 0)
+            _logger.LogInformation("Settled {Count} interrupted agent run(s) to Cancelled at startup", affected);
+        return Task.FromResult(affected);
+    }
+
     public Task<AgentRun?> GetAsync(Guid runId, CancellationToken ct = default)
     {
         lock (_gate)
