@@ -97,6 +97,25 @@
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Im Hintergrund ausführen</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Hintergrundausführung konnte nicht gestartet werden: {0}</value></data>
+  <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agentenläufe</value></data>
+  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine Agent-Ausführung stoppt, damit sie nie außer Kontrolle gerät. Ausführungen, die ein Limit erreichen, enden und werden als „bei Budget gestoppt“ markiert.</value></data>
+  <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximale Schritte</value></data>
+  <data name="Settings_Agent_MaxSteps_Value" xml:space="preserve"><value>{0} Schritte</value></data>
+  <data name="Settings_Agent_MaxSteps_Description" xml:space="preserve"><value>Wie viele Schritte eine Ausführung durchführen darf, bevor sie stoppt.</value></data>
+  <data name="Settings_Agent_WallClock_Label" xml:space="preserve"><value>Zeitlimit</value></data>
+  <data name="Settings_Agent_WallClock_Value" xml:space="preserve"><value>{0} Min.</value></data>
+  <data name="Settings_Agent_WallClock_Description" xml:space="preserve"><value>Wie lange eine Ausführung dauern darf, bevor sie stoppt.</value></data>
+  <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Neuplanungen bei Fehlern</value></data>
+  <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} Neuplanungen</value></data>
+  <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>Wie oft eine Ausführung ihren Plan überarbeiten darf, nachdem ein Schritt fehlgeschlagen ist.</value></data>
+  <data name="Settings_Scheduled_Section_Header" xml:space="preserve"><value>Hintergrund- &amp; geplante Ausführungen</value></data>
+  <data name="Settings_Scheduled_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine unbeaufsichtigte Ausführung stoppt – ein „Im Hintergrund ausführen“ oder ein geplanter Agent-Auftrag. Großzügiger als interaktive Ausführungen, da niemand zusieht.</value></data>
+  <data name="Settings_Scheduled_MaxSteps_Label" xml:space="preserve"><value>Maximale Schritte</value></data>
+  <data name="Settings_Scheduled_MaxSteps_Value" xml:space="preserve"><value>{0} Schritte</value></data>
+  <data name="Settings_Scheduled_WallClock_Label" xml:space="preserve"><value>Zeitlimit</value></data>
+  <data name="Settings_Scheduled_WallClock_Value" xml:space="preserve"><value>{0} Min.</value></data>
+  <data name="Settings_Scheduled_MaxReplans_Label" xml:space="preserve"><value>Neuplanungen bei Fehlern</value></data>
+  <data name="Settings_Scheduled_MaxReplans_Value" xml:space="preserve"><value>{0} Neuplanungen</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Recherchemodus</value></data>

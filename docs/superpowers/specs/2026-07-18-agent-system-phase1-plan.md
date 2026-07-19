@@ -1158,3 +1158,56 @@ Decide the headless consent model:
 - Sub-agents / multi-persona (Phase 3, separate).
 - Verify/critic + budget pausing into `WaitingForInput` (Phase 2).
 - The Phase-2 MCP gate fix (this milestone just *disables* MCP headless).
+
+---
+
+## 18. Parallel job execution — plan (post–Milestone B)
+
+**Status:** planned, not built. Milestone B introduced the first real concurrency knob — the
+`HeadlessRunLauncher`'s shared `SemaphoreSlim(2)` — but the **scheduler** still runs jobs strictly
+serially: `ScheduledJobBackgroundService` holds a single `_runLock` across each job (research and agent
+alike) and, for agent jobs, additionally `await`s the run's `Completion` before releasing it. So today at
+most one *scheduled* job progresses at a time, even though the launcher pool could admit two. This section
+is the design for lifting that to controlled parallelism.
+
+### 18.1 Current state (as-built)
+- **Headless launcher:** up to 2 concurrent runs (`_slots`), shared by the "Run in background" producer and
+  the scheduler; a 3rd queues on the slot. Own linked CTS per run; shutdown cancels + bounded-awaits all.
+- **Scheduler:** `ExecuteOnceAsync` iterates due jobs sequentially; `_runLock` serializes execution; agent
+  jobs block on `handle.Completion` before releasing the lock. Net **scheduled** parallelism = 1.
+- No per-provider / per-resource throttle beyond the global cap; no explicit fairness/ordering policy.
+
+### 18.2 Goals
+- Run N scheduled + detached jobs concurrently up to a **user-configurable** cap (default 2), with the
+  launcher pool as the single source of truth for concurrency (no second, contradictory gate).
+- Never stampede a provider or the disk; keep shutdown bounded and crash recovery intact (G-4).
+- Fairness: a wedged job must not starve the queue (a per-job wall-clock already bounds it).
+
+### 18.3 Design
+1. **Single concurrency authority.** Drop the scheduler's serializing `_runLock` for agent jobs and stop
+   blocking on `handle.Completion`; let the launcher semaphore be the only gate. Dispatch fire-and-track:
+   the scheduler records the `runId` and reconciles job status from the terminal run state on completion
+   (reuse today's `ExecuteAgentTaskAsync` success/failure tail, moved to a completion continuation).
+2. **Configurable cap.** Promote the launcher's `SemaphoreSlim(2)` to a setting
+   (`MaxParallelBackgroundRuns`, default 2, clamped 1..8) surfaced beside the scheduled-budget knobs.
+3. **Per-provider throttle.** Optional per-provider concurrency limit (a keyed semaphore) so several jobs on
+   the same provider don't exceed its rate limits; jobs on different providers run fully parallel.
+4. **Fairness / ordering.** Admit due jobs oldest-`NextFireAt`-first; a job that can't get a slot waits its
+   turn rather than being skipped. The per-run wall-clock bounds a wedged job so it releases its slot.
+5. **Research jobs.** Either move `Research` (SingleTurn) behind the same pool, or keep its own small cap —
+   decided when built; the SingleTurn path must first gain workspace handling consistent with §17.2.
+
+### 18.4 Safety / lifecycle
+- **Shutdown:** `StopAsync` already cancels + bounded-awaits the whole pool — unchanged.
+- **Crash recovery:** `FailInterruptedRunsAsync` already settles any non-terminal run — unchanged.
+- The global cap + per-provider throttle are what prevent the provider/disk stampede §17.5 warned about,
+  so raising parallelism above 1 is only safe *with* the throttle in place.
+
+### 18.5 Tests
+- N due agent jobs with cap=2 → at most 2 concurrent (mirror `ConcurrencyCap_NeverExceedsTwoConcurrentRuns`).
+- Per-provider throttle honored across jobs on the same provider; different providers run parallel.
+- A wedged job (holds its slot to the wall-clock) does not block a different-provider job.
+- Shutdown mid-parallel-batch settles every run terminal (no dangling `Running`).
+
+### 18.6 Out of scope
+- Cross-device distributed scheduling; priority classes; dynamic autoscaling.
