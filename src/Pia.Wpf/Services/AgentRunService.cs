@@ -301,8 +301,10 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
 
             // Single-connection + _gate makes `WHERE State=@Expected` an atomic CAS — the only writer.
             // A second racer (double-click, panel+Flow) finds State != WaitingForInput → 0 rows → loses.
+            // Clear the {paused:true} marker on the claim so a cleanly-completing resumed run (whose
+            // non-truncated CompleteAsync leaves ExtraJson untouched) does not retain stale pause state.
             using var cmd = Connection().CreateCommand();
-            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now WHERE Id=@Id AND State=@Expected";
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now, ExtraJson=NULL WHERE Id=@Id AND State=@Expected";
             cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Running);
             cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
             cmd.Parameters.AddWithValue("@Id", runId.ToString());

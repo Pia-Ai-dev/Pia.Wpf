@@ -50,6 +50,15 @@ public sealed class AgentRunOrchestrator
         Guid? runFirst = null;
         var runLast = Guid.Empty;
 
+        // R3: on resume, seed the range from the persisted pre-pause slice so the terminal PinRange
+        // EXTENDS the run's transcript range rather than shrinking it to only the post-resume portion.
+        // runFirst's ??= below then keeps this original first message; runLast advances to the latest.
+        if (resume)
+        {
+            runFirst = run.FirstMessageId;
+            runLast = run.LastMessageId ?? Guid.Empty;
+        }
+
         // R3: pin the run-level transcript slice off the STABLE step message Ids accrued so far.
         // Shared by every terminal path (success, truncation, cancel, fail) so a run that executed
         // steps never keeps a null range — symmetric with the clean-success path.

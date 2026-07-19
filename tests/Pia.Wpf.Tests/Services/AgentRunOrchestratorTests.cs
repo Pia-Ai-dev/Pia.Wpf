@@ -339,6 +339,36 @@ public sealed class AgentRunOrchestratorTests
     }
 
     [Fact]
+    public async Task Run_Resume_PreservesRunMessageRange_AcrossPause()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        // First run: 2 steps produce a transcript slice, then pause. The pre-pause first message is pinned.
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        await h.BuildOrchestrator(planner).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct);
+        var parked = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
+        var pinnedFirst = parked.FirstMessageId;
+        Assert.NotNull(pinnedFirst); // pre-pause slice pinned
+
+        // Resume drains s3 (producing its OWN message ids). The terminal PinRange must EXTEND the range, not
+        // overwrite FirstMessageId with the resume-only first id — the orchestrator seeds runFirst from the
+        // (freshly-fetched) run on resume (R3). Pass the fetched run, exactly as HeadlessRunLauncher does.
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var resumeRun = await h.Runs.GetAsync(run.Id, ct);
+        var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        await h.BuildOrchestrator(planner).RunAsync(resumeRun!, new RecordingExecutor(_ => Ok()), Persona(), Provider(), fresh, ct, resume: true);
+
+        var final = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.Equal(pinnedFirst, final.FirstMessageId); // first message UNCHANGED across pause → resume → Completed
+    }
+
+    [Fact]
     public async Task Run_CancelDuringResume_SettlesCancelled_SlicePinned()
     {
         using var h = new Harness();
