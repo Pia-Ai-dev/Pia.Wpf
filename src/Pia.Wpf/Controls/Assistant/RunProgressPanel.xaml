@@ -24,9 +24,16 @@
                      Foreground="{DynamicResource TextMutedBrush}"
                      Visibility="{Binding IsTruncated, Converter={StaticResource BooleanToVisibilityConverter}}" />
         </StackPanel>
-        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
-                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                   Text="{Binding LedgerSummary}" />
+        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <!-- Budget-pause Continue: the one sanctioned Phase-2 mutation on this read-only panel.
+               CanContinue hides it off the WaitingForInput state; CanExecute also disables it
+               (IsResuming) so a double-click can't launch two resumes (the CAS is the hard guard). -->
+          <ui:Button Content="{loc:Str Run_Action_Continue}" Command="{Binding ContinueCommand}"
+                     Appearance="Primary" Padding="10,3" Margin="0,0,8,0" FontSize="12"
+                     Visibility="{Binding CanContinue, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                     VerticalAlignment="Center" Text="{Binding LedgerSummary}" />
+        </StackPanel>
       </Grid>
 
       <!-- Current-activity line (D1): the active step / a planning note. Quiet by design — the dense

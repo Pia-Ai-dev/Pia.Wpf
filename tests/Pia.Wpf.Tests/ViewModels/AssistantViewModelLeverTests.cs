@@ -68,6 +68,7 @@ public class AssistantViewModelLeverTests
             Substitute.For<IAssistantPromptComposer>(),
             _capability,
             Substitute.For<IAgentRunService>(),
+            Substitute.For<IAgentRunResumeService>(),
             _manager,
             _workingDir,
             Substitute.For<IFilesToolHandler>(),

@@ -45,6 +45,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAssistantPromptComposer _promptComposer;
     private readonly IProviderCapabilityService _providerCapabilityService;
     private readonly IAgentRunService _agentRunService;
+    private readonly IAgentRunResumeService _resumeService;
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IWorkingDirectoryService _workingDirectoryService;
     private readonly IFilesToolHandler _filesToolHandler;
@@ -198,6 +199,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAssistantPromptComposer promptComposer,
         IProviderCapabilityService providerCapabilityService,
         IAgentRunService agentRunService,
+        IAgentRunResumeService resumeService,
         IChatSessionManager chatSessionManager,
         IWorkingDirectoryService workingDirectoryService,
         IFilesToolHandler filesToolHandler,
@@ -227,6 +229,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _promptComposer = promptComposer;
         _providerCapabilityService = providerCapabilityService;
         _agentRunService = agentRunService;
+        _resumeService = resumeService;
         _chatSessionManager = chatSessionManager;
         _workingDirectoryService = workingDirectoryService;
         _filesToolHandler = filesToolHandler;
@@ -361,7 +364,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
         _runProgress = runId is { } id
-            ? new RunProgressViewModel(_agentRunService, id, _localizationService, _logger)
+            ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger)
             : null;
         ActiveRunProgress = _runProgress;
     }

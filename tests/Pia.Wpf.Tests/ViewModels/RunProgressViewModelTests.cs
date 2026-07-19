@@ -25,6 +25,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     private readonly AssistantChatService _chats;
     private readonly AgentRunService _runs;
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
+    private readonly IAgentRunResumeService _resume = Substitute.For<IAgentRunResumeService>();
 
     public RunProgressViewModelTests()
     {
@@ -64,7 +65,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     private RunProgressViewModel CreateVm(Guid runId)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
-        return new RunProgressViewModel(_runs, runId, _loc, NullLogger.Instance);
+        return new RunProgressViewModel(_runs, runId, _loc, _resume, NullLogger.Instance);
     }
 
     [Fact]
@@ -200,6 +201,50 @@ public sealed class RunProgressViewModelTests : IDisposable
         // that no exception escapes; production posts to the WPF dispatcher.
         await Task.Run(async () => await _runs.SetStateAsync(run.Id, AgentRunState.Running));
 
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task WaitingForInput_ProjectsWaitingState_ContinueEnabled()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.PauseAsync(run.Id, "step-cap");
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.WaitingForInput, vm.State);
+        Assert.Equal("Run_Activity_WaitingAtBudget", vm.CurrentActivity); // fake echoes the loc key
+        Assert.True(vm.CanContinue);
+        Assert.True(vm.ContinueCommand.CanExecute(null));
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Continue_InvokesResumeService()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        await _runs.PauseAsync(run.Id, "wall-clock");
+        await vm.RefreshAsync();
+
+        await vm.ContinueCommand.ExecuteAsync(null);
+
+        await _resume.Received(1).ResumeAsync(run.Id, Arg.Any<CancellationToken>());
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Completed_CannotContinue()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        await _runs.CompleteAsync(run.Id);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Completed, vm.State);
+        Assert.False(vm.CanContinue);
+        Assert.False(vm.ContinueCommand.CanExecute(null));
         vm.Dispose();
     }
 

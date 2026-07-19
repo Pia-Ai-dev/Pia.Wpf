@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
@@ -40,13 +41,27 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly Guid _runId;
     private readonly SynchronizationContext _uiContext;
     private readonly ILocalizationService _localization;
+    private readonly IAgentRunResumeService _resumeService;
     private readonly ILogger _logger;
     private bool _disposed;
 
     public Guid RunId => _runId;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanContinue))]
+    [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     private RunProgressState _state;
+
+    /// <summary>True while a resume is being launched — gates the Continue button against a double-click
+    /// (the CAS in the resume service is the hard guard; this is the UI-visible affordance).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanContinue))]
+    [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
+    private bool _isResuming;
+
+    /// <summary>The budget-pause Continue affordance is the sanctioned Phase-2 exception to the otherwise
+    /// read-only panel — enabled only while the run sits WaitingForInput and no resume is in flight.</summary>
+    public bool CanContinue => State == RunProgressState.WaitingForInput && !IsResuming;
 
     [ObservableProperty]
     private bool _isTruncated;
@@ -81,11 +96,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     public string LedgerSummary => FormatLedger();
 
-    public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization, ILogger logger)
+    public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization,
+        IAgentRunResumeService resumeService, ILogger logger)
     {
         _runService = runService;
         _runId = runId;
         _localization = localization;
+        _resumeService = resumeService;
         _logger = logger;
         // Captured on the construction (UI) thread; may be null in a headless test → run inline.
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
@@ -126,18 +143,21 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     // R12 mapping. Verifying intentionally folds into Running here (keeps the spinner lit) while
-    // ComputeActivity supplies its own "Checking the work…" line; WaitingForInput/Paused are
-    // pass-through (keep the last rendered state). Cancelled folds into the Failed-family visual.
+    // ComputeActivity supplies its own "Checking the work…" line; WaitingForInput/Paused now render
+    // as their own distinct (non-spinning) states with a Continue affordance. Cancelled folds into
+    // the Failed-family visual.
     private static (RunProgressState, bool) MapState(AgentRun run) => run.State switch
     {
         AgentRunState.Planning => (RunProgressState.Planning, false),
         AgentRunState.Running => (RunProgressState.Running, false),
         AgentRunState.Failed => (RunProgressState.Failed, false),
         AgentRunState.Cancelled => (RunProgressState.Failed, false),
+        AgentRunState.WaitingForInput => (RunProgressState.WaitingForInput, false), // budget pause — offer Continue
+        AgentRunState.Paused => (RunProgressState.Paused, false),                   // reserved user pause (Phase 4)
         AgentRunState.Completed => ReadTruncated(run)
             ? (RunProgressState.TruncatedCompleted, true)
             : (RunProgressState.Completed, false),
-        _ => (RunProgressState.Running, false), // Verifying folds to Running (spinner); WaitingForInput/Paused — not rendered in Phase 1
+        _ => (RunProgressState.Running, false), // Verifying folds to Running (spinner)
     };
 
     // Current-activity line (D1): the active step's title while Running (falls back to a generic
@@ -150,8 +170,32 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             run.Plan.FirstOrDefault(s => s.Status == AgentStepStatus.Running)?.Title
             ?? _localization["Run_Activity_Working"],
         AgentRunState.Verifying => _localization["Run_Activity_Verifying"],
-        _ => null,
+        AgentRunState.WaitingForInput => _localization["Run_Activity_WaitingAtBudget"], // "Stopped at budget — continue?"
+        _ => null, // Paused / terminal — the state chip already carries it
     };
+
+    /// <summary>
+    /// Resume a budget-paused run (§7.2 — the sanctioned Phase-2 mutation on the otherwise read-only
+    /// panel). The resume service CAS-claims internally, so a double-click or a panel+Flow race is safe;
+    /// a real resume flips State→Running via RunChanged, which clears CanContinue. Logs the run id only.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanContinue))]
+    private async Task Continue()
+    {
+        IsResuming = true;
+        try
+        {
+            await _resumeService.ResumeAsync(_runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} resume failed from panel", _runId);
+        }
+        finally
+        {
+            IsResuming = false;
+        }
+    }
 
     // Truncated-Completed marker lives in ExtraJson as {truncated:true,reason} (IAgentRunService.CompleteAsync).
     private static bool ReadTruncated(AgentRun run)
