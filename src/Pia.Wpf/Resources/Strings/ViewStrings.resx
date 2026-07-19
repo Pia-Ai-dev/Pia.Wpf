@@ -901,6 +901,7 @@
   <data name="Run_State_Failed" xml:space="preserve"><value>Failed</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Building a plan…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Working…</value></data>
+  <data name="Run_Activity_Verifying" xml:space="preserve"><value>Checking the work…</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agent runs</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limits an Agent run stops at, so it never runs away. Runs that hit a limit end and are marked "stopped at budget."</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>

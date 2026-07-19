@@ -9,7 +9,9 @@ using Pia.Services.Interfaces;
 namespace Pia.ViewModels;
 
 /// <summary>View-facing run states (R12). Only the four rendered states plus the distinct
-/// truncated-Completed variant — Verifying/WaitingForInput/Paused are not rendered in Phase 1.</summary>
+/// truncated-Completed variant. Verifying now renders as the Running chip (via the MapState default)
+/// plus a "Checking the work…" current-activity line; only WaitingForInput/Paused stay unrendered
+/// in Phase 1.</summary>
 public enum RunProgressState
 {
     Planning,
@@ -121,8 +123,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         }
     }
 
-    // R12 mapping. Verifying/WaitingForInput/Paused are pass-through (keep the last rendered state);
-    // Cancelled folds into the Failed-family visual for the read-only panel.
+    // R12 mapping. Verifying intentionally folds into Running here (keeps the spinner lit) while
+    // ComputeActivity supplies its own "Checking the work…" line; WaitingForInput/Paused are
+    // pass-through (keep the last rendered state). Cancelled folds into the Failed-family visual.
     private static (RunProgressState, bool) MapState(AgentRun run) => run.State switch
     {
         AgentRunState.Planning => (RunProgressState.Planning, false),
@@ -132,7 +135,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunState.Completed => ReadTruncated(run)
             ? (RunProgressState.TruncatedCompleted, true)
             : (RunProgressState.Completed, false),
-        _ => (RunProgressState.Running, false), // Verifying/WaitingForInput/Paused — not rendered in Phase 1
+        _ => (RunProgressState.Running, false), // Verifying folds to Running (spinner); WaitingForInput/Paused — not rendered in Phase 1
     };
 
     // Current-activity line (D1): the active step's title while Running (falls back to a generic
@@ -144,6 +147,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunState.Running =>
             run.Plan.FirstOrDefault(s => s.Status == AgentStepStatus.Running)?.Title
             ?? _localization["Run_Activity_Working"],
+        AgentRunState.Verifying => _localization["Run_Activity_Verifying"],
         _ => null,
     };
 
