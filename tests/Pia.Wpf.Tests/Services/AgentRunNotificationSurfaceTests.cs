@@ -45,7 +45,7 @@ public sealed class AgentRunNotificationSurfaceTests
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
 
-        await Create().HandleTerminalAsync(runId, AgentRunState.Failed);
+        await Create().HandleRunStateAsync(runId, AgentRunState.Failed);
 
         _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d =>
             d.Severity == FlowSeverity.Error &&
@@ -63,7 +63,7 @@ public sealed class AgentRunNotificationSurfaceTests
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
 
-        await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
+        await Create().HandleRunStateAsync(runId, AgentRunState.Completed);
 
         _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d => d.Severity == FlowSeverity.Success));
     }
@@ -77,7 +77,7 @@ public sealed class AgentRunNotificationSurfaceTests
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
         _windows.ActiveAssistantChatId.Returns(chatId);
 
-        await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
+        await Create().HandleRunStateAsync(runId, AgentRunState.Completed);
 
         _flow.DidNotReceive().Publish(Arg.Any<FlowItemDraft>());
     }
@@ -92,7 +92,7 @@ public sealed class AgentRunNotificationSurfaceTests
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
         _windows.ActiveAssistantChatId.Returns(Guid.NewGuid()); // some other chat
 
-        await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
+        await Create().HandleRunStateAsync(runId, AgentRunState.Completed);
 
         _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d => d.Severity == FlowSeverity.Success));
     }
@@ -106,7 +106,7 @@ public sealed class AgentRunNotificationSurfaceTests
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
         _windows.ActiveAssistantChatId.Returns((Guid?)null);
 
-        await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
+        await Create().HandleRunStateAsync(runId, AgentRunState.Completed);
 
         _flow.Received(1).Publish(Arg.Any<FlowItemDraft>());
     }
@@ -118,7 +118,7 @@ public sealed class AgentRunNotificationSurfaceTests
         SetupRun(runId, RunShape.SingleTurn);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
 
-        await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
+        await Create().HandleRunStateAsync(runId, AgentRunState.Completed);
 
         _flow.DidNotReceive().Publish(Arg.Any<FlowItemDraft>());
     }
@@ -134,8 +134,8 @@ public sealed class AgentRunNotificationSurfaceTests
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
         var surface = Create();
 
-        await surface.HandleTerminalAsync(runId, AgentRunState.Completed);
-        await surface.HandleTerminalAsync(runId, AgentRunState.Completed);
+        await surface.HandleRunStateAsync(runId, AgentRunState.Completed);
+        await surface.HandleRunStateAsync(runId, AgentRunState.Completed);
 
         _flow.Received(2).Publish(Arg.Is<FlowItemDraft>(d => d.DedupKey == runId.ToString()));
     }
@@ -150,7 +150,7 @@ public sealed class AgentRunNotificationSurfaceTests
         SetupRun(runId, RunShape.Planned, chatId);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
         var surface = Create();
-        await surface.HandleTerminalAsync(runId, AgentRunState.Failed); // records runId → chatId
+        await surface.HandleRunStateAsync(runId, AgentRunState.Failed); // records runId → chatId
 
         surface.HandleChatDeleted(chatId);
 
@@ -162,6 +162,109 @@ public sealed class AgentRunNotificationSurfaceTests
     {
         // A chat with no published run items (or an already-handled one) is a no-op — never a spurious retract.
         Create().HandleChatDeleted(Guid.NewGuid());
+
+        _flow.DidNotReceive().Retract(Arg.Any<string>());
+    }
+
+    // ---- Budget-pause WaitingForInput publish + retract (Phase 2) --------------------------------
+
+    [Fact]
+    public async Task WaitingForInput_PublishesSingleActionRequiredContinueItem()
+    {
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+
+        await Create().HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d =>
+            d.Severity == FlowSeverity.ActionRequired &&
+            d.Source == FlowSource.AgentRun &&
+            d.DedupKey == runId.ToString() &&
+            d.Lifetime.IsPersistent &&
+            d.RequestDurable &&
+            d.Action is ContinueRunAction));
+    }
+
+    [Fact]
+    public async Task WaitingForInput_ForegroundActiveChat_Suppressed()
+    {
+        // A foreground run shows the panel Continue button instead — no Flow card.
+        var runId = Guid.NewGuid();
+        var chatId = SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(true);
+        _windows.ActiveAssistantChatId.Returns(chatId);
+
+        await Create().HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        _flow.DidNotReceive().Publish(Arg.Any<FlowItemDraft>());
+    }
+
+    [Fact]
+    public async Task WaitingForInput_SingleTurnRun_Suppressed()
+    {
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.SingleTurn);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+
+        await Create().HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        _flow.DidNotReceive().Publish(Arg.Any<FlowItemDraft>());
+    }
+
+    [Fact]
+    public async Task WaitingForInput_ThenRepeat_DedupesToOne()
+    {
+        // A redundant WaitingForInput event carries the SAME DedupKey (run id) so the store collapses it.
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+        var surface = Create();
+
+        await surface.HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+        await surface.HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        _flow.Received(2).Publish(Arg.Is<FlowItemDraft>(d => d.DedupKey == runId.ToString()));
+    }
+
+    [Fact]
+    public async Task Running_AfterWaitingPublished_Retracts()
+    {
+        // A resumed parked run (→Running) must drop its WaitingForInput card.
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+        var surface = Create();
+        await surface.HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        await surface.HandleRunStateAsync(runId, AgentRunState.Running);
+
+        _flow.Received(1).Retract(runId.ToString());
+    }
+
+    [Fact]
+    public async Task Cancelled_AfterWaitingPublished_Retracts()
+    {
+        // D6: a run cancelled while parked must not leave a stale WaitingForInput card.
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+        var surface = Create();
+        await surface.HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        await surface.HandleRunStateAsync(runId, AgentRunState.Cancelled);
+
+        _flow.Received(1).Retract(runId.ToString());
+    }
+
+    [Fact]
+    public async Task Running_NoPriorPublish_RetractsNothing()
+    {
+        // An ordinary per-step Running event for a run that never parked issues no spurious Retract.
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+
+        await Create().HandleRunStateAsync(runId, AgentRunState.Running);
 
         _flow.DidNotReceive().Retract(Arg.Any<string>());
     }

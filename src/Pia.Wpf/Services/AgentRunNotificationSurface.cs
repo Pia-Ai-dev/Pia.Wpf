@@ -39,6 +39,9 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
 
     // chat id → run ids this surface has published a durable Flow item for (R17 deletion-side).
     private readonly Dictionary<Guid, HashSet<Guid>> _publishedByChat = new();
+    // run ids with a live WaitingForInput ("continue?") card — gates the retract so an ordinary
+    // step-Running event never issues a spurious Retract (D6).
+    private readonly HashSet<Guid> _waitingPublished = new();
     private readonly object _publishedLock = new();
 
     public AgentRunNotificationSurface(
@@ -61,30 +64,67 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
 
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
-        if (e.State is not (AgentRunState.Completed or AgentRunState.Failed))
-            return; // terminal only
+        // Terminal (publish), WaitingForInput (publish a "continue?" card), Running/Cancelled (retract a
+        // prior card — a resumed or cancelled parked run). Everything else is ignored.
+        if (e.State is not (AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled
+            or AgentRunState.WaitingForInput or AgentRunState.Running))
+            return;
 
         // Marshal to the UI thread (G3) before touching window-foreground state / Flow.
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is null)
-            HandleTerminalAsync(e.RunId, e.State).SafeFireAndForget(_logger);
+            HandleRunStateAsync(e.RunId, e.State).SafeFireAndForget(_logger);
         else
-            dispatcher.InvokeAsync(() => HandleTerminalAsync(e.RunId, e.State).SafeFireAndForget(_logger));
+            dispatcher.InvokeAsync(() => HandleRunStateAsync(e.RunId, e.State).SafeFireAndForget(_logger));
     }
 
-    internal async Task HandleTerminalAsync(Guid runId, AgentRunState state)
+    internal async Task HandleRunStateAsync(Guid runId, AgentRunState state)
     {
+        // Retract-only transitions: a parked run resumed (→Running) or was cancelled while parked. No
+        // publish and no Planned/foreground filter — just drop the WaitingForInput card if we posted one.
+        // Gated on _waitingPublished so an ordinary per-step Running event issues no spurious Retract.
+        if (state is AgentRunState.Running or AgentRunState.Cancelled)
+        {
+            RetractWaiting(runId);
+            return;
+        }
+
         var run = await _runService.GetAsync(runId);
         if (run is null || run.RunShape != RunShape.Planned)
             return; // Planned-only
 
         // R18: suppress ONLY the chat the user is actively watching in the foreground — its embedded
-        // run-progress panel already reflects terminal state. A headless run's chat is never the active
-        // session, so it always publishes; this also fixes the interactive background-chat silent-drop.
+        // run-progress panel already reflects the state (incl. the WaitingForInput Continue button). A
+        // headless run's chat is never the active session, so it always publishes.
         if (_windowManager.IsInForeground(WindowMode.Assistant)
             && _windowManager.ActiveAssistantChatId == run.ChatId)
             return;
 
+        if (state == AgentRunState.WaitingForInput)
+        {
+            _flowService.Publish(new FlowItemDraft
+            {
+                Severity = FlowSeverity.ActionRequired,
+                Source = FlowSource.AgentRun,
+                // Generic title/body — the run Goal + pause reason are SENSITIVE, never in the Flow item.
+                Title = _localizationService["Flow_Run_Title"],
+                Body = _localizationService["Flow_Run_WaitingAtBudget"],
+                DedupKey = runId.ToString(),
+                Lifetime = FlowLifetime.Persistent,
+                Action = new ContinueRunAction(runId, _localizationService["Flow_Action_ContinueRun"]),
+                RequestDurable = true,
+            });
+
+            lock (_publishedLock)
+            {
+                RecordPublishedForChat(run.ChatId, runId);
+                _waitingPublished.Add(runId);
+            }
+            return;
+        }
+
+        // Completed / Failed (terminal) — unchanged publish. The shared DedupKey (run id) reconciles the
+        // terminal item onto any prior WaitingForInput card via FlowService dedup (retract-on-terminal).
         var completed = state == AgentRunState.Completed;
         _flowService.Publish(new FlowItemDraft
         {
@@ -99,13 +139,37 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
             RequestDurable = true,
         });
 
-        // R17: remember runId→chatId so a later chat deletion retracts this durable item.
+        // R17: remember runId→chatId so a later chat deletion retracts this durable item. The terminal
+        // item supersedes any WaitingForInput card (shared DedupKey), so drop the waiting flag.
         lock (_publishedLock)
         {
-            if (!_publishedByChat.TryGetValue(run.ChatId, out var runs))
-                _publishedByChat[run.ChatId] = runs = new HashSet<Guid>();
-            runs.Add(runId);
+            RecordPublishedForChat(run.ChatId, runId);
+            _waitingPublished.Remove(runId);
         }
+    }
+
+    // Records runId under its chat for R17 deletion-side retraction. Caller holds _publishedLock.
+    private void RecordPublishedForChat(Guid chatId, Guid runId)
+    {
+        if (!_publishedByChat.TryGetValue(chatId, out var runs))
+            _publishedByChat[chatId] = runs = new HashSet<Guid>();
+        runs.Add(runId);
+    }
+
+    // Retracts a live WaitingForInput card (if any) and clears its bookkeeping from both sets (D6).
+    private void RetractWaiting(Guid runId)
+    {
+        bool wasPublished;
+        lock (_publishedLock)
+        {
+            wasPublished = _waitingPublished.Remove(runId);
+            if (wasPublished)
+                foreach (var runs in _publishedByChat.Values)
+                    runs.Remove(runId);
+        }
+
+        if (wasPublished)
+            _flowService.Retract(runId.ToString());
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
