@@ -355,6 +355,60 @@
           </StackPanel>
         </ScrollViewer>
       </TabItem>
+
+      <!-- Agent runs tab: the budget envelope an interactive Agent (Planned) run stops at (§5). -->
+      <TabItem Header="{loc:Str Settings_Agent_Tab}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="4,8,16,16">
+            <TextBlock Text="{loc:Str Settings_Agent_Section_Description}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,16"/>
+
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Agent_MaxSteps_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="1" Maximum="48"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding AgentMaxSteps, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding AgentMaxStepsDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Agent_MaxSteps_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap" Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Agent_WallClock_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="1" Maximum="120"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding AgentWallClockMinutes, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding AgentWallClockDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Agent_WallClock_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap" Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Agent_MaxReplans_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="0" Maximum="5"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding AgentMaxReplans, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding AgentMaxReplansDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Agent_MaxReplans_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap" Margin="0,2,0,0"/>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
   </Grid>
 </UserControl>

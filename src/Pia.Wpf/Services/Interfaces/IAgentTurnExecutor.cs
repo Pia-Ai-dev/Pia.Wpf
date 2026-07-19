@@ -12,6 +12,16 @@ public sealed record RunProfile(int MaxSteps, int MaxReplans, TimeSpan WallClock
 {
     public static readonly RunProfile Interactive = new(24, 2, TimeSpan.FromMinutes(20));
     public static readonly RunProfile Scheduled = new(24, 2, TimeSpan.FromMinutes(45));
+
+    // Bounds a user-configured budget (Assistant settings) into a sane envelope. A zero/negative
+    // step or wall-clock would terminate a run immediately (never a clean run), so clamp to floors.
+    public const int MinSteps = 1, MaxStepsCap = 48, MinReplans = 0, MaxReplansCap = 5, MinWallClockMinutes = 1, MaxWallClockMinutes = 120;
+
+    /// <summary>Build an interactive profile from user-configured budget values, clamped to safe bounds.</summary>
+    public static RunProfile FromBudget(int maxSteps, int maxReplans, int wallClockMinutes) => new(
+        Math.Clamp(maxSteps, MinSteps, MaxStepsCap),
+        Math.Clamp(maxReplans, MinReplans, MaxReplansCap),
+        TimeSpan.FromMinutes(Math.Clamp(wallClockMinutes, MinWallClockMinutes, MaxWallClockMinutes)));
 }
 
 /// <summary>

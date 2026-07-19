@@ -26,7 +26,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
     public ToolPermissionsSettingsViewModel ToolPermissionsVm { get; }
     public MeetingSettingsViewModel MeetingVm { get; }
 
-    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access, 3 = Meeting).</summary>
+    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access, 3 = Meeting, 4 = Agent runs).</summary>
     [ObservableProperty]
     private int _selectedInnerTabIndex;
 
@@ -211,6 +211,48 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // Agent-run budget knobs (Assistant → Agent runs). Clamped on change + persisted; built into a
+    // RunProfile at run start (RunProfile.FromBudget). Defaults mirror RunProfile.Interactive.
+    [ObservableProperty]
+    private int _agentMaxSteps = 24;
+
+    [ObservableProperty]
+    private int _agentMaxReplans = 2;
+
+    [ObservableProperty]
+    private int _agentWallClockMinutes = 20;
+
+    public string AgentMaxStepsDisplay => _localizationService.Format("Settings_Agent_MaxSteps_Value", AgentMaxSteps);
+    public string AgentMaxReplansDisplay => _localizationService.Format("Settings_Agent_MaxReplans_Value", AgentMaxReplans);
+    public string AgentWallClockDisplay => _localizationService.Format("Settings_Agent_WallClock_Value", AgentWallClockMinutes);
+
+    partial void OnAgentMaxStepsChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, RunProfile.MinSteps, RunProfile.MaxStepsCap);
+        if (clamped != value) { AgentMaxSteps = clamped; return; }
+        OnPropertyChanged(nameof(AgentMaxStepsDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnAgentMaxReplansChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, RunProfile.MinReplans, RunProfile.MaxReplansCap);
+        if (clamped != value) { AgentMaxReplans = clamped; return; }
+        OnPropertyChanged(nameof(AgentMaxReplansDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnAgentWallClockMinutesChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
+        if (clamped != value) { AgentWallClockMinutes = clamped; return; }
+        OnPropertyChanged(nameof(AgentWallClockDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -229,9 +271,19 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ChatHistoryRetentionDays = Math.Clamp(settings.ChatHistoryRetentionDays, 1, 365);
         ChatAutoTitleEnabled = settings.ChatAutoTitleEnabled;
 
+        AgentMaxSteps = Math.Clamp(settings.AgentMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
+        AgentMaxReplans = Math.Clamp(settings.AgentMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
+        AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
+
         await MeetingVm.InitializeAsync();
 
         _isLoading = false;
+
+        // Displays are computed; refresh them once now that the values are loaded (OnXChanged skips
+        // while _isLoading). Subsequent slider edits raise them individually.
+        OnPropertyChanged(nameof(AgentMaxStepsDisplay));
+        OnPropertyChanged(nameof(AgentMaxReplansDisplay));
+        OnPropertyChanged(nameof(AgentWallClockDisplay));
     }
 
     [RelayCommand]
@@ -359,6 +411,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.ChatHistoryEnabled = ChatHistoryEnabled;
         settings.ChatHistoryRetentionDays = ChatHistoryRetentionDays;
         settings.ChatAutoTitleEnabled = ChatAutoTitleEnabled;
+        settings.AgentMaxSteps = AgentMaxSteps;
+        settings.AgentMaxReplans = AgentMaxReplans;
+        settings.AgentWallClockMinutes = AgentWallClockMinutes;
         await _settingsService.SaveSettingsAsync(settings);
     }
 }

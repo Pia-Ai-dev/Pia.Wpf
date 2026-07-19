@@ -898,6 +898,17 @@
   <data name="Run_State_Failed" xml:space="preserve"><value>Failed</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Building a plan…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Working…</value></data>
+  <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agent runs</value></data>
+  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limits an Agent run stops at, so it never runs away. Runs that hit a limit end and are marked "stopped at budget."</value></data>
+  <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>
+  <data name="Settings_Agent_MaxSteps_Value" xml:space="preserve"><value>{0} steps</value></data>
+  <data name="Settings_Agent_MaxSteps_Description" xml:space="preserve"><value>How many steps a run may take before it stops.</value></data>
+  <data name="Settings_Agent_WallClock_Label" xml:space="preserve"><value>Time limit</value></data>
+  <data name="Settings_Agent_WallClock_Value" xml:space="preserve"><value>{0} min</value></data>
+  <data name="Settings_Agent_WallClock_Description" xml:space="preserve"><value>How long a run may take before it stops.</value></data>
+  <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Re-plans on failure</value></data>
+  <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} re-plans</value></data>
+  <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>How many times a run may revise its plan after a step fails.</value></data>
   <data name="Flow_Run_Title" xml:space="preserve"><value>Agent run</value></data>
   <data name="Flow_Run_Completed" xml:space="preserve"><value>Finished — tap to review</value></data>
   <data name="Flow_Run_Failed" xml:space="preserve"><value>Ended with an error</value></data>

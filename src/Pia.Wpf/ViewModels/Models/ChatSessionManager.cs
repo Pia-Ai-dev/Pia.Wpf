@@ -508,8 +508,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             var live = new LiveTurnExecutor(session, IsSessionActive,
                 PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled);
 
+            // Budget envelope from user settings (clamped in FromBudget); defaults match RunProfile.Interactive.
+            var budget = await _settingsService.GetSettingsAsync();
+            var profile = RunProfile.FromBudget(budget.AgentMaxSteps, budget.AgentMaxReplans, budget.AgentWallClockMinutes);
+
             _agentRunOrchestrator
-                .RunAsync(run, live, persona, request.Provider, RunProfile.Interactive, session.Cts!.Token)
+                .RunAsync(run, live, persona, request.Provider, profile, session.Cts!.Token)
                 .SafeFireAndForget(_logger);
             return;
         }
