@@ -366,4 +366,134 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(10, root.GetProperty("outputTokens").GetInt64()); // 2 × 5
         Assert.Equal(2, root.GetProperty("perStep").GetArrayLength());  // per-step ledger entries
     }
+
+    // ---- Verify/critic pass (§13.x) ----
+
+    [Fact]
+    public async Task Run_VerifyPasses_Completed()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var verifier = new FakeVerifier();
+        verifier.Verdicts.Enqueue(new VerdictResult(true, "ok", Array.Empty<string>(), null));
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.DoesNotContain("truncated", final.ExtraJson ?? string.Empty);
+        Assert.Equal(1, verifier.VerifyCalls);
+    }
+
+    [Fact]
+    public async Task Run_VerifyFails_Replans_Redrains_Passes_Completed()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("B", "s2")), false));
+        var verifier = new FakeVerifier();
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "not yet", new[] { "x" }, null)); // fail → replan
+        verifier.Verdicts.Enqueue(VerdictResult.Accept);                                     // re-drain → pass
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Contains("s1", exec.Executed);
+        Assert.Contains("s2", exec.Executed);
+        Assert.Equal(1, planner.ReplanCalls);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.DoesNotContain("truncated", final.ExtraJson ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task Run_VerifyFails_ReplansExhausted_CompletedTruncatedUnverified()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var profile = new RunProfile(24, 1, TimeSpan.FromMinutes(20)); // MaxReplans = 1
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("B", "s2")), false));
+        var verifier = new FakeVerifier();
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "nope", new[] { "x" }, null)); // fail → replan (1)
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "still nope", new[] { "x" }, null)); // fail → exhausted
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), profile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, planner.ReplanCalls);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State); // NOT Failed — steps genuinely ran
+        Assert.Contains("truncated", final.ExtraJson ?? string.Empty);
+        Assert.Contains("unverified", final.ExtraJson ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task Run_VerifyFails_ReplanDegradesToFallback_CompletedTruncatedUnverified()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        // Replans queue left empty → ReplanAsync returns PlanResult.Fallback (the replan itself degrades).
+        var verifier = new FakeVerifier();
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "nope", new[] { "x" }, null));
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, planner.ReplanCalls);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State); // NOT Failed
+        Assert.Contains("unverified", final.ExtraJson ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task Run_VerifierThrows_DegradesToAccept_Completed()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var verifier = new FakeVerifier { ThrowOnVerify = true };
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.DoesNotContain("truncated", final.ExtraJson ?? string.Empty);
+        Assert.False(exec.EndFailed);
+    }
+
+    [Fact]
+    public async Task Run_VerifyUsage_AccruesToRunLedger()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var verifier = new FakeVerifier();
+        verifier.Verdicts.Enqueue(new VerdictResult(true, "ok", Array.Empty<string>(),
+            new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 }));
+        var exec = new RecordingExecutor(_ => Ok()); // null step usage → no per-step ledger entry
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.NotNull(final.LedgerJson);
+
+        using var doc = JsonDocument.Parse(final.LedgerJson!);
+        var root = doc.RootElement;
+        Assert.Equal(7, root.GetProperty("inputTokens").GetInt64());   // verify run-level accrual
+        Assert.Equal(3, root.GetProperty("outputTokens").GetInt64());
+        Assert.Equal(0, root.GetProperty("perStep").GetArrayLength()); // verify accrues run-level (stepId null)
+    }
 }
