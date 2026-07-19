@@ -332,6 +332,16 @@ Additive, no migration (per the Flow map):
   ledger, Q7 transparency) + `IAgentRunService.RunChanged` consumers + `FlowAction.OpenRun`
   deep-link + run→Flow publishing (the *headless* producer has no caller until Phase 3/4 — only
   unfocused-window interactive Planned runs publish in Phase 1, §16 R18). *Full design in §15.*
+  - *As-built follow-ups (post-1.4):* R17 deletion-side Flow retraction (chat delete → retract the
+    durable `OpenRun` item); the §15.1 current-activity line; and user-configurable interactive
+    budgets in an Assistant → **Agent runs** settings tab (`RunProfile.FromBudget`).
+- **Milestone B — Headless / background Agent runs (the unattended producer).** Activates the
+  headless path that shipped *seamed* in 1.2 (`HeadlessTurnExecutor`) and 1.4
+  (`AgentRunNotificationSurface`'s headless branch, §16 R18) by giving it a real producer — a
+  "Run in background" affordance + scheduler emission — plus the **out-of-folder per-run workspace**
+  (§9, pulled forward because unattended writes require isolation) and a headless tool-consent model.
+  The first milestone that runs an agent with **no human watching the turn**: safety-first, not
+  UI-first. *Full design in §17.*
 
 ---
 
@@ -345,10 +355,11 @@ Additive, no migration (per the Flow map):
   ⚠ Note: MCP is **stdio-only** today (spec's "stdio+sse" is inaccurate — SSE is not wired).
 - **Sub-agents / Council-for-work** — `ParentRunId`/`AssignedPersonaId` reserved; multi-persona
   resolve path (`ResolveActiveAsync` is single-persona-per-mode today) is Phase 3.
-- **Out-of-folder temp workspace** (`%LOCALAPPDATA%\Pia\runs\<runId>`) — requires making the
-  `FilesToolHandler` **base root** run-aware (ambient via `TaskContext`), not just the
-  subpath, and still rejecting escapes. Lands with Phase 3 workspace work; the per-run
-  `TaskAmbient` established in 1.2 is the hook.
+- **Out-of-folder temp workspace** (`%LOCALAPPDATA%\Pia\runs\<runId>`) — **now built in Milestone B**
+  (§17.2), pulled forward because unattended headless writes make per-run isolation a *requirement*,
+  not a nicety. Requires making the `FilesToolHandler` **base root** run-aware (ambient via
+  `TaskContext`), not just the subpath, and still rejecting escapes. The per-run `TaskAmbient`
+  established in 1.2 is the hook.
 - **Plan editability / live steering (nudge/pause/resume)** — read-only plan in Phase 1;
   mutation API shape reserved (Phase 4).
 
@@ -1027,3 +1038,123 @@ Legend: severity is post-verification; ✓ = claim checked against source this s
 Two agent claims were themselves wrong and are **not** actioned: *FK-is-off* (R1, inverted above),
 and *"`ChatMessageExtras.cs` does not exist"* (it does — but R8's core, `Suggestions` being a
 `string` collection, is verified true regardless).
+
+---
+
+## 17. Milestone B — Headless / background Agent runs (the unattended producer)
+
+**Goal:** activate the headless execution path that shipped *seamed* in 1.2 (`HeadlessTurnExecutor`)
+and 1.4 (`AgentRunNotificationSurface`'s headless branch, §16 R18) by giving it a **real producer**, so
+a `Planned` run can execute **unattended** — no interactive `ChatSession` driving it — and surface in
+**Flow** on completion/failure. This is the first milestone that runs an agent with **no human watching
+the turn**, so its center of gravity is **safety** (an isolated workspace + a tool-consent model), not
+new UI. It pulls the Phase-3 **out-of-folder workspace** (§9) forward because unattended writes make
+per-run isolation a requirement, not a nicety.
+
+**Depends on (all already built):** 1.2 `AgentRunOrchestrator` + `HeadlessTurnExecutor` + per-run
+`TaskAmbient` (`TaskId = run.Id`); 1.4 `AgentRunNotificationSurface` (the Flow producer — publishes for
+non-foreground Planned runs; R17 deletion-side retraction already covers durable items); the 1.2c
+Assistant → Agent runs budget settings (extended to scheduled here). The Flow side is done; this
+milestone is the **producer** + the **workspace substrate** + the **headless consent model**.
+
+### 17.1 The producer(s)
+
+Two triggers create a headless `Planned` run and hand it to `AgentRunOrchestrator` with a
+`HeadlessTurnExecutor` in a **fresh DI scope** (as `ScheduledJobBackgroundService` already scopes runs):
+
+1. **"Run in background" (primary, user-facing).** A send-time choice in Agent mode: instead of the live
+   `LiveTurnExecutor` (§14.2), dispatch the goal as a **headless** Planned run so the user can close /
+   navigate away and get a Flow item when it finishes. Reuses the 1.4 `OpenRun` deep-link (the Flow item
+   opens the run's chat). Small net-new UI: an Agent-mode "run detached" affordance (e.g. a split
+   "Send ▸ Run in background") — design pass via the **frontend-design** skill.
+2. **Scheduler (secondary).** `ScheduledJobBackgroundService` emits a `Schedule`-triggered `Planned` run
+   for an "agent job" kind, generalizing `ScheduledJobKind` (it already persists / syncs / round-trips,
+   §6.2). The full create/edit/list **scheduler UI** for agent jobs stays deferred (Phase 4); this
+   milestone wires the *execution* + a minimal/programmatic trigger.
+
+Both are **non-foreground by definition**, so `AgentRunNotificationSurface` publishes for them with no
+change (Completed→Success, Failed→Error; `DedupKey = runId`; durable; retract on open + on chat delete).
+
+### 17.2 Workspace isolation (the safety prerequisite)
+
+Unattended multi-step runs that **write files** must not share the interactive default folder. Give each
+headless run an isolated workspace `%LOCALAPPDATA%\Pia\runs\<runId>`:
+
+- Make `FilesToolHandler` **base-root** run-aware. Today `ResolveEffectiveRoot(baseRoot, workingSubpath)`
+  (`FilesToolHandler.cs:185`) varies only the *subpath* under a fixed base (the interactive files
+  folder). Add an **ambient base root** carried on `TaskContext` so a headless run resolves against its
+  per-run directory. `HeadlessTurnExecutor.cs:143` already sets
+  `TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, …)` per exchange — extend
+  `TaskContext` with the run workspace root and populate it there (per exchange — the AsyncLocal does not
+  flow back out of `BeginRunAsync`, §16 R9 reasoning).
+- Still **reject escapes** (`..`, absolute paths, symlinks) against the *new* base — the containment
+  checks must run against the run root, not the interactive root. This is a security boundary; fuzz it.
+- **Cleanup / artifacts:** `runs\<runId>` accumulates. Add a retention policy (delete on run/chat delete
+  via the FK-cascade hook, or an age sweep). Decide the artifact story — anything the run produced that
+  the chat references must either outlive the workspace or be copied into the vault.
+
+### 17.3 `HeadlessTurnExecutor` activation
+
+The executor is built (`BeginRunAsync:66` / `ExecuteStepAsync:122` / `EndRunAsync:193`) and drives
+`BackgroundAssistantTurnRunner.RunExchangeAsync` per step, accumulating messages and persisting the chat
+once at end (title precedence unchanged). Activation work: give it a production caller (§17.1), point its
+`TaskContext` at the run workspace (§17.2), and confirm the reads-always / **writes-if-granted** policy
+end-to-end (the denial path returns `"Denied: … Do not retry."` — `BackgroundAssistantTurnRunner.cs:350`).
+
+### 17.4 Tool consent for unattended writes (the core risk)
+
+Interactive runs gate writes via the action-card approval; a headless run has **no one to approve**.
+Decide the headless consent model:
+
+- **Pre-granted scope:** the run declares up front which write scopes it may use (file write *within its
+  workspace*, git, etc.); anything outside is denied inline (current behavior). Writes are confined to the
+  run workspace (§17.2).
+- **MCP stays denied headless** until the Phase-2 MCP gate fix lands (MCP is stdio-only and bypasses the
+  gate, §9 — an unattended, unreviewed MCP call is unacceptable). Simplest this milestone: disable MCP
+  tools for headless runs.
+- Record every headless tool decision to the run/step timeline (privacy: tool args are SENSITIVE →
+  `SensitiveDebug`).
+
+### 17.5 Budgets, lifecycle, concurrency
+
+- **Profile:** headless/scheduled runs use `RunProfile.Scheduled` (45 min; defined, currently unused).
+  Surface scheduled budgets by mirroring the interactive knobs from the 1.2c "Agent runs" settings tab.
+- **Cancellation:** a headless run owns its own CTS (no session). App shutdown mid-run must settle it
+  cleanly (persist `Cancelled`/`Failed`; never a dangling `Running`).
+- **Concurrency:** cap simultaneous headless runs (a small queue) so N scheduled jobs don't stampede the
+  provider / disk.
+- **Missed runs:** decide catch-up for scheduled agent jobs missed while the app was closed (reuse the
+  existing `MissedRun` dialog pattern, or auto-run).
+
+### 17.6 Red-team / things that bite
+
+- **FK write-order (R1):** a headless run needs its `AssistantChats` parent row first — reuse the
+  stub-chat-first pattern from 1.1 (failure paths must still persist a chat).
+- **Base-root escape:** the workspace change is a security boundary; a bug lets an unattended agent write
+  outside `runs\<runId>`. Fuzz containment on the *new* base.
+- **Eviction:** confirm the 1.2 `Planned`-run eviction-skip covers headless run chats (retained as audit
+  artifacts).
+- **`TaskAmbient` flow:** set the workspace base root **per exchange** (`HeadlessTurnExecutor.cs:138`),
+  not in `BeginRunAsync` — the AsyncLocal doesn't propagate back out (§16 R9).
+- **Off-thread `RunChanged`:** the singleton raises off the UI thread for headless runs — the 1.4
+  consumers already marshal (G3); a headless run with no open panel is fine (only the surface consumes it).
+- **Unfocused/always-publish (R18):** a headless run is never foreground, so it always publishes — even
+  while the user is on a *different* chat. That's correct (they didn't start it).
+
+### 17.7 Tests
+
+- Programmatic "run in background" → a headless `Planned` run completes off-thread, accumulates one chat,
+  publishes exactly one durable Flow item; opening it opens the chat.
+- Workspace isolation: a headless file write lands under `runs\<runId>`; an escape (`../`, absolute) is
+  rejected against the run root.
+- MCP denied headless; a non-granted write returns the inline denial.
+- App-shutdown mid-run settles the run to a terminal state (no dangling `Running`).
+- `RunProfile.Scheduled` (45 min) applied; scheduled budget setting flows through.
+- Cleanup: deleting the run/chat removes its workspace.
+
+### 17.8 Out of scope (this milestone)
+
+- Full scheduler UI to create/edit/list agent jobs (Phase 4) — a minimal/programmatic trigger suffices.
+- Sub-agents / multi-persona (Phase 3, separate).
+- Verify/critic + budget pausing into `WaitingForInput` (Phase 2).
+- The Phase-2 MCP gate fix (this milestone just *disables* MCP headless).
