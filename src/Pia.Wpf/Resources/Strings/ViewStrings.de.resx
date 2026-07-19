@@ -782,6 +782,7 @@
   <data name="ActionCard_Diff_UnchangedLines" xml:space="preserve"><value>{0} unveränderte Zeilen</value></data>
   <data name="ActionCard_Diff_TruncatedNotice" xml:space="preserve"><value>Diff gekürzt – restliche Zeilen nicht angezeigt</value></data>
   <data name="ActionCard_Category_Git" xml:space="preserve"><value>Git</value></data>
+  <data name="ActionCard_Category_Mcp" xml:space="preserve"><value>Externes Tool</value></data>
   <data name="ActionCard_Action_Initialize" xml:space="preserve"><value>Initialisieren</value></data>
   <data name="ActionCard_Action_Stage" xml:space="preserve"><value>Bereitstellen</value></data>
   <data name="ActionCard_Action_Commit" xml:space="preserve"><value>Committen</value></data>

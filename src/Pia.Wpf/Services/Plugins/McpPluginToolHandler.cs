@@ -80,7 +80,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
 
     public string? GetSystemPromptAddition() => _systemPromptAddition;
 
-    public async Task<(object? Result, PluginToolCall? PendingAction)> HandleToolCallAsync(
+    public Task<(object? Result, PluginToolCall? PendingAction)> HandleToolCallAsync(
         FunctionCallContent toolCall, CancellationToken ct = default)
     {
         if (_client is null)
@@ -93,41 +93,59 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             _logger.LogWarning("MCP tool '{ToolName}' not found in plugin {Name}. Available tools: [{Available}]",
                 toolCall.Name, PluginName,
                 string.Join(", ", _tools.Select(t => t.Name)));
-            return ($"Tool '{toolCall.Name}' not found in plugin '{PluginName}'.", null);
+            return Task.FromResult<(object?, PluginToolCall?)>(
+                ($"Tool '{toolCall.Name}' not found in plugin '{PluginName}'.", null));
         }
 
-        try
-        {
-            _logger.SensitiveDebug("MCP tool {ToolName} invocation on plugin {Name}, args: {Args}",
-                toolCall.Name,
-                PluginName,
-                toolCall.Arguments is not null
-                    ? TruncateText(JsonSerializer.Serialize(toolCall.Arguments), 500)
-                    : "<null>");
+        // Phase-2 MCP gate: MCP is stdio and cannot be classified read-vs-write, so it no longer runs
+        // inline. Return a DEFERRED PluginToolCall so every MCP call flows through the same gate as a
+        // built-in write — the interactive action card, or (unattended) the write-grant gate. The actual
+        // InvokeAsync happens only inside Execute(), after approval/grant.
+        var pending = new PluginToolCall(
+            ToolName: toolCall.Name,
+            PluginId: PluginId,
+            PluginName: PluginName,
+            Description: $"{PluginName}: {toolCall.Name}",
+            Details: toolCall.Arguments is { Count: > 0 }
+                ? JsonSerializer.Serialize(toolCall.Arguments)
+                : null,
+            Execute: async () =>
+            {
+                _logger.SensitiveDebug("MCP tool {ToolName} invocation on plugin {Name}, args: {Args}",
+                    toolCall.Name,
+                    PluginName,
+                    toolCall.Arguments is not null
+                        ? TruncateText(JsonSerializer.Serialize(toolCall.Arguments), 500)
+                        : "<null>");
+                try
+                {
+                    // McpClientTool.InvokeAsync handles the MCP protocol call internally.
+                    var funcArgs = toolCall.Arguments is not null
+                        ? new AIFunctionArguments(toolCall.Arguments)
+                        : null;
+                    var result = await tool.InvokeAsync(funcArgs, ct);
+                    var resultText = result?.ToString() ?? "Tool completed with no output.";
 
-            // McpClientTool.InvokeAsync handles the MCP protocol call internally
-            var funcArgs = toolCall.Arguments is not null
-                ? new AIFunctionArguments(toolCall.Arguments)
-                : null;
-            var result = await tool.InvokeAsync(funcArgs, ct);
-            var resultText = result?.ToString() ?? "Tool completed with no output.";
+                    _logger.SensitiveDebug("MCP tool {ToolName} result ({Length} chars): {Preview}",
+                        toolCall.Name, resultText.Length, TruncateText(resultText, 500));
 
-            _logger.SensitiveDebug("MCP tool {ToolName} result ({Length} chars): {Preview}",
-                toolCall.Name, resultText.Length, TruncateText(resultText, 500));
+                    return resultText;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "MCP tool call {Tool} failed on plugin {Name}",
+                        toolCall.Name, PluginName);
+                    return $"Tool call failed: {ex.Message}";
+                }
+            });
 
-            return (resultText, null);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "MCP tool call {Tool} failed on plugin {Name}",
-                toolCall.Name, PluginName);
-            return ($"Tool call failed: {ex.Message}", null);
-        }
+        return Task.FromResult<(object?, PluginToolCall?)>((null, pending));
     }
 
     public Task<object?> ExecutePendingActionAsync(PluginToolCall pendingAction)
     {
-        // MCP tools execute immediately — no pending actions
+        // The deferred call built in HandleToolCallAsync — runs the real MCP invocation now that the
+        // gate (approval or grant) has cleared it.
         return pendingAction.Execute();
     }
 

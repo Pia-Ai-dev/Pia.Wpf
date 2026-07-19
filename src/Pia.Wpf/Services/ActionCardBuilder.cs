@@ -35,7 +35,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             "reminder" => ActionCardCategory.Reminder,
             "files" => ActionCardCategory.Files,
             "git" => ActionCardCategory.Git,
-            _ => ActionCardCategory.Memory
+            // Any non-built-in plugin is an external (MCP) tool — server-defined name.
+            _ => ActionCardCategory.Mcp
         };
 
         // Destructive is TOOLNAME-based, not the "delete" substring: git_switch/git_restore/git_stash
@@ -69,8 +70,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         var details = new ObservableCollection<ActionCardDetail>();
         if (!isFilesDiff && pendingAction.Details is not null)
         {
-            // Memory carries structured JSON detail; every other plugin uses key/value text.
-            var parsed = pendingAction.PluginName == "memory"
+            // Memory + MCP carry structured JSON detail (MCP passes the raw tool-call arguments);
+            // the built-in write plugins use key/value text.
+            var parsed = pendingAction.PluginName == "memory" || category == ActionCardCategory.Mcp
                 ? JsonHelper.ParseToDetails(pendingAction.Details)
                 : JsonHelper.ParseKeyValueText(pendingAction.Details);
             details = new ObservableCollection<ActionCardDetail>(DetokenizeDetails(parsed, detokenize));
@@ -93,7 +95,10 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             Category = category,
             ToolName = pendingAction.ToolName,
             PluginId = pendingAction.PluginId,
-            IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName),
+            // MCP tools are grantable as a class: they aren't in the built-in safe allowlist, but an
+            // external tool is a specific named capability the user may choose to "always allow" per tool
+            // (unlike the catch-all write_file, which stays never-auto-approvable). The gate re-checks this.
+            IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName) || category == ActionCardCategory.Mcp,
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,
@@ -149,6 +154,11 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
     private string FormatToolTitle(string toolName, ActionCardCategory category)
     {
+        // MCP tool names are server-defined and don't map to the built-in action verbs; the card's
+        // Summary already shows "{plugin}: {tool}", so the title is just the generic external-tool label.
+        if (category == ActionCardCategory.Mcp)
+            return _localizationService["ActionCard_Category_Mcp"];
+
         var categoryKey = category switch
         {
             ActionCardCategory.Memory => "ActionCard_Category_Memory",

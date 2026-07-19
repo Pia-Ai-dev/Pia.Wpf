@@ -19,7 +19,10 @@ public enum ActionCardCategory
     Todo,
     Reminder,
     Files,
-    Git
+    Git,
+
+    /// <summary>An external (MCP) plugin tool — server-defined, gated per-call (Phase 2 MCP gate).</summary>
+    Mcp
 }
 
 public record ActionCardDetail(string Label, string Value);
