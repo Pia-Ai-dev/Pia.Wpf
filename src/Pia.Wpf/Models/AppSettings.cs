@@ -161,6 +161,9 @@ public class AppSettings
     // Assistant suggestions (follow-up chips)
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 
+    /// <summary>Global last-used Chat/Agent lever default (R15). Not per-chat, not per-mode. false = Chat.</summary>
+    public bool AssistantAgentModeDefault { get; set; } = false;
+
     // Sandboxed folder the assistant's file tool may read/write/delete in. The memory vault lives
     // under it (<folder>\Vault), so it is always set after first run; file-tool enablement is the
     // separate AssistantFileToolsEnabled flag (clearing the folder no longer disables the tools).

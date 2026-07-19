@@ -485,6 +485,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
                 session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText));
 
+            // Surface the run id onto the session so the active VM can embed the run-progress panel
+            // (§15.1). Raised on the UI thread (this branch runs on it), so the VM handler is safe.
+            session.SetActiveRun(run.Id);
+
             // BeginTurn() above already created session.Cts; the Planned branch does NOT call BeginTurn
             // per step (R13). The orchestrator links the run CTS from session.Cts.Token below, so
             // ChatSession.Cancel() propagates to the run + in-flight step. Constructed on the UI thread

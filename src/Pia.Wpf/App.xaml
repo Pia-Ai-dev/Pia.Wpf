@@ -36,6 +36,8 @@
       <converters:ZeroToVisibilityConverter x:Key="ZeroToVisibilityConverter" />
       <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
       <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+      <converters:ToolScopeToBoolConverter x:Key="ToolScopeToBoolConverter" />
+      <converters:ToolScopeToInverseVisibilityConverter x:Key="ToolScopeToInverseVisibilityConverter" />
       <converters:IdEqualsVisibilityConverter x:Key="IdEqualsVisibilityConverter" />
       <converters:ProviderTypeToVisibilityConverter x:Key="ProviderTypeToVisibilityConverter" />
       <converters:LanguageToFlagConverter x:Key="LanguageToFlagConverter" />

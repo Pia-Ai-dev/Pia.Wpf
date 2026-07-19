@@ -217,6 +217,11 @@
                 </Setter.Value>
               </Setter>
             </Trigger>
+            <!-- Disabled (e.g. Chat/Agent lever on a no-tools persona): reads as unavailable. -->
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
+              <Setter Property="Cursor" Value="Arrow"/>
+            </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>

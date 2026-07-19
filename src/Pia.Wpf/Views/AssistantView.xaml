@@ -392,6 +392,44 @@
                   </DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>
+
+              <Separator Width="1" Margin="4,2" Background="{DynamicResource BorderBrush_}" />
+
+              <!-- Chat/Agent lever (1.3). Disabled when the active persona has ToolScope==None. -->
+              <Border Background="{DynamicResource SurfaceSunkBrush}"
+                      CornerRadius="{StaticResource SmallRadius}"
+                      Padding="2"
+                      VerticalAlignment="Center"
+                      ToolTipService.ShowOnDisabled="True"
+                      IsEnabled="{Binding ActivePersona.ToolScope, Converter={StaticResource ToolScopeToBoolConverter}, FallbackValue=False}">
+                <Border.Style>
+                  <Style TargetType="Border">
+                    <Style.Triggers>
+                      <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="ToolTip" Value="{loc:Str Lever_Disabled_NoTools}" />
+                      </Trigger>
+                    </Style.Triggers>
+                  </Style>
+                </Border.Style>
+                <StackPanel Orientation="Horizontal">
+                  <RadioButton Style="{StaticResource PiaSegmentedButton}"
+                               GroupName="ChatAgentLever"
+                               Content="{loc:Str Lever_Chat}"
+                               IsChecked="{Binding AgentModeEnabled, Converter={StaticResource InverseBooleanConverter}}" />
+                  <Grid>
+                    <RadioButton Style="{StaticResource PiaSegmentedButton}"
+                                 GroupName="ChatAgentLever"
+                                 Content="{loc:Str Lever_Agent}"
+                                 IsChecked="{Binding AgentModeEnabled}" />
+                    <!-- Weak-provider adorner: subtle warn dot on the Agent segment. -->
+                    <Ellipse Width="6" Height="6" Margin="0,3,3,0"
+                             HorizontalAlignment="Right" VerticalAlignment="Top"
+                             Fill="{DynamicResource WarnBrush}"
+                             ToolTip="{loc:Str Lever_WeakProvider_Tooltip}"
+                             Visibility="{Binding WeakProviderWarningVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                  </Grid>
+                </StackPanel>
+              </Border>
             </StackPanel>
 
             <!-- Send button -->

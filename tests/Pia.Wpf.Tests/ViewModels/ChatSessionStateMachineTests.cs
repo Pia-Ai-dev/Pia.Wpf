@@ -40,6 +40,23 @@ public class ChatSessionStateMachineTests
     private ChatSession CreateBackgroundSession() => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => false);
 
+    [Fact]
+    public void SetActiveRun_RaisesOnChange_AndIsIdempotent()
+    {
+        var session = CreateSession();
+        var raised = new List<Guid?>();
+        session.ActiveRunChanged += (_, id) => raised.Add(id);
+
+        var runId = Guid.NewGuid();
+        session.SetActiveRun(runId);
+        session.SetActiveRun(runId);   // no-op — unchanged
+        session.SetActiveRun(null);
+
+        // Only two notifications: set-to-runId and clear-to-null (the duplicate set is suppressed).
+        Assert.Equal(new Guid?[] { runId, null }, raised);
+        Assert.Null(session.ActiveRunId);
+    }
+
     private static ChatTurnRequest BuildRequest(ChatSession session, string userText = "hi")
     {
         var user = new AssistantMessage(ChatRole.User, userText);

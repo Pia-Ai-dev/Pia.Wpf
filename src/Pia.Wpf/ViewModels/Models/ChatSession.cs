@@ -124,6 +124,25 @@ public sealed class ChatSession : IDisposable
     internal void SetProviderId(Guid? providerId) => ProviderId = providerId;
 
     /// <summary>
+    /// The live (or most-recently-selected) Planned <see cref="Pia.Models.AgentRun"/> for this chat,
+    /// or null when the chat has no run to surface (§15.1). Set by the manager on the UI thread when a
+    /// Planned turn starts; the active VM watches <see cref="ActiveRunChanged"/> to embed the run-progress panel.
+    /// </summary>
+    public Guid? ActiveRunId { get; private set; }
+
+    /// <summary>Raised when <see cref="ActiveRunId"/> changes (UI thread — the Planned branch runs on it).</summary>
+    public event EventHandler<Guid?>? ActiveRunChanged;
+
+    /// <summary>Sets the active run id and notifies (no-op when unchanged).</summary>
+    public void SetActiveRun(Guid? runId)
+    {
+        if (ActiveRunId == runId)
+            return;
+        ActiveRunId = runId;
+        ActiveRunChanged?.Invoke(this, runId);
+    }
+
+    /// <summary>
     /// Sets the per-chat working directory. Trims, treats empty as null (= sandbox root),
     /// and normalizes separators to forward slashes (the stored/relative convention).
     /// </summary>

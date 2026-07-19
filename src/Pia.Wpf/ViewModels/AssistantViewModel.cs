@@ -102,6 +102,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private bool _isLoadingPersonas;
 
+    /// <summary>The Chat/Agent lever state (R15). false = Chat, true = Agent (Planned run). Persisted
+    /// as a global last-used default in <see cref="AppSettings.AssistantAgentModeDefault"/>.</summary>
+    [ObservableProperty]
+    private bool _agentModeEnabled;
+
+    /// <summary>Guards the settings-seed of <see cref="AgentModeEnabled"/> so seeding never re-persists
+    /// (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
+    private bool _isLoadingAgentMode;
+
     private static readonly string[] SuggestionReminderKeys =
     [
         "Assistant_Suggestion_Reminder1", "Assistant_Suggestion_Reminder2",
@@ -439,6 +448,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     AvailablePersonas.Add(persona);
 
                 ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
+
+                // Seed the Chat/Agent lever from the persisted global default (R15). Guarded so the
+                // seed itself never re-persists via OnAgentModeEnabledChanged.
+                _isLoadingAgentMode = true;
+                try { AgentModeEnabled = settings.AssistantAgentModeDefault; }
+                finally { _isLoadingAgentMode = false; }
             });
         }
         finally
@@ -460,6 +475,30 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         settings.SetPersonaForMode(WindowMode.Assistant, personaId);
         await _settingsService.SaveSettingsAsync(settings);
         _logger.LogInformation("Active persona for Assistant set to {PersonaId}", personaId);
+    }
+
+    partial void OnAgentModeEnabledChanged(bool value)
+    {
+        if (_isLoadingAgentMode)
+            return;
+        PersistAgentModeDefaultAsync(value).SafeFireAndForget(_logger);
+        // Warning-first (§14.4) evaluation is wired in Commit Group 2 (needs IProviderCapabilityService).
+        if (!value)
+            WeakProviderWarningVisible = false;
+    }
+
+    // Weak-provider warning surface (§14.4). Set true when the active provider is not Capable of tool
+    // calling for Agent planning; drives the subtle adorner on the Agent segment + the composer banner.
+    // Never blocks a Planned send (R10). Populated by EvaluateProviderWarningAsync (Commit Group 2).
+    [ObservableProperty]
+    private bool _weakProviderWarningVisible;
+
+    private async Task PersistAgentModeDefaultAsync(bool enabled)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        settings.AssistantAgentModeDefault = enabled;
+        await _settingsService.SaveSettingsAsync(settings);
+        _logger.LogInformation("Assistant agent-mode default set to {Enabled}", enabled);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -551,9 +590,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
+        // The Chat/Agent lever decides the run shape. Defence in depth: a no-tools persona can never
+        // plan (the lever UI already disables), so force Chat regardless of a stale lever value.
+        var planned = AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
+
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten (Step 4-compatible).
-        await _chatSessionManager.StartTurnAsync(session, userText, attachment);
+        await _chatSessionManager.StartTurnAsync(session, userText, attachment, planned: planned);
     }
 
     private async Task ExecuteToggleRecording()

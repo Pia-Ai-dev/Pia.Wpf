@@ -26,6 +26,7 @@ public class ChatSessionManagerTests
     private readonly Pia.Services.Flow.IFlowService _flow = Substitute.For<Pia.Services.Flow.IFlowService>();
     private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
     private readonly IFilesToolHandler _files = Substitute.For<IFilesToolHandler>();
+    private readonly IAgentRunService _runService = Substitute.For<IAgentRunService>();
 
     public ChatSessionManagerTests()
     {
@@ -39,9 +40,8 @@ public class ChatSessionManagerTests
         if (SynchronizationContext.Current is null)
             SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
-        var runService = Substitute.For<Pia.Services.Interfaces.IAgentRunService>();
         var orchestrator = new Pia.Services.AgentRunOrchestrator(
-            runService, Substitute.For<Pia.Services.IAgentPlanner>(),
+            _runService, Substitute.For<Pia.Services.IAgentPlanner>(),
             NullLogger<Pia.Services.AgentRunOrchestrator>.Instance);
 
         return new ChatSessionManager(
@@ -49,7 +49,7 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files, orchestrator, runService);
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService);
     }
 
     [Fact]
@@ -379,6 +379,58 @@ public class ChatSessionManagerTests
         Assert.Equal(ChatState.Error, background.State);
         // The persist was attempted (SaveAsync) before the auto-title re-read threw and was swallowed.
         await _chatService.Received(1).SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_Planned_CreatesPlannedRun_AndSurfacesActiveRunId()
+    {
+        // 1.3 lever wiring: planned:true creates a RunShape.Planned run and stamps its id onto the
+        // session (SetActiveRun) so the active VM can embed the run-progress panel.
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test", SupportsToolCalling = true });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, true, false));
+
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new AgentRun { Id = runId, ChatId = session.Id ?? Guid.Empty, RunShape = RunShape.Planned });
+
+        Guid? raised = null;
+        session.ActiveRunChanged += (_, id) => raised = id;
+
+        await sut.StartTurnAsync(session, "plan my week", null, planned: true);
+
+        Assert.Equal(runId, session.ActiveRunId);
+        Assert.Equal(runId, raised);
+        await _runService.Received(1).CreateAsync(
+            Arg.Is<AgentRunCreateRequest>(r => r.Shape == RunShape.Planned && r.Trigger == AgentRunTrigger.User),
+            Arg.Any<CancellationToken>());
+        // The empty streaming placeholder is removed for a Planned transcript (only the user goal remains pre-run).
+        Assert.DoesNotContain(session.Messages, m => !m.IsUser && string.IsNullOrEmpty(m.Content) && m.IsStreaming);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_NotPlanned_DoesNotCreateRun_NorSetActiveRunId()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test", SupportsToolCalling = true });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, false, false));
+
+        await sut.StartTurnAsync(session, "just chat", null, planned: false);
+
+        Assert.Null(session.ActiveRunId);
+        await _runService.DidNotReceive().CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
