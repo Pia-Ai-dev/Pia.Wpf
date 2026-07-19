@@ -111,6 +111,16 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // Headless path — no user to click the chip (R7) → never eligible.
             var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled,
                 suggestAgentModeEligible: false);
+
+            // G-2: strip MCP tools from an unattended SingleTurn's tool list (symmetry with the headless
+            // Planned executor) so denied MCP calls aren't dangled to the model; the gate denies any leak.
+            if (turnSetup.Tools is { Count: > 0 })
+            {
+                var filtered = turnSetup.Tools.Where(t => !_pluginService.IsMcpTool(t.Name)).ToList();
+                if (filtered.Count != turnSetup.Tools.Count)
+                    turnSetup = turnSetup with { Tools = filtered };
+            }
+
             _logger.LogInformation(
                 "Background turn {ChatId}: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, grantedWrites={GrantedWrites}",
                 chatId, provider.Id, turnSetup.SupportsTools, turnSetup.Tools?.Count ?? 0, request.GrantedWriteTools.Count);
@@ -327,6 +337,15 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// </summary>
     private async Task<object?> HandleToolCallAsync(FunctionCallContent toolCall, HashSet<string> grantedWrites)
     {
+        // G-2 enforcement boundary: MCP tools return an immediate result and so slip the write-gate.
+        // Deny any MCP call for an unattended run (covers both the Planned per-step path via
+        // RunExchangeAsync and the scheduled SingleTurn path). Re-enablement is Phase 2 (§17.4).
+        if (_pluginService.IsMcpTool(toolCall.Name))
+        {
+            _logger.LogInformation("Background turn denied MCP tool {ToolName} (unattended)", toolCall.Name);
+            return "Denied: MCP tools are not available to unattended runs. Do not retry.";
+        }
+
         var route = await _pluginService.RouteToolCallAsync(toolCall);
         if (route is null)
         {

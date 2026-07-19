@@ -157,6 +157,29 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
+    public async Task McpTool_IsDeniedAtGate_AndNeverRouted()
+    {
+        // G-2: MCP tools bypass the write-gate (immediate result), so they are denied at the gate for
+        // an unattended run — before routing — even if the model was granted them.
+        var h = new Harness();
+        h.Plugins.IsMcpTool("mcp_search").Returns(true);
+
+        var runner = h.Build([Call("mcp_search")]);
+        var result = await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            GrantedWriteTools = ["mcp_search"],
+        }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        var returned = Assert.IsType<string>(h.HandlerResults[0].Returned);
+        Assert.Contains("Denied", returned);
+        Assert.Contains("MCP", returned);
+        await h.Plugins.DidNotReceive().RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task GrantCheck_IsCaseInsensitive()
     {
         var h = new Harness();

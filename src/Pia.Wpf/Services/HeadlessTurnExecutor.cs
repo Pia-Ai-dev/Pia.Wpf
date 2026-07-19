@@ -26,6 +26,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private readonly IProviderService _providerService;
     private readonly IAssistantPromptComposer _promptComposer;
     private readonly IChatTitleService _titleService;
+    private readonly IPluginService _pluginService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly ILogger<HeadlessTurnExecutor> _logger;
 
@@ -41,6 +42,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private Guid _chatId;
     private Guid _runId;
 
+    // Seeded by the launcher via Initialize before the orchestrator runs (§17.3).
+    private string? _workspaceRoot;
+    private AiProvider? _providerOverride;
+
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
         IAssistantChatService chatService,
@@ -49,6 +54,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         IProviderService providerService,
         IAssistantPromptComposer promptComposer,
         IChatTitleService titleService,
+        IPluginService pluginService,
         Func<ITokenMapService> tokenMapFactory,
         ILogger<HeadlessTurnExecutor> logger)
     {
@@ -59,8 +65,23 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _providerService = providerService;
         _promptComposer = promptComposer;
         _titleService = titleService;
+        _pluginService = pluginService;
         _tokenMapFactory = tokenMapFactory;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Seed the per-run workspace root, granted write tools, and an optional provider override
+    /// (the launcher's resolved provider, kept in lock-step with the orchestrator's planner so the two
+    /// never diverge). Called from the launcher's fresh DI scope BEFORE <c>orchestrator.RunAsync</c>.
+    /// </summary>
+    public void Initialize(string workspaceRoot, IReadOnlyCollection<string> grantedWrites, AiProvider? providerOverride = null)
+    {
+        _workspaceRoot = workspaceRoot;
+        _providerOverride = providerOverride;
+        _grantedWrites.Clear();
+        foreach (var w in grantedWrites)
+            _grantedWrites.Add(w);
     }
 
     public async Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct)
@@ -73,22 +94,38 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _persona = await _personaService.ResolveActiveAsync(
             WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
 
-        var provider = _persona.PreferredProviderId.HasValue
-            ? await _providerService.GetProviderAsync(_persona.PreferredProviderId.Value).ConfigureAwait(false)
-            : null;
-        provider ??= await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant).ConfigureAwait(false);
+        // Prefer the launcher-resolved override so the executor and the orchestrator's planner run on
+        // the SAME provider (honors a scheduled job's ProviderId); fall back to persona-preferred/default.
+        var provider = _providerOverride;
         if (provider is null)
-            throw new InvalidOperationException("No provider configured for a headless agent run.");
-        if (_persona.ReasoningEffort.HasValue)
         {
-            provider = provider.Clone();
-            provider.ReasoningEffort = _persona.ReasoningEffort.Value;
+            provider = _persona.PreferredProviderId.HasValue
+                ? await _providerService.GetProviderAsync(_persona.PreferredProviderId.Value).ConfigureAwait(false)
+                : null;
+            provider ??= await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant).ConfigureAwait(false);
+            if (provider is null)
+                throw new InvalidOperationException("No provider configured for a headless agent run.");
+            if (_persona.ReasoningEffort.HasValue)
+            {
+                provider = provider.Clone();
+                provider.ReasoningEffort = _persona.ReasoningEffort.Value;
+            }
         }
         _provider = provider;
 
         // Headless path — no user to click the chip (R7) → never eligible.
         _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled,
             suggestAgentModeEligible: false);
+
+        // G-2: MCP tools return an immediate result and so bypass the unattended write-gate. Strip them
+        // from the headless tool list (capability removal); the gate in BackgroundAssistantTurnRunner
+        // denies any that slip through. MCP re-enablement for unattended runs is Phase 2 (§17.4).
+        if (_setup.Tools is { Count: > 0 })
+        {
+            var filtered = _setup.Tools.Where(t => !_pluginService.IsMcpTool(t.Name)).ToList();
+            if (filtered.Count != _setup.Tools.Count)
+                _setup = _setup with { Tools = filtered };
+        }
 
         // Initialize the run's token map. NOTE: the ambients are set PER STEP (in RunExchangeStepAsync),
         // not here — an AsyncLocal set after an await inside BeginRunAsync would NOT propagate into the
@@ -140,7 +177,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var previousTask = TaskAmbient.Current;
         if (_tokenizationEnabled)
             TokenMapAmbient.Current = _tokenMap;
-        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null);
+        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot);
 
         BackgroundAssistantTurnRunner.ExchangeResult exchange;
         try

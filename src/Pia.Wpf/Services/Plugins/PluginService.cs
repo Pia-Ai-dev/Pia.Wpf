@@ -287,6 +287,12 @@ public class PluginService : IPluginService
         return await handler.HandleToolCallAsync(toolCall, ct);
     }
 
+    public bool IsMcpTool(string toolName)
+    {
+        lock (_handlers)
+            return _toolNameRoutes.TryGetValue(toolName, out var handler) && handler is McpPluginToolHandler;
+    }
+
     public IReadOnlyList<SyncPlugin> GetAllPluginConfigs()
     {
         return _pluginConfigs.Values.ToList();

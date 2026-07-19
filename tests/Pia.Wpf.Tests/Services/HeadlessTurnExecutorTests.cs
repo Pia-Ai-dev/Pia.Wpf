@@ -76,7 +76,7 @@ public sealed class HeadlessTurnExecutorTests
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
             NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
-            engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
+            engine, chats, settings, personas, providers, composer, titles, plugins, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
 
         // Bootstrap: FK parent chat + Planned run (R1 ordering).
@@ -130,5 +130,192 @@ public sealed class HeadlessTurnExecutorTests
         Assert.NotNull(finalRun.LastMessageId);
 
         try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+
+    // ---- C2: consent + MCP disable + provider override ----
+
+    private sealed class SingleStepPlanner : IAgentPlanner
+    {
+        public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(new PlanResult(
+                new List<AgentStep> { new() { Ordinal = 0, Title = "A", Intent = "ia", Status = AgentStepStatus.Pending } },
+                false));
+        public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(PlanResult.Fallback);
+    }
+
+    [Fact]
+    public async Task BeginRun_StripsMcpTools_AndHonorsProviderOverride_AndGrantedWrites()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var runRoot = Path.Combine(dir, "runroot");
+        Directory.CreateDirectory(runRoot);
+        using var ctx = new SqliteContext(Path.Combine(dir, "history.db"));
+        using var runs = new AgentRunService(ctx, NullLogger<AgentRunService>.Instance);
+        var chats = new AssistantChatService(ctx, runs);
+
+        var defaultProvider = new AiProvider { Id = Guid.NewGuid(), Name = "Default", Endpoint = "https://d", ProviderType = AiProviderType.OpenAI };
+        var overrideProvider = new AiProvider { Id = Guid.NewGuid(), Name = "Override", Endpoint = "https://o", ProviderType = AiProviderType.OpenAI };
+        var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
+
+        var mcpTool = AIFunctionFactory.Create((string q) => "x", "mcp_search", "mcp");
+        var normalTool = AIFunctionFactory.Create((string q) => "y", "write_file", "write");
+
+        IList<AITool>? capturedTools = null;
+        AiProvider? capturedProvider = null;
+        var toolCalls = new List<FunctionCallContent> { new(Guid.NewGuid().ToString(), "write_file", new Dictionary<string, object?>()) };
+
+        var ai = Substitute.For<IAiClientService>();
+        ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                capturedTools = ci.ArgAt<IList<AITool>?>(2);
+                capturedProvider = ci.ArgAt<AiProvider>(1);
+                return DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls);
+            });
+
+        var executed = false;
+        var plugins = Substitute.For<IPluginService>();
+        plugins.IsMcpTool("mcp_search").Returns(true);
+        plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, new PluginToolCall("write_file", Guid.NewGuid(), "files", "d", null, () =>
+            {
+                executed = true;
+                return Task.FromResult<object?>("written");
+            })));
+
+        var composer = Substitute.For<IAssistantPromptComposer>();
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", new List<AITool> { mcpTool, normalTool }, SupportsTools: true, WebSearchActive: false));
+        var personas = Substitute.For<IPersonaService>();
+        personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        var providers = Substitute.For<IProviderService>();
+        providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(defaultProvider);
+        var titles = Substitute.For<IChatTitleService>();
+        titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
+
+        var engine = new BackgroundAssistantTurnRunner(
+            ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
+            NullLogger<BackgroundAssistantTurnRunner>.Instance);
+        var executor = new HeadlessTurnExecutor(
+            engine, chats, settings, personas, providers, composer, titles, plugins, TokenMapFactory,
+            NullLogger<HeadlessTurnExecutor>.Instance);
+
+        // Seed workspace root + grants + provider override (the launcher's job).
+        executor.Initialize(runRoot, new[] { "write_file" }, overrideProvider);
+
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "stub",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "goal"), TestContext.Current.CancellationToken);
+
+        var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), NullLogger<AgentRunOrchestrator>.Instance);
+        await orchestrator.RunAsync(run, executor, persona, defaultProvider, RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        // MCP tool stripped from the executor's tool list (G-2 capability removal).
+        Assert.NotNull(capturedTools);
+        Assert.DoesNotContain(capturedTools!, t => t.Name == "mcp_search");
+        Assert.Contains(capturedTools!, t => t.Name == "write_file");
+
+        // Provider override honored — the default was never resolved.
+        Assert.Equal(overrideProvider.Id, capturedProvider!.Id);
+        await providers.DidNotReceive().GetDefaultProviderForModeAsync(Arg.Any<WindowMode>());
+
+        // Granted write executed.
+        Assert.True(executed);
+
+        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+
+    [Fact]
+    public async Task UngrantedWrite_IsDenied_InHeadlessRun()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var runRoot = Path.Combine(dir, "runroot");
+        Directory.CreateDirectory(runRoot);
+        using var ctx = new SqliteContext(Path.Combine(dir, "history.db"));
+        using var runs = new AgentRunService(ctx, NullLogger<AgentRunService>.Instance);
+        var chats = new AssistantChatService(ctx, runs);
+
+        var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
+        var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
+        var toolCalls = new List<FunctionCallContent> { new(Guid.NewGuid().ToString(), "delete_file", new Dictionary<string, object?>()) };
+
+        var ai = Substitute.For<IAiClientService>();
+        ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls));
+
+        var executed = false;
+        var plugins = Substitute.For<IPluginService>();
+        plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, new PluginToolCall("delete_file", Guid.NewGuid(), "files", "d", null, () =>
+            {
+                executed = true;
+                return Task.FromResult<object?>("deleted");
+            })));
+
+        var composer = Substitute.For<IAssistantPromptComposer>();
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
+        var personas = Substitute.For<IPersonaService>();
+        personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        var providers = Substitute.For<IProviderService>();
+        var titles = Substitute.For<IChatTitleService>();
+        titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
+
+        var engine = new BackgroundAssistantTurnRunner(
+            ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
+            NullLogger<BackgroundAssistantTurnRunner>.Instance);
+        var executor = new HeadlessTurnExecutor(
+            engine, chats, settings, personas, providers, composer, titles, plugins, TokenMapFactory,
+            NullLogger<HeadlessTurnExecutor>.Instance);
+
+        // Only write_file granted — delete_file is not.
+        executor.Initialize(runRoot, new[] { "write_file" }, provider);
+
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "stub",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "goal"), TestContext.Current.CancellationToken);
+
+        var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), NullLogger<AgentRunOrchestrator>.Instance);
+        await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.False(executed);
+
+        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> DriveWithTool(
+        Func<FunctionCallContent, Task<object?>>? handler, IReadOnlyList<FunctionCallContent> toolCalls)
+    {
+        if (handler is not null)
+            foreach (var call in toolCalls)
+                await handler(call);
+        await Task.Yield();
+        yield return new TextDelta("reply");
+        yield return new Finished(null, "test-model");
     }
 }
