@@ -893,6 +893,10 @@
   <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Stay in Chat</value></data>
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Stopped at budget</value></data>
   <data name="Run_Working" xml:space="preserve"><value>Working…</value></data>
+  <data name="Run_State_Planning" xml:space="preserve"><value>Planning</value></data>
+  <data name="Run_State_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="Run_State_Completed" xml:space="preserve"><value>Completed</value></data>
+  <data name="Run_State_Failed" xml:space="preserve"><value>Failed</value></data>
   <data name="Flow_Run_Title" xml:space="preserve"><value>Agent run</value></data>
   <data name="Flow_Run_Completed" xml:space="preserve"><value>Finished — tap to review</value></data>
   <data name="Flow_Run_Failed" xml:space="preserve"><value>Ended with an error</value></data>

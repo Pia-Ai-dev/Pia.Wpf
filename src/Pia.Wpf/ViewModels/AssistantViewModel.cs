@@ -44,6 +44,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAssistantChatService _chatService;
     private readonly IAssistantPromptComposer _promptComposer;
     private readonly IProviderCapabilityService _providerCapabilityService;
+    private readonly IAgentRunService _agentRunService;
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IWorkingDirectoryService _workingDirectoryService;
     private readonly IFilesToolHandler _filesToolHandler;
@@ -111,6 +112,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>Guards the settings-seed of <see cref="AgentModeEnabled"/> so seeding never re-persists
     /// (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
     private bool _isLoadingAgentMode;
+
+    /// <summary>The run-progress view-model for the active session's live/selected run (§15.1); null when
+    /// the active chat has no run to surface. New'd on the UI thread, disposed on session swap (not DI'd).</summary>
+    private RunProgressViewModel? _runProgress;
+
+    [ObservableProperty]
+    private RunProgressViewModel? _activeRunProgress;
 
     private static readonly string[] SuggestionReminderKeys =
     [
@@ -188,6 +196,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         MeetingAttendeeViewModel meetingAttendee,
         IAssistantPromptComposer promptComposer,
         IProviderCapabilityService providerCapabilityService,
+        IAgentRunService agentRunService,
         IChatSessionManager chatSessionManager,
         IWorkingDirectoryService workingDirectoryService,
         IFilesToolHandler filesToolHandler,
@@ -216,6 +225,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         MeetingAttendee = meetingAttendee;
         _promptComposer = promptComposer;
         _providerCapabilityService = providerCapabilityService;
+        _agentRunService = agentRunService;
         _chatSessionManager = chatSessionManager;
         _workingDirectoryService = workingDirectoryService;
         _filesToolHandler = filesToolHandler;
@@ -317,6 +327,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.TurnCompleted -= OnActiveSessionTurnCompleted;
             prev.ToolSucceeded -= OnActiveSessionToolSucceeded;
             prev.RunFailed -= OnActiveSessionRunFailed;
+            prev.ActiveRunChanged -= OnActiveRunChanged;
         }
 
         _subscribedSession = session;
@@ -324,6 +335,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.TurnCompleted += OnActiveSessionTurnCompleted;
         session.ToolSucceeded += OnActiveSessionToolSucceeded;
         session.RunFailed += OnActiveSessionRunFailed;
+        session.ActiveRunChanged += OnActiveRunChanged;
+        SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
 
         Messages = session.Messages;            // re-points the ItemsControl (OnMessagesChanged swaps CollectionChanged)
         HasMessages = session.Messages.Count > 0;
@@ -333,6 +346,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
         // Scope the @Files autocomplete to this chat's dir (it runs outside any turn).
         _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
+    }
+
+    // The session raises ActiveRunChanged on the UI thread (its Planned branch runs there), but marshal
+    // defensively so a future off-thread caller can't touch the bound RunProgressViewModel cross-thread.
+    private void OnActiveRunChanged(object? sender, Guid? runId) =>
+        App.Current.Dispatcher.InvokeAsync(() => SyncRunProgress(runId));
+
+    private void SyncRunProgress(Guid? runId)
+    {
+        if (_runProgress?.RunId == runId)
+            return;
+        _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
+        _runProgress = runId is { } id
+            ? new RunProgressViewModel(_agentRunService, id, _logger)
+            : null;
+        ActiveRunProgress = _runProgress;
     }
 
     partial void OnMessagesChanged(ObservableCollection<AssistantMessage>? oldValue, ObservableCollection<AssistantMessage> newValue)

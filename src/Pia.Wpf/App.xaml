@@ -38,6 +38,12 @@
       <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
       <converters:ToolScopeToBoolConverter x:Key="ToolScopeToBoolConverter" />
       <converters:ToolScopeToInverseVisibilityConverter x:Key="ToolScopeToInverseVisibilityConverter" />
+      <converters:StepStatusToGlyphConverter x:Key="StepStatusToGlyphConverter" />
+      <converters:StepStatusToBrushConverter x:Key="StepStatusToBrushConverter" />
+      <converters:RunStateToLabelConverter x:Key="RunStateToLabelConverter" />
+      <converters:RunStateToBrushConverter x:Key="RunStateToBrushConverter" />
+      <converters:RunStateToSpinnerVisibilityConverter x:Key="RunStateToSpinnerVisibilityConverter" />
+      <converters:BoolToRunningRowBrushConverter x:Key="BoolToRunningRowBrushConverter" />
       <converters:IdEqualsVisibilityConverter x:Key="IdEqualsVisibilityConverter" />
       <converters:ProviderTypeToVisibilityConverter x:Key="ProviderTypeToVisibilityConverter" />
       <converters:LanguageToFlagConverter x:Key="LanguageToFlagConverter" />

@@ -41,10 +41,16 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-    <!-- Chat title chip -->
-    <assistant:PiaChatTitleChip Grid.Row="0"
-                                DataContext="{Binding ChatTitleChip}"
-                                Margin="20,12,20,0" />
+    <!-- Chat title chip + run-progress panel -->
+    <StackPanel Grid.Row="0">
+      <assistant:PiaChatTitleChip DataContext="{Binding ChatTitleChip}"
+                                  Margin="20,12,20,0" />
+      <!-- Read-only run-progress panel (1.4). Embedded when the active chat has a live/selected run.
+           DataContext = ActiveRunProgress; visibility resolves against the VM via the root UserControl. -->
+      <assistant:RunProgressPanel Margin="20,8,20,0"
+                                  DataContext="{Binding ActiveRunProgress}"
+                                  Visibility="{Binding DataContext.ActiveRunProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource NullToVisibilityConverter}}" />
+    </StackPanel>
 
     <!-- Empty state -->
     <StackPanel Grid.Row="1"
