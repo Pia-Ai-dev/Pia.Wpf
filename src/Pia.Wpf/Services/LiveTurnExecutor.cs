@@ -83,6 +83,20 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             return Task.CompletedTask;
         });
 
+    public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
+        PostAsync(() =>
+        {
+            // Non-terminal budget pause (guardrail 5): release the live session so it is USABLE while the
+            // run sits WaitingForInput. Dispose the CTS and drop the session back to Idle — this clears
+            // IsStreaming (ChatState.Running/WaitingForTool → Idle) so Send/RunInBackground re-enable.
+            // Crucially, NO terminal settle here: we do NOT set ChatState.Completed/Error and do NOT raise
+            // TurnCompleted (the run is not finished — it is parked awaiting the user's Continue).
+            _session.DisposeCts();
+            if (_session.State != ChatState.Error)
+                _session.SetState(ChatState.Idle);
+            return Task.CompletedTask;
+        });
+
     private StepTurnSpec BuildSpec(AgentRun run, int ordinal, string intent, string? expectedArtifact, bool useGoalVerbatim) =>
         new(
             RunId: run.Id,

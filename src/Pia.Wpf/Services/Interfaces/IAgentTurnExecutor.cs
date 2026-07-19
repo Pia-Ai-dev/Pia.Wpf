@@ -84,4 +84,15 @@ public interface IAgentTurnExecutor
     /// settles <c>ChatState.Completed</c> / raises <c>TurnCompleted(Succeeded=true)</c> (§13.5.2/§16 R4).
     /// </summary>
     Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct);
+
+    /// <summary>
+    /// Non-terminal budget-pause hook (guardrail 5): the orchestrator calls this on the pause exit
+    /// INSTEAD of <see cref="EndRunAsync"/> when a run parks into <c>WaitingForInput</c>. Unlike a
+    /// terminal end, a pause must NOT settle <c>ChatState.Completed</c>/<c>Error</c> or raise
+    /// <c>TurnCompleted</c>. Live: release the live session (dispose the CTS + settle
+    /// <c>ChatState.Idle</c>) so <c>IsStreaming</c> clears and Send/RunInBackground re-enable while the
+    /// run sits parked. Headless: no-op (nothing to release; the persisted chat/steps/ledger already
+    /// carry the state, and finalizing here would erase pre-existing rows).
+    /// </summary>
+    Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct);
 }

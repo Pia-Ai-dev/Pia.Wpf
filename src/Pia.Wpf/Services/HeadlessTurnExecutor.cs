@@ -295,6 +295,18 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Ambients are set + restored per step (RunExchangeStepAsync); nothing to restore here.
     }
 
+    /// <summary>
+    /// Budget-pause hook (guardrail 5): no-op for headless. There is no live session to release, and the
+    /// persisted steps/ledger already carry the parked state. Deliberately NOT a persist-and-finalize — a
+    /// full EndRunAsync chat replace here would erase pre-existing rows (D2) and settle a non-terminal run.
+    /// The run resumes out-of-band via ResumeAsync, whose EndRunAsync then persists the transcript once.
+    /// </summary>
+    public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
+    {
+        _logger.LogInformation("Headless run {RunId} parked at budget (no session to release)", run.Id);
+        return Task.CompletedTask;
+    }
+
     private static string BuildInstruction(int ordinal, string intent, string? expectedArtifact)
     {
         var instruction = $"Execute step {ordinal + 1}: {intent}.";

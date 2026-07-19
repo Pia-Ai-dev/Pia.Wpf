@@ -60,6 +60,7 @@ public sealed class AgentRunOrchestratorTests
         public bool EndCancelled { get; private set; }
         public bool EndFailed { get; private set; }
         public bool FallbackCalled { get; private set; }
+        public bool PausedCalled { get; private set; }
 
         public RecordingExecutor(Func<AgentStep, StepTurnResult> result) => _result = result;
 
@@ -80,6 +81,12 @@ public sealed class AgentRunOrchestratorTests
         public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
         {
             EndCalled = true; EndCancelled = cancelled; EndFailed = failed;
+            return Task.CompletedTask;
+        }
+
+        public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
+        {
+            PausedCalled = true; // non-terminal pause hook — NOT EndRunAsync (guardrail 5)
             return Task.CompletedTask;
         }
     }
@@ -117,6 +124,8 @@ public sealed class AgentRunOrchestratorTests
             EndCalled = true; EndCancelled = cancelled;
             return Task.CompletedTask;
         }
+
+        public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class Harness : IDisposable
@@ -268,8 +277,10 @@ public sealed class AgentRunOrchestratorTests
         Assert.Contains("step-cap", final.ExtraJson ?? string.Empty);
         Assert.DoesNotContain("truncated", final.ExtraJson ?? string.Empty);
         Assert.Null(final.CompletedAt); // not terminal
-        // Guardrail 5: a pause must NOT raise a terminal EndRun (no ChatState.Completed / TurnCompleted).
+        // Guardrail 5: a pause must NOT raise a terminal EndRun (no ChatState.Completed / TurnCompleted),
+        // but MUST call the non-terminal OnPaused release hook so a Live session is unwedged (Idle).
         Assert.False(exec.EndCalled);
+        Assert.True(exec.PausedCalled);
     }
 
     [Fact]
@@ -416,6 +427,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.Contains("wall-clock", final.ExtraJson ?? string.Empty);
         Assert.Null(final.CompletedAt);
         Assert.False(exec.EndCalled); // guardrail 5: pause is not terminal
+        Assert.True(exec.PausedCalled); // non-terminal release hook fired (Live session → Idle)
     }
 
     [Fact]

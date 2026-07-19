@@ -121,8 +121,13 @@ public sealed class AgentRunOrchestrator
                             reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
                         // Pause is NOT terminal: deliberately NO SafeEndRun — Live must not settle
                         // ChatState.Completed or raise TurnCompleted (guardrail 5), and Headless must not
-                        // persist-and-finalize here. The run sits WaitingForInput until TryBeginResumeAsync
-                        // claims it. Release the loop.
+                        // persist-and-finalize here. But the executor still needs a NON-terminal release
+                        // hook: for a Live run, only EndRunAsync clears the session's IsStreaming, so
+                        // without this the foreground chat would be wedged Running forever (spinner +
+                        // disabled Send). OnPausedAsync settles the live session to Idle (no TurnCompleted,
+                        // no Completed/Error); Headless no-ops. The run sits WaitingForInput until
+                        // TryBeginResumeAsync claims it. Release the loop.
+                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
                         return;
                     }
 
@@ -360,5 +365,14 @@ public sealed class AgentRunOrchestrator
         // Executor cleanup is not allowed to flip an already-terminal run — swallow + log.
         try { await executor.EndRunAsync(run, ctx, cancelled, failed, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Executor EndRun failed for run {RunId}", run.Id); }
+    }
+
+    private async Task SafeOnPaused(IAgentTurnExecutor executor, AgentRun run, RunContext ctx)
+    {
+        // Non-terminal executor release on a budget pause (guardrail 1/5). Failure-isolated: a release
+        // error must never wedge or corrupt a parked run. Uses CancellationToken.None so a cancelled
+        // token does not skip settling the live session back to Idle.
+        try { await executor.OnPausedAsync(run, ctx, CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Executor OnPaused failed for run {RunId}", run.Id); }
     }
 }
