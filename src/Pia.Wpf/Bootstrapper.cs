@@ -477,6 +477,7 @@ public static class Bootstrapper
         // call; the headless executor is resolved inside a fresh per-run DI scope. The live executor
         // is NOT registered — ChatSessionManager new's it on the UI thread bound to the session.
         services.AddTransient<IAgentPlanner, AgentPlanner>();
+        services.AddTransient<IAgentVerifier, AgentVerifier>();
         services.AddTransient<AgentRunOrchestrator>();
         services.AddTransient<HeadlessTurnExecutor>();
         // Headless "Run in background" / scheduled-AgentTask launcher (§17.1/17.5). Singleton: owns the
