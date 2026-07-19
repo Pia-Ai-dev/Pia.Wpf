@@ -249,7 +249,7 @@ public sealed class AgentRunOrchestratorTests
     }
 
     [Fact]
-    public async Task Run_BudgetExhausted_CompletedTruncated()
+    public async Task Run_BudgetExhausted_PausesIntoWaitingForInput_NotCompletedTruncated()
     {
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
@@ -262,9 +262,101 @@ public sealed class AgentRunOrchestratorTests
 
         Assert.Equal(2, exec.Executed.Count); // dispatched at most MaxSteps
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Completed, final!.State);
-        Assert.Contains("truncated", final.ExtraJson ?? string.Empty);
+        // Budget now PARKS the run (WaitingForInput), not Completed+truncated.
+        Assert.Equal(AgentRunState.WaitingForInput, final!.State);
+        Assert.Contains("paused", final.ExtraJson ?? string.Empty);
         Assert.Contains("step-cap", final.ExtraJson ?? string.Empty);
+        Assert.DoesNotContain("truncated", final.ExtraJson ?? string.Empty);
+        Assert.Null(final.CompletedAt); // not terminal
+        // Guardrail 5: a pause must NOT raise a terminal EndRun (no ChatState.Completed / TurnCompleted).
+        Assert.False(exec.EndCalled);
+    }
+
+    [Fact]
+    public async Task Run_Resume_ReDrainsRemainingSteps_ToCompleted()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        // First run: budget = 2 steps → s1, s2 Done, then pause before s3.
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec1 = new RecordingExecutor(_ => Ok());
+        await h.BuildOrchestrator(planner).RunAsync(run, exec1, Persona(), Provider(), profile, ct);
+        Assert.Equal(new[] { "s1", "s2" }, exec1.Executed);
+        Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, ct))!.State);
+
+        // Resume: CAS-claim, then re-invoke on the EXISTING run with resume:true + a fresh budget. The
+        // persisted Pending remainder (s3) drains; the Done steps (s1, s2) are NOT re-executed.
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec2 = new RecordingExecutor(_ => Ok());
+        await h.BuildOrchestrator(planner).RunAsync(run, exec2, Persona(), Provider(), fresh, ct, resume: true);
+
+        Assert.Equal(new[] { "s3" }, exec2.Executed); // only the remainder ran (no re-plan, no re-run)
+        var final = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+    }
+
+    [Fact]
+    public async Task Run_Resume_PreservesLedgerAcrossPause()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec1 = new RecordingExecutor(_ => OkUsage(10, 5)); // 2 steps → 20/10 accrued, then pause
+        await h.BuildOrchestrator(planner).RunAsync(run, exec1, Persona(), Provider(), profile, ct);
+
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec2 = new RecordingExecutor(_ => OkUsage(10, 5)); // 1 more step → +10/5 (ledger is persisted, NOT reset)
+        await h.BuildOrchestrator(planner).RunAsync(run, exec2, Persona(), Provider(), fresh, ct, resume: true);
+
+        var final = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        using var doc = JsonDocument.Parse(final.LedgerJson!);
+        var root = doc.RootElement;
+        Assert.Equal(30, root.GetProperty("inputTokens").GetInt64());  // 20 pre-pause + 10 resume
+        Assert.Equal(15, root.GetProperty("outputTokens").GetInt64()); // 10 pre-pause + 5 resume
+    }
+
+    [Fact]
+    public async Task Run_CancelDuringResume_SettlesCancelled_SlicePinned()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        // First run pauses after 2 steps; the executed slice is pinned by PauseAsync's PinRange.
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec1 = new RecordingExecutor(_ => Ok()); // Ok() carries non-empty message ids → a real slice
+        await h.BuildOrchestrator(planner).RunAsync(run, exec1, Persona(), Provider(), profile, ct);
+        var parked = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
+        Assert.NotNull(parked.FirstMessageId); // slice pinned at pause
+
+        // Resume, but a cancel lands on the remaining step. The run settles Cancelled and the pre-pause
+        // slice stays pinned (no double-run, no null range).
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        using var sessionCts = new CancellationTokenSource();
+        var exec2 = new CancellingExecutor(sessionCts);
+        var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        await h.BuildOrchestrator(planner).RunAsync(run, exec2, Persona(), Provider(), fresh, sessionCts.Token, resume: true);
+
+        var final = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.True(exec2.EndCancelled);
+        Assert.NotNull(final.FirstMessageId); // slice still pinned
+        Assert.NotEqual(Guid.Empty, final.FirstMessageId!.Value);
     }
 
     [Fact]
@@ -304,7 +396,7 @@ public sealed class AgentRunOrchestratorTests
     }
 
     [Fact]
-    public async Task Run_WallClockExhausted_CompletedTruncated_WallClockReason()
+    public async Task Run_WallClockExhausted_PausesIntoWaitingForInput_WallClockReason()
     {
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
@@ -319,9 +411,11 @@ public sealed class AgentRunOrchestratorTests
 
         Assert.Empty(exec.Executed); // wall-clock exhausted before dispatching any step
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Completed, final!.State); // never a silent clean Completed
-        Assert.Contains("truncated", final.ExtraJson ?? string.Empty);
+        Assert.Equal(AgentRunState.WaitingForInput, final!.State); // parked, never a silent clean Completed
+        Assert.Contains("paused", final.ExtraJson ?? string.Empty);
         Assert.Contains("wall-clock", final.ExtraJson ?? string.Empty);
+        Assert.Null(final.CompletedAt);
+        Assert.False(exec.EndCalled); // guardrail 5: pause is not terminal
     }
 
     [Fact]

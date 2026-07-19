@@ -38,7 +38,8 @@ public sealed class AgentRunOrchestrator
         Persona persona,
         AiProvider provider,
         RunProfile profile,
-        CancellationToken externalToken)
+        CancellationToken externalToken,
+        bool resume = false)
     {
         // R13: link the run CTS from the caller's token. Interactive passes session.Cts.Token, so
         // ChatSession.Cancel() (which cancels session.Cts) propagates to the run + in-flight step.
@@ -61,34 +62,45 @@ public sealed class AgentRunOrchestrator
         try
         {
             await executor.BeginRunAsync(run, ctx, cts.Token).ConfigureAwait(false);
-            await SafeSetState(run.Id, AgentRunState.Planning, cts.Token).ConfigureAwait(false);
 
-            var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
-            if (plan.FallBackToSingleTurn) // R10
+            // D1: a resume must NOT re-plan. ReplaceStepsAsync writes the plan verbatim and does not
+            // preserve Done steps, so re-planning here would wipe the persisted Done+Pending steps and
+            // re-run the whole goal from scratch. On resume we skip Planning/PlanAsync/ReplaceSteps and
+            // drop straight into the outer verify/drain loop, which re-queries the persisted Pending
+            // remainder (R2) and runs only the steps that had not completed before the pause.
+            if (!resume)
             {
-                var fr = await executor.RunSingleTurnFallbackAsync(run, ctx, cts.Token).ConfigureAwait(false);
-                if (fr.Cancelled)
-                {
-                    cancelled = true;
-                    await SafeFail(run.Id, fr.Error, cancelled: true).ConfigureAwait(false);
-                }
-                else if (!fr.Succeeded)
-                {
-                    // R5/R10: a failed fallback turn is never presented as a clean Completed run.
-                    failed = true;
-                    await SafeFail(run.Id, fr.Error, cancelled: false).ConfigureAwait(false);
-                }
-                else
-                {
-                    if (fr.FirstMessageId != Guid.Empty)
-                        await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, cts.Token).ConfigureAwait(false);
-                    await SafeComplete(run.Id, cts.Token).ConfigureAwait(false); // clean; zero steps recorded
-                }
-                await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
-                return;
-            }
+                await SafeSetState(run.Id, AgentRunState.Planning, cts.Token).ConfigureAwait(false);
 
-            await SafeReplaceSteps(run.Id, plan.Steps, cts.Token).ConfigureAwait(false);
+                var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
+                if (plan.FallBackToSingleTurn) // R10
+                {
+                    var fr = await executor.RunSingleTurnFallbackAsync(run, ctx, cts.Token).ConfigureAwait(false);
+                    if (fr.Cancelled)
+                    {
+                        cancelled = true;
+                        await SafeFail(run.Id, fr.Error, cancelled: true).ConfigureAwait(false);
+                    }
+                    else if (!fr.Succeeded)
+                    {
+                        // R5/R10: a failed fallback turn is never presented as a clean Completed run.
+                        failed = true;
+                        await SafeFail(run.Id, fr.Error, cancelled: false).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        if (fr.FirstMessageId != Guid.Empty)
+                            await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, cts.Token).ConfigureAwait(false);
+                        await SafeComplete(run.Id, cts.Token).ConfigureAwait(false); // clean; zero steps recorded
+                    }
+                    await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+                    return;
+                }
+
+                await SafeReplaceSteps(run.Id, plan.Steps, cts.Token).ConfigureAwait(false);
+            }
+            // resume: TryBeginResumeAsync already CAS'd State→Running; the drain loop re-sets Running per
+            // step. The persisted Pending remainder drives the loop — no re-plan, no step wipe (D1).
 
             var replans = 0;
             var unverifiedTruncated = false;
@@ -104,10 +116,13 @@ public sealed class AgentRunOrchestrator
                 {
                     if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
                     {
-                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice on a truncated run
-                        await SafeComplete(run.Id, cts.Token, truncated: true,
+                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                        await SafePause(run.Id, cts.Token,
                             reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
-                        await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+                        // Pause is NOT terminal: deliberately NO SafeEndRun — Live must not settle
+                        // ChatState.Completed or raise TurnCompleted (guardrail 5), and Headless must not
+                        // persist-and-finalize here. The run sits WaitingForInput until TryBeginResumeAsync
+                        // claims it. Release the loop.
                         return;
                     }
 
@@ -323,6 +338,14 @@ public sealed class AgentRunOrchestrator
     {
         try { await _runService.CompleteAsync(runId, truncated, reason, ct).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (complete) failed for {RunId}", runId); }
+    }
+
+    // Budget pause: park the run WaitingForInput (non-terminal). Failure-isolated (guardrail 1) — a
+    // pause bookkeeping error must never corrupt or wedge the run.
+    private async Task SafePause(Guid runId, CancellationToken ct, string reason)
+    {
+        try { await _runService.PauseAsync(runId, reason, ct).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (pause) failed for {RunId}", runId); }
     }
 
     private async Task SafeFail(Guid runId, string? error, bool cancelled)
