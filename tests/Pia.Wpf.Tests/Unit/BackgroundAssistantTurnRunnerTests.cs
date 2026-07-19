@@ -157,12 +157,33 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
-    public async Task McpTool_IsDeniedAtGate_AndNeverRouted()
+    public async Task McpTool_Ungranted_IsGrantGated_AndRouted()
     {
-        // G-2: MCP tools bypass the write-gate (immediate result), so they are denied at the gate for
-        // an unattended run — before routing — even if the model was granted them.
+        // Phase-2 gate: MCP no longer has a pre-route deny. The MCP handler returns a deferred pending
+        // action, so an ungranted MCP call is denied by the grant gate — and IS routed (unlike before).
         var h = new Harness();
-        h.Plugins.IsMcpTool("mcp_search").Returns(true);
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending("mcp_search", () => executed = true)));
+
+        var runner = h.Build([Call("mcp_search")]);
+        var result = await runner.RunAsync(new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.False(executed);
+        var returned = Assert.IsType<string>(h.HandlerResults[0].Returned);
+        Assert.Contains("Denied", returned);
+        await h.Plugins.Received().RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task McpTool_Granted_IsExecuted()
+    {
+        // A scheduled/detached run that explicitly grants an MCP tool name runs it (default-deny otherwise).
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending("mcp_search", () => executed = true)));
 
         var runner = h.Build([Call("mcp_search")]);
         var result = await runner.RunAsync(new BackgroundTurnRequest
@@ -173,10 +194,7 @@ public class BackgroundAssistantTurnRunnerTests
         }, CancellationToken.None);
 
         Assert.True(result.Succeeded);
-        var returned = Assert.IsType<string>(h.HandlerResults[0].Returned);
-        Assert.Contains("Denied", returned);
-        Assert.Contains("MCP", returned);
-        await h.Plugins.DidNotReceive().RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>());
+        Assert.True(executed);
     }
 
     [Fact]

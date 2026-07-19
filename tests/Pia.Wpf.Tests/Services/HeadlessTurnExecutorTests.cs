@@ -76,7 +76,7 @@ public sealed class HeadlessTurnExecutorTests
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
             NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
-            engine, chats, settings, personas, providers, composer, titles, plugins, TokenMapFactory,
+            engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
 
         // Bootstrap: FK parent chat + Planned run (R1 ordering).
@@ -145,7 +145,7 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     [Fact]
-    public async Task BeginRun_StripsMcpTools_AndHonorsProviderOverride_AndGrantedWrites()
+    public async Task BeginRun_OffersMcpTools_HonorsProviderOverride_AndExecutesGrantedWrite()
     {
         var dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -179,7 +179,6 @@ public sealed class HeadlessTurnExecutorTests
 
         var executed = false;
         var plugins = Substitute.For<IPluginService>();
-        plugins.IsMcpTool("mcp_search").Returns(true);
         plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(((object?)null, new PluginToolCall("write_file", Guid.NewGuid(), "files", "d", null, () =>
             {
@@ -204,7 +203,7 @@ public sealed class HeadlessTurnExecutorTests
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
             NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
-            engine, chats, settings, personas, providers, composer, titles, plugins, TokenMapFactory,
+            engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
 
         // Seed workspace root + grants + provider override (the launcher's job).
@@ -223,9 +222,10 @@ public sealed class HeadlessTurnExecutorTests
         var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), NullLogger<AgentRunOrchestrator>.Instance);
         await orchestrator.RunAsync(run, executor, persona, defaultProvider, RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        // MCP tool stripped from the executor's tool list (G-2 capability removal).
+        // MCP is now OFFERED to unattended runs (Phase-2 gate): no longer stripped — instead denied inline
+        // unless granted. Both tools reach the model.
         Assert.NotNull(capturedTools);
-        Assert.DoesNotContain(capturedTools!, t => t.Name == "mcp_search");
+        Assert.Contains(capturedTools!, t => t.Name == "mcp_search");
         Assert.Contains(capturedTools!, t => t.Name == "write_file");
 
         // Provider override honored — the default was never resolved.
@@ -284,7 +284,7 @@ public sealed class HeadlessTurnExecutorTests
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
             NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
-            engine, chats, settings, personas, providers, composer, titles, plugins, TokenMapFactory,
+            engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
 
         // Only write_file granted — delete_file is not.

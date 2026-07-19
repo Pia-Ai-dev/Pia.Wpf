@@ -1111,6 +1111,13 @@ end-to-end (the denial path returns `"Denied: … Do not retry."` — `Backgroun
 
 ### 17.4 Tool consent for unattended writes (the core risk)
 
+> **Amendment (Phase 2, MCP gate landed):** the "disable MCP headless" stopgap below is **removed**.
+> `McpPluginToolHandler` now returns a deferred `PluginToolCall`, so MCP flows through the same gate as a
+> built-in write — an interactive action card, or (unattended) the write-grant gate. Unattended runs are
+> **default-deny**: MCP runs only if the run/job grants that tool's name (the launcher's default grants stay
+> `{write_file, delete_file}`). Interactively, MCP is gated with per-tool "always allow". See §18-adjacent
+> M1/M2 commits on `feature/agent-mcp-gate`.
+
 Interactive runs gate writes via the action-card approval; a headless run has **no one to approve**.
 Decide the headless consent model:
 

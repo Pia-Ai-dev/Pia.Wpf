@@ -26,7 +26,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private readonly IProviderService _providerService;
     private readonly IAssistantPromptComposer _promptComposer;
     private readonly IChatTitleService _titleService;
-    private readonly IPluginService _pluginService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly ILogger<HeadlessTurnExecutor> _logger;
 
@@ -54,7 +53,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         IProviderService providerService,
         IAssistantPromptComposer promptComposer,
         IChatTitleService titleService,
-        IPluginService pluginService,
         Func<ITokenMapService> tokenMapFactory,
         ILogger<HeadlessTurnExecutor> logger)
     {
@@ -65,7 +63,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _providerService = providerService;
         _promptComposer = promptComposer;
         _titleService = titleService;
-        _pluginService = pluginService;
         _tokenMapFactory = tokenMapFactory;
         _logger = logger;
     }
@@ -125,15 +122,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled,
             suggestAgentModeEligible: false);
 
-        // G-2: MCP tools return an immediate result and so bypass the unattended write-gate. Strip them
-        // from the headless tool list (capability removal); the gate in BackgroundAssistantTurnRunner
-        // denies any that slip through. MCP re-enablement for unattended runs is Phase 2 (§17.4).
-        if (_setup.Tools is { Count: > 0 })
-        {
-            var filtered = _setup.Tools.Where(t => !_pluginService.IsMcpTool(t.Name)).ToList();
-            if (filtered.Count != _setup.Tools.Count)
-                _setup = _setup with { Tools = filtered };
-        }
+        // MCP is offered to unattended runs like any other tool now that the Phase-2 gate is in place: an
+        // MCP call returns a deferred PluginToolCall and is denied inline unless its tool name is in the
+        // run's write-grant set (default-deny — the launcher grants only {write_file, delete_file}).
 
         // Initialize the run's token map. NOTE: the ambients are set PER STEP (in RunExchangeStepAsync),
         // not here — an AsyncLocal set after an await inside BeginRunAsync would NOT propagate into the
