@@ -12,4 +12,6 @@ public enum FlowSource
     Reminder,
     ScheduledJob,
     TodoDeadline,
+    // Appended (persisted as int, append-only). Terminal agent-run notification.
+    AgentRun,
 }

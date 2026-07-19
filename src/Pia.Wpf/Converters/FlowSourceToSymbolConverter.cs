@@ -14,6 +14,7 @@ public class FlowSourceToSymbolConverter : IValueConverter
         FlowSource.Reminder => SymbolRegular.Alert24,
         FlowSource.ScheduledJob => SymbolRegular.Search24,
         FlowSource.TodoDeadline => SymbolRegular.TaskListSquareLtr24,
+        FlowSource.AgentRun => SymbolRegular.Bot24,
         _ => SymbolRegular.Info24, // Snackbar / InAppToast
     };
 

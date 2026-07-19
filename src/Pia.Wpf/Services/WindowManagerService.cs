@@ -18,6 +18,9 @@ public partial class WindowManagerService : IWindowManagerService
 
     private readonly IServiceProvider _rootProvider;
     private readonly ILogger<WindowManagerService> _logger;
+    private readonly IAgentRunService _agentRunService;
+    private readonly Services.Flow.IFlowService _flowService;
+    private readonly ILocalizationService _localizationService;
     private readonly Dictionary<WindowMode, ManagedWindow> _windows = new();
     private bool _isShuttingDown;
     private double _lastWindowLeft = double.NaN;
@@ -30,10 +33,18 @@ public partial class WindowManagerService : IWindowManagerService
     public event EventHandler<ManagedWindow>? WindowClosed;
     public event EventHandler? WindowVisibilityChanged;
 
-    public WindowManagerService(IServiceProvider rootProvider, ILogger<WindowManagerService> logger)
+    public WindowManagerService(
+        IServiceProvider rootProvider,
+        ILogger<WindowManagerService> logger,
+        IAgentRunService agentRunService,
+        Services.Flow.IFlowService flowService,
+        ILocalizationService localizationService)
     {
         _rootProvider = rootProvider;
         _logger = logger;
+        _agentRunService = agentRunService;
+        _flowService = flowService;
+        _localizationService = localizationService;
     }
 
     public void ShowWindow(WindowMode mode)
@@ -194,6 +205,64 @@ public partial class WindowManagerService : IWindowManagerService
 
         var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
         navigationService.NavigateTo<AssistantViewModel, Guid>(chatId);
+    }
+
+    public void ShowAgentRun(Guid runId) =>
+        Pia.Helpers.TaskExtensions.SafeFireAndForget(ShowAgentRunAsync(runId), _logger);
+
+    internal async Task ShowAgentRunAsync(Guid runId)
+    {
+        var run = await _agentRunService.GetAsync(runId);
+        if (run is null)
+        {
+            // R17: the run cascaded away (its chat was deleted). Retract the stale durable Flow item and
+            // show a brief toast — never dereference a missing ChatId.
+            _flowService.Retract(runId.ToString());
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher is not null)
+                await dispatcher.InvokeAsync(() => ShowStaleRunToast(runId));
+            return;
+        }
+
+        // Live/completed run: open its hosting chat. The run-progress panel re-embeds via
+        // ChatSession.ActiveRunId when the chat re-activates IF still live (OQ1).
+        var uiDispatcher = Application.Current?.Dispatcher;
+        if (uiDispatcher is not null)
+            await uiDispatcher.InvokeAsync(() => ShowAssistantChat(run.ChatId));
+        else
+            ShowAssistantChat(run.ChatId);
+    }
+
+    private void ShowStaleRunToast(Guid runId)
+    {
+        try
+        {
+            if (TryFindForegroundSnackbarPresenter() is { } presenter)
+                Pia.Helpers.SnackbarActionHelper.ShowSubtleWithAction(
+                    presenter,
+                    _localizationService["Flow_Run_Title"],
+                    _localizationService["Flow_Run_Gone"],
+                    _localizationService["Flow_Action_Dismiss"],
+                    () => { },
+                    Wpf.Ui.Controls.SymbolRegular.Bot24,
+                    null,
+                    TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to show stale-run toast for {RunId}", runId);
+        }
+    }
+
+    private static Wpf.Ui.Controls.SnackbarPresenter? TryFindForegroundSnackbarPresenter()
+    {
+        if (Application.Current is null) return null;
+        foreach (Window w in Application.Current.Windows)
+        {
+            if (w.IsActive && w.FindName("RootSnackbarPresenter") is Wpf.Ui.Controls.SnackbarPresenter presenter)
+                return presenter;
+        }
+        return null;
     }
 
     public void HideWindow(WindowMode mode)

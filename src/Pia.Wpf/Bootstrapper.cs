@@ -441,6 +441,8 @@ public static class Bootstrapper
         services.AddSingleton<IScheduledJobService, ScheduledJobService>();
         services.AddSingleton<IScheduledResearchProviderResolver, ScheduledResearchProviderResolver>();
         services.AddSingleton<IScheduledJobNotificationSurface, ScheduledJobNotificationSurface>();
+        // Terminal agent-run Flow notifications (R18/G3). Eager-resolved at startup (App.xaml.cs).
+        services.AddSingleton<IAgentRunNotificationSurface, AgentRunNotificationSurface>();
         services.AddSingleton<IBackgroundChatNotifier, BackgroundChatNotificationSurface>();
         services.AddSingleton<IReminderToolHandler, ReminderToolHandler>();
         services.AddSingleton<IScheduledJobToolHandler, ScheduledJobToolHandler>();

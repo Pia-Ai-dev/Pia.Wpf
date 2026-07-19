@@ -195,6 +195,7 @@ public sealed class FlowPersistenceStore : IFlowPersistenceStore, IDisposable
         FlowActionKind.OpenTodo => new OpenTodoAction(entityId, label),
         FlowActionKind.ReminderSnooze => new ReminderSnoozeAction(entityId, label),
         FlowActionKind.ReminderDismiss => new ReminderDismissAction(entityId, label),
+        FlowActionKind.OpenRun => new OpenRunAction(entityId, label),
         _ => null, // Invoke is never persisted.
     };
 

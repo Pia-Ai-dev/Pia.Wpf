@@ -11,6 +11,8 @@ public enum FlowActionKind
     ReminderSnooze,
     ReminderDismiss,
     Invoke,
+    // Appended (G2) — ordinals are persisted as int, never reorder. Opens an agent run's chat.
+    OpenRun,
 }
 
 /// <summary>
@@ -34,6 +36,14 @@ public sealed record OpenChatAction(Guid ChatId, string Label) : FlowAction(Labe
 {
     public override FlowActionKind Kind => FlowActionKind.OpenChat;
     public override Guid? EntityId => ChatId;
+}
+
+/// <summary>Open the agent run with the given id (via IWindowManagerService.ShowAgentRun). Id-carrying →
+/// re-derivable/durable; a stale run (chat cascaded away) is retracted on open (R17).</summary>
+public sealed record OpenRunAction(Guid RunId, string Label) : FlowAction(Label)
+{
+    public override FlowActionKind Kind => FlowActionKind.OpenRun;
+    public override Guid? EntityId => RunId;
 }
 
 /// <summary>Navigate to the todo board, focusing the given todo.</summary>

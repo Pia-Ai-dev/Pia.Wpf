@@ -145,6 +145,39 @@ public class FlowItemViewModelTests
     }
 
     [Fact]
+    public void ExecuteAction_OpenRun_ShowsAgentRun_ThenRetractsByKey()
+    {
+        var flow = Substitute.For<IFlowService>();
+        var windowManager = Substitute.For<IWindowManagerService>();
+        var vm = new FlowItemViewModel(
+            flow,
+            Substitute.For<IReminderService>(),
+            windowManager,
+            Substitute.For<INavigationService>(),
+            Substitute.For<ILocalizationService>(),
+            NullLogger<FlowItemViewModel>.Instance);
+
+        var runId = Guid.NewGuid();
+        vm.Bind(new FlowItem
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = DateTimeOffset.UtcNow,
+            Severity = FlowSeverity.Success,
+            Source = FlowSource.AgentRun,
+            Title = "Agent run",
+            Body = "",
+            DedupKey = runId.ToString(),
+            Lifetime = FlowLifetime.Persistent,
+            Action = new OpenRunAction(runId, "Open run"),
+        });
+
+        vm.ExecuteActionCommand.Execute(null);
+
+        windowManager.Received(1).ShowAgentRun(runId);
+        flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
+    }
+
+    [Fact]
     public async Task SnoozeCommand_SnoozesReminderThenDismissesCard()
     {
         var reminderId = Guid.NewGuid();

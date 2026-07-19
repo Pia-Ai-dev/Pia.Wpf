@@ -177,6 +177,10 @@ public partial class FlowItemViewModel : ObservableObject
                     _windowManager.ShowAssistantChat(chat.ChatId);
                     RetractByKey();
                     break;
+                case OpenRunAction run:
+                    _windowManager.ShowAgentRun(run.RunId);
+                    RetractByKey();
+                    break;
                 case OpenTodoAction:
                     NavigateToTodoBoard();
                     _flow.MarkRead(_item.Id); // the deadline auto-retracts when the todo is completed/out of window

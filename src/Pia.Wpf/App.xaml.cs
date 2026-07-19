@@ -139,6 +139,9 @@ public partial class App : Application
         // route correctly when clicked.
         _ = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledJobNotificationSurface>();
 
+        // Attach the agent-run notification surface eagerly so it subscribes to RunChanged at startup.
+        _ = Bootstrapper.ServiceProvider.GetRequiredService<IAgentRunNotificationSurface>();
+
         // Load persisted durable Flow items before the pollers run (the todo poller re-validates against them).
         var flowService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.IFlowService>();
         await flowService.LoadAsync();
