@@ -253,6 +253,49 @@ public partial class AssistantSettingsViewModel : ObservableObject
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // Scheduled/headless-run budget knobs (§17.5) — the caps an unattended run (a "Run in background"
+    // detach or a scheduled AgentTask job) stops at. Separate envelope from the interactive Agent* knobs
+    // (no user is watching). Clamped on the same RunProfile bounds + persisted. Defaults = RunProfile.Scheduled.
+    [ObservableProperty]
+    private int _scheduledMaxSteps = 24;
+
+    [ObservableProperty]
+    private int _scheduledMaxReplans = 2;
+
+    [ObservableProperty]
+    private int _scheduledWallClockMinutes = 45;
+
+    public string ScheduledMaxStepsDisplay => _localizationService.Format("Settings_Scheduled_MaxSteps_Value", ScheduledMaxSteps);
+    public string ScheduledMaxReplansDisplay => _localizationService.Format("Settings_Scheduled_MaxReplans_Value", ScheduledMaxReplans);
+    public string ScheduledWallClockDisplay => _localizationService.Format("Settings_Scheduled_WallClock_Value", ScheduledWallClockMinutes);
+
+    partial void OnScheduledMaxStepsChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, RunProfile.MinSteps, RunProfile.MaxStepsCap);
+        if (clamped != value) { ScheduledMaxSteps = clamped; return; }
+        OnPropertyChanged(nameof(ScheduledMaxStepsDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnScheduledMaxReplansChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, RunProfile.MinReplans, RunProfile.MaxReplansCap);
+        if (clamped != value) { ScheduledMaxReplans = clamped; return; }
+        OnPropertyChanged(nameof(ScheduledMaxReplansDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnScheduledWallClockMinutesChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
+        if (clamped != value) { ScheduledWallClockMinutes = clamped; return; }
+        OnPropertyChanged(nameof(ScheduledWallClockDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -275,6 +318,10 @@ public partial class AssistantSettingsViewModel : ObservableObject
         AgentMaxReplans = Math.Clamp(settings.AgentMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
         AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
 
+        ScheduledMaxSteps = Math.Clamp(settings.ScheduledMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
+        ScheduledMaxReplans = Math.Clamp(settings.ScheduledMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
+        ScheduledWallClockMinutes = Math.Clamp(settings.ScheduledWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
+
         await MeetingVm.InitializeAsync();
 
         _isLoading = false;
@@ -284,6 +331,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AgentMaxStepsDisplay));
         OnPropertyChanged(nameof(AgentMaxReplansDisplay));
         OnPropertyChanged(nameof(AgentWallClockDisplay));
+        OnPropertyChanged(nameof(ScheduledMaxStepsDisplay));
+        OnPropertyChanged(nameof(ScheduledMaxReplansDisplay));
+        OnPropertyChanged(nameof(ScheduledWallClockDisplay));
     }
 
     [RelayCommand]
@@ -414,6 +464,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.AgentMaxSteps = AgentMaxSteps;
         settings.AgentMaxReplans = AgentMaxReplans;
         settings.AgentWallClockMinutes = AgentWallClockMinutes;
+        settings.ScheduledMaxSteps = ScheduledMaxSteps;
+        settings.ScheduledMaxReplans = ScheduledMaxReplans;
+        settings.ScheduledWallClockMinutes = ScheduledWallClockMinutes;
         await _settingsService.SaveSettingsAsync(settings);
     }
 }

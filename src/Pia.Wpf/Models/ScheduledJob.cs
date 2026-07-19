@@ -1,6 +1,8 @@
 namespace Pia.Models;
 
-public enum ScheduledJobKind { Research }
+// Persisted as int — append-only, never reorder. AgentTask (1) runs the job's Query as an unattended
+// headless Planned agent run via IHeadlessRunLauncher (§17.1); Research (0) keeps the existing runner.
+public enum ScheduledJobKind { Research, AgentTask }
 public enum ScheduledJobStatus { Active, Disabled, Failed }
 
 public class ScheduledJob

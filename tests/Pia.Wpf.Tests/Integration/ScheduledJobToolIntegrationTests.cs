@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
@@ -66,6 +67,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
+            Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // Create a job via the tool handler so the path exercises the actual JSON arg parsing.

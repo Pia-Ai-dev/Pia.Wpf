@@ -22,6 +22,9 @@ public class ScheduledJobBackgroundService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IScheduledResearchProviderResolver _providers;
     private readonly IScheduledJobNotificationSurface _notifications;
+    private readonly IHeadlessRunLauncher _launcher;
+    private readonly ISettingsService _settingsService;
+    private readonly IAgentRunService _runService;
     private readonly ILogger<ScheduledJobBackgroundService> _logger;
 
     /// <summary>
@@ -43,12 +46,18 @@ public class ScheduledJobBackgroundService : BackgroundService
         IServiceScopeFactory scopeFactory,
         IScheduledResearchProviderResolver providers,
         IScheduledJobNotificationSurface notifications,
+        IHeadlessRunLauncher launcher,
+        ISettingsService settingsService,
+        IAgentRunService runService,
         ILogger<ScheduledJobBackgroundService> logger)
     {
         _jobs = jobs;
         _scopeFactory = scopeFactory;
         _providers = providers;
         _notifications = notifications;
+        _launcher = launcher;
+        _settingsService = settingsService;
+        _runService = runService;
         _logger = logger;
     }
 
@@ -93,7 +102,7 @@ public class ScheduledJobBackgroundService : BackgroundService
 
         if (lateBy <= _gracePeriod)
         {
-            await ExecuteResearchAsync(job, ct);
+            await ExecuteJobAsync(job, ct);
             return;
         }
 
@@ -134,7 +143,89 @@ public class ScheduledJobBackgroundService : BackgroundService
             return;
         }
 
-        await ExecuteResearchAsync(job, ct);
+        await ExecuteJobAsync(job, ct);
+    }
+
+    /// <summary>
+    /// Dispatch by kind (§17.1): an <see cref="ScheduledJobKind.AgentTask"/> job runs as an unattended
+    /// headless Planned agent run via the launcher; a <see cref="ScheduledJobKind.Research"/> job keeps
+    /// the existing background-turn runner. The missed-run gate above is kind-agnostic.
+    /// </summary>
+    private Task ExecuteJobAsync(ScheduledJob job, CancellationToken ct) =>
+        job.Kind == ScheduledJobKind.AgentTask ? ExecuteAgentTaskAsync(job, ct) : ExecuteResearchAsync(job, ct);
+
+    /// <summary>
+    /// Runs a scheduled AgentTask as a headless Planned agent run. Mirrors <see cref="ExecuteResearchAsync"/>'s
+    /// <c>_runLock</c> serialization + provider-resolve + success/failure bookkeeping, but swaps the runner
+    /// for <see cref="IHeadlessRunLauncher"/> and derives success from the terminal run state. The job's
+    /// GrantedTools flow to the run's write-consent set (§17.4); the launcher's slot cap still bounds
+    /// overall concurrency.
+    /// </summary>
+    private async Task ExecuteAgentTaskAsync(ScheduledJob job, CancellationToken ct)
+    {
+        await _runLock.WaitAsync(ct);
+        try
+        {
+            var provider = await _providers.ResolveAsync(job.ProviderId);
+            if (provider is null)
+            {
+                const string reason = "NoProvider";
+                await _jobs.MarkRunFailedAsync(job.Id, reason);
+                _notifications.NotifyFailure(job, reason);
+                _logger.LogWarning("Scheduled agent job {Id} failed: no provider available", job.Id);
+                return;
+            }
+
+            var settings = await _settingsService.GetSettingsAsync();
+            var budget = RunProfile.FromBudget(
+                settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
+
+            HeadlessRunHandle handle;
+            try
+            {
+                handle = await _launcher.LaunchAsync(new HeadlessRunRequest(
+                    Goal: job.Query,
+                    Trigger: AgentRunTrigger.Schedule,
+                    TriggerRef: job.Id,
+                    OwnerDeviceId: job.OwnerDeviceId,
+                    ProviderId: job.ProviderId,
+                    GrantedWrites: job.GrantedTools,
+                    Budget: budget), ct);
+
+                // Serialized by _runLock; await the run's terminal settle to bookkeep like Research.
+                await handle.Completion;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _jobs.MarkRunFailedAsync(job.Id, ex.Message);
+                _notifications.NotifyFailure(job, ex.Message);
+                _logger.LogWarning(ex, "Scheduled agent job {Id} run threw", job.Id);
+                return;
+            }
+
+            var run = await _runService.GetAsync(handle.RunId, ct);
+            if (run?.State == AgentRunState.Completed)
+            {
+                await _jobs.MarkRunCompleteAsync(job.Id, handle.ChatId);
+                _notifications.NotifySuccess(job, handle.ChatId, job.Name);
+                _logger.LogInformation("Scheduled agent job {Id} run completed; chat {ChatId}", job.Id, handle.ChatId);
+            }
+            else
+            {
+                var reason = run?.State.ToString() ?? "Unknown";
+                await _jobs.MarkRunFailedAsync(job.Id, reason);
+                _notifications.NotifyFailure(job, reason);
+                _logger.LogWarning("Scheduled agent job {Id} run did not complete: {State}", job.Id, reason);
+            }
+        }
+        finally
+        {
+            _runLock.Release();
+        }
     }
 
     private async Task ExecuteResearchAsync(ScheduledJob job, CancellationToken ct)

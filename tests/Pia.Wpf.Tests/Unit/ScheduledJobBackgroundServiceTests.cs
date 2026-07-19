@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -41,6 +42,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
+            Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -71,6 +73,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
+            Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -95,6 +98,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
+            Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -121,6 +125,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
+            Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -144,6 +149,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
+            Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -170,7 +176,7 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
 
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
@@ -198,7 +204,7 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
 
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
@@ -226,12 +232,89 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
 
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, NullLogger<ScheduledJobBackgroundService>.Instance);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
         Assert.Equal(1, notifications.AskCount); // not 2
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_DispatchesToLauncherWithScheduleProvenanceAndScheduledBudget()
+    {
+        // §17.1-2 / §17.7: an AgentTask job runs as an unattended headless Planned run via the launcher —
+        // NOT the research runner — carrying Schedule provenance, the job's write grants, and the
+        // scheduled budget (RunProfile.Scheduled = 45 min) from settings.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        due.ProviderId = Guid.NewGuid();
+        due.GrantedTools = new List<string> { "write_file" };
+        jobs.SeedDue(due);
+
+        var providers = new FakeProviderResolver(NewProvider());
+        var notifications = new FakeNotificationSurface();
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings()); // ScheduledWallClockMinutes defaults to 45
+
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        HeadlessRunRequest? captured = null;
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Do<HeadlessRunRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, chatId, Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, ChatId = chatId, RunShape = RunShape.Planned, State = AgentRunState.Completed });
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), providers, notifications,
+            launcher, settings, runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        await launcher.Received(1).LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        Assert.NotNull(captured);
+        Assert.Equal(due.Query, captured!.Goal);
+        Assert.Equal(AgentRunTrigger.Schedule, captured.Trigger);
+        Assert.Equal(due.Id, captured.TriggerRef);
+        Assert.Equal(due.OwnerDeviceId, captured.OwnerDeviceId);
+        Assert.Equal(due.ProviderId, captured.ProviderId);
+        Assert.Equal(due.GrantedTools, captured.GrantedWrites);
+        Assert.NotNull(captured.Budget);
+        Assert.Equal(45, captured.Budget!.WallClock.TotalMinutes);
+        // Completed terminal run → job marked complete with the run's chat id + a success notification.
+        Assert.Single(jobs.Completed);
+        Assert.Equal(chatId, jobs.Completed[0].EntryId);
+        Assert.Equal(1, notifications.SuccessCount);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ResearchJob_DoesNotDispatchToLauncher()
+    {
+        // Guard the dispatch fork the other way: a Research job stays on the runner path.
+        var jobs = new FakeJobService();
+        jobs.SeedDue(NewDueJob()); // Kind defaults to Research
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var scopeFactory = new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner));
+        var providers = new FakeProviderResolver(NewProvider());
+        var notifications = new FakeNotificationSurface();
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, scopeFactory, providers, notifications,
+            launcher, Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.Equal(1, runner.RunCount);
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
     }
 
     private sealed class FakeJobService : IScheduledJobService

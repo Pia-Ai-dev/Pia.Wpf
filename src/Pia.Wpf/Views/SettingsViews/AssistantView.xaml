@@ -406,6 +406,48 @@
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          TextWrapping="Wrap" Margin="0,2,0,0"/>
             </StackPanel>
+
+            <!-- Scheduled / background-run budget (§17.5): the separate envelope an unattended run stops at. -->
+            <TextBlock Text="{loc:Str Settings_Scheduled_Section_Header}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,12,0,0"/>
+            <TextBlock Text="{loc:Str Settings_Scheduled_Section_Description}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,16"/>
+
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Scheduled_MaxSteps_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="1" Maximum="48"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding ScheduledMaxSteps, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding ScheduledMaxStepsDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Scheduled_WallClock_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="1" Maximum="120"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding ScheduledWallClockMinutes, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding ScheduledWallClockDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Scheduled_MaxReplans_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="0" Maximum="5"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding ScheduledMaxReplans, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding ScheduledMaxReplansDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
