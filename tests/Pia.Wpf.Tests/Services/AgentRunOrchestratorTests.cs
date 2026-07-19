@@ -153,8 +153,8 @@ public sealed class AgentRunOrchestratorTests
             return await Runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: goal));
         }
 
-        public AgentRunOrchestrator BuildOrchestrator(IAgentPlanner planner) =>
-            new(Runs, planner, NullLogger<AgentRunOrchestrator>.Instance);
+        public AgentRunOrchestrator BuildOrchestrator(IAgentPlanner planner, IAgentVerifier? verifier = null) =>
+            new(Runs, planner, verifier ?? new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
 
         public void Dispose()
         {

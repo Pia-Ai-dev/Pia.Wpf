@@ -101,7 +101,7 @@ public sealed class HeadlessTurnExecutorTests
             new() { Ordinal = 1, Title = "B", Intent = "ib", Status = AgentStepStatus.Pending },
             new() { Ordinal = 2, Title = "C", Intent = "ic", Status = AgentStepStatus.Pending },
         });
-        var orchestrator = new AgentRunOrchestrator(runs, planner, NullLogger<AgentRunOrchestrator>.Instance);
+        var orchestrator = new AgentRunOrchestrator(runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
 
         await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, TestContext.Current.CancellationToken);
 
@@ -219,7 +219,7 @@ public sealed class HeadlessTurnExecutorTests
         }, TestContext.Current.CancellationToken);
         var run = await runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "goal"), TestContext.Current.CancellationToken);
 
-        var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), NullLogger<AgentRunOrchestrator>.Instance);
+        var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
         await orchestrator.RunAsync(run, executor, persona, defaultProvider, RunProfile.Interactive, TestContext.Current.CancellationToken);
 
         // MCP is now OFFERED to unattended runs (Phase-2 gate): no longer stripped — instead denied inline
@@ -300,7 +300,7 @@ public sealed class HeadlessTurnExecutorTests
         }, TestContext.Current.CancellationToken);
         var run = await runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "goal"), TestContext.Current.CancellationToken);
 
-        var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), NullLogger<AgentRunOrchestrator>.Instance);
+        var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
         await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, TestContext.Current.CancellationToken);
 
         Assert.False(executed);

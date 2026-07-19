@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -16,15 +17,18 @@ public sealed class AgentRunOrchestrator
 {
     private readonly IAgentRunService _runService;
     private readonly IAgentPlanner _planner;
+    private readonly IAgentVerifier _verifier;
     private readonly ILogger<AgentRunOrchestrator> _logger;
 
     public AgentRunOrchestrator(
         IAgentRunService runService,
         IAgentPlanner planner,
+        IAgentVerifier verifier,
         ILogger<AgentRunOrchestrator> logger)
     {
         _runService = runService;
         _planner = planner;
+        _verifier = verifier;
         _logger = logger;
     }
 
@@ -87,75 +91,117 @@ public sealed class AgentRunOrchestrator
             await SafeReplaceSteps(run.Id, plan.Steps, cts.Token).ConfigureAwait(false);
 
             var replans = 0;
-            // R2: re-query the persisted Pending list each iteration — a foreach over a snapshot
-            // would never run replanned steps.
-            while (await _runService.NextPendingStepAsync(run.Id, cts.Token).ConfigureAwait(false) is { } step)
+            var unverifiedTruncated = false;
+
+            // Outer verify → replan → re-drain loop. Verify feeds the SAME `replans`/profile.MaxReplans
+            // budget as step-failure replan (guardrail 3: no replan storm — a run that keeps failing
+            // verify terminates as Completed+truncated "unverified", never loops forever).
+            while (true)
             {
-                if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
+                // R2: re-query the persisted Pending list each iteration — a foreach over a snapshot
+                // would never run replanned steps.
+                while (await _runService.NextPendingStepAsync(run.Id, cts.Token).ConfigureAwait(false) is { } step)
                 {
-                    await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice on a truncated run
-                    await SafeComplete(run.Id, cts.Token, truncated: true,
-                        reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
-                    await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
-                    return;
-                }
-
-                await SafeSetState(run.Id, AgentRunState.Running, cts.Token).ConfigureAwait(false);
-                await SafeSetStepStatus(step.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
-
-                var r = await executor.ExecuteStepAsync(run, step, ctx, cts.Token).ConfigureAwait(false); // critical path
-                await SafeRecordStep(step.Id, r, cts.Token).ConfigureAwait(false); // R16 ledger + R3 slice
-                ctx.RecordStep(step, r);
-                // Track only valid (non-empty) message Ids so a step that produced no transcript
-                // (e.g. a cancelled step) never poisons the run-level range with Guid.Empty.
-                if (r.FirstMessageId != Guid.Empty) runFirst ??= r.FirstMessageId;
-                if (r.LastMessageId != Guid.Empty) runLast = r.LastMessageId;
-
-                if (r.Cancelled)
-                {
-                    cancelled = true;
-                    await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                    await SafeFail(run.Id, r.Error, cancelled: true).ConfigureAwait(false);
-                    break;
-                }
-
-                if (!r.Succeeded)
-                {
-                    if (replans++ < profile.MaxReplans)
+                    if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
                     {
-                        var revised = await _planner.ReplanAsync(ctx, r.Error, persona, provider, cts.Token).ConfigureAwait(false);
-                        if (revised.FallBackToSingleTurn)
+                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice on a truncated run
+                        await SafeComplete(run.Id, cts.Token, truncated: true,
+                            reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
+                        await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+                        return;
+                    }
+
+                    await SafeSetState(run.Id, AgentRunState.Running, cts.Token).ConfigureAwait(false);
+                    await SafeSetStepStatus(step.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
+
+                    var r = await executor.ExecuteStepAsync(run, step, ctx, cts.Token).ConfigureAwait(false); // critical path
+                    await SafeRecordStep(step.Id, r, cts.Token).ConfigureAwait(false); // R16 ledger + R3 slice
+                    ctx.RecordStep(step, r);
+                    // Track only valid (non-empty) message Ids so a step that produced no transcript
+                    // (e.g. a cancelled step) never poisons the run-level range with Guid.Empty.
+                    if (r.FirstMessageId != Guid.Empty) runFirst ??= r.FirstMessageId;
+                    if (r.LastMessageId != Guid.Empty) runLast = r.LastMessageId;
+
+                    if (r.Cancelled)
+                    {
+                        cancelled = true;
+                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                        await SafeFail(run.Id, r.Error, cancelled: true).ConfigureAwait(false);
+                        break;
+                    }
+
+                    if (!r.Succeeded)
+                    {
+                        if (replans++ < profile.MaxReplans)
                         {
-                            failed = true;
-                            await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                            await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
-                            break;
+                            var revised = await _planner.ReplanAsync(ctx, r.Error, persona, provider, cts.Token).ConfigureAwait(false);
+                            if (revised.FallBackToSingleTurn)
+                            {
+                                failed = true;
+                                await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                                await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
+                                break;
+                            }
+                            // Keep the Done steps (immutable, original Ids preserved), append the revised
+                            // steps continuing the ordinal sequence; ReplaceSteps writes ordinals verbatim.
+                            var doneSteps = await KeepDoneAsync(run.Id, cts.Token).ConfigureAwait(false);
+                            var offset = doneSteps.Count;
+                            var revisedSteps = revised.Steps.Select((s, i) => { s.Ordinal = offset + i; return s; });
+                            await SafeReplaceSteps(run.Id, doneSteps.Concat(revisedSteps).ToList(), cts.Token).ConfigureAwait(false);
+                            continue; // re-query picks up the revised steps (R2)
                         }
-                        // Keep the Done steps (immutable, original Ids preserved), append the revised
-                        // steps continuing the ordinal sequence; ReplaceSteps writes ordinals verbatim.
+
+                        failed = true;
+                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                        await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
+                        break;
+                    }
+                }
+
+                // Cancel/step-fail already wrote their terminal Fail inside the loop — skip verify and
+                // leave the outer loop; the terminal-settle block's else-branch runs EndRun only.
+                if (cancelled || failed)
+                    break;
+
+                // Clean drain → the terminal critic pass (both executors; executor-agnostic like the planner).
+                await SafeSetState(run.Id, AgentRunState.Verifying, cts.Token).ConfigureAwait(false);
+                var verdict = await SafeVerify(run.Id, ctx, persona, provider, cts.Token).ConfigureAwait(false);
+                await SafeAddUsage(run.Id, verdict.Usage, cts.Token).ConfigureAwait(false); // run-level (stepId: null)
+
+                if (verdict.Passed)
+                    break; // accept → clean Complete below
+
+                // Verify FAIL → feed the SHARED replan budget (guardrail 3).
+                if (replans++ < profile.MaxReplans)
+                {
+                    var revised = await _planner.ReplanAsync(ctx, BuildVerifyFailureReason(verdict), persona, provider, cts.Token).ConfigureAwait(false);
+                    if (!revised.FallBackToSingleTurn)
+                    {
                         var doneSteps = await KeepDoneAsync(run.Id, cts.Token).ConfigureAwait(false);
                         var offset = doneSteps.Count;
                         var revisedSteps = revised.Steps.Select((s, i) => { s.Ordinal = offset + i; return s; });
                         await SafeReplaceSteps(run.Id, doneSteps.Concat(revisedSteps).ToList(), cts.Token).ConfigureAwait(false);
-                        continue; // re-query picks up the revised steps (R2)
+                        continue; // re-drain: re-enter the outer loop; NextPendingStepAsync picks up revised steps
                     }
-
-                    failed = true;
-                    await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                    await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
-                    break;
+                    // replan itself degraded to Fallback → settle unverified, NOT Failed (steps genuinely ran)
                 }
+
+                unverifiedTruncated = true; // replans exhausted OR replan degraded
+                break;
             }
 
+            // ---- single terminal settle (SafeEndRun → SafeComplete, exactly once, every path) ----
             if (!cancelled && !failed)
             {
                 await PinRange().ConfigureAwait(false);
-                await SafeSetState(run.Id, AgentRunState.Verifying, cts.Token).ConfigureAwait(false); // no-op pass-through (R12)
                 // §13.2 order: END the run (Live: settle terminal state; Headless: persist the chat) BEFORE
                 // marking it Completed — so no crash / RunChanged consumer observes a Completed run whose chat
-                // is not yet persisted (headless persists only in EndRunAsync).
+                // is not yet persisted (headless persists only in EndRunAsync). A verify-unverified run
+                // settles Completed+truncated reason "unverified".
                 await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
-                await SafeComplete(run.Id, cts.Token).ConfigureAwait(false);
+                await SafeComplete(run.Id, cts.Token,
+                    truncated: unverifiedTruncated,
+                    reason: unverifiedTruncated ? "unverified" : null).ConfigureAwait(false);
             }
             else
             {
@@ -191,6 +237,44 @@ public sealed class AgentRunOrchestrator
         for (var i = 0; i < done.Count; i++)
             done[i].Ordinal = i;
         return done;
+    }
+
+    // Verify is failure-isolated: a crash/timeout degrades to ACCEPT (guardrail 1) so it never wedges
+    // or fails an otherwise-successful run. EXCEPTION: a genuine run cancel (ct actually cancelled)
+    // must PROPAGATE to the outer catch(OperationCanceledException) → SafeFail(cancelled) — not be
+    // swallowed into an accept-then-Complete.
+    private async Task<VerdictResult> SafeVerify(Guid runId, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+    {
+        try
+        {
+            return await _verifier.VerifyAsync(ctx, persona, provider, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // genuine run cancellation — propagate
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Verify degraded to accept for run {RunId}", runId);
+            return VerdictResult.Accept;
+        }
+    }
+
+    // Run-level verify usage accrual (stepId: null) — updates ledger totals + wall-clock, raises RunChanged.
+    // Skips a null usage so the FakeVerifier/no-usage path adds no spurious ledger write.
+    private async Task SafeAddUsage(Guid runId, UsageDetails? usage, CancellationToken ct)
+    {
+        if (usage is null) return;
+        try { await _runService.AddUsageAsync(runId, null, usage, ct).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (verify usage) failed for {RunId}", runId); }
+    }
+
+    private static string BuildVerifyFailureReason(VerdictResult v)
+    {
+        var reason = string.IsNullOrWhiteSpace(v.Reason) ? "The run did not satisfy the goal." : v.Reason!;
+        if (v.Missing.Count > 0)
+            reason += " Missing: " + string.Join("; ", v.Missing);
+        return reason; // fed into ReplanAsync's prompt — never logged (sensitive)
     }
 
     // ---- Failure-isolated bookkeeping (§12.5/§13.10): never fail the run ----

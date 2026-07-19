@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.Services;
 using Pia.ViewModels.Models;
 using Xunit;
 
@@ -188,7 +189,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         session.TurnCompleted += (_, e) => { completed = e; Interlocked.Increment(ref completedCount); };
 
         var live = BuildLiveExecutor(session, _ => false);
-        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, NullLogger<AgentRunOrchestrator>.Instance);
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
 
         await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
 
@@ -219,7 +220,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         session.TurnCompleted += (_, e) => completed = e;
 
         var live = BuildLiveExecutor(session, _ => false); // background chat → producedContent settles Completed
-        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, NullLogger<AgentRunOrchestrator>.Instance);
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
 
         await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
 
@@ -251,7 +252,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         session.TurnCompleted += (_, e) => completed = e;
 
         var live = BuildLiveExecutor(session, _ => false);
-        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, NullLogger<AgentRunOrchestrator>.Instance);
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
 
         await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
 

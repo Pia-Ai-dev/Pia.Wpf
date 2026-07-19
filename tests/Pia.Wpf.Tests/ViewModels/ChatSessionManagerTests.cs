@@ -47,6 +47,7 @@ public class ChatSessionManagerTests
 
         var orchestrator = new Pia.Services.AgentRunOrchestrator(
             _runService, Substitute.For<Pia.Services.IAgentPlanner>(),
+            new Pia.Tests.Services.FakeVerifier(),
             NullLogger<Pia.Services.AgentRunOrchestrator>.Instance);
 
         return new ChatSessionManager(
