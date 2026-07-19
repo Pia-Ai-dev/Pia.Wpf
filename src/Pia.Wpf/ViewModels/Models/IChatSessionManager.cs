@@ -47,6 +47,12 @@ public interface IChatSessionManager
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
         bool planned = false);
 
+    /// <summary>
+    /// Detach the goal as an unattended headless Planned run (no live session). Additive to
+    /// <see cref="StartTurnAsync"/> — the interactive path is untouched (G-6).
+    /// </summary>
+    Task StartBackgroundRunAsync(string goal);
+
     /// <summary>Live state for <paramref name="chatId"/>, or <see cref="ChatState.Idle"/> if not live.</summary>
     ChatState GetState(Guid chatId);
 

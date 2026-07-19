@@ -154,6 +154,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public ObservableCollection<Persona> AvailablePersonas { get; } = new();
 
     public IAsyncRelayCommand SendMessageCommand { get; }
+    public IAsyncRelayCommand RunInBackgroundCommand { get; }
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelStreamingCommand { get; }
     public IRelayCommand ClearConversationCommand { get; }
@@ -233,6 +234,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _dialogService = dialogService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
+        RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteSendMessage);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
         CancelStreamingCommand = new RelayCommand(ExecuteCancelStreaming);
         ClearConversationCommand = new RelayCommand(ExecuteClearConversation);
@@ -547,6 +549,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
+            RunInBackgroundCommand.NotifyCanExecuteChanged();
         }
 
         if (e.PropertyName is nameof(IsStreaming) or nameof(IsVoiceModeActive))
@@ -640,6 +643,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await _chatSessionManager.StartTurnAsync(session, userText, attachment, planned: planned);
     }
 
+    /// <summary>
+    /// "Run in background": detach the current input as an unattended headless Planned run instead of
+    /// starting a live turn. Additive to <see cref="ExecuteSendMessage"/> — no live session is created
+    /// (G-6); the run notifies via Flow on completion.
+    /// </summary>
+    private async Task ExecuteRunInBackground()
+    {
+        var userText = InputText.Trim();
+        if (string.IsNullOrWhiteSpace(userText)) return;
+        InputText = string.Empty;
+        await _chatSessionManager.StartBackgroundRunAsync(userText);
+    }
+
     private async Task ExecuteToggleRecording()
     {
         var transcription = await _voiceInputService.CaptureVoiceInputAsync();
@@ -649,6 +665,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 ? transcription
                 : $"{InputText.TrimEnd()} {transcription}";
             SendMessageCommand.NotifyCanExecuteChanged();
+            RunInBackgroundCommand.NotifyCanExecuteChanged();
         }
     }
 

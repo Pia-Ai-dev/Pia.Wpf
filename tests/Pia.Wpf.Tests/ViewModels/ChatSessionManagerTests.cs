@@ -28,6 +28,8 @@ public class ChatSessionManagerTests
     private readonly IFilesToolHandler _files = Substitute.For<IFilesToolHandler>();
     private readonly IAgentRunService _runService = Substitute.For<IAgentRunService>();
     private readonly IProviderCapabilityService _capability = Substitute.For<IProviderCapabilityService>();
+    private readonly IHeadlessRunLauncher _headlessLauncher = Substitute.For<IHeadlessRunLauncher>();
+    private readonly IWindowManagerService _windowManager = Substitute.For<IWindowManagerService>();
 
     public ChatSessionManagerTests()
     {
@@ -52,7 +54,8 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability);
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
+            _headlessLauncher, _windowManager);
     }
 
     [Fact]

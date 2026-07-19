@@ -29,6 +29,12 @@ public partial class WindowManagerService : IWindowManagerService
 
     public bool HasOpenWindows => _windows.Values.Any(w => w.Window.Visibility == Visibility.Visible);
 
+    /// <inheritdoc />
+    public Guid? ActiveAssistantChatId { get; private set; }
+
+    /// <inheritdoc />
+    public void SetActiveAssistantChatId(Guid? chatId) => ActiveAssistantChatId = chatId;
+
     public event EventHandler<ManagedWindow>? WindowOpened;
     public event EventHandler<ManagedWindow>? WindowClosed;
     public event EventHandler? WindowVisibilityChanged;

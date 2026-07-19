@@ -78,8 +78,11 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         if (run is null || run.RunShape != RunShape.Planned)
             return; // Planned-only
 
-        // R18: a foreground run publishes nothing — the embedded panel already shows terminal state.
-        if (_windowManager.IsInForeground(WindowMode.Assistant))
+        // R18: suppress ONLY the chat the user is actively watching in the foreground — its embedded
+        // run-progress panel already reflects terminal state. A headless run's chat is never the active
+        // session, so it always publishes; this also fixes the interactive background-chat silent-drop.
+        if (_windowManager.IsInForeground(WindowMode.Assistant)
+            && _windowManager.ActiveAssistantChatId == run.ChatId)
             return;
 
         var completed = state == AgentRunState.Completed;

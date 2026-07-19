@@ -29,4 +29,14 @@ public interface IWindowManagerService
     bool IsVisible(WindowMode mode);
     bool IsInForeground(WindowMode mode);
     bool CanDismissWithHotkey(WindowMode mode);
+
+    /// <summary>
+    /// Chat id of the currently-active assistant session (null when none). Set by
+    /// <c>ChatSessionManager.SetActive</c>. Lets the terminal-run Flow surface suppress a notification
+    /// ONLY for the exact chat the user is watching in the foreground (R18) — a headless run's chat is
+    /// never the active session, so it always publishes.
+    /// </summary>
+    Guid? ActiveAssistantChatId { get; }
+
+    void SetActiveAssistantChatId(Guid? chatId);
 }

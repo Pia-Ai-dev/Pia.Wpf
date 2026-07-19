@@ -479,6 +479,9 @@ public static class Bootstrapper
         services.AddTransient<IAgentPlanner, AgentPlanner>();
         services.AddTransient<AgentRunOrchestrator>();
         services.AddTransient<HeadlessTurnExecutor>();
+        // Headless "Run in background" / scheduled-AgentTask launcher (§17.1/17.5). Singleton: owns the
+        // shared concurrency cap, shutdown token, and per-run workspace cleanup map.
+        services.AddSingleton<IHeadlessRunLauncher, HeadlessRunLauncher>();
         services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
         services.AddSingleton<IMarkdownExportService, MarkdownExportService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();

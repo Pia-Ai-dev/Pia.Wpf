@@ -69,15 +69,46 @@ public sealed class AgentRunNotificationSurfaceTests
     }
 
     [Fact]
-    public async Task Foreground_PublishesNothing()
+    public async Task Foreground_ActiveChat_PublishesNothing()
     {
+        // R18: suppress ONLY the chat the user is actively watching in the foreground.
         var runId = Guid.NewGuid();
-        SetupRun(runId, RunShape.Planned);
+        var chatId = SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
+        _windows.ActiveAssistantChatId.Returns(chatId);
 
         await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
 
         _flow.DidNotReceive().Publish(Arg.Any<FlowItemDraft>());
+    }
+
+    [Fact]
+    public async Task Foreground_NonActiveChat_Publishes()
+    {
+        // R18: a foreground window watching a DIFFERENT chat (e.g. a headless run's chat is never
+        // the active session) still publishes — this fixes the interactive background-chat silent-drop.
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(true);
+        _windows.ActiveAssistantChatId.Returns(Guid.NewGuid()); // some other chat
+
+        await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
+
+        _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d => d.Severity == FlowSeverity.Success));
+    }
+
+    [Fact]
+    public async Task Foreground_NoActiveChat_Publishes()
+    {
+        // A headless run reaching terminal state while the window is up but no chat is active.
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(true);
+        _windows.ActiveAssistantChatId.Returns((Guid?)null);
+
+        await Create().HandleTerminalAsync(runId, AgentRunState.Completed);
+
+        _flow.Received(1).Publish(Arg.Any<FlowItemDraft>());
     }
 
     [Fact]

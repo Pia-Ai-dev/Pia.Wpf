@@ -43,6 +43,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly AgentRunOrchestrator _agentRunOrchestrator;
     private readonly IAgentRunService _agentRunService;
     private readonly IProviderCapabilityService _providerCapabilityService;
+    private readonly IHeadlessRunLauncher _headlessRunLauncher;
+    private readonly IWindowManagerService _windowManager;
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -93,7 +95,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IFilesToolHandler filesToolHandler,
         AgentRunOrchestrator agentRunOrchestrator,
         IAgentRunService agentRunService,
-        IProviderCapabilityService providerCapabilityService)
+        IProviderCapabilityService providerCapabilityService,
+        IHeadlessRunLauncher headlessRunLauncher,
+        IWindowManagerService windowManager)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -115,6 +119,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _agentRunOrchestrator = agentRunOrchestrator;
         _agentRunService = agentRunService;
         _providerCapabilityService = providerCapabilityService;
+        _headlessRunLauncher = headlessRunLauncher;
+        _windowManager = windowManager;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
     }
@@ -208,6 +214,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         if (ReferenceEquals(session, ActiveSession)) return;
         ActiveSession = session;
         session.LastActivatedSequence = ++_activationCounter;
+
+        // R18: publish the active chat id so the terminal-run Flow surface suppresses a notification only
+        // for the chat the user is actively watching (a headless run's chat is never active → always notifies).
+        _windowManager.SetActiveAssistantChatId(session.Id);
 
         // Clear Completed → Idle on activation: the result is now "read".
         if (session.State == ChatState.Completed)
@@ -737,10 +747,21 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return collapsed.Length <= max ? collapsed : collapsed[..max].TrimEnd() + "…";
     }
 
+    /// <summary>
+    /// Detach <paramref name="goal"/> as an unattended headless Planned run (no live session). Additive
+    /// to <see cref="StartTurnAsync"/> — it never touches the interactive session/CTS/active-run state
+    /// (G-6); the launcher runs it on a fresh DI scope with its own CTS.
+    /// </summary>
+    public Task StartBackgroundRunAsync(string goal) =>
+        _headlessRunLauncher.LaunchAsync(new HeadlessRunRequest(goal, AgentRunTrigger.User));
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+
+        // R18: this window no longer owns an active assistant chat.
+        _windowManager.SetActiveAssistantChatId(null);
 
         // The manager owns session teardown — cancel every session's Cts + pending
         // action cards (a WaitingForTool session at shutdown is otherwise an

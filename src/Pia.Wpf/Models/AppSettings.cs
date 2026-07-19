@@ -171,6 +171,13 @@ public class AppSettings
     public int AgentMaxReplans { get; set; } = 2;
     public int AgentWallClockMinutes { get; set; } = 20;
 
+    // Scheduled/headless-run budget envelope (§17.5) — the caps an unattended run (a "Run in background"
+    // detach or a scheduled AgentTask job) stops at. Separate from the interactive Agent* knobs because
+    // an unattended run has no user watching and gets a longer envelope. Defaults match RunProfile.Scheduled.
+    public int ScheduledMaxSteps { get; set; } = 24;
+    public int ScheduledMaxReplans { get; set; } = 2;
+    public int ScheduledWallClockMinutes { get; set; } = 45;
+
     // Sandboxed folder the assistant's file tool may read/write/delete in. The memory vault lives
     // under it (<folder>\Vault), so it is always set after first run; file-tool enablement is the
     // separate AssistantFileToolsEnabled flag (clearing the folder no longer disables the tools).
