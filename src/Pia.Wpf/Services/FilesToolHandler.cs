@@ -81,12 +81,14 @@ public class FilesToolHandler : IFilesToolHandler
     }
 
     /// <summary>
-    /// True when the file tools are enabled AND a usable sandbox folder is configured. Used by the
-    /// plugin host to suppress tool registration and the system prompt while disabled. The folder is
-    /// always set now (the vault lives under it), so <see cref="AppSettings.AssistantFileToolsEnabled"/>
-    /// is the explicit on/off switch.
+    /// True when the file tools are enabled. Used by the plugin host to gate tool registration, the
+    /// system prompt, and the route table. The folder is always set in prod (the vault lives under it),
+    /// and an unattended run supplies its own <see cref="TaskContext.WorkspaceRoot"/>, so this no longer
+    /// requires a configured interactive folder — otherwise a granted headless write would never route
+    /// (the route table stays empty while no folder is set). The per-call guard in
+    /// <see cref="HandleToolCallAsync"/> is the backstop for a genuinely-missing folder (§17.3).
     /// </summary>
-    public bool IsAvailable => _toolsEnabled && _currentFolder is not null;
+    public bool IsAvailable => _toolsEnabled;
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
@@ -115,6 +117,18 @@ public class FilesToolHandler : IFilesToolHandler
             _currentFolder = Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
         }
         catch { _currentFolder = null; }
+    }
+
+    /// <summary>
+    /// Canonicalizes a per-run workspace root the same way <see cref="UpdateFolder"/> normalizes the
+    /// interactive folder — so a junction/symlink in the run-root path itself is not a sandbox hole
+    /// (canonicalize requires an existing handle; fall back to the full path when it does not yet exist,
+    /// the per-call <c>Directory.Exists</c> guard then rejects it).
+    /// </summary>
+    private static string NormalizeWorkspaceRoot(string root)
+    {
+        var full = Path.GetFullPath(root);
+        return Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
     }
 
     public IList<AITool> GetTools()
@@ -150,7 +164,11 @@ public class FilesToolHandler : IFilesToolHandler
 #endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        var baseRoot = _currentFolder;
+        // An unattended run supplies its own isolated workspace root (§17.2/G-1): resolve every
+        // file operation against it instead of the interactive folder, so all containment rejections
+        // re-anchor to runs\<runId>. Null (the interactive path) keeps the configured folder.
+        var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
+        var baseRoot = ambientRoot is not null ? NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
         if (baseRoot is null || !Directory.Exists(baseRoot))
         {
             return (

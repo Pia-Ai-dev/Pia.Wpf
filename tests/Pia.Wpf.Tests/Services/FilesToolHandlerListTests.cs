@@ -263,7 +263,10 @@ public class FilesToolHandlerListTests : IDisposable
         settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = null });
         var handler = new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
 
-        Assert.False(handler.IsAvailable);
+        // IsAvailable no longer requires a configured folder (§17.3 — route-table gap fix): tools are
+        // enabled by default, and an unattended run supplies its own WorkspaceRoot. The @Files
+        // autocomplete still returns empty because no interactive folder is configured.
+        Assert.True(handler.IsAvailable);
         Assert.Empty(handler.ListRelativeFiles(filter: null, max: 50));
     }
 }

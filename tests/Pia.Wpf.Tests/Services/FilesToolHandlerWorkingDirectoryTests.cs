@@ -79,6 +79,44 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_root, "deferred.txt")));
     }
 
+    [Fact]
+    public async Task WorkspaceRoot_RedirectsListReadWrite_UnderRunRoot_NotInteractiveFolder()
+    {
+        // Per-run isolated workspace (§17.2). The ambient WorkspaceRoot must win over _currentFolder.
+        var runRoot = Path.Combine(Path.GetTempPath(), "pia-runroot-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(runRoot);
+        try
+        {
+            TaskAmbient.Current = new TaskContext(Guid.NewGuid(), WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: runRoot);
+
+            // write_file lands under the run root, not the interactive _root.
+            var write = new FunctionCallContent("c1", "write_file",
+                new Dictionary<string, object?> { ["path"] = "note.txt", ["content"] = "hello" });
+            var (_, pending) = await _handler.HandleToolCallAsync(write);
+            Assert.NotNull(pending);
+            var execResult = await pending!.Execute();
+            Assert.True(Prop<bool>(execResult!, "success"));
+            Assert.True(File.Exists(Path.Combine(runRoot, "note.txt")));
+            Assert.False(File.Exists(Path.Combine(_root, "note.txt")));
+
+            // read_file resolves under the run root.
+            var read = new FunctionCallContent("c2", "read_file",
+                new Dictionary<string, object?> { ["path"] = "note.txt" });
+            var (readResult, _) = await _handler.HandleToolCallAsync(read);
+            Assert.Contains("hello", (string)readResult!);
+
+            // list_files enumerates the run root.
+            var list = new FunctionCallContent("c3", "list_files", new Dictionary<string, object?>());
+            var (listResult, _) = await _handler.HandleToolCallAsync(list);
+            Assert.Contains("note.txt", (string)listResult!);
+        }
+        finally
+        {
+            TaskAmbient.Current = null;
+            try { Directory.Delete(runRoot, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     private static T Prop<T>(object obj, string name)
     {
         var p = obj.GetType().GetProperty(name);

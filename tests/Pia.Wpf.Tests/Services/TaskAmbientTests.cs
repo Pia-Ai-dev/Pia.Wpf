@@ -1,3 +1,4 @@
+using System.IO;
 using Pia.Services;
 using Xunit;
 
@@ -45,6 +46,35 @@ public class TaskAmbientTests
         TaskAmbient.Current = new TaskContext(null, "sub");
         Assert.Null(TaskAmbient.Current?.TaskId);
         Assert.Equal("sub", TaskAmbient.Current?.WorkingSubpath);
+
+        TaskAmbient.Current = previous;
+    }
+
+    [Fact]
+    public void FourArg_RoundTripsWorkspaceRoot()
+    {
+        var previous = TaskAmbient.Current;
+        var id = Guid.NewGuid();
+        var root = Path.Combine(Path.GetTempPath(), "pia-run-" + id.ToString("N"));
+
+        TaskAmbient.Current = new TaskContext(id, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: root);
+        Assert.Equal(id, TaskAmbient.Current?.TaskId);
+        Assert.Null(TaskAmbient.Current?.WorkingSubpath);
+        Assert.Equal(root, TaskAmbient.Current?.WorkspaceRoot);
+
+        TaskAmbient.Current = previous;
+    }
+
+    [Fact]
+    public void TwoAndThreeArg_LeaveWorkspaceRootNull()
+    {
+        var previous = TaskAmbient.Current;
+
+        TaskAmbient.Current = new TaskContext(Guid.NewGuid(), "sub");
+        Assert.Null(TaskAmbient.Current?.WorkspaceRoot);
+
+        TaskAmbient.Current = new TaskContext(Guid.NewGuid(), "sub", OnFileTouched: null);
+        Assert.Null(TaskAmbient.Current?.WorkspaceRoot);
 
         TaskAmbient.Current = previous;
     }
