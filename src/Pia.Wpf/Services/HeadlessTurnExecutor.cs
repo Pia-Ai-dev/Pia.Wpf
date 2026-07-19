@@ -139,21 +139,46 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             catch (Exception ex) { _logger.LogError(ex, "Failed to initialize token map for headless run {RunId}", run.Id); }
         }
 
-        // Seed the accumulating transcript: system + the goal as the opening user message.
+        // Seed the accumulating transcript. The terminal EndRunAsync does a full chat replace, so on a
+        // RESUME (or any pre-populated chat) we must load the existing rows first — otherwise EndRunAsync
+        // would erase the prior transcript (D2). A fresh launch's stub chat is empty → seed [system, goal].
         _messages.Clear();
         _persisted.Clear();
-        _messages.Add(new ChatMessage(ChatRole.System, _setup.SystemPrompt));
+        _messages.Add(new ChatMessage(ChatRole.System, _setup.SystemPrompt)); // system: never persisted
 
-        var goalMsgId = Guid.NewGuid();
-        _messages.Add(new ChatMessage(ChatRole.User, ctx.Goal));
-        _persisted.Add(new SyncAssistantChatMessage
+        var chat = await _chatService.GetAsync(run.ChatId, ct).ConfigureAwait(false);
+        if (chat is { Messages.Count: > 0 })
         {
-            Id = goalMsgId,
-            Role = "user",
-            Content = ctx.Goal,
-            Timestamp = DateTime.UtcNow,
-        });
+            // Resume: seed from the persisted transcript so the terminal full-replace PRESERVES prior
+            // rows. No synthetic goal (it is already in the transcript).
+            foreach (var m in chat.Messages)
+            {
+                _messages.Add(new ChatMessage(ParseRole(m.Role), m.Content));
+                _persisted.Add(m);
+            }
+        }
+        else
+        {
+            // Fresh launch: stub chat is empty → seed the goal as the opening user message (as before).
+            var goalMsgId = Guid.NewGuid();
+            _messages.Add(new ChatMessage(ChatRole.User, ctx.Goal));
+            _persisted.Add(new SyncAssistantChatMessage
+            {
+                Id = goalMsgId,
+                Role = "user",
+                Content = ctx.Goal,
+                Timestamp = DateTime.UtcNow,
+            });
+        }
     }
+
+    private static ChatRole ParseRole(string role) => role switch
+    {
+        "system" => ChatRole.System,
+        "assistant" => ChatRole.Assistant,
+        "tool" => ChatRole.Tool,
+        _ => ChatRole.User,
+    };
 
     public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct) =>
         RunExchangeStepAsync(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact), ct);

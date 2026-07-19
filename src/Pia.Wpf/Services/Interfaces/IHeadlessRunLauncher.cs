@@ -38,7 +38,8 @@ public interface IHeadlessRunLauncher
     /// <summary>
     /// Stub-chat-first (G-3/R1) then create the Planned run, resolve persona/provider, seed the run
     /// workspace, and dispatch the orchestrator fire-and-forget. Returns once the run is queued/started;
-    /// the returned <see cref="HeadlessRunHandle.Completion"/> settles when the run reaches a terminal state.
+    /// the returned <see cref="HeadlessRunHandle.Completion"/> settles when the run reaches a terminal state
+    /// OR a budget pause (<see cref="AgentRunState.WaitingForInput"/>, a non-terminal park).
     /// </summary>
     Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct = default);
 

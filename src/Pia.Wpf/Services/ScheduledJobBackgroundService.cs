@@ -216,6 +216,14 @@ public class ScheduledJobBackgroundService : BackgroundService
                 _notifications.NotifySuccess(job, handle.ChatId, job.Name);
                 _logger.LogInformation("Scheduled agent job {Id} run completed; chat {ChatId}", job.Id, handle.ChatId);
             }
+            else if (run?.State is AgentRunState.WaitingForInput or AgentRunState.Paused)
+            {
+                // Budget pause is a deliberate park, not a job failure — do NOT MarkRunFailed / toast
+                // failure. The Flow WaitingForInput card (from PauseAsync's RunChanged) is the out-of-band
+                // resume affordance (guardrail 6).
+                _logger.LogInformation("Scheduled agent job {Id} run parked at budget ({State}); awaiting resume",
+                    job.Id, run.State);
+            }
             else
             {
                 var reason = run?.State.ToString() ?? "Unknown";

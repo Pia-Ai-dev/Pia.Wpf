@@ -18,7 +18,7 @@ namespace Pia.Services;
 /// scope with its own linked CTS. A shared <see cref="SemaphoreSlim"/> caps concurrency; app shutdown
 /// cancels + bounded-awaits in-flight runs so none is left <see cref="AgentRunState.Running"/> (G-4).
 /// </summary>
-public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
+public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeService, IDisposable
 {
     /// <summary>Concurrency cap shared by both producers (decision d). A 3rd run queues on the slot.</summary>
     private readonly SemaphoreSlim _slots = new(2, 2);
@@ -192,6 +192,94 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
 
         _inflight[run.Id] = (runCts, completion);
         return new HeadlessRunHandle(run.Id, chatId, completion);
+    }
+
+    public async Task<bool> ResumeAsync(Guid runId, CancellationToken ct = default)
+    {
+        var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
+        if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return false; }
+
+        // Atomic claim FIRST (guardrail 2): a panel+Flow race or double-click → only one winner. On the
+        // lost path we return BEFORE touching _slots/_inflight/_runsByChat — no slot leak, no duplicate run.
+        if (!await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false))
+        {
+            _logger.LogInformation("Resume: run {RunId} not claimable (already resumed/not parked)", runId);
+            return false;
+        }
+
+        var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+        var persona = await _personaService.ResolveActiveAsync(
+            WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
+        // persona/provider are NOT persisted on the run — resolve the current default (same as the launch
+        // path). Minor assumption: a resumed run may run on a different default provider than its origin.
+        var provider = await ResolveProviderAsync(null, persona).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
+        var grants = new[] { "write_file", "delete_file" };
+        // FRESH budget envelope IS the "continue" grant (guardrail 4). The ledger is persisted and accrues
+        // across resumes (never reset).
+        var budget = RunProfile.FromBudget(
+            settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
+
+        // Idempotent: the run's ephemeral workspace already exists from the original launch (or is recreated).
+        _ = SafeFolderPath.Canonicalize(
+            Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
+
+        var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
+        lock (_runsByChatLock)
+        {
+            if (!_runsByChat.TryGetValue(run.ChatId, out var set))
+                _runsByChat[run.ChatId] = set = new HashSet<Guid>();
+            set.Add(run.Id);
+        }
+
+        _logger.LogInformation("Resuming run {RunId} (chat {ChatId})", run.Id, run.ChatId);
+
+        var completion = Task.Run(async () =>
+        {
+            var acquired = false;
+            var started = false;
+            try
+            {
+                await _slots.WaitAsync(runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
+                acquired = true;
+
+                using var scope = _scopeFactory.CreateScope();
+                var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
+                var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
+                executor.Initialize(workspaceRoot: null, grants, provider);
+                started = true;
+                await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token, resume: true)
+                    .ConfigureAwait(false); // resume:true → no re-plan, drains the Pending remainder (D1)
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancel during resume before entering the orchestrator: the run was CAS'd to Running by the
+                // claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
+                if (!started)
+                {
+                    try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to re-park interrupted resume {RunId}", run.Id); }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Resume of run {RunId} faulted", run.Id);
+                if (started)
+                {
+                    try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted resume {RunId}", run.Id); }
+                }
+            }
+            finally
+            {
+                if (acquired) _slots.Release();
+                _inflight.TryRemove(run.Id, out _);
+                runCts.Dispose();
+            }
+        }, CancellationToken.None);
+
+        _inflight[run.Id] = (runCts, completion);
+        return true;
     }
 
     public async Task StopAsync(CancellationToken ct)
