@@ -75,7 +75,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(_dir, true); } catch { /* best effort */ }
     }
 
-    private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(Func<Task>? onPlan = null)
+    private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
+        Func<Task>? onPlan = null, bool nullDefaultProvider = false)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -94,7 +95,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
         var providers = Substitute.For<IProviderService>();
-        providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
+        providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(nullDefaultProvider ? (AiProvider?)null : provider);
         var titles = Substitute.For<IChatTitleService>();
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
         var settings = Substitute.For<ISettingsService>();
@@ -240,5 +241,43 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(Directory.Exists(keep));
 
         try { Directory.Delete(keep, true); } catch { }
+    }
+
+    [Fact]
+    public async Task Resume_PreDispatchFailure_ReParksRun_ReturnsFalse()
+    {
+        // Guardrail 1/3: after the CAS claim (WaitingForInput→Running) a pre-dispatch failure (here: no
+        // provider resolvable) must re-park the run to WaitingForInput — never leave it dangling Running,
+        // unresumable, until the crash sweep cancels it.
+        var (launcher, _) = BuildLauncher(nullDefaultProvider: true);
+
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await _chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId,
+            SchemaVersion = 1,
+            Title = "t",
+            CreatedAt = now,
+            UpdatedAt = now,
+            LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(),
+            Messages = [],
+        }, TestContext.Current.CancellationToken);
+
+        var run = await _runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "g"),
+            TestContext.Current.CancellationToken);
+        await _runs.PauseAsync(run.Id, "step-cap", TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput,
+            (await _runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
+
+        var resumed = await launcher.ResumeAsync(run.Id, TestContext.Current.CancellationToken);
+
+        Assert.False(resumed);
+        var after = await _runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, after!.State); // re-parked, still resumable
+
+        try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
     }
 }

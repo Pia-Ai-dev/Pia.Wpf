@@ -207,35 +207,42 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             return false;
         }
 
-        var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-        var persona = await _personaService.ResolveActiveAsync(
-            WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
-        // persona/provider are NOT persisted on the run — resolve the current default (same as the launch
-        // path). Minor assumption: a resumed run may run on a different default provider than its origin.
-        var provider = await ResolveProviderAsync(null, persona).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
-        var grants = new[] { "write_file", "delete_file" };
-        // FRESH budget envelope IS the "continue" grant (guardrail 4). The ledger is persisted and accrues
-        // across resumes (never reset).
-        var budget = RunProfile.FromBudget(
-            settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
-
-        // Idempotent: the run's ephemeral workspace already exists from the original launch (or is recreated).
-        _ = SafeFolderPath.Canonicalize(
-            Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
-
-        var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
-        lock (_runsByChatLock)
+        // The run is now CAS'd WaitingForInput→Running (the claim raised RunChanged(Running), retracting the
+        // Flow card and disabling the panel Continue). Any failure between here and the orchestrator loop being
+        // attached would leave the run dangling Running — unresumable and losing the parked work until the next
+        // startup sweep cancels it. Re-park it on ANY such pre-dispatch failure so it stays resumable
+        // (guardrail 1 — a resume error must never wedge a run; guardrail 3 — parked survives).
+        try
         {
-            if (!_runsByChat.TryGetValue(run.ChatId, out var set))
-                _runsByChat[run.ChatId] = set = new HashSet<Guid>();
-            set.Add(run.Id);
-        }
+            var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+            var persona = await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
+            // persona/provider are NOT persisted on the run — resolve the current default (same as the launch
+            // path). Minor assumption: a resumed run may run on a different default provider than its origin.
+            var provider = await ResolveProviderAsync(null, persona).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
+            var grants = new[] { "write_file", "delete_file" };
+            // FRESH budget envelope IS the "continue" grant (guardrail 4). The ledger is persisted and accrues
+            // across resumes (never reset).
+            var budget = RunProfile.FromBudget(
+                settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
 
-        _logger.LogInformation("Resuming run {RunId} (chat {ChatId})", run.Id, run.ChatId);
+            // Idempotent: the run's ephemeral workspace already exists from the original launch (or is recreated).
+            _ = SafeFolderPath.Canonicalize(
+                Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
 
-        var completion = Task.Run(async () =>
-        {
+            var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
+            lock (_runsByChatLock)
+            {
+                if (!_runsByChat.TryGetValue(run.ChatId, out var set))
+                    _runsByChat[run.ChatId] = set = new HashSet<Guid>();
+                set.Add(run.Id);
+            }
+
+            _logger.LogInformation("Resuming run {RunId} (chat {ChatId})", run.Id, run.ChatId);
+
+            var completion = Task.Run(async () =>
+            {
             var acquired = false;
             var started = false;
             try
@@ -269,6 +276,14 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
                     catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted resume {RunId}", run.Id); }
                 }
+                else
+                {
+                    // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
+                    // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
+                    // rather than dangling Running (guardrail 1/3).
+                    try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception px) { _logger.LogWarning(px, "Failed to re-park interrupted resume {RunId}", run.Id); }
+                }
             }
             finally
             {
@@ -276,10 +291,20 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 _inflight.TryRemove(run.Id, out _);
                 runCts.Dispose();
             }
-        }, CancellationToken.None);
+            }, CancellationToken.None);
 
-        _inflight[run.Id] = (runCts, completion);
-        return true;
+            _inflight[run.Id] = (runCts, completion);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Pre-dispatch failure (settings/persona/provider resolve, workspace create) after the CAS win.
+            // Re-park so the run leaves Running and stays resumable; report the resume did not start.
+            _logger.LogError(ex, "Resume of run {RunId} failed before dispatch; re-parking", runId);
+            try { await _agentRunService.PauseAsync(runId, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception px) { _logger.LogWarning(px, "Failed to re-park run {RunId} after pre-dispatch resume failure", runId); }
+            return false;
+        }
     }
 
     public async Task StopAsync(CancellationToken ct)
