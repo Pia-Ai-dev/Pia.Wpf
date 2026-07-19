@@ -38,6 +38,7 @@ public class FlowItemViewModelTests
             windowManager,
             navigation,
             loc,
+            Substitute.For<IAgentRunResumeService>(),
             logger ?? NullLogger<FlowItemViewModel>.Instance);
     }
 
@@ -155,6 +156,7 @@ public class FlowItemViewModelTests
             windowManager,
             Substitute.For<INavigationService>(),
             Substitute.For<ILocalizationService>(),
+            Substitute.For<IAgentRunResumeService>(),
             NullLogger<FlowItemViewModel>.Instance);
 
         var runId = Guid.NewGuid();
@@ -174,6 +176,40 @@ public class FlowItemViewModelTests
         vm.ExecuteActionCommand.Execute(null);
 
         windowManager.Received(1).ShowAgentRun(runId);
+        flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
+    }
+
+    [Fact]
+    public void ExecuteAction_ContinueRun_InvokesResume_ThenRetracts()
+    {
+        var flow = Substitute.For<IFlowService>();
+        var resume = Substitute.For<IAgentRunResumeService>();
+        var vm = new FlowItemViewModel(
+            flow,
+            Substitute.For<IReminderService>(),
+            Substitute.For<IWindowManagerService>(),
+            Substitute.For<INavigationService>(),
+            Substitute.For<ILocalizationService>(),
+            resume,
+            NullLogger<FlowItemViewModel>.Instance);
+
+        var runId = Guid.NewGuid();
+        vm.Bind(new FlowItem
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = DateTimeOffset.UtcNow,
+            Severity = FlowSeverity.ActionRequired,
+            Source = FlowSource.AgentRun,
+            Title = "Agent run",
+            Body = "",
+            DedupKey = runId.ToString(),
+            Lifetime = FlowLifetime.Persistent,
+            Action = new ContinueRunAction(runId, "Continue run"),
+        });
+
+        vm.ExecuteActionCommand.Execute(null);
+
+        resume.Received(1).ResumeAsync(runId, Arg.Any<CancellationToken>());
         flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
     }
 

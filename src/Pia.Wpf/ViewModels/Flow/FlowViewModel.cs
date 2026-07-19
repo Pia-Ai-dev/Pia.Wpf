@@ -24,6 +24,7 @@ public partial class FlowViewModel : UiThreadViewModel, IDisposable
     private readonly ISettingsService _settingsService;
     private readonly INavigationService _navigationService;
     private readonly ILocalizationService _localizationService;
+    private readonly IAgentRunResumeService _resumeService;
     private readonly ILogger<FlowViewModel> _logger;
     private readonly ILogger<FlowItemViewModel> _itemLogger;
     private bool _disposed;
@@ -35,6 +36,7 @@ public partial class FlowViewModel : UiThreadViewModel, IDisposable
         ISettingsService settingsService,
         INavigationService navigationService,
         ILocalizationService localizationService,
+        IAgentRunResumeService resumeService,
         ILogger<FlowViewModel> logger,
         ILogger<FlowItemViewModel> itemLogger)
     {
@@ -44,6 +46,7 @@ public partial class FlowViewModel : UiThreadViewModel, IDisposable
         _settingsService = settingsService;
         _navigationService = navigationService;
         _localizationService = localizationService;
+        _resumeService = resumeService;
         _logger = logger;
         _itemLogger = itemLogger;
 
@@ -158,6 +161,7 @@ public partial class FlowViewModel : UiThreadViewModel, IDisposable
             _windowManager,
             _navigationService,
             _localizationService,
+            _resumeService,
             _itemLogger);
         wrapper.Bind(item);
         return wrapper;

@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Controls.Cards;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Models.Flow;
 using Pia.Navigation;
@@ -27,6 +28,7 @@ public partial class FlowItemViewModel : ObservableObject
     private readonly IWindowManagerService _windowManager;
     private readonly INavigationService _navigationService;
     private readonly ILocalizationService _localizationService;
+    private readonly IAgentRunResumeService _resumeService;
     private readonly ILogger<FlowItemViewModel> _logger;
 
     private FlowItem _item = null!;
@@ -38,6 +40,7 @@ public partial class FlowItemViewModel : ObservableObject
         IWindowManagerService windowManager,
         INavigationService navigationService,
         ILocalizationService localizationService,
+        IAgentRunResumeService resumeService,
         ILogger<FlowItemViewModel> logger)
     {
         _flow = flow;
@@ -45,6 +48,7 @@ public partial class FlowItemViewModel : ObservableObject
         _windowManager = windowManager;
         _navigationService = navigationService;
         _localizationService = localizationService;
+        _resumeService = resumeService;
         _logger = logger;
     }
 
@@ -179,6 +183,13 @@ public partial class FlowItemViewModel : ObservableObject
                     break;
                 case OpenRunAction run:
                     _windowManager.ShowAgentRun(run.RunId);
+                    RetractByKey();
+                    break;
+                case ContinueRunAction cont:
+                    // Resume out-of-band (no foreground chat to navigate to). CAS in the resume service
+                    // makes a double invoke a no-op; drop the WaitingForInput card immediately (the surface
+                    // also retracts on the resulting Running/terminal RunChanged — a gone key is a no-op).
+                    _resumeService.ResumeAsync(cont.RunId).SafeFireAndForget(_logger);
                     RetractByKey();
                     break;
                 case OpenTodoAction:

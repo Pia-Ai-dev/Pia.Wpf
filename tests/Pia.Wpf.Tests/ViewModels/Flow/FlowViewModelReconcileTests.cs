@@ -51,6 +51,7 @@ public class FlowViewModelReconcileTests
             settings,
             Substitute.For<INavigationService>(),
             Substitute.For<ILocalizationService>(),
+            Substitute.For<IAgentRunResumeService>(),
             NullLogger<FlowViewModel>.Instance,
             NullLogger<FlowItemViewModel>.Instance);
     }

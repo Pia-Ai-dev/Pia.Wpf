@@ -104,6 +104,37 @@ public sealed class FlowPersistenceStoreTests : IDisposable
     }
 
     [Fact]
+    public void ContinueRunAction_RoundTrips_Unchanged()
+    {
+        // G2/G9: the appended ContinueRun action must persist → reconstruct with Kind/RunId/Label intact.
+        var store = Store();
+        var runId = Guid.NewGuid();
+        var item = new FlowItem
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = DateTimeOffset.Now,
+            Severity = FlowSeverity.ActionRequired,
+            Source = FlowSource.AgentRun,
+            Title = "Agent run",
+            Body = "Stopped at its budget",
+            DedupKey = "run-2",
+            Lifetime = FlowLifetime.Persistent,
+            IsRead = false,
+            Action = new ContinueRunAction(runId, "Continue run"),
+            Durable = true,
+        };
+
+        store.Upsert(item);
+        var only = Assert.Single(store.ReadAll());
+
+        Assert.Equal(FlowSource.AgentRun, only.Source);
+        var action = Assert.IsType<ContinueRunAction>(only.Action);
+        Assert.Equal(FlowActionKind.ContinueRun, action.Kind);
+        Assert.Equal(runId, action.RunId);
+        Assert.Equal("Continue run", action.Label);
+    }
+
+    [Fact]
     public void Upsert_SameId_Replaces()
     {
         var store = Store();

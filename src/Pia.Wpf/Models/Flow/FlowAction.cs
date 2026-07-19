@@ -13,6 +13,8 @@ public enum FlowActionKind
     Invoke,
     // Appended (G2) — ordinals are persisted as int, never reorder. Opens an agent run's chat.
     OpenRun,
+    // Appended (G2). Resumes a budget-paused (WaitingForInput) agent run out-of-band.
+    ContinueRun,
 }
 
 /// <summary>
@@ -43,6 +45,14 @@ public sealed record OpenChatAction(Guid ChatId, string Label) : FlowAction(Labe
 public sealed record OpenRunAction(Guid RunId, string Label) : FlowAction(Label)
 {
     public override FlowActionKind Kind => FlowActionKind.OpenRun;
+    public override Guid? EntityId => RunId;
+}
+
+/// <summary>Resume a budget-paused agent run (via IAgentRunResumeService.ResumeAsync). Id-carrying →
+/// re-derivable/durable; the CAS in the resume service makes a stale/double invoke a harmless no-op.</summary>
+public sealed record ContinueRunAction(Guid RunId, string Label) : FlowAction(Label)
+{
+    public override FlowActionKind Kind => FlowActionKind.ContinueRun;
     public override Guid? EntityId => RunId;
 }
 
