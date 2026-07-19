@@ -41,7 +41,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                 "Examples: 'every weekday at 8am check Tesla stock news' -> create 5 separate Weekly jobs (Mon-Fri) since 'weekday' is not a single recurrence type. " +
                 "'every Monday research crypto trends' -> recurrence=Weekly, dayOfWeek=Monday, timeOfDay=08:00. " +
                 "The background turn may use read-only tools freely. Write tools are DENIED unless the user explicitly grants them: pass their EXACT tool names in grantedTools (comma-separated). Grantable write tools include: create_object/update_object/append_to_list/delete_object (memory), create_todo/update_todo/complete_todo/delete_todo (todos), write_file/delete_file (files). Only grant writes the user clearly asked for. " +
-                "providerName is optional - if omitted, the provider mapped to Assistant mode at fire time is used."),
+                "providerName is optional - if omitted, the provider mapped to Assistant mode at fire time is used. " +
+                "KIND: 'research' (default) runs the query once at fire time and saves a summary as a chat; 'agent' runs a multi-step agent task that plans and can use granted write tools to actually carry out work. If the user has NOT made clear which of the two they want, do NOT call this tool - ask a single clarifying question (e.g. 'Should this just research and summarize, or actually carry out the task?') and call once they answer."),
 
             AIFunctionFactory.Create(QueryScheduledSchema, "query_scheduled_research",
                 "List the user's scheduled research jobs. Use filter 'active' (default) for current jobs, 'all' for everything including disabled/failed."),
@@ -147,6 +148,10 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         var specificDateStr = GetOptionalStringArg(args, "specificDate");
         var grantedToolsStr = GetOptionalStringArg(args, "grantedTools");
         var providerName = GetOptionalStringArg(args, "providerName");
+        var kindStr = GetOptionalStringArg(args, "kind");
+        var kind = string.Equals(kindStr, "agent", StringComparison.OrdinalIgnoreCase)
+            ? ScheduledJobKind.AgentTask
+            : ScheduledJobKind.Research;
 
         var recurrence = Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) ? r : RecurrenceType.Daily;
         var timeOfDay = TimeOnly.TryParse(timeOfDayStr, out var t) ? t : new TimeOnly(8, 0);
@@ -160,6 +165,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
 
         var detailSb = new StringBuilder();
         detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Name"]}: {name}");
+        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Kind"]}: {(kind == ScheduledJobKind.AgentTask ? "Agent task" : "Research")}");
         detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Query"]}: {query}");
         detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Recurrence"]}: {recurrence}");
         detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Time"]}: {timeOfDay:HH:mm}");
@@ -179,7 +185,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             Execute: async () =>
             {
                 var created = await _jobs.CreateAsync(name, query, recurrence, timeOfDay,
-                    dayOfWeek, dayOfMonth, month, specificDate, providerId, grantedTools);
+                    dayOfWeek, dayOfMonth, month, specificDate, providerId, grantedTools, kind);
                 return _localizationService.Format("Tool_ScheduledResearch_Exec_Created", created.Id, created.NextFireAt.ToString("g"));
             });
     }
@@ -290,7 +296,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         [Description("Month for Yearly recurrence (1-12)")] string? month = null,
         [Description("Specific date for Once recurrence in yyyy-MM-dd format")] string? specificDate = null,
         [Description("Comma-separated EXACT write-tool names to allow at fire time (e.g. 'create_object,create_todo,write_file'). Omit for read-only. Only grant writes the user explicitly asked for.")] string? grantedTools = null,
-        [Description("Optional substring of an AI provider name to pin")] string? providerName = null) => "";
+        [Description("Optional substring of an AI provider name to pin")] string? providerName = null,
+        [Description("Job type: 'research' (default) = one-shot query saved as a chat; 'agent' = a multi-step agent task that can use granted write tools. If the user hasn't made the type clear, ASK before calling.")] string? kind = null) => "";
 
     [Description("List scheduled research jobs")]
     private static string QueryScheduledSchema(

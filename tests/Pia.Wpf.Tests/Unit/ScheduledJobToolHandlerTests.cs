@@ -59,6 +59,30 @@ public class ScheduledJobToolHandlerTests
         Assert.Equal(new TimeOnly(8, 0), created.TimeOfDay);
         Assert.Equal(DayOfWeek.Monday, created.DayOfWeek);
         Assert.Equal(new[] { "create_object", "create_todo" }, created.GrantedTools);
+        Assert.Equal(ScheduledJobKind.Research, created.Kind); // default when kind omitted
+    }
+
+    [Fact]
+    public async Task CreateScheduledResearch_WithAgentKind_CreatesAgentTaskJob()
+    {
+        var jobs = new FakeJobService();
+        var handler = CreateHandler(jobs);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["name"] = "Nightly cleanup",
+            ["query"] = "tidy my notes folder",
+            ["recurrence"] = "Daily",
+            ["timeOfDay"] = "02:00",
+            ["kind"] = "agent"
+        };
+
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args));
+        Assert.NotNull(pending);
+        await handler.ExecutePendingActionAsync(pending!);
+
+        Assert.Single(jobs.Created);
+        Assert.Equal(ScheduledJobKind.AgentTask, jobs.Created[0].Kind);
     }
 
     [Fact]
@@ -149,12 +173,14 @@ public class ScheduledJobToolHandlerTests
         public Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence,
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
-            IReadOnlyCollection<string>? grantedTools = null)
+            IReadOnlyCollection<string>? grantedTools = null,
+            ScheduledJobKind kind = ScheduledJobKind.Research)
         {
             var job = new ScheduledJob
             {
                 Name = name,
                 Query = query,
+                Kind = kind,
                 Recurrence = recurrence,
                 TimeOfDay = timeOfDay,
                 DayOfWeek = dayOfWeek,

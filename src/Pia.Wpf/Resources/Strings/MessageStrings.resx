@@ -355,6 +355,7 @@ Changes will be applied.</value></data>
   <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Delete scheduled research '{0}'</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Query</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Type</value></data>
   <data name="Tool_ScheduledResearch_Detail_Recurrence" xml:space="preserve"><value>Recurrence</value></data>
   <data name="Tool_ScheduledResearch_Detail_Time" xml:space="preserve"><value>Time</value></data>
   <data name="Tool_ScheduledResearch_Detail_DayOfWeek" xml:space="preserve"><value>Day of week</value></data>

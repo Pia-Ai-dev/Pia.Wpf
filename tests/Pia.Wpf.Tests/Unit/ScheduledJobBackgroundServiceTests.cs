@@ -352,7 +352,8 @@ public class ScheduledJobBackgroundServiceTests
         public Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence,
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
-            IReadOnlyCollection<string>? grantedTools = null) => throw new NotImplementedException();
+            IReadOnlyCollection<string>? grantedTools = null,
+            ScheduledJobKind kind = ScheduledJobKind.Research) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();

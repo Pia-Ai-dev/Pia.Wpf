@@ -35,13 +35,15 @@ public class ScheduledJobService : IScheduledJobService
 
     public async Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
-        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null)
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
+        ScheduledJobKind kind = ScheduledJobKind.Research)
     {
         var now = DateTime.Now;
         var job = new ScheduledJob
         {
             Name = name,
             Query = query,
+            Kind = kind,
             Recurrence = recurrence,
             TimeOfDay = timeOfDay,
             DayOfWeek = dayOfWeek,
@@ -59,7 +61,7 @@ public class ScheduledJobService : IScheduledJobService
 
         await InsertAsync(job);
 
-        _logger.LogInformation("Created scheduled job {Id} ({Recurrence})", job.Id, recurrence);
+        _logger.LogInformation("Created scheduled job {Id} ({Kind}, {Recurrence})", job.Id, kind, recurrence);
         _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} query: {Query}", job.Id, name, query);
         return job;
     }

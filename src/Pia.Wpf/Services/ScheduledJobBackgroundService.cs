@@ -189,7 +189,9 @@ public class ScheduledJobBackgroundService : BackgroundService
                     TriggerRef: job.Id,
                     OwnerDeviceId: job.OwnerDeviceId,
                     ProviderId: job.ProviderId,
-                    GrantedWrites: job.GrantedTools,
+                    // An agent job with no explicit grant gets the standard detached-run write access
+                    // ({write_file, delete_file}); an explicit grant list narrows or widens it.
+                    GrantedWrites: job.GrantedTools.Count > 0 ? job.GrantedTools : null,
                     Budget: budget), ct);
 
                 // Serialized by _runLock; await the run's terminal settle to bookkeep like Research.

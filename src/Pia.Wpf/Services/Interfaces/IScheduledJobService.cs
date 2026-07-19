@@ -6,7 +6,8 @@ public interface IScheduledJobService
 {
     Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
-        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null);
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
+        ScheduledJobKind kind = ScheduledJobKind.Research);
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();
