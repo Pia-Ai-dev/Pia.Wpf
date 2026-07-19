@@ -103,9 +103,11 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
             chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal), ct)
             .ConfigureAwait(false);
 
-        // Isolated per-run workspace (§17.2/G-1). Canonicalize so a link in the path is not a hole. The run row
-        // already exists (Planning), so a workspace-setup failure here must settle it — otherwise the run dangles
-        // non-terminal until the next startup sweep (G-4).
+        // Per-run scratch/temp workspace under runs\<runId> (§17.2). Real deliverables go to the assistant
+        // files folder (see the Initialize call below), so this directory holds only ephemeral run temp and is
+        // auto-cleaned on chat delete / startup sweep. Canonicalize so a link in the path is not a hole. The run
+        // row already exists (Planning), so a workspace-setup failure here must settle it — otherwise the run
+        // dangles non-terminal until the next startup sweep (G-4).
         string runRoot;
         try
         {
@@ -151,7 +153,11 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
                 using var scope = _scopeFactory.CreateScope();
                 var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
                 var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-                executor.Initialize(runRoot, grants, provider);
+                // workspaceRoot: null → real deliverables write to the assistant files folder with full
+                // read/write/delete, contained, like an interactive chat (only MCP is withheld). runRoot stays
+                // the run's ephemeral scratch area. Passing runRoot here instead would confine the run to it
+                // (the reserved opt-in-sandbox seam).
+                executor.Initialize(workspaceRoot: null, grants, provider);
                 started = true;
                 await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token).ConfigureAwait(false);
             }

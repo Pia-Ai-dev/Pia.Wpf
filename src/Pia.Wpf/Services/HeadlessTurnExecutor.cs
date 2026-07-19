@@ -71,11 +71,19 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     }
 
     /// <summary>
-    /// Seed the per-run workspace root, granted write tools, and an optional provider override
-    /// (the launcher's resolved provider, kept in lock-step with the orchestrator's planner so the two
-    /// never diverge). Called from the launcher's fresh DI scope BEFORE <c>orchestrator.RunAsync</c>.
+    /// Seed the granted write tools, an optional provider override (the launcher's resolved provider, kept
+    /// in lock-step with the orchestrator's planner so the two never diverge), and an optional per-run
+    /// workspace root. Called from the launcher's fresh DI scope BEFORE <c>orchestrator.RunAsync</c>.
+    /// <para>
+    /// <paramref name="workspaceRoot"/> is <c>null</c> for a normal unattended run: real deliverables are
+    /// written to the user's assistant files folder with full read/write/delete, contained (no escape, no
+    /// system paths) exactly like an interactive chat — only MCP is withheld. A non-null value instead
+    /// confines every file operation to that folder; it is the reserved seam for a future opt-in per-run
+    /// sandbox. The run's <c>%LOCALAPPDATA%\Pia\runs\&lt;runId&gt;</c> directory remains the ephemeral
+    /// scratch/temp area (auto-cleaned), separate from where real deliverables land.
+    /// </para>
     /// </summary>
-    public void Initialize(string workspaceRoot, IReadOnlyCollection<string> grantedWrites, AiProvider? providerOverride = null)
+    public void Initialize(string? workspaceRoot, IReadOnlyCollection<string> grantedWrites, AiProvider? providerOverride = null)
     {
         _workspaceRoot = workspaceRoot;
         _providerOverride = providerOverride;

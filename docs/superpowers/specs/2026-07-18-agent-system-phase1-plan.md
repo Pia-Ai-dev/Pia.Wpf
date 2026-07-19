@@ -1077,6 +1077,14 @@ change (Completed→Success, Failed→Error; `DedupKey = runId`; durable; retrac
 
 ### 17.2 Workspace isolation (the safety prerequisite)
 
+> **Amendment (post-build, owner decision):** unattended runs write their **real deliverables to the
+> assistant files folder** with full read/write/**delete**, contained (no escape, no system paths) exactly
+> like an interactive chat — only MCP stays withheld. `runs\<runId>` is retained as the run's **ephemeral
+> scratch/temp** directory (auto-cleaned), not the deliverable root. The per-run base-root redirect below is
+> kept as a *reserved seam* (`TaskContext.WorkspaceRoot` + `HeadlessTurnExecutor.Initialize(workspaceRoot)`)
+> for a future **opt-in per-run sandbox**, but is not engaged by default. The containment machinery and its
+> escape-fuzz tests still apply verbatim to whichever root is active (the assistant folder by default).
+
 Unattended multi-step runs that **write files** must not share the interactive default folder. Give each
 headless run an isolated workspace `%LOCALAPPDATA%\Pia\runs\<runId>`:
 
