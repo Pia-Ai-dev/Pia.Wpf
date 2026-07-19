@@ -53,10 +53,13 @@ public interface IAgentRunService
     Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default);
 
     /// <summary>
-    /// Settle every non-terminal run (a crash / forced-exit leftover) to <see cref="AgentRunState.Cancelled"/>
-    /// so none dangles <see cref="AgentRunState.Running"/> across app sessions (§17.5/G-4). Bulk, silent
-    /// (raises no <see cref="RunChanged"/> — these are historical leftovers, not live transitions, so the
-    /// Flow surface must not re-publish for them at startup). Returns the number of runs settled.
+    /// Settle every crash-recoverable run (Planning/Running/Verifying — a crash / forced-exit leftover) to
+    /// <see cref="AgentRunState.Cancelled"/> so none dangles <see cref="AgentRunState.Running"/> across app
+    /// sessions (§17.5/G-4). <see cref="AgentRunState.WaitingForInput"/>/<see cref="AgentRunState.Paused"/>
+    /// are a DELIBERATE parked state (budget pause) and are EXCLUDED — a parked run survives restart
+    /// resumable. Bulk, silent (raises no <see cref="RunChanged"/> — these are historical leftovers, not
+    /// live transitions, so the Flow surface must not re-publish for them at startup). Returns the number
+    /// of runs settled.
     /// </summary>
     Task<int> FailInterruptedRunsAsync(CancellationToken ct = default);
 

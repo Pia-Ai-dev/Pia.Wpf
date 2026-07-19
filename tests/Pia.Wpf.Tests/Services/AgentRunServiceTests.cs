@@ -194,8 +194,9 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task FailInterruptedRunsAsync_SettlesNonTerminalRuns_LeavesTerminalUntouched()
     {
-        // G-4: a crash / forced-exit leaves runs non-terminal (Planning/Running/Verifying/...); the startup
-        // sweep settles exactly those to Cancelled and never touches already-terminal runs.
+        // G-4: a crash / forced-exit leaves runs crash-recoverable (Planning/Running/Verifying); the startup
+        // sweep settles exactly those to Cancelled and never touches already-terminal runs. WaitingForInput/
+        // Paused are a DELIBERATE budget-parked state — they survive the sweep resumable (guardrail 3).
         var ct = TestContext.Current.CancellationToken;
 
         var planning = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
@@ -204,6 +205,11 @@ public sealed class AgentRunServiceTests : IDisposable
         var verifying = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         await _service.SetStateAsync(verifying.Id, AgentRunState.Verifying, ct);
 
+        var waiting = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.SetStateAsync(waiting.Id, AgentRunState.WaitingForInput, ct);
+        var paused = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.SetStateAsync(paused.Id, AgentRunState.Paused, ct);
+
         var completed = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         await _service.CompleteAsync(completed.Id, ct: ct);
         var failed = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.SingleTurn, AgentRunTrigger.User), ct);
@@ -211,11 +217,14 @@ public sealed class AgentRunServiceTests : IDisposable
 
         var settled = await _service.FailInterruptedRunsAsync(ct);
 
-        Assert.Equal(3, settled);
+        Assert.Equal(3, settled); // only Planning/Running/Verifying swept — parked runs excluded
         Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(planning.Id, ct))!.State);
         Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(running.Id, ct))!.State);
         Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(verifying.Id, ct))!.State);
         Assert.NotNull((await _service.GetAsync(planning.Id, ct))!.CompletedAt);
+        // Parked runs survive the sweep resumable (guardrail 3).
+        Assert.Equal(AgentRunState.WaitingForInput, (await _service.GetAsync(waiting.Id, ct))!.State);
+        Assert.Equal(AgentRunState.Paused, (await _service.GetAsync(paused.Id, ct))!.State);
         Assert.Equal(AgentRunState.Completed, (await _service.GetAsync(completed.Id, ct))!.State);
         Assert.Equal(AgentRunState.Failed, (await _service.GetAsync(failed.Id, ct))!.State);
 

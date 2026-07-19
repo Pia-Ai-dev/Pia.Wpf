@@ -274,14 +274,15 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             if (_disposed) return Task.FromResult(0);
 
             using var cmd = Connection().CreateCommand();
-            // States 0..4 (Planning/Running/Verifying/WaitingForInput/Paused) are non-terminal; Completed(5)/
-            // Failed(6)/Cancelled(7) are terminal. Anything below the terminal floor is a crash leftover — settle
-            // it to Cancelled. No per-row RunChanged: these are not live transitions (the Flow surface would
-            // otherwise re-publish stale terminal items at startup).
+            // States 0..2 (Planning/Running/Verifying) are crash-recoverable — settle to Cancelled.
+            // 3/4 (WaitingForInput/Paused) are a DELIBERATE parked state (budget pause) and MUST survive
+            // restart resumable — never swept. 5-7 (Completed/Failed/Cancelled) are terminal.
+            // No per-row RunChanged: these are not live transitions (the Flow surface would otherwise
+            // re-publish stale items at startup).
             cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now WHERE State < @Terminal";
             cmd.Parameters.AddWithValue("@State", (int)AgentRunState.Cancelled);
             cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
-            cmd.Parameters.AddWithValue("@Terminal", (int)AgentRunState.Completed);
+            cmd.Parameters.AddWithValue("@Terminal", (int)AgentRunState.WaitingForInput);
             affected = cmd.ExecuteNonQuery();
         }
 
