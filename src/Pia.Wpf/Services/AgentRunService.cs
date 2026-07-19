@@ -265,6 +265,59 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.CompletedTask;
     }
 
+    public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        lock (_gate)
+        {
+            if (_disposed) return Task.CompletedTask;
+
+            // Freeze accrued wall-clock into the persisted ledger before parking (mirrors CompleteAsync).
+            RefreshLedgerWallClock(runId);
+
+            var extraJson = JsonSerializer.Serialize(new { paused = true, reason }, JsonOptions);
+
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@State, UpdatedAt=@Now, ExtraJson=@Extra WHERE Id=@Id";
+            cmd.Parameters.AddWithValue("@State", (int)AgentRunState.WaitingForInput);
+            cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
+            cmd.Parameters.AddWithValue("@Extra", ToParam(extraJson));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.ExecuteNonQuery();
+        }
+
+        _logger.LogInformation("Run {RunId} → WaitingForInput (paused)", runId);        // scalar, safe
+        _logger.SensitiveDebug("Run {RunId} pause reason: {Reason}", runId, reason);    // guardrail 8
+        RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForInput));
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default)
+    {
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            // Single-connection + _gate makes `WHERE State=@Expected` an atomic CAS — the only writer.
+            // A second racer (double-click, panel+Flow) finds State != WaitingForInput → 0 rows → loses.
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now WHERE Id=@Id AND State=@Expected";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Running);
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@Expected", (int)AgentRunState.WaitingForInput);
+            affected = cmd.ExecuteNonQuery();
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} resume claimed → Running", runId);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        }
+        return Task.FromResult(affected > 0);
+    }
+
     public Task<int> FailInterruptedRunsAsync(CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;

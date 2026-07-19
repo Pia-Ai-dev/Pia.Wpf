@@ -53,6 +53,21 @@ public interface IAgentRunService
     Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default);
 
     /// <summary>
+    /// Park a run at its budget: State → <see cref="AgentRunState.WaitingForInput"/>, writes
+    /// <c>{paused:true,reason}</c> to ExtraJson. This is NOT a completion (no CompletedAt) — the run sits
+    /// parked until <see cref="TryBeginResumeAsync"/> claims it. Raises RunChanged(WaitingForInput).
+    /// </summary>
+    Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically CAS-claim a parked run for resume: <see cref="AgentRunState.WaitingForInput"/> →
+    /// <see cref="AgentRunState.Running"/>. Returns <c>true</c> iff THIS caller won the claim (guardrail 2
+    /// — never two loops on one run). A non-WaitingForInput run returns <c>false</c> and is a no-op.
+    /// Raises RunChanged(Running) only on the win.
+    /// </summary>
+    Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>
     /// Settle every crash-recoverable run (Planning/Running/Verifying — a crash / forced-exit leftover) to
     /// <see cref="AgentRunState.Cancelled"/> so none dangles <see cref="AgentRunState.Running"/> across app
     /// sessions (§17.5/G-4). <see cref="AgentRunState.WaitingForInput"/>/<see cref="AgentRunState.Paused"/>

@@ -233,6 +233,49 @@ public sealed class AgentRunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PauseAsync_WritesMarker_NoCompletedAt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
+
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+
+        var fetched = await _service.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, fetched!.State);
+        Assert.Null(fetched.CompletedAt); // pause is NOT terminal (guardrail 2)
+        Assert.Contains("paused", fetched.ExtraJson ?? string.Empty);
+        Assert.Contains("step-cap", fetched.ExtraJson ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task TryBeginResume_OnlyOneRacerWins()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+
+        // Two racers CAS-claim the same parked run; exactly one wins (guardrail 2 — never two loops).
+        var a = _service.TryBeginResumeAsync(run.Id, ct);
+        var b = _service.TryBeginResumeAsync(run.Id, ct);
+        var results = await Task.WhenAll(a, b);
+
+        Assert.Single(results, r => r); // exactly one true
+        Assert.Equal(AgentRunState.Running, (await _service.GetAsync(run.Id, ct))!.State);
+    }
+
+    [Fact]
+    public async Task TryBeginResume_NonWaitingRun_ReturnsFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
+
+        Assert.False(await _service.TryBeginResumeAsync(run.Id, ct)); // not parked → no-op
+        Assert.Equal(AgentRunState.Running, (await _service.GetAsync(run.Id, ct))!.State);
+    }
+
+    [Fact]
     public async Task CreateAsync_BeforeChatRow_ThrowsFkConstraint()
     {
         // R1: FK enforcement is ON — a run row cannot precede its AssistantChats parent.
