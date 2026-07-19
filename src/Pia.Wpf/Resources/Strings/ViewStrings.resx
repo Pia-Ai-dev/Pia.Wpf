@@ -96,6 +96,7 @@
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Run in background</value></data>
+  <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Couldn't start the background run: {0}</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Research Mode</value></data>

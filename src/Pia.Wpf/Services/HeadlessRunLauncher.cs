@@ -42,6 +42,10 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
     private readonly IPersonaService _personaService;
     private readonly ILogger<HeadlessRunLauncher> _logger;
 
+    /// <summary>Base directory for all run workspaces (<c>%LOCALAPPDATA%\Pia\runs</c> in production, precedent
+    /// SqliteContext). Injectable so tests never point the destructive startup sweep at the real user folder.</summary>
+    private readonly string _runsBaseDir;
+
     private bool _disposed;
 
     public HeadlessRunLauncher(
@@ -51,7 +55,8 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
         ISettingsService settingsService,
         IProviderService providerService,
         IPersonaService personaService,
-        ILogger<HeadlessRunLauncher> logger)
+        ILogger<HeadlessRunLauncher> logger,
+        string? runsBaseDirOverride = null)
     {
         _scopeFactory = scopeFactory;
         _chatService = chatService;
@@ -60,14 +65,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
         _providerService = providerService;
         _personaService = personaService;
         _logger = logger;
+        _runsBaseDir = runsBaseDirOverride ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "runs");
 
         // Decision c: delete a run's workspace when its chat (and, by FK cascade, its run) is deleted.
         _chatService.ChatsChanged += OnChatsChanged;
     }
-
-    /// <summary>Base directory for all run workspaces: <c>%LOCALAPPDATA%\Pia\runs</c> (precedent SqliteContext).</summary>
-    private static string RunsBaseDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "runs");
 
     public async Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct)
     {
@@ -100,10 +103,23 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
             chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal), ct)
             .ConfigureAwait(false);
 
-        // Isolated per-run workspace (§17.2/G-1). Canonicalize so a link in the path is not a hole.
-        var runRoot = Path.Combine(RunsBaseDir, run.Id.ToString());
-        Directory.CreateDirectory(runRoot);
-        runRoot = SafeFolderPath.Canonicalize(runRoot);
+        // Isolated per-run workspace (§17.2/G-1). Canonicalize so a link in the path is not a hole. The run row
+        // already exists (Planning), so a workspace-setup failure here must settle it — otherwise the run dangles
+        // non-terminal until the next startup sweep (G-4).
+        string runRoot;
+        try
+        {
+            runRoot = Path.Combine(_runsBaseDir, run.Id.ToString());
+            Directory.CreateDirectory(runRoot);
+            runRoot = SafeFolderPath.Canonicalize(runRoot);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Headless run {RunId} workspace setup failed", run.Id);
+            try { await _agentRunService.FailAsync(run.Id, "workspace setup failed", cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle headless run {RunId} after workspace-setup failure", run.Id); }
+            throw;
+        }
 
         var grants = req.GrantedWrites ?? new[] { "write_file", "delete_file" };
         var budget = req.Budget ?? RunProfile.FromBudget(
@@ -152,6 +168,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Headless run {RunId} launcher task faulted", run.Id);
+                // Defense in depth (G-4): the orchestrator settles its own terminal state on every path today,
+                // but if a future refactor let RunAsync throw after we entered it, the run would dangle Running.
+                if (started)
+                {
+                    try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted headless run {RunId}", run.Id); }
+                }
             }
             finally
             {
@@ -192,12 +215,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
             string[] dirs;
             try
             {
-                if (!Directory.Exists(RunsBaseDir)) return;
-                dirs = Directory.GetDirectories(RunsBaseDir);
+                if (!Directory.Exists(_runsBaseDir)) return;
+                dirs = Directory.GetDirectories(_runsBaseDir);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Headless run-workspace sweep: failed to enumerate {Base}", RunsBaseDir);
+                _logger.LogWarning(ex, "Headless run-workspace sweep: failed to enumerate {Base}", _runsBaseDir);
                 return;
             }
 
@@ -256,7 +279,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IDisposable
 
         foreach (var runId in runIds)
         {
-            var dir = Path.Combine(RunsBaseDir, runId.ToString());
+            var dir = Path.Combine(_runsBaseDir, runId.ToString());
             TryDeleteDirectory(dir);
         }
     }

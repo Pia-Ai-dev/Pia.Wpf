@@ -96,6 +96,7 @@
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Im Hintergrund ausführen</value></data>
+  <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Hintergrundausführung konnte nicht gestartet werden: {0}</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Recherchemodus</value></data>

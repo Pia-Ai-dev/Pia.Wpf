@@ -256,8 +256,10 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
         var notifications = new FakeNotificationSurface();
 
+        // Seed a NON-default wall-clock (50, not the 45 shared by AppSettings' default and RunProfile.Scheduled)
+        // so the assertion proves the setting actually flows through to the budget, not a hardcoded constant.
         var settings = Substitute.For<ISettingsService>();
-        settings.GetSettingsAsync().Returns(new AppSettings()); // ScheduledWallClockMinutes defaults to 45
+        settings.GetSettingsAsync().Returns(new AppSettings { ScheduledWallClockMinutes = 50 });
 
         var runId = Guid.NewGuid();
         var chatId = Guid.NewGuid();
@@ -286,7 +288,7 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(due.ProviderId, captured.ProviderId);
         Assert.Equal(due.GrantedTools, captured.GrantedWrites);
         Assert.NotNull(captured.Budget);
-        Assert.Equal(45, captured.Budget!.WallClock.TotalMinutes);
+        Assert.Equal(50, captured.Budget!.WallClock.TotalMinutes);
         // Completed terminal run → job marked complete with the run's chat id + a success notification.
         Assert.Single(jobs.Completed);
         Assert.Equal(chatId, jobs.Completed[0].EntryId);

@@ -62,8 +62,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         _ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
         _runs = new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance);
         _chats = new AssistantChatService(_ctx, _runs);
-        _runsBase = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "runs");
+        // Per-test workspace base — never the real %LOCALAPPDATA%\Pia\runs, so the destructive startup
+        // sweep can't touch a developer's actual run workspaces.
+        _runsBase = Path.Combine(_dir, "runs");
+        Directory.CreateDirectory(_runsBase);
     }
 
     public void Dispose()
@@ -118,7 +120,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var launcher = new HeadlessRunLauncher(
             sp.GetRequiredService<IServiceScopeFactory>(), _chats, _runs, settings, providers, personas,
-            NullLogger<HeadlessRunLauncher>.Instance);
+            NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase);
         return (launcher, planner);
     }
 

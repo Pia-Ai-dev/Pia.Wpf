@@ -234,7 +234,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _dialogService = dialogService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
-        RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteSendMessage);
+        RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
         CancelStreamingCommand = new RelayCommand(ExecuteCancelStreaming);
         ClearConversationCommand = new RelayCommand(ExecuteClearConversation);
@@ -624,6 +624,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private bool CanExecuteSendMessage() =>
         !IsStreaming && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null);
 
+    // "Run in background" detaches the typed goal and (this milestone) ignores attachments, so unlike
+    // Send it requires real text — never enable on an attachment-only composer.
+    private bool CanExecuteRunInBackground() =>
+        !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
+
     private async Task ExecuteSendMessage()
     {
         var userText = InputText.Trim();
@@ -653,7 +658,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var userText = InputText.Trim();
         if (string.IsNullOrWhiteSpace(userText)) return;
         InputText = string.Empty;
-        await _chatSessionManager.StartBackgroundRunAsync(userText);
+        try
+        {
+            await _chatSessionManager.StartBackgroundRunAsync(userText);
+        }
+        catch (Exception ex)
+        {
+            // A detached run has no live session to surface a failure through, and the goal is not persisted
+            // until the run row exists — so a pre-dispatch failure (e.g. no provider configured) would silently
+            // swallow the user's input. Restore it and tell them. ex.Message is diagnostic text, not user content.
+            _logger.LogError(ex, "Failed to start a background run");
+            InputText = userText;
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Assistant_RunInBackground_Failed", ex.Message),
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
+        }
     }
 
     private async Task ExecuteToggleRecording()

@@ -96,6 +96,7 @@
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Conversation vocale</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Exécuter en arrière-plan</value></data>
+  <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Impossible de démarrer l'exécution en arrière-plan : {0}</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Mode Recherche</value></data>
