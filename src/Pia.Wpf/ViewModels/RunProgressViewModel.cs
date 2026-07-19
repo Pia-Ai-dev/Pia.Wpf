@@ -8,10 +8,10 @@ using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
 
-/// <summary>View-facing run states (R12). Only the four rendered states plus the distinct
-/// truncated-Completed variant. Verifying now renders as the Running chip (via the MapState default)
-/// plus a "Checking the work…" current-activity line; only WaitingForInput/Paused stay unrendered
-/// in Phase 1.</summary>
+/// <summary>View-facing run states (R12). The four rendered states, the distinct truncated-Completed
+/// variant, and — new in Phase 2 — the budget-pause WaitingForInput state (a "continue?" affordance)
+/// plus the reserved user-initiated Paused state. Verifying renders as the Running chip (via the
+/// MapState default) plus a "Checking the work…" current-activity line.</summary>
 public enum RunProgressState
 {
     Planning,
@@ -19,6 +19,8 @@ public enum RunProgressState
     Completed,
     TruncatedCompleted,
     Failed,
+    WaitingForInput, // budget-paused, awaiting the user's Continue
+    Paused,          // reserved: user-initiated pause (Phase 4) — rendered, never driven this round
 }
 
 /// <summary>

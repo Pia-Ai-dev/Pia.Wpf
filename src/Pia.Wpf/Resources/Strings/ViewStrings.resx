@@ -899,9 +899,13 @@
   <data name="Run_State_Running" xml:space="preserve"><value>Running</value></data>
   <data name="Run_State_Completed" xml:space="preserve"><value>Completed</value></data>
   <data name="Run_State_Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="Run_State_WaitingForInput" xml:space="preserve"><value>Waiting for you</value></data>
+  <data name="Run_State_Paused" xml:space="preserve"><value>Paused</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Building a plan…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Working…</value></data>
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Checking the work…</value></data>
+  <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Stopped at budget — continue?</value></data>
+  <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agent runs</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limits an Agent run stops at, so it never runs away. Runs that hit a limit end and are marked "stopped at budget."</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>
@@ -926,6 +930,8 @@
   <data name="Flow_Run_Failed" xml:space="preserve"><value>Ended with an error</value></data>
   <data name="Flow_Run_Gone" xml:space="preserve"><value>That run is no longer available.</value></data>
   <data name="Flow_Action_OpenRun" xml:space="preserve"><value>Open run</value></data>
+  <data name="Flow_Run_WaitingAtBudget" xml:space="preserve"><value>Stopped at its budget — continue?</value></data>
+  <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Continue run</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Shorter</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>More detailed</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-ready</value></data>

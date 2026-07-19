@@ -56,6 +56,8 @@ public sealed class RunStateToLabelConverter : IValueConverter
             RunProgressState.Planning => "Run_State_Planning",
             RunProgressState.Running => "Run_State_Running",
             RunProgressState.Failed => "Run_State_Failed",
+            RunProgressState.WaitingForInput => "Run_State_WaitingForInput",
+            RunProgressState.Paused => "Run_State_Paused",
             _ => "Run_State_Completed", // Completed + TruncatedCompleted both read "Completed"
         };
         return LocalizationSource.Instance[key];
@@ -76,6 +78,8 @@ public sealed class RunStateToBrushConverter : IValueConverter
             RunProgressState.Completed => "PiaSuccessBrush",
             RunProgressState.TruncatedCompleted => "TextMutedBrush", // muted "stopped at budget", not danger
             RunProgressState.Failed => "PiaDangerBrush",
+            RunProgressState.WaitingForInput => "PiaAccentBrush", // action-needed accent — invites the Continue
+            RunProgressState.Paused => "TextMutedBrush",
             _ => "TextDefaultBrush", // Planning / Running
         };
         return Application.Current?.TryFindResource(key) as Brush ?? DependencyProperty.UnsetValue;
