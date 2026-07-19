@@ -27,6 +27,13 @@ public enum FileRefKind
     Exported,
 }
 
+/// <summary>
+/// A model-offered "switch to Agent mode" chip (R8). Distinct from the string-based
+/// <see cref="AssistantMessage.Suggestions"/> (whose click merely pastes text): clicking this
+/// re-dispatches <see cref="Goal"/> as a Planned run. <see cref="Reason"/> is model content — never logged.
+/// </summary>
+public sealed record AgentModeSuggestion(string Goal, string Reason);
+
 public sealed record MessageMeta(string Timing, string? ProfileLabel = null);
 
 public sealed record AnswerStats(int Tokens, string Model)

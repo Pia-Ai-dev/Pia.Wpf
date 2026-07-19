@@ -60,7 +60,7 @@ public sealed class HeadlessTurnExecutorTests
 
         var plugins = Substitute.For<IPluginService>();
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -108,6 +108,11 @@ public sealed class HeadlessTurnExecutorTests
         // TaskAmbient.TaskId == run.Id for every exchange (R9).
         Assert.Equal(3, ObservedTaskIds.Count);
         Assert.All(ObservedTaskIds, id => Assert.Equal(run.Id, id));
+
+        // R7/G1: the headless path never offers Agent mode — suggestAgentModeEligible is always false.
+        composer.DidNotReceive().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
+            suggestAgentModeEligible: true);
 
         // Exactly one accumulated chat: goal + 3 assistant replies.
         var ids = await chats.GetAllIdsAsync(TestContext.Current.CancellationToken);

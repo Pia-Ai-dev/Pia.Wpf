@@ -537,6 +537,8 @@ public static class Bootstrapper
 
         // Cloud capability probe + assistant-chat sync (singletons)
         services.AddSingleton<ICloudCapabilityService, CloudCapabilityService>();
+        // Provider tool-calling capability probe for the Agent lever/suggestion (R10).
+        services.AddSingleton<IProviderCapabilityService, ProviderCapabilityService>();
         services.AddSingleton<AssistantChatSyncService>();
 
         // Background services

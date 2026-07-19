@@ -47,6 +47,10 @@ public partial class AssistantMessage : ObservableObject
 
     public ObservableCollection<string> Suggestions { get; } = [];
 
+    /// <summary>Typed "switch to Agent mode" chips (R8) — net-new, not the string <see cref="Suggestions"/>.
+    /// Populated pre-route in <c>ChatSession.HandleToolCall</c> when the model calls suggest_agent_mode.</summary>
+    public ObservableCollection<AgentModeSuggestion> AgentModeSuggestions { get; } = [];
+
     [ObservableProperty]
     private MessageMeta? _meta;
 
@@ -76,6 +80,8 @@ public partial class AssistantMessage : ObservableObject
     public bool HasFileRefs => FileRefs.Count > 0;
 
     public bool HasSuggestions => Suggestions.Count > 0;
+
+    public bool HasAgentModeSuggestion => AgentModeSuggestions.Count > 0;
 
     public bool HasContent => !string.IsNullOrEmpty(Content);
 
@@ -156,6 +162,7 @@ public partial class AssistantMessage : ObservableObject
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSources));
         FileRefs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFileRefs));
         Suggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSuggestions));
+        AgentModeSuggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAgentModeSuggestion));
     }
 
     /// <summary>

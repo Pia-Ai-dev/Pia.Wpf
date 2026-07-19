@@ -43,6 +43,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ISuggestionService _suggestionService;
     private readonly IAssistantChatService _chatService;
     private readonly IAssistantPromptComposer _promptComposer;
+    private readonly IProviderCapabilityService _providerCapabilityService;
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IWorkingDirectoryService _workingDirectoryService;
     private readonly IFilesToolHandler _filesToolHandler;
@@ -186,6 +187,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAssistantChatService chatService,
         MeetingAttendeeViewModel meetingAttendee,
         IAssistantPromptComposer promptComposer,
+        IProviderCapabilityService providerCapabilityService,
         IChatSessionManager chatSessionManager,
         IWorkingDirectoryService workingDirectoryService,
         IFilesToolHandler filesToolHandler,
@@ -213,6 +215,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatService = chatService;
         MeetingAttendee = meetingAttendee;
         _promptComposer = promptComposer;
+        _providerCapabilityService = providerCapabilityService;
         _chatSessionManager = chatSessionManager;
         _workingDirectoryService = workingDirectoryService;
         _filesToolHandler = filesToolHandler;
@@ -482,8 +485,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (_isLoadingAgentMode)
             return;
         PersistAgentModeDefaultAsync(value).SafeFireAndForget(_logger);
-        // Warning-first (§14.4) evaluation is wired in Commit Group 2 (needs IProviderCapabilityService).
-        if (!value)
+        // Warning-first (§14.4): surface the subtle Weak-provider adorner when flipping to Agent.
+        if (value)
+            EvaluateProviderWarningAsync().SafeFireAndForget(_logger);
+        else
             WeakProviderWarningVisible = false;
     }
 
@@ -1114,6 +1119,67 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         => _navigationService.NavigateTo<SettingsViewModel, (int, int)>(
             ((int)SettingsTab.Assistant, (int)AssistantSettingsInnerTab.ToolAccess));
 
+    /// <summary>
+    /// Accepts a model-offered <see cref="AgentModeSuggestion"/> (R8): flips the lever to Agent and
+    /// re-dispatches the goal as a Planned run. Modeled on <see cref="ExecuteSendMessage"/> (NOT
+    /// RegenerateCore) — the prior Chat answer carrying the chip stays in the transcript, and the
+    /// composer round-trip is untouched (InputText/attachment are never read or cleared).
+    /// </summary>
+    [RelayCommand]
+    private async Task SwitchToAgent(AgentModeSuggestion? suggestion)
+    {
+        if (suggestion is null || string.IsNullOrWhiteSpace(suggestion.Goal))
+            return;
+
+        AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
+        var session = _chatSessionManager.ActiveSession
+            ?? _chatSessionManager.GetOrCreateActiveForNewChat();
+        await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachment: null, planned: true);
+    }
+
+    /// <summary>Warning-first evaluation (§14.4): shows the subtle adorner/banner when the active provider
+    /// is not Capable of tool calling. Non-blocking — a Weak provider still runs Planned (R10).</summary>
+    private async Task EvaluateProviderWarningAsync()
+    {
+        var provider = await ResolveActiveProviderAsync();
+        if (provider is null)
+        {
+            WeakProviderWarningVisible = false;
+            return;
+        }
+        var capability = await _providerCapabilityService.GetPlanningCapabilityAsync(provider);
+        // Treat Unknown (transient probe failure) conservatively like Weak (OQ5).
+        WeakProviderWarningVisible = capability != PlanningCapability.Capable;
+    }
+
+    /// <summary>Resolves the provider for the active persona (persona preference, else the mode default).</summary>
+    private async Task<AiProvider?> ResolveActiveProviderAsync()
+    {
+        var persona = ActivePersona;
+        if (persona?.PreferredProviderId is { } preferred)
+        {
+            var p = await _providerService.GetProviderAsync(preferred);
+            if (p is not null)
+                return p;
+        }
+        return await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+    }
+
+    [RelayCommand]
+    private void DismissWeakWarning() => WeakProviderWarningVisible = false;
+
+    [RelayCommand]
+    private void OpenProviderSettings()
+    {
+        WeakProviderWarningVisible = false;
+        // Link to existing provider settings (no reassignment UI — out of scope this pass).
+        _navigationService.NavigateTo<SettingsViewModel, (int, int)>(
+            ((int)SettingsTab.Providers, 0));
+    }
+
+    [RelayCommand]
+    private void StayInChat() => AgentModeEnabled = false;
+
     private async Task SpeakMessageAsync(AssistantMessage message)
     {
         // Stop any currently speaking message
@@ -1197,7 +1263,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             provider.ReasoningEffort = persona.ReasoningEffort.Value;
         }
 
-        var turnSetup = _promptComposer.PrepareTurn(persona, provider, Array.Empty<AtCommand>(), _tokenizationEnabled);
+        // Voice mode has no chip-render surface and no Planned concept (F1) → never eligible.
+        var turnSetup = _promptComposer.PrepareTurn(persona, provider, Array.Empty<AtCommand>(), _tokenizationEnabled,
+            suggestAgentModeEligible: false);
         var supportsTools = turnSetup.SupportsTools;
         var fullSystemPrompt = turnSetup.SystemPrompt;
         var tools = turnSetup.Tools;

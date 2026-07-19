@@ -157,5 +157,11 @@
                              ItemClickCommand="{Binding SuggestionCommand, ElementName=Root}"
                              Visibility="{Binding HasSuggestions, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
+    <!-- Agent-mode suggestion chip (R8) — switches to a Planned run, not text-paste -->
+    <chat:PiaAgentModeChip Margin="0,8,0,0"
+                           ItemsSource="{Binding AgentModeSuggestions}"
+                           ItemClickCommand="{Binding SwitchToAgentCommand, ElementName=Root}"
+                           Visibility="{Binding HasAgentModeSuggestion, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
   </StackPanel>
 </UserControl>

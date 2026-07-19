@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text;
 using Microsoft.Extensions.AI;
 using Pia.Models;
@@ -23,7 +24,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         _pluginService = pluginService;
     }
 
-    public AssistantTurnSetup PrepareTurn(Persona persona, AiProvider provider, IReadOnlyList<AtCommand> atCommands, bool tokenizationEnabled)
+    public AssistantTurnSetup PrepareTurn(Persona persona, AiProvider provider, IReadOnlyList<AtCommand> atCommands, bool tokenizationEnabled, bool suggestAgentModeEligible = false)
     {
         // Tool gating (contract §5) — see ShouldUseTools.
         var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
@@ -41,12 +42,19 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             var allTools = _pluginService.GetAllTools();
             if (hasAtCommands)
             {
+                // @-command turns narrow the toolset to the tagged domain — leave suggest_agent_mode out
+                // so those turns stay byte-stable (G1).
                 var allowed = GetAllowedToolNames(atCommands);
                 tools = [.. allTools.Where(t => allowed.Contains(t.Name))];
             }
             else
             {
-                tools = [.. allTools];
+                var list = new List<AITool>(allTools);
+                // R7: inject the suggestion tool only for an eligible interactive Chat turn on a tool-capable
+                // provider. supportsTools here already carries ToolScope!=None ∧ provider.SupportsToolCalling.
+                if (suggestAgentModeEligible)
+                    list.Add(BuildSuggestAgentModeTool());
+                tools = list;
             }
         }
         else
@@ -309,4 +317,14 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
 
     private static bool IsWebSearchActive(AiProvider provider)
         => provider.EnableWebSearch || provider.ProviderType == AiProviderType.PiaCloud;
+
+    // suggest_agent_mode (R7): a no-op tool the model calls to offer switching the user from Chat to
+    // Agent mode. It is intercepted pre-route in ChatSession.HandleToolCall (recording the reason and
+    // returning a short ack); the returned "ok" here is never reached. Goal is NOT a parameter — it is
+    // derived from the turn's user text at interception. Name pinned by the interception + tests.
+    internal static AITool BuildSuggestAgentModeTool() =>
+        AIFunctionFactory.Create(
+            ([Description("One short sentence: why the user's request would be better handled as a multi-step Agent run.")] string reason) => "ok",
+            "suggest_agent_mode",
+            "Offer to switch the user from Chat to Agent mode when their request is a multi-step task that benefits from planning. Call at most once.");
 }

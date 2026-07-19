@@ -784,6 +784,46 @@ public class AiClientService : IAiClientService
         }
     }
 
+    public async Task<bool> TestToolCallEmittedAsync(AiProvider provider, CancellationToken cancellationToken = default)
+    {
+        // R10 strengthening: unlike TestToolCallingAsync (schema-accept only), this demands an ACTUAL
+        // tool call and inspects the response for a FunctionCallContent. Does NOT mutate the settings-page
+        // probe. Non-blocking: 400/404 and other faults surface to the caller → Weak/Unknown.
+        var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
+        var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
+
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeoutCts.Token);
+
+        var handler = _handlers.Get(provider.ProviderType);
+        var httpClient = _httpClientFactory.CreateClient();
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
+
+        var pingTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool. Call it to confirm tool support.");
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(ChatRole.System, NoThinkSystemPrompt),
+            new(ChatRole.User, "Call the ping tool now. Do not answer in text."),
+        };
+        var options = handler.CreateChatOptions(provider, hasTools: true);
+        options.Tools = [pingTool];
+        options.ToolMode = ChatToolMode.RequireAny; // demand a call; providers that ignore it fall through to false
+
+        try
+        {
+            var response = await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
+            return response.Messages
+                .SelectMany(m => m.Contents)
+                .OfType<FunctionCallContent>()
+                .Any(fc => string.Equals(fc.Name, "ping", StringComparison.Ordinal));
+        }
+        catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Capability probe timed out after {timeout.TotalSeconds} seconds");
+        }
+    }
+
     private static bool IsToolNotSupportedError(Exception ex)
     {
         if (ex is ClientResultException clientEx)

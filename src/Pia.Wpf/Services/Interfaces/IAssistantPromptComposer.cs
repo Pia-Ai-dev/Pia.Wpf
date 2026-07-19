@@ -26,9 +26,15 @@ public interface IAssistantPromptComposer
     /// Composes the system prompt and tool list for one turn. Pass an empty
     /// <paramref name="atCommands"/> list for turns without @-commands (e.g. voice mode).
     /// </summary>
+    /// <param name="suggestAgentModeEligible">
+    /// When true (interactive Chat turn on a tool-capable provider), the <c>suggest_agent_mode</c> tool is
+    /// injected so the model can offer to switch the user to Agent mode (R7). Only honoured inside the
+    /// tools path with no @-commands; false everywhere by default (headless + voice-mode + Planned turns).
+    /// </param>
     AssistantTurnSetup PrepareTurn(
         Persona persona,
         AiProvider provider,
         IReadOnlyList<AtCommand> atCommands,
-        bool tokenizationEnabled);
+        bool tokenizationEnabled,
+        bool suggestAgentModeEligible = false);
 }

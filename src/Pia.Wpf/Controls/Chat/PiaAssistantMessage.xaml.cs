@@ -21,6 +21,8 @@ public partial class PiaAssistantMessage : UserControl
         DependencyProperty.Register(nameof(RateCommand), typeof(ICommand), typeof(PiaAssistantMessage));
     public static readonly DependencyProperty SuggestionCommandProperty =
         DependencyProperty.Register(nameof(SuggestionCommand), typeof(ICommand), typeof(PiaAssistantMessage));
+    public static readonly DependencyProperty SwitchToAgentCommandProperty =
+        DependencyProperty.Register(nameof(SwitchToAgentCommand), typeof(ICommand), typeof(PiaAssistantMessage));
     public static readonly DependencyProperty ManageToolPermissionsCommandProperty =
         DependencyProperty.Register(nameof(ManageToolPermissionsCommand), typeof(ICommand), typeof(PiaAssistantMessage));
 
@@ -64,6 +66,12 @@ public partial class PiaAssistantMessage : UserControl
     {
         get => (ICommand?)GetValue(SuggestionCommandProperty);
         set => SetValue(SuggestionCommandProperty, value);
+    }
+
+    public ICommand? SwitchToAgentCommand
+    {
+        get => (ICommand?)GetValue(SwitchToAgentCommandProperty);
+        set => SetValue(SwitchToAgentCommandProperty, value);
     }
 
     public ICommand? ManageToolPermissionsCommand

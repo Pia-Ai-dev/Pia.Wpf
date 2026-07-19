@@ -245,6 +245,9 @@ public class TokenizingAiClientService : IAiClientService
     public Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default)
         => _inner.TestToolCallingAsync(provider, cancellationToken);
 
+    public Task<bool> TestToolCallEmittedAsync(AiProvider provider, CancellationToken cancellationToken = default)
+        => _inner.TestToolCallEmittedAsync(provider, cancellationToken);
+
     public Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default)
         => _inner.TestStreamingAsync(provider, cancellationToken);
 

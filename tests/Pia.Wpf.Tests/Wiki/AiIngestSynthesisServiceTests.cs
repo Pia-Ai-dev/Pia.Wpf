@@ -261,6 +261,7 @@ public class AiIngestSynthesisServiceTests
             => throw new NotImplementedException();
 
         public Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<bool> TestToolCallEmittedAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<AiCompletionResult> OptimizeViaPiaCloudAsync(string text, Guid templateId, string language, bool isVoiceInput, string? mode = null, string? customPrompt = null, string? customTemplateName = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<string> GeneratePromptViaPiaCloudAsync(string styleDescription, string? mode = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
@@ -282,6 +283,7 @@ public class AiIngestSynthesisServiceTests
             => throw new NotImplementedException();
 
         public Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<bool> TestToolCallEmittedAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<AiCompletionResult> OptimizeViaPiaCloudAsync(string text, Guid templateId, string language, bool isVoiceInput, string? mode = null, string? customPrompt = null, string? customTemplateName = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<string> GeneratePromptViaPiaCloudAsync(string styleDescription, string? mode = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();

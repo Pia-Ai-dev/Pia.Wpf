@@ -27,11 +27,14 @@ public class ChatSessionManagerTests
     private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
     private readonly IFilesToolHandler _files = Substitute.For<IFilesToolHandler>();
     private readonly IAgentRunService _runService = Substitute.For<IAgentRunService>();
+    private readonly IProviderCapabilityService _capability = Substitute.For<IProviderCapabilityService>();
 
     public ChatSessionManagerTests()
     {
         _settings.GetSettingsAsync().Returns(new AppSettings());
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        _capability.GetPlanningCapabilityAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
+            .Returns(PlanningCapability.Capable);
     }
 
     private ChatSessionManager CreateSut()
@@ -49,7 +52,7 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService);
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability);
     }
 
     [Fact]

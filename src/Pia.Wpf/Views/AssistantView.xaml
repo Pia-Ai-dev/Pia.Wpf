@@ -213,6 +213,7 @@
                     RegenerateStyledCommand="{Binding DataContext.RegenerateStyledCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     ExportCommand="{Binding DataContext.ExportMessageHtmlCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SuggestionCommand="{Binding DataContext.UseFollowupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    SwitchToAgentCommand="{Binding DataContext.SwitchToAgentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     ManageToolPermissionsCommand="{Binding DataContext.NavigateToToolPermissionsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     AddToPiiRequested="OnAddToPiiRequested" />
               </Grid>
@@ -226,6 +227,26 @@
     <Border Grid.Row="2" Padding="20,8,20,16">
       <Border Style="{StaticResource PiaComposerCardStyle}">
         <StackPanel Margin="8">
+          <!-- Weak-provider warning banner (§14.4). Non-blocking: a Planned send still runs (R10). -->
+          <Border Background="{DynamicResource WarnSoftBrush}"
+                  BorderBrush="{DynamicResource WarnBrush}"
+                  BorderThickness="1"
+                  CornerRadius="{StaticResource SmallRadius}"
+                  Padding="10,8" Margin="0,0,0,6"
+                  Visibility="{Binding WeakProviderWarningVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="Warning24" FontSize="16"
+                             Foreground="{DynamicResource WarnBrush}" Margin="0,0,8,0"
+                             VerticalAlignment="Center" />
+              <TextBlock Text="{loc:Str Agent_WeakProvider_Body}" VerticalAlignment="Center" />
+              <Button Content="{loc:Str Agent_Warn_Continue}"
+                      Command="{Binding DismissWeakWarningCommand}" Margin="8,0,0,0" />
+              <Button Content="{loc:Str Agent_Warn_ChooseProvider}"
+                      Command="{Binding OpenProviderSettingsCommand}" Margin="4,0,0,0" />
+              <Button Content="{loc:Str Agent_Warn_StayInChat}"
+                      Command="{Binding StayInChatCommand}" Margin="4,0,0,0" />
+            </StackPanel>
+          </Border>
           <Border Margin="0,0,0,6" Padding="6"
                   CornerRadius="6"
                   BorderBrush="{DynamicResource ControlElevationBorderBrush}"

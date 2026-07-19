@@ -30,6 +30,13 @@ public interface IAiClientService
 
     Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Strengthened tool-calling probe (R10): demands an actual tool call and returns true only when the
+    /// provider emits a <c>FunctionCallContent</c>. Distinct from <see cref="TestToolCallingAsync"/> (which
+    /// only checks the schema is accepted). Used by <c>IProviderCapabilityService</c>; never hard-blocks.
+    /// </summary>
+    Task<bool> TestToolCallEmittedAsync(AiProvider provider, CancellationToken cancellationToken = default);
+
     Task<bool> TestStreamingAsync(AiProvider provider, CancellationToken cancellationToken = default);
 
     Task<AiCompletionResult> OptimizeViaPiaCloudAsync(

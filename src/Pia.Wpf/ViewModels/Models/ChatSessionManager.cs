@@ -42,6 +42,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly AgentRunOrchestrator _agentRunOrchestrator;
     private readonly IAgentRunService _agentRunService;
+    private readonly IProviderCapabilityService _providerCapabilityService;
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -91,7 +92,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IFlowService flowService,
         IFilesToolHandler filesToolHandler,
         AgentRunOrchestrator agentRunOrchestrator,
-        IAgentRunService agentRunService)
+        IAgentRunService agentRunService,
+        IProviderCapabilityService providerCapabilityService)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -112,6 +114,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _filesToolHandler = filesToolHandler;
         _agentRunOrchestrator = agentRunOrchestrator;
         _agentRunService = agentRunService;
+        _providerCapabilityService = providerCapabilityService;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
     }
@@ -418,7 +421,16 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             session.SetProviderId(provider.Id);
             _logger.LogInformation("SendMessage: resolved persona {PersonaId} (ToolScope {ToolScope})", persona.Id, persona.ToolScope);
 
-            var turnSetup = _promptComposer.PrepareTurn(persona, provider, atCommands, tokenizationEnabled);
+            // suggest_agent_mode eligibility (R7/§14.3): only an interactive Chat turn (never a Planned
+            // dispatch) on a tool-Capable provider may offer the switch. Capability is async + cached, so
+            // pre-resolve it here (F2 — keeps PrepareTurn synchronous). Swallowed inside the service on
+            // failure (Unknown/Weak) → never throws into the turn, never hard-blocks.
+            var providerToolCapable = !planned
+                && await _providerCapabilityService.GetPlanningCapabilityAsync(provider, session.Cts!.Token)
+                    == PlanningCapability.Capable;
+
+            var turnSetup = _promptComposer.PrepareTurn(persona, provider, atCommands, tokenizationEnabled,
+                suggestAgentModeEligible: !planned && providerToolCapable);
             // Provider name is a user-named item (CLAUDE.md) — keep it out of the
             // release-surviving log; surface IDs/counts at Info, the name only in DEBUG.
             _logger.LogInformation("SendMessage: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",

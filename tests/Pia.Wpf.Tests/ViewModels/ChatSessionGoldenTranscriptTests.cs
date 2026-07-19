@@ -105,6 +105,68 @@ public sealed class ChatSessionGoldenTranscriptTests
 #pragma warning restore CS0162
     }
 
+    // G1: a Chat turn whose tool schema carries the injected suggest_agent_mode must still produce
+    // today's transcript/state for a normal text answer — no reasoning/tool-path regression.
+    private static ChatTurnRequest BuildRequestWithSuggestTool(ChatSession session)
+    {
+        var user = new AssistantMessage(ChatRole.User, "hi");
+        var assistant = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
+        session.Messages.Add(user);
+        session.Messages.Add(assistant);
+        var tools = new List<AITool> { AssistantPromptComposer.BuildSuggestAgentModeTool() };
+        return new ChatTurnRequest
+        {
+            UserMessage = user,
+            AssistantMessage = assistant,
+            Provider = new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+            TurnSetup = new AssistantTurnSetup("system", tools, SupportsTools: true, WebSearchActive: false),
+            AtCommands = [],
+            TokenizationEnabled = false,
+        };
+    }
+
+    [Fact]
+    public async Task SuggestToolInjected_PlainText_ByteIdenticalToBaseline()
+    {
+        // G1: with suggest_agent_mode present in the tool list, a plain-text Chat turn is unchanged.
+        ReturnsStream(() => Stream(new TextDelta("Hello "), new TextDelta("world"), new Finished(null, "m")));
+        var session = CreateSession();
+        bool? succeeded = null;
+        session.TurnCompleted += (_, e) => succeeded = e.Succeeded;
+
+        await session.RunTurnAsync(BuildRequestWithSuggestTool(session), CancellationToken.None);
+
+        var msg = session.Messages.Last(m => !m.IsUser);
+        Assert.Equal("Hello world", msg.Content);
+        Assert.Equal(ChatState.Idle, session.State);
+        Assert.False(session.IsStreaming);
+        Assert.True(succeeded);
+        Assert.Null(session.Cts);
+        Assert.False(msg.HasAgentModeSuggestion); // no suggest call happened → no chip
+    }
+
+    [Fact]
+    public async Task SuggestAgentMode_PreRouteAck_RecordsChip_AndNeverRoutes()
+    {
+        // R7: the model calling suggest_agent_mode is intercepted before RouteToolCallAsync; it records a
+        // typed chip (Goal = the turn's user text) and returns a short ack, never dead-ending at "Unknown tool.".
+        ReturnsToolThenText("suggest_agent_mode", "Sure, here is a plan.");
+        var session = CreateSession();
+
+        await session.RunTurnAsync(BuildRequestWithSuggestTool(session), CancellationToken.None);
+
+        var msg = session.Messages.Last(m => !m.IsUser);
+        Assert.True(msg.HasAgentModeSuggestion);
+        Assert.Single(msg.AgentModeSuggestions);
+        Assert.Equal("hi", msg.AgentModeSuggestions[0].Goal);
+        Assert.Equal(string.Empty, msg.AgentModeSuggestions[0].Reason);
+        Assert.Equal("Sure, here is a plan.", msg.Content);
+        Assert.Equal(ChatState.Idle, session.State);
+        // The pre-route short-circuit means the plugin router is never asked to handle this tool.
+        await _plugins.DidNotReceive().RouteToolCallAsync(
+            Arg.Is<FunctionCallContent>(fc => fc.Name == "suggest_agent_mode"), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task PlainText_SettlesIdle_ContentAndTurnCompleted()
     {

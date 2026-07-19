@@ -86,7 +86,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
         _provider = provider;
 
-        _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled);
+        // Headless path — no user to click the chip (R7) → never eligible.
+        _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled,
+            suggestAgentModeEligible: false);
 
         // Initialize the run's token map. NOTE: the ambients are set PER STEP (in RunExchangeStepAsync),
         // not here — an AsyncLocal set after an await inside BeginRunAsync would NOT propagate into the

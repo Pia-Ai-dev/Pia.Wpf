@@ -725,6 +725,19 @@ public sealed class ChatSession : IDisposable
         return result;
     }
 
+    /// <summary>Reads a string tool-call argument, tolerating both a raw string and a <see cref="JsonElement"/>.</summary>
+    private static string? ExtractStringArg(IDictionary<string, object?>? arguments, string name)
+    {
+        if (arguments is null || !arguments.TryGetValue(name, out var value) || value is null)
+            return null;
+        return value switch
+        {
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+            _ => value.ToString(),
+        };
+    }
+
     private async Task<object?> HandleToolCall(FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled)
     {
         _logger.LogInformation("Handling tool call: {ToolName}", toolCall.Name);
@@ -732,6 +745,24 @@ public sealed class ChatSession : IDisposable
 #if DEBUG
         Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
 #endif
+
+        // suggest_agent_mode (R7): pre-route special-case. RouteToolCallAsync would return null for this
+        // unknown tool and dead-end at "Unknown tool.", so intercept BEFORE routing. Records a typed chip
+        // on the streaming message + returns a short ack; never gated, always succeeds. G1: every other
+        // tool path is byte-for-byte unchanged because this short-circuits before RouteToolCallAsync.
+        if (string.Equals(toolCall.Name, "suggest_agent_mode", StringComparison.Ordinal))
+        {
+            var reason = ExtractStringArg(toolCall.Arguments, "reason") ?? string.Empty;
+            _logger.SensitiveDebug("suggest_agent_mode reason: {Reason}", reason); // user/model content
+            // OQ2: idempotent — at most one chip per message even if the model calls twice.
+            if (!message.HasAgentModeSuggestion)
+            {
+                var goal = Messages.LastOrDefault(m => m.Role == ChatRole.User)?.Content ?? string.Empty;
+                // UI-affine loop: this handler runs on the UI thread, so the ObservableCollection add is safe.
+                message.AgentModeSuggestions.Add(new AgentModeSuggestion(goal, reason));
+            }
+            return "Noted — offered Agent mode to the user.";
+        }
 
         var routeResult = await _pluginService.RouteToolCallAsync(toolCall);
         if (routeResult is null)

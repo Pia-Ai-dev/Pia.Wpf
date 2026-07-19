@@ -108,7 +108,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 provider.ReasoningEffort = persona.ReasoningEffort.Value;
             }
 
-            var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled);
+            // Headless path — no user to click the chip (R7) → never eligible.
+            var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled,
+                suggestAgentModeEligible: false);
             _logger.LogInformation(
                 "Background turn {ChatId}: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, grantedWrites={GrantedWrites}",
                 chatId, provider.Id, turnSetup.SupportsTools, turnSetup.Tools?.Count ?? 0, request.GrantedWriteTools.Count);

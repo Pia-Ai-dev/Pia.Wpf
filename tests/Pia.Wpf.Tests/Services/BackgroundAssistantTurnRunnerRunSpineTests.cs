@@ -44,7 +44,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         settings.GetSettingsAsync().Returns(new AppSettings());
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: false, WebSearchActive: false));
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
