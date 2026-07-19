@@ -19,6 +19,7 @@ public sealed class AgentRunNotificationSurfaceTests
     private readonly IAgentRunService _runs = Substitute.For<IAgentRunService>();
     private readonly Pia.Services.Flow.IFlowService _flow = Substitute.For<Pia.Services.Flow.IFlowService>();
     private readonly IWindowManagerService _windows = Substitute.For<IWindowManagerService>();
+    private readonly IAssistantChatService _chats = Substitute.For<IAssistantChatService>();
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
 
     public AgentRunNotificationSurfaceTests()
@@ -27,11 +28,15 @@ public sealed class AgentRunNotificationSurfaceTests
     }
 
     private AgentRunNotificationSurface Create() =>
-        new(_runs, _flow, _windows, _loc, NullLogger<AgentRunNotificationSurface>.Instance);
+        new(_runs, _flow, _windows, _chats, _loc, NullLogger<AgentRunNotificationSurface>.Instance);
 
-    private void SetupRun(Guid runId, RunShape shape)
-        => _runs.GetAsync(runId, Arg.Any<CancellationToken>())
-            .Returns(new AgentRun { Id = runId, RunShape = shape, ChatId = Guid.NewGuid() });
+    private Guid SetupRun(Guid runId, RunShape shape, Guid? chatId = null)
+    {
+        var chat = chatId ?? Guid.NewGuid();
+        _runs.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = shape, ChatId = chat });
+        return chat;
+    }
 
     [Fact]
     public async Task Unfocused_Planned_Failed_PublishesDurableErrorItem()
@@ -102,5 +107,31 @@ public sealed class AgentRunNotificationSurfaceTests
         await surface.HandleTerminalAsync(runId, AgentRunState.Completed);
 
         _flow.Received(2).Publish(Arg.Is<FlowItemDraft>(d => d.DedupKey == runId.ToString()));
+    }
+
+    [Fact]
+    public async Task ChatDeleted_RetractsPublishedRunItems()
+    {
+        // R17 deletion-side: once a chat (and its cascaded runs) is deleted, the durable OpenRun item(s)
+        // this surface published for that chat must be retracted so nothing dangles in Flow.
+        var chatId = Guid.NewGuid();
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned, chatId);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+        var surface = Create();
+        await surface.HandleTerminalAsync(runId, AgentRunState.Failed); // records runId → chatId
+
+        surface.HandleChatDeleted(chatId);
+
+        _flow.Received(1).Retract(runId.ToString());
+    }
+
+    [Fact]
+    public void ChatDeleted_UnknownChat_RetractsNothing()
+    {
+        // A chat with no published run items (or an already-handled one) is a no-op — never a spurious retract.
+        Create().HandleChatDeleted(Guid.NewGuid());
+
+        _flow.DidNotReceive().Retract(Arg.Any<string>());
     }
 }
