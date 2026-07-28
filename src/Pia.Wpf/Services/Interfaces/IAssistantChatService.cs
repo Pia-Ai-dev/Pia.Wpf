@@ -26,6 +26,24 @@ public interface IAssistantChatService
     /// </summary>
     Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default);
 
+    /// <summary>
+    /// Set a chat's title (and <c>UpdatedAt</c>) WITHOUT touching its message rows, refreshing the FTS row so
+    /// history search does not keep matching the old title. No-op when the chat row is gone.
+    /// <para>
+    /// W2: this exists so the auto-title rename stops being a full-chat writer. The old shape —
+    /// <see cref="GetAsync"/> → mutate <c>Title</c> → <see cref="SaveAsync"/> — is a fire-and-forget
+    /// read-modify-write whose DB snapshot is routinely stale by the time it writes, so it could revert
+    /// message rows a headless step appended in between. A title update has no business carrying a message
+    /// payload.
+    /// </para>
+    /// <returns>
+    /// <c>true</c> when a row was updated; <c>false</c> when the chat had already been deleted/evicted. The
+    /// caller (the auto-title path) turns <c>false</c> into its existing "chat disappeared before rename"
+    /// warning — this service owns no logger, so the signal has to come back as a value.
+    /// </returns>
+    /// </summary>
+    Task<bool> SetTitleAsync(Guid chatId, string title, CancellationToken ct = default);
+
     Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default);
 
     Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(

@@ -215,6 +215,57 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         transaction.Commit();
     }
 
+    /// <summary>
+    /// Set only the title (plus <c>UpdatedAt</c>) and refresh the FTS row. Deliberately NOT a full replace:
+    /// the auto-title rename used to read-modify-write the whole chat, so its stale DB snapshot could revert
+    /// message rows another writer had appended in between. A title update has no business carrying a
+    /// message payload.
+    /// </summary>
+    public async Task<bool> SetTitleAsync(Guid chatId, string title, CancellationToken ct = default)
+    {
+        var updated = false;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return false;
+
+            var connection = Connection();
+            using var transaction = connection.BeginTransaction();
+
+            using (var update = connection.CreateCommand())
+            {
+                update.Transaction = transaction;
+                update.CommandText = "UPDATE AssistantChats SET Title = @Title, UpdatedAt = @Now WHERE Id = @Id";
+                update.Parameters.AddWithValue("@Title", title);
+                update.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+                update.Parameters.AddWithValue("@Id", chatId.ToString());
+                updated = await update.ExecuteNonQueryAsync(ct) > 0;
+            }
+
+            if (!updated)
+            {
+                // The chat disappeared (deleted/evicted) before the rename landed — no-op, and no event.
+                transaction.Commit();
+                return false;
+            }
+
+            // The FTS row indexes the title, so a title-only write must refresh it or history search keeps
+            // matching the old title. Rewriting only the Title column of the FTS row is not possible in the
+            // shape this table is written elsewhere, so re-derive Body from the persisted message rows.
+            var body = await ReadFtsBodyAsync(connection, transaction, chatId, ct);
+            await ReplaceFtsRowAsync(connection, transaction, chatId, title, body, ct);
+
+            transaction.Commit();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        OnChatsChanged(chatId, AssistantChatChangeKind.Upserted);
+        return true;
+    }
+
     public async Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -633,31 +684,60 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         return messages;
     }
 
-    private static async Task ReplaceFtsRowAsync(
+    private static Task ReplaceFtsRowAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         SyncAssistantChat chat,
+        CancellationToken ct) =>
+        ReplaceFtsRowAsync(connection, transaction, chat.Id, chat.Title ?? string.Empty,
+            string.Join("\n\n", chat.Messages.Select(m => m.Content)), ct);
+
+    private static async Task ReplaceFtsRowAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid chatId,
+        string title,
+        string body,
         CancellationToken ct)
     {
         using (var deleteFts = connection.CreateCommand())
         {
             deleteFts.Transaction = transaction;
             deleteFts.CommandText = "DELETE FROM AssistantChatsFts WHERE ChatId = @ChatId";
-            deleteFts.Parameters.AddWithValue("@ChatId", chat.Id.ToString());
+            deleteFts.Parameters.AddWithValue("@ChatId", chatId.ToString());
             await deleteFts.ExecuteNonQueryAsync(ct);
         }
 
-        var body = string.Join("\n\n", chat.Messages.Select(m => m.Content));
         using var insertFts = connection.CreateCommand();
         insertFts.Transaction = transaction;
         insertFts.CommandText = """
             INSERT INTO AssistantChatsFts (ChatId, Title, Body)
             VALUES (@ChatId, @Title, @Body)
             """;
-        insertFts.Parameters.AddWithValue("@ChatId", chat.Id.ToString());
-        insertFts.Parameters.AddWithValue("@Title", chat.Title ?? string.Empty);
+        insertFts.Parameters.AddWithValue("@ChatId", chatId.ToString());
+        insertFts.Parameters.AddWithValue("@Title", title);
         insertFts.Parameters.AddWithValue("@Body", body);
         await insertFts.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// The FTS <c>Body</c> as the full-replace writer would have built it — the persisted message contents in
+    /// ordinal order, joined the same way. Used by <see cref="SetTitleAsync"/>, which has no message payload
+    /// of its own and must not invent one.
+    /// </summary>
+    private static async Task<string> ReadFtsBodyAsync(
+        SqliteConnection connection, SqliteTransaction transaction, Guid chatId, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT Content FROM AssistantChatMessages WHERE ChatId = @ChatId ORDER BY Ordinal ASC";
+        command.Parameters.AddWithValue("@ChatId", chatId.ToString());
+
+        var parts = new List<string>();
+        using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            parts.Add(reader.GetString(0));
+        return string.Join("\n\n", parts);
     }
 
     private static SyncAssistantChat MapChat(SqliteDataReader reader)

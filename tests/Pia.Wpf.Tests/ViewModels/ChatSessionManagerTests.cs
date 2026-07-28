@@ -360,6 +360,67 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task AutoTitle_WritesTheTitleOnly_AndNeverFullReplacesTheChat()
+    {
+        // W2: the auto-title rename used to be GetAsync -> mutate Title -> SaveAsync, a fire-and-forget
+        // read-modify-write. Its DB snapshot is routinely stale by the time it lands (the title LLM call sits
+        // in the middle), so it could revert message rows a headless step appended in between — a second
+        // effective writer on the chat row. It must now issue exactly one SetTitleAsync and NO SaveAsync.
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = true });
+        _titleService.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Weekly plan");
+        _chatService.SetTitleAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "plan my week"));
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "step 1 done"));
+
+        session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
+
+        // Terminal persist + rename are both fire-and-forget; wait for the rename to land.
+        for (var i = 0; i < 200 && session.Title != "Weekly plan"; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Weekly plan", session.Title);
+        await _chatService.Received(1).SetTitleAsync(session.Id!.Value, "Weekly plan", Arg.Any<CancellationToken>());
+        // EXACTLY ONE full replace for the whole turn — the terminal persist's. Before W2 the rename added a
+        // second one, from a snapshot read before the title LLM call.
+        await _chatService.Received(1).SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+        // And it no longer READS the chat back: that read existed only to carry the message payload.
+        await _chatService.DidNotReceive().GetAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AutoTitle_ChatDeletedBeforeTheRename_KeepsTheSessionTitleUnchanged()
+    {
+        // The zero-row update IS the "chat disappeared before rename" case; SetTitleAsync reports it as false
+        // (the store owns no logger) and the session title must not be moved.
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = true });
+        _titleService.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Weekly plan");
+        _chatService.SetTitleAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "plan my week"));
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "step 1 done"));
+
+        session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
+
+        for (var i = 0; i < 200; i++)
+        {
+            if (_chatService.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SetTitleAsync)))
+                break;
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
+        await _chatService.Received(1).SetTitleAsync(session.Id!.Value, "Weekly plan", Arg.Any<CancellationToken>());
+        // The terminal persist's derived title stands; the LLM title is NOT applied to a chat that is gone.
+        Assert.Equal("plan my week", session.Title);
+    }
+
+    [Fact]
     public async Task ActivateAsync_LiveSession_ReturnsSameInstance_WithoutLoadingOrCancelling()
     {
         var sut = CreateSut();

@@ -361,7 +361,25 @@ public sealed class HeadlessTurnExecutorTests
         }
 
         public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) => _inner.SaveFromRemoteAsync(chat, ct);
-        public Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default) => _inner.GetAsync(id, ct);
+
+        /// <summary>W2a: the title-only writer. Counted separately from <see cref="SaveCalls"/> — the point of
+        /// the change is that the auto-title path issues NO full replace.</summary>
+        public int SetTitleCalls { get; private set; }
+
+        public Task<bool> SetTitleAsync(Guid chatId, string title, CancellationToken ct = default)
+        {
+            SetTitleCalls++;
+            return _inner.SetTitleAsync(chatId, title, ct);
+        }
+
+        /// <summary>W2b: counted so the rebase can be shown to add GetAsync calls, not SaveAsync calls.</summary>
+        public int GetCalls { get; private set; }
+
+        public Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
+        {
+            GetCalls++;
+            return _inner.GetAsync(id, ct);
+        }
         public Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(string? searchText = null, DateTime? fromDate = null,
             DateTime? toDate = null, Guid? providerId = null, int offset = 0, int limit = 50, CancellationToken ct = default)
             => _inner.SearchAsync(searchText, fromDate, toDate, providerId, offset, limit, ct);

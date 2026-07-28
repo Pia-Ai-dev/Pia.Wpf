@@ -791,16 +791,17 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             if (string.IsNullOrEmpty(title))
                 return;
 
-            var existing = await _chatService.GetAsync(chatId);
-            if (existing is null)
+            // W2: a TITLE-ONLY write. This used to be GetAsync -> mutate Title -> SaveAsync, i.e. a
+            // fire-and-forget read-modify-write with a full-chat replace at the end. Started from
+            // TryStartAutoTitleAsync, its snapshot is routinely stale by the time it writes, so it could
+            // revert message rows a headless step had appended in between — the auto-title path was a second
+            // effective writer on the chat row. SetTitleAsync touches Title/UpdatedAt + the FTS row only, so
+            // it cannot lose a message no matter who else wrote.
+            if (!await _chatService.SetTitleAsync(chatId, title))
             {
                 _logger.LogWarning("Auto-title: chat {ChatId} disappeared before rename", chatId);
                 return;
             }
-
-            existing.Title = title;
-            existing.UpdatedAt = DateTime.UtcNow;
-            await _chatService.SaveAsync(existing);
 
             session.SetTitle(title);
             // Forward to the chip only when this session is active (is-active gate

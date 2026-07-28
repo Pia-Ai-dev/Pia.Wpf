@@ -80,7 +80,7 @@ public class AssistantChatServiceTests : IDisposable
         _service.ChatsChanged += (_, e) =>
         {
             if (e.Kind == AssistantChatChangeKind.Upserted)
-                readBack = _service.GetAsync(e.Id).GetAwaiter().GetResult();
+                readBack = _service.GetAsync(e.Id, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         };
 
         await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
@@ -104,7 +104,7 @@ public class AssistantChatServiceTests : IDisposable
             if (e.Kind != AssistantChatChangeKind.Deleted) return;
             deleted.Add(e.Id);
             // Re-entering under the gate would deadlock; the row is already gone, so this must return null.
-            Assert.Null(_service.GetAsync(e.Id).GetAwaiter().GetResult());
+            Assert.Null(_service.GetAsync(e.Id, TestContext.Current.CancellationToken).GetAwaiter().GetResult());
         };
 
         var ids = await _service.DeleteAllAsync(TestContext.Current.CancellationToken);
@@ -125,6 +125,103 @@ public class AssistantChatServiceTests : IDisposable
         await _service.SaveAsync(chat, TestContext.Current.CancellationToken); // must not throw
         Assert.Null(await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken));
         _service.Dispose(); // idempotent
+    }
+
+    [Fact]
+    public async Task SetTitleAsync_ChangesOnlyTheTitle_AndLeavesTheMessageRowsUntouched()
+    {
+        // W2a: the whole point of the new member. A title write must not carry a message payload.
+        var chat = MakeChat(title: "old title", body: "the one message");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+        var before = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+
+        Assert.True(await _service.SetTitleAsync(chat.Id, "new title", TestContext.Current.CancellationToken));
+
+        var after = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+        Assert.Equal("new title", after!.Title);
+        Assert.Equal(before!.Messages.Select(m => m.Id), after.Messages.Select(m => m.Id));
+        Assert.Equal(before.Messages.Select(m => m.Content), after.Messages.Select(m => m.Content));
+        Assert.True(after.UpdatedAt >= before.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task SetTitleAsync_PreservesMessagesAppendedByAnotherWriter()
+    {
+        // The failure W2 is about: the rename's snapshot is taken before the title LLM call, so by the time it
+        // writes, a headless step may have appended rows. A title-only write cannot delete them.
+        var chat = MakeChat(title: "old title", body: "first");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        // "Another writer" appends a second message via a full replace.
+        var appended = new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(),
+            Role = "assistant",
+            Content = "written by the headless run",
+            Timestamp = DateTime.UtcNow,
+        };
+        var grown = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+        grown!.Messages.Add(appended);
+        await _service.SaveAsync(grown, TestContext.Current.CancellationToken);
+
+        Assert.True(await _service.SetTitleAsync(chat.Id, "llm title", TestContext.Current.CancellationToken));
+
+        var after = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+        Assert.Equal("llm title", after!.Title);
+        Assert.Equal(2, after.Messages.Count);
+        Assert.Contains(after.Messages, m => m.Id == appended.Id);
+    }
+
+    [Fact]
+    public async Task SetTitleAsync_RefreshesTheFtsRow_SoSearchMatchesTheNewTitleAndStillTheBody()
+    {
+        var chat = MakeChat(title: "StaleTitleWordABC", body: "BodyWordXYZ stays searchable");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        await _service.SetTitleAsync(chat.Id, "FreshTitleWordDEF", TestContext.Current.CancellationToken);
+
+        var byNewTitle = await _service.SearchAsync(searchText: "freshtitleworddef", ct: TestContext.Current.CancellationToken);
+        Assert.Contains(byNewTitle, c => c.Id == chat.Id);
+        var byOldTitle = await _service.SearchAsync(searchText: "staletitlewordabc", ct: TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(byOldTitle, c => c.Id == chat.Id);
+        // The body half of the FTS row must survive the refresh — it is re-derived from the message rows.
+        var byBody = await _service.SearchAsync(searchText: "bodywordxyz", ct: TestContext.Current.CancellationToken);
+        Assert.Contains(byBody, c => c.Id == chat.Id);
+    }
+
+    [Fact]
+    public async Task SetTitleAsync_MissingChat_ReturnsFalse_AndRaisesNoEvent()
+    {
+        var raised = new List<AssistantChatChangedEventArgs>();
+        _service.ChatsChanged += (_, e) => raised.Add(e);
+
+        Assert.False(await _service.SetTitleAsync(Guid.NewGuid(), "orphan", TestContext.Current.CancellationToken));
+
+        Assert.Empty(raised);
+    }
+
+    [Fact]
+    public async Task SetTitleAsync_RaisesUpsertedAfterTheGateIsReleased()
+    {
+        var chat = MakeChat(title: "before", body: "b");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        string? titleSeenBySubscriber = null;
+        _service.ChatsChanged += (_, e) =>
+        {
+            // Re-entering the service from the raising thread would deadlock if the gate were still held.
+            if (e.Kind == AssistantChatChangeKind.Upserted && e.Id == chat.Id)
+                titleSeenBySubscriber = _service.GetAsync(e.Id, TestContext.Current.CancellationToken)
+                    .GetAwaiter().GetResult()?.Title;
+        };
+
+        await _service.SetTitleAsync(chat.Id, "after", TestContext.Current.CancellationToken);
+
+        Assert.Equal("after", titleSeenBySubscriber);
     }
 
     [Fact]
