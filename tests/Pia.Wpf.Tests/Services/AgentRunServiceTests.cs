@@ -552,6 +552,39 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Equal(5_000, WallClockMs(run.Id));
     }
 
+    // ---- D1: the launch grant envelope round-trips as an opaque string ----
+
+    [Fact]
+    public async Task CreateAsync_PolicyJson_RoundTripsThroughGetAndGetByChat()
+    {
+        // The resume path needs the launch envelope back verbatim (it hardcodes wide grants without
+        // it). The service stores it opaquely — no parsing, no reshaping.
+        var ct = TestContext.Current.CancellationToken;
+        var chatId = await MakeChatAsync();
+        const string envelope = """{"grants":["write_file"],"v":1}""";
+
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(
+            chatId, RunShape.Planned, AgentRunTrigger.Schedule, Goal: "g", PolicyJson: envelope), ct);
+
+        Assert.Equal(envelope, run.PolicyJson);
+        Assert.Equal(envelope, (await _service.GetAsync(run.Id, ct))!.PolicyJson);
+        var byChat = Assert.Single(await _service.GetByChatAsync(chatId, ct));
+        Assert.Equal(envelope, byChat.PolicyJson);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithoutPolicyJson_StaysNull()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chatId = await MakeChatAsync();
+
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.SingleTurn, AgentRunTrigger.User), ct);
+
+        Assert.Null(run.PolicyJson);
+        Assert.Null((await _service.GetAsync(run.Id, ct))!.PolicyJson);
+        Assert.Null(Assert.Single(await _service.GetByChatAsync(chatId, ct)).PolicyJson);
+    }
+
     private async Task<Guid> MakeChatAsync()
     {
         var id = Guid.NewGuid();

@@ -4,13 +4,23 @@ using Pia.Models;
 namespace Pia.Services.Interfaces;
 
 /// <summary>Parameters for creating a new <see cref="AgentRun"/>.</summary>
+/// <param name="PolicyJson">
+/// OPTIONAL launch-grant envelope, persisted verbatim into <c>AgentRuns.PolicyJson</c> and handed back
+/// by <see cref="IAgentRunService.GetAsync"/>/<see cref="IAgentRunService.GetByChatAsync"/> so a resume
+/// can rebuild the launch's grants instead of inventing wide ones. Contract: an OPAQUE string at this
+/// layer — the launcher owns the schema, the run service never parses, validates or mutates it (written
+/// ONCE at create; there is deliberately no policy-mutation API — per-run autonomy policy is a later
+/// batch). It may name granted capabilities, so it is metadata: log its PRESENCE only, never its
+/// content (CLAUDE.md privacy-first logging).
+/// </param>
 public sealed record AgentRunCreateRequest(
     Guid ChatId,
     RunShape Shape,
     AgentRunTrigger Trigger,
     Guid? TriggerRef = null,
     Guid? OwnerDeviceId = null,
-    string? Goal = null);
+    string? Goal = null,
+    string? PolicyJson = null);
 
 /// <summary>Raised after a state-changing run write. The 1.4 UI/Flow event source; no consumers in 1.1.</summary>
 public sealed class AgentRunChangedEventArgs : EventArgs
@@ -37,6 +47,10 @@ public sealed class AgentRunChangedEventArgs : EventArgs
 /// </summary>
 public interface IAgentRunService
 {
+    /// <summary>
+    /// Insert a new run row. <see cref="AgentRunCreateRequest.PolicyJson"/>, when supplied, is stored
+    /// as-is and round-trips through the getters — the create is its only write.
+    /// </summary>
     Task<AgentRun> CreateAsync(AgentRunCreateRequest request, CancellationToken ct = default);
 
     Task SetStateAsync(Guid runId, AgentRunState state, CancellationToken ct = default);

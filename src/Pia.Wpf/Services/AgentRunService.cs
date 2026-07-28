@@ -18,7 +18,8 @@ namespace Pia.Services;
 /// the shared connection once at composition time so that schema exists before this service opens.
 /// <para>
 /// <c>Goal</c>/step <c>Title</c>/<c>Intent</c> are user content — logged only via
-/// <c>SensitiveDebug</c>, never at Information (CLAUDE.md / §12.7).
+/// <c>SensitiveDebug</c>, never at Information (CLAUDE.md / §12.7). <c>PolicyJson</c> is an opaque
+/// launch envelope: stored/returned verbatim, never parsed here and never logged beyond its presence.
 /// </para>
 /// <para>
 /// The ledger's <c>wallClockMs</c> is the run's accumulated ACTIVE time (segments opened at
@@ -87,6 +88,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             TriggerRef = request.TriggerRef,
             OwnerDeviceId = request.OwnerDeviceId,
             Goal = request.Goal,
+            // Opaque launch envelope — stored verbatim, never parsed here, never logged (D1).
+            PolicyJson = request.PolicyJson,
             // The run starts working now → open the ledger's first work segment (G1). ActiveMs is set
             // explicitly (not left default) so this ledger is never mistaken for a legacy one.
             LedgerJson = JsonSerializer.Serialize(new Ledger { ActiveMs = 0, SegmentStartedAt = now }, JsonOptions),
@@ -122,7 +125,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             cmd.Parameters.AddWithValue("@Goal", ToParam(run.Goal));
             cmd.Parameters.AddWithValue("@FirstMessageId", DBNull.Value);
             cmd.Parameters.AddWithValue("@LastMessageId", DBNull.Value);
-            cmd.Parameters.AddWithValue("@PolicyJson", DBNull.Value);
+            cmd.Parameters.AddWithValue("@PolicyJson", ToParam(run.PolicyJson));
             cmd.Parameters.AddWithValue("@LedgerJson", ToParam(run.LedgerJson));
             cmd.Parameters.AddWithValue("@CreatedAt", run.CreatedAt.ToString("O"));
             cmd.Parameters.AddWithValue("@UpdatedAt", run.UpdatedAt.ToString("O"));
@@ -132,8 +135,9 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             cmd.ExecuteNonQuery();
         }
 
-        _logger.LogInformation("Created run {RunId} shape={Shape} state={State} trigger={Trigger}",
-            run.Id, run.RunShape, run.State, run.TriggerKind);
+        // policy= is PRESENCE only: the envelope may name granted capabilities → never log its content.
+        _logger.LogInformation("Created run {RunId} shape={Shape} state={State} trigger={Trigger} policy={HasPolicy}",
+            run.Id, run.RunShape, run.State, run.TriggerKind, run.PolicyJson is not null);
         _logger.SensitiveDebug("Run {RunId} goal: {Goal}", run.Id, run.Goal);
         RunChanged?.Invoke(this, new AgentRunChangedEventArgs(run.Id, run.State));
         return Task.FromResult(run);

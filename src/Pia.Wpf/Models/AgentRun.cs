@@ -37,7 +37,11 @@ public sealed class AgentRun
 
     public Guid? LastMessageId { get; set; }
 
-    /// <summary>Reserved for the Phase 2 autonomy policy.</summary>
+    /// <summary>
+    /// Opaque launch-grant envelope written once at create (the launcher owns its schema; the run
+    /// service never parses it). METADATA — may name granted capabilities, so log presence only.
+    /// Also the seam for the Phase 2 per-run autonomy policy.
+    /// </summary>
     public string? PolicyJson { get; set; }
 
     /// <summary>
