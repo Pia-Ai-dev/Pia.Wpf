@@ -1,8 +1,7 @@
 # Agent System — Roadmap & Status
 
-_Snapshot: 2026-07-28 (as-built at the hardening batch's fix-up pass, on top of `54e1f43`)._
-Living index of what the Agent System has shipped and
-what is left to build. Authoritative design:
+_Snapshot: 2026-07-28 (as-built at the hardening batch's fix-up pass, on top of `54e1f43`)._ Living index
+of what the Agent System has shipped and what is left to build. Authoritative design:
 [`../2026-07-18-agent-system-phase1-plan.md`](../2026-07-18-agent-system-phase1-plan.md)
 (referenced below as “the plan §N”). The open items in the last section come from
 [`hermes-comparison.md`](hermes-comparison.md) — the external review that drove the hardening batch.
@@ -100,7 +99,7 @@ keyed per dispatch, and the never-executed H1 test assertions were corrected.
 
 | # | Batch | Phase | Size | Depends on |
 |---|-------|-------|------|-----------|
-| 01 | [Budget-pause polish](01-budget-pause-polish.md) — residual nits (most items closed by the hardening batch) | 2 | XS | — |
+| 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | 02 | [Cost ledger](02-cost-ledger.md) — price table populates `CostUsd` | 2 | S | — |
 | 03 | [Audit timeline](03-audit-timeline.md) — per-tool decision trace (plan §11) | 2 | M–L | — |
 | 04 | [Autonomy policy](04-autonomy-policy.md) — `PolicyJson` per-run approval policy | 2 | M–L | MCP gate |
@@ -126,8 +125,8 @@ Each of these was seen and left; the reason is the point.
   (bookkeeping moved off the tick), which changes the job-completion contract; the hardening batch only made
   a *parked* run stop re-launching every tick. See hermes-comparison §4(b)(2)/§8² and rec #2.
 - **No structured step-result signal.** Step success is still `!string.IsNullOrWhiteSpace(exchange.Visible)`
-  (`HeadlessTurnExecutor.cs:247`), so a step that politely explains its own failure records `Done` and the
-  failure-only replan never fires. `RunContext.Scratchpad` (`RunContext.cs:75`) is declared and read/written
+  (`HeadlessTurnExecutor.cs:256`), so a step that politely explains its own failure records `Done` and the
+  failure-only replan never fires. `RunContext.Scratchpad` (`RunContext.cs:85`) is declared and read/written
   nowhere — the seam for a real `emit_step_result{succeeded, artifactRef}` already exists. The H1 artifact
   probe narrows the blast radius (a missing declared artifact now reaches the critic) but does **not** make a
   step's own verdict structured. hermes-comparison §5/rec #9.
