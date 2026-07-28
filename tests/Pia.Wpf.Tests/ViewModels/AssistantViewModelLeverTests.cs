@@ -268,4 +268,123 @@ public class AssistantViewModelLeverTests
         Assert.False(vm.ForeignRunActive);
         Assert.True(vm.SendMessageCommand.CanExecute(null));
     }
+
+    // ---- W2c: the ChatSession -> ViewModel wiring, and the two commands that also start live turns ----
+
+    /// <summary>
+    /// A session with a two-message transcript, optionally already flagged as having a foreign run
+    /// executing — the state <c>ChatSessionManager.RestoreActiveRunAsync</c> leaves behind for a chat whose
+    /// headless run is mid-flight.
+    /// </summary>
+    private static ChatSession SessionWithTranscript(bool foreignRunActive)
+    {
+        var session = new ChatSession(
+            Substitute.For<ITokenMapService>(),
+            Substitute.For<IAiClientService>(),
+            Substitute.For<IPluginService>(),
+            Substitute.For<IActionCardBuilder>(),
+            Substitute.For<IToolPermissionService>(),
+            Substitute.For<ILocalizationService>(),
+            NullLogger.Instance,
+            _ => true);
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "summarize the repo"));
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "here you go"));
+        if (foreignRunActive)
+            session.SetForeignRunActive(true);
+        return session;
+    }
+
+    private void Activate(ChatSession session) =>
+        _manager.ActiveChanged += Raise.Event<EventHandler<ChatSession?>>(_manager, session);
+
+    [Fact]
+    public void AttachingASessionWithAForeignRun_SeedsTheFlagOntoTheViewModel()
+    {
+        // The wiring the other W2c view-model tests cannot see because they poke the property directly:
+        // delete `ForeignRunActive = session.ForeignRunActive` from AttachToActiveSession and the composer
+        // stays enabled for the whole duration of a foreign run with no red test anywhere.
+        var vm = CreateSut();
+        vm.InputText = "hello";
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+
+        Activate(SessionWithTranscript(foreignRunActive: true));
+
+        Assert.True(vm.ForeignRunActive);
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void AttachingAnOrdinarySession_LeavesTheComposerEnabled()
+    {
+        var vm = CreateSut();
+        vm.InputText = "hello";
+
+        Activate(SessionWithTranscript(foreignRunActive: false));
+
+        Assert.False(vm.ForeignRunActive);
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Regenerate_IsBlocked_WhileAForeignRunIsExecuting()
+    {
+        // Regenerate had only an IsStreaming guard, so it was an open door through the W2c lever — and a
+        // worse one than Send: it TRUNCATES the transcript the headless run is still extending, then starts a
+        // live turn whose persist full-replaces the chat.
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: true);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _manager.DidNotReceive().StartTurnAsync(
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+        Assert.Equal(2, vm.Messages.Count);   // the transcript was not truncated either
+    }
+
+    [Fact]
+    public async Task Regenerate_StillWorks_WithoutAForeignRun()
+    {
+        // The guard must not be vacuous: the same call goes through on an ordinary chat.
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: false);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _manager.Received(1).StartTurnAsync(
+            session, "summarize the repo", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task SwitchToAgent_IsBlocked_WhileAForeignRunIsExecuting()
+    {
+        // Modeled on Send, so it needs Send's lever: it starts a live turn against the ACTIVE chat and would
+        // additionally create a second Planned run in a chat that already has one.
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: true);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+
+        await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
+
+        await _manager.DidNotReceive().StartTurnAsync(
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task SwitchToAgent_StillWorks_WithoutAForeignRun()
+    {
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: false);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+
+        await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
+
+        await _manager.Received(1).StartTurnAsync(
+            session, "plan my week", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: true);
+    }
 }

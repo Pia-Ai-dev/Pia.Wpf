@@ -861,7 +861,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// </summary>
     private async Task RegenerateCore(AssistantMessage? message, RegenerateStyle style)
     {
-        if (message is null || IsStreaming) return;
+        // W2c: ForeignRunActive blocks this for the same reason it blocks Send — the turn below writes THIS
+        // chat, and the persist at the end of it is a full replace built from session.Messages, so it would
+        // delete every row the headless run has appended since. Regenerate is worse than Send, in fact: it
+        // also truncates the transcript the run is still extending.
+        if (message is null || IsStreaming || ForeignRunActive) return;
 
         var idx = Messages.IndexOf(message);
         if (idx <= 0) return;
@@ -1228,6 +1232,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private async Task SwitchToAgent(AgentModeSuggestion? suggestion)
     {
         if (suggestion is null || string.IsNullOrWhiteSpace(suggestion.Goal))
+            return;
+
+        // W2c: same lever as Send (this is modeled on ExecuteSendMessage). It starts a live turn against the
+        // ACTIVE chat, so with a foreign headless run mid-flight it would be a second full-chat writer — and
+        // it would additionally create a SECOND Planned run in a chat that already has one.
+        if (IsStreaming || ForeignRunActive)
             return;
 
         AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
