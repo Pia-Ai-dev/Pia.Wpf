@@ -50,7 +50,7 @@ public sealed class AgentVerifier : IAgentVerifier
         {
             var (args2, usage2) = await TryCaptureAsync(BuildVerifyMessages(ctx, persona, firm: true), provider, ct).ConfigureAwait(false); // retry once
             args = args2;
-            usage = SumUsage(usage, usage2);
+            usage = AgentTurnUsage.Sum(usage, usage2);
         }
 
         if (args is null)
@@ -71,8 +71,9 @@ public sealed class AgentVerifier : IAgentVerifier
 
     /// <summary>
     /// Runs one verify turn, capturing the final <c>emit_verdict</c> args (last-write-wins) while
-    /// draining the whole stream; sums <see cref="Finished.Usage"/> across the drained items (the
-    /// planner discards these — the verifier must not). Returns (null, usage) when no verdict emitted.
+    /// draining the whole stream; sums <see cref="Finished.Usage"/> across the drained items via the
+    /// shared <see cref="AgentTurnUsage"/> (the planner does the same since I1, off one helper so the
+    /// two accruals cannot drift). Returns (null, usage) when no verdict emitted.
     /// </summary>
     private async Task<(EmitVerdictArgs? Args, UsageDetails? Usage)> TryCaptureAsync(
         List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
@@ -101,21 +102,10 @@ public sealed class AgentVerifier : IAgentVerifier
             messages, provider, [EmitVerdictTool], toolHandler, mode: null, ct).ConfigureAwait(false))
         {
             if (item is Finished { Usage: { } u })
-                usage = SumUsage(usage, u); // capture usage from the yielded stream (unlike the planner)
+                usage = AgentTurnUsage.Sum(usage, u); // capture usage from the yielded stream
         }
 
         return (captured, usage);
-    }
-
-    private static UsageDetails? SumUsage(UsageDetails? a, UsageDetails? b)
-    {
-        if (a is null) return b;
-        if (b is null) return a;
-        return new UsageDetails
-        {
-            InputTokenCount = (a.InputTokenCount ?? 0) + (b.InputTokenCount ?? 0),
-            OutputTokenCount = (a.OutputTokenCount ?? 0) + (b.OutputTokenCount ?? 0),
-        };
     }
 
     private static List<ChatMessage> BuildVerifyMessages(RunContext ctx, Persona persona, bool firm)

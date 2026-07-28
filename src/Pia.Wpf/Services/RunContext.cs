@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Microsoft.Extensions.AI;
 using Pia.Models;
 
 namespace Pia.Services;
@@ -7,6 +8,27 @@ namespace Pia.Services;
 /// <summary>Summary of a completed step, carried forward as context for later steps + replanning.</summary>
 public sealed record CompletedStepSummary(
     int Ordinal, string Title, string Intent, bool Succeeded, string VisibleText);
+
+/// <summary>
+/// Adds up the provider usage of the extra (non-step) turns the run loop spends — the plan/replan
+/// and verify turns, each of which can run twice (the firm retry). Shared by
+/// <see cref="AgentPlanner"/> and <see cref="AgentVerifier"/> so their accrual can never drift.
+/// Only input/output tokens are summed: those are the only fields the run ledger reads
+/// (<c>AgentRunService.AddUsageAsync</c>).
+/// </summary>
+internal static class AgentTurnUsage
+{
+    public static UsageDetails? Sum(UsageDetails? a, UsageDetails? b)
+    {
+        if (a is null) return b;
+        if (b is null) return a;
+        return new UsageDetails
+        {
+            InputTokenCount = (a.InputTokenCount ?? 0) + (b.InputTokenCount ?? 0),
+            OutputTokenCount = (a.OutputTokenCount ?? 0) + (b.OutputTokenCount ?? 0),
+        };
+    }
+}
 
 /// <summary>
 /// Runtime-only (not persisted) run context: the goal, the completed-step summaries, a free-form

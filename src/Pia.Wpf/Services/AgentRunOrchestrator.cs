@@ -82,6 +82,9 @@ public sealed class AgentRunOrchestrator
                 await SafeSetState(run.Id, AgentRunState.Planning, cts.Token).ConfigureAwait(false);
 
                 var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
+                // I1: the plan turn's rounds (≥2, doubled by the firm retry) are real spend — accrue
+                // them run-level BEFORE branching, so the degrade path below cannot drop them.
+                await SafeAddUsage(run.Id, plan.Usage, cts.Token).ConfigureAwait(false);
                 if (plan.FallBackToSingleTurn) // R10
                 {
                     var fr = await executor.RunSingleTurnFallbackAsync(run, ctx, cts.Token).ConfigureAwait(false);
@@ -164,6 +167,7 @@ public sealed class AgentRunOrchestrator
                         if (replans++ < profile.MaxReplans)
                         {
                             var revised = await _planner.ReplanAsync(ctx, r.Error, persona, provider, cts.Token).ConfigureAwait(false);
+                            await SafeAddUsage(run.Id, revised.Usage, cts.Token).ConfigureAwait(false); // I1
                             if (revised.FallBackToSingleTurn)
                             {
                                 failed = true;
@@ -204,6 +208,7 @@ public sealed class AgentRunOrchestrator
                 if (replans++ < profile.MaxReplans)
                 {
                     var revised = await _planner.ReplanAsync(ctx, BuildVerifyFailureReason(verdict), persona, provider, cts.Token).ConfigureAwait(false);
+                    await SafeAddUsage(run.Id, revised.Usage, cts.Token).ConfigureAwait(false); // I1
                     if (!revised.FallBackToSingleTurn)
                     {
                         var doneSteps = await KeepDoneAsync(run.Id, cts.Token).ConfigureAwait(false);
@@ -294,13 +299,15 @@ public sealed class AgentRunOrchestrator
         }
     }
 
-    // Run-level verify usage accrual (stepId: null) — updates ledger totals + wall-clock, raises RunChanged.
-    // Skips a null usage so the FakeVerifier/no-usage path adds no spurious ledger write.
+    // Run-level usage accrual (stepId: null) for the loop's non-step turns — plan, replan and verify
+    // (I1) — updates ledger totals + wall-clock and raises RunChanged. Step usage goes through
+    // SafeRecordStep instead (per-step entry). Skips a null usage so a fake/no-usage provider path adds
+    // no spurious ledger write.
     private async Task SafeAddUsage(Guid runId, UsageDetails? usage, CancellationToken ct)
     {
         if (usage is null) return;
         try { await _runService.AddUsageAsync(runId, null, usage, ct).ConfigureAwait(false); }
-        catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (verify usage) failed for {RunId}", runId); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (run-level usage) failed for {RunId}", runId); }
     }
 
     private static string BuildVerifyFailureReason(VerdictResult v)

@@ -128,6 +128,46 @@ public sealed class AgentRunOrchestratorTests
         public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct) => Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Real run store with a POISONED <see cref="AddUsageAsync"/> — the run-level (plan/replan/verify)
+    /// accrual seam. Everything else delegates, so the run really executes; only the bookkeeping write
+    /// faults (guardrail 1: bookkeeping is never on the critical path).
+    /// </summary>
+    private sealed class ThrowingUsageRunService : IAgentRunService
+    {
+        private readonly IAgentRunService _inner;
+        public ThrowingUsageRunService(IAgentRunService inner) => _inner = inner;
+
+        public Task AddUsageAsync(Guid runId, Guid? stepId, UsageDetails usage, CancellationToken ct = default)
+            => throw new InvalidOperationException("ledger boom");
+
+        public Task<AgentRun> CreateAsync(AgentRunCreateRequest request, CancellationToken ct = default) => _inner.CreateAsync(request, ct);
+        public Task SetStateAsync(Guid runId, AgentRunState state, CancellationToken ct = default) => _inner.SetStateAsync(runId, state, ct);
+        public Task SetRunMessageRangeAsync(Guid runId, Guid firstMessageId, Guid lastMessageId, CancellationToken ct = default)
+            => _inner.SetRunMessageRangeAsync(runId, firstMessageId, lastMessageId, ct);
+        public Task CompleteAsync(Guid runId, bool truncated = false, string? truncationReason = null, CancellationToken ct = default)
+            => _inner.CompleteAsync(runId, truncated, truncationReason, ct);
+        public Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default) => _inner.FailAsync(runId, error, cancelled, ct);
+        public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default) => _inner.PauseAsync(runId, reason, ct);
+        public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => _inner.TryBeginResumeAsync(runId, ct);
+        public Task<int> FailInterruptedRunsAsync(CancellationToken ct = default) => _inner.FailInterruptedRunsAsync(ct);
+        public Task<AgentRun?> GetAsync(Guid runId, CancellationToken ct = default) => _inner.GetAsync(runId, ct);
+        public Task<IReadOnlyList<AgentRun>> GetByChatAsync(Guid chatId, CancellationToken ct = default) => _inner.GetByChatAsync(chatId, ct);
+        public Task<bool> ChatHasPlannedRunAsync(Guid chatId, CancellationToken ct = default) => _inner.ChatHasPlannedRunAsync(chatId, ct);
+        public Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default) => _inner.ReplaceStepsAsync(runId, steps, ct);
+        public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default) => _inner.NextPendingStepAsync(runId, ct);
+        public Task SetStepStatusAsync(Guid stepId, AgentStepStatus status, CancellationToken ct = default) => _inner.SetStepStatusAsync(stepId, status, ct);
+        public Task RecordStepResultAsync(Guid stepId, AgentStepStatus status, Guid? firstMessageId, Guid? lastMessageId,
+            UsageDetails? usage, CancellationToken ct = default)
+            => _inner.RecordStepResultAsync(stepId, status, firstMessageId, lastMessageId, usage, ct);
+
+        public event EventHandler<AgentRunChangedEventArgs> RunChanged
+        {
+            add => _inner.RunChanged += value;
+            remove => _inner.RunChanged -= value;
+        }
+    }
+
     private sealed class Harness : IDisposable
     {
         public readonly SqliteContext Ctx;
@@ -631,6 +671,140 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(7, root.GetProperty("inputTokens").GetInt64());   // verify run-level accrual
         Assert.Equal(3, root.GetProperty("outputTokens").GetInt64());
         Assert.Equal(0, root.GetProperty("perStep").GetArrayLength()); // verify accrues run-level (stepId null)
+    }
+
+    // ---- I1: plan/replan spend reaches the run ledger (it used to be discarded in the planner) ----
+
+    private static UsageDetails Usage(long input, long output) =>
+        new() { InputTokenCount = input, OutputTokenCount = output };
+
+    private static (long In, long Out, int PerStep) Ledger(AgentRun run)
+    {
+        using var doc = JsonDocument.Parse(run.LedgerJson!);
+        var root = doc.RootElement;
+        return (root.GetProperty("inputTokens").GetInt64(), root.GetProperty("outputTokens").GetInt64(),
+            root.GetProperty("perStep").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Run_PlannerUsage_AccruesToRunLedger()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false, Usage(40, 12))); // the plan turn's rounds
+        var exec = new RecordingExecutor(_ => Ok()); // null step usage → no per-step entry
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        var (input, output, perStep) = Ledger(final);
+        Assert.Equal(40, input);
+        Assert.Equal(12, output);
+        Assert.Equal(0, perStep); // planning is run-level spend (stepId: null), never a step entry
+    }
+
+    [Fact]
+    public async Task Run_PlannerDegradeUsage_AccruesToRunLedger_OnTheSingleTurnPath()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        // R10 degrade: no usable plan, but both planning attempts (incl. the firm retry) were paid for.
+        planner.Plans.Enqueue(PlanResult.Fallback with { Usage = Usage(80, 24) });
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.True(exec.FallbackCalled);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        var (input, output, _) = Ledger(final);
+        Assert.Equal(80, input);  // the degrade path must not drop the planner's spend
+        Assert.Equal(24, output);
+    }
+
+    [Fact]
+    public async Task Run_StepFailureReplanUsage_AccruesToRunLedger()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1fail")), false, Usage(40, 12)));
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("B", "s2")), false, Usage(30, 9)));
+        var exec = new RecordingExecutor(step => step.Intent == "s1fail" ? Fail("boom") : Ok());
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, planner.ReplanCalls);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        var (input, output, _) = Ledger(final);
+        Assert.Equal(70, input);  // plan 40 + replan 30
+        Assert.Equal(21, output); // plan 12 + replan 9
+    }
+
+    [Fact]
+    public async Task Run_ReplanDegradeUsage_AccruesToRunLedger_EvenThoughTheRunFails()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1fail")), false, Usage(40, 12)));
+        planner.Replans.Enqueue(PlanResult.Fallback with { Usage = Usage(30, 9) }); // replan degraded → run fails
+        var exec = new RecordingExecutor(_ => Fail("boom"));
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Failed, final!.State);
+        var (input, output, _) = Ledger(final);
+        Assert.Equal(70, input);  // a failed run still bills the planning it consumed
+        Assert.Equal(21, output);
+    }
+
+    [Fact]
+    public async Task Run_VerifyFailReplanUsage_AccruesToRunLedger_WithPlanAndVerify()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false, Usage(40, 12)));
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("B", "s2")), false, Usage(30, 9)));
+        var verifier = new FakeVerifier();
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "not yet", new[] { "x" }, Usage(7, 3))); // fail → replan
+        verifier.Verdicts.Enqueue(VerdictResult.Accept with { Usage = Usage(7, 3) });               // re-drain → pass
+        var exec = new RecordingExecutor(_ => OkUsage(10, 5));
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        var (input, output, perStep) = Ledger(final);
+        Assert.Equal(40 + 30 + 7 + 7 + 10 + 10, input);  // plan + verify-fail replan + 2 verifies + 2 steps
+        Assert.Equal(12 + 9 + 3 + 3 + 5 + 5, output);
+        Assert.Equal(2, perStep); // only the two step turns own per-step entries
+    }
+
+    [Fact]
+    public async Task Run_PlannerUsageBookkeepingFaults_DoesNotFailTheRun()
+    {
+        // Guardrail 1: the plan-usage accrual is bookkeeping. A ledger write fault must never turn an
+        // otherwise-clean run into a failure — the run still completes.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false, Usage(40, 12)));
+        var exec = new RecordingExecutor(_ => Ok());
+        var orchestrator = new AgentRunOrchestrator(
+            new ThrowingUsageRunService(h.Runs), planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+
+        await orchestrator.RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.False(exec.EndFailed);
     }
 
     [Fact]

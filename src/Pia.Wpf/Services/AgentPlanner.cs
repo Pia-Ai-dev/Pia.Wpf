@@ -15,8 +15,10 @@ namespace Pia.Services;
 /// that drains the whole stream — because that loop has no handler-driven early exit, a plan turn
 /// costs ≥1 extra provider round after the ack (§16 R6). On no-call it retries once with a firmer
 /// instruction; on still-no-call or a semantically invalid plan it signals a SingleTurn fallback
-/// rather than a degenerate 1-step Planned run (§16 R10). Sensitive plan text is logged only via
-/// <see cref="LoggingExtensions.SensitiveDebug"/>.
+/// rather than a degenerate 1-step Planned run (§16 R10). Provider usage is summed off the drained
+/// <see cref="Finished"/> items and surfaced on <see cref="PlanResult.Usage"/> — on the degrade paths
+/// too, where the rounds were still paid for — so the orchestrator accrues it run-level (I1).
+/// Sensitive plan text is logged only via <see cref="LoggingExtensions.SensitiveDebug"/>.
 /// </summary>
 public sealed class AgentPlanner : IAgentPlanner
 {
@@ -49,37 +51,48 @@ public sealed class AgentPlanner : IAgentPlanner
 
     public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
     {
-        var steps = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: false), provider, ct).ConfigureAwait(false);
+        var (steps, usage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: false), provider, ct).ConfigureAwait(false);
         if (steps is null)
-            steps = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: true), provider, ct).ConfigureAwait(false); // R10 retry once
+        {
+            var (retried, retryUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: true), provider, ct).ConfigureAwait(false); // R10 retry once
+            steps = retried;
+            usage = AgentTurnUsage.Sum(usage, retryUsage); // I1: the retry's rounds were paid for too
+        }
 
         if (steps is null || !ValidatePlan(steps, ctx.MaxSteps))
         {
             _logger.LogInformation("Planner degrade → SingleTurn fallback (no valid emit_plan).");
-            return PlanResult.Fallback;
+            return PlanResult.Fallback with { Usage = usage }; // still accrue the tokens spent
         }
-        return new PlanResult(BuildSteps(steps), false);
+        return new PlanResult(BuildSteps(steps), false, usage);
     }
 
     public async Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
     {
-        var steps = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: false), provider, ct).ConfigureAwait(false);
+        var (steps, usage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: false), provider, ct).ConfigureAwait(false);
         if (steps is null)
-            steps = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: true), provider, ct).ConfigureAwait(false);
+        {
+            var (retried, retryUsage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: true), provider, ct).ConfigureAwait(false);
+            steps = retried;
+            usage = AgentTurnUsage.Sum(usage, retryUsage);
+        }
 
         if (steps is null || !ValidatePlan(steps, ctx.MaxSteps))
         {
             _logger.LogInformation("Replan degrade → fallback (no valid emit_plan).");
-            return PlanResult.Fallback;
+            return PlanResult.Fallback with { Usage = usage }; // still accrue the tokens spent
         }
-        return new PlanResult(BuildSteps(steps), false);
+        return new PlanResult(BuildSteps(steps), false, usage);
     }
 
     /// <summary>
     /// Runs one planning turn, capturing the final <c>emit_plan</c> args (last-write-wins) while
-    /// draining the whole stream (R6). Returns null when the model emitted no <c>emit_plan</c> call.
+    /// draining the whole stream (R6); sums <see cref="Finished.Usage"/> across the drained items so
+    /// the plan turn's ≥2 rounds reach the run ledger (I1 — they used to be discarded here).
+    /// Returns (null, usage) when the model emitted no <c>emit_plan</c> call.
     /// </summary>
-    private async Task<PlanStepArg[]?> TryCaptureAsync(List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
+    private async Task<(PlanStepArg[]? Steps, UsageDetails? Usage)> TryCaptureAsync(
+        List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
     {
         PlanStepArg[]? captured = null;
         Func<FunctionCallContent, Task<object?>> toolHandler = call =>
@@ -101,16 +114,20 @@ public sealed class AgentPlanner : IAgentPlanner
             return Task.FromResult<object?>("Only emit_plan is available here.");
         };
 
-        await foreach (var _ in _ai.GetChatCompletionWithToolsAsync(
+        UsageDetails? usage = null;
+        await foreach (var item in _ai.GetChatCompletionWithToolsAsync(
             messages, provider, [EmitPlanTool], toolHandler, mode: null, ct).ConfigureAwait(false))
         {
-            // Drain the whole stream; the plan is captured in the handler, not the yielded items.
+            // Drain the whole stream; the plan itself is captured in the handler, but the USAGE only
+            // ever surfaces on the yielded Finished items — mirror the verifier and keep it (I1).
+            if (item is Finished { Usage: { } u })
+                usage = AgentTurnUsage.Sum(usage, u);
         }
 
         if (captured is not null)
             _logger.SensitiveDebug("Planner captured {Count} step(s): {Titles}",
                 captured.Length, string.Join(" | ", captured.Select(s => s.Title)));
-        return captured;
+        return (captured, usage);
     }
 
     /// <summary>Semantic validation (§13.3): non-empty; ≤ MaxSteps; every step has a title+intent; no duplicate titles.</summary>

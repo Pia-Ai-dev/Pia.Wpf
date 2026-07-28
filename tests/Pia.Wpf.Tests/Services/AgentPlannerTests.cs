@@ -24,14 +24,16 @@ public sealed class AgentPlannerTests
     private AgentPlanner BuildPlanner() => new(_ai, NullLogger<AgentPlanner>.Instance);
 
     // Drives one planning turn: invokes the captured toolHandler with a synthetic emit_plan call
-    // (when emitArgs is set) then yields Finished — the loop drains the whole stream (R6).
+    // (when emitArgs is set) then yields Finished — the loop drains the whole stream (R6). The usage
+    // rides on the yielded Finished item, which is the ONLY place a provider reports it (I1).
     private static async IAsyncEnumerable<ChatStreamItem> PlanStream(
-        Func<FunctionCallContent, Task<object?>>? handler, Dictionary<string, object?>? emitArgs)
+        Func<FunctionCallContent, Task<object?>>? handler, Dictionary<string, object?>? emitArgs,
+        UsageDetails? usage = null)
     {
         if (handler is not null && emitArgs is not null)
             await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", emitArgs));
         await Task.Yield();
-        yield return new Finished(null, "test-model");
+        yield return new Finished(usage, "test-model");
     }
 
     private static Dictionary<string, object?> Steps(params (string Title, string Intent, string? Artifact)[] steps)
@@ -47,12 +49,12 @@ public sealed class AgentPlannerTests
         return new Dictionary<string, object?> { ["steps"] = arr };
     }
 
-    private void ReturnsPlan(Dictionary<string, object?>? emitArgs)
+    private void ReturnsPlan(Dictionary<string, object?>? emitArgs, UsageDetails? usage = null)
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => PlanStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs));
+            .Returns(ci => PlanStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs, usage));
     }
 
     [Fact]
@@ -113,5 +115,82 @@ public sealed class AgentPlannerTests
         var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.FallBackToSingleTurn);
+    }
+
+    // ---- I1: the planning turn's spend must reach the ledger (it used to be discarded here) ----
+
+    [Fact]
+    public async Task PlanAsync_CapturesUsageFromFinished()
+    {
+        ReturnsPlan(Steps(("Gather", "collect the inputs", null)),
+            new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 });
+
+        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.FallBackToSingleTurn);
+        Assert.NotNull(result.Usage);
+        Assert.Equal(7, result.Usage!.InputTokenCount);
+        Assert.Equal(3, result.Usage.OutputTokenCount);
+    }
+
+    [Fact]
+    public async Task PlanAsync_NoCall_Degrades_ButCarriesBothAttemptsUsage()
+    {
+        // No emit_plan on either attempt → SingleTurn degrade. Both rounds were still paid for, so the
+        // fallback result must carry the SUM (the firm retry's usage is the one most easily lost).
+        ReturnsPlan(emitArgs: null, usage: new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 });
+
+        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.FallBackToSingleTurn);
+        Assert.NotNull(result.Usage);
+        Assert.Equal(14, result.Usage!.InputTokenCount);  // 2 attempts × 7
+        Assert.Equal(6, result.Usage.OutputTokenCount);   // 2 attempts × 3
+        Assert.NotSame(PlanResult.Fallback, result);      // the shared instance is never mutated
+        Assert.Null(PlanResult.Fallback.Usage);
+    }
+
+    [Fact]
+    public async Task PlanAsync_InvalidPlan_Degrades_ButCarriesTheAttemptUsage()
+    {
+        // Semantically invalid (duplicate titles) → fallback WITHOUT a retry, but the one attempt spent.
+        ReturnsPlan(Steps(("Same", "do a", null), ("Same", "do b", null)),
+            new UsageDetails { InputTokenCount = 5, OutputTokenCount = 2 });
+
+        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.FallBackToSingleTurn);
+        Assert.Equal(5, result.Usage!.InputTokenCount);
+        Assert.Equal(2, result.Usage.OutputTokenCount);
+    }
+
+    [Fact]
+    public async Task ReplanAsync_CapturesUsage_OnSuccessAndOnDegrade()
+    {
+        ReturnsPlan(Steps(("Recover", "retry the failed step", null)),
+            new UsageDetails { InputTokenCount = 11, OutputTokenCount = 4 });
+        var planner = BuildPlanner();
+
+        var revised = await planner.ReplanAsync(Ctx(), "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
+        Assert.False(revised.FallBackToSingleTurn);
+        Assert.Equal(11, revised.Usage!.InputTokenCount);
+        Assert.Equal(4, revised.Usage.OutputTokenCount);
+
+        ReturnsPlan(emitArgs: null, usage: new UsageDetails { InputTokenCount = 11, OutputTokenCount = 4 });
+        var degraded = await planner.ReplanAsync(Ctx(), "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
+        Assert.True(degraded.FallBackToSingleTurn);
+        Assert.Equal(22, degraded.Usage!.InputTokenCount); // replan + its firm retry
+        Assert.Equal(8, degraded.Usage.OutputTokenCount);
+    }
+
+    [Fact]
+    public async Task PlanAsync_ProviderReportsNoUsage_LeavesUsageNull()
+    {
+        // A provider that never reports usage must not fabricate a zero-token ledger write.
+        ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
+
+        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Null(result.Usage);
     }
 }
