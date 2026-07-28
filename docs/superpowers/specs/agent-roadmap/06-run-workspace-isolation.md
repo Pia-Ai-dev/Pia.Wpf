@@ -1,11 +1,14 @@
 # Batch 06 — Run workspace isolation (run-aware file-tool base root)
 
-**Phase 3 · Size M · Branch from the latest branch**
+**Phase 3 · Size M · Work on `feature/agent-run-spine`** (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 Milestone B built the per-run scratch dir (`%LOCALAPPDATA%\Pia\runs\<runId>\`), but headless runs currently write
-**real deliverables straight to the assistant files folder** (`HeadlessRunLauncher.Initialize(workspaceRoot: null, …)`
-— the "reserved opt-in-sandbox seam"). True isolation needs the file tool's **base root** to be run-aware, not just
-the subpath (plan §9 line 358-362, §17.2, Q5 line 22).
+**real deliverables straight to the assistant files folder**: the method is
+`HeadlessTurnExecutor.Initialize(string? workspaceRoot, …)` (`HeadlessTurnExecutor.cs:91`) — the "reserved
+opt-in-sandbox seam" — and `HeadlessRunLauncher` merely *calls* it with `workspaceRoot: null`, on **both** the
+launch (`HeadlessRunLauncher.cs:181`) and the resume (`:289`) path. So the scratch dir is created and cleaned but
+nothing writes into it. True isolation needs the file tool's **base root** to be run-aware, not just the subpath
+(plan §9 line 358-362, §17.2, Q5 line 22).
 
 ## Goal
 
@@ -17,8 +20,10 @@ of writing to the assistant folder directly. Escapes still rejected.
 
 - `FilesToolHandler` — the base-root resolution (today the assistant folder); make it read the ambient run root.
 - The per-run `TaskAmbient` / `TaskContext` (1.2 hook) — carries the active run's workspace root.
-- `HeadlessRunLauncher` — currently passes `workspaceRoot: null` (writes to assistant folder); switch to the
-  isolated run root + a promotion step.
+- `HeadlessRunLauncher` — currently passes `workspaceRoot: null` at both call sites (writes to assistant
+  folder); switch to the isolated run root + a promotion step. Note the *grant* side already narrowed:
+  `HeadlessRunRequest.DefaultGrantedWrites` is `{write_file}` (no `delete_file`), and a resume restores the
+  launch's persisted grant envelope — so isolation is now the only missing half, not both.
 - `SafeFolderPath` / escape-rejection — must still hold against the new base root.
 
 ## Decisions to resolve

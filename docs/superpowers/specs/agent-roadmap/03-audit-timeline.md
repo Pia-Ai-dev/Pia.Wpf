@@ -1,6 +1,6 @@
 # Batch 03 — Audit timeline (per-tool decision trace)
 
-**Phase 2 · Size M–L · Branch from the latest Phase-2 branch**
+**Phase 2 · Size M–L · Work on `feature/agent-run-spine`** (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 The run-progress panel is the live **plan tracker + ledger**, deliberately _not_ the full audit trail
 (plan §15 line 925-926, §15.6 line 998: "The full audit timeline with per-tool decisions (Phase 2 §11)").

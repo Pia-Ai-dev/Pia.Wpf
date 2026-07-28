@@ -1,6 +1,6 @@
 # Batch 07 — Sub-agents / multi-persona
 
-**Phase 3 · Size L · Branch from the latest branch**
+**Phase 3 · Size L · Work on `feature/agent-run-spine`** (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 The spine reserved `AgentRun.ParentRunId` and `AgentStep.AssignedPersonaId` for sub-agents/multi-persona
 (plan §2 line 82/112, §9 line 356-357). Today `ResolveActiveAsync` is single-persona-per-mode. This is the

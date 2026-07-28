@@ -1,6 +1,7 @@
 # Batch 08 — Live steering (plan mutation / nudge / pause / resume)
 
-**Phase 4 · Size L · Branch from the latest branch (after budget-pause + sub-agents)**
+**Phase 4 · Size L · Work on `feature/agent-run-spine`**, after the budget-pause batch (shipped) and
+sub-agents (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 The run-progress plan is **read-only** in Phases 1–3; the mutation API shape is reserved for Phase 4
 (plan §2 Q2 line 20, §7.2 line 300, §9 line 363-364, §15.6 line 1000). This batch makes the plan steerable.

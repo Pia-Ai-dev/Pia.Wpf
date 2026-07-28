@@ -1,6 +1,6 @@
 # Batch 09 — Scheduler UI (create/edit/list agent jobs)
 
-**Phase 4 · Size M · Branch from the latest branch**
+**Phase 4 · Size M · Work on `feature/agent-run-spine`** (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 Milestone B wired scheduler **emission** (a scheduled job can create an agent task, plan §17.1) and the plan
 notes the full create/edit/list **scheduler UI** for agent jobs stays deferred to Phase 4 (§17 line 1072,

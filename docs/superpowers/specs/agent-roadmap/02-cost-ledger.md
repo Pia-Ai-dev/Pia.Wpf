@@ -1,9 +1,15 @@
 # Batch 02 — Cost ledger (price table → `CostUsd`)
 
-**Phase 2 · Size S · Branch from the latest Phase-2 branch**
+**Phase 2 · Size S · Work on `feature/agent-run-spine`** (the only ref this system was built on — see the
+chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 The run ledger already accrues input/output tokens + wall-clock live (plan §5, Q7 transparency). Cost is the one
 column left unpopulated — the panel renders `CostUsd` only when non-null, and today nothing sets it.
+
+Two inputs got trustworthy in the hardening batch: `wallClockMs` is now accumulated **active** time (a parked
+run no longer reports the hours it sat waiting), and plan/replan/verify/single-turn-fallback turns all accrue
+run-level, so the token total is complete. What is still missing is per-phase attribution — every non-step turn
+lands in the same run-level total with no marker distinguishing planning from verifying.
 
 ## Goal
 
@@ -12,7 +18,8 @@ running cost, per-step and total.
 
 ## Key seams
 
-- `RunProgressViewModel.cs:117` — `CostUsd = ledger.CostUsd; // TODO Phase 2: price table populates cost`.
+- `RunProgressViewModel.cs:151` — `CostUsd = ledger.CostUsd; // TODO Phase 2: price table populates cost`
+  (the line moved as the panel grew; it is the only `CostUsd` read in the UI).
 - `AgentRunService.AddUsageAsync` / the `Ledger`/`StepLedger` DTOs — where token deltas are accrued; the natural
   place to also accrue a cost delta once a price lookup exists.
 - The model label rides on `Finished(UsageDetails?, string Model, …)` (`Models/ChatStreamItem.cs`) — the per-round

@@ -353,6 +353,13 @@ Additive, no migration (per the Flow map):
 - **MCP gate fix** — MCP still bypasses the gate in Phase 1 (unchanged). The fix
   (handler returns a deferred `PluginToolCall`) is a Phase 2 prerequisite for autonomy.
   ⚠ Note: MCP is **stdio-only** today (spec's "stdio+sse" is inaccurate — SSE is not wired).
+  **As-built at `fc0d4a7` (2026-07-28):** shipped and no longer deferred. `McpPluginToolHandler`
+  returns a deferred `PluginToolCall`, so MCP goes through the same gate as a built-in write —
+  interactively an action card, unattended the write-grant gate (default-deny: only a tool name the
+  run/job explicitly granted runs). It is **not** disabled headless any more. On top of that, a
+  destructive-tool floor refuses a granted tool that is both delete-like (delete/remove/purge/drop/
+  wipe/erase/destroy/truncate/forget stems) and external, failing closed if MCP-ness cannot be
+  derived. MCP remains stdio-only.
 - **Sub-agents / Council-for-work** — `ParentRunId`/`AssignedPersonaId` reserved; multi-persona
   resolve path (`ResolveActiveAsync` is single-persona-per-mode today) is Phase 3.
 - **Out-of-folder temp workspace** (`%LOCALAPPDATA%\Pia\runs\<runId>`) — **now built in Milestone B**
@@ -1085,6 +1092,14 @@ change (Completed→Success, Failed→Error; `DedupKey = runId`; durable; retrac
 > for a future **opt-in per-run sandbox**, but is not engaged by default. The containment machinery and its
 > escape-fuzz tests still apply verbatim to whichever root is active (the assistant folder by default).
 
+> **As-built at `fc0d4a7` (2026-07-28):** the amendment above still holds — the seam is still not engaged
+> (`HeadlessTurnExecutor.Initialize(workspaceRoot: null, …)` on both the launch and the resume path), so
+> `runs\<runId>` is created and cleaned but nothing writes into it. Two things have changed: "full
+> read/write/**delete**" is no longer the default — `HeadlessRunRequest.DefaultGrantedWrites` is
+> `{write_file}`, `delete_file` must be granted explicitly, and a resume restores the launch's own persisted
+> grant envelope (falling back to the `{write_file}` floor) instead of re-granting write+delete — and "only
+> MCP stays withheld" is obsolete (see the §17.4 note). Isolate-then-promote is roadmap Batch 06.
+
 Unattended multi-step runs that **write files** must not share the interactive default folder. Give each
 headless run an isolated workspace `%LOCALAPPDATA%\Pia\runs\<runId>`:
 
@@ -1129,6 +1144,19 @@ Decide the headless consent model:
   tools for headless runs.
 - Record every headless tool decision to the run/step timeline (privacy: tool args are SENSITIVE →
   `SensitiveDebug`).
+
+> **As-built at `fc0d4a7` (2026-07-28) — reconciling this section with itself.** The amendment note at the
+> top of §17.4 is the current behaviour; the body bullet "MCP stays denied headless" above, the §17.7 test
+> line "MCP denied headless", and §17.8's "(this milestone just *disables* MCP headless)" are all superseded
+> and describe a stopgap that no longer exists. Concretely, today: MCP is gated, not disabled, on both paths
+> (§9's as-built note has the detail); unattended runs are default-deny by tool name; the launcher's default
+> grant set is `{write_file}` — **not** `{write_file, delete_file}` as the amendment states — and a resume
+> restores the launch's persisted grant envelope rather than re-deriving one; and a destructive-tool floor
+> refuses a granted delete-like *external* tool even when it was granted. Also: the amendment cites
+> "M1/M2 commits on `feature/agent-mcp-gate`" — **that branch never existed.** The MCP-gate work is the
+> commit range `ed030f2..c62bc97` on `feature/agent-run-spine`, the only ref this system was ever built on
+> (see `docs/superpowers/specs/agent-roadmap/00-OVERVIEW.md`). The third bullet (record every headless tool
+> decision) is still **unbuilt** — roadmap Batch 03.
 
 ### 17.5 Budgets, lifecycle, concurrency
 

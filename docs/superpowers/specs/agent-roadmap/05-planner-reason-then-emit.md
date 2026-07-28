@@ -1,6 +1,6 @@
 # Batch 05 — Planner reason-then-emit (boosted planning effort)
 
-**Phase 2 · Size S–M · Branch from the latest Phase-2 branch**
+**Phase 2 · Size S–M · Work on `feature/agent-run-spine`** (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 Planning uses a constrained `emit_plan` **tool** call. On **Chat-Completions** providers, `ReasoningEffortMapping`
 (`ToOpenAi`) omits the reasoning-effort param when tools are present — so the plan turn reasons at *default* effort,

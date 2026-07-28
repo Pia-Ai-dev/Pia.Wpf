@@ -1,10 +1,19 @@
 # Batch 04 — Autonomy policy (`PolicyJson`)
 
-**Phase 2 · Size M–L · Branch from `feature/agent-mcp-gate` lineage (latest Phase-2 branch)**
+**Phase 2 · Size M–L · Work on `feature/agent-run-spine`** (there is no `feature/agent-mcp-gate` branch — the
+MCP-gate work is the commit range `ed030f2` → `c62bc97`; see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
-`AgentRun.PolicyJson` is reserved "for the Phase 2 autonomy policy" (plan §2 line 87, DDL line 438). The MCP/tool
-approval **gate** already exists (`feature/agent-mcp-gate`: interactive gate + unattended grant gate + destructive
-guard). What's missing is a **per-run policy** that decides, up front, how that gate behaves for a given run.
+`AgentRun.PolicyJson` was reserved "for the Phase 2 autonomy policy" (plan §2 line 87, DDL line 438). The MCP/tool
+approval **gate** already exists (commit range `ed030f2` → `c62bc97`: interactive gate + unattended grant gate +
+destructive guard). What's missing is a **per-run policy** that decides, up front, how that gate behaves for a
+given run.
+
+⚠ **The column is no longer empty.** The hardening batch writes the run's resolved **write-grant envelope** into
+`PolicyJson` at launch (a private, `v`-versioned camelCase object carrying `grantedWrites` + the origin trigger)
+and `HeadlessRunLauncher.ResumeAsync` reads it back so a resume can never widen what the launch granted; a
+missing/unreadable/unknown-version envelope resumes with the `{write_file}` floor. So this batch must **extend
+that document** (add policy members alongside `grantedWrites`, bump `v` with a fallback that stays restrictive) —
+not claim the column, and not break the resume reader.
 
 ## Goal
 
@@ -32,7 +41,9 @@ can be granted a bounded autonomy envelope instead of ad-hoc grants.
 
 - The M3 invariant holds: **no policy can auto-approve a destructive MCP call.**
 - Privacy: policy is config, not user content; fine to log the policy *shape*, never tool payloads.
-- Backward-compatible: a null/absent `PolicyJson` behaves exactly as today (no autonomy change).
+- Backward-compatible: a `PolicyJson` that carries only the grant envelope (every run written before this
+  batch) behaves exactly as today — the resume grant restore must keep working, and an unknown policy value
+  must fail *restrictive*, never bypass.
 
 ## Tests
 
