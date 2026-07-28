@@ -200,6 +200,146 @@ public class ChatSessionManagerTests
         Assert.True(raised is null || raised == parked.Id);
     }
 
+    // ---- W2c: a re-attached, still-EXECUTING run is a foreign writer, so the composer must be blocked ----
+
+    [Theory]
+    [InlineData(AgentRunState.Planning)]
+    [InlineData(AgentRunState.Running)]
+    [InlineData(AgentRunState.Verifying)]
+    public async Task RestoreActiveRunAsync_ExecutingRun_MarksTheSessionsRunForeign(AgentRunState state)
+    {
+        // A hydrated session never executes its own run — this manager did not launch it. So a re-attached run
+        // that is still executing is by definition a SECOND full-chat writer, and the live composer must not
+        // start a turn against it (a live full replace would delete the run's step rows).
+        var chatId = Guid.NewGuid();
+        var executing = Run(chatId, state, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { executing });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.Equal(executing.Id, session.ActiveRunId);
+        Assert.True(session.ForeignRunActive);
+    }
+
+    [Theory]
+    [InlineData(AgentRunState.WaitingForInput)]
+    [InlineData(AgentRunState.Paused)]
+    public async Task RestoreActiveRunAsync_ParkedRun_DoesNotMarkItForeign(AgentRunState state)
+    {
+        // The parked "continue in chat" path must stay OPEN: a parked run is not writing, and blocking Send
+        // there would break the headline C2 case (resume the run by talking to the chat).
+        var chatId = Guid.NewGuid();
+        var parked = Run(chatId, state, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.Equal(parked.Id, session.ActiveRunId);
+        Assert.False(session.ForeignRunActive);
+    }
+
+    [Fact]
+    public async Task RunChanged_ToPaused_ClearsTheForeignFlag()
+    {
+        var chatId = Guid.NewGuid();
+        var running = Run(chatId, AgentRunState.Running, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { running });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+        await sut.RestoreActiveRunAsync(session);
+        Assert.True(session.ForeignRunActive);
+
+        // AgentRunService raises RunChanged from a pool thread; the manager marshals the flip (G3), so poll.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.Paused));
+
+        for (var i = 0; i < 200 && session.ForeignRunActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.False(session.ForeignRunActive);
+    }
+
+    [Fact]
+    public async Task RunChanged_BackToRunning_SetsTheForeignFlagAgain()
+    {
+        var chatId = Guid.NewGuid();
+        var parked = Run(chatId, AgentRunState.WaitingForInput, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+        await sut.RestoreActiveRunAsync(session);
+        Assert.False(session.ForeignRunActive);
+
+        // The user hit Continue on the Flow card: the run resumes HEADLESSLY, so it becomes a writer again.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(parked.Id, AgentRunState.Running));
+
+        for (var i = 0; i < 200 && !session.ForeignRunActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.True(session.ForeignRunActive);
+    }
+
+    [Fact]
+    public async Task RunChanged_ForAnInteractiveRunThisManagerLaunched_NeverMarksItForeign()
+    {
+        // No interactive regression: the session that OWNS the run executes it itself, and its own IsStreaming
+        // already blocks Send. Flagging it would disable the composer for every ordinary agent run.
+        var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = RunShape.Planned, State = AgentRunState.Planning });
+
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        await sut.StartPlannedTurnAsync(session, "plan my week");
+
+        Assert.Equal(runId, session.ActiveRunId);
+
+        // The orchestrator's per-step RunChanged events fire for THIS run; none may flag the session.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Verifying));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.False(session.ForeignRunActive);
+    }
+
+    [Fact]
+    public async Task RunChanged_WithNoMatchingSession_IsHarmless()
+    {
+        // Guardrail 1: RunChanged is raised by AgentRunService on the write path. The handler is bookkeeping —
+        // an unknown run id, or a disposed manager, must not throw back into the run.
+        var sut = CreateSut();
+        sut.GetOrCreateActiveForNewChat();
+
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(Guid.NewGuid(), AgentRunState.Running));
+        await Task.Delay(30, TestContext.Current.CancellationToken);
+
+        sut.Dispose();
+        // After Dispose the handler is detached; raising again must still be inert.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(Guid.NewGuid(), AgentRunState.Running));
+        await Task.Delay(30, TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task RestoreActiveRunAsync_OnlyTerminalRuns_RestoresNothing()
     {

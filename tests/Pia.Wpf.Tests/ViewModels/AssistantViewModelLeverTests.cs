@@ -216,4 +216,56 @@ public class AssistantViewModelLeverTests
 
         Assert.False(vm.WeakProviderWarningVisible);
     }
+
+    // ---- W2c: Send is blocked while a FOREIGN (headless) run is executing in this chat ----
+
+    [Fact]
+    public void CanSend_IsFalse_WhileAForeignRunIsExecuting()
+    {
+        // The data-loss guard: a live turn here would be a SECOND full-chat writer against a headless
+        // executor that is mid-run, and its full replace deletes the run's step rows. No new resx string —
+        // the embedded run-progress panel is already on screen showing the run executing.
+        var vm = CreateSut();
+        vm.InputText = "hello";
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+
+        vm.ForeignRunActive = true;
+
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void CanSend_ReEnables_WhenTheForeignRunStops()
+    {
+        var vm = CreateSut();
+        vm.InputText = "hello";
+        vm.ForeignRunActive = true;
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+
+        vm.ForeignRunActive = false;
+
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void RunInBackground_StaysEnabled_WhileAForeignRunIsExecuting()
+    {
+        // "Run in background" launches into a NEW chat id and never writes this chat, so it is not a second
+        // writer and must not be gated.
+        var vm = CreateSut();
+        vm.InputText = "a different goal";
+        vm.ForeignRunActive = true;
+
+        Assert.True(vm.RunInBackgroundCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void ForeignRunActive_DefaultsToFalse_SoAnOrdinaryComposerIsUnaffected()
+    {
+        var vm = CreateSut();
+        vm.InputText = "hello";
+
+        Assert.False(vm.ForeignRunActive);
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
 }

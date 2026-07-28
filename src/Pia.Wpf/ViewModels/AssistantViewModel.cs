@@ -69,6 +69,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isStreaming;
 
+    /// <summary>
+    /// W2: a run attached to this chat is executing under an executor this session does not own (headlessly),
+    /// so it is a second full-chat writer and Send must stay disabled until it stops. No explanatory string in
+    /// this batch on purpose: the embedded <see cref="ActiveRunProgress"/> panel is already on screen for the
+    /// re-attached run and already shows it executing.
+    /// </summary>
+    [ObservableProperty]
+    private bool _foreignRunActive;
+
     [ObservableProperty]
     private bool _hasMessages;
 
@@ -333,6 +342,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.ToolSucceeded -= OnActiveSessionToolSucceeded;
             prev.RunFailed -= OnActiveSessionRunFailed;
             prev.ActiveRunChanged -= OnActiveRunChanged;
+            prev.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
         }
 
         _subscribedSession = session;
@@ -341,7 +351,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.ToolSucceeded += OnActiveSessionToolSucceeded;
         session.RunFailed += OnActiveSessionRunFailed;
         session.ActiveRunChanged += OnActiveRunChanged;
+        session.ForeignRunActiveChanged += OnForeignRunActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
+        ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
 
         Messages = session.Messages;            // re-points the ItemsControl (OnMessagesChanged swaps CollectionChanged)
         HasMessages = session.Messages.Count > 0;
@@ -357,6 +369,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // defensively so a future off-thread caller can't touch the bound RunProgressViewModel cross-thread.
     private void OnActiveRunChanged(object? sender, Guid? runId) =>
         App.Current.Dispatcher.InvokeAsync(() => SyncRunProgress(runId));
+
+    // The manager already marshals the flip to the UI thread (G3); marshal defensively anyway, for the same
+    // reason OnActiveRunChanged does — this sets a bound property and re-evaluates a command.
+    private void OnForeignRunActiveChanged(object? sender, bool active) =>
+        App.Current.Dispatcher.InvokeAsync(() => ForeignRunActive = active);
 
     private void SyncRunProgress(Guid? runId)
     {
@@ -549,7 +566,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment))
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
+            or nameof(ForeignRunActive))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
             RunInBackgroundCommand.NotifyCanExecuteChanged();
@@ -624,11 +642,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         InputText = suggestion;
     }
 
+    // W2: ForeignRunActive blocks Send because a live turn would be a SECOND full-chat writer against a
+    // headless executor that is mid-run — the live full replace deletes the run's step rows, and the run's
+    // own model context never sees the typed message, so the transcript would be garbled even without loss.
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null);
+        !IsStreaming && !ForeignRunActive
+        && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null);
 
     // "Run in background" detaches the typed goal and (this milestone) ignores attachments, so unlike
-    // Send it requires real text — never enable on an attachment-only composer.
+    // Send it requires real text — never enable on an attachment-only composer. Deliberately NOT gated on
+    // ForeignRunActive: it launches into a NEW chat id and never writes this chat.
     private bool CanExecuteRunInBackground() =>
         !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
 

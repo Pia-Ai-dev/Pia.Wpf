@@ -153,6 +153,31 @@ public sealed class ChatSession : IDisposable
     }
 
     /// <summary>
+    /// True while a run attached to this chat is executing under an executor this session does NOT own —
+    /// i.e. headlessly, on a run pool thread (W2). That executor is a second full-chat writer, so this
+    /// session must not write: a live turn's full replace would delete the rows the run's steps produced, and
+    /// the run's own model context never sees the user's message anyway, so the resulting conversation would
+    /// be garbled even if nothing were lost.
+    /// <para>
+    /// Set only for a re-attached (hydrated) run — a session that creates its own run has its own
+    /// <see cref="IsStreaming"/> to block Send, and setting this for it would be an interactive regression.
+    /// </para>
+    /// </summary>
+    public bool ForeignRunActive { get; private set; }
+
+    /// <summary>Raised when <see cref="ForeignRunActive"/> changes (marshaled to the UI thread by the manager).</summary>
+    public event EventHandler<bool>? ForeignRunActiveChanged;
+
+    /// <summary>Sets <see cref="ForeignRunActive"/> and notifies (no-op when unchanged).</summary>
+    public void SetForeignRunActive(bool active)
+    {
+        if (ForeignRunActive == active)
+            return;
+        ForeignRunActive = active;
+        ForeignRunActiveChanged?.Invoke(this, active);
+    }
+
+    /// <summary>
     /// Sets the per-chat working directory. Trims, treats empty as null (= sandbox root),
     /// and normalizes separators to forward slashes (the stored/relative convention).
     /// </summary>

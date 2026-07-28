@@ -55,6 +55,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     private readonly Dictionary<Guid, ChatSession> _sessions = new();
     private readonly HashSet<ChatSession> _allSessions = new();
+
+    /// <summary>
+    /// Runs this manager launched into a live session itself (W2). Their <c>RunChanged</c> events must NOT set
+    /// <see cref="ChatSession.ForeignRunActive"/> — the owning session's <c>IsStreaming</c> already blocks
+    /// Send, and flagging it would disable the composer for an ordinary interactive agent run.
+    /// </summary>
+    private readonly HashSet<Guid> _ownRunIds = new();
+
     private long _activationCounter;
     private bool _disposed;
 
@@ -123,6 +131,52 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _windowManager = windowManager;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
+
+        // W2: track whether a chat's attached run is executing under a FOREIGN (headless) executor, so the
+        // composer can refuse to start a second full-chat writer. Unsubscribed in Dispose.
+        _agentRunService.RunChanged += OnAgentRunChanged;
+    }
+
+    /// <summary>
+    /// W2: a run attached to a live session moved state. Planning/Running/Verifying means a foreign executor
+    /// is writing this chat; WaitingForInput/Paused/terminal means it is not (and the parked
+    /// "continue in chat" path must stay open).
+    /// <para>
+    /// Off-thread by construction — <c>AgentRunService</c> raises <c>RunChanged</c> from whatever pool thread
+    /// completed a step, under no gate of ours — so the flag flip is marshaled to the UI thread (G3), which
+    /// is also where the session's own <c>ActiveRunChanged</c> is raised. Bookkeeping: a fault here must never
+    /// fail the run (guardrail 1), and the handler owns the marshal so a throwing continuation cannot
+    /// propagate back into <c>RecordStepResultAsync</c>'s caller.
+    /// </para>
+    /// <para>
+    /// Matched by <see cref="ChatSession.ActiveRunId"/> rather than by chat id: the event carries no chat id,
+    /// and a session only tracks the run it has attached — which is exactly the run that could write it.
+    /// A run this manager launched itself (<see cref="_ownRunIds"/>) is skipped entirely: that session's own
+    /// <c>IsStreaming</c> already blocks Send, and flagging it would be an interactive regression.
+    /// </para>
+    /// </summary>
+    private void OnAgentRunChanged(object? sender, AgentRunChangedEventArgs e)
+    {
+        if (_ownRunIds.Contains(e.RunId))
+            return;
+
+        var executing = e.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying;
+        _syncContext.Post(_ =>
+        {
+            try
+            {
+                if (_disposed) return;
+                foreach (var session in _allSessions)
+                {
+                    if (session.ActiveRunId == e.RunId)
+                        session.SetForeignRunActive(executing);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to apply a run-state change to a live session");
+            }
+        }, null);
     }
 
     private ChatSession CreateSession()
@@ -409,6 +463,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             return;
 
         session.SetActiveRun(resumable.Id);
+
+        // W2: a HYDRATED session never executes its own run — this manager did not launch it (the run
+        // predates this session, often this process). So a re-attached run that is still EXECUTING is by
+        // definition foreign, i.e. a second full-chat writer, and Send must be blocked until it stops.
+        // WaitingForInput/Paused deliberately do NOT set it: the parked "continue in chat" path stays open.
+        session.SetForeignRunActive(
+            resumable.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying);
+
         // Ids + enum only — a run Goal is user content (CLAUDE.md privacy logging).
         _logger.LogInformation("Re-attached run {RunId} ({State}) to activated chat {ChatId}",
             resumable.Id, resumable.State, chatId);
@@ -593,6 +655,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
             var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
                 session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText, PolicyJson: policyJson));
+
+            // W2: this session EXECUTES this run itself (LiveTurnExecutor below), so it is not a foreign
+            // writer. Recorded before SetActiveRun so no RunChanged can race in and flag the session; the
+            // flag is deliberately left false here — session.IsStreaming already blocks Send.
+            _ownRunIds.Add(run.Id);
 
             // Surface the run id onto the session so the active VM can embed the run-progress panel
             // (§15.1). Raised on the UI thread (this branch runs on it), so the VM handler is safe.
@@ -853,6 +920,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         // R18: this window no longer owns an active assistant chat.
         _windowManager.SetActiveAssistantChatId(null);
+
+        // W2: the run store is a singleton and outlives this scoped manager — leaving the handler attached
+        // would keep a disposed window's sessions alive and post to a dead SynchronizationContext.
+        _agentRunService.RunChanged -= OnAgentRunChanged;
 
         // The manager owns session teardown — cancel every session's Cts + pending
         // action cards (a WaitingForTool session at shutdown is otherwise an
