@@ -332,8 +332,8 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     /// <summary>
-    /// Real <see cref="AssistantChatService"/> plus a call counter and fault injection on
-    /// <c>SaveAsync</c> — the seam the interim (per-step) persist writes through.
+    /// Real <see cref="AssistantChatService"/> plus a call counter and fault injection on the WRITE seams
+    /// (<c>SaveAsync</c> and the merging <c>SaveMergedAsync</c> the interim/per-step persist uses).
     /// </summary>
     private sealed class CountingChatService : IAssistantChatService
     {
@@ -347,9 +347,10 @@ public sealed class HeadlessTurnExecutorTests
 
         public event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
+        /// <summary>Every full-chat replace, whichever save seam issued it — the per-step write cost.</summary>
         public int SaveCalls { get; private set; }
 
-        /// <summary>Throw on the next N SaveAsync calls (models a transient store fault mid-run).</summary>
+        /// <summary>Throw on the next N save calls (models a transient store fault mid-run).</summary>
         public int FailNextSaves { get; set; }
 
         public Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default)
@@ -361,6 +362,18 @@ public sealed class HeadlessTurnExecutorTests
                 throw new InvalidOperationException("save boom");
             }
             return _inner.SaveAsync(chat, ct);
+        }
+
+        /// <summary>W2b: the executor's write seam. Counted as a WRITE — the merge must not cost a second one.</summary>
+        public Task<int> SaveMergedAsync(SyncAssistantChat chat, CancellationToken ct = default)
+        {
+            SaveCalls++;
+            if (FailNextSaves > 0)
+            {
+                FailNextSaves--;
+                throw new InvalidOperationException("save boom");
+            }
+            return _inner.SaveMergedAsync(chat, ct);
         }
 
         public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) => _inner.SaveFromRemoteAsync(chat, ct);
@@ -375,7 +388,6 @@ public sealed class HeadlessTurnExecutorTests
             return _inner.SetTitleAsync(chatId, title, ct);
         }
 
-        /// <summary>W2b: counted so the rebase can be shown to add GetAsync calls, not SaveAsync calls.</summary>
         public int GetCalls { get; private set; }
 
         public Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
@@ -662,14 +674,14 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Null(ctx.WorkingSubpath);
     }
 
-    // ---- W2b: the run's chat write rebases on the persisted rows before every write ----
+    // ---- W2b: the run's chat write merges the persisted rows INSIDE the store's gate hold ----
 
     [Fact]
     public async Task ForeignRowWrittenAfterBeginRun_SurvivesTheInterimAndTerminalWrites()
     {
         // W2 direction B: BeginRunAsync takes ONE snapshot of the chat and every later write is a full
         // replace from it, so a row another writer added afterwards used to be DELETED — silently, because
-        // there is no FK from AgentSteps to the message rows. The rebase absorbs it instead.
+        // there is no FK from AgentSteps to the message rows. SaveMergedAsync absorbs it instead.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(2));
@@ -716,32 +728,28 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     [Fact]
-    public async Task Rebase_AddsReadsNotWrites_SaveCallsPerParkedTwoStepRunIsStillTwo()
+    public async Task Merge_IsNotASecondWrite_SaveCallsPerParkedTwoStepRunIsStillTwo()
     {
-        // The cost guard for W2b: if the rebase were ever implemented as "write, merge, re-write", SaveCalls
-        // would double. It must be a READ before the single write.
+        // The cost guard for W2b: if the merge were ever implemented as "write, merge, re-write", the write
+        // count would double. It must be one read + one write inside a single gate hold, so the per-step
+        // write cost is unchanged. SaveCalls counts BOTH save seams (see CountingChatService).
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(4));
         var budget = new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
         var savesBefore = h.Chats.SaveCalls;
-        var getsBefore = h.Chats.GetCalls;
 
         await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, budget,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(2, h.Chats.SaveCalls - savesBefore);
-        // One GetAsync for BeginRunAsync's seeding + one per write. Asserted as a lower bound so the exact
-        // read cadence stays free to change; the WRITE count above is the one that is pinned.
-        Assert.True(h.Chats.GetCalls - getsBefore >= 3,
-            $"expected the rebase to add reads, saw {h.Chats.GetCalls - getsBefore}");
     }
 
     [Fact]
-    public async Task ChatDeletedMidRun_RebaseIsANoOp_AndTheRunStillCompletes()
+    public async Task ChatDeletedMidRun_MergeIsANoOp_AndTheRunStillCompletes()
     {
-        // Guardrail 1: the rebase lives inside PersistChatAsync's try. A chat deleted mid-run reads back null,
-        // the rebase absorbs nothing, and the run writes its own transcript exactly as before.
+        // Guardrail 1: the write lives inside PersistChatAsync's try. A chat deleted mid-run has no stored
+        // rows, the merge absorbs nothing, and the run writes its own transcript exactly as before.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(2));
@@ -760,7 +768,7 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     [Fact]
-    public async Task Rebase_DoesNotFeedForeignRowsIntoTheRunsModelContext()
+    public async Task Merge_DoesNotFeedForeignRowsIntoTheRunsModelContext()
     {
         // Executor parity: the run's plan is fixed at BeginRunAsync, so a foreign turn must reach the DURABLE
         // transcript but NEVER the model context. The exchange messages are [system, goal, ...replies,

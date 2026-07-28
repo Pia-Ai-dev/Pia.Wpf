@@ -123,7 +123,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         try
         {
             if (_disposed) return;
-            await SaveUnderGateAsync(chat, preserveNewerLastAccessed, ct);
+            await SaveUnderGateAsync(chat, chat.Messages, preserveNewerLastAccessed, ct);
         }
         finally
         {
@@ -135,7 +135,66 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             OnChatsChanged(chat.Id, AssistantChatChangeKind.Upserted);
     }
 
-    private async Task SaveUnderGateAsync(SyncAssistantChat chat, bool preserveNewerLastAccessed, CancellationToken ct)
+    /// <summary>
+    /// W2b: the read, the merge and the write under ONE hold of <see cref="_gate"/>. See
+    /// <see cref="IAssistantChatService.SaveMergedAsync"/> for the contract; this is the atomicity the
+    /// caller cannot get by pairing <see cref="GetAsync"/> with <see cref="SaveAsync"/>, because that pair
+    /// releases the gate in between and any writer committing in the gap is still deleted by the replace.
+    /// </summary>
+    public async Task<int> SaveMergedAsync(SyncAssistantChat chat, CancellationToken ct = default)
+    {
+        var absorbed = 0;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return 0;
+
+            var connection = Connection();
+            var stored = await GetMessagesAsync(connection, chat.Id, ct);
+
+            var messages = chat.Messages;
+            if (stored.Count > 0)
+            {
+                var known = chat.Messages.Select(m => m.Id).ToHashSet();
+                var merged = new List<SyncAssistantChatMessage>(chat.Messages);
+                foreach (var row in stored)
+                {
+                    if (!known.Add(row.Id))
+                        continue;
+                    merged.Add(row);
+                    absorbed++;
+                }
+
+                // Merge CHRONOLOGICALLY, not by append order: Ordinal is renumbered from the list index
+                // below, so appending an absorbed row at the tail would make "the agent's step reply comes
+                // before the question the user asked mid-run" durable. Timestamp is set by every writer that
+                // creates a row. OrderBy is a stable sort, so rows sharing a timestamp keep the caller's
+                // order and an all-equal-timestamp list is left exactly as it came in.
+                if (absorbed > 0)
+                    messages = [.. merged.OrderBy(m => m.Timestamp)];
+            }
+
+            await SaveUnderGateAsync(chat, messages, preserveNewerLastAccessed: false, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        // Outside the gate — subscribers re-enter this service.
+        OnChatsChanged(chat.Id, AssistantChatChangeKind.Upserted);
+        return absorbed;
+    }
+
+    /// <param name="messages">
+    /// The rows to persist. Passed separately from <paramref name="chat"/> so <see cref="SaveMergedAsync"/>
+    /// can write a merged list without mutating the caller's snapshot.
+    /// </param>
+    private async Task SaveUnderGateAsync(
+        SyncAssistantChat chat,
+        IReadOnlyList<SyncAssistantChatMessage> messages,
+        bool preserveNewerLastAccessed,
+        CancellationToken ct)
     {
         var connection = Connection();
         using var transaction = connection.BeginTransaction();
@@ -185,7 +244,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
 
         var ordinal = 0;
-        foreach (var msg in chat.Messages)
+        foreach (var msg in messages)
         {
             using var insertMessage = connection.CreateCommand();
             insertMessage.Transaction = transaction;
@@ -210,7 +269,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             await insertMessage.ExecuteNonQueryAsync(ct);
         }
 
-        await ReplaceFtsRowAsync(connection, transaction, chat, ct);
+        await ReplaceFtsRowAsync(connection, transaction, chat, messages, ct);
 
         transaction.Commit();
     }
@@ -688,9 +747,10 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         SqliteConnection connection,
         SqliteTransaction transaction,
         SyncAssistantChat chat,
+        IReadOnlyList<SyncAssistantChatMessage> messages,
         CancellationToken ct) =>
         ReplaceFtsRowAsync(connection, transaction, chat.Id, chat.Title ?? string.Empty,
-            string.Join("\n\n", chat.Messages.Select(m => m.Content)), ct);
+            string.Join("\n\n", messages.Select(m => m.Content)), ct);
 
     private static async Task ReplaceFtsRowAsync(
         SqliteConnection connection,

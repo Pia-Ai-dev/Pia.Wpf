@@ -297,6 +297,131 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
         Assert.Equal(3, final!.Messages.Count);
     }
 
+    [Fact]
+    public async Task TwoAppendOnlyWritersMergingConcurrently_LoseNoRow()
+    {
+        // W2b's atomicity, end to end. A merging save that READ through GetAsync and then wrote through
+        // SaveAsync would release the gate in between, so a writer committing in that gap still has its rows
+        // deleted by the replace. Here BOTH writers append 40 rows each to the same chat, interleaved by the
+        // scheduler; every row must be in the final table. This test is why the merge lives inside
+        // AssistantChatService's gate hold rather than in the caller.
+        var id = Guid.NewGuid();
+        var seed = Chat(id, "shared", "m0");
+        await _chats.SaveAsync(seed, TestContext.Current.CancellationToken);
+
+        var errors = new ConcurrentBag<Exception>();
+        var expected = new ConcurrentBag<Guid>(seed.Messages.Select(m => m.Id));
+
+        async Task Writer(string tag)
+        {
+            // Each writer owns an append-only view — its seed row plus its own rows, exactly like a headless
+            // run's _persisted list. It never sees the other writer's rows; the store merges them.
+            var mine = new List<SyncAssistantChatMessage>(seed.Messages);
+            for (var i = 0; i < 40; i++)
+            {
+                var row = new SyncAssistantChatMessage
+                {
+                    Id = Guid.NewGuid(),
+                    Role = "assistant",
+                    Content = $"{tag}-{i}",
+                    Timestamp = DateTime.UtcNow,
+                };
+                mine.Add(row);
+                expected.Add(row.Id);
+                var snapshot = Chat(id, "shared");
+                snapshot.Messages = [.. mine];
+                try { await _chats.SaveMergedAsync(snapshot); }
+                catch (Exception ex) { errors.Add(ex); }
+            }
+        }
+
+        await Task.WhenAll(
+            Task.Run(() => Writer("a"), TestContext.Current.CancellationToken),
+            Task.Run(() => Writer("b"), TestContext.Current.CancellationToken));
+
+        Assert.Empty(errors);
+        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
+        var stored = final!.Messages.Select(m => m.Id).ToHashSet();
+        foreach (var rowId in expected)
+            Assert.Contains(rowId, stored);
+        Assert.Equal(81, final.Messages.Count);
+    }
+
+    [Fact]
+    public async Task SaveMergedAsync_OrdersAbsorbedRowsByTimestamp_NotByAppendOrder()
+    {
+        // W2b ordering: Ordinal is renumbered from the list index on every replace, so an absorbed row
+        // appended at the TAIL makes "the agent's step reply printed before the question the user typed
+        // mid-run" durable. The merge sorts by Timestamp instead.
+        var id = Guid.NewGuid();
+        var t0 = new DateTime(2026, 7, 28, 9, 0, 0, DateTimeKind.Utc);
+
+        SyncAssistantChatMessage Row(string content, int minute) => new()
+        {
+            Id = Guid.NewGuid(),
+            Role = "user",
+            Content = content,
+            Timestamp = t0.AddMinutes(minute),
+        };
+
+        var goal = Row("goal", 0);
+        var step1 = Row("step 1 reply", 1);
+        var userMid = Row("what about the other folder?", 2);
+        var liveReply = Row("live reply", 3);
+        var step2 = Row("step 2 reply", 4);
+
+        // The DB after a live turn appended two rows behind the run's back.
+        var afterLiveTurn = Chat(id, "c");
+        afterLiveTurn.Messages = [goal, step1, userMid, liveReply];
+        await _chats.SaveAsync(afterLiveTurn, TestContext.Current.CancellationToken);
+
+        // The run's own append-only view knows nothing about the two middle rows.
+        var runView = Chat(id, "c");
+        runView.Messages = [goal, step1, step2];
+        var absorbed = await _chats.SaveMergedAsync(runView, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, absorbed);
+        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
+        Assert.Equal(
+            new[] { "goal", "step 1 reply", "what about the other folder?", "live reply", "step 2 reply" },
+            final!.Messages.Select(m => m.Content).ToArray());
+    }
+
+    [Fact]
+    public async Task SaveMergedAsync_WithNothingToAbsorb_WritesExactlyTheCallersRows()
+    {
+        // The ordinary case: no other writer touched the chat, so the merge is a plain replace and reports 0.
+        var id = Guid.NewGuid();
+        var chat = Chat(id, "c", "m0", "m1");
+        Assert.Equal(0, await _chats.SaveMergedAsync(chat, TestContext.Current.CancellationToken));
+
+        chat.Messages.Add(new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(), Role = "assistant", Content = "m2", Timestamp = DateTime.UtcNow,
+        });
+        Assert.Equal(0, await _chats.SaveMergedAsync(chat, TestContext.Current.CancellationToken));
+
+        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
+        Assert.Equal(["m0", "m1", "m2"], final!.Messages.Select(m => m.Content).ToArray());
+    }
+
+    [Fact]
+    public async Task SaveMergedAsync_DoesNotMutateTheCallersSnapshot()
+    {
+        // The executor reuses its own list to build the next snapshot, so the merge must stay inside the
+        // store: absorbing a foreign row into the caller's list would leak it into the run's next payload
+        // (and, if it ever reached _messages, into the model context — executor parity).
+        var id = Guid.NewGuid();
+        var stored = Chat(id, "c", "goal", "typed mid-run");
+        await _chats.SaveAsync(stored, TestContext.Current.CancellationToken);
+
+        var runView = Chat(id, "c");
+        runView.Messages = [stored.Messages[0]];
+        await _chats.SaveMergedAsync(runView, TestContext.Current.CancellationToken);
+
+        Assert.Single(runView.Messages);
+    }
+
     public void Dispose()
     {
         // Both stores own a DEDICATED connection to the file under _dir, so both must be closed before the

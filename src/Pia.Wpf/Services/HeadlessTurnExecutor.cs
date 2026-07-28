@@ -161,11 +161,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Seed the accumulating transcript. The terminal EndRunAsync does a full chat replace, so on a
         // RESUME (or any pre-populated chat) we must load the existing rows first — otherwise EndRunAsync
         // would erase the prior transcript (D2). A fresh launch's stub chat is empty → seed [system, goal].
-        // W2: this snapshot is no longer taken ONCE and trusted for the rest of the run —
-        // RebaseOnPersistedRowsAsync re-reads the persisted rows before EVERY write and absorbs anything this
-        // executor did not author, so a concurrent writer's rows survive the full replace. What is seeded
-        // HERE is still the only thing that reaches _messages (the model context); the rebase deliberately
-        // does not touch it.
+        // W2: this snapshot is no longer taken ONCE and trusted for the rest of the run — every write goes
+        // through SaveMergedAsync, which re-reads the persisted rows under the store's gate and absorbs
+        // anything this executor did not author, so a concurrent writer's rows survive the full replace.
+        // What is seeded HERE is still the only thing that reaches _messages (the model context); the merge
+        // happens inside the store and deliberately never reaches it.
         _messages.Clear();
         _persisted.Clear();
         _messages.Add(new ChatMessage(ChatRole.System, _setup.SystemPrompt)); // system: never persisted
@@ -338,9 +338,19 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// never diverge from the terminal one. Failure-isolated (guardrail 1): a persist fault logs a warning
     /// and lets the step/run continue — losing durability is bad, failing a run over bookkeeping is worse.
     /// <para>
-    /// COST: <see cref="IAssistantChatService"/> offers no append — <c>SaveAsync</c> is a full-chat replace
-    /// (upsert + DELETE/re-INSERT of the message rows in one transaction). So per-step durability costs one
-    /// full replace per COMPLETED STEP; deliberately not per tool round and not per token.
+    /// COST: <see cref="IAssistantChatService"/> offers no append — a save is a full-chat replace (upsert +
+    /// DELETE/re-INSERT of the message rows in one transaction). So per-step durability costs one full
+    /// replace per COMPLETED STEP; deliberately not per tool round and not per token.
+    /// </para>
+    /// <para>
+    /// W2b: the write goes through <see cref="IAssistantChatService.SaveMergedAsync"/>, which re-reads the
+    /// stored rows and merges back anything this executor did not author INSIDE its own gate hold, so a full
+    /// replace can never DELETE another writer's row — not even one committed between this executor's read
+    /// and its write, which is precisely what a rebase done out here could not prevent. This run is an
+    /// append-only writer (it never removes a message), which is what makes a merging save correct for it.
+    /// It also means the merge never touches <see cref="_messages"/> (the run's MODEL CONTEXT): the run's
+    /// plan is fixed at <c>BeginRunAsync</c> and feeding it foreign turns would break executor parity, so
+    /// the absorbed rows exist only in the row the store writes.
     /// </para>
     /// <paramref name="interim"/> only distinguishes the log/warning text — the caller resolves the title
     /// (<see cref="InterimTitle"/> mid-run, the LLM/derived one at the end).
@@ -349,9 +359,15 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     {
         try
         {
-            await RebaseOnPersistedRowsAsync(ct).ConfigureAwait(false);
             var chat = BuildChatSnapshot(title);
-            await _chatService.SaveAsync(chat, ct).ConfigureAwait(false);
+            var absorbed = await _chatService.SaveMergedAsync(chat, ct).ConfigureAwait(false);
+            if (absorbed > 0)
+            {
+                // Ids + counts only — message content is user content (CLAUDE.md privacy logging).
+                _logger.LogInformation(
+                    "Headless run {RunId} absorbed {Count} foreign message row(s) of chat {ChatId} into its write",
+                    _runId, absorbed, _chatId);
+            }
             if (interim)
             {
                 _logger.LogInformation("Headless run {RunId} interim-persisted chat {ChatId} ({MessageCount} messages)",
@@ -371,54 +387,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to persist headless run {RunId} chat {ChatId}", _runId, _chatId);
-        }
-    }
-
-    /// <summary>
-    /// W2: absorb any row this executor did not author into <see cref="_persisted"/> before every write, so a
-    /// full replace can never DELETE a row written by another writer. Rows are matched by <c>Id</c> and
-    /// appended in DB ordinal order.
-    /// <para>
-    /// Keying on <c>Id</c> is mandatory: <c>Ordinal</c> is not identity, it is the writer's loop index
-    /// (<c>AssistantChatService</c> renumbers from 0 on every replace), whereas Ids round-trip through
-    /// <c>AssistantMessageMapper</c> and the D2 resume seeding, and are what
-    /// <see cref="AgentStep.FirstMessageId"/>/<see cref="AgentStep.LastMessageId"/> name.
-    /// </para>
-    /// <para>
-    /// It touches <see cref="_persisted"/> (the DURABLE transcript) ONLY — never <see cref="_messages"/> (the
-    /// run's MODEL CONTEXT). Injecting foreign turns into a mid-flight run's context would change its
-    /// behaviour unpredictably and break executor parity: the run's plan is fixed at
-    /// <c>BeginRunAsync</c>, and the live executor does not feed it foreign turns either.
-    /// </para>
-    /// <para>
-    /// Called from inside <see cref="PersistChatAsync"/>'s try, so a read fault degrades to the previous
-    /// behaviour (write the run's own transcript) and can never fail the step (guardrail 1). A chat deleted
-    /// mid-run reads back null and the rebase is a no-op. Costs one extra GetAsync per completed step — a
-    /// read, NOT a second SaveAsync, so the per-step write-cost assertion stays at one write per step.
-    /// </para>
-    /// </summary>
-    private async Task RebaseOnPersistedRowsAsync(CancellationToken ct)
-    {
-        var stored = await _chatService.GetAsync(_chatId, ct).ConfigureAwait(false);
-        if (stored is null || stored.Messages.Count == 0)
-            return;
-
-        var known = _persisted.Select(m => m.Id).ToHashSet();
-        var absorbed = 0;
-        foreach (var row in stored.Messages)
-        {
-            if (!known.Add(row.Id))
-                continue;
-            _persisted.Add(row);
-            absorbed++;
-        }
-
-        if (absorbed > 0)
-        {
-            // Ids + counts only — message content is user content (CLAUDE.md privacy logging).
-            _logger.LogInformation(
-                "Headless run {RunId} absorbed {Count} foreign message row(s) from chat {ChatId} before writing",
-                _runId, absorbed, _chatId);
         }
     }
 
