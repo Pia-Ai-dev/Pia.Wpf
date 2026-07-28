@@ -40,7 +40,7 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 
 **Git position:** the branch **is** pushed — `origin/feature/agent-run-spine` exists and the branch tracks
 it; the last pushed commit is `e7df175`. Everything from `19c7a03` onward (hardening + Batch 10 + Batch 11 +
-the fix pass) is **local-only** — **48 commits** as of 2026-07-28. Check with
+the fix pass, plus this doc commit) is **local-only** — **49 commits** as of 2026-07-28. Check with
 `git rev-list --count origin/feature/agent-run-spine..HEAD` and `git branch -vv`.
 Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true`. At `601090e` this is **0 errors, 194
 warnings**, all pre-existing: 3× `CS8602` in `Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in
@@ -58,7 +58,7 @@ does not re-emit analyzer warnings. The real bar these batches held is *adds zer
 >    and 11 added **90 more** `[Fact]`/`[Theory]`, also never executed. Roughly **240 assertions across 20
 >    commits rest on code nothing has run.** This is by far the largest risk on the branch, and two of the new
 >    assertions are *known* to be fixture-sensitive rather than production-sensitive (see Batch 11).
-> 2. **Push.** 48 commits are local-only.
+> 2. **Push.** 49 commits are local-only.
 
 ---
 
