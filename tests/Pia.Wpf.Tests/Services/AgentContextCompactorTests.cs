@@ -366,6 +366,15 @@ public class AgentContextCompactorTests
         // tokens on a list whose text is a handful of tokens. That inflation is unfixable from here
         // (the tokenizer seam is internal), which is exactly why the pin exists rather than trusting
         // the thresholds.
+        //
+        // KNOWN OPEN HAZARD, measured, deliberately NOT asserted either way: on this fixture the
+        // attachment MESSAGE itself is evicted (in=7 -> out=6, no DataContent survives), so a
+        // multi-step Live agent run on a provider with a window loses the image from step 2 onward
+        // while the goal that refers to it stays pinned — a confidently wrong answer instead of a
+        // failure. Fixing it means pinning arbitrary mid-list DataContent messages and inventing a
+        // real token estimate for them (a provider counts a 300 KB JPEG at ~1-2k tokens, not 76k),
+        // which is a bigger change than this file's splice. Not asserted as "image survives" (it
+        // does not) and not asserted as "image is dropped" (that would freeze the bug in place).
         var jpeg = new byte[300 * 1024];
         Random.Shared.NextBytes(jpeg);
 

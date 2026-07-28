@@ -428,6 +428,17 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // durable but unreachable. Re-attach it. Fire-and-forget: an activation must never fail or stall on
         // this lookup. Only the hydrate path needs it — the live-attach branch above returns a session that
         // already carries its run id (SetActiveRun ran when the run was created).
+        //
+        // KNOWN OPEN WINDOW (W2c): SetActive above has already made the composer live, so between here and
+        // the moment the lookup lands there is an interval in which Send is enabled for a chat whose
+        // headless run IS executing — and the lookup's Task.Run blocks on AgentRunService's synchronous
+        // lock, which the run itself holds while committing a step, so the interval is a lock round-trip
+        // rather than microseconds. Closing it needs a product decision this fix-up did not take: either
+        // await the lookup before the composer goes live (a visible stall on every history click) or gate
+        // the composer pessimistically for the duration (a flicker-disable on every activation, which
+        // silently drops an Enter press). Bounded, in the meantime, by the store-level merge: a live turn
+        // landing in that window no longer deletes the run's rows outright (SaveMergedAsync re-absorbs them
+        // on the run's next write) — but a run that has already made its terminal write is still exposed.
         RestoreActiveRunAsync(session).SafeFireAndForget(_logger);
 
         try
