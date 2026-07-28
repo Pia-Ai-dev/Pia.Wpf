@@ -113,6 +113,144 @@ public class ChatSessionManagerTests
         Assert.Null(session);
     }
 
+    // ---- C2: a parked run must stay reachable after a restart (ActiveRunId is runtime-only) ----
+
+    private static AgentRun Run(Guid chatId, AgentRunState state, DateTime createdAt, RunShape shape = RunShape.Planned) =>
+        new() { Id = Guid.NewGuid(), ChatId = chatId, RunShape = shape, State = state, CreatedAt = createdAt };
+
+    private SyncAssistantChat StoredChat(Guid chatId) => new()
+    {
+        Id = chatId,
+        SchemaVersion = 1,
+        Title = "Stored chat",
+        CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+        UpdatedAt = DateTime.UtcNow,
+        LastAccessedAt = DateTime.UtcNow,
+        WindowMode = WindowMode.Assistant.ToString(),
+        Messages =
+        [
+            new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "user", Content = "plan my week", Timestamp = DateTime.UtcNow },
+        ],
+    };
+
+    [Fact]
+    public async Task ActivateAsync_ChatWithParkedRun_RestoresTheRunPanel()
+    {
+        // The headline C2 case: after an app restart the run is durable but was unreachable — no panel, no
+        // Continue button, and the Flow WaitingForInput card is suppressed for the foreground active chat.
+        var chatId = Guid.NewGuid();
+        var parked = Run(chatId, AgentRunState.WaitingForInput, DateTime.UtcNow.AddMinutes(-2));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        Assert.NotNull(session);
+        Guid? raised = null;
+        session!.ActiveRunChanged += (_, id) => raised = id;
+
+        // The lookup is fire-and-forget off the UI thread (an activation must never stall on it), so wait
+        // for it rather than assuming it already landed.
+        for (var i = 0; i < 200 && session.ActiveRunId is null; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.Equal(parked.Id, session.ActiveRunId);
+        // Late subscribers still get the panel: AssistantViewModel reads ActiveRunId when it attaches.
+        Assert.True(raised is null || raised == parked.Id);
+    }
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_OnlyTerminalRuns_RestoresNothing()
+    {
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun>
+        {
+            Run(chatId, AgentRunState.Completed, DateTime.UtcNow.AddMinutes(-9)),
+            Run(chatId, AgentRunState.Failed, DateTime.UtcNow.AddMinutes(-6)),
+            Run(chatId, AgentRunState.Cancelled, DateTime.UtcNow.AddMinutes(-3)),
+        });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+
+        await sut.RestoreActiveRunAsync(session!);
+
+        Assert.Null(session!.ActiveRunId); // a finished run must never resurrect a panel
+    }
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_PicksTheNewestNonTerminalPlannedRun()
+    {
+        var chatId = Guid.NewGuid();
+        var older = Run(chatId, AgentRunState.WaitingForInput, DateTime.UtcNow.AddMinutes(-10));
+        var newest = Run(chatId, AgentRunState.Paused, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun>
+        {
+            older,
+            Run(chatId, AgentRunState.Completed, DateTime.UtcNow),                              // terminal → ignored
+            Run(chatId, AgentRunState.Running, DateTime.UtcNow, RunShape.SingleTurn),           // not Planned → ignored
+            newest,
+        });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null); // ignore whatever the activation's own fire-and-forget lookup did
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.Equal(newest.Id, session.ActiveRunId);
+    }
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_SessionAlreadyHasARun_DoesNotQueryOrReplaceIt()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "hi"));
+        await sut.PersistAsync(session); // assigns the chat id
+        var liveRunId = Guid.NewGuid();
+        session.SetActiveRun(liveRunId);
+        _runService.ClearReceivedCalls();
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.Equal(liveRunId, session.ActiveRunId);
+        await _runService.DidNotReceive().GetByChatAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_LookupThrows_LeavesTheChatUsable()
+    {
+        // Guardrail 1: the rehydration query is bookkeeping — a fault must not fail the activation.
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<AgentRun>>>(_ => throw new InvalidOperationException("runs boom"));
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId); // a rethrow here fails the test
+
+        Assert.NotNull(session);
+        Assert.Single(session!.Messages);
+
+        await sut.RestoreActiveRunAsync(session); // awaited directly: still must not throw
+        Assert.Null(session.ActiveRunId);
+    }
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_UnpersistedSession_DoesNothing()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat(); // Id still null → nothing to look up
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.Null(session.ActiveRunId);
+        await _runService.DidNotReceive().GetByChatAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public void GetState_UnknownChat_ReturnsIdle()
     {
