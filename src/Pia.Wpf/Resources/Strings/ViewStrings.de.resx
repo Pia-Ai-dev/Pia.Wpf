@@ -98,7 +98,7 @@
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Im Hintergrund ausführen</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Hintergrundausführung konnte nicht gestartet werden: {0}</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agentenläufe</value></data>
-  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine Agent-Ausführung stoppt, damit sie nie außer Kontrolle gerät. Ausführungen, die ein Limit erreichen, enden und werden als „bei Budget gestoppt“ markiert.</value></data>
+  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine Agent-Ausführung stoppt, damit sie nie außer Kontrolle gerät. Eine Ausführung, die ein Limit erreicht, pausiert und wartet auf dich – du kannst sie im Ausführungsbereich fortsetzen.</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximale Schritte</value></data>
   <data name="Settings_Agent_MaxSteps_Value" xml:space="preserve"><value>{0} Schritte</value></data>
   <data name="Settings_Agent_MaxSteps_Description" xml:space="preserve"><value>Wie viele Schritte eine Ausführung durchführen darf, bevor sie stoppt.</value></data>
@@ -904,6 +904,8 @@
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
   <data name="Flow_Todo_OverdueDays" xml:space="preserve"><value>Überfällig · {0}T</value></data>
+  <data name="Run_Unverified" xml:space="preserve"><value>Ergebnis nicht geprüft</value></data>
+  <data name="Run_EndedEarly" xml:space="preserve"><value>Vorzeitig beendet</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Kürzer</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Ausführlicher</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-fertig</value></data>

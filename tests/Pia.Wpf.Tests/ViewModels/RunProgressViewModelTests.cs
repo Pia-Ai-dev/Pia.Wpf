@@ -159,7 +159,108 @@ public sealed class RunProgressViewModelTests : IDisposable
         await cleanVm.RefreshAsync();
         Assert.Equal(RunProgressState.Completed, cleanVm.State);
         Assert.False(cleanVm.IsTruncated);
+        Assert.Null(cleanVm.TruncationNote); // no chip on a clean completion
         cleanVm.Dispose();
+    }
+
+    /// <summary>J1: the truncation chip must name the REAL reason. Budget exhaustion now parks the run,
+    /// so the only reason the run loop still produces is "unverified" — a run whose work was never
+    /// verified must not claim it hit a budget it never hit.</summary>
+    [Fact]
+    public async Task TruncationNote_Unverified_IsNotTheBudgetCopy()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.CompleteAsync(run.Id, truncated: true, truncationReason: "unverified",
+            ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.TruncatedCompleted, vm.State);
+        Assert.True(vm.IsTruncated);
+        Assert.Equal("Run_Unverified", vm.TruncationNote); // fake echoes the loc key
+        Assert.NotEqual("Run_StoppedAtBudget", vm.TruncationNote);
+        vm.Dispose();
+    }
+
+    /// <summary>A run persisted BEFORE the budget-pause change carries reason "budget" (or the two
+    /// orchestrator cap reasons) — those keep the budget wording, which is true for them.</summary>
+    [Theory]
+    [InlineData("budget")]
+    [InlineData("step-cap")]
+    [InlineData("wall-clock")]
+    public async Task TruncationNote_LegacyBudgetReasons_KeepTheBudgetCopy(string reason)
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.CompleteAsync(run.Id, truncated: true, truncationReason: reason,
+            ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal("Run_StoppedAtBudget", vm.TruncationNote);
+        vm.Dispose();
+    }
+
+    /// <summary>An unknown or absent reason must degrade to the neutral "ended early" copy — falling
+    /// back to the budget wording is exactly the lie this mapping removes.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("something-new")]
+    public async Task TruncationNote_UnknownReason_DegradesToEndedEarly(string? reason)
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.CompleteAsync(run.Id, truncated: true, truncationReason: reason,
+            ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsTruncated);
+        Assert.Equal("Run_EndedEarly", vm.TruncationNote);
+        vm.Dispose();
+    }
+
+    /// <summary>The chip clears when the run leaves the truncated state (a resumed/replanned run must
+    /// not keep a stale note): Completed+truncated → Running drops both flag and note.</summary>
+    [Fact]
+    public async Task TruncationNote_ClearsWhenTheRunIsNoLongerTruncated()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        await _runs.CompleteAsync(run.Id, truncated: true, truncationReason: "unverified",
+            ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+        Assert.Equal("Run_Unverified", vm.TruncationNote);
+
+        await _runs.SetStateAsync(run.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.False(vm.IsTruncated);
+        Assert.Null(vm.TruncationNote);
+        vm.Dispose();
+    }
+
+    /// <summary>Verifying folds into the Running chip (spinner stays lit) but supplies its own
+    /// current-activity line — the only rendered signal that the critic pass is running.</summary>
+    [Fact]
+    public async Task Verifying_FoldsToRunningChip_WithItsOwnActivityLine()
+    {
+        var run = await NewPlannedRunAsync();
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "Write report", Status = AgentStepStatus.Done };
+        await _runs.ReplaceStepsAsync(run.Id, new[] { step }, TestContext.Current.CancellationToken);
+        var vm = CreateVm(run.Id);
+
+        await _runs.SetStateAsync(run.Id, AgentRunState.Verifying, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Running, vm.State); // spinner stays lit (MapState default)
+        Assert.False(vm.IsTruncated);
+        Assert.Equal("Run_Activity_Verifying", vm.CurrentActivity); // fake echoes the loc key
+        Assert.True(vm.HasCurrentActivity);
+        Assert.False(vm.CanContinue);
+        vm.Dispose();
     }
 
     [Fact]

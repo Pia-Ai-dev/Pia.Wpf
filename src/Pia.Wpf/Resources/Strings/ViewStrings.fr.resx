@@ -98,7 +98,7 @@
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Exécuter en arrière-plan</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Impossible de démarrer l'exécution en arrière-plan : {0}</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Exécutions d'agent</value></data>
-  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limites auxquelles une exécution d'agent s'arrête, pour qu'elle ne s'emballe jamais. Les exécutions qui atteignent une limite se terminent et sont marquées « arrêtée au budget ».</value></data>
+  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limites auxquelles une exécution d'agent s'arrête, pour qu'elle ne s'emballe jamais. Une exécution qui atteint une limite se met en pause et vous attend — vous pouvez la reprendre depuis le panneau d'exécution.</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Étapes maximales</value></data>
   <data name="Settings_Agent_MaxSteps_Value" xml:space="preserve"><value>{0} étapes</value></data>
   <data name="Settings_Agent_MaxSteps_Description" xml:space="preserve"><value>Combien d'étapes une exécution peut effectuer avant de s'arrêter.</value></data>
@@ -904,6 +904,8 @@
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Échec de l'exécution</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>À échéance sous 24 h</value></data>
   <data name="Flow_Todo_OverdueDays" xml:space="preserve"><value>En retard · {0}j</value></data>
+  <data name="Run_Unverified" xml:space="preserve"><value>Résultat non vérifié</value></data>
+  <data name="Run_EndedEarly" xml:space="preserve"><value>Terminée prématurément</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Plus court</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Plus détaillé</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Prêt à exporter</value></data>

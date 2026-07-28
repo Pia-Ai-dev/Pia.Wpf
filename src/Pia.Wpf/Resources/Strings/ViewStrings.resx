@@ -895,6 +895,8 @@
   <data name="Agent_Warn_ChooseProvider" xml:space="preserve"><value>Choose provider…</value></data>
   <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Stay in Chat</value></data>
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Stopped at budget</value></data>
+  <data name="Run_Unverified" xml:space="preserve"><value>Result not verified</value></data>
+  <data name="Run_EndedEarly" xml:space="preserve"><value>Ended early</value></data>
   <data name="Run_State_Planning" xml:space="preserve"><value>Planning</value></data>
   <data name="Run_State_Running" xml:space="preserve"><value>Running</value></data>
   <data name="Run_State_Completed" xml:space="preserve"><value>Completed</value></data>
@@ -907,7 +909,7 @@
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Stopped at budget — continue?</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agent runs</value></data>
-  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limits an Agent run stops at, so it never runs away. Runs that hit a limit end and are marked "stopped at budget."</value></data>
+  <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limits an Agent run stops at, so it never runs away. A run that reaches a limit pauses and waits for you — you can continue it from the run panel.</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>
   <data name="Settings_Agent_MaxSteps_Value" xml:space="preserve"><value>{0} steps</value></data>
   <data name="Settings_Agent_MaxSteps_Description" xml:space="preserve"><value>How many steps a run may take before it stops.</value></data>

@@ -76,7 +76,7 @@ public sealed class RunStateToBrushConverter : IValueConverter
         var key = value switch
         {
             RunProgressState.Completed => "PiaSuccessBrush",
-            RunProgressState.TruncatedCompleted => "TextMutedBrush", // muted "stopped at budget", not danger
+            RunProgressState.TruncatedCompleted => "TextMutedBrush", // muted truncation note, never danger (R5)
             RunProgressState.Failed => "PiaDangerBrush",
             RunProgressState.WaitingForInput => "PiaAccentBrush", // action-needed accent — invites the Continue
             RunProgressState.Paused => "TextMutedBrush",

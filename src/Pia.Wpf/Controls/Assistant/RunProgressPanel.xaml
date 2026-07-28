@@ -19,7 +19,9 @@
                      FontWeight="SemiBold"
                      VerticalAlignment="Center"
                      Foreground="{Binding State, Converter={StaticResource RunStateToBrushConverter}}" />
-          <TextBlock Text="{loc:Str Run_StoppedAtBudget}" Margin="8,0,0,0"
+          <!-- Truncation chip: the VM resolves WHY (unverified vs. a pre-pause budget stop) from the
+               persisted reason — never a hardcoded "stopped at budget". Muted, never the danger brush (R5). -->
+          <TextBlock Text="{Binding TruncationNote}" Margin="8,0,0,0"
                      VerticalAlignment="Center"
                      Foreground="{DynamicResource TextMutedBrush}"
                      Visibility="{Binding IsTruncated, Converter={StaticResource BooleanToVisibilityConverter}}" />

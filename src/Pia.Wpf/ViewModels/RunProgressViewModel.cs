@@ -67,6 +67,17 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _isTruncated;
 
     /// <summary>
+    /// Localized chip text explaining WHY a Completed run is not a clean completion — read from the
+    /// truncation <c>reason</c> in <c>ExtraJson</c>, never assumed. Since the budget cap parks the run
+    /// (<see cref="RunProgressState.WaitingForInput"/>) instead of truncating it, the only reason the
+    /// current code produces is <c>"unverified"</c> (the verify pass exhausted its replans); the
+    /// budget wording survives only for runs persisted before that change. Null when not truncated.
+    /// Always rendered MUTED, never in the danger brush (R5).
+    /// </summary>
+    [ObservableProperty]
+    private string? _truncationNote;
+
+    /// <summary>
     /// The current-activity line (design D1): the running step's title while Running, or a "building a
     /// plan" note while Planning; null (line hidden) otherwise. The live per-tool micro-status
     /// (<c>StatusText</c>) stays on the adjacent streaming transcript by design — this panel is
@@ -126,7 +137,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private void Project(AgentRun run)
     {
-        (State, IsTruncated) = MapState(run);
+        var truncation = ReadTruncation(run);
+        (State, IsTruncated) = MapState(run, truncation.Truncated);
+        TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;
         SyncSteps(run.Plan);
         CurrentActivity = ComputeActivity(run);
 
@@ -146,7 +159,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // ComputeActivity supplies its own "Checking the work…" line; WaitingForInput/Paused now render
     // as their own distinct (non-spinning) states with a Continue affordance. Cancelled folds into
     // the Failed-family visual.
-    private static (RunProgressState, bool) MapState(AgentRun run) => run.State switch
+    private static (RunProgressState, bool) MapState(AgentRun run, bool truncated) => run.State switch
     {
         AgentRunState.Planning => (RunProgressState.Planning, false),
         AgentRunState.Running => (RunProgressState.Running, false),
@@ -154,10 +167,20 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunState.Cancelled => (RunProgressState.Failed, false),
         AgentRunState.WaitingForInput => (RunProgressState.WaitingForInput, false), // budget pause — offer Continue
         AgentRunState.Paused => (RunProgressState.Paused, false),                   // reserved user pause (Phase 4)
-        AgentRunState.Completed => ReadTruncated(run)
+        AgentRunState.Completed => truncated
             ? (RunProgressState.TruncatedCompleted, true)
             : (RunProgressState.Completed, false),
         _ => (RunProgressState.Running, false), // Verifying folds to Running (spinner)
+    };
+
+    // The truncation vocabulary is written by the run loop, not by a user or a model, so it is a fixed
+    // set of app-owned tokens (never user content). An unknown/absent reason must NOT fall back to the
+    // budget wording: that is exactly the lie this mapping removes — say "ended early" instead.
+    private string DescribeTruncation(string? reason) => reason switch
+    {
+        "unverified" => _localization["Run_Unverified"],                             // verify pass never passed
+        "budget" or "step-cap" or "wall-clock" => _localization["Run_StoppedAtBudget"], // pre-pause legacy rows
+        _ => _localization["Run_EndedEarly"],
     };
 
     // Current-activity line (D1): the active step's title while Running (falls back to a generic
@@ -198,18 +221,24 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     // Truncated-Completed marker lives in ExtraJson as {truncated:true,reason} (IAgentRunService.CompleteAsync).
-    private static bool ReadTruncated(AgentRun run)
+    // Both halves are read in one parse: the flag drives the state, the reason drives the chip copy.
+    // A malformed/absent envelope degrades to "not truncated" (the panel stays quiet rather than guessing).
+    private static (bool Truncated, string? Reason) ReadTruncation(AgentRun run)
     {
-        if (string.IsNullOrEmpty(run.ExtraJson)) return false;
+        if (string.IsNullOrEmpty(run.ExtraJson)) return (false, null);
         try
         {
             using var doc = JsonDocument.Parse(run.ExtraJson);
-            return doc.RootElement.TryGetProperty("truncated", out var t)
-                && t.ValueKind == JsonValueKind.True;
+            if (!doc.RootElement.TryGetProperty("truncated", out var t) || t.ValueKind != JsonValueKind.True)
+                return (false, null);
+            var reason = doc.RootElement.TryGetProperty("reason", out var r) && r.ValueKind == JsonValueKind.String
+                ? r.GetString()
+                : null;
+            return (true, reason);
         }
         catch
         {
-            return false;
+            return (false, null);
         }
     }
 
