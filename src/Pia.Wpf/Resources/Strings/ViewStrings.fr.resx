@@ -618,9 +618,9 @@
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Nom de déploiement Azure</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Récupérer les modèles</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Délai d'attente (secondes)</value></data>
-  <data name="Dialog_ProviderEdit_ContextWindowTokens" xml:space="preserve"><value>Fenêtre de contexte (jetons, 0 = désactivé)</value></data>
-  <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Jetons de sortie maximum (0 = désactivé)</value></data>
-  <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>Les deux valeurs servent à compacter les longues exécutions d'agent. 0 = désactivé.</value></data>
+  <data name="Dialog_ProviderEdit_ContextWindowTokens" xml:space="preserve"><value>Fenêtre de contexte (jetons, 0 = compactage désactivé)</value></data>
+  <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Jetons de sortie maximum (réservés à la réponse)</value></data>
+  <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>La fenêtre de contexte active le compactage des longues exécutions d'agent ; 0 le désactive. Les jetons de sortie maximum sont réservés à la réponse du modèle : à 0, rien n'est réservé.</value></data>
   <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Activer la recherche Web</value></data>
   <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>ID de l'agent Mistral</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Modifier le modèle</value></data>

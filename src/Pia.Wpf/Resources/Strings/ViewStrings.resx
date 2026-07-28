@@ -599,9 +599,9 @@
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure Deployment Name</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Fetch Models</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Timeout (seconds)</value></data>
-  <data name="Dialog_ProviderEdit_ContextWindowTokens" xml:space="preserve"><value>Context window (tokens, 0 = disabled)</value></data>
-  <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Max output tokens (0 = disabled)</value></data>
-  <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>Both values are used to compact long agent runs. 0 = disabled.</value></data>
+  <data name="Dialog_ProviderEdit_ContextWindowTokens" xml:space="preserve"><value>Context window (tokens, 0 = compaction off)</value></data>
+  <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Max output tokens (reserved for the reply)</value></data>
+  <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>The context window switches compaction on for long agent runs; 0 turns it off. Max output tokens is held back for the model’s reply, so leaving it at 0 reserves nothing.</value></data>
   <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Enable web search</value></data>
   <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>Mistral Agent ID</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Edit Template</value></data>
