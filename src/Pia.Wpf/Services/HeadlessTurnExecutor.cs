@@ -11,11 +11,12 @@ namespace Pia.Services;
 /// <summary>
 /// Off-thread act-step executor (§13.1/§B.5). Wraps the refactored
 /// <see cref="BackgroundAssistantTurnRunner.RunExchangeAsync"/> exchange engine, accumulating
-/// messages across steps and persisting the chat once at <see cref="EndRunAsync"/> (title
-/// precedence unchanged). Created in a fresh DI scope per run. No streaming, no action-card UI —
-/// writes run only if granted. Sets <c>TaskAmbient.Current</c> with the run-stable TaskId for the
-/// whole run so file tools key per-run state (§16 R9); the file-chip sink is null (headless has no
-/// message UI — TaskId correctness is the point).
+/// messages across steps, making each completed step DURABLE as it lands (E2) and persisting the
+/// final chat once at <see cref="EndRunAsync"/> (title precedence unchanged). Created in a fresh DI
+/// scope per run. No streaming, no action-card UI — writes run only if granted. Sets
+/// <c>TaskAmbient.Current</c> with the run-stable TaskId for the whole run so file tools key per-run
+/// state (§16 R9); the file-chip sink is null (headless has no message UI — TaskId correctness is the
+/// point).
 /// </summary>
 public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 {
@@ -40,6 +41,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private bool _tokenizationEnabled;
     private Guid _chatId;
     private Guid _runId;
+
+    // Captured at BeginRunAsync so the interim (per-step) and the terminal chat write build the SAME
+    // row from one place — an interim save must never drop a column the terminal save preserves.
+    private DateTime _runCreatedAt;
+    private string _goal = string.Empty;
+    private string? _existingTitle;
+    private string? _existingWorkingDirectory;
 
     // Seeded by the launcher via Initialize before the orchestrator runs (§17.3).
     private string? _workspaceRoot;
@@ -92,6 +100,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     public async Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct)
     {
         _chatId = run.ChatId;
+        _runCreatedAt = run.CreatedAt;
+        _goal = ctx.Goal;
 
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         _tokenizationEnabled = settings.Privacy.TokenizationEnabled;
@@ -147,6 +157,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _messages.Add(new ChatMessage(ChatRole.System, _setup.SystemPrompt)); // system: never persisted
 
         var chat = await _chatService.GetAsync(run.ChatId, ct).ConfigureAwait(false);
+        // Carry the row's own metadata forward: every chat write here is a FULL replace, and with per-step
+        // interim saves it now happens repeatedly mid-run. Re-using the persisted title keeps an interim
+        // save from downgrading a good title (the launcher's derived one, or an LLM title an earlier segment
+        // produced) and re-using WorkingDirectory keeps an interactive chat's per-chat folder from being
+        // nulled by a resumed run's saves.
+        _existingTitle = chat?.Title;
+        _existingWorkingDirectory = chat?.WorkingDirectory;
         if (chat is { Messages.Count: > 0 })
         {
             // Resume: seed from the persisted transcript so the terminal full-replace PRESERVES prior
@@ -181,12 +198,15 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     };
 
     public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct) =>
-        RunExchangeStepAsync(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact), ct);
+        RunExchangeStepAsync(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact),
+            persistInterim: true, ct);
 
+    // persistInterim: false — the fallback turn is followed IMMEDIATELY by the terminal EndRunAsync on
+    // every branch of the R10 degrade path, so an interim write here would only double the chat rewrite.
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
-        RunExchangeStepAsync(ctx.Goal, ct);
+        RunExchangeStepAsync(ctx.Goal, persistInterim: false, ct);
 
-    private async Task<StepTurnResult> RunExchangeStepAsync(string instruction, CancellationToken ct)
+    private async Task<StepTurnResult> RunExchangeStepAsync(string instruction, bool persistInterim, CancellationToken ct)
     {
         // Append the EPHEMERAL step instruction to a COPY — the accumulating _messages keeps the
         // clean transcript (system + goal + one assistant reply per step) — §13.7.
@@ -241,6 +261,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Persona = new SyncMessagePersona { Id = _persona.Id, Name = _persona.Name, Emoji = _persona.Emoji },
         });
 
+        // E2: this step's reply becomes DURABLE now. Until per-step persistence, EndRunAsync was the ONLY
+        // chat write a headless run ever did — so a budget pause (which deliberately skips EndRunAsync and
+        // calls the non-terminal OnPausedAsync instead) or a crash mid-run lost every step reply, and the
+        // D2 resume seeding then re-seeded an empty chat. Awaited so writes stay serialized within the run.
+        if (persistInterim)
+            await PersistChatAsync(title: null, interim: true, CancellationToken.None).ConfigureAwait(false);
+
         return new StepTurnResult(
             Succeeded: succeeded,
             Cancelled: false,
@@ -253,53 +280,102 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     public async Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
     {
-        try
+        // The terminal write stays the single source of the FINAL chat (title precedence: LLM-generated >
+        // derived-from-goal, unchanged by E2). The interim per-step saves wrote the very same rows with the
+        // very same message Ids, so this full replace neither loses nor duplicates a message — and the
+        // AgentRun/AgentStep First/LastMessageId slices keep pointing at live rows (R3).
+        string? title = null;
+        var firstAssistant = _persisted.FirstOrDefault(m => m.Role == "assistant" && !string.IsNullOrWhiteSpace(m.Content));
+        if (firstAssistant is not null)
         {
-            // Persist the accumulated chat once (title precedence: LLM-generated > derived-from-goal).
-            var now = DateTime.UtcNow;
-            string? title = null;
-            var firstAssistant = _persisted.FirstOrDefault(m => m.Role == "assistant" && !string.IsNullOrWhiteSpace(m.Content));
-            if (firstAssistant is not null)
-            {
-                try { title = await _titleService.GenerateAsync(ctx.Goal, firstAssistant.Content, ct).ConfigureAwait(false); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Auto-title failed for headless run {RunId}", run.Id); }
-            }
-            if (string.IsNullOrWhiteSpace(title))
-            {
-                var collapsed = TextFormatting.CollapseWhitespace(ctx.Goal);
-                title = collapsed.Length <= 40 ? collapsed : collapsed[..40].TrimEnd() + "…";
-            }
-
-            var chat = new SyncAssistantChat
-            {
-                Id = _chatId,
-                SchemaVersion = 1,
-                Title = title,
-                CreatedAt = run.CreatedAt == default ? now : run.CreatedAt,
-                UpdatedAt = now,
-                LastAccessedAt = now,
-                WindowMode = WindowMode.Assistant.ToString(),
-                ProviderId = _provider.Id,
-                Messages = [.. _persisted],
-            };
-
-            await _chatService.SaveAsync(chat, ct).ConfigureAwait(false);
-            _logger.LogInformation("Headless run {RunId} persisted chat {ChatId} ({MessageCount} messages)",
-                run.Id, _chatId, chat.Messages.Count);
-            _logger.SensitiveDebug("Headless run {RunId} chat title: {Title}", run.Id, title);
+            try { title = await _titleService.GenerateAsync(ctx.Goal, firstAssistant.Content, ct).ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Auto-title failed for headless run {RunId}", run.Id); }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to persist headless run {RunId} chat {ChatId}", run.Id, _chatId);
-        }
+        if (string.IsNullOrWhiteSpace(title))
+            title = DeriveTitleFromGoal(ctx.Goal);
+
+        await PersistChatAsync(title, interim: false, ct).ConfigureAwait(false);
         // Ambients are set + restored per step (RunExchangeStepAsync); nothing to restore here.
     }
 
     /// <summary>
+    /// The one chat write both the interim (per-step, E2) and the terminal path use, so an interim save can
+    /// never diverge from the terminal one. Failure-isolated (guardrail 1): a persist fault logs a warning
+    /// and lets the step/run continue — losing durability is bad, failing a run over bookkeeping is worse.
+    /// <para>
+    /// COST: <see cref="IAssistantChatService"/> offers no append — <c>SaveAsync</c> is a full-chat replace
+    /// (upsert + DELETE/re-INSERT of the message rows in one transaction). So per-step durability costs one
+    /// full replace per COMPLETED STEP; deliberately not per tool round and not per token.
+    /// </para>
+    /// </summary>
+    private async Task PersistChatAsync(string? title, bool interim, CancellationToken ct)
+    {
+        try
+        {
+            var chat = BuildChatSnapshot(interim ? InterimTitle() : title);
+            await _chatService.SaveAsync(chat, ct).ConfigureAwait(false);
+            if (interim)
+            {
+                _logger.LogInformation("Headless run {RunId} interim-persisted chat {ChatId} ({MessageCount} messages)",
+                    _runId, _chatId, chat.Messages.Count);
+            }
+            else
+            {
+                _logger.LogInformation("Headless run {RunId} persisted chat {ChatId} ({MessageCount} messages)",
+                    _runId, _chatId, chat.Messages.Count);
+                _logger.SensitiveDebug("Headless run {RunId} chat title: {Title}", _runId, title);
+            }
+        }
+        catch (Exception ex) when (interim)
+        {
+            _logger.LogWarning(ex, "Failed to interim-persist headless run {RunId} chat {ChatId}", _runId, _chatId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist headless run {RunId} chat {ChatId}", _runId, _chatId);
+        }
+    }
+
+    /// <summary>The accumulated transcript as one chat row. Metadata comes from the captured run/chat state.</summary>
+    private SyncAssistantChat BuildChatSnapshot(string? title)
+    {
+        var now = DateTime.UtcNow;
+        return new SyncAssistantChat
+        {
+            Id = _chatId,
+            SchemaVersion = 1,
+            Title = title,
+            CreatedAt = _runCreatedAt == default ? now : _runCreatedAt,
+            UpdatedAt = now,
+            LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(),
+            ProviderId = _provider.Id,
+            WorkingDirectory = _existingWorkingDirectory,
+            Messages = [.. _persisted],
+        };
+    }
+
+    /// <summary>
+    /// Title for a mid-run save: PROVISIONAL by design. Keep whatever the row already carries (the
+    /// launcher's derived title, or an LLM title from an earlier segment of a resumed run) and fall back to
+    /// derived-from-goal only when the row has none — the terminal <see cref="EndRunAsync"/> still owns the
+    /// final precedence (LLM > derived), so an interim save can neither pre-empt nor downgrade it.
+    /// </summary>
+    private string? InterimTitle() =>
+        string.IsNullOrWhiteSpace(_existingTitle) ? DeriveTitleFromGoal(_goal) : _existingTitle;
+
+    private static string DeriveTitleFromGoal(string goal)
+    {
+        var collapsed = TextFormatting.CollapseWhitespace(goal);
+        return collapsed.Length <= 40 ? collapsed : collapsed[..40].TrimEnd() + "…";
+    }
+
+    /// <summary>
     /// Budget-pause hook (guardrail 5): no-op for headless. There is no live session to release, and the
-    /// persisted steps/ledger already carry the parked state. Deliberately NOT a persist-and-finalize — a
-    /// full EndRunAsync chat replace here would erase pre-existing rows (D2) and settle a non-terminal run.
-    /// The run resumes out-of-band via ResumeAsync, whose EndRunAsync then persists the transcript once.
+    /// persisted steps/ledger already carry the parked state — and since E2 the parked TRANSCRIPT is durable
+    /// too: every completed step wrote itself out, so nothing is left to flush here. Deliberately still NOT
+    /// a persist-and-finalize: EndRunAsync would generate the run's FINAL (LLM) title and settle a
+    /// non-terminal run. The run resumes out-of-band via ResumeAsync, whose EndRunAsync persists once more.
     /// </summary>
     public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
     {
