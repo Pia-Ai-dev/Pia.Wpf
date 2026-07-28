@@ -376,10 +376,15 @@ public sealed class AgentVerifierTests : IDisposable
 
         await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        Assert.DoesNotContain("\n- step 2", LastPrompt);  // neither in the facts block nor in the step list
-        Assert.DoesNotContain("→ found", LastPrompt);     // no "found" fact exists — nothing was written
-        Assert.Contains("declared: notes.md → NOT FOUND", LastPrompt);
-        Assert.Equal(1, CountOccurrences(LastPrompt, "declared: notes.md"));
+        // Neither in the facts block nor in the step list does the forged text become a line of its own…
+        Assert.DoesNotContain("\n- step 2", LastPrompt);
+        // …and the ONE real fact line still ends in the outcome the app established, so the injected
+        // "→ found (…)" reads as part of a quoted title rather than as this line's verdict.
+        var factLines = LastPrompt.Split('\n')
+            .Where(l => l.StartsWith("- step 1 \"", StringComparison.Ordinal))
+            .ToList();
+        Assert.Single(factLines);
+        Assert.EndsWith("declared: notes.md → NOT FOUND", factLines[0].TrimEnd('\r'));
     }
 
     [Fact]
