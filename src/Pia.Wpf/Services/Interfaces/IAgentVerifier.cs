@@ -22,9 +22,12 @@ public sealed record VerdictResult(
 
 /// <summary>
 /// Terminal critic (§13.x): judges whether a completed run achieved its goal / expected artifacts,
-/// reusing the run's resolved persona+provider (like <see cref="IAgentPlanner"/>). Reads only the
-/// <see cref="RunContext"/> (Goal + CompletedSteps; VisibleText is the artifact evidence) — never
-/// the store. Executor-agnostic; no UI, no gate — a verdict is internal metadata, not chat text.
+/// reusing the run's resolved persona+provider (like <see cref="IAgentPlanner"/>). Reads the
+/// <see cref="RunContext"/> (Goal + CompletedSteps, i.e. the run's self-reported results) and — since
+/// H1 — one piece of mechanical evidence: each completed step's declared <c>ExpectedArtifact</c> is
+/// probed (metadata only, inside the file sandbox) so the verdict is not a self-critique over
+/// self-summaries. Never reads the run store. Executor-agnostic; no UI, no gate — a verdict is
+/// internal metadata, not chat text.
 /// </summary>
 public interface IAgentVerifier
 {

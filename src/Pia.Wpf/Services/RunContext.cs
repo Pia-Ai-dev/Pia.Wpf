@@ -6,8 +6,15 @@ using Pia.Models;
 namespace Pia.Services;
 
 /// <summary>Summary of a completed step, carried forward as context for later steps + replanning.</summary>
+/// <param name="ExpectedArtifact">
+/// The deliverable the planner declared for this step (free text; SENSITIVE user content — a prompt may
+/// carry it, a log may not). Carried here so the verifier can probe it against the filesystem instead of
+/// judging the model's self-summary alone (H1); the loop already holds the step, so this is strictly
+/// cheaper than re-reading the persisted plan at verify time.
+/// </param>
 public sealed record CompletedStepSummary(
-    int Ordinal, string Title, string Intent, bool Succeeded, string VisibleText);
+    int Ordinal, string Title, string Intent, bool Succeeded, string VisibleText,
+    string? ExpectedArtifact = null);
 
 /// <summary>
 /// Adds up the provider usage of the extra (non-step) turns the run loop spends — the plan/replan
@@ -70,6 +77,7 @@ public sealed class RunContext
     {
         StepsExecuted++;
         _completed.Add(new CompletedStepSummary(
-            step.Ordinal, step.Title, step.Intent ?? string.Empty, result.Succeeded, result.VisibleText));
+            step.Ordinal, step.Title, step.Intent ?? string.Empty, result.Succeeded, result.VisibleText,
+            step.ExpectedArtifact));
     }
 }
