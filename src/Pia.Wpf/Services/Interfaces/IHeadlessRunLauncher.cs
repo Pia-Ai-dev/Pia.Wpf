@@ -13,7 +13,10 @@ namespace Pia.Services.Interfaces;
 /// <param name="TriggerRef">e.g. the <c>ScheduledJob.Id</c> for a scheduled run.</param>
 /// <param name="OwnerDeviceId">Owning device, carried onto the run row (scheduled jobs).</param>
 /// <param name="ProviderId">Explicit provider (scheduled job); null = persona-preferred/default.</param>
-/// <param name="GrantedWrites">Write tools this run may execute; null = default {write_file, delete_file}.</param>
+/// <param name="GrantedWrites">
+/// Write tools this run may execute. <c>null</c> = <see cref="HeadlessRunRequest.DefaultGrantedWrites"/>;
+/// an explicitly EMPTY collection means no write grants at all and is honoured as such.
+/// </param>
 /// <param name="Budget">Budget envelope; null = the scheduled budget from settings.</param>
 public sealed record HeadlessRunRequest(
     string Goal,
@@ -22,7 +25,18 @@ public sealed record HeadlessRunRequest(
     Guid? OwnerDeviceId = null,
     Guid? ProviderId = null,
     IReadOnlyCollection<string>? GrantedWrites = null,
-    RunProfile? Budget = null);
+    RunProfile? Budget = null)
+{
+    /// <summary>
+    /// The write grants an unattended run receives when the request names none (A1). Deliberately
+    /// <c>{write_file}</c> only: an unattended run still writes real deliverables into the shared
+    /// assistant files folder (owner decision d1bf62d), but it must not be able to DESTROY existing
+    /// files unless the caller explicitly asked for that — an explicit <see cref="GrantedWrites"/>
+    /// containing <c>delete_file</c> still works. Single source of truth: the launcher applies it and
+    /// the scheduled-job approval card renders it as the effective default.
+    /// </summary>
+    public static readonly IReadOnlyList<string> DefaultGrantedWrites = ["write_file"];
+}
 
 /// <summary>Handle to a launched headless run — its ids and a task that completes when the run settles.</summary>
 public sealed record HeadlessRunHandle(Guid RunId, Guid ChatId, Task Completion);

@@ -75,8 +75,25 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(_dir, true); } catch { /* best effort */ }
     }
 
+    /// <summary>
+    /// Drives ONE tool call through the executor's unattended grant gate and records the outcome, so a
+    /// test can observe the grant set a launch or a resume actually handed to the executor (D1/A1) instead
+    /// of trusting a constant.
+    /// </summary>
+    private sealed class ToolProbe
+    {
+        public ToolProbe(string toolName) => ToolName = toolName;
+
+        public string ToolName { get; }
+        public bool Executed { get; private set; }
+        public string? GateResult { get; private set; }
+
+        public void MarkExecuted() => Executed = true;
+        public void Record(object? gateResult) => GateResult = gateResult as string;
+    }
+
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
-        Func<Task>? onPlan = null, bool nullDefaultProvider = false)
+        Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -86,12 +103,25 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Drive());
+            .Returns(ci => probe is null
+                ? Drive()
+                : DriveWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe));
 
         var plugins = Substitute.For<IPluginService>();
+        if (probe is not null)
+        {
+            // Every tool call routes to a deferred write (a pending action) that records whether the gate
+            // let it run. IsMcpTool stays false → a built-in, so only the grant set decides.
+            plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+                .Returns(_ => ((object?)null, new PluginToolCall(
+                    probe.ToolName, Guid.NewGuid(), "files", "desc", null,
+                    () => { probe.MarkExecuted(); return Task.FromResult<object?>("write-done"); })));
+        }
+
         var composer = Substitute.For<IAssistantPromptComposer>();
         composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
-            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+            .Returns(new AssistantTurnSetup("system", probe is null ? null : new List<AITool>(),
+                SupportsTools: probe is not null, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
         var providers = Substitute.For<IProviderService>();
@@ -113,6 +143,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         services.AddSingleton<IAgentRunService>(_runs);
         services.AddSingleton<IAssistantChatService>(_chats);
         services.AddSingleton<IAgentPlanner>(planner);
+        // The orchestrator's terminal critic pass; the default (empty queue) FakeVerifier accepts.
+        services.AddSingleton<IAgentVerifier>(new FakeVerifier());
         services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
@@ -128,6 +160,16 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     private static async IAsyncEnumerable<ChatStreamItem> Drive()
     {
         await Task.Yield();
+        yield return new TextDelta("reply");
+        yield return new Finished(null, "test-model");
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
+        Func<FunctionCallContent, Task<object?>>? handler, ToolProbe probe)
+    {
+        await Task.Yield();
+        if (handler is not null)
+            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>())));
         yield return new TextDelta("reply");
         yield return new Finished(null, "test-model");
     }
@@ -241,6 +283,50 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(Directory.Exists(keep));
 
         try { Directory.Delete(keep, true); } catch { }
+    }
+
+    [Fact]
+    public async Task Launch_WithoutExplicitGrants_DeniesDeleteFile_ButAllowsWriteFile()
+    {
+        // The default set is observed at the GATE, not just in the envelope: delete_file is refused as
+        // ungranted while write_file still runs, so unattended runs keep producing real deliverables.
+        var deleteProbe = new ToolProbe("delete_file");
+        var (deleteLauncher, _) = BuildLauncher(probe: deleteProbe);
+        var deleteHandle = await deleteLauncher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await deleteHandle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.False(deleteProbe.Executed);
+        Assert.Contains("not granted", deleteProbe.GateResult ?? string.Empty);
+
+        var writeProbe = new ToolProbe("write_file");
+        var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
+        var writeHandle = await writeLauncher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await writeHandle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.True(writeProbe.Executed);
+
+        foreach (var h in new[] { deleteHandle, writeHandle })
+            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task Launch_WithExplicitDeleteGrant_StillHonoursIt()
+    {
+        // A1 narrows the DEFAULT only — an explicit GrantedWrites naming delete_file keeps working, and
+        // the envelope records it so a resume restores it too.
+        var probe = new ToolProbe("delete_file");
+        var (launcher, _) = BuildLauncher(probe: probe);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: ["write_file", "delete_file"]),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.True(probe.Executed);
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
     }
 
     [Fact]

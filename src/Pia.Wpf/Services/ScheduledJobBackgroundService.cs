@@ -189,8 +189,9 @@ public class ScheduledJobBackgroundService : BackgroundService
                     TriggerRef: job.Id,
                     OwnerDeviceId: job.OwnerDeviceId,
                     ProviderId: job.ProviderId,
-                    // An agent job with no explicit grant gets the standard detached-run write access
-                    // ({write_file, delete_file}); an explicit grant list narrows or widens it.
+                    // An agent job with no explicit grant gets the narrow detached-run default
+                    // (HeadlessRunRequest.DefaultGrantedWrites = {write_file} — no delete, A1); an explicit
+                    // grant list replaces it and may name delete_file if the user asked for that.
                     GrantedWrites: job.GrantedTools.Count > 0 ? job.GrantedTools : null,
                     Budget: budget), ct);
 

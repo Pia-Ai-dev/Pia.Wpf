@@ -123,7 +123,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             throw;
         }
 
-        var grants = req.GrantedWrites ?? new[] { "write_file", "delete_file" };
+        // A1: null GrantedWrites → the narrow default; an explicitly EMPTY collection still means "no
+        // write grants at all" and is honoured as such (never re-widened to the default).
+        var grants = req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites;
         var budget = req.Budget ?? RunProfile.FromBudget(
             settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
 
