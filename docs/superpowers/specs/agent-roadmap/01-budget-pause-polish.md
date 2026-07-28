@@ -41,11 +41,12 @@ into their own batch.
   resumed segment cannot write files; deriving the real per-tool grants a session held is a Batch 04 job.
   A true interactive-streaming resume (re-bind a live `ChatSession`) is deferred — see Batch 08. The restored
   panel makes this easier to reach: a resumed run's headless chat writes and a still-open live `ChatSession`
-  are two writers on one chat row (see 00-OVERVIEW “Deliberately open”).
+  are two writers on one chat row — **now owned by [Batch 10](10-durability-and-lifecycle.md) (W2)**.
 - A parked **recurring** scheduled run now advances its schedule (so it stops re-launching every tick). A
   `RecurrenceType.Once` job cannot: `ComputeNextFireAt` returns the same past instant for it, so it stays due
-  and still re-launches — see 00-OVERVIEW “Deliberately open”. Nothing marks the **job** complete when a
-  parked run is later resumed and finishes either — the resume path has no job context.
+  and still re-launches — **now owned by [Batch 10](10-durability-and-lifecycle.md) (W3)**. Nothing marks the
+  **job** complete when a parked run is later resumed and finishes either — the resume path has no job
+  context; Batch 10 W3 decides that too.
 - No resume-count cap (each Continue is an explicit user/Flow action — acceptable).
 
 ## Acceptance
