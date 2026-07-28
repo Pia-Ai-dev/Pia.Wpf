@@ -234,6 +234,107 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     [Fact]
+    public async Task PlannedRun_ParkedAtBudget_PersistsPerStep_WithoutTurnCompletedOrTerminalSettle()
+    {
+        // E2: the interactive transcript used to reach the store ONLY via TurnCompleted → the manager's
+        // PersistAsync, and the budget pause deliberately raises neither (OnPausedAsync is non-terminal) —
+        // so a parked chat kept at most the goal row. The executor now asks for a persist after every
+        // completed step; the request must carry the transcript so far and must NOT settle the run.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2", "s3", "s4"), false));
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        ReturnsStream(_ => Stream(new TextDelta("reply"), new Finished(null, "m")));
+
+        var persistSnapshots = new List<int>();
+        session.PersistRequested += (_, _) => persistSnapshots.Add(session.Messages.Count);
+        var completedCount = 0;
+        session.TurnCompleted += (_, _) => Interlocked.Increment(ref completedCount);
+        var states = new List<ChatState>();
+        session.StateChanged += (_, e) => states.Add(e.NewState);
+
+        var live = BuildLiveExecutor(session, _ => false);
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+        var budget = new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
+
+        await orchestrator.RunAsync(run, live, Persona(), Provider(), budget, session.Cts!.Token);
+
+        var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
+
+        // One persist request per completed step, each seeing the transcript grown by that step's reply.
+        Assert.Equal(new[] { 2, 3 }, persistSnapshots.ToArray());
+
+        // Non-terminal: no TurnCompleted, no Completed/Error — the run is parked, not finished (guardrail 5).
+        Assert.Equal(0, completedCount);
+        Assert.DoesNotContain(ChatState.Completed, states);
+        Assert.DoesNotContain(ChatState.Error, states);
+        Assert.Equal(ChatState.Idle, session.State); // OnPausedAsync released the session
+        Assert.Null(session.Cts);
+    }
+
+    [Fact]
+    public async Task PlannedRun_InterimPersistHandlerThrows_DoesNotFailTheStepOrTheRun()
+    {
+        // Guardrail 1: interim persistence is bookkeeping. A throwing subscriber is swallowed + logged and
+        // the run drains to a clean Completed.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2"), false));
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        ReturnsStream(_ => Stream(new TextDelta("reply"), new Finished(null, "m")));
+
+        var raised = 0;
+        session.PersistRequested += (_, _) => { Interlocked.Increment(ref raised); throw new InvalidOperationException("persist boom"); };
+
+        var live = BuildLiveExecutor(session, _ => false);
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+
+        await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+        Assert.Equal(2, raised);
+        Assert.Equal(3, session.Messages.Count); // [user goal] + one assistant message per step
+    }
+
+    [Fact]
+    public async Task SingleTurnFallback_RaisesNoInterimPersist_TheTerminalTurnCompletedCoversIt()
+    {
+        // Parity note with HeadlessTurnExecutor: the R10 degrade path runs EndRunAsync immediately, and
+        // that raises TurnCompleted → the manager persists. An interim write there would only duplicate it.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner(); // empty queue → PlanResult.Fallback → single-turn fallback
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        ReturnsStream(_ => Stream(new TextDelta("reply"), new Finished(null, "m")));
+
+        var persists = 0;
+        session.PersistRequested += (_, _) => Interlocked.Increment(ref persists);
+        var completedCount = 0;
+        session.TurnCompleted += (_, _) => Interlocked.Increment(ref completedCount);
+
+        var live = BuildLiveExecutor(session, _ => false);
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+
+        await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.Equal(0, persists);
+        Assert.Equal(1, completedCount);
+    }
+
+    [Fact]
     public async Task PlannedRun_StepFails_DoesNotSettleCompleted_TurnCompletedNotSucceeded()
     {
         using var h = new Harness();

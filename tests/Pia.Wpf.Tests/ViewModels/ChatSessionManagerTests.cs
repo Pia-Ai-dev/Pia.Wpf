@@ -135,6 +135,52 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task PersistRequested_SavesTheTranscript_WithoutTurnCompletedOrAutoTitle()
+    {
+        // E2 (interactive per-step durability): the live executor asks for a persist after each completed
+        // step. The manager must save — so a budget pause or a crash cannot lose the step replies — while
+        // staying NON-terminal: no TurnCompleted, no terminal state, and no auto-title (that stays with the
+        // terminal persist, so titling behaviour is unchanged and the rename never read-modify-writes a
+        // chat that is still growing).
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = true });
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "plan my week"));
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "step 1 done"));
+        _chatService.ClearReceivedCalls();
+        var turnCompleted = 0;
+        session.TurnCompleted += (_, _) => turnCompleted++;
+
+        session.RequestPersist();
+
+        await _chatService.Received(1).SaveAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 2), Arg.Any<CancellationToken>());
+        await _titleService.DidNotReceive().GenerateAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Assert.Equal(0, turnCompleted);
+        Assert.Equal(ChatState.Idle, session.State);
+        Assert.NotNull(session.Id); // the save assigned/kept the chat identity, as the terminal persist does
+    }
+
+    [Fact]
+    public async Task TurnCompleted_StillStartsAutoTitle_AfterAnInterimPersist()
+    {
+        // The contrast to the test above: suppressing auto-title is scoped to the interim persist only —
+        // the terminal path still triggers it (unchanged behaviour).
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = true });
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "plan my week"));
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "step 1 done"));
+
+        session.RequestPersist();
+        session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
+
+        await _titleService.Received(1).GenerateAsync(
+            "plan my week", "step 1 done", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ActivateAsync_LiveSession_ReturnsSameInstance_WithoutLoadingOrCancelling()
     {
         var sut = CreateSut();

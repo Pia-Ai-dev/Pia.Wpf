@@ -88,6 +88,16 @@ public sealed class ChatSession : IDisposable
     /// <summary>Raised on a handled error (not cancellation) — active VM shows a snackbar / restores composer.</summary>
     public event EventHandler<RunFailedEventArgs>? RunFailed;
 
+    /// <summary>
+    /// Raised when an IN-FLIGHT (non-terminal) run wants the transcript so far made durable — the manager
+    /// answers it with the same <c>PersistAsync</c> the terminal path uses (E2). Deliberately NOT
+    /// <see cref="TurnCompleted"/>: a mid-run step is not a finished turn, so raising that instead would
+    /// settle terminal state, fire follow-ups/TTS and present a parked run as complete (guardrail 5).
+    /// The single-turn <see cref="RunTurnAsync"/> path never raises this — its terminal
+    /// <see cref="TurnCompleted"/> already persists, and its ordering must stay byte-stable (§16 R11).
+    /// </summary>
+    internal event EventHandler? PersistRequested;
+
     public ChatSession(
         ITokenMapService tokenMap,
         IAiClientService aiClientService,
@@ -160,6 +170,18 @@ public sealed class ChatSession : IDisposable
     /// EndRunAsync mirror) — the single-turn path raises it inline in <see cref="RunTurnAsync"/>'s finally.
     /// </summary>
     internal void RaiseTurnCompleted(TurnCompletedEventArgs args) => TurnCompleted?.Invoke(this, args);
+
+    /// <summary>
+    /// Ask the manager to make the transcript so far durable (per-step durability, E2). Raised by the live
+    /// executor after each completed step — persist ONLY: no terminal settle, no
+    /// <see cref="TurnCompleted"/>. Never throws: persistence is bookkeeping and must never fail the step
+    /// that produced the content (guardrail 1).
+    /// </summary>
+    internal void RequestPersist()
+    {
+        try { PersistRequested?.Invoke(this, EventArgs.Empty); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Interim persist request failed for chat {ChatId}", Id); }
+    }
 
     /// <summary>Single funnel for state writes — no-ops on unchanged value, raises <see cref="StateChanged"/>.</summary>
     internal void SetState(ChatState next)

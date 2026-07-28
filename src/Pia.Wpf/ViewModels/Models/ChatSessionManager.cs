@@ -150,6 +150,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // in Step 4, background turns). The active VM separately subscribes
         // TurnCompleted for followups/TTS.
         session.TurnCompleted += OnSessionTurnCompleted;
+        // E2: and every completed step of an in-flight Planned run (persist-only, no terminal settle).
+        session.PersistRequested += OnSessionPersistRequested;
         _allSessions.Add(session);
         return session;
     }
@@ -169,6 +171,21 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // saved error turns too). Follow-up/TTS gating lives in the active VM.
         if (sender is ChatSession session)
             PersistAsync(session).SafeFireAndForget(_logger);
+    }
+
+    /// <summary>
+    /// E2: per-step durability for an interactive Planned run. The live executor asks for this after every
+    /// completed step, because the interactive transcript otherwise reaches the store only through the
+    /// terminal <see cref="OnSessionTurnCompleted"/> — and a run parked at its budget never gets there, so
+    /// the stored chat held at most the goal row. Same <see cref="PersistAsync"/> the terminal path uses,
+    /// minus the auto-title trigger: leaving that to the terminal persist keeps titling behaviour identical
+    /// to before and keeps the rename's read-modify-write off a chat that is still growing. Fire-and-forget
+    /// + swallowed (SafeFireAndForget) so a persist fault never fails the step (guardrail 1).
+    /// </summary>
+    private void OnSessionPersistRequested(object? sender, EventArgs e)
+    {
+        if (sender is ChatSession session)
+            PersistAsync(session, startAutoTitle: false).SafeFireAndForget(_logger);
     }
 
     private void OnSessionStateChanged(object? sender, ChatStateChangedEventArgs e)
@@ -270,6 +287,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     {
         session.StateChanged -= OnSessionStateChanged;
         session.TurnCompleted -= OnSessionTurnCompleted;
+        session.PersistRequested -= OnSessionPersistRequested;
         _allSessions.Remove(session);
         if (session.Id is { } id
             && _sessions.TryGetValue(id, out var keyed)
@@ -632,7 +650,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         }
     }
 
-    public async Task PersistAsync(ChatSession session)
+    public Task PersistAsync(ChatSession session) => PersistAsync(session, startAutoTitle: true);
+
+    private async Task PersistAsync(ChatSession session, bool startAutoTitle)
     {
         if (session.Messages.Count == 0) return;
 
@@ -672,7 +692,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             _logger.LogWarning(ex, "Failed to persist assistant chat {ChatId}", chat.Id);
         }
 
-        await TryStartAutoTitleAsync(session, chat);
+        if (startAutoTitle)
+            await TryStartAutoTitleAsync(session, chat);
     }
 
     private async Task TryStartAutoTitleAsync(ChatSession session, SyncAssistantChat chat)
@@ -770,6 +791,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         {
             session.StateChanged -= OnSessionStateChanged;
             session.TurnCompleted -= OnSessionTurnCompleted;
+            session.PersistRequested -= OnSessionPersistRequested;
             session.Dispose();
         }
         _allSessions.Clear();

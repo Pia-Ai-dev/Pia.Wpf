@@ -54,9 +54,25 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         });
 
     public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct) =>
-        PostAsync(() => _session.RunStepTurnAsync(BuildSpec(run, step.Ordinal, step.Intent ?? string.Empty,
-            step.ExpectedArtifact, useGoalVerbatim: false), ctx, ct));
+        PostAsync(async () =>
+        {
+            var result = await _session.RunStepTurnAsync(BuildSpec(run, step.Ordinal, step.Intent ?? string.Empty,
+                step.ExpectedArtifact, useGoalVerbatim: false), ctx, ct);
 
+            // E2 (parity with HeadlessTurnExecutor's per-step write): make this step's assistant message
+            // DURABLE now. The interactive path otherwise persists only via TurnCompleted → the manager's
+            // PersistAsync, which nothing but the terminal EndRunAsync raises — so a run parked at its
+            // budget (OnPausedAsync raises nothing, by design) left the stored chat holding just the goal,
+            // and a crash mid-run lost every step reply. Persist-ONLY: no terminal settle, no
+            // TurnCompleted — a parked or mid-flight run is not finished. Runs on the UI thread inside
+            // this Post (the manager's PersistAsync snapshots Messages synchronously, so it cannot race
+            // the next step's streaming) and swallows its own faults (guardrail 1).
+            _session.RequestPersist();
+            return result;
+        });
+
+    // No interim persist here (same call as HeadlessTurnExecutor's fallback): the R10 degrade path runs
+    // EndRunAsync immediately on every branch, and that raises TurnCompleted → the manager persists.
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
         PostAsync(() => _session.RunStepTurnAsync(BuildSpec(run, 0, ctx.Goal, null, useGoalVerbatim: true), ctx, ct));
 
