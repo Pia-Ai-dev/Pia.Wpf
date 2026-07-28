@@ -4,7 +4,7 @@
 see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
 The budget-pause → `WaitingForInput` + resume batch shipped, and the hardening batch (`19c7a03` → `HEAD`) closed
-almost all of its follow-ups. What is left is two nits in one file.
+all of its follow-ups, including the two nits this file used to list. What is left is the assumptions below.
 
 ## Closed already — do not re-do
 
@@ -21,30 +21,35 @@ almost all of its follow-ups. What is left is two nits in one file.
 - **Post-resume wall-clock inflation** — the ledger now accumulates ACTIVE time (`activeMs` +
   `segmentStartedAt` inside `LedgerJson`, no schema change), so a parked gap is never billed.
 
-## Work items (all that remains)
+- **`HeadlessRunLauncher.ResumeAsync` indentation** — the `Task.Run` lambda body is indented with its lambda
+  now; the resume path no longer reads as if it were at method scope.
+- **`_inflight` micro-race** — both completion `finally` blocks go through `RemoveInflight(runId, ownCts)`,
+  which removes the entry only when it is still *this* dispatch's (identified by its per-dispatch CTS), so an
+  original launch's teardown can no longer delete a resume's entry and make `StopAsync` miss it (G-4).
 
-1. **`HeadlessRunLauncher.ResumeAsync` indentation.** The `Task.Run` lambda body (`:277`–`:345`) is
-   under-indented one level relative to the lambda, so the resume path reads as if it were still at method
-   scope. Cosmetic only; touch nothing else in the method.
-2. **`_inflight` micro-race.** Both completion `finally` blocks call `_inflight.TryRemove(run.Id, out _)`
-   unconditionally, so the original launch's teardown (`:209`) can delete a *resume*'s entry (written at
-   `:329`) — which would make `StopAsync` (`:348`) miss that task on shutdown. Practically unreachable (user
-   reaction time vs. a `finally`), but a keyed guard — remove only if the stored task is still *this* task —
-   closes it.
+## Work items
+
+None — this batch is empty. Keep the file for the assumptions below until they are either closed or promoted
+into their own batch.
 
 ## Open assumptions to revisit (may become their own work)
 
 - Resume always re-launches via the **headless** path, so a resumed interactive run runs unattended and uses
   the **scheduled** budget envelope + the **current default** persona/provider (not necessarily its origin's).
+  Since the interactive create persists an *empty* grant envelope (D1 producer), an interactive-origin resume
+  also holds **no write grants** — honest (the launch had none either, only per-click cards) but it means a
+  resumed segment cannot write files; deriving the real per-tool grants a session held is a Batch 04 job.
   A true interactive-streaming resume (re-bind a live `ChatSession`) is deferred — see Batch 08. The restored
   panel makes this easier to reach: a resumed run's headless chat writes and a still-open live `ChatSession`
-  are two writers on one chat row.
-- A parked *scheduled* run now advances its schedule (so it stops re-launching every tick), but nothing marks
-  the **job** complete when that run is later resumed and finishes — the resume path has no job context.
+  are two writers on one chat row (see 00-OVERVIEW “Deliberately open”).
+- A parked **recurring** scheduled run now advances its schedule (so it stops re-launching every tick). A
+  `RecurrenceType.Once` job cannot: `ComputeNextFireAt` returns the same past instant for it, so it stays due
+  and still re-launches — see 00-OVERVIEW “Deliberately open”. Nothing marks the **job** complete when a
+  parked run is later resumed and finishes either — the resume path has no job context.
 - No resume-count cap (each Continue is an explicit user/Flow action — acceptable).
 
 ## Acceptance
 
-Build green; the two nits cleared. Guardrails from the budget-pause batch (1–9 in its synthesis) stay intact
+Build green; nothing left to clear. Guardrails from the budget-pause batch (1–9 in its synthesis) stay intact
 — especially G5 (pause never raises `TurnCompleted`/settles `Completed`) and G3 (crash sweep parks
 `WaitingForInput`/`Paused`).
