@@ -77,39 +77,71 @@ internal static class AgentContextCompactor
         if (budget is not { } contextBudget || messages.Count < MinimumCompactableMessageCount)
             return [.. messages];
 
-        // Pin the leading system run plus the first following user message — the step goal.
+        // Pin BOTH ends of the instruction pair: the leading system run plus the first following user
+        // message (the run goal), and the most recent user message (the step instruction).
         // Verified empirically: ContextWindowCompactionStrategy has no pin/protect hook, and over an
-        // agent-step-shaped list the FIRST casualty of an over-budget step is the user message
-        // stating what the step was asked to do. Splicing it out of the compacted range is the only
-        // way to keep it.
-        var pinnedCount = 0;
-        while (pinnedCount < messages.Count && messages[pinnedCount].Role == ChatRole.System)
-            pinnedCount++;
+        // agent-step-shaped list the FIRST casualty of an over-budget step is a user message stating
+        // what the step was asked to do. Splicing those out of the compacted range is the only way to
+        // keep them.
+        var systemCount = 0;
+        while (systemCount < messages.Count && messages[systemCount].Role == ChatRole.System)
+            systemCount++;
 
-        var systemCount = pinnedCount;
-        if (pinnedCount < messages.Count && messages[pinnedCount].Role == ChatRole.User)
-            pinnedCount++;
+        var headCount = systemCount;
+        if (headCount < messages.Count && messages[headCount].Role == ChatRole.User)
+            headCount++;
 
-        var pinned = new List<ChatMessage>(pinnedCount);
-        for (var i = 0; i < pinnedCount; i++)
-            pinned.Add(messages[i]);
+        // The TAIL pin. Pinning only the head kept the goal and dropped "Execute step N: <intent>.
+        // Expected: <artifact>" as soon as the in-step tool loop appended a few rounds behind it —
+        // measured against Microsoft.Agents.AI 1.15.0: an 8-prior-step request at window 8000/2000
+        // came back as [system, goal, assistant, tool, assistant, tool] with the instruction gone, so
+        // the model was asked to keep going with no statement of which step or artifact it was
+        // producing and answered against the whole run goal instead (AgentVerifier then fails the
+        // ExpectedArtifact check). The newest user message IS that instruction on both executor
+        // paths, and on an ordinary chat request it is the user's latest turn — pinnable in either
+        // reading. -1 when the newest user message is the already-pinned goal (or there is none).
+        var instructionIndex = -1;
+        for (var i = messages.Count - 1; i >= headCount; i--)
+        {
+            if (messages[i].Role == ChatRole.User)
+            {
+                instructionIndex = i;
+                break;
+            }
+        }
+
+        var head = new List<ChatMessage>(headCount);
+        for (var i = 0; i < headCount; i++)
+            head.Add(messages[i]);
+
+        var instruction = instructionIndex >= 0 ? messages[instructionIndex] : null;
 
         // The system messages are handed to the library as well, so its grouping still sees a System
-        // group and never counts it removable. Only the pinned goal is withheld.
-        var toCompact = new List<ChatMessage>(messages.Count - pinnedCount + systemCount);
+        // group and never counts it removable. Only the pinned goal and instruction are withheld.
+        var toCompact = new List<ChatMessage>(messages.Count);
         for (var i = 0; i < systemCount; i++)
             toCompact.Add(messages[i]);
-        for (var i = pinnedCount; i < messages.Count; i++)
-            toCompact.Add(messages[i]);
+        for (var i = headCount; i < messages.Count; i++)
+        {
+            if (i != instructionIndex)
+                toCompact.Add(messages[i]);
+        }
 
-        // The pinned messages still cost tokens on the wire, so charge them against the window
-        // rather than letting the library budget as if they were free. Text length / 4 approximates
-        // the library's own bytes/4 accounting closely enough for a prefix that is text in practice;
-        // a pinned image attachment is under-charged here, which errs toward compacting rather than
-        // toward silently overflowing.
+        // The WITHHELD pinned messages still cost tokens on the wire, so charge them against the
+        // window rather than letting the library budget as if they were free. Text length / 4
+        // approximates the library's own bytes/4 accounting closely enough for a prefix that is text
+        // in practice; a pinned image attachment is under-charged here, which errs toward compacting
+        // rather than toward silently overflowing.
+        //
+        // Charged ONCE: the system messages are NOT included here because they are inside toCompact,
+        // where the library counts them itself. Charging them in both places made a 2000-token system
+        // prompt cost 4000 — measured, that evicted 1 of 11 messages at 2810 real input tokens of an
+        // 8000 window, and 7 of 11 once the history reached ~2000 tokens.
         var pinnedCost = 0;
-        foreach (var message in pinned)
-            pinnedCost += (message.Text?.Length ?? 0) / 4;
+        for (var i = systemCount; i < headCount; i++)
+            pinnedCost += (messages[i].Text?.Length ?? 0) / 4;
+        if (instruction is not null)
+            pinnedCost += (instruction.Text?.Length ?? 0) / 4;
 
         var window = contextBudget.WindowTokens - pinnedCost;
         if (window <= contextBudget.MaxOutputTokens)
@@ -140,20 +172,29 @@ internal static class AgentContextCompactor
             if (kept.Count >= toCompact.Count)
                 return [.. messages]; // Nothing was evicted — preserve the caller's order and instances.
 
-            var compacted = new List<ChatMessage>(pinned.Count + kept.Count);
-            compacted.AddRange(pinned);
+            // The pinned instruction goes back LAST. When the caller's list already ended with it — every
+            // step request the executors build — that reproduces the original order exactly. When the
+            // in-step tool loop had appended rounds behind it, the instruction moves from the middle to the
+            // end of the request, which is the deliberate choice: it is a valid shape (a user turn after a
+            // tool result), it keeps the surviving call/result pairs adjacent, and it states the step the
+            // model must finish as the most recent thing it was told.
+            var pinnedCount = head.Count + (instruction is null ? 0 : 1);
+            var compacted = new List<ChatMessage>(pinnedCount + kept.Count);
+            compacted.AddRange(head);
             foreach (var message in kept)
             {
                 if (message.Role != ChatRole.System)
                     compacted.Add(message);
             }
+            if (instruction is not null)
+                compacted.Add(instruction);
 
             // Counts only: this line lands in a support-attachable log, so no message content.
             logger.LogDebug(
                 "Context compaction reduced the request from {BeforeCount} to {AfterCount} messages ({PinnedCount} pinned)",
                 messages.Count,
                 compacted.Count,
-                pinned.Count);
+                pinnedCount);
 
             return compacted;
         }

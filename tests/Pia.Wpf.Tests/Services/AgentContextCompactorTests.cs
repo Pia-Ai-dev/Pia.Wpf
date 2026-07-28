@@ -35,6 +35,14 @@ public class AgentContextCompactorTests
     /// every previous step, then the ephemeral "execute step N" instruction. More than four
     /// non-system groups on purpose — the library short-circuits at one included non-system group
     /// and floors at its minimum-preserved count, so a smaller fixture would pass vacuously.
+    /// <para>
+    /// SIZING (measured against Microsoft.Agents.AI 1.15.0, not derived): at window 8000 / max output
+    /// 2000 the eight-reply default is NOT over budget — 8 × 2014 chars / 4 = 4028 estimated tokens
+    /// against a truncation trigger of 0.70 × (8000 − 2000 − pinnedCost) ≈ 4190 — so a shrink
+    /// assertion on it fails (measured in=11, out=11). Tests that need real truncation pass
+    /// <c>priorSteps: 12</c> (measured in=15, out=11) or a 6000 window (in=11, out=8). The 0.45 tool
+    /// eviction trigger does fire on the default fixture, but it has no ToolCall group to evict.
+    /// </para>
     /// </summary>
     private static List<ChatMessage> AgentStepShapedMessages(int priorSteps = 8, int replyTokens = 500)
     {
@@ -144,7 +152,9 @@ public class AgentContextCompactorTests
     [Fact]
     public async Task OverBudget_ShrinksButKeepsSystemAndGoalFirst()
     {
-        var messages = AgentStepShapedMessages();
+        // 12 prior steps, not the 8-step default: the default fixture is under the truncation trigger
+        // and comes back unchanged (see AgentStepShapedMessages). Measured here: in=15, out=11.
+        var messages = AgentStepShapedMessages(priorSteps: 12);
 
         var result = await AgentContextCompactor.CompactAsync(
             messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
@@ -162,7 +172,121 @@ public class AgentContextCompactorTests
         Assert.Contains("THE GOAL", result[1].Text);
 
         // The ephemeral step instruction is the most recent message and must survive too.
+        Assert.Contains(result, m => m.Text.Contains("Execute step 13", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task OverBudget_OnASmallerWindow_AlsoShrinks()
+    {
+        // The other half of the sizing note: the same eight-reply fixture DOES truncate once the window
+        // is small enough for it to be over budget. Measured: in=11, out=8. Kept as a second fixture so
+        // "over budget" is pinned by two independent knobs (history length and window size) — a future
+        // threshold or estimator change cannot leave both green by accident.
+        var messages = AgentStepShapedMessages();
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(6_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            result.Count < messages.Count,
+            $"an over-budget agent step must shrink, but {messages.Count} messages came back as {result.Count}");
+        Assert.Same(messages[0], result[0]);
+        Assert.Contains("THE GOAL", result[1].Text);
         Assert.Contains(result, m => m.Text.Contains("Execute step 9", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UnderBudgetWithALargeSystemPrompt_EvictsNothing()
+    {
+        // The pinned prefix must be charged ONCE. It used to be subtracted from the window as pinnedCost
+        // AND left in the list the library counts, so a 2000-token system prompt cost 4000 and compaction
+        // evicted history that fit with thousands of tokens to spare. Measured before: in=11, out=10 at
+        // ~800 tokens of history and out=6 at ~2000. Measured now: unchanged, both times.
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, Bulk(2_000)),
+            new(ChatRole.User, "THE GOAL: do the thing."),
+        };
+        for (var i = 1; i <= 8; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i}: {Bulk(250)}"));
+        messages.Add(new ChatMessage(ChatRole.User, "Execute step 9"));
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        // 2000 (system) + ~2000 (history) input + 2000 reserved output = ~6000 of 8000 — nothing to evict.
+        Assert.Equal(messages.Count, result.Count);
+        for (var i = 0; i < messages.Count; i++)
+            Assert.Same(messages[i], result[i]);
+    }
+
+    /// <summary>
+    /// What the IN-STEP tool loop sends on round N: the step-shaped request plus the assistant/tool
+    /// exchanges the loop appended AFTER the step instruction. The instruction is no longer the most
+    /// recent group, which is what used to get it evicted.
+    /// </summary>
+    private static List<ChatMessage> ToolLoopShapedMessages(int rounds, int priorSteps = 8)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "You are Pia, an agent."),
+            new(ChatRole.User, "THE GOAL: audit the repo."),
+        };
+        for (var i = 1; i <= priorSteps; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(700)}"));
+        messages.Add(new ChatMessage(ChatRole.User,
+            $"Execute step {priorSteps + 1}: write the audit report. Expected: report.md"));
+
+        for (var r = 0; r < rounds; r++)
+        {
+            var callId = $"call_{r}";
+            messages.Add(new ChatMessage(ChatRole.Assistant,
+                [new FunctionCallContent(callId, "read_file", new Dictionary<string, object?> { ["path"] = $"/f{r}" })]));
+            messages.Add(new ChatMessage(ChatRole.Tool,
+                [new FunctionResultContent(callId, $"{{\"text\":\"{Bulk(1_500)}\"}}")]));
+        }
+
+        return messages;
+    }
+
+    [Theory]
+    [InlineData(3, 4_000, 1_000)]
+    [InlineData(5, 8_000, 2_000)]
+    [InlineData(8, 8_000, 2_000)]
+    public async Task InStepToolLoop_KeepsTheStepInstruction_NotJustTheGoal(int rounds, int window, int maxOutput)
+    {
+        // The regression this fixture exists for: with only the head pinned, every one of these three
+        // configurations came back as [system, goal, assistant, tool, assistant, tool] — the step
+        // instruction GONE while the run goal stayed. The model is then asked to continue with no
+        // statement of which step or artifact it is producing, answers against the whole run goal, and
+        // AgentVerifier's ExpectedArtifact check fails on the wrong artifact.
+        var messages = ToolLoopShapedMessages(rounds);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(window, maxOutput)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Count < messages.Count, "this fixture must be over budget or it proves nothing");
+        Assert.Contains("THE GOAL", result[1].Text);
+        Assert.Contains(result, m => m.Text.Contains("Execute step 9", StringComparison.Ordinal));
+        // It goes back LAST: the loop appended rounds behind it, so the pinned instruction is re-attached
+        // at the end of the request rather than at the position it no longer has neighbours for.
+        Assert.Contains("Execute step 9", result[^1].Text);
+        Assert.Same(messages[10], result[^1]);
+    }
+
+    [Fact]
+    public async Task InStepToolLoop_StillNeverOrphansAToolCall()
+    {
+        // The tail pin must not break pairing: it withholds a USER message, so no call/result group is
+        // split, and the re-attached instruction sits after the last tool result (a valid shape).
+        var messages = ToolLoopShapedMessages(rounds: 6);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        var callIds = result.SelectMany(m => m.Contents.OfType<FunctionCallContent>()).Select(c => c.CallId).ToHashSet();
+        var resultIds = result.SelectMany(m => m.Contents.OfType<FunctionResultContent>()).Select(c => c.CallId).ToHashSet();
+        Assert.Equal(callIds, resultIds);
     }
 
     [Fact]
@@ -279,15 +403,20 @@ public class AgentContextCompactorTests
     public async Task NoSystemMessage_StillPinsTheGoal()
     {
         // Not every request Pia builds starts with a system message; the split must not assume one.
+        // 12 replies for the same reason as OverBudget_ShrinksButKeepsSystemAndGoalFirst: at 8 replies
+        // this shape is under the truncation trigger and comes back unchanged (measured in=10, out=10),
+        // so the shrink assertion was failing for a fixture reason, not a code reason. Measured with 12:
+        // in=14, out=10.
         var messages = new List<ChatMessage> { new(ChatRole.User, "THE GOAL: no system prompt here.") };
-        for (var i = 1; i <= 8; i++)
+        for (var i = 1; i <= 12; i++)
             messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
-        messages.Add(new ChatMessage(ChatRole.User, "Execute step 9"));
+        messages.Add(new ChatMessage(ChatRole.User, "Execute step 13"));
 
         var result = await AgentContextCompactor.CompactAsync(
             messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
 
         Assert.True(result.Count < messages.Count);
         Assert.Same(messages[0], result[0]);
+        Assert.Contains("Execute step 13", result[^1].Text);
     }
 }
