@@ -60,6 +60,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// Runs this manager launched into a live session itself (W2). Their <c>RunChanged</c> events must NOT set
     /// <see cref="ChatSession.ForeignRunActive"/> — the owning session's <c>IsStreaming</c> already blocks
     /// Send, and flagging it would disable the composer for an ordinary interactive agent run.
+    /// <para>
+    /// Entries are RETIRED by <see cref="OnAgentRunChanged"/> the moment the run stops executing (parked or
+    /// terminal), because that is where the live executor hands it back: a resume always runs unattended
+    /// through <c>HeadlessRunLauncher</c>, so from then on the run is a foreign writer like any other. A
+    /// never-pruned set would exempt exactly the most likely two-writer path in the product — an
+    /// interactively launched run that parks at its budget and is resumed with Continue — from the Send lever.
+    /// </para>
     /// </summary>
     private readonly HashSet<Guid> _ownRunIds = new();
 
@@ -151,8 +158,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// <para>
     /// Matched by <see cref="ChatSession.ActiveRunId"/> rather than by chat id: the event carries no chat id,
     /// and a session only tracks the run it has attached — which is exactly the run that could write it.
-    /// A run this manager launched itself (<see cref="_ownRunIds"/>) is skipped entirely: that session's own
-    /// <c>IsStreaming</c> already blocks Send, and flagging it would be an interactive regression.
+    /// A run this manager launched itself (<see cref="_ownRunIds"/>) is skipped WHILE IT EXECUTES: that
+    /// session's own <c>IsStreaming</c> already blocks Send, and flagging it would be an interactive
+    /// regression. Its first non-executing state retires the ownership entry (see below), so a later headless
+    /// resume of that same run is flagged like any other foreign writer.
     /// </para>
     /// </summary>
     private void OnAgentRunChanged(object? sender, AgentRunChangedEventArgs e)
@@ -166,7 +175,19 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
                 // Checked HERE, not on the raising thread: _ownRunIds is written by the UI-thread Planned
                 // branch, so probing it from a pool thread would be a data race on a plain HashSet.
-                if (_ownRunIds.Contains(e.RunId)) return;
+                if (_ownRunIds.Contains(e.RunId))
+                {
+                    // Ownership lasts exactly as long as the LIVE executor is the one running the run. The
+                    // first non-executing state — parked at its step budget (WaitingForInput/Paused) or
+                    // terminal — is where this manager hands the run back: EVERY resume path in the app goes
+                    // through HeadlessRunLauncher (RunProgressViewModel.Continue, the Flow "continue?" card,
+                    // IAgentRunResumeService), i.e. unattended and FOREIGN, writing the same chat from a pool
+                    // thread while IsStreaming is false and the composer is live again. So retire the entry
+                    // here: the next executing state is then treated as what it is — a second full-chat
+                    // writer — and the set stops growing for the lifetime of the process.
+                    if (executing) return;
+                    _ownRunIds.Remove(e.RunId);
+                }
 
                 foreach (var session in _allSessions)
                 {

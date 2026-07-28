@@ -324,6 +324,80 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task RunChanged_OwnRunParkedThenResumedHeadlessly_IsFlaggedForeign()
+    {
+        // The two-writer path the product hits most: the user launches an agent run interactively, it parks at
+        // its step budget, IsStreaming goes false and the composer comes back — and then Continue resumes it
+        // through HeadlessRunLauncher, unattended, against the same chat. Ownership must NOT survive the park,
+        // or Send stays enabled and the live turn's full replace deletes every row the resumed run wrote.
+        var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = RunShape.Planned, State = AgentRunState.Planning });
+
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        await sut.StartPlannedTurnAsync(session, "plan my week");
+        Assert.Equal(runId, session.ActiveRunId);
+
+        // Still ours while it runs — no interactive regression.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.False(session.ForeignRunActive);
+
+        // Parked at the budget: the live executor released the session and handed the run back.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForInput));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.False(session.ForeignRunActive);   // parked is not writing — Continue-in-chat stays open
+
+        // Continue -> HeadlessRunLauncher.ResumeAsync -> TryBeginResumeAsync CAS'd it to Running.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        for (var i = 0; i < 200 && !session.ForeignRunActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.True(session.ForeignRunActive);
+    }
+
+    [Theory]
+    [InlineData(AgentRunState.Completed)]
+    [InlineData(AgentRunState.Failed)]
+    [InlineData(AgentRunState.Cancelled)]
+    public async Task RunChanged_OwnRunTerminal_RetiresOwnership(AgentRunState terminal)
+    {
+        // Same retirement on the terminal states (which is also what keeps _ownRunIds from growing for the
+        // lifetime of the process). A run id can only be re-used by a re-attach/resume, so treating a
+        // post-terminal executing state as foreign is the safe reading.
+        var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = RunShape.Planned, State = AgentRunState.Planning });
+
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        await sut.StartPlannedTurnAsync(session, "plan my week");
+
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, terminal));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.False(session.ForeignRunActive);
+
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        for (var i = 0; i < 200 && !session.ForeignRunActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.True(session.ForeignRunActive);
+    }
+
+    [Fact]
     public async Task RunChanged_WithNoMatchingSession_IsHarmless()
     {
         // Guardrail 1: RunChanged is raised by AgentRunService on the write path. The handler is bookkeeping —
