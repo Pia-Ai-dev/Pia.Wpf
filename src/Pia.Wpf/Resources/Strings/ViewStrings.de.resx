@@ -618,6 +618,9 @@
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure-Bereitstellungsname</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Modelle abrufen</value></data>
   <data name="Dialog_ProviderEdit_Timeout" xml:space="preserve"><value>Zeitlimit (Sekunden)</value></data>
+  <data name="Dialog_ProviderEdit_ContextWindowTokens" xml:space="preserve"><value>Kontextfenster (Token, 0 = deaktiviert)</value></data>
+  <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Maximale Ausgabe-Token (0 = deaktiviert)</value></data>
+  <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>Beide Werte werden verwendet, um lange Agent-Durchläufe zu verdichten. 0 = deaktiviert.</value></data>
   <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Websuche aktivieren</value></data>
   <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>Mistral Agent-ID</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Vorlage bearbeiten</value></data>

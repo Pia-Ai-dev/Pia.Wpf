@@ -34,6 +34,17 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private int _timeoutSeconds = 300;
 
+    // Non-nullable with 0 as the "not configured" sentinel: NumberBox.Value is a double?, so an
+    // int? would need a converter to express the same unset state the 0 sentinel expresses for
+    // free. The nullability lives on AiProvider, where it keeps the persisted JSON additive.
+    [Range(0, 2_000_000, ErrorMessage = "Context window must be between 0 and 2000000 tokens")]
+    [ObservableProperty]
+    private int _maxContextWindowTokens;
+
+    [Range(0, 200_000, ErrorMessage = "Max output must be between 0 and 200000 tokens")]
+    [ObservableProperty]
+    private int _maxOutputTokens;
+
     [ObservableProperty]
     private bool _supportsToolCalling = true;
 
@@ -119,6 +130,8 @@ public partial class ProviderEditModel : ObservableValidator
             ModelName = provider.ModelName,
             AzureDeploymentName = provider.AzureDeploymentName,
             TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 300 ? provider.TimeoutSeconds : 300,
+            MaxContextWindowTokens = provider.MaxContextWindowTokens ?? 0,
+            MaxOutputTokens = provider.MaxOutputTokens ?? 0,
             SupportsToolCalling = provider.SupportsToolCalling,
             SupportsStreaming = provider.SupportsStreaming,
             ReasoningEffort = provider.ReasoningEffort ?? ReasoningEffort.None,
@@ -140,6 +153,8 @@ public partial class ProviderEditModel : ObservableValidator
             SupportsToolCalling = SupportsToolCalling,
             SupportsStreaming = SupportsStreaming,
             TimeoutSeconds = TimeoutSeconds,
+            MaxContextWindowTokens = MaxContextWindowTokens > 0 ? MaxContextWindowTokens : null,
+            MaxOutputTokens = MaxOutputTokens > 0 ? MaxOutputTokens : null,
             ReasoningEffort = ReasoningEffort,
             EnableWebSearch = EnableWebSearch,
             MistralAgentId = MistralAgentId,
