@@ -161,8 +161,14 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         DateTime? specificDate = specificDateStr is not null && DateTime.TryParse(specificDateStr, out var sd) ? sd : null;
         var (grantedTools, rejectedTools) = ParseGrantedTools(grantedToolsStr);
         if (rejectedTools.Count > 0)
-            _logger.LogWarning("create_scheduled_research refused {Count} destructive external grant(s): {Tools}",
-                rejectedTools.Count, string.Join(", ", rejectedTools));
+        {
+            // The rejected names are raw substrings of the MODEL's grantedTools argument — never validated
+            // against a registered tool, so they can carry arbitrary user/customer content ("delete Acme's
+            // invoices"). Count at Warning, names only via SensitiveDebug (CLAUDE.md: tool-call arguments
+            // are a payload). The model-facing DescribeRejectedGrants string still carries them.
+            _logger.LogWarning("create_scheduled_research refused {Count} destructive external grant(s)", rejectedTools.Count);
+            _logger.SensitiveDebug("create_scheduled_research refused grants: {Tools}", string.Join(", ", rejectedTools));
+        }
 
         // The grant set that will ACTUALLY be in force at fire time. An AgentTask job with no explicit
         // grant silently receives the launcher's default, so render that default instead of omitting the
@@ -240,8 +246,11 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         if (grantedToolsStr is not null)
             (grantedTools, rejectedTools) = ParseGrantedTools(grantedToolsStr);
         if (rejectedTools.Count > 0)
-            _logger.LogWarning("update_scheduled_research refused {Count} destructive external grant(s): {Tools}",
-                rejectedTools.Count, string.Join(", ", rejectedTools));
+        {
+            // Same privacy split as the create path: count at Warning, model-authored names DEBUG-only.
+            _logger.LogWarning("update_scheduled_research refused {Count} destructive external grant(s)", rejectedTools.Count);
+            _logger.SensitiveDebug("update_scheduled_research refused grants: {Tools}", string.Join(", ", rejectedTools));
+        }
 
         var providerId = await ResolveProviderIdAsync(providerName);
 
