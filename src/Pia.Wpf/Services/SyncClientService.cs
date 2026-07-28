@@ -1191,6 +1191,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                         // API keys never travel plaintext (device-local without E2EE);
                         // under E2EE the mapper has already placed the synced key on
                         // local.EncryptedApiKey and UpdateProviderAsync honors it.
+                        // The six fields SyncProvider omits are NOT on the wire in either mode, so
+                        // `local` carries only C# defaults for them — carry this device's values over
+                        // or the pull resets them (compaction budget -> null, streaming -> true).
+                        _mapper.PreserveDeviceLocalProviderFields(local, existing);
                         await _providerService.UpdateProviderAsync(local);
                         mergeUpdated++;
                         _logger.LogInformation("Updated provider {Id}", provider.Id);
@@ -1215,6 +1219,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                     // Server Id wins as the canonical identifier. Content from whichever
                     // side has the later UpdatedAt wins; UpdatedAt is set to the max
                     // so the next push does not regress the server row.
+                    // Same preserve as the update branch above: `dup` is this device's row and holds the
+                    // device-local fields, `local` holds only defaults for them. Doing it before the
+                    // ternary covers both outcomes — when `dup` wins it already has them.
+                    _mapper.PreserveDeviceLocalProviderFields(local, dup);
                     var serverNewer = local.UpdatedAt.ToUniversalTime()
                         >= dup.UpdatedAt.ToUniversalTime();
                     var merged = serverNewer ? local : dup;

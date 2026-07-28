@@ -301,6 +301,51 @@ public class SyncMapper
         };
     }
 
+    /// <summary>
+    /// Copies the device-local provider fields onto <paramref name="incoming"/> from the local row
+    /// <paramref name="existing"/> it is about to replace.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="FromSyncProvider"/> builds a <em>fresh</em> <see cref="AiProvider"/> from the DTO, so
+    /// every field <see cref="SyncProvider"/> omits comes back as its C# default rather than as the value
+    /// this device had. A pull therefore silently reset all six fields below — most consequentially
+    /// <see cref="AiProvider.MaxContextWindowTokens"/>/<see cref="AiProvider.MaxOutputTokens"/> to
+    /// <see langword="null"/>, which turns agent context compaction OFF, and
+    /// <see cref="AiProvider.SupportsStreaming"/> back to its <c>true</c> default, re-enabling streaming a
+    /// user had deliberately switched off.
+    /// </para>
+    /// <para>
+    /// These fields are device-local <em>by design</em> (see the remarks on
+    /// <see cref="AiProvider.MaxContextWindowTokens"/>) — the fix is to preserve them across a pull, not to
+    /// put them on the wire, which would make one machine's tuning govern another's runs.
+    /// </para>
+    /// <para>
+    /// The copy is UNCONDITIONAL, unlike the <see cref="AiProvider.EncryptedApiKey"/> preserve in
+    /// <c>ProviderService.UpdateProviderAsync</c>. That one is conditional because an E2EE pull can carry a
+    /// real rotated key; these six are never on the wire in any mode, so a value on
+    /// <paramref name="incoming"/> is always a default and never user intent. This is why the preserve lives
+    /// on the pull path and NOT in <c>UpdateProviderAsync</c> — there it would also fire for the provider
+    /// edit dialog and make clearing a budget impossible.
+    /// </para>
+    /// <para>
+    /// None of these fields feed <c>ProviderFingerprint.Compute</c> (type/endpoint/model/deployment only),
+    /// so calling this before or after a fingerprint computation cannot change duplicate matching.
+    /// </para>
+    /// </remarks>
+    public void PreserveDeviceLocalProviderFields(AiProvider incoming, AiProvider existing)
+    {
+        ArgumentNullException.ThrowIfNull(incoming);
+        ArgumentNullException.ThrowIfNull(existing);
+
+        incoming.SupportsStreaming = existing.SupportsStreaming;
+        incoming.MaxContextWindowTokens = existing.MaxContextWindowTokens;
+        incoming.MaxOutputTokens = existing.MaxOutputTokens;
+        incoming.ReasoningEffort = existing.ReasoningEffort;
+        incoming.EnableWebSearch = existing.EnableWebSearch;
+        incoming.MistralAgentId = existing.MistralAgentId;
+    }
+
     // --- Sessions ---
 
     public SyncSession ToSyncSession(OptimizationSession session, string? userId = null)
