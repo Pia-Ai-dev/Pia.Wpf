@@ -95,6 +95,10 @@ public sealed class AgentRunOrchestrator
                 if (plan.FallBackToSingleTurn) // R10
                 {
                     var fr = await executor.RunSingleTurnFallbackAsync(run, ctx, cts.Token).ConfigureAwait(false);
+                    // The fallback turn owns no step row, so its usage has no SafeRecordStep to ride on —
+                    // accrue it run-level here or the whole degrade path bills as zero tokens (I1). Before
+                    // the branch: a cancelled/failed fallback turn spent its tokens just the same.
+                    await SafeAddUsage(run.Id, fr.Usage, cts.Token).ConfigureAwait(false);
                     if (fr.Cancelled)
                     {
                         cancelled = true;

@@ -58,6 +58,8 @@ public sealed class AgentRunOrchestratorTests
     private sealed class RecordingExecutor : IAgentTurnExecutor
     {
         private readonly Func<AgentStep, StepTurnResult> _result;
+        /// <summary>What the R10 single-turn fallback returns; null = a plain successful turn.</summary>
+        public StepTurnResult? FallbackResult { get; set; }
         public List<string> Executed { get; } = new();
         public bool BeginCalled { get; private set; }
         public bool EndCalled { get; private set; }
@@ -79,7 +81,7 @@ public sealed class AgentRunOrchestratorTests
         public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         {
             FallbackCalled = true;
-            return Task.FromResult(Ok("fallback"));
+            return Task.FromResult(FallbackResult ?? Ok("fallback"));
         }
 
         public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
@@ -732,6 +734,30 @@ public sealed class AgentRunOrchestratorTests
         var (input, output, _) = Ledger(final);
         Assert.Equal(80, input);  // the degrade path must not drop the planner's spend
         Assert.Equal(24, output);
+    }
+
+    [Fact]
+    public async Task Run_SingleTurnFallbackUsage_AccruesToRunLedger()
+    {
+        // The fallback turn owns no step row, so nothing else would ever bill it: without a run-level
+        // accrual the entire R10 degrade path reports zero tokens.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(PlanResult.Fallback with { Usage = Usage(80, 24) });
+        var exec = new RecordingExecutor(_ => Ok())
+        {
+            FallbackResult = new StepTurnResult(true, false, null, "fallback", Usage(15, 6), Guid.NewGuid(), Guid.NewGuid()),
+        };
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        var (input, output, perStep) = Ledger(final);
+        Assert.Equal(95, input);  // planner degrade 80 + fallback turn 15
+        Assert.Equal(30, output); // 24 + 6
+        Assert.Equal(0, perStep); // no step row exists for the fallback turn
     }
 
     [Fact]
