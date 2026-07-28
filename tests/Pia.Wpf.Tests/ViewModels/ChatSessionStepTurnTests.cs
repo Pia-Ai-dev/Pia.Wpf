@@ -33,14 +33,15 @@ public sealed class ChatSessionStepTurnTests
     private ChatSession CreateSession() => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
 
-    private static StepTurnSpec Spec(bool tokenizationEnabled) => new(
+    private static StepTurnSpec Spec(bool tokenizationEnabled, AiProvider? provider = null) => new(
         RunId: Guid.NewGuid(),
         Ordinal: 0,
         Intent: "do the thing",
         ExpectedArtifact: "artifact",
         SystemPrompt: "system",
         Persona: new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"),
-        Provider: new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+        Provider: provider
+            ?? new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
         Tools: null,
         SupportsTools: false,
         WebSearchActive: false,
@@ -123,6 +124,93 @@ public sealed class ChatSessionStepTurnTests
         Assert.NotEqual(ChatState.Error, session.State);
         Assert.Equal(0, failed);
         Assert.False(session.Messages.Last(m => !m.IsUser).IsStreaming);
+    }
+
+    // ---- Executor parity: the LIVE step path compacts too, and relays the budget into the tool loop ----
+
+    [Fact]
+    public async Task RunStepTurn_WithAConfiguredWindow_CompactsTheRequest_AndRelaysTheBudget()
+    {
+        // The Headless half of the compaction change is covered by HeadlessTurnExecutorTests; this is the
+        // LIVE half, which had no assertion at all — BuildStepChatMessagesAsync's CompactAsync call and the
+        // budget it relays into RunModelExchangeAsync could both be deleted with the suite staying green,
+        // because every other fixture here leaves MaxContextWindowTokens null (so the budget is null and the
+        // 6-arg stub keeps matching). A live agent step on a provider WITH a window would then still
+        // overflow while the headless path compacts.
+        List<ChatMessage>? sent = null;
+        AgentContextBudget? relayed = null;
+        var budgeted = new AiProvider
+        {
+            Name = "Budgeted",
+            Endpoint = "http://localhost",
+            ProviderType = AiProviderType.OpenAI,
+            MaxContextWindowTokens = 8_000,
+            MaxOutputTokens = 2_000,
+        };
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
+                Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                sent = [.. (IList<ChatMessage>)ci[0]];
+                relayed = (AgentContextBudget?)ci[6];
+                return Stream(new TextDelta("done"), new Finished(null, "m"));
+            });
+
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "THE GOAL: audit the repo."));
+        // 12 prior step replies of ~500 estimated tokens each — the shape measured to be over budget at
+        // 8000/2000 (the 8-reply shape is NOT, see AgentContextCompactorTests).
+        for (var i = 1; i <= 12; i++)
+            session.Messages.Add(new AssistantMessage(ChatRole.Assistant, $"step {i} reply: " + new string('x', 2_000)));
+
+        var result = await session.RunStepTurnAsync(
+            Spec(tokenizationEnabled: false, budgeted),
+            new RunContext("THE GOAL: audit the repo.", RunProfile.Interactive),
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(sent);
+        // Built: system + goal + 12 replies + the ephemeral instruction = 15.
+        Assert.True(sent!.Count < 15, $"the live step request must be compacted, saw {sent.Count} of 15");
+        // The pins survive: system first, then the goal, and the step instruction last.
+        Assert.Equal(ChatRole.System, sent[0].Role);
+        Assert.Contains("THE GOAL", sent[1].Text);
+        Assert.Contains("Execute step 1", sent[^1].Text);
+        // ...and the same budget is relayed so the IN-STEP tool loop is bounded too.
+        Assert.Equal(new AgentContextBudget(8_000, 2_000), relayed);
+    }
+
+    [Fact]
+    public async Task RunStepTurn_WithNoConfiguredWindow_RelaysNoBudget_AndSendsEverything()
+    {
+        // Opt-in: an unconfigured provider (every provider after upgrade) must behave exactly as before.
+        List<ChatMessage>? sent = null;
+        AgentContextBudget? relayed = new AgentContextBudget(1, 1);
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
+                Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                sent = [.. (IList<ChatMessage>)ci[0]];
+                relayed = (AgentContextBudget?)ci[6];
+                return Stream(new TextDelta("done"), new Finished(null, "m"));
+            });
+
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "THE GOAL: audit the repo."));
+        for (var i = 1; i <= 12; i++)
+            session.Messages.Add(new AssistantMessage(ChatRole.Assistant, $"step {i} reply: " + new string('x', 2_000)));
+
+        await session.RunStepTurnAsync(
+            Spec(tokenizationEnabled: false),
+            new RunContext("THE GOAL: audit the repo.", RunProfile.Interactive),
+            CancellationToken.None);
+
+        Assert.Null(relayed);
+        Assert.Equal(15, sent!.Count);
     }
 
     [Fact]
