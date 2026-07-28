@@ -222,7 +222,19 @@ public class ScheduledJobBackgroundService : BackgroundService
                 // Budget pause is a deliberate park, not a job failure — do NOT MarkRunFailed / toast
                 // failure. The Flow WaitingForInput card (from PauseAsync's RunChanged) is the out-of-band
                 // resume affordance (guardrail 6).
-                _logger.LogInformation("Scheduled agent job {Id} run parked at budget ({State}); awaiting resume",
+                //
+                // But the schedule MUST still advance (F): only MarkRunComplete/MarkRunFailed recompute
+                // NextFireAt, so a park used to leave the job due forever — the next 30 s tick launched a
+                // DUPLICATE run of the same goal, and past the grace period the user got a missed-run
+                // prompt for a job that had in fact already run. AdvanceMissedRunAsync is a pure
+                // "NextFireAt = next occurrence" write: it never touches ConsecutiveFailures/Status, so it
+                // carries no job-health signal and keeps park-is-not-a-failure intact.
+                // Failure-isolated (guardrail 1): a bookkeeping fault here must not abort the tick's
+                // remaining due jobs — worst case the job stays due and re-runs, exactly as before.
+                try { await _jobs.AdvanceMissedRunAsync(job.Id); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to advance schedule for parked agent job {Id}", job.Id); }
+
+                _logger.LogInformation("Scheduled agent job {Id} run parked at budget ({State}); awaiting resume, schedule advanced",
                     job.Id, run.State);
             }
             else

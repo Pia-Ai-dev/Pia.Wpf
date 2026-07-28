@@ -296,6 +296,120 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_ParkedAtBudget_AdvancesScheduleOnce_AndDoesNotRelaunch()
+    {
+        // F: a parked (budget-paused) run is NOT a job failure — but the schedule must still advance.
+        // Only MarkRunComplete/MarkRunFailed used to recompute NextFireAt, so the job stayed due and the
+        // next 30 s tick launched a DUPLICATE run of the same goal (and, past the grace period, prompted
+        // the user about a "missed" run that had in fact already fired).
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, chatId, Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun
+            {
+                Id = runId, ChatId = chatId, RunShape = RunShape.Planned,
+                State = AgentRunState.WaitingForInput,
+            });
+
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, Substitute.For<ISettingsService>(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        // Park is not a failure: no MarkRunFailed, no failure toast, no success bookkeeping either.
+        Assert.Empty(jobs.Failed);
+        Assert.Empty(jobs.Completed);
+        Assert.Equal(0, notifications.FailureCount);
+        Assert.Equal(0, notifications.SuccessCount);
+        // …but the schedule advanced exactly once.
+        Assert.Single(jobs.Advanced);
+        Assert.Equal(due.Id, jobs.Advanced[0]);
+
+        // The next tick must NOT relaunch: the job is no longer due, and nothing advances twice.
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        await launcher.Received(1).LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        Assert.Single(jobs.Advanced);
+        Assert.Equal(0, notifications.AskCount); // and no missed-run prompt for a run that already fired
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_Paused_AlsoAdvancesSchedule()
+    {
+        // The park branch covers both non-terminal parked states.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+
+        var runId = Guid.NewGuid();
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, Guid.NewGuid(), Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = RunShape.Planned, State = AgentRunState.Paused });
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            new FakeNotificationSurface(), launcher, Substitute.For<ISettingsService>(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.Single(jobs.Advanced);
+        Assert.Empty(jobs.Failed);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ParkedJob_AdvanceThrows_DoesNotBreakTheTick()
+    {
+        // Guardrail 1: the schedule advance is bookkeeping. If it faults, the tick must keep going (the
+        // job simply stays due and re-runs, exactly as it did before this fix) — never an aborted tick.
+        var jobs = new FakeJobService { ThrowOnAdvance = true };
+        var parkedJob = NewDueJob();
+        parkedJob.Kind = ScheduledJobKind.AgentTask;
+        var researchJob = NewDueJob();
+        jobs.SeedDue(parkedJob);
+        jobs.SeedDue(researchJob);
+
+        var runId = Guid.NewGuid();
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, Guid.NewGuid(), Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = RunShape.Planned, State = AgentRunState.WaitingForInput });
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(), launcher,
+            Substitute.For<ISettingsService>(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+
+        Assert.Equal(1, runner.RunCount);       // the second due job in the same tick still ran
+        Assert.Empty(jobs.Failed);              // and the park still did not count as a failure
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_ResearchJob_DoesNotDispatchToLauncher()
     {
         // Guard the dispatch fork the other way: a Research job stays on the runner path.
@@ -326,10 +440,16 @@ public class ScheduledJobBackgroundServiceTests
         public List<(Guid JobId, string Reason)> Failed { get; } = new();
         public List<Guid> Advanced { get; } = new();
 
+        /// <summary>When set, AdvanceMissedRunAsync faults (the bookkeeping degrade path).</summary>
+        public bool ThrowOnAdvance { get; set; }
+
         public void SeedDue(ScheduledJob job) => _due.Add(job);
 
+        // Models the real query: only jobs whose NextFireAt has passed come back, so a job whose schedule
+        // was advanced is genuinely not due on the following tick.
         public Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync()
-            => Task.FromResult<IReadOnlyList<ScheduledJob>>(_due.AsReadOnly());
+            => Task.FromResult<IReadOnlyList<ScheduledJob>>(
+                _due.Where(j => j.NextFireAt <= DateTime.Now).ToList());
 
         public Task MarkRunCompleteAsync(Guid id, Guid resultEntryId)
         {
@@ -345,7 +465,13 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task AdvanceMissedRunAsync(Guid id)
         {
+            if (ThrowOnAdvance) throw new InvalidOperationException("advance boom");
+
             Advanced.Add(id);
+            // Mirror the real service: NextFireAt moves to the next occurrence and NOTHING else — no
+            // failure counter, no Status, no LastFiredAt.
+            var job = _due.FirstOrDefault(j => j.Id == id);
+            if (job is not null) job.NextFireAt = DateTime.Now.AddDays(1);
             return Task.CompletedTask;
         }
 
