@@ -128,4 +128,45 @@ public class SyncMapperNewEntitiesTests
         Assert.Equal(original.Status, back.Status);
         Assert.Equal(original.OwnerDeviceId, back.OwnerDeviceId);
     }
+
+    // W3a: Status crosses the wire as an int (SyncMapper.cs Status = (int)job.Status) and is cast back
+    // with no Enum.IsDefined validation, so the newly appended ordinal 3 must survive a round trip in
+    // both plaintext and encrypted modes. If someone reorders ScheduledJobStatus, these go red.
+    [Fact]
+    public void ScheduledJob_CompletedStatus_RoundTrips_Plaintext()
+    {
+        var mapper = PlainMapper();
+        var original = SampleJob();
+        original.Recurrence = RecurrenceType.Once;
+        original.SpecificDate = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc);
+        original.Status = ScheduledJobStatus.Completed;
+
+        var sync = mapper.ToSyncScheduledJob(original);
+
+        // Pin the ordinal itself, not just the enum member: an older peer sees this int.
+        Assert.Equal(3, sync.Status);
+
+        var back = mapper.FromSyncScheduledJob(sync);
+        Assert.Equal(ScheduledJobStatus.Completed, back.Status);
+        Assert.Equal(RecurrenceType.Once, back.Recurrence);
+    }
+
+    [Fact]
+    public void ScheduledJob_CompletedStatus_RoundTrips_Encrypted()
+    {
+        var (mapper, _) = E2EEMapper();
+        var original = SampleJob();
+        original.Recurrence = RecurrenceType.Once;
+        original.SpecificDate = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc);
+        original.Status = ScheduledJobStatus.Completed;
+
+        var sync = mapper.ToSyncScheduledJob(original, UserId);
+
+        // Under E2EE Status travels inside the encrypted payload, so the plaintext field is nulled.
+        Assert.Null(sync.Status);
+
+        var back = mapper.FromSyncScheduledJob(sync, UserId);
+        Assert.Equal(ScheduledJobStatus.Completed, back.Status);
+        Assert.Equal(RecurrenceType.Once, back.Recurrence);
+    }
 }

@@ -3,7 +3,31 @@ namespace Pia.Models;
 // Persisted as int — append-only, never reorder. AgentTask (1) runs the job's Query as an unattended
 // headless Planned agent run via IHeadlessRunLauncher (§17.1); Research (0) keeps the existing runner.
 public enum ScheduledJobKind { Research, AgentTask }
-public enum ScheduledJobStatus { Active, Disabled, Failed }
+
+// Persisted as TEXT (Enum.Parse, ScheduledJobService.cs:390) but crosses the sync wire as an int
+// (SyncMapper.cs:905/:923 -> :953/:974, cast back with no Enum.IsDefined validation), so this enum is
+// APPEND-ONLY: never reorder, never remove. A peer on an older build receives the unknown ordinal 3,
+// casts it to an undefined ScheduledJobStatus and stores it verbatim as the string "3" — which its
+// `Status = 'Active'` queries exclude, i.e. the job is inert there and round-trips unchanged. That is
+// the intended meaning, but any future UI must tolerate an unknown status value.
+public enum ScheduledJobStatus
+{
+    /// <summary>Armed: the job fires when NextFireAt comes due on its owner device.</summary>
+    Active,
+
+    /// <summary>Switched off by the user. Re-arming via EnableAsync is expected and re-fires the job.</summary>
+    Disabled,
+
+    /// <summary>Retired by repeated failures (or, for a one-off, by its single failure).</summary>
+    Failed,
+
+    /// <summary>
+    /// A one-off job whose single firing has been settled — it ran, parked for resume, or the user
+    /// skipped it; it will not fire again. NextFireAt is deliberately left at the past instant it was
+    /// meant to fire (an honest record); this Status is what removes the row from the due query.
+    /// </summary>
+    Completed
+}
 
 public class ScheduledJob
 {
