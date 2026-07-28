@@ -157,15 +157,17 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// </summary>
     private void OnAgentRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
-        if (_ownRunIds.Contains(e.RunId))
-            return;
-
         var executing = e.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying;
         _syncContext.Post(_ =>
         {
             try
             {
                 if (_disposed) return;
+
+                // Checked HERE, not on the raising thread: _ownRunIds is written by the UI-thread Planned
+                // branch, so probing it from a pool thread would be a data race on a plain HashSet.
+                if (_ownRunIds.Contains(e.RunId)) return;
+
                 foreach (var session in _allSessions)
                 {
                     if (session.ActiveRunId == e.RunId)
