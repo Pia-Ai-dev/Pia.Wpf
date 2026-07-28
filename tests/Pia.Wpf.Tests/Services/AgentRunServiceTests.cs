@@ -427,6 +427,55 @@ public sealed class AgentRunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Ledger_WallClock_ExcludesParkedGap_OnTheStepResultAccrualSiteToo()
+    {
+        // G1 changed TWO accrual sites. The AddUsageAsync one is covered above; this is the HOT one —
+        // every completed step of every run goes through RecordStepResultAsync, so a regression that
+        // restored `WallClockMs = ElapsedMs(startedAt)` there would re-import the parked gap with every
+        // other G1 test still green.
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending };
+        await _service.ReplaceStepsAsync(run.Id, new[] { step }, ct);
+
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(3));
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+        var parked = WallClockMs(run.Id);
+        Assert.InRange(parked, 3_000, 60_000);
+
+        // Parked 12h. StartedAt is written once at create and never advanced — the poisoned input.
+        SetStartedAt(run.Id, DateTime.UtcNow - TimeSpan.FromHours(12));
+        Assert.True(await _service.TryBeginResumeAsync(run.Id, ct));
+
+        await _service.RecordStepResultAsync(step.Id, AgentStepStatus.Done, Guid.NewGuid(), Guid.NewGuid(),
+            new UsageDetails { InputTokenCount = 5, OutputTokenCount = 2 }, ct);
+
+        Assert.InRange(WallClockMs(run.Id), parked, parked + 60_000);
+        Assert.Equal(parked, ActiveMs(run.Id)); // Refresh reports the open segment without folding it in
+        Assert.True(WallClockMs(run.Id) < (long)TimeSpan.FromHours(1).TotalMilliseconds,
+            "the 12h parked gap must never reach the reported wall clock");
+        Assert.Equal(5, TokenTotals(run.Id).Input); // the token half of the same write still accrues
+    }
+
+    [Fact]
+    public async Task LedgerClockFault_IsSwallowed_AndTheStateWriteStillLands()
+    {
+        // Guardrail 1 for the ledger clock itself: MoveLedgerClock runs BEFORE the pause/terminal state
+        // UPDATE, so an unguarded fault there would leave a run dangling Running — unresumable, its parked
+        // work lost until the startup sweep cancels it. Forced here with an unparseable StartedAt, which
+        // makes the ledger read throw (DateTime.Parse) inside MoveLedgerClock.
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        SetRawStartedAt(run.Id, "not-a-timestamp");
+
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+        Assert.Equal((long)AgentRunState.WaitingForInput, RawState(run.Id)); // parked despite the ledger fault
+
+        await _service.CompleteAsync(run.Id, ct: ct);
+        Assert.Equal((long)AgentRunState.Completed, RawState(run.Id));       // and it can still settle
+    }
+
+    [Fact]
     public async Task TryBeginResume_Loser_DoesNotReopenTheLedgerSegment()
     {
         // Only the CAS winner opens a work segment — a second claim must leave the clock alone
@@ -653,6 +702,27 @@ public sealed class AgentRunServiceTests : IDisposable
         cmd.Parameters.AddWithValue("@StartedAt", startedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@Id", runId.ToString());
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Writes a raw (possibly unparseable) StartedAt, to fault the ledger read that parses it.</summary>
+    private void SetRawStartedAt(Guid runId, string rawValue)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE AgentRuns SET StartedAt = @StartedAt WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@StartedAt", rawValue);
+        cmd.Parameters.AddWithValue("@Id", runId.ToString());
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>State straight from the row — GetAsync would itself trip over a forged StartedAt.</summary>
+    private long RawState(Guid runId)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT State FROM AgentRuns WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@Id", runId.ToString());
+        return Convert.ToInt64(cmd.ExecuteScalar());
     }
 
     private long RawCount(string table, string column, Guid id)

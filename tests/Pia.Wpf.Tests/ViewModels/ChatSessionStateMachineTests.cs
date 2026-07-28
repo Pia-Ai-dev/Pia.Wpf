@@ -572,6 +572,58 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public async Task GrantedDestructiveMcpTool_IsNotAutoApproved_StillPrompts()
+    {
+        // B1 broadened IsDeleteLike from the single "delete" substring to the whole destructive stem
+        // family, and the INTERACTIVE gate composes it: eligible = IsAutoApproveEligible(tool)
+        // || (IsMcpTool(tool) && !IsDeleteLike(tool)). A standing per-tool grant on an external
+        // destructive tool must therefore NOT auto-execute — it must still raise a card. Without this
+        // case, dropping the !IsDeleteLike term would silently auto-run a granted MCP delete in the
+        // foreground with every other test in the batch still green.
+        var executed = false;
+        var mcpPluginId = Guid.NewGuid();
+        var pending = new PluginToolCall(
+            ToolName: "remove_page",
+            PluginId: mcpPluginId,
+            PluginName: "notion",
+            Description: "notion: remove_page",
+            Details: null,
+            Execute: () => { executed = true; return Task.FromResult<object?>("removed"); });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+        _plugins.IsMcpTool("remove_page").Returns(true);                     // external…
+        _permissions.IsAutoApproveEligible("remove_page").Returns(false);    // …not a built-in allowlist tool
+        _permissions.IsGranted(mcpPluginId, "remove_page").Returns(true);    // and ALREADY granted
+
+        var card = NewCard("remove_page", mcpPluginId);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+
+        var session = CreateSession();
+        var states = new List<ChatState>();
+        session.StateChanged += (_, e) => states.Add(e.NewState);
+        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
+
+        await WaitUntilAsync(() => card.IsPending);
+        Assert.False(executed);                                   // the grant did NOT bypass the gate
+        Assert.Equal(ChatState.WaitingForTool, session.State);    // the user is being asked
+        Assert.Contains(ChatState.WaitingForTool, states);
+
+        card.DeclineCommand.Execute(null);
+        await run;
+
+        Assert.False(executed);
+        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+    }
+
+    [Fact]
     public async Task ForgedGrant_OnIneligibleTool_StillPrompts_AndDoesNotGrant()
     {
         var executed = false;
