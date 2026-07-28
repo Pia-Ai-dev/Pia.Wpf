@@ -146,6 +146,107 @@ public class TokenizingAiClientServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]   // tokenization ON  — the wrapping branch
+    [InlineData(false)]  // tokenization OFF — the pass-through branch
+    public async Task RelaysTheContextBudgetToTheInnerClient(bool tokenizationEnabled)
+    {
+        // The decorator is registered AS IAiClientService, so if it dropped the budget the in-step tool
+        // loop would never compact in production even though every unit test of the adapter passed.
+        // Both branches must relay it.
+        AgentContextBudget? seenByInner = null;
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
+                Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                seenByInner = ci.ArgAt<AgentContextBudget?>(6);
+                return Stream(new Finished(null, "gpt-5"));
+            });
+
+        var tokenMap = Substitute.For<ITokenMapService>();
+        tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            Privacy = new PrivacySettings { TokenizationEnabled = tokenizationEnabled },
+        });
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            await foreach (var _ in sut.GetChatCompletionWithToolsAsync(
+                new List<ChatMessage> { new(ChatRole.User, "hi") },
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                cancellationToken: TestContext.Current.CancellationToken,
+                contextBudget: new AgentContextBudget(128_000, 4_096)))
+            {
+            }
+
+            Assert.Equal(new AgentContextBudget(128_000, 4_096), seenByInner);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+    }
+
+    [Fact]
+    public async Task WithoutAContextBudget_TheInnerClientSeesNull()
+    {
+        // An unconfigured provider (every provider after upgrade) and every interactive/background
+        // caller must reach the inner client with a null budget — i.e. today's behaviour exactly.
+        var observed = new List<AgentContextBudget?>();
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
+                Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                observed.Add(ci.ArgAt<AgentContextBudget?>(6));
+                return Stream(new Finished(null, "gpt-5"));
+            });
+
+        var tokenMap = Substitute.For<ITokenMapService>();
+        tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            await foreach (var _ in sut.GetChatCompletionWithToolsAsync(
+                new List<ChatMessage> { new(ChatRole.User, "hi") },
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                cancellationToken: TestContext.Current.CancellationToken))
+            {
+            }
+
+            Assert.Single(observed);
+            Assert.Null(observed[0]);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+    }
+
     private static async IAsyncEnumerable<ChatStreamItem> Stream(params ChatStreamItem[] items)
     {
         foreach (var item in items)

@@ -257,7 +257,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         BackgroundAssistantTurnRunner.ExchangeResult exchange;
         try
         {
-            exchange = await _engine.RunExchangeAsync(request, _provider, _setup, _grantedWrites, ct)
+            // The same budget goes down into the exchange so the IN-step tool loop is bounded too: the
+            // request compacted above can still grow past the window inside AiClientService as tool
+            // calls and tool results accumulate over up to 10 rounds.
+            exchange = await _engine.RunExchangeAsync(request, _provider, _setup, _grantedWrites, ct,
+                    onUsage: null, contextBudget: contextBudget)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

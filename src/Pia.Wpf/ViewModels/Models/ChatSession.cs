@@ -502,7 +502,8 @@ public sealed class ChatSession : IDisposable
         bool supportsTools,
         bool webSearchActive,
         bool tokenizationEnabled,
-        CancellationToken token)
+        CancellationToken token,
+        AgentContextBudget? contextBudget = null)
     {
         var rawBuffer = new StringBuilder();
         // Reasoning reaches us via two channels that never overlap for a given provider:
@@ -548,7 +549,8 @@ public sealed class ChatSession : IDisposable
             chatMessages, provider, tools,
             supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled) : null,
             nameof(WindowMode.Assistant),
-            token))
+            token,
+            contextBudget))
         {
             switch (item)
             {
@@ -672,8 +674,11 @@ public sealed class ChatSession : IDisposable
             ct.ThrowIfCancellationRequested();
 
             var chatMessages = await BuildStepChatMessagesAsync(spec, ctx, assistantMessage, ct);
+            // Same budget the step request was compacted with, relayed so the in-step tool loop is
+            // bounded too. The INTERACTIVE call site (RunTurnAsync) deliberately leaves it null.
             usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
-                spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct);
+                spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct,
+                AgentContextBudget.From(spec.Provider));
             succeeded = true;
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)

@@ -123,7 +123,8 @@ public class AiClientService : IAiClientService
             IList<AITool>? tools = null,
             Func<FunctionCallContent, Task<object?>>? toolHandler = null,
             string? mode = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            [EnumeratorCancellation] CancellationToken cancellationToken = default,
+            AgentContextBudget? contextBudget = null)
     {
         _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
             provider.Name, tools?.Count ?? 0);
@@ -172,6 +173,24 @@ public class AiClientService : IAiClientService
             // fail-closed to the protected model but recovered to the normal model on the next round). A
             // genuine HIT keeps marking every round because the offending content stays in workingMessages.
             protectedRoute = false;
+
+            // Bound the IN-STEP tool loop. workingMessages is the ONLY list in Pia that ever holds
+            // FunctionCallContent / FunctionResultContent messages (appended below, after a round that
+            // produced tool calls), so this is the only place tool-result eviction can do any work —
+            // and the only overflow path the executors' own compaction cannot see, because the growth
+            // happens after they hand the request over. Nothing here is persisted: workingMessages is
+            // discarded when the loop ends.
+            //
+            // Placed BEFORE the streaming / non-streaming branch so one insertion covers both provider
+            // paths (they read the same workingMessages, including the tool-disabled retry).
+            // round > 0 because round 0's list is what the executor already compacted.
+            if (round > 0 && contextBudget is { } budget)
+            {
+                workingMessages = await AgentContextCompactor
+                    .CompactAsync(workingMessages, budget, _logger, linkedCts.Token)
+                    .ConfigureAwait(false);
+            }
+
             ChatResponse response;
 
             if (provider.SupportsStreaming)

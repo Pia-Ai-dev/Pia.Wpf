@@ -270,6 +270,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// messages across steps. <paramref name="onUsage"/> is awaited on each round's <see cref="Finished"/>
     /// (preserves the single-turn per-round ledger accrual); null for step turns (the orchestrator records
     /// the step usage from the returned <see cref="ExchangeResult.Usage"/>).
+    /// <para>
+    /// <paramref name="contextBudget"/> is relayed to the AI client so the in-step tool loop can be
+    /// compacted between rounds. Agent step turns pass one; the background single-turn path
+    /// (<see cref="RunAsync"/>) leaves it null and is therefore bit-for-bit unchanged.
+    /// </para>
     /// </summary>
     public async Task<ExchangeResult> RunExchangeAsync(
         List<ChatMessage> messages,
@@ -277,7 +282,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         AssistantTurnSetup setup,
         HashSet<string> grantedWrites,
         CancellationToken ct,
-        Func<UsageDetails, Task>? onUsage = null)
+        Func<UsageDetails, Task>? onUsage = null,
+        AgentContextBudget? contextBudget = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -288,7 +294,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
             setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites) : null,
-            nameof(WindowMode.Assistant), ct))
+            nameof(WindowMode.Assistant), ct, contextBudget))
         {
             switch (item)
             {

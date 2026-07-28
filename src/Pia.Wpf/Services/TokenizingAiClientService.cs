@@ -152,14 +152,19 @@ public class TokenizingAiClientService : IAiClientService
         IList<AITool>? tools = null,
         Func<FunctionCallContent, Task<object?>>? toolHandler = null,
         string? mode = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default,
+        AgentContextBudget? contextBudget = null)
     {
+        // The budget is relayed verbatim on BOTH branches. Note the one-directional skew this decorator
+        // introduces: TokenizeMessages rewrites User-role text to PII placeholders BEFORE the inner
+        // call, so the byte counts compaction measures downstream are of placeholders rather than of
+        // the user's real text. The effect is small and always in the "slightly optimistic" direction.
         _logger.LogDebug("TokenizingAiClientService: relaying GetChatCompletionWithToolsAsync with {ToolCount} tools, tokenization={Enabled}",
             tools?.Count ?? 0, _enabled ?? false);
         if (!await IsEnabledAsync())
         {
             _logger.LogDebug("Tokenization disabled, passing through tool completion");
-            await foreach (var item in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, mode, cancellationToken))
+            await foreach (var item in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, mode, cancellationToken, contextBudget))
                 yield return item;
             yield break;
         }
@@ -177,7 +182,7 @@ public class TokenizingAiClientService : IAiClientService
         var reasoningIsBuffering = false;
 
         await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
-            tokenizedMessages, provider, tools, wrappedHandler, mode, cancellationToken))
+            tokenizedMessages, provider, tools, wrappedHandler, mode, cancellationToken, contextBudget))
         {
             if (item is TextDelta td)
             {

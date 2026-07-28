@@ -20,13 +20,21 @@ public interface IAiClientService
         string? mode = null,
         CancellationToken cancellationToken = default);
 
+    /// <param name="contextBudget">
+    /// Opt-in agent context budget. When non-null, the working message list is compacted between tool
+    /// rounds so a long in-step tool loop cannot overflow the model's context window and fail the
+    /// step. Null — the default, and what every interactive/background caller passes — means the
+    /// request list is sent exactly as today. It sits AFTER <paramref name="cancellationToken"/> on
+    /// purpose: that keeps every existing call site source-compatible.
+    /// </param>
     IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(
         IList<ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
         Func<FunctionCallContent, Task<object?>>? toolHandler = null,
         string? mode = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        AgentContextBudget? contextBudget = null);
 
     Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default);
 
