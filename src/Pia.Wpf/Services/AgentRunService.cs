@@ -20,6 +20,12 @@ namespace Pia.Services;
 /// <c>Goal</c>/step <c>Title</c>/<c>Intent</c> are user content — logged only via
 /// <c>SensitiveDebug</c>, never at Information (CLAUDE.md / §12.7).
 /// </para>
+/// <para>
+/// The ledger's <c>wallClockMs</c> is the run's accumulated ACTIVE time (segments opened at
+/// create/resume, closed at pause/terminal) — NOT <c>UtcNow - StartedAt</c>, which would bill the time
+/// a run sat parked. The ENFORCED budget clock is a separate fresh <c>Stopwatch</c> per
+/// <see cref="RunContext"/>; the two are intentionally different clocks.
+/// </para>
 /// </summary>
 public sealed class AgentRunService : IAgentRunService, IDisposable
 {
@@ -81,7 +87,9 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             TriggerRef = request.TriggerRef,
             OwnerDeviceId = request.OwnerDeviceId,
             Goal = request.Goal,
-            LedgerJson = JsonSerializer.Serialize(new Ledger(), JsonOptions),
+            // The run starts working now → open the ledger's first work segment (G1). ActiveMs is set
+            // explicitly (not left default) so this ledger is never mistaken for a legacy one.
+            LedgerJson = JsonSerializer.Serialize(new Ledger { ActiveMs = 0, SegmentStartedAt = now }, JsonOptions),
             CreatedAt = now,
             UpdatedAt = now,
             StartedAt = now,
@@ -178,7 +186,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 entry.InputTokens += input;
                 entry.OutputTokens += output;
             }
-            ledger.WallClockMs = ElapsedMs(startedAt);
+            ApplyLedgerClock(ledger, startedAt, state, LedgerClock.Refresh);
 
             WriteLedger(runId, ledger);
         }
@@ -214,7 +222,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         {
             if (_disposed) return Task.CompletedTask;
 
-            RefreshLedgerWallClock(runId);
+            // Close the open work segment so the reported wall clock freezes here (G1).
+            MoveLedgerClock(runId, LedgerClock.CloseSegment);
 
             string? extraJson = null;
             if (truncated)
@@ -245,7 +254,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         {
             if (_disposed) return Task.CompletedTask;
 
-            RefreshLedgerWallClock(runId);
+            MoveLedgerClock(runId, LedgerClock.CloseSegment);
 
             var extraJson = error is not null
                 ? JsonSerializer.Serialize(new { error }, JsonOptions)
@@ -272,8 +281,9 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         {
             if (_disposed) return Task.CompletedTask;
 
-            // Freeze accrued wall-clock into the persisted ledger before parking (mirrors CompleteAsync).
-            RefreshLedgerWallClock(runId);
+            // Close the work segment before parking (mirrors CompleteAsync): the parked gap that starts
+            // here must NOT count as worked time, and the next resume opens a fresh segment (G1).
+            MoveLedgerClock(runId, LedgerClock.CloseSegment);
 
             var extraJson = JsonSerializer.Serialize(new { paused = true, reason }, JsonOptions);
 
@@ -310,6 +320,12 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             cmd.Parameters.AddWithValue("@Id", runId.ToString());
             cmd.Parameters.AddWithValue("@Expected", (int)AgentRunState.WaitingForInput);
             affected = cmd.ExecuteNonQuery();
+
+            // Open a fresh work segment ONLY for the CAS winner, in the same _gate hold so the loser
+            // never re-opens a clock (G1). Separate statement on purpose: the CAS must stay one
+            // self-contained UPDATE, and this is bookkeeping (MoveLedgerClock swallows its own faults).
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.OpenSegment);
         }
 
         if (affected > 0)
@@ -534,7 +550,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             if (!TryLoadStepRun(stepId, out runId, out runState))
                 return Task.CompletedTask;
 
-            if (usage is not null && TryLoadRunLedger(runId, out var ledger, out var startedAt, out _))
+            if (usage is not null && TryLoadRunLedger(runId, out var ledger, out var startedAt, out var ledgerState))
             {
                 var input = usage.InputTokenCount ?? 0;
                 var output = usage.OutputTokenCount ?? 0;
@@ -548,7 +564,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 }
                 entry.InputTokens += input;
                 entry.OutputTokens += output;
-                ledger.WallClockMs = ElapsedMs(startedAt);
+                ApplyLedgerClock(ledger, startedAt, ledgerState, LedgerClock.Refresh);
                 WriteLedger(runId, ledger);
             }
         }
@@ -662,11 +678,97 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return true;
     }
 
-    private void RefreshLedgerWallClock(Guid runId)
+    /// <summary>What a ledger write does to the run's work-segment clock (G1).</summary>
+    private enum LedgerClock
     {
-        if (!TryLoadRunLedger(runId, out var ledger, out var startedAt, out _)) return;
-        ledger.WallClockMs = ElapsedMs(startedAt);
-        WriteLedger(runId, ledger);
+        /// <summary>Recompute the reported total; do not open or close a segment.</summary>
+        Refresh,
+
+        /// <summary>The run starts working (create / resume claim).</summary>
+        OpenSegment,
+
+        /// <summary>The run stops working (pause / complete / fail).</summary>
+        CloseSegment,
+    }
+
+    /// <summary>
+    /// THE single place ledger wall-clock is computed (G1). <c>WallClockMs</c> is the reported total
+    /// WORKED time — accumulated closed segments plus the open one — so a run parked overnight and
+    /// resumed no longer bills the parked gap (the old <c>UtcNow - StartedAt</c> did, because
+    /// <c>StartedAt</c> is written once at create and never advanced). Correct across repeated
+    /// pause→resume→pause cycles: each cycle closes one segment into <see cref="Ledger.ActiveMs"/>.
+    /// <para>
+    /// Distinct from the ENFORCED budget clock, which is a fresh <c>Stopwatch</c> per
+    /// <see cref="RunContext"/> (a resume deliberately grants a fresh wall-clock budget) — this one is
+    /// the durable, cumulative accounting number.
+    /// </para>
+    /// </summary>
+    private static void ApplyLedgerClock(Ledger ledger, DateTime? startedAt, AgentRunState state, LedgerClock action)
+    {
+        var now = DateTime.UtcNow;
+        var terminal = state >= AgentRunState.Completed;
+
+        // Legacy ledger: written before active-time tracking, so it has NEITHER field. Seed the
+        // accumulator once from its last reported total (falling back to StartedAt when it never
+        // accrued), then accumulate normally. A terminal legacy run is frozen and returns untouched —
+        // it can never work again, and re-deriving from StartedAt would inflate an archived run.
+        if (ledger.ActiveMs is null && ledger.SegmentStartedAt is null)
+        {
+            if (terminal) return;
+            ledger.ActiveMs = ledger.WallClockMs > 0 ? ledger.WallClockMs : ElapsedMs(startedAt);
+        }
+
+        var active = ledger.ActiveMs ?? 0;
+        // An ALREADY-terminal run cannot be working, so a segment still open on it is stale (a crashed
+        // run later swept to Cancelled, whose bulk sweep does not touch ledgers). Drop it instead of
+        // accruing it — the frozen total must never absorb downtime.
+        var openMs = terminal ? 0 : OpenSegmentMs(ledger, now);
+
+        if (action == LedgerClock.Refresh && !terminal)
+        {
+            // The segment is still running: report it on top WITHOUT folding it into the accumulator,
+            // so the next Refresh does not count it twice.
+            ledger.ActiveMs = active;
+            ledger.WallClockMs = active + openMs;
+            return;
+        }
+
+        // Open/Close (and any write landing on a terminal run) settle the segment here. Folding the
+        // open part in before re-opening keeps a redundant open from dropping its elapsed time.
+        ledger.ActiveMs = active + openMs;
+        ledger.SegmentStartedAt = action == LedgerClock.OpenSegment && !terminal ? now : null;
+        ledger.WallClockMs = ledger.ActiveMs.Value;
+    }
+
+    /// <summary>Elapsed ms of the open segment (0 when none). Clamped at 0 against clock skew.</summary>
+    private static long OpenSegmentMs(Ledger ledger, DateTime now) =>
+        ledger.SegmentStartedAt is { } s ? Math.Max(0, (long)(now - AsUtc(s)).TotalMilliseconds) : 0;
+
+    private static DateTime AsUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        // We only ever write UTC, so a zone-less value is UTC — reading it as local would shift it.
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+    };
+
+    /// <summary>
+    /// Applies <paramref name="action"/> to the persisted ledger of <paramref name="runId"/>.
+    /// Bookkeeping only: a fault here is logged and swallowed so it can never fail the pause/terminal
+    /// write it precedes (guardrail 1). Callers must already hold <see cref="_gate"/>.
+    /// </summary>
+    private void MoveLedgerClock(Guid runId, LedgerClock action)
+    {
+        try
+        {
+            if (!TryLoadRunLedger(runId, out var ledger, out var startedAt, out var state)) return;
+            ApplyLedgerClock(ledger, startedAt, state, action);
+            WriteLedger(runId, ledger);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ledger clock ({Action}) failed for run {RunId}", action, runId);
+        }
     }
 
     private void WriteLedger(Guid runId, Ledger ledger)
@@ -711,7 +813,26 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         public long InputTokens { get; set; }
         public long OutputTokens { get; set; }
         public double? CostUsd { get; set; }
+
+        /// <summary>
+        /// REPORTED total worked time = <see cref="ActiveMs"/> + the currently open segment. The only
+        /// field the UI ledger strip reads; recomputed exclusively by <see cref="ApplyLedgerClock"/>.
+        /// </summary>
         public long WallClockMs { get; set; }
+
+        /// <summary>
+        /// Accumulated ACTIVE milliseconds across all closed work segments (G1). Nullable purely to
+        /// detect a legacy ledger written before active-time tracking existed (field absent → null);
+        /// every write from this service materialises a non-null value.
+        /// </summary>
+        public long? ActiveMs { get; set; }
+
+        /// <summary>
+        /// UTC start of the OPEN work segment, or null when the run is not working (parked/terminal).
+        /// Serialized by <c>System.Text.Json</c> in the round-trippable ISO-8601 form.
+        /// </summary>
+        public DateTime? SegmentStartedAt { get; set; }
+
         public List<StepLedger> PerStep { get; set; } = [];
     }
 

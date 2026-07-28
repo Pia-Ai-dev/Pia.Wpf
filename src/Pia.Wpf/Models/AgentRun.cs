@@ -40,7 +40,12 @@ public sealed class AgentRun
     /// <summary>Reserved for the Phase 2 autonomy policy.</summary>
     public string? PolicyJson { get; set; }
 
-    /// <summary>Tokens/cost/wall-clock, per step + total: <c>{ inputTokens, outputTokens, costUsd?, wallClockMs, perStep:[...] }</c>.</summary>
+    /// <summary>
+    /// Tokens/cost/wall-clock, per step + total:
+    /// <c>{ inputTokens, outputTokens, costUsd?, wallClockMs, activeMs, segmentStartedAt?, perStep:[...] }</c>.
+    /// <c>wallClockMs</c> is accumulated ACTIVE time (parked gaps excluded); <c>activeMs</c> +
+    /// <c>segmentStartedAt</c> are its internal accumulator/open-segment marker.
+    /// </summary>
     public string? LedgerJson { get; set; }
 
     public DateTime CreatedAt { get; set; }

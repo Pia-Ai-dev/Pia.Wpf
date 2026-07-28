@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,6 +17,8 @@ namespace Pia.Tests.Services;
 /// Durable-spine coverage for <see cref="AgentRunService"/> (phase1 plan §12.8): schema
 /// idempotency, lifecycle transitions, ledger accrual, the R1 write-order/FK-cascade rules, the
 /// eviction predicate, and the R2 re-query semantics of <see cref="AgentRunService.NextPendingStepAsync"/>.
+/// Also covers the ledger's ACTIVE-time clock (G1 — parked gaps are not worked time) and the opaque
+/// launch-envelope round-trip (<c>PolicyJson</c>).
 /// Written to run on Windows/CI — the WPF-targeted test assembly cannot execute on macOS.
 /// </summary>
 public sealed class AgentRunServiceTests : IDisposable
@@ -379,6 +382,176 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Equal(AgentStepStatus.Done, doneStep.Status);
     }
 
+    // ---- G1: the ledger clock measures ACTIVE time, never the parked gap ----
+
+    [Fact]
+    public async Task Ledger_WallClock_ExcludesParkedGap_AndIsMonotonicAcrossTwoPauseResumeCycles()
+    {
+        // G1: WallClockMs is accumulated WORKED time. The old formula (UtcNow - StartedAt) billed the
+        // whole parked span, so a run parked overnight reported ~12h it never worked. StartedAt is
+        // deliberately back-dated below — that is exactly the input that used to poison the ledger.
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+
+        // Cycle 1: 4s of work, then park.
+        Assert.NotNull(SegmentStartedAt(run.Id)); // create opens the first segment
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(4));
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+
+        var afterFirstPause = WallClockMs(run.Id);
+        Assert.InRange(afterFirstPause, 4_000, 60_000);
+        Assert.Equal(afterFirstPause, ActiveMs(run.Id));
+        Assert.Null(SegmentStartedAt(run.Id)); // parked → no open segment
+
+        // Parked overnight. StartedAt is never advanced by the resume path, so this is the poisoned input.
+        SetStartedAt(run.Id, DateTime.UtcNow - TimeSpan.FromHours(12));
+
+        Assert.True(await _service.TryBeginResumeAsync(run.Id, ct));
+        Assert.NotNull(SegmentStartedAt(run.Id));                 // claim opened a fresh segment
+        Assert.Equal(afterFirstPause, ActiveMs(run.Id));          // the 12h gap accrued nothing
+        Assert.InRange(WallClockMs(run.Id), afterFirstPause, afterFirstPause + 60_000);
+
+        // A usage accrual mid-segment reports the live total without billing the gap either.
+        await _service.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 3, OutputTokenCount = 1 }, ct);
+        Assert.InRange(WallClockMs(run.Id), afterFirstPause, afterFirstPause + 60_000);
+        Assert.Equal(afterFirstPause, ActiveMs(run.Id));          // Refresh must not fold the segment in
+
+        // Cycle 2: 6 more seconds of work, then park again — the accumulator only ever grows.
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(6));
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+
+        var afterSecondPause = WallClockMs(run.Id);
+        Assert.InRange(afterSecondPause, afterFirstPause + 6_000, afterFirstPause + 66_000);
+        Assert.True(afterSecondPause < (long)TimeSpan.FromHours(1).TotalMilliseconds,
+            "the 12h parked gap must never reach the reported wall clock");
+    }
+
+    [Fact]
+    public async Task TryBeginResume_Loser_DoesNotReopenTheLedgerSegment()
+    {
+        // Only the CAS winner opens a work segment — a second claim must leave the clock alone
+        // (otherwise two racers could each restart the segment and lose accrued active time).
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+
+        Assert.True(await _service.TryBeginResumeAsync(run.Id, ct));
+        var openedAt = SegmentStartedAt(run.Id);
+        Assert.NotNull(openedAt);
+
+        Assert.False(await _service.TryBeginResumeAsync(run.Id, ct)); // already Running → lost
+        Assert.Equal(openedAt, SegmentStartedAt(run.Id));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_FreezesWallClock_AndLaterWritesDoNotGrowIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.SingleTurn, AgentRunTrigger.User), ct);
+
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(3));
+        await _service.CompleteAsync(run.Id, ct: ct);
+
+        var frozen = WallClockMs(run.Id);
+        Assert.InRange(frozen, 3_000, 60_000);
+        Assert.Null(SegmentStartedAt(run.Id));
+
+        // A terminal run has no open segment, so a late usage accrual (or a repeated terminal write)
+        // must accrue tokens without moving the clock — even with a back-dated StartedAt.
+        SetStartedAt(run.Id, DateTime.UtcNow - TimeSpan.FromHours(12));
+        await _service.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 2, OutputTokenCount = 1 }, ct);
+        Assert.Equal(frozen, WallClockMs(run.Id));
+
+        await _service.CompleteAsync(run.Id, ct: ct);
+        Assert.Equal(frozen, WallClockMs(run.Id));
+    }
+
+    [Fact]
+    public async Task SweptRun_StaleOpenSegment_IsDroppedNotBilled()
+    {
+        // Crash path: the startup sweep settles a Running run to Cancelled in bulk and deliberately
+        // does not touch ledgers, so the run keeps an OPEN segment forever. Any later ledger write must
+        // drop that stale segment — a terminal run cannot have been working through the downtime.
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.SingleTurn, AgentRunTrigger.User), ct);
+
+        BackdateOpenSegment(run.Id, TimeSpan.FromHours(5)); // "crashed" 5h ago with the segment open
+        Assert.Equal(1, await _service.FailInterruptedRunsAsync(ct));
+
+        await _service.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 1, OutputTokenCount = 1 }, ct);
+
+        Assert.Equal(0, WallClockMs(run.Id));   // the 5h of downtime is not worked time
+        Assert.Equal(0, ActiveMs(run.Id));
+        Assert.Null(SegmentStartedAt(run.Id));  // stale segment cleared
+    }
+
+    [Fact]
+    public async Task LegacyLedger_ParkedRun_SeedsFromReportedTotal_ThenAccumulatesActiveTime()
+    {
+        // Backward compatibility: a ledger persisted before active-time tracking has neither activeMs
+        // nor segmentStartedAt. A non-terminal legacy run seeds the accumulator ONCE from its last
+        // reported total and then behaves like any other run — the parked gap stays out.
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+
+        WriteRawLedger(run.Id, """{"inputTokens":10,"outputTokens":2,"wallClockMs":5000,"perStep":[]}""");
+        SetStartedAt(run.Id, DateTime.UtcNow - TimeSpan.FromHours(12));
+        Assert.Null(ActiveMs(run.Id));
+        Assert.Null(SegmentStartedAt(run.Id));
+
+        Assert.True(await _service.TryBeginResumeAsync(run.Id, ct));
+        Assert.Equal(5_000, ActiveMs(run.Id)); // seeded from the legacy reported total, not from StartedAt
+
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(2));
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+
+        var reported = WallClockMs(run.Id);
+        Assert.InRange(reported, 7_000, 67_000); // 5s legacy + ~2s of new work, never the 12h gap
+        Assert.Equal(reported, ActiveMs(run.Id));
+        Assert.Equal(10, TokenTotals(run.Id).Input); // token accrual is untouched by the upgrade
+    }
+
+    [Fact]
+    public async Task LegacyLedger_WithoutReportedTotal_SeedsFromStartedAt()
+    {
+        // Fallback branch of the legacy upgrade: a legacy ledger that never accrued (wallClockMs 0)
+        // has only StartedAt to go on, so the run's whole life so far counts as active.
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
+
+        WriteRawLedger(run.Id, """{"inputTokens":0,"outputTokens":0,"wallClockMs":0,"perStep":[]}""");
+        SetStartedAt(run.Id, DateTime.UtcNow - TimeSpan.FromSeconds(90));
+
+        await _service.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 1, OutputTokenCount = 1 }, ct);
+
+        Assert.InRange(WallClockMs(run.Id), 90_000, 150_000);
+        Assert.InRange(ActiveMs(run.Id) ?? 0, 90_000, 150_000);
+    }
+
+    [Fact]
+    public async Task LegacyLedger_TerminalRun_WallClockNeverChanges()
+    {
+        // A terminal legacy run is history: re-deriving it from StartedAt would inflate an archived
+        // run, so its reported total is left exactly as persisted.
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.SingleTurn, AgentRunTrigger.User), ct);
+        await _service.CompleteAsync(run.Id, ct: ct);
+
+        WriteRawLedger(run.Id, """{"inputTokens":10,"outputTokens":2,"wallClockMs":5000,"perStep":[]}""");
+        SetStartedAt(run.Id, DateTime.UtcNow - TimeSpan.FromHours(12));
+
+        await _service.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 5, OutputTokenCount = 1 }, ct);
+
+        Assert.Equal(5_000, WallClockMs(run.Id));      // frozen
+        Assert.Null(ActiveMs(run.Id));                 // stays legacy — nothing to upgrade
+        Assert.Equal(15, TokenTotals(run.Id).Input);   // usage still accrues (bookkeeping unaffected)
+
+        await _service.FailAsync(run.Id, "late failure", ct: ct);
+        Assert.Equal(5_000, WallClockMs(run.Id));
+    }
+
     private async Task<Guid> MakeChatAsync()
     {
         var id = Guid.NewGuid();
@@ -392,6 +565,61 @@ public sealed class AgentRunServiceTests : IDisposable
             WindowMode = "Assistant",
         }, TestContext.Current.CancellationToken);
         return id;
+    }
+
+    // ---- raw ledger/row access: lets a test forge a legacy ledger or simulate a long parked gap
+    // without sleeping (the service reads UtcNow, so the fixture moves the persisted timestamps). ----
+
+    private JsonNode LedgerNode(Guid runId)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT LedgerJson FROM AgentRuns WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@Id", runId.ToString());
+        var json = Assert.IsType<string>(cmd.ExecuteScalar());
+        return JsonNode.Parse(json)!;
+    }
+
+    private long WallClockMs(Guid runId) => LedgerNode(runId)["wallClockMs"]!.GetValue<long>();
+
+    /// <summary>The accumulator; null for a legacy ledger (field absent) — that is the upgrade trigger.</summary>
+    private long? ActiveMs(Guid runId) => LedgerNode(runId)["activeMs"]?.GetValue<long>();
+
+    private DateTime? SegmentStartedAt(Guid runId) => LedgerNode(runId)["segmentStartedAt"]?.GetValue<DateTime>();
+
+    private (long Input, long Output) TokenTotals(Guid runId)
+    {
+        var node = LedgerNode(runId);
+        return (node["inputTokens"]!.GetValue<long>(), node["outputTokens"]!.GetValue<long>());
+    }
+
+    /// <summary>Pretends the currently OPEN work segment started <paramref name="by"/> ago.</summary>
+    private void BackdateOpenSegment(Guid runId, TimeSpan by)
+    {
+        var node = LedgerNode(runId);
+        Assert.NotNull(node["segmentStartedAt"]); // nothing to back-date otherwise — the test is wrong
+        node["segmentStartedAt"] = JsonValue.Create((DateTime.UtcNow - by).ToString("O"));
+        WriteRawLedger(runId, node.ToJsonString());
+    }
+
+    private void WriteRawLedger(Guid runId, string ledgerJson)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE AgentRuns SET LedgerJson = @Ledger WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@Ledger", ledgerJson);
+        cmd.Parameters.AddWithValue("@Id", runId.ToString());
+        cmd.ExecuteNonQuery();
+    }
+
+    private void SetStartedAt(Guid runId, DateTime startedAt)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE AgentRuns SET StartedAt = @StartedAt WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@StartedAt", startedAt.ToString("O"));
+        cmd.Parameters.AddWithValue("@Id", runId.ToString());
+        cmd.ExecuteNonQuery();
     }
 
     private long RawCount(string table, string column, Guid id)
