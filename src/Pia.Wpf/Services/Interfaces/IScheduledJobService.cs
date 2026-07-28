@@ -15,6 +15,17 @@ public interface IScheduledJobService
     Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync();
     Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since);
 
+    /// <summary>
+    /// Applies the supplied field edits (null = leave unchanged) and recomputes <c>NextFireAt</c>.
+    /// <para>
+    /// Also RE-ARMS a job that had settled: a <see cref="ScheduledJobStatus.Completed"/> row whose recomputed
+    /// fire time lands in the future goes back to <see cref="ScheduledJobStatus.Active"/>, because otherwise a
+    /// fired one-off can never be re-scheduled — no caller exposes <c>EnableAsync</c>. Deliberately does NOT
+    /// touch <see cref="ScheduledJobStatus.Disabled"/> (the user's off switch) or
+    /// <see cref="ScheduledJobStatus.Failed"/> (a retirement whose failure count only <c>EnableAsync</c>
+    /// clears), and does not re-arm a settled row whose fire time is still in the past.
+    /// </para>
+    /// </summary>
     Task UpdateAsync(Guid id, string? name = null, string? query = null,
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,

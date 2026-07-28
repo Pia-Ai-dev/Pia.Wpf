@@ -290,6 +290,74 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Equal(ScheduledJobStatus.Completed, after.Status);
     }
 
+    [Fact]
+    public async Task UpdateAsync_ReArmsASettledOnceJob()
+    {
+        // W3 left no re-arming surface: EnableAsync is not exposed by ScheduledJobToolHandler (list/create/
+        // update/delete only) and there is no scheduled-job view model, so a settled one-off was permanently
+        // inert while the update tool still reported success — "move that job to Friday at 10:00" did
+        // nothing, and list_scheduled_jobs (GetActiveAsync) no longer showed the row to say so.
+        var job = await _service.CreateAsync("TEST_OnceReArm", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
+        Assert.Equal(ScheduledJobStatus.Completed, (await _service.GetAsync(job.Id))!.Status);
+
+        await _service.UpdateAsync(job.Id, timeOfDay: new TimeOnly(10, 0), recurrence: RecurrenceType.Daily);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, after!.Status);
+        Assert.True(after.NextFireAt > DateTime.Now, "a re-scheduled job must have a future NextFireAt");
+        Assert.Contains(await _service.GetActiveAsync(), j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DoesNotReArmASettledJobWhoseFireTimeIsStillPast()
+    {
+        // The narrowing: UpdateAsync has no specificDate parameter, so a settled one-off keeps its PAST
+        // instant. Re-arming that would fire the job on the very next tick — for an AgentTask, an unattended
+        // run nobody asked for. It stays settled until the caller actually re-schedules it forward.
+        var job = await _service.CreateAsync("TEST_OnceStalePast", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-2));
+        await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
+
+        await _service.UpdateAsync(job.Id, name: "TEST_OnceStalePast_renamed");
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Completed, after!.Status);
+        Assert.Equal("TEST_OnceStalePast_renamed", after.Name);
+        Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DoesNotReviveADisabledJob()
+    {
+        // Disabled is the user's explicit off switch, owned by DisableAsync/EnableAsync. An unrelated field
+        // edit must not silently switch a job back on.
+        var job = await _service.CreateAsync("TEST_DisabledEdit", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
+        await _service.DisableAsync(job.Id);
+
+        await _service.UpdateAsync(job.Id, name: "TEST_DisabledEdit_renamed");
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Disabled, after!.Status);
+        Assert.Equal("TEST_DisabledEdit_renamed", after.Name);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DoesNotReviveAFailureRetiredJob()
+    {
+        // Failed carries a ConsecutiveFailures budget that only EnableAsync resets, so re-arming it here
+        // would put a broken job straight back into the due query with its failure count intact.
+        var job = await _service.CreateAsync("TEST_FailedEdit", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        await _service.MarkRunFailedAsync(job.Id, "boom");
+        Assert.Equal(ScheduledJobStatus.Failed, (await _service.GetAsync(job.Id))!.Status);
+
+        await _service.UpdateAsync(job.Id, timeOfDay: new TimeOnly(10, 0));
+
+        Assert.Equal(ScheduledJobStatus.Failed, (await _service.GetAsync(job.Id))!.Status);
+    }
+
     private async Task ForceUpdatedAtAsync(Guid id, DateTime when)
     {
         var conn = _ctx.GetConnection();

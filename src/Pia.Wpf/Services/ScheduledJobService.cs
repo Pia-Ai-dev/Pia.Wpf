@@ -116,6 +116,23 @@ public class ScheduledJobService : IScheduledJobService
         existing.NextFireAt = ComputeNextFireAt(existing, DateTime.Now);
         existing.UpdatedAt = DateTime.Now;
 
+        // W3 follow-up: re-scheduling a SETTLED job re-arms it. Since a fired Once job is left
+        // Status='Completed' (deff7d9), an update that recomputed NextFireAt into the future was writing a
+        // schedule the due query — `NextFireAt <= @Now AND Status = 'Active'` — can never pick up: the tool
+        // reported success, list_scheduled_jobs (GetActiveAsync) no longer showed the row at all, and
+        // "move that job to Friday at 10:00" silently did nothing. Before W3 the same edit worked, because a
+        // fired Once job stayed Active.
+        //
+        // Two deliberate narrowings. ONLY Completed is re-armed: Disabled is the user's explicit off switch
+        // (DisableAsync/EnableAsync own it) and Failed is a retirement whose ConsecutiveFailures budget only
+        // EnableAsync resets, so neither may be flipped on by an unrelated field edit. And only when the
+        // recomputed NextFireAt is in the FUTURE: UpdateAsync cannot move SpecificDate (there is no
+        // parameter for it), so a settled one-off keeps its past instant, and re-arming that would fire the
+        // job again on the very next tick — an unattended AgentTask run nobody asked for. Re-scheduling it
+        // forward (a new recurrence, or a Once row with no SpecificDate, which clamps forward) does re-arm.
+        if (existing.Status == ScheduledJobStatus.Completed && existing.NextFireAt > DateTime.Now)
+            existing.Status = ScheduledJobStatus.Active;
+
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -123,7 +140,7 @@ public class ScheduledJobService : IScheduledJobService
             SET Name=@Name, Query=@Query, Recurrence=@Recurrence, TimeOfDay=@TimeOfDay,
                 DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month,
                 GrantedTools=@GrantedTools, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
-                UpdatedAt=@UpdatedAt
+                Status=@Status, UpdatedAt=@UpdatedAt
             WHERE Id=@Id
             """;
         command.Parameters.AddWithValue("@Id", existing.Id.ToString());
@@ -137,10 +154,11 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@GrantedTools", SerializeGrantedTools(existing.GrantedTools));
         command.Parameters.AddWithValue("@ProviderId", existing.ProviderId.HasValue ? (object)existing.ProviderId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@NextFireAt", existing.NextFireAt.ToString("O"));
+        command.Parameters.AddWithValue("@Status", existing.Status.ToString());
         command.Parameters.AddWithValue("@UpdatedAt", existing.UpdatedAt.ToString("O"));
 
         await command.ExecuteNonQueryAsync();
-        _logger.LogInformation("Updated scheduled job {Id}", id);
+        _logger.LogInformation("Updated scheduled job {Id} ({Status})", id, existing.Status);
     }
 
     public async Task DeleteAsync(Guid id)
