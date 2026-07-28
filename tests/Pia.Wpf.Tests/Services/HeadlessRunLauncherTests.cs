@@ -213,13 +213,20 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var deadline = DateTime.UtcNow.AddSeconds(10);
+        var state = (await _runs.GetAsync(runId, ct))!.State;
         while (DateTime.UtcNow < deadline)
         {
-            var state = (await _runs.GetAsync(runId, ct))!.State;
+            state = (await _runs.GetAsync(runId, ct))!.State;
             if (state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
                 break;
             await Task.Delay(20, ct);
         }
+
+        // Assert terminality rather than just giving up at the deadline: a caller that only asserts a tool
+        // was NOT executed would otherwise pass VACUOUSLY when the resume dispatched no step at all (e.g. a
+        // pre-dispatch failure re-parks the run) — the grant-refusal legs would report green on a resume
+        // path that is entirely broken.
+        Assert.Contains(state, new[] { AgentRunState.Completed, AgentRunState.Failed, AgentRunState.Cancelled });
 
         // Drains the resume task (StopAsync awaits every in-flight run) so nothing touches the
         // SqliteContext after the test disposes it.
@@ -426,6 +433,9 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await AwaitRunSettledAsync(writeLauncher, parked2.Id);
 
         Assert.False(writeProbe.Executed); // the floor is a FALLBACK, never an addition to a known set
+        // Positive counter-assertion: the gate was actually consulted and refused, so this leg cannot pass
+        // just because the resume never dispatched a step.
+        Assert.Contains("not granted", writeProbe.GateResult ?? string.Empty);
 
         var grantProbe = new ToolProbe("create_todo");
         var (grantLauncher, _) = BuildLauncher(probe: grantProbe);
@@ -486,6 +496,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await AwaitRunSettledAsync(deleteLauncher, parked.Id);
 
         Assert.False(deleteProbe.Executed);
+        Assert.Contains("not granted", deleteProbe.GateResult ?? string.Empty); // the gate refused it — not "never asked"
 
         var writeProbe = new ToolProbe("write_file");
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);

@@ -113,6 +113,47 @@ public class ChatSessionManagerTests
         Assert.Null(session);
     }
 
+    [Fact]
+    public async Task StartPlannedTurn_PersistsAnEmptyGrantEnvelope_SoParkingCannotWidenAuthority()
+    {
+        // D1's producer half for the INTERACTIVE origin. An interactive run holds no standing write grant:
+        // write_file is not auto-approve eligible, so every write raises an action card the user clicks. A
+        // resume, though, runs UNATTENDED through HeadlessRunLauncher, and a run whose PolicyJson is null
+        // falls back to the {write_file} resume floor — so parking would ESCALATE the run to card-free
+        // writes with nobody watching. The create must persist the honoured-EMPTY envelope instead.
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful" };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+
+        AgentRunCreateRequest? captured = null;
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                captured = ci.Arg<AgentRunCreateRequest>();
+                return Task.FromResult(new AgentRun
+                {
+                    Id = Guid.NewGuid(),
+                    ChatId = captured.ChatId,
+                    RunShape = RunShape.Planned,
+                    State = AgentRunState.Planning,
+                    Goal = captured.Goal,
+                });
+            });
+
+        await sut.StartPlannedTurnAsync(session, "do the thing");
+
+        Assert.NotNull(captured);
+        var restored = Pia.Services.HeadlessRunLauncher.TryRestoreGrantEnvelope(captured!.PolicyJson);
+        Assert.NotNull(restored);  // an envelope IS written — null would resume on the {write_file} floor
+        Assert.Empty(restored!);   // and it grants nothing, which is exactly what the launch granted
+    }
+
     // ---- C2: a parked run must stay reachable after a restart (ActiveRunId is runtime-only) ----
 
     private static AgentRun Run(Guid chatId, AgentRunState state, DateTime createdAt, RunShape shape = RunShape.Planned) =>

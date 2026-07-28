@@ -579,8 +579,20 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // the interactive first-turn persist below is fire-and-forget and not safe before CreateAsync.
             await PersistAsync(session);
 
+            // D1 producer for the INTERACTIVE origin. An interactive run holds no standing write grant at
+            // all: every write_file goes through an action card the user clicks (write_file is not in the
+            // auto-approve allowlist — ChatSession's gate). A resume, however, runs UNATTENDED through
+            // HeadlessRunLauncher, and a run with no envelope falls back to the {write_file} resume floor —
+            // so parking would ESCALATE this run's authority to card-free writes with nobody watching.
+            // Persist the honoured-empty envelope instead: the resume restores "no write grants", which is
+            // exactly what the launch had. Bookkeeping, so a serializer fault must not fail the turn
+            // (guardrail 1); null degrades to the floor, which is the documented fallback.
+            string? policyJson = null;
+            try { policyJson = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to serialize the interactive run's grant envelope"); }
+
             var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
-                session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText));
+                session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText, PolicyJson: policyJson));
 
             // Surface the run id onto the session so the active VM can embed the run-progress panel
             // (§15.1). Raised on the UI thread (this branch runs on it), so the VM handler is safe.

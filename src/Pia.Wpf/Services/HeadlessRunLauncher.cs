@@ -206,7 +206,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             finally
             {
                 if (acquired) _slots.Release();
-                _inflight.TryRemove(run.Id, out _);
+                RemoveInflight(run.Id, runCts);
                 runCts.Dispose();
             }
         }, CancellationToken.None);
@@ -276,54 +276,54 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
             var completion = Task.Run(async () =>
             {
-            var acquired = false;
-            var started = false;
-            try
-            {
-                await _slots.WaitAsync(runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
-                acquired = true;
+                var acquired = false;
+                var started = false;
+                try
+                {
+                    await _slots.WaitAsync(runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
+                    acquired = true;
 
-                using var scope = _scopeFactory.CreateScope();
-                var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
-                var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-                executor.Initialize(workspaceRoot: null, grants, provider);
-                started = true;
-                await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token, resume: true)
-                    .ConfigureAwait(false); // resume:true → no re-plan, drains the Pending remainder (D1)
-            }
-            catch (OperationCanceledException)
-            {
-                // Cancel during resume before entering the orchestrator: the run was CAS'd to Running by the
-                // claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
-                if (!started)
-                {
-                    try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to re-park interrupted resume {RunId}", run.Id); }
+                    using var scope = _scopeFactory.CreateScope();
+                    var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
+                    var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
+                    executor.Initialize(workspaceRoot: null, grants, provider);
+                    started = true;
+                    await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token, resume: true)
+                        .ConfigureAwait(false); // resume:true → no re-plan, drains the Pending remainder (D1)
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Resume of run {RunId} faulted", run.Id);
-                if (started)
+                catch (OperationCanceledException)
                 {
-                    try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
-                    catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted resume {RunId}", run.Id); }
+                    // Cancel during resume before entering the orchestrator: the run was CAS'd to Running by
+                    // the claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
+                    if (!started)
+                    {
+                        try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to re-park interrupted resume {RunId}", run.Id); }
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
-                    // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
-                    // rather than dangling Running (guardrail 1/3).
-                    try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
-                    catch (Exception px) { _logger.LogWarning(px, "Failed to re-park interrupted resume {RunId}", run.Id); }
+                    _logger.LogError(ex, "Resume of run {RunId} faulted", run.Id);
+                    if (started)
+                    {
+                        try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                        catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted resume {RunId}", run.Id); }
+                    }
+                    else
+                    {
+                        // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
+                        // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
+                        // rather than dangling Running (guardrail 1/3).
+                        try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+                        catch (Exception px) { _logger.LogWarning(px, "Failed to re-park interrupted resume {RunId}", run.Id); }
+                    }
                 }
-            }
-            finally
-            {
-                if (acquired) _slots.Release();
-                _inflight.TryRemove(run.Id, out _);
-                runCts.Dispose();
-            }
+                finally
+                {
+                    if (acquired) _slots.Release();
+                    RemoveInflight(run.Id, runCts);
+                    runCts.Dispose();
+                }
             }, CancellationToken.None);
 
             _inflight[run.Id] = (runCts, completion);
@@ -434,6 +434,20 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             var dir = Path.Combine(_runsBaseDir, runId.ToString());
             TryDeleteDirectory(dir);
         }
+    }
+
+    /// <summary>
+    /// Drops this dispatch's own <see cref="_inflight"/> entry — and ONLY its own. The same run id is
+    /// dispatched more than once over its life (launch → park → resume, and a resume can start while the
+    /// previous dispatch is still unwinding its <c>finally</c>), so an unconditional
+    /// <c>TryRemove(run.Id)</c> lets a finishing dispatch evict a LIVE one: shutdown would then neither
+    /// cancel nor await that run (G-4). The dispatch's CTS is its identity — it is created per dispatch and
+    /// disposed right after this call.
+    /// </summary>
+    private void RemoveInflight(Guid runId, CancellationTokenSource ownCts)
+    {
+        if (_inflight.TryGetValue(runId, out var entry) && ReferenceEquals(entry.Cts, ownCts))
+            _inflight.TryRemove(new KeyValuePair<Guid, (CancellationTokenSource Cts, Task Task)>(runId, entry));
     }
 
     private void TryDeleteDirectory(string dir)
