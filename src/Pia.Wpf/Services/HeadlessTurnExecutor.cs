@@ -229,6 +229,23 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             new(ChatRole.User, instruction),
         };
 
+        // ONE compaction seam covers all three Headless entry points: ExecuteStepAsync, the R10
+        // degrade turn (RunSingleTurnFallbackAsync) — both funnel through here — and the RESUME path.
+        // Resume needs no seam of its own: its growth enters via the transcript re-seed into
+        // _messages in BeginRunAsync (every prior segment's full assistant reply, verbatim, unbounded
+        // in total steps ever run), and the copy above is what gets compacted.
+        //
+        // HARD GUARDRAIL, satisfied by construction: this cannot reach persistence. _messages is a
+        // List<ChatMessage> and _persisted is a List<SyncAssistantChatMessage> — different types,
+        // appended in parallel, never cross-read, no object aliasing — and the only route from
+        // executor state to the DB is BuildChatSnapshot's `Messages = [.. _persisted]`, which serves
+        // both the interim per-step write and the terminal one. A pass over a ChatMessage list is
+        // therefore type-incapable of shrinking the transcript, so a resume still replays it in full.
+        var contextBudget = AgentContextBudget.From(_provider);
+        var request = await AgentContextCompactor
+            .CompactAsync(exchangeMessages, contextBudget, _logger, ct)
+            .ConfigureAwait(false);
+
         // Per-step ambient bracket (§16 R9): run-stable TaskId, no file-chip sink (headless has no UI).
         // Set here — not in BeginRunAsync — so the AsyncLocal is live inside THIS exchange's flow.
         var previousAmbient = TokenMapAmbient.Current;
@@ -240,7 +257,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         BackgroundAssistantTurnRunner.ExchangeResult exchange;
         try
         {
-            exchange = await _engine.RunExchangeAsync(exchangeMessages, _provider, _setup, _grantedWrites, ct)
+            exchange = await _engine.RunExchangeAsync(request, _provider, _setup, _grantedWrites, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

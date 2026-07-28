@@ -325,6 +325,13 @@ public sealed class ChatSession : IDisposable
             var fullSystemPrompt = turnSetup.SystemPrompt;
             var tools = turnSetup.Tools;
 
+            // This INTERACTIVE list is deliberately never compacted — "no interactive regression" is a
+            // standing guardrail, and agent context compaction is an agent-run mechanism only. The
+            // guardrail is structural rather than a runtime flag: this builder is a separate,
+            // synchronous method body from the step builder (BuildStepChatMessagesAsync), which is the
+            // only one that compacts. Keep them separate. Compacting here would silently change
+            // ordinary chats, and the library's bytes/4 scoring counts an image attachment at its raw
+            // byte size, which would make an image-bearing chat an active regression.
             var chatMessages = new List<ChatMessage>
             {
                 new(ChatRole.System, fullSystemPrompt)
@@ -664,7 +671,7 @@ public sealed class ChatSession : IDisposable
         {
             ct.ThrowIfCancellationRequested();
 
-            var chatMessages = BuildStepChatMessages(spec, ctx, assistantMessage);
+            var chatMessages = await BuildStepChatMessagesAsync(spec, ctx, assistantMessage, ct);
             usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
                 spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct);
             succeeded = true;
@@ -733,8 +740,15 @@ public sealed class ChatSession : IDisposable
     /// Builds the model context for a step exchange: the system prompt + the full visible transcript
     /// so far (excluding the streaming target) + one trailing EPHEMERAL User-role step instruction.
     /// The instruction message is a local — it is never added to <see cref="Messages"/> / persisted (§13.7).
+    /// <para>
+    /// The finished list is compacted against the provider's context budget so a long run cannot
+    /// overflow the window and fail a step. This is the LIVE half of executor parity — LiveTurnExecutor
+    /// builds no message list of its own (it only posts to <see cref="RunStepTurnAsync"/>), so the
+    /// parity seam lives here. Compaction returns a NEW list and never touches
+    /// <see cref="Messages"/>, so the displayed and persisted transcript is unaffected.
+    /// </para>
     /// </summary>
-    private List<ChatMessage> BuildStepChatMessages(StepTurnSpec spec, RunContext ctx, AssistantMessage assistantMessage)
+    private async Task<List<ChatMessage>> BuildStepChatMessagesAsync(StepTurnSpec spec, RunContext ctx, AssistantMessage assistantMessage, CancellationToken ct)
     {
         var chatMessages = new List<ChatMessage>
         {
@@ -761,7 +775,10 @@ public sealed class ChatSession : IDisposable
         }
 
         chatMessages.Add(new ChatMessage(ChatRole.User, instruction));
-        return chatMessages;
+
+        // No ConfigureAwait(false) — this session is UI-thread-affine (see the class remarks), and the
+        // caller resumes into code that touches Messages and the streaming target message.
+        return await AgentContextCompactor.CompactAsync(chatMessages, AgentContextBudget.From(spec.Provider), _logger, ct);
     }
 
     private async Task<object?> HandleToolCallWithStatus(FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled)

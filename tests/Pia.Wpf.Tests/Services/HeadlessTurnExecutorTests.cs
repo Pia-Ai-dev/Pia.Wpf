@@ -797,4 +797,106 @@ public sealed class HeadlessTurnExecutorTests
         var final = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
         Assert.Contains(final!.Messages, m => m.Content == "FOREIGN CHATTER");
     }
+
+    /// <summary>A step reply long enough that a handful of them blows a small context window.</summary>
+    private static string LongReply(int turn) => $"reply {turn}: " + new string('x', 8_000);
+
+    /// <summary>
+    /// Re-stubs the harness AI with long replies and records the message list each turn was actually
+    /// asked to send. The real BackgroundAssistantTurnRunner sits between the executor and this stub,
+    /// so the captured argument IS the request the provider would have seen — compaction included.
+    /// </summary>
+    private static List<List<ChatMessage>> CaptureLongReplyRequests(DurabilityHarness h)
+    {
+        var captured = new List<List<ChatMessage>>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return DriveText(LongReply(++h.Turns));
+            });
+        return captured;
+    }
+
+    [Fact]
+    public async Task CompactionShrinksTheRequest_ButPersistedTranscriptKeepsEveryStepReply()
+    {
+        // THE HARD-GUARDRAIL TEST. Compaction operates on the request copy only: the outgoing list may
+        // shrink, but _persisted — and therefore the E2 per-step durable transcript — must be
+        // bit-for-bit what it would have been without compaction.
+        using var h = new DurabilityHarness();
+        h.Provider.MaxContextWindowTokens = 4_000;
+        h.Provider.MaxOutputTokens = 1_000;
+        var run = await h.NewRunAsync("the goal");
+        var planner = new FakePlanner(Steps(6));
+        var captured = CaptureLongReplyRequests(h);
+
+        await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
+            new RunProfile(MaxSteps: 6, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(6, captured.Count);
+
+        // The last step's request would carry system + goal + 5 prior replies + the step instruction
+        // if nothing compacted. It must be smaller than that.
+        var last = captured[^1];
+        Assert.True(last.Count < 8,
+            $"the final step's request must be compacted, but it still carried {last.Count} messages");
+
+        // ...and the pin held: the system prompt and the run goal are still the first two messages.
+        Assert.Equal(ChatRole.System, last[0].Role);
+        Assert.Equal(ChatRole.User, last[1].Role);
+        Assert.Equal("the goal", last[1].Text);
+
+        // The durable transcript is UNAFFECTED: goal + one verbatim reply per step.
+        var persisted = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.Equal(7, persisted!.Messages.Count);
+        Assert.Equal("the goal", persisted.Messages[0].Content);
+        for (var turn = 1; turn <= 6; turn++)
+            Assert.Equal(LongReply(turn), persisted.Messages[turn].Content);
+    }
+
+    [Fact]
+    public async Task ParkAndResumeUnderCompaction_TranscriptMatchesTheUncompactedBaseline()
+    {
+        // Resume growth enters through the transcript re-seed into _messages, so resume is the path
+        // most likely to compact — and the path where a persistence leak would be least visible.
+        // Asserts the PERSISTED FACT rather than the mechanism: the same park/resume scenario run with
+        // a tiny window and with no window at all must leave byte-identical transcripts.
+        var budget = new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
+
+        async Task<List<string>> ParkAndResumeAsync(int? window, int? maxOutput)
+        {
+            using var h = new DurabilityHarness();
+            h.Provider.MaxContextWindowTokens = window;
+            h.Provider.MaxOutputTokens = maxOutput;
+            var run = await h.NewRunAsync("the goal");
+            var planner = new FakePlanner(Steps(4));
+            CaptureLongReplyRequests(h);
+
+            await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, budget,
+                TestContext.Current.CancellationToken);
+
+            var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+            Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
+
+            Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, TestContext.Current.CancellationToken));
+            await h.Orchestrator(planner).RunAsync(parked, h.NewExecutor(), h.Persona, h.Provider, budget,
+                TestContext.Current.CancellationToken, resume: true);
+
+            var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+            Assert.Equal(AgentRunState.Completed, final!.State);
+
+            var chat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+            return chat!.Messages.Select(m => $"{m.Role}:{m.Content}").ToList();
+        }
+
+        var compacted = await ParkAndResumeAsync(4_000, 1_000);
+        var baseline = await ParkAndResumeAsync(null, null);
+
+        Assert.Equal(baseline.Count, compacted.Count);
+        Assert.Equal(baseline, compacted);
+    }
 }
