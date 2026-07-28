@@ -404,6 +404,12 @@ public sealed class HeadlessTurnExecutorTests
         public readonly IAiClientService Ai = Substitute.For<IAiClientService>();
         public int Turns;
 
+        /// <summary>
+        /// Runs on the run's own thread at the START of turn N, i.e. AFTER BeginRunAsync seeded the executor's
+        /// transcript and BEFORE that turn's interim persist. The seam a "second writer" needs (W2).
+        /// </summary>
+        public Action<int>? OnTurn;
+
         public DurabilityHarness()
         {
             _dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
@@ -416,7 +422,12 @@ public sealed class HeadlessTurnExecutorTests
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                     Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-                .Returns(_ => DriveText("reply " + (++Turns)));
+                .Returns(_ =>
+                {
+                    var turn = ++Turns;
+                    OnTurn?.Invoke(turn);
+                    return DriveText("reply " + turn);
+                });
         }
 
         /// <summary>A fresh executor — models the launcher's per-run (and per-resume) DI scope.</summary>
@@ -645,5 +656,145 @@ public sealed class HeadlessTurnExecutorTests
         await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
 
         Assert.Null(ctx.WorkingSubpath);
+    }
+
+    // ---- W2b: the run's chat write rebases on the persisted rows before every write ----
+
+    [Fact]
+    public async Task ForeignRowWrittenAfterBeginRun_SurvivesTheInterimAndTerminalWrites()
+    {
+        // W2 direction B: BeginRunAsync takes ONE snapshot of the chat and every later write is a full
+        // replace from it, so a row another writer added afterwards used to be DELETED — silently, because
+        // there is no FK from AgentSteps to the message rows. The rebase absorbs it instead.
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var planner = new FakePlanner(Steps(2));
+        var foreignId = Guid.NewGuid();
+
+        h.OnTurn = turn =>
+        {
+            if (turn != 1) return;
+            // A second writer (a live session's full replace) appends a row mid-run.
+            var stored = h.Chats.GetAsync(run.ChatId).GetAwaiter().GetResult()!;
+            stored.Messages.Add(new SyncAssistantChatMessage
+            {
+                Id = foreignId,
+                Role = "user",
+                Content = "typed by the user mid-run",
+                Timestamp = DateTime.UtcNow,
+            });
+            h.Chats.SaveAsync(stored).GetAwaiter().GetResult();
+        };
+
+        await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        var contents = final!.Messages.Select(m => m.Content).ToList();
+        Assert.Contains("typed by the user mid-run", contents);   // the foreign row survived BOTH writes
+        Assert.Contains("the goal", contents);                    // and the run's own rows are all still there
+        Assert.Contains("reply 1", contents);
+        Assert.Contains("reply 2", contents);
+
+        // The run's own message Ids are unchanged, and every step slice still resolves to a live row —
+        // resolved against the ROWS, not against a substring (nothing in production reads these ids, so this
+        // is the only place the dangling-id symptom can be caught).
+        var runRow = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        var ids = final.Messages.Select(m => m.Id).ToHashSet();
+        Assert.Equal(AgentRunState.Completed, runRow!.State);
+        foreach (var step in runRow.Plan)
+        {
+            Assert.Contains(step.FirstMessageId!.Value, ids);
+            Assert.Contains(step.LastMessageId!.Value, ids);
+        }
+        Assert.Contains(runRow.FirstMessageId!.Value, ids);
+        Assert.Contains(runRow.LastMessageId!.Value, ids);
+    }
+
+    [Fact]
+    public async Task Rebase_AddsReadsNotWrites_SaveCallsPerParkedTwoStepRunIsStillTwo()
+    {
+        // The cost guard for W2b: if the rebase were ever implemented as "write, merge, re-write", SaveCalls
+        // would double. It must be a READ before the single write.
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var planner = new FakePlanner(Steps(4));
+        var budget = new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
+        var savesBefore = h.Chats.SaveCalls;
+        var getsBefore = h.Chats.GetCalls;
+
+        await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, budget,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, h.Chats.SaveCalls - savesBefore);
+        // One GetAsync for BeginRunAsync's seeding + one per write. Asserted as a lower bound so the exact
+        // read cadence stays free to change; the WRITE count above is the one that is pinned.
+        Assert.True(h.Chats.GetCalls - getsBefore >= 3,
+            $"expected the rebase to add reads, saw {h.Chats.GetCalls - getsBefore}");
+    }
+
+    [Fact]
+    public async Task ChatDeletedMidRun_RebaseIsANoOp_AndTheRunStillCompletes()
+    {
+        // Guardrail 1: the rebase lives inside PersistChatAsync's try. A chat deleted mid-run reads back null,
+        // the rebase absorbs nothing, and the run writes its own transcript exactly as before.
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var planner = new FakePlanner(Steps(2));
+
+        h.OnTurn = turn =>
+        {
+            if (turn != 1) return;
+            h.Chats.DeleteAsync(run.ChatId).GetAwaiter().GetResult();
+        };
+
+        await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var runRow = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, runRow!.State);
+    }
+
+    [Fact]
+    public async Task Rebase_DoesNotFeedForeignRowsIntoTheRunsModelContext()
+    {
+        // Executor parity: the run's plan is fixed at BeginRunAsync, so a foreign turn must reach the DURABLE
+        // transcript but NEVER the model context. The exchange messages are [system, goal, ...replies,
+        // step instruction] — a mid-run user row must not appear among them.
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var planner = new FakePlanner(Steps(2));
+        var seenByModel = new List<string>();
+
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var turn = ++h.Turns;
+                foreach (var m in (IList<ChatMessage>)ci[0])
+                    seenByModel.Add(m.Text ?? string.Empty);
+                if (turn == 1)
+                {
+                    var stored = h.Chats.GetAsync(run.ChatId).GetAwaiter().GetResult()!;
+                    stored.Messages.Add(new SyncAssistantChatMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        Role = "user",
+                        Content = "FOREIGN CHATTER",
+                        Timestamp = DateTime.UtcNow,
+                    });
+                    h.Chats.SaveAsync(stored).GetAwaiter().GetResult();
+                }
+                return DriveText("reply " + turn);
+            });
+
+        await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("FOREIGN CHATTER", seenByModel);
+        // ...while still reaching the durable transcript.
+        var final = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.Contains(final!.Messages, m => m.Content == "FOREIGN CHATTER");
     }
 }
