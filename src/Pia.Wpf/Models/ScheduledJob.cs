@@ -4,7 +4,7 @@ namespace Pia.Models;
 // headless Planned agent run via IHeadlessRunLauncher (§17.1); Research (0) keeps the existing runner.
 public enum ScheduledJobKind { Research, AgentTask }
 
-// Persisted as TEXT (Enum.Parse, ScheduledJobService.cs:390) but crosses the sync wire as an int
+// Persisted as TEXT (Enum.Parse in ScheduledJobService.MapJob) but crosses the sync wire as an int
 // (SyncMapper.cs:905/:923 -> :953/:974, cast back with no Enum.IsDefined validation), so this enum is
 // APPEND-ONLY: never reorder, never remove. A peer on an older build receives the unknown ordinal 3,
 // casts it to an undefined ScheduledJobStatus and stores it verbatim as the string "3" — which its
