@@ -47,6 +47,7 @@ public class SqliteContext : IDisposable
         {
             _connection = new SqliteConnection(_connectionString);
             _connection.Open();
+            ApplyConnectionPragmas(_connection);
             EnsureSchema();
         }
         else if (_connection.State != System.Data.ConnectionState.Open)
@@ -55,6 +56,37 @@ public class SqliteContext : IDisposable
         }
 
         return _connection;
+    }
+
+    /// <summary>
+    /// Set on the shared connection's FIRST open, before <see cref="EnsureSchema"/> runs a single statement.
+    /// <para>
+    /// <c>journal_mode=WAL</c> is a PERSISTENT PER-FILE setting, so applying it where the file is first
+    /// opened also covers every dedicated connection to the same file (<c>AgentRunService</c>,
+    /// <c>FlowPersistenceStore</c>, <c>IngestStateStore</c>, <c>AssistantChatService</c>). It is what makes a
+    /// second writer survivable at all: in the default rollback-journal mode a write transaction holds
+    /// RESERVED from its first write and EXCLUSIVE through COMMIT, so any write from another connection
+    /// during that window fails IMMEDIATELY with "database is locked" — and WAL additionally lets this
+    /// connection's READERS proceed while another connection's writer is mid-transaction.
+    /// </para>
+    /// <para>
+    /// <c>busy_timeout</c> is PER-CONNECTION and must therefore be set on every handle separately (the
+    /// dedicated stores each set their own). Without it here, moving the chat store onto its own connection
+    /// would merely convert a swallowed intra-connection <see cref="InvalidOperationException"/> into an
+    /// instant SQLITE_BUSY for the ten other services still sharing this connection (TodoService,
+    /// MemoryService, ReminderService, ScheduledJobService, KanbanColumnService, PersonaService,
+    /// PluginService, HistoryService, VaultIndexer, LintService) — none of which handles it.
+    /// </para>
+    /// </summary>
+    private static void ApplyConnectionPragmas(SqliteConnection connection)
+    {
+        using var journal = connection.CreateCommand();
+        journal.CommandText = "PRAGMA journal_mode=WAL;";
+        journal.ExecuteNonQuery();
+
+        using var busy = connection.CreateCommand();
+        busy.CommandText = "PRAGMA busy_timeout=3000;";
+        busy.ExecuteNonQuery();
     }
 
     private void EnsureSchema()
