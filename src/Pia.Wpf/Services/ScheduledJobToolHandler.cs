@@ -40,7 +40,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                 "Parse the user's natural language request into structured fields. " +
                 "Examples: 'every weekday at 8am check Tesla stock news' -> create 5 separate Weekly jobs (Mon-Fri) since 'weekday' is not a single recurrence type. " +
                 "'every Monday research crypto trends' -> recurrence=Weekly, dayOfWeek=Monday, timeOfDay=08:00. " +
-                "The background turn may use read-only tools freely. Write tools are DENIED unless the user explicitly grants them: pass their EXACT tool names in grantedTools (comma-separated). Grantable write tools include: create_object/update_object/append_to_list/delete_object (memory), create_todo/update_todo/complete_todo/delete_todo (todos), write_file/delete_file (files). Only grant writes the user clearly asked for. " +
+                "The background turn may use read-only tools freely. Write tools are DENIED unless the user explicitly grants them: pass their EXACT tool names in grantedTools (comma-separated). Grantable write tools include: create_object/update_object/append_to_list/delete_object (memory), create_todo/update_todo/complete_todo/delete_todo (todos), write_file/delete_file (files). Only grant writes the user clearly asked for. Destructive tools from EXTERNAL (MCP) plugins can never be granted to a scheduled job — they are stripped from the grant list. " +
                 "providerName is optional - if omitted, the provider mapped to Assistant mode at fire time is used. " +
                 "KIND: 'research' (default) runs the query once at fire time and saves a summary as a chat; 'agent' runs a multi-step agent task that plans and can use granted write tools to actually carry out work. If the user has NOT made clear which of the two they want, do NOT call this tool - ask a single clarifying question (e.g. 'Should this just research and summarize, or actually carry out the task?') and call once they answer."),
 
@@ -159,7 +159,20 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         int? dayOfMonth = dayOfMonthStr is not null && int.TryParse(dayOfMonthStr, out var dom) ? dom : null;
         int? month = monthStr is not null && int.TryParse(monthStr, out var m) ? m : null;
         DateTime? specificDate = specificDateStr is not null && DateTime.TryParse(specificDateStr, out var sd) ? sd : null;
-        var grantedTools = ParseGrantedTools(grantedToolsStr);
+        var (grantedTools, rejectedTools) = ParseGrantedTools(grantedToolsStr);
+        if (rejectedTools.Count > 0)
+            _logger.LogWarning("create_scheduled_research refused {Count} destructive external grant(s): {Tools}",
+                rejectedTools.Count, string.Join(", ", rejectedTools));
+
+        // The grant set that will ACTUALLY be in force at fire time. An AgentTask job with no explicit
+        // grant silently receives the launcher's default, so render that default instead of omitting the
+        // line — the user must be able to see on the approval card what the job may write. A Research job
+        // with no grants genuinely is read-only, so it keeps no line at all.
+        var effectiveGrants = grantedTools.Count > 0
+            ? grantedTools
+            : kind == ScheduledJobKind.AgentTask
+                ? HeadlessRunRequest.DefaultGrantedWrites.ToList()
+                : [];
 
         var providerId = await ResolveProviderIdAsync(providerName);
 
@@ -173,7 +186,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         if (dayOfMonth.HasValue) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_DayOfMonth"]}: {dayOfMonth}");
         if (month.HasValue) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Month"]}: {month}");
         if (specificDate.HasValue) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Date"]}: {specificDate:d}");
-        if (grantedTools.Count > 0) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_GrantedTools"]}: {string.Join(", ", grantedTools)}");
+        if (effectiveGrants.Count > 0) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_GrantedTools"]}: {string.Join(", ", effectiveGrants)}");
         if (providerId.HasValue && !string.IsNullOrWhiteSpace(providerName))
             detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Provider"]}: {providerName}");
 
@@ -186,7 +199,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             {
                 var created = await _jobs.CreateAsync(name, query, recurrence, timeOfDay,
                     dayOfWeek, dayOfMonth, month, specificDate, providerId, grantedTools, kind);
-                return _localizationService.Format("Tool_ScheduledResearch_Exec_Created", created.Id, created.NextFireAt.ToString("g"));
+                return _localizationService.Format("Tool_ScheduledResearch_Exec_Created", created.Id, created.NextFireAt.ToString("g"))
+                       + DescribeRejectedGrants(rejectedTools);
             });
     }
 
@@ -221,7 +235,13 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         int? dayOfMonth = dayOfMonthStr is not null && int.TryParse(dayOfMonthStr, out var dom) ? dom : null;
         int? month = monthStr is not null && int.TryParse(monthStr, out var m) ? m : null;
         // null = leave existing grants unchanged; empty/whitespace string = clear all grants.
-        IReadOnlyCollection<string>? grantedTools = grantedToolsStr is not null ? ParseGrantedTools(grantedToolsStr) : null;
+        List<string>? grantedTools = null;
+        List<string> rejectedTools = [];
+        if (grantedToolsStr is not null)
+            (grantedTools, rejectedTools) = ParseGrantedTools(grantedToolsStr);
+        if (rejectedTools.Count > 0)
+            _logger.LogWarning("update_scheduled_research refused {Count} destructive external grant(s): {Tools}",
+                rejectedTools.Count, string.Join(", ", rejectedTools));
 
         var providerId = await ResolveProviderIdAsync(providerName);
 
@@ -234,7 +254,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             {
                 await _jobs.UpdateAsync(id, name, query, recurrence, timeOfDay,
                     dayOfWeek, dayOfMonth, month, providerId, grantedTools);
-                return _localizationService.Format("Tool_ScheduledResearch_Exec_Updated", id);
+                return _localizationService.Format("Tool_ScheduledResearch_Exec_Updated", id)
+                       + DescribeRejectedGrants(rejectedTools);
             });
     }
 
@@ -295,7 +316,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         [Description("Day of month for Monthly/Yearly recurrence (1-31)")] string? dayOfMonth = null,
         [Description("Month for Yearly recurrence (1-12)")] string? month = null,
         [Description("Specific date for Once recurrence in yyyy-MM-dd format")] string? specificDate = null,
-        [Description("Comma-separated EXACT write-tool names to allow at fire time (e.g. 'create_object,create_todo,write_file'). Omit for read-only. Only grant writes the user explicitly asked for.")] string? grantedTools = null,
+        [Description("Comma-separated EXACT write-tool names to allow at fire time (e.g. 'create_object,create_todo,write_file'). Omit for read-only ('agent' jobs still get write_file). Only grant writes the user explicitly asked for. Destructive external (MCP) tool names are refused.")] string? grantedTools = null,
         [Description("Optional substring of an AI provider name to pin")] string? providerName = null,
         [Description("Job type: 'research' (default) = one-shot query saved as a chat; 'agent' = a multi-step agent task that can use granted write tools. If the user hasn't made the type clear, ASK before calling.")] string? kind = null) => "";
 
@@ -320,12 +341,46 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
     private static string DeleteScheduledSchema(
         [Description("The ID of the scheduled job to delete")] string id) => "";
 
-    private static List<string> ParseGrantedTools(string? csv) =>
-        string.IsNullOrWhiteSpace(csv)
-            ? []
-            : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                 .ToList();
+    /// <summary>
+    /// Model-facing note appended to the tool result when grants were stripped, so the assistant can tell
+    /// the user instead of silently creating a weaker job than they asked for. Not a UI string (the tool
+    /// result is consumed by the model), so it stays English like the other inline results here.
+    /// </summary>
+    private static string DescribeRejectedGrants(List<string> rejected)
+        => rejected.Count == 0
+            ? string.Empty
+            : $" NOTE: refused these grants — {string.Join(", ", rejected)} — because a destructive external "
+              + "(MCP) tool can never be granted to an unattended job. Tell the user; do not retry.";
+
+    /// <summary>
+    /// Parse the comma-separated grant list and STRIP every presumed-external destructive name (B2): a
+    /// scheduled job must not be able to carry a standing grant for an irreversible third-party action into
+    /// an unattended fire, so the escalation is refused where it would be created rather than only at the
+    /// gate. Our own destructive tools (delete_file, delete_todo, …) are untouched — granting those is the
+    /// user's explicit, auditable choice. Returns the accepted list plus whatever was rejected, so the
+    /// approval card and the tool result can both tell the truth about the grant set that will be used.
+    /// </summary>
+    private static (List<string> Accepted, List<string> Rejected) ParseGrantedTools(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv))
+            return ([], []);
+
+        var names = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var accepted = new List<string>();
+        var rejected = new List<string>();
+        foreach (var name in names)
+        {
+            if (ToolPermissionService.IsPresumedExternalDeleteLike(name))
+                rejected.Add(name);
+            else
+                accepted.Add(name);
+        }
+
+        return (accepted, rejected);
+    }
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {

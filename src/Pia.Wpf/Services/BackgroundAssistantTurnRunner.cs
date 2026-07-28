@@ -324,13 +324,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
     /// <summary>
     /// Headless tool dispatch: reads (tools that return an immediate result) always run;
-    /// writes (tools that return a pending action) run only if explicitly granted to this job.
+    /// writes (tools that return a pending action) run only if explicitly granted to this job — with one
+    /// FLOOR no grant can lift: a destructive EXTERNAL (MCP) tool never runs unattended (B2).
     /// </summary>
     private async Task<object?> HandleToolCallAsync(FunctionCallContent toolCall, HashSet<string> grantedWrites)
     {
-        // MCP now flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
+        // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
         // deferred PluginToolCall (below), so an ungranted MCP call is denied by the pending-action branch
-        // and a granted one executes. No MCP-specific pre-check is needed here anymore.
+        // and a granted NON-destructive one executes. No MCP-specific pre-check is needed here anymore.
         var route = await _pluginService.RouteToolCallAsync(toolCall);
         if (route is null)
         {
@@ -346,6 +347,20 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         {
             if (grantedWrites.Contains(pending.ToolName))
             {
+                // Destructive-external FLOOR (B2): a delete-like EXTERNAL (MCP) tool is refused even when it
+                // IS in the grant set. There is no user here to confirm an irreversible action against a
+                // third-party system, and an MCP tool's name and effect are server-defined — a grant list
+                // authored days earlier (or a server that renamed its tools) cannot be treated as informed
+                // consent for that. Scoped to external tools ONLY: IsDeleteLike("delete_file") is true for
+                // the BUILT-IN file tool, and an explicit grant for a built-in delete is the user's own
+                // auditable decision, so it still executes.
+                if (ToolPermissionService.IsDeleteLike(pending.ToolName) && IsExternalTool(pending.ToolName))
+                {
+                    _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);
+                    return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
+                           + "even when granted. Do not retry.";
+                }
+
                 _logger.LogInformation("Background turn executing granted write tool {ToolName}", pending.ToolName);
                 return await pending.Execute();
             }
@@ -355,6 +370,25 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         }
 
         return "Tool call handled.";
+    }
+
+    /// <summary>
+    /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the
+    /// interactive gate uses — never from a name pattern and never from the pending action, so a renamed or
+    /// spoofed tool cannot talk its way out of the destructive-external floor. A derivation fault fails
+    /// CLOSED (treat as external): the only consequence is extra friction on a granted built-in delete.
+    /// </summary>
+    private bool IsExternalTool(string toolName)
+    {
+        try
+        {
+            return _pluginService.IsMcpTool(toolName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not derive MCP-ness for tool {ToolName}; treating it as external", toolName);
+            return true;
+        }
     }
 
     private static string DeriveTitle(string prompt)

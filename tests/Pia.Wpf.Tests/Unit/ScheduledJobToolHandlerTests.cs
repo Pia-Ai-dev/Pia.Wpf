@@ -86,6 +86,168 @@ public class ScheduledJobToolHandlerTests
     }
 
     [Fact]
+    public async Task CreateScheduledResearch_StripsDestructiveExternalGrants_AndTellsTheModel()
+    {
+        // B2 at grant CREATION: a destructive external (MCP) tool name can never become a standing grant on
+        // a scheduled job, so the escalation cannot be created in the first place. The card the user
+        // approves shows only the grants that will actually be used.
+        var jobs = new FakeJobService();
+        var handler = CreateHandler(jobs);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["name"] = "Nightly tidy",
+            ["query"] = "tidy things",
+            ["recurrence"] = "Daily",
+            ["timeOfDay"] = "02:00",
+            ["grantedTools"] = "write_file, purge_records, delete_issue, create_todo"
+        };
+
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(pending);
+        Assert.Contains("write_file", pending!.Details ?? string.Empty);
+        Assert.DoesNotContain("purge_records", pending.Details ?? string.Empty);
+        Assert.DoesNotContain("delete_issue", pending.Details ?? string.Empty);
+
+        var execResult = Assert.IsType<string>(await handler.ExecutePendingActionAsync(pending));
+        Assert.Contains("purge_records", execResult);   // the model is told what was refused
+        Assert.Contains("delete_issue", execResult);
+
+        Assert.Equal(new[] { "write_file", "create_todo" }, jobs.Created[0].GrantedTools);
+    }
+
+    [Fact]
+    public async Task CreateScheduledResearch_KeepsBuiltInDeleteGrants()
+    {
+        // Only PRESUMED-EXTERNAL destructive names are stripped: our own delete tools stay grantable, so an
+        // explicitly requested "delete my old exports nightly" job still works.
+        var jobs = new FakeJobService();
+        var handler = CreateHandler(jobs);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["name"] = "Nightly cleanup",
+            ["query"] = "delete stale exports",
+            ["recurrence"] = "Daily",
+            ["timeOfDay"] = "02:00",
+            ["grantedTools"] = "delete_file, delete_todo, forget"
+        };
+
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args), TestContext.Current.CancellationToken);
+        var execResult = Assert.IsType<string>(await handler.ExecutePendingActionAsync(pending!));
+
+        Assert.Equal(new[] { "delete_file", "delete_todo", "forget" }, jobs.Created[0].GrantedTools);
+        Assert.DoesNotContain("refused", execResult);
+    }
+
+    [Fact]
+    public async Task CreateScheduledResearch_AgentKindWithoutGrants_SurfacesTheEffectiveDefaultOnTheCard()
+    {
+        // A1/B2: an agent job with no explicit grant silently receives the launcher's default write access
+        // at fire time. The approval card must say so instead of omitting the line — and the default it
+        // renders is the single source of truth, so it can never drift from what the launcher applies.
+        var jobs = new FakeJobService();
+        var handler = CreateHandler(jobs);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["name"] = "Nightly agent",
+            ["query"] = "carry out the work",
+            ["recurrence"] = "Daily",
+            ["timeOfDay"] = "02:00",
+            ["kind"] = "agent"
+        };
+
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(pending);
+        Assert.Contains("Tool_ScheduledResearch_Detail_GrantedTools", pending!.Details ?? string.Empty);
+        foreach (var tool in HeadlessRunRequest.DefaultGrantedWrites)
+            Assert.Contains(tool, pending.Details ?? string.Empty);
+        Assert.DoesNotContain("delete_file", pending.Details ?? string.Empty);
+
+        // The job row itself still stores no explicit grants — the launcher applies its default.
+        await handler.ExecutePendingActionAsync(pending);
+        Assert.Empty(jobs.Created[0].GrantedTools);
+    }
+
+    [Fact]
+    public async Task CreateScheduledResearch_ResearchKindWithoutGrants_ShowsNoGrantLine()
+    {
+        // A research job with no grants genuinely is read-only at fire time, so it must NOT advertise the
+        // agent default.
+        var jobs = new FakeJobService();
+        var handler = CreateHandler(jobs);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["name"] = "Morning briefing",
+            ["query"] = "news",
+            ["recurrence"] = "Daily",
+            ["timeOfDay"] = "08:00"
+        };
+
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(pending);
+        Assert.DoesNotContain("Tool_ScheduledResearch_Detail_GrantedTools", pending!.Details ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task UpdateScheduledResearch_StripsDestructiveExternalGrants()
+    {
+        var jobs = new FakeJobService();
+        var existing = new ScheduledJob
+        {
+            Name = "Job",
+            Query = "q",
+            Recurrence = RecurrenceType.Daily,
+            TimeOfDay = new TimeOnly(8, 0),
+            NextFireAt = DateTime.Now.AddHours(1)
+        };
+        jobs.SeedActive(existing);
+        var handler = CreateHandler(jobs);
+
+        var args = new Dictionary<string, object?>
+        {
+            ["id"] = existing.Id.ToString(),
+            ["grantedTools"] = "create_todo, remove_page"
+        };
+
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("update_scheduled_research", args), TestContext.Current.CancellationToken);
+        var execResult = Assert.IsType<string>(await handler.ExecutePendingActionAsync(pending!));
+
+        Assert.Equal(new[] { "create_todo" }, jobs.LastUpdatedGrants);
+        Assert.Contains("remove_page", execResult);
+    }
+
+    [Fact]
+    public async Task UpdateScheduledResearch_WithoutGrantedToolsArg_LeavesGrantsUnchanged()
+    {
+        // The null-vs-empty contract survives the rejected-grant plumbing: no grantedTools argument must
+        // still mean "leave the existing grants alone", not "clear them".
+        var jobs = new FakeJobService();
+        var existing = new ScheduledJob
+        {
+            Name = "Job",
+            Query = "q",
+            Recurrence = RecurrenceType.Daily,
+            TimeOfDay = new TimeOnly(8, 0),
+            NextFireAt = DateTime.Now.AddHours(1)
+        };
+        jobs.SeedActive(existing);
+        var handler = CreateHandler(jobs);
+
+        var args = new Dictionary<string, object?> { ["id"] = existing.Id.ToString(), ["name"] = "Renamed" };
+
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("update_scheduled_research", args), TestContext.Current.CancellationToken);
+        await handler.ExecutePendingActionAsync(pending!);
+
+        Assert.Null(jobs.LastUpdatedGrants);
+    }
+
+    [Fact]
     public async Task UpdateScheduledResearch_WithInvalidGuid_ReturnsErrorResultNotPendingAction()
     {
         var handler = CreateHandler();
@@ -161,6 +323,9 @@ public class ScheduledJobToolHandlerTests
         public List<Guid> Deleted { get; } = new();
         public List<Guid> Updated { get; } = new();
 
+        /// <summary>Grant list handed to the last UpdateAsync — null means "leave existing grants alone".</summary>
+        public IReadOnlyCollection<string>? LastUpdatedGrants { get; private set; }
+
         private readonly List<ScheduledJob> _all = new();
         private readonly List<ScheduledJob> _active = new();
 
@@ -214,6 +379,7 @@ public class ScheduledJobToolHandlerTests
             IReadOnlyCollection<string>? grantedTools = null)
         {
             Updated.Add(id);
+            LastUpdatedGrants = grantedTools;
             return Task.CompletedTask;
         }
 

@@ -198,6 +198,134 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
+    public async Task GrantedDestructiveMcpTool_IsRefused_EvenThoughItIsGranted()
+    {
+        // B2: the destructive-external FLOOR applies unattended too. A delete-like EXTERNAL tool is refused
+        // even when its name IS in the grant set — there is no user here to confirm an irreversible action
+        // on a third-party system, and MCP names/semantics are server-defined.
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending("purge_records", () => executed = true)));
+        h.Plugins.IsMcpTool("purge_records").Returns(true);
+
+        var runner = h.Build([Call("purge_records")]);
+        var result = await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            GrantedWriteTools = ["purge_records"],
+        }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);  // a refusal is a tool result, never a turn failure
+        Assert.False(executed);
+        var returned = Assert.IsType<string>(h.HandlerResults[0].Returned);
+        Assert.Contains("Denied", returned);
+        Assert.Contains("external", returned);
+        Assert.Contains("Do not retry", returned);
+    }
+
+    [Theory]
+    [InlineData("remove_page")]
+    [InlineData("drop_table")]
+    [InlineData("wipe_index")]
+    [InlineData("erase_all")]
+    [InlineData("destroy_env")]
+    [InlineData("truncate_log")]
+    [InlineData("delete_issue")]
+    public async Task GrantedDestructiveMcpTool_TheWholeStemFamilyIsRefused(string toolName)
+    {
+        // B1's broadened stem set is what the unattended gate consults, so a "purge/drop/wipe/…" MCP tool
+        // is no longer one-click grantable-as-a-class and then auto-executed forever.
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending(toolName, () => executed = true)));
+        h.Plugins.IsMcpTool(toolName).Returns(true);
+
+        var runner = h.Build([Call(toolName)]);
+        await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            GrantedWriteTools = [toolName],
+        }, CancellationToken.None);
+
+        Assert.False(executed);
+    }
+
+    [Fact]
+    public async Task GrantedBuiltInDeleteFile_StillExecutes_TheFloorIsExternalOnly()
+    {
+        // CRITICAL scoping check: IsDeleteLike("delete_file") is TRUE, but delete_file is the BUILT-IN file
+        // tool (IsMcpTool false). An explicit grant for it is the user's own auditable decision, so the
+        // floor must not break the explicitly-granted built-in delete path.
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending("delete_file", () => executed = true)));
+        h.Plugins.IsMcpTool("delete_file").Returns(false);
+
+        var runner = h.Build([Call("delete_file")]);
+        var result = await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            GrantedWriteTools = ["delete_file"],
+        }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.True(executed);
+        Assert.Equal("write-done", h.HandlerResults[0].Returned);
+    }
+
+    [Fact]
+    public async Task GrantedNonDestructiveMcpTool_StillExecutes()
+    {
+        // The other half of the scoping: being external is not enough to trip the floor — the name must
+        // also be delete-like. A granted read/write MCP tool keeps running unattended.
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending("create_issue", () => executed = true)));
+        h.Plugins.IsMcpTool("create_issue").Returns(true);
+
+        var runner = h.Build([Call("create_issue")]);
+        await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            GrantedWriteTools = ["create_issue"],
+        }, CancellationToken.None);
+
+        Assert.True(executed);
+    }
+
+    [Fact]
+    public async Task DeleteLikeTool_WhenMcpDerivationThrows_FailsClosed_AndTheTurnSurvives()
+    {
+        // Degrade path: MCP-ness is re-derived from the plugin service at the gate. If that derivation
+        // faults we treat the tool as external and refuse (fail closed) — and the turn still completes.
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending("delete_file", () => executed = true)));
+        h.Plugins.IsMcpTool(Arg.Any<string>()).Returns(_ => throw new InvalidOperationException("routes locked"));
+
+        var runner = h.Build([Call("delete_file")]);
+        var result = await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            GrantedWriteTools = ["delete_file"],
+        }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.False(executed);
+        Assert.Contains("Denied", Assert.IsType<string>(h.HandlerResults[0].Returned));
+    }
+
+    [Fact]
     public async Task GrantCheck_IsCaseInsensitive()
     {
         var h = new Harness();
