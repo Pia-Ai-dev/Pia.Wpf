@@ -49,12 +49,21 @@ public sealed class AgentPlannerTests
         return new Dictionary<string, object?> { ["steps"] = arr };
     }
 
+    private readonly List<string> _systemPrompts = new();
+
+    /// <summary>The system prompt of the LAST planning attempt.</summary>
+    private string LastPrompt => _systemPrompts[^1];
+
     private void ReturnsPlan(Dictionary<string, object?>? emitArgs, UsageDetails? usage = null)
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => PlanStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs, usage));
+            .Returns(ci =>
+            {
+                _systemPrompts.Add(ci.ArgAt<IList<ChatMessage>>(0)[0].Text ?? string.Empty);
+                return PlanStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs, usage);
+            });
     }
 
     [Fact]
@@ -181,6 +190,41 @@ public sealed class AgentPlannerTests
         Assert.True(degraded.FallBackToSingleTurn);
         Assert.Equal(22, degraded.Usage!.InputTokenCount); // replan + its firm retry
         Assert.Equal(8, degraded.Usage.OutputTokenCount);
+    }
+
+    // ---- E2: a resumed run's replan judge must be told the pre-pause steps already ran ----
+
+    [Fact]
+    public async Task ReplanAsync_SeededPrePauseStep_IsPresentedAsExecuted_NotAsMissing()
+    {
+        ReturnsPlan(Steps(("Recover", "finish the goal", null)));
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+        ctx.SeedCompletedSteps(new[]
+        {
+            new CompletedStepSummary(0, "Early", "ran before the pause", Succeeded: true, VisibleText: string.Empty,
+                ExpectedArtifact: "early.md", FromEarlierSegment: true),
+        });
+
+        await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("Completed so far", LastPrompt);
+        Assert.Contains("[ok] Early: ran before the pause", LastPrompt);
+        Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastPrompt); // ran, text just unavailable
+        Assert.Contains("do NOT repeat these steps", LastPrompt);
+    }
+
+    [Fact]
+    public async Task ReplanAsync_LiveStep_CarriesNoEarlierSegmentNote()
+    {
+        ReturnsPlan(Steps(("Recover", "finish the goal", null)));
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+        ctx.RecordStep(new AgentStep { Ordinal = 0, Title = "Live", Intent = "ran in this segment" },
+            new StepTurnResult(true, false, null, "visible", null, Guid.NewGuid(), Guid.NewGuid()));
+
+        await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("[ok] Live: ran in this segment", LastPrompt);
+        Assert.DoesNotContain(CompletedStepSummary.EarlierSegmentNote, LastPrompt);
     }
 
     [Fact]

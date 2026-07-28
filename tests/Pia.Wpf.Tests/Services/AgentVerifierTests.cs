@@ -334,6 +334,34 @@ public sealed class AgentVerifierTests : IDisposable
         Assert.Empty(_systemPrompts); // never reached the provider
     }
 
+    [Fact]
+    public async Task VerifyAsync_ResumedRun_SeededStepIsPresentedAsExecuted_AndItsArtifactIsProbed()
+    {
+        // E2 + H1 together: a pre-pause step has no recoverable result text, so the prompt must say the
+        // text is unavailable (NOT present it as a step that produced nothing) — while its declared
+        // artifact is probed exactly like a post-resume step's.
+        WriteFile("early.md", 512);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+        ctx.SeedCompletedSteps(new[]
+        {
+            new CompletedStepSummary(0, "Early", "ran before the pause", Succeeded: true, VisibleText: string.Empty,
+                ExpectedArtifact: "early.md", FromEarlierSegment: true),
+        });
+        ctx.RecordStep(
+            new AgentStep { Ordinal = 1, Title = "Late", Intent = "ran after the resume", ExpectedArtifact = "late.md" },
+            new StepTurnResult(true, false, null, "post-resume text", null, Guid.NewGuid(), Guid.NewGuid()));
+
+        await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastPrompt);
+        Assert.Contains("result: post-resume text", LastPrompt);
+        Assert.Contains("declared: early.md → found (512 B, modified ", LastPrompt); // seeded step IS probed
+        Assert.Contains("declared: late.md → NOT FOUND", LastPrompt);
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;

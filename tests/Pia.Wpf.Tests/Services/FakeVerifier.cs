@@ -13,6 +13,12 @@ internal sealed class FakeVerifier : IAgentVerifier
     public int VerifyCalls { get; private set; }
     public bool ThrowOnVerify { get; set; }
 
+    /// <summary>
+    /// Snapshot of <c>ctx.CompletedSteps</c> per verify call — what the critic actually got to judge
+    /// (E2: a resumed run must not present only its post-resume slice).
+    /// </summary>
+    public List<IReadOnlyList<CompletedStepSummary>> SeenCompletedSteps { get; } = new();
+
     /// <summary>When set, the verify turn cancels this source (as ChatSession.Cancel() would) and then
     /// honors the linked run token — so the orchestrator's SafeVerify observes a genuine run cancel.</summary>
     public CancellationTokenSource? CancelSessionOnVerify { get; set; }
@@ -20,6 +26,7 @@ internal sealed class FakeVerifier : IAgentVerifier
     public Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
     {
         VerifyCalls++;
+        SeenCompletedSteps.Add(ctx.CompletedSteps.ToList());
         if (CancelSessionOnVerify is { } src)
         {
             src.Cancel();               // user cancel fires during the in-flight verify turn

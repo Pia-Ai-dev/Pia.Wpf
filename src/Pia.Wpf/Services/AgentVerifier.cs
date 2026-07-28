@@ -139,6 +139,8 @@ public sealed class AgentVerifier : IAgentVerifier
                 sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {c.Title}: {c.Intent}");
                 if (!string.IsNullOrWhiteSpace(c.VisibleText))
                     sb.AppendLine($"    result: {c.VisibleText}");
+                else if (c.FromEarlierSegment) // E2: a resumed run's pre-pause steps carry no result text
+                    sb.AppendLine($"    result: {CompletedStepSummary.EarlierSegmentNote}");
             }
         }
         if (artifactFacts is not null)

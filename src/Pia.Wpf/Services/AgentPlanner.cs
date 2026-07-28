@@ -192,9 +192,13 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine("A step in the current plan failed. Revise the REMAINING plan to recover and still accomplish the goal.");
         if (ctx.CompletedSteps.Count > 0)
         {
-            sb.AppendLine("Completed so far:");
+            sb.AppendLine("Completed so far (do NOT repeat these steps):");
             foreach (var c in ctx.CompletedSteps)
+            {
                 sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {c.Title}: {c.Intent}");
+                if (c.FromEarlierSegment) // E2: seeded pre-pause step — it ran, its text is just not here
+                    sb.AppendLine($"    {CompletedStepSummary.EarlierSegmentNote}");
+            }
         }
         if (!string.IsNullOrWhiteSpace(failure))
             sb.AppendLine($"Failure detail: {failure}");

@@ -41,12 +41,16 @@ public sealed class AgentRunOrchestratorTests
         public Queue<PlanResult> Replans { get; } = new();
         public int ReplanCalls { get; private set; }
 
+        /// <summary>Snapshot of <c>ctx.CompletedSteps</c> per replan — what the replan judge got to see (E2).</summary>
+        public List<IReadOnlyList<CompletedStepSummary>> SeenCompletedSteps { get; } = new();
+
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
             => Task.FromResult(Plans.Count > 0 ? Plans.Dequeue() : PlanResult.Fallback);
 
         public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
         {
             ReplanCalls++;
+            SeenCompletedSteps.Add(ctx.CompletedSteps.ToList());
             return Task.FromResult(Replans.Count > 0 ? Replans.Dequeue() : PlanResult.Fallback);
         }
     }
@@ -129,17 +133,23 @@ public sealed class AgentRunOrchestratorTests
     }
 
     /// <summary>
-    /// Real run store with a POISONED <see cref="AddUsageAsync"/> — the run-level (plan/replan/verify)
-    /// accrual seam. Everything else delegates, so the run really executes; only the bookkeeping write
-    /// faults (guardrail 1: bookkeeping is never on the critical path).
+    /// Real run store with individually POISONABLE bookkeeping seams: the run-level usage accrual
+    /// (plan/replan/verify) and the run read the resume context seed uses. Everything else delegates, so
+    /// the run really executes — guardrail 1: bookkeeping is never on the critical path.
     /// </summary>
-    private sealed class ThrowingUsageRunService : IAgentRunService
+    private sealed class FaultyRunService : IAgentRunService
     {
         private readonly IAgentRunService _inner;
-        public ThrowingUsageRunService(IAgentRunService inner) => _inner = inner;
+        public FaultyRunService(IAgentRunService inner) => _inner = inner;
+
+        public bool FailAddUsage { get; set; }
+        public bool FailGet { get; set; }
 
         public Task AddUsageAsync(Guid runId, Guid? stepId, UsageDetails usage, CancellationToken ct = default)
-            => throw new InvalidOperationException("ledger boom");
+            => FailAddUsage ? throw new InvalidOperationException("ledger boom") : _inner.AddUsageAsync(runId, stepId, usage, ct);
+
+        public Task<AgentRun?> GetAsync(Guid runId, CancellationToken ct = default)
+            => FailGet ? throw new InvalidOperationException("read boom") : _inner.GetAsync(runId, ct);
 
         public Task<AgentRun> CreateAsync(AgentRunCreateRequest request, CancellationToken ct = default) => _inner.CreateAsync(request, ct);
         public Task SetStateAsync(Guid runId, AgentRunState state, CancellationToken ct = default) => _inner.SetStateAsync(runId, state, ct);
@@ -151,7 +161,6 @@ public sealed class AgentRunOrchestratorTests
         public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default) => _inner.PauseAsync(runId, reason, ct);
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => _inner.TryBeginResumeAsync(runId, ct);
         public Task<int> FailInterruptedRunsAsync(CancellationToken ct = default) => _inner.FailInterruptedRunsAsync(ct);
-        public Task<AgentRun?> GetAsync(Guid runId, CancellationToken ct = default) => _inner.GetAsync(runId, ct);
         public Task<IReadOnlyList<AgentRun>> GetByChatAsync(Guid chatId, CancellationToken ct = default) => _inner.GetByChatAsync(chatId, ct);
         public Task<bool> ChatHasPlannedRunAsync(Guid chatId, CancellationToken ct = default) => _inner.ChatHasPlannedRunAsync(chatId, ct);
         public Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default) => _inner.ReplaceStepsAsync(runId, steps, ct);
@@ -798,13 +807,141 @@ public sealed class AgentRunOrchestratorTests
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false, Usage(40, 12)));
         var exec = new RecordingExecutor(_ => Ok());
         var orchestrator = new AgentRunOrchestrator(
-            new ThrowingUsageRunService(h.Runs), planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+            new FaultyRunService(h.Runs) { FailAddUsage = true }, planner, new FakeVerifier(),
+            NullLogger<AgentRunOrchestrator>.Instance);
 
         await orchestrator.RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.False(exec.EndFailed);
+    }
+
+    // ---- E2: a resumed run's critic/replan must see the PRE-PAUSE work, not only the post-resume slice ----
+
+    private static List<AgentStep> MakeStepsWithArtifacts(params (string Title, string Intent, string? Artifact)[] steps)
+    {
+        var result = new List<AgentStep>();
+        for (var i = 0; i < steps.Length; i++)
+        {
+            result.Add(new AgentStep
+            {
+                Id = Guid.Empty, Ordinal = i, Title = steps[i].Title, Intent = steps[i].Intent,
+                ExpectedArtifact = steps[i].Artifact, Status = AgentStepStatus.Pending,
+            });
+        }
+        return result;
+    }
+
+    [Fact]
+    public async Task Run_Resume_VerifierSeesPrePauseSteps_AndTheSeedDoesNotSpendTheFreshBudget()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeStepsWithArtifacts(
+            ("A", "s1", "one.md"), ("B", "s2", "two.md"), ("C", "s3", "three.md")), false));
+
+        // First run: budget = 2 steps → s1, s2 Done, then park before s3 (verify never runs at a pause).
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var firstVerifier = new FakeVerifier();
+        await h.BuildOrchestrator(planner, firstVerifier).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, ct))!.State);
+        Assert.Empty(firstVerifier.SeenCompletedSteps);
+
+        // Resume with the SAME 2-step budget: the seeded pre-pause steps must not be billed against it,
+        // otherwise the run would re-park instantly instead of draining s3.
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var verifier = new FakeVerifier();
+        var exec2 = new RecordingExecutor(_ => Ok("post-resume text"));
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec2, Persona(), Provider(), profile, ct, resume: true);
+
+        Assert.Equal(new[] { "s3" }, exec2.Executed);
+        Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
+
+        // The critic judged all three steps: the two seeded ones (marked as an earlier segment, carrying
+        // their declared artifacts, with no recoverable result text) plus the post-resume one.
+        var seen = Assert.Single(verifier.SeenCompletedSteps);
+        Assert.Equal(new[] { 0, 1, 2 }, seen.Select(s => s.Ordinal).ToArray());
+        Assert.Equal(new[] { "A", "B", "C" }, seen.Select(s => s.Title).ToArray());
+        Assert.Equal(new[] { "one.md", "two.md", "three.md" }, seen.Select(s => s.ExpectedArtifact).ToArray());
+        Assert.Equal(new[] { true, true, false }, seen.Select(s => s.FromEarlierSegment).ToArray());
+        Assert.All(seen.Take(2), s => Assert.True(s.Succeeded));
+        Assert.All(seen.Take(2), s => Assert.Equal(string.Empty, s.VisibleText)); // not recoverable (yet)
+        Assert.Equal("post-resume text", seen[2].VisibleText);
+    }
+
+    [Fact]
+    public async Task Run_Resume_ReplanAfterPause_SeesPrePauseStepsToo()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3fail")), false));
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("D", "s4")), false));
+
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        await h.BuildOrchestrator(planner).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, ct))!.State);
+
+        // Resume: s3 fails → replan. The replan judge must be told about s1/s2 (which it cannot see in
+        // this process any more) so it does not re-plan work that already happened.
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec = new RecordingExecutor(step => step.Intent == "s3fail" ? Fail("boom") : Ok());
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), fresh, ct, resume: true);
+
+        var seen = Assert.Single(planner.SeenCompletedSteps);
+        Assert.Equal(new[] { "A", "B", "C" }, seen.Select(s => s.Title).ToArray());
+        Assert.Equal(new[] { true, true, false }, seen.Select(s => s.FromEarlierSegment).ToArray());
+    }
+
+    [Fact]
+    public async Task Run_Resume_SeedReadFaults_StillDrainsAndCompletes()
+    {
+        // Guardrail 1: the seed is bookkeeping. A failing read degrades to the old partial picture — it
+        // must never fail the resume.
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        await h.BuildOrchestrator(planner).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct);
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+
+        var verifier = new FakeVerifier();
+        var exec2 = new RecordingExecutor(_ => Ok());
+        var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var orchestrator = new AgentRunOrchestrator(
+            new FaultyRunService(h.Runs) { FailGet = true }, planner, verifier, NullLogger<AgentRunOrchestrator>.Instance);
+
+        await orchestrator.RunAsync(run, exec2, Persona(), Provider(), fresh, ct, resume: true);
+
+        Assert.Equal(new[] { "s3" }, exec2.Executed);
+        Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
+        var seen = Assert.Single(verifier.SeenCompletedSteps);
+        Assert.Single(seen); // degraded to the post-resume slice only — but the run still finished cleanly
+    }
+
+    [Fact]
+    public async Task Run_FreshRun_SeedsNothing_NoEarlierSegmentMarkers()
+    {
+        // A non-resume run must be untouched by E2 (and must not pay for the extra read).
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var verifier = new FakeVerifier();
+
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(),
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var seen = Assert.Single(verifier.SeenCompletedSteps);
+        Assert.All(seen, s => Assert.False(s.FromEarlierSegment));
     }
 
     [Fact]

@@ -72,6 +72,13 @@ public sealed class AgentRunOrchestrator
         {
             await executor.BeginRunAsync(run, ctx, cts.Token).ConfigureAwait(false);
 
+            // E2: RunContext is built fresh per RunAsync, so without this a resumed run's critic (and any
+            // replan) would judge the goal on ONLY the post-resume steps — the pre-pause work, and with H1
+            // its declared artifacts, would be invisible. Seed the persisted Done steps before anything
+            // reads ctx.CompletedSteps.
+            if (resume)
+                await SafeSeedResumeContext(run.Id, ctx, cts.Token).ConfigureAwait(false);
+
             // D1: a resume must NOT re-plan. ReplaceStepsAsync writes the plan verbatim and does not
             // preserve Done steps, so re-planning here would wipe the persisted Done+Pending steps and
             // re-run the whole goal from scratch. On resume we skip Planning/PlanAsync/ReplaceSteps and
@@ -297,6 +304,34 @@ public sealed class AgentRunOrchestrator
             _logger.LogWarning(ex, "Verify degraded to accept for run {RunId}", runId);
             return VerdictResult.Accept;
         }
+    }
+
+    /// <summary>
+    /// E2: rebuilds the pre-pause half of a resumed run's context from the persisted plan. Seeds the Done
+    /// steps' title/intent/declared artifact and marks them as an earlier segment — their visible result
+    /// text is NOT recoverable here (it lives in the chat transcript, not on the step row), so the prompts
+    /// say so instead of implying those steps never ran. Failure-isolated (guardrail 1): a read fault
+    /// leaves the run with the old partial picture rather than failing the resume.
+    /// </summary>
+    private async Task SafeSeedResumeContext(Guid runId, RunContext ctx, CancellationToken ct)
+    {
+        try
+        {
+            var persisted = await _runService.GetAsync(runId, ct).ConfigureAwait(false);
+            var done = persisted?.Plan
+                .Where(s => s.Status == AgentStepStatus.Done)
+                .OrderBy(s => s.Ordinal)
+                .Select(s => new CompletedStepSummary(
+                    s.Ordinal, s.Title, s.Intent ?? string.Empty, Succeeded: true, VisibleText: string.Empty,
+                    s.ExpectedArtifact, FromEarlierSegment: true))
+                .ToList();
+            if (done is null || done.Count == 0)
+                return;
+
+            ctx.SeedCompletedSteps(done);
+            _logger.LogInformation("Resume seeded {Count} pre-pause step(s) into the context of run {RunId}", done.Count, runId);
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (resume context seed) failed for {RunId}", runId); }
     }
 
     // Run-level usage accrual (stepId: null) for the loop's non-step turns — plan, replan and verify

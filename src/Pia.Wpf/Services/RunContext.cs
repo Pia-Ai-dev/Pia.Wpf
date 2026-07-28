@@ -12,9 +12,24 @@ namespace Pia.Services;
 /// judging the model's self-summary alone (H1); the loop already holds the step, so this is strictly
 /// cheaper than re-reading the persisted plan at verify time.
 /// </param>
+/// <param name="FromEarlierSegment">
+/// True for a step seeded from persistence on RESUME — it ran in an earlier segment of this same run,
+/// before the budget pause (E2). Its <paramref name="VisibleText"/> is not recoverable from the run
+/// context today, so prompts must say the result text is unavailable rather than imply the step never
+/// happened.
+/// </param>
 public sealed record CompletedStepSummary(
     int Ordinal, string Title, string Intent, bool Succeeded, string VisibleText,
-    string? ExpectedArtifact = null);
+    string? ExpectedArtifact = null, bool FromEarlierSegment = false)
+{
+    /// <summary>
+    /// What every prompt puts where a <see cref="FromEarlierSegment"/> step's result text would go. One
+    /// shared string so the critic and the replan judge are told the same thing: the step RAN, its text
+    /// just is not in this context — the alternative (an empty result) reads like a step that did nothing.
+    /// </summary>
+    public const string EarlierSegmentNote =
+        "(completed before this run was paused for budget; its result text is not available in this context — treat it as executed, not as missing)";
+}
 
 /// <summary>
 /// Adds up the provider usage of the extra (non-step) turns the run loop spends — the plan/replan
@@ -80,4 +95,17 @@ public sealed class RunContext
             step.Ordinal, step.Title, step.Intent ?? string.Empty, result.Succeeded, result.VisibleText,
             step.ExpectedArtifact));
     }
+
+    /// <summary>
+    /// E2: seeds the steps that completed BEFORE a budget pause into a resumed run's fresh context, so
+    /// the verifier and any replan judge the whole run instead of only the post-resume slice. Inserted at
+    /// the front — an earlier segment always precedes this segment's steps.
+    /// <para>
+    /// Deliberately does NOT touch <see cref="StepsExecuted"/>: a resume is granted a FRESH step budget
+    /// (that is what makes it a resume and not a continuation of the exhausted one), so counting the
+    /// earlier segment against it would re-park the run immediately.
+    /// </para>
+    /// </summary>
+    public void SeedCompletedSteps(IEnumerable<CompletedStepSummary> earlier)
+        => _completed.InsertRange(0, earlier);
 }
