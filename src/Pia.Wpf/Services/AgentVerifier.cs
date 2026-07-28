@@ -269,7 +269,7 @@ public sealed class AgentVerifier : IAgentVerifier
             if (reported >= MaxReportedDeclarations) { skipped++; continue; }
             reported++;
 
-            var declaration = Truncate(c.ExpectedArtifact!.Trim());
+            var declaration = Truncate(Flatten(c.ExpectedArtifact!.Trim()));
             var candidates = FileCandidates(declaration);
 
             string outcome;
@@ -374,6 +374,14 @@ public sealed class AgentVerifier : IAgentVerifier
 
         return Path.GetFileNameWithoutExtension(token).Length > 0; // a bare ".md" is not a file reference
     }
+
+    /// <summary>
+    /// Keeps a declaration on ONE line. The block's value is that every line in it is a fact the app
+    /// established; a declaration is model/user text, so a newline inside it must not be able to forge an
+    /// extra "- step N … → found" line.
+    /// </summary>
+    private static string Flatten(string text) =>
+        text.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
 
     private static string Truncate(string text) =>
         text.Length <= MaxDeclarationChars ? text : text[..MaxDeclarationChars] + "…";
