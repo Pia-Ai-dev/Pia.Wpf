@@ -187,72 +187,172 @@ public class ScheduledJobService : IScheduledJobService
     public async Task MarkRunCompleteAsync(Guid id, Guid resultEntryId)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        var nextFire = ComputeNextFireAt(existing, DateTime.Now);
 
-        // LastFiredAt / LastResultEntryId / NextFireAt / ConsecutiveFailures are device-local
-        // execution state; don't bump UpdatedAt so this doesn't trigger a wasteful re-sync.
+        // W3: a one-off job has no next occurrence to re-arm into, so its single firing SETTLES the
+        // schedule instead of recomputing NextFireAt. The predicate is Recurrence — never Kind (that
+        // would retire every Daily AgentTask job after one run) and never "does the recomputed
+        // NextFireAt still look past" (that would catch a hand-edited recurring row and MISS the quiet
+        // face of the bug: Once with SpecificDate == null falls through to the Daily expression in
+        // RecurrenceCalculator, which DOES clamp forward, so such a job never looks past and used to
+        // repeat every day forever). Shape mirrors ReminderService.DismissAsync: the branch chooses
+        // only the CommandText, shared parameters are bound after it, and it stays ONE statement and
+        // ONE round-trip — this call site is not try/catch-wrapped, so extra work here could abort the
+        // tick's remaining due jobs (guardrail 1).
+        var settleOnce = existing.Recurrence == RecurrenceType.Once;
+        DateTime? nextFire = null;
+
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE ScheduledJobs
-            SET LastFiredAt=@Now, LastResultEntryId=@EntryId, ConsecutiveFailures=0, NextFireAt=@NextFireAt
-            WHERE Id=@Id
-            """;
+
+        if (settleOnce)
+        {
+            // NextFireAt is deliberately NOT rewritten: the row keeps an honest record of when it was
+            // meant to fire, and Status is what removes it from GetDueJobsAsync's
+            // `NextFireAt <= @Now AND Status = 'Active'`. Clamping it forward instead would turn a
+            // diagnosable loop into a Once job that quietly behaves like a Daily one.
+            //
+            // UpdatedAt IS bumped here, unlike the recurring branch below: this is a Status flip, not
+            // device-local execution state. SyncClientService's pull merge keeps the REMOTE row when
+            // remote.UpdatedAt >= local.UpdatedAt, and UpsertFromSyncAsync then writes Status back to
+            // 'Active' while explicitly leaving NextFireAt (still the past instant) alone — so a
+            // settle that does not bump UpdatedAt is reverted by the first pull. Same rationale as
+            // MarkRunFailedAsync's existing bump.
+            command.CommandText = """
+                UPDATE ScheduledJobs
+                SET LastFiredAt=@Now, LastResultEntryId=@EntryId, ConsecutiveFailures=0,
+                    Status='Completed', UpdatedAt=@UpdatedAt
+                WHERE Id=@Id
+                """;
+            command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+        }
+        else
+        {
+            nextFire = ComputeNextFireAt(existing, DateTime.Now);
+            // LastFiredAt / LastResultEntryId / NextFireAt / ConsecutiveFailures are device-local
+            // execution state; don't bump UpdatedAt so this doesn't trigger a wasteful re-sync.
+            command.CommandText = """
+                UPDATE ScheduledJobs
+                SET LastFiredAt=@Now, LastResultEntryId=@EntryId, ConsecutiveFailures=0, NextFireAt=@NextFireAt
+                WHERE Id=@Id
+                """;
+            command.Parameters.AddWithValue("@NextFireAt", nextFire.Value.ToString("O"));
+        }
+
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O"));
         command.Parameters.AddWithValue("@EntryId", resultEntryId.ToString());
-        command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
         await command.ExecuteNonQueryAsync();
-        _logger.LogInformation("Scheduled job {Id} run completed; next fire {NextFireAt:g}", id, nextFire);
+
+        // nextFire is non-null exactly when the recurring branch ran; pattern-match rather than
+        // re-test settleOnce so the compiler can see it.
+        if (nextFire is { } fire)
+            _logger.LogInformation("Scheduled job {Id} run completed; next fire {NextFireAt:g}", id, fire);
+        else
+            _logger.LogInformation("Scheduled job {Id} run completed; one-off settled as Completed, will not fire again", id);
     }
 
     public async Task MarkRunFailedAsync(Guid id, string reason)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        var nextFire = ComputeNextFireAt(existing, DateTime.Now);
+        var settleOnce = existing.Recurrence == RecurrenceType.Once;
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
-        // Atomic increment + threshold check, so concurrent callers cannot lose increments
-        // or overwrite each other's Status flips. UpdatedAt is bumped unconditionally so a
-        // Status flip to 'Failed' propagates to other devices on next sync; the redundant
-        // bumps in non-flip cases are cheap.
-        command.CommandText = """
-            UPDATE ScheduledJobs
-            SET LastFiredAt = @Now,
-                ConsecutiveFailures = ConsecutiveFailures + 1,
-                Status = CASE
-                    WHEN ConsecutiveFailures + 1 >= @MaxFailures THEN 'Failed'
-                    ELSE Status
-                END,
-                NextFireAt = @NextFireAt,
-                UpdatedAt = @UpdatedAt
-            WHERE Id = @Id
-            """;
+
+        if (settleOnce)
+        {
+            // W3: a one-off has no future occurrence to retry INTO, so it retires on the FIRST failure
+            // rather than waiting for the 5-strike valve. Leaving it Active would re-run the same past
+            // instant on every 30 s tick until the valve trips — five unattended agent runs with real
+            // token spend inside 150 s, each serialized behind the tick's run lock, which also starves
+            // the other due jobs. The user still gets NotifyFailure and can re-enable, and re-enabling
+            // now costs exactly ONE more run instead of an unbounded loop.
+            //
+            // ConsecutiveFailures still increments so the row records what happened. NextFireAt is left
+            // at its past instant, like the other two settles. UpdatedAt is bumped for the same sync
+            // reason as the recurring branch below.
+            command.CommandText = """
+                UPDATE ScheduledJobs
+                SET LastFiredAt = @Now,
+                    ConsecutiveFailures = ConsecutiveFailures + 1,
+                    Status = 'Failed',
+                    UpdatedAt = @UpdatedAt
+                WHERE Id = @Id
+                """;
+        }
+        else
+        {
+            var nextFire = ComputeNextFireAt(existing, DateTime.Now);
+            // Atomic increment + threshold check, so concurrent callers cannot lose increments
+            // or overwrite each other's Status flips. UpdatedAt is bumped unconditionally so a
+            // Status flip to 'Failed' propagates to other devices on next sync; the redundant
+            // bumps in non-flip cases are cheap.
+            command.CommandText = """
+                UPDATE ScheduledJobs
+                SET LastFiredAt = @Now,
+                    ConsecutiveFailures = ConsecutiveFailures + 1,
+                    Status = CASE
+                        WHEN ConsecutiveFailures + 1 >= @MaxFailures THEN 'Failed'
+                        ELSE Status
+                    END,
+                    NextFireAt = @NextFireAt,
+                    UpdatedAt = @UpdatedAt
+                WHERE Id = @Id
+                """;
+            command.Parameters.AddWithValue("@MaxFailures", MaxConsecutiveFailures);
+            command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
+        }
+
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O"));
-        command.Parameters.AddWithValue("@MaxFailures", MaxConsecutiveFailures);
-        command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
         command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
         await command.ExecuteNonQueryAsync();
 
         _logger.LogWarning("Scheduled job {Id} run failed", id);
+        if (settleOnce)
+            _logger.LogInformation("Scheduled job {Id} is one-off; retired as Failed, will not fire again", id);
         _logger.SensitiveDebug("Scheduled job {Id} run failed reason: {Reason}", id, reason);
     }
 
     public async Task AdvanceMissedRunAsync(Guid id)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
-        var nextFire = ComputeNextFireAt(existing, DateTime.Now);
+        var settleOnce = existing.Recurrence == RecurrenceType.Once;
+        DateTime? nextFire = null;
 
-        // NextFireAt is local execution state; don't bump UpdatedAt.
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @NextFireAt WHERE Id = @Id";
+
+        if (settleOnce)
+        {
+            // W3: this method has two callers and for a one-off BOTH of them are the job's settle —
+            // the user-Skip door of the missed-run prompt and the parked-at-budget door. Deliberately
+            // one status for both: a job's lifecycle question is "has this firing been settled", not
+            // "did the run eventually succeed", so the PARK settle IS the job's settle and a resumed
+            // run does not re-settle it (that would double-advance a recurring job, and a resume can
+            // happen on a non-owner device). Distinguishing park from Skip would need a parameter here
+            // and a matching edit in every hand-written fake, for a nuance no surface renders.
+            //
+            // NextFireAt stays at its past instant; UpdatedAt is bumped so the Status flip survives the
+            // next sync pull (see MarkRunCompleteAsync for the full reason).
+            command.CommandText = "UPDATE ScheduledJobs SET Status = 'Completed', UpdatedAt = @UpdatedAt WHERE Id = @Id";
+            command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+        }
+        else
+        {
+            nextFire = ComputeNextFireAt(existing, DateTime.Now);
+            // NextFireAt is local execution state; don't bump UpdatedAt.
+            command.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @NextFireAt WHERE Id = @Id";
+            command.Parameters.AddWithValue("@NextFireAt", nextFire.Value.ToString("O"));
+        }
+
         command.Parameters.AddWithValue("@Id", id.ToString());
-        command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
         await command.ExecuteNonQueryAsync();
-        _logger.LogInformation("Scheduled job {Id} missed run advanced to {NextFireAt:g}", id, nextFire);
+
+        if (nextFire is { } fire)
+            _logger.LogInformation("Scheduled job {Id} missed run advanced to {NextFireAt:g}", id, fire);
+        else
+            _logger.LogInformation("Scheduled job {Id} missed run settled; one-off marked Completed, will not fire again", id);
     }
 
     public async Task UpsertFromSyncAsync(ScheduledJob job)
