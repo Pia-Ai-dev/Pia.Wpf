@@ -174,6 +174,58 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         yield return new Finished(null, "test-model");
     }
 
+    /// <summary>Persist a stub chat + a parked (WaitingForInput) Planned run carrying one Pending step.</summary>
+    private async Task<AgentRun> ParkRunWithPendingStepAsync(string? policyJson)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await _chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId,
+            SchemaVersion = 1,
+            Title = "t",
+            CreatedAt = now,
+            UpdatedAt = now,
+            LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(),
+            Messages = [],
+        }, ct);
+
+        var run = await _runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.Schedule, Goal: "g",
+                PolicyJson: policyJson), ct);
+        await _runs.ReplaceStepsAsync(run.Id, [new AgentStep
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            Ordinal = 0,
+            Title = "S1",
+            Intent = "do it",
+            Status = AgentStepStatus.Pending,
+        }], ct);
+        await _runs.PauseAsync(run.Id, "step-cap", ct);
+        return run;
+    }
+
+    /// <summary>Poll until the run leaves the non-terminal states, then drain the launcher's in-flight task.</summary>
+    private async Task AwaitRunSettledAsync(HeadlessRunLauncher launcher, Guid runId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            var state = (await _runs.GetAsync(runId, ct))!.State;
+            if (state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
+                break;
+            await Task.Delay(20, ct);
+        }
+
+        // Drains the resume task (StopAsync awaits every in-flight run) so nothing touches the
+        // SqliteContext after the test disposes it.
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     [Fact]
     public async Task Launch_PersistsStubChat_CreatesPlannedUserRun_AndWorkspace()
     {
@@ -286,6 +338,26 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     }
 
     [Fact]
+    public async Task Launch_WithoutExplicitGrants_PersistsWriteFileOnlyEnvelope()
+    {
+        // A1: the default grant set for an unattended run drops delete_file. The launch also persists the
+        // resolved set as its opaque PolicyJson envelope, which is what a later resume restores (D1).
+        var (launcher, _) = BuildLauncher();
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("do the thing", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var run = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        Assert.NotNull(run!.PolicyJson);
+        var restored = HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson);
+        Assert.Equal(new[] { "write_file" }, restored);
+        Assert.DoesNotContain("delete_file", run.PolicyJson);
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    [Fact]
     public async Task Launch_WithoutExplicitGrants_DeniesDeleteFile_ButAllowsWriteFile()
     {
         // The default set is observed at the GATE, not just in the envelope: delete_file is refused as
@@ -325,8 +397,106 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.True(probe.Executed);
+        var run = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        Assert.Equal(new[] { "write_file", "delete_file" }, HeadlessRunLauncher.TryRestoreGrantEnvelope(run!.PolicyJson));
 
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task Resume_RestoresTheNarrowLaunchGrant_AndNeverWidensIt()
+    {
+        // D1 (top-severity): a scheduled job launched with a NARROW grant list that budget-pauses must not
+        // silently acquire delete_file on resume — nor even write_file, which its launch never granted.
+        var deleteProbe = new ToolProbe("delete_file");
+        var (deleteLauncher, _) = BuildLauncher(probe: deleteProbe);
+        var narrowEnvelope = HeadlessRunLauncher.SerializeGrantEnvelope(["create_todo"], AgentRunTrigger.Schedule);
+
+        var parked = await ParkRunWithPendingStepAsync(narrowEnvelope);
+        Assert.True(await deleteLauncher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(deleteLauncher, parked.Id);
+
+        Assert.False(deleteProbe.Executed);
+        Assert.Contains("not granted", deleteProbe.GateResult ?? string.Empty);
+
+        var writeProbe = new ToolProbe("write_file");
+        var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
+        var parked2 = await ParkRunWithPendingStepAsync(narrowEnvelope);
+        Assert.True(await writeLauncher.ResumeAsync(parked2.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(writeLauncher, parked2.Id);
+
+        Assert.False(writeProbe.Executed); // the floor is a FALLBACK, never an addition to a known set
+
+        var grantProbe = new ToolProbe("create_todo");
+        var (grantLauncher, _) = BuildLauncher(probe: grantProbe);
+        var parked3 = await ParkRunWithPendingStepAsync(narrowEnvelope);
+        Assert.True(await grantLauncher.ResumeAsync(parked3.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(grantLauncher, parked3.Id);
+
+        Assert.True(grantProbe.Executed); // exactly what the launch granted still runs
+
+        foreach (var id in new[] { parked.Id, parked2.Id, parked3.Id })
+            try { Directory.Delete(Path.Combine(_runsBase, id.ToString()), true); } catch { }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("{not json")]
+    [InlineData("{}")]
+    [InlineData("{\"v\":99,\"grantedWrites\":[\"write_file\",\"delete_file\"]}")]
+    [InlineData("{\"somethingElse\":true}")]
+    public void GrantEnvelope_MissingOrUnreadable_RestoresNothing_SoTheCallerAppliesTheFloor(string? policyJson)
+    {
+        Assert.Null(HeadlessRunLauncher.TryRestoreGrantEnvelope(policyJson));
+    }
+
+    [Fact]
+    public void GrantEnvelope_PresentButEmptyGrantList_IsHonoured_NotReWidened()
+    {
+        // A launch that granted NO writes must not gain any on resume, so an explicitly empty list is
+        // restored as empty rather than treated as "unreadable" (which would apply the {write_file} floor).
+        var envelope = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.Schedule);
+        var restored = HeadlessRunLauncher.TryRestoreGrantEnvelope(envelope);
+
+        Assert.NotNull(restored);
+        Assert.Empty(restored!);
+    }
+
+    [Fact]
+    public void GrantEnvelope_IsVersionedCamelCase_AndCarriesTheOriginTrigger()
+    {
+        var json = HeadlessRunLauncher.SerializeGrantEnvelope(["write_file"], AgentRunTrigger.Schedule);
+
+        Assert.Contains("\"v\":1", json);
+        Assert.Contains("\"grantedWrites\"", json);
+        Assert.Contains("Schedule", json);
+    }
+
+    [Fact]
+    public async Task Resume_WithUnreadableEnvelope_UsesTheWriteOnlyFloor()
+    {
+        // Missing/garbage envelope (e.g. a run created before D1): resume with {write_file} ONLY — the
+        // fallback is a floor, never a ceiling, so delete_file stays refused.
+        var deleteProbe = new ToolProbe("delete_file");
+        var (deleteLauncher, _) = BuildLauncher(probe: deleteProbe);
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+        Assert.True(await deleteLauncher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(deleteLauncher, parked.Id);
+
+        Assert.False(deleteProbe.Executed);
+
+        var writeProbe = new ToolProbe("write_file");
+        var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
+        var parked2 = await ParkRunWithPendingStepAsync(policyJson: "{\"totally\":\"foreign\"}");
+        Assert.True(await writeLauncher.ResumeAsync(parked2.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(writeLauncher, parked2.Id);
+
+        Assert.True(writeProbe.Executed);
+
+        foreach (var id in new[] { parked.Id, parked2.Id })
+            try { Directory.Delete(Path.Combine(_runsBase, id.ToString()), true); } catch { }
     }
 
     [Fact]

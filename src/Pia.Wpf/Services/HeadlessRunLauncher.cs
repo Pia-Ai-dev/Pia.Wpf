@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -33,6 +34,21 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     private readonly object _runsByChatLock = new();
 
     private static readonly TimeSpan _workspaceMaxAge = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Resume FLOOR (D1): the grant set a resume falls back to when the launch envelope is missing or
+    /// unreadable. Deliberately the NARROWEST useful grant — never a destructive one — because a resume
+    /// must never be able to widen what the launch actually granted.
+    /// </summary>
+    private static readonly string[] ResumeFloorGrants = ["write_file"];
+
+    /// <summary>Envelope shape currently written/understood by this launcher. Anything else → the floor.</summary>
+    private const int GrantEnvelopeVersion = 1;
+
+    private static readonly JsonSerializerOptions GrantEnvelopeJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAssistantChatService _chatService;
@@ -99,8 +115,14 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             Messages = [],
         }, ct).ConfigureAwait(false);
 
+        // Resolve the write grants BEFORE the run row exists so the resolved set can be persisted with it
+        // (D1). A null GrantedWrites takes the narrow default; an explicitly EMPTY collection still means
+        // "no write grants at all" and is preserved as such (never re-widened to the default).
+        var grants = req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites;
+
         var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
-            chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal), ct)
+            chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal,
+            PolicyJson: TrySerializeGrantEnvelope(grants, req.Trigger)), ct)
             .ConfigureAwait(false);
 
         // Per-run scratch/temp workspace under runs\<runId> (§17.2). Real deliverables go to the assistant
@@ -123,9 +145,6 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             throw;
         }
 
-        // A1: null GrantedWrites → the narrow default; an explicitly EMPTY collection still means "no
-        // write grants at all" and is honoured as such (never re-widened to the default).
-        var grants = req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites;
         var budget = req.Budget ?? RunProfile.FromBudget(
             settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
 
@@ -223,9 +242,21 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // path). Minor assumption: a resumed run may run on a different default provider than its origin.
             var provider = await ResolveProviderAsync(null, persona).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
-            var grants = new[] { "write_file", "delete_file" };
-            // FRESH budget envelope IS the "continue" grant (guardrail 4). The ledger is persisted and accrues
-            // across resumes (never reset).
+            // Restore the write grants the LAUNCH resolved from the run's own envelope (D1) — a resume must
+            // never widen them, so a narrowly-granted scheduled job that parked at its budget does NOT come
+            // back with write+delete over the user's real assistant-files folder. Missing/unreadable/foreign
+            // envelope → the FLOOR ({write_file}, never delete_file), logged with the run id only.
+            var grants = TryRestoreGrantEnvelope(run.PolicyJson);
+            if (grants is null)
+            {
+                _logger.LogInformation(
+                    "Resume: run {RunId} has no readable launch-grant envelope; using the write-only floor", run.Id);
+                grants = ResumeFloorGrants;
+            }
+
+            // Budget is DELIBERATELY not restored: a FRESH budget envelope IS the "continue" grant
+            // (guardrail 4) — that is the whole point of the pause. Only the write grants are restored.
+            // The ledger is persisted and accrues across resumes (never reset).
             var budget = RunProfile.FromBudget(
                 settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
 
@@ -416,6 +447,86 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         {
             _logger.LogWarning(ex, "Failed to delete headless run workspace {Dir}", dir);
         }
+    }
+
+    /// <summary>
+    /// Serialize the launch-grant envelope, swallowing any serializer fault (guardrail 1 — this is
+    /// bookkeeping and must never fail a launch). A null result means the resume will apply the FLOOR,
+    /// which is the safe direction to degrade in.
+    /// </summary>
+    private string? TrySerializeGrantEnvelope(IReadOnlyCollection<string> grants, AgentRunTrigger trigger)
+    {
+        try
+        {
+            return SerializeGrantEnvelope(grants, trigger);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to serialize the launch-grant envelope; resume will use the floor");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Serialize the grants a launch resolved into the opaque <c>AgentRuns.PolicyJson</c> envelope (D1).
+    /// The run service stores the string verbatim and never parses it, so the shape stays private to this
+    /// launcher; <c>v</c> lets a later shape change be detected instead of misread.
+    /// </summary>
+    internal static string SerializeGrantEnvelope(IReadOnlyCollection<string> grants, AgentRunTrigger trigger)
+        => JsonSerializer.Serialize(
+            new GrantEnvelope
+            {
+                V = GrantEnvelopeVersion,
+                GrantedWrites = grants.ToList(),
+                Trigger = trigger.ToString(),
+            },
+            GrantEnvelopeJsonOptions);
+
+    /// <summary>
+    /// Read the grant list a launch persisted, so a resume restores exactly what the launch granted and
+    /// can never widen it (D1). Returns <c>null</c> — meaning "apply the resume FLOOR" — when the envelope
+    /// is absent, unparseable, of an unknown version, or carries no <c>grantedWrites</c> member at all.
+    /// A present-but-EMPTY list is honoured as an empty grant set (a launch that granted no writes must
+    /// not gain any on resume). Never throws.
+    /// </summary>
+    internal static IReadOnlyList<string>? TryRestoreGrantEnvelope(string? policyJson)
+    {
+        if (string.IsNullOrWhiteSpace(policyJson))
+            return null;
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<GrantEnvelope>(policyJson, GrantEnvelopeJsonOptions);
+            if (envelope is null || envelope.V != GrantEnvelopeVersion || envelope.GrantedWrites is null)
+                return null;
+
+            return envelope.GrantedWrites
+                .Where(g => !string.IsNullOrWhiteSpace(g))
+                .Select(g => g.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            // Garbage / foreign JSON in PolicyJson is a floor case, not an error case.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The launch-grant envelope persisted on <c>AgentRuns.PolicyJson</c>. Private to this file
+    /// (see <see cref="SerializeGrantEnvelope"/>); camelCase on the wire like the rest of this codebase.
+    /// </summary>
+    private sealed class GrantEnvelope
+    {
+        /// <summary>Envelope version. Absent/unknown → the reader applies the resume floor.</summary>
+        public int V { get; set; }
+
+        /// <summary>The write-tool names the LAUNCH resolved. A resume restores exactly this.</summary>
+        public List<string>? GrantedWrites { get; set; }
+
+        /// <summary>Origin trigger — diagnostics only; never consulted to widen a grant.</summary>
+        public string? Trigger { get; set; }
     }
 
     private static string DeriveTitle(string goal)
