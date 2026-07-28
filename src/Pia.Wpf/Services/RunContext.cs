@@ -72,6 +72,16 @@ public sealed class RunContext
 
     public string Goal { get; }
 
+    /// <summary>
+    /// The chat working subpath the run's file tools narrow their sandbox to (<c>TaskContext.WorkingSubpath</c>),
+    /// or null when the run writes at the base root. Set ONCE by the executor in <c>BeginRunAsync</c>: the
+    /// per-step ambient that carries it is restored in the step's <c>finally</c> (and, for the live path,
+    /// only ever set inside the UI <c>Post</c>), so by verify time on the orchestrator thread it is gone —
+    /// yet the verifier's artifact probe must resolve declared artifacts against the root the steps actually
+    /// wrote into, or it reports confident false NOT FOUNDs for a run that delivered everything.
+    /// </summary>
+    public string? WorkingSubpath { get; set; }
+
     public StringBuilder Scratchpad { get; } = new();
 
     public IReadOnlyList<CompletedStepSummary> CompletedSteps => _completed;

@@ -48,6 +48,11 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             var placeholder = _session.Messages.LastOrDefault(m => !m.IsUser && m.IsStreaming);
             if (placeholder is not null)
                 _session.Messages.Remove(placeholder);
+            // The chat's working subpath is what narrows this run's file sandbox (ChatSession passes it as
+            // TaskContext.WorkingSubpath per step), but that ambient never reaches the orchestrator thread —
+            // hand it to the context here so the verifier's artifact probe stats the root the steps really
+            // wrote into. Read on the UI thread, where WorkingDirectory is owned.
+            ctx.WorkingSubpath = _session.WorkingDirectory;
             // The session is already Running (the manager flipped it before dispatch); stays Running
             // across all steps (§16 R12).
             return Task.CompletedTask;

@@ -103,6 +103,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _runCreatedAt = run.CreatedAt;
         _goal = ctx.Goal;
 
+        // Parity note (guardrail 3): LiveTurnExecutor hands the chat's working subpath to the context so the
+        // verifier's artifact probe stats the root its steps wrote into. A headless run deliberately does NOT
+        // inherit one — every step runs with TaskContext.WorkingSubpath: null (RunExchangeStepAsync), so its
+        // writes land at the base root even when the chat row carries a WorkingDirectory. Stated as an
+        // explicit assignment rather than left to the default.
+        ctx.WorkingSubpath = null;
+
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         _tokenizationEnabled = settings.Privacy.TokenizationEnabled;
 
@@ -134,7 +141,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
         // MCP is offered to unattended runs like any other tool now that the Phase-2 gate is in place: an
         // MCP call returns a deferred PluginToolCall and is denied inline unless its tool name is in the
-        // run's write-grant set (default-deny — the launcher grants only {write_file, delete_file}).
+        // run's write-grant set (default-deny — the launcher's default is
+        // HeadlessRunRequest.DefaultGrantedWrites = {write_file}; delete_file must be granted explicitly,
+        // and a granted tool that is both delete-like and external is refused regardless — B2).
 
         // Initialize the run's token map. NOTE: the ambients are set PER STEP (in RunExchangeStepAsync),
         // not here — an AsyncLocal set after an await inside BeginRunAsync would NOT propagate into the

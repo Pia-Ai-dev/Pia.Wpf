@@ -366,4 +366,31 @@ public sealed class LiveTurnExecutorPlannedRunTests
         Assert.NotNull(completed);
         Assert.False(completed!.Succeeded);
     }
+
+    [Theory]
+    [InlineData("projects/q3")]
+    [InlineData(null)]
+    public async Task BeginRunAsync_HandsTheChatWorkingSubpathToTheRunContext(string? workingDirectory)
+    {
+        // The chat's working subpath is what narrows this run's file sandbox (ChatSession passes it as
+        // TaskContext.WorkingSubpath per step), but that ambient is restored in the step's finally and never
+        // reaches the orchestrator thread — so the verifier's artifact probe can only find the root the steps
+        // wrote into if BeginRunAsync copies it onto the context.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1"), false));
+
+        var session = CreateSession();
+        session.SetWorkingDirectory(workingDirectory);
+        SeedSessionForPlannedRun(session, "goal");
+        ReturnsStream(_ => Stream(new TextDelta("done"), new Finished(null, "m")));
+
+        var live = BuildLiveExecutor(session, _ => false);
+        var ctx = new RunContext("goal", RunProfile.Interactive);
+
+        await live.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
+        Assert.Equal(workingDirectory, ctx.WorkingSubpath);
+    }
 }

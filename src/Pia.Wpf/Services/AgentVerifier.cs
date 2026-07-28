@@ -136,7 +136,12 @@ public sealed class AgentVerifier : IAgentVerifier
             sb.AppendLine("Steps executed (with their results, as reported by the assistant itself):");
             foreach (var c in ctx.CompletedSteps)
             {
-                sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {c.Title}: {c.Intent}");
+                // Title/Intent are flattened for the same reason as in the facts block: a planner title is
+                // model text, and a newline in it would otherwise let a step's own label imitate a
+                // "- step N … → found" fact line. The result text below is deliberately NOT flattened —
+                // it is prose the prompt explicitly frames as the assistant's self-report, and the facts
+                // block is what anchors the verdict.
+                sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {Flatten(c.Title)}: {Flatten(c.Intent)}");
                 if (!string.IsNullOrWhiteSpace(c.VisibleText))
                     sb.AppendLine($"    result: {c.VisibleText}");
                 else if (c.FromEarlierSegment) // E2: a resumed run's pre-pause steps carry no result text
@@ -170,6 +175,8 @@ public sealed class AgentVerifier : IAgentVerifier
     private const int MaxProbedPaths = 12;
     private const int MaxReportedDeclarations = 20;
     private const int MaxCandidatesPerDeclaration = 3;
+
+    /// <summary>Cap for BOTH interpolated free-text fields of a fact line (declaration and step title).</summary>
     private const int MaxDeclarationChars = 200;
     private static readonly TimeSpan ProbeBudget = TimeSpan.FromSeconds(2);
 
@@ -191,24 +198,41 @@ public sealed class AgentVerifier : IAgentVerifier
     /// </summary>
     private async Task<string?> TryBuildArtifactFactsAsync(RunContext ctx, CancellationToken ct)
     {
-        Task<(string Facts, int Probed)>? probe = null;
+        Task<(string? Facts, int Probed)>? probe = null;
         try
         {
             var declared = ctx.CompletedSteps.Where(c => !string.IsNullOrWhiteSpace(c.ExpectedArtifact)).ToList();
             if (declared.Count == 0)
                 return null; // nothing was ever declared — no facts to add
 
-            var root = await ResolveProbeRootAsync().ConfigureAwait(false);
-            if (root is null)
+            // Only the settings read happens here (a local DB read, not a filesystem walk). Everything that
+            // TOUCHES the filesystem — including resolving the root — runs inside the time-boxed task below.
+            var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
+            var configured = ambientRoot ?? (await _settings.GetSettingsAsync().ConfigureAwait(false)).AssistantFilesFolder;
+            if (string.IsNullOrWhiteSpace(configured))
             {
                 _logger.LogInformation("Artifact probe skipped for {Count} declaration(s): no usable files folder.", declared.Count);
                 return null;
             }
 
+            var workingSubpath = ctx.WorkingSubpath;
+
             // Off the caller's thread and time-boxed: the folder can be a slow or dead network share, and
-            // a hung stat must never hold up the verify turn.
-            probe = Task.Run(() => ProbeDeclarations(root, declared), CancellationToken.None);
+            // a hung stat must never hold up the verify turn. The ROOT RESOLUTION is inside the box on
+            // purpose — Directory.Exists/Canonicalize on a dead UNC path is exactly the call that blocks
+            // (for the SMB connect timeout, tens of seconds), so resolving it before the box would leave
+            // the advertised budget covering only the cheap part.
+            probe = Task.Run<(string? Facts, int Probed)>(() =>
+            {
+                var root = ResolveProbeRoot(configured, workingSubpath);
+                return root is null ? (null, 0) : ProbeDeclarations(root, declared);
+            }, CancellationToken.None);
             var (facts, probed) = await probe.WaitAsync(ProbeBudget, ct).ConfigureAwait(false);
+            if (facts is null)
+            {
+                _logger.LogInformation("Artifact probe skipped for {Count} declaration(s): files folder does not exist.", declared.Count);
+                return null;
+            }
 
             _logger.LogInformation("Artifact probe: {Declared} declaration(s), {Probed} path(s) probed.", declared.Count, probed);
             _logger.SensitiveDebug("Artifact probe facts:\n{Facts}", facts);
@@ -233,23 +257,33 @@ public sealed class AgentVerifier : IAgentVerifier
 
     /// <summary>
     /// The run's effective file root, resolved and canonicalized exactly like
-    /// <c>FilesToolHandler.HandleToolCallAsync</c> does — an unattended run's workspace root when one is
-    /// ambient, otherwise the configured assistant files folder (owner decision d1bf62d: unattended runs
-    /// write there, so <c>WorkspaceRoot</c> is null in production and the settings folder IS the root the
-    /// step writes landed in). Null when no usable folder exists. Canonicalizing here means a junction in
-    /// the root path itself is not a hole in the containment check below.
+    /// <c>FilesToolHandler.HandleToolCallAsync</c> does: the base is an unattended run's workspace root
+    /// when one is ambient, otherwise the configured assistant files folder (owner decision d1bf62d:
+    /// unattended runs write there, so <c>WorkspaceRoot</c> is null in production and the settings folder
+    /// IS the root the step writes landed in), then <paramref name="workingSubpath"/> narrows it.
+    /// Null when no usable folder exists. Canonicalizing here means a junction in the root path itself is
+    /// not a hole in the containment check below. Blocking — call it inside the probe's time box.
     /// </summary>
-    private async Task<string?> ResolveProbeRootAsync()
+    private static string? ResolveProbeRoot(string configured, string? workingSubpath)
     {
-        var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
-        var configured = ambientRoot ?? (await _settings.GetSettingsAsync().ConfigureAwait(false)).AssistantFilesFolder;
-        if (string.IsNullOrWhiteSpace(configured))
-            return null;
-
         var full = Path.GetFullPath(configured);
         if (!Directory.Exists(full))
             return null;
-        return SafeFolderPath.Canonicalize(full);
+        var root = SafeFolderPath.Canonicalize(full);
+
+        // Mirror of FilesToolHandler.ResolveEffectiveRoot (which GitToolHandler also duplicates): an
+        // interactive chat scoped to a working subpath writes its files UNDER it, so probing the base root
+        // would report every artifact the run actually delivered as NOT FOUND — a confident false fact,
+        // which is worse than no fact. Same fail-safe direction as the file tools: a subpath that escapes
+        // containment or does not exist falls back to the base root and never widens past it.
+        if (!string.IsNullOrWhiteSpace(workingSubpath)
+            && SafeFolderPath.TryResolveInsideAllowingAbsolute(root, workingSubpath, out var narrowed)
+            && Directory.Exists(narrowed))
+        {
+            return narrowed;
+        }
+
+        return root;
     }
 
     /// <summary>
@@ -302,7 +336,11 @@ public sealed class AgentVerifier : IAgentVerifier
                 outcome = string.Join("; ", parts);
             }
 
-            sb.AppendLine($"- step {c.Ordinal + 1} \"{c.Title}\" declared: {declaration} → {outcome}");
+            // BOTH interpolated fields are model text and BOTH are sanitized: the step title is planner
+            // free text (AgentPlanner only trims it), so an embedded newline in it could otherwise forge a
+            // second "- step N … → found" line inside a block the prompt introduces as mechanical
+            // app-gathered facts. Truncate also bounds an over-long title.
+            sb.AppendLine($"- step {c.Ordinal + 1} \"{Truncate(Flatten(c.Title))}\" declared: {declaration} → {outcome}");
         }
 
         if (skipped > 0)
@@ -376,9 +414,9 @@ public sealed class AgentVerifier : IAgentVerifier
     }
 
     /// <summary>
-    /// Keeps a declaration on ONE line. The block's value is that every line in it is a fact the app
-    /// established; a declaration is model/user text, so a newline inside it must not be able to forge an
-    /// extra "- step N … → found" line.
+    /// Keeps a declaration (and a step title) on ONE line. The block's value is that every line in it is a
+    /// fact the app established; both fields are model/user text, so a newline inside either must not be
+    /// able to forge an extra "- step N … → found" line.
     /// </summary>
     private static string Flatten(string text) =>
         text.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');

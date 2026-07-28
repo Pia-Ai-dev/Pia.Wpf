@@ -597,4 +597,35 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal("projects/alpha", parked.WorkingDirectory);
         Assert.Equal(2, parked.Messages.Count); // pre-existing goal row + the one step reply
     }
+
+    [Fact]
+    public async Task BeginRunAsync_DoesNotInheritTheChatsWorkingSubpath_ParityWithLive()
+    {
+        // Executor parity (guardrail 3) with LiveTurnExecutor.BeginRunAsync, which DOES hand its chat's
+        // working subpath to the run context so the verifier's artifact probe stats the right root. A
+        // headless run deliberately must NOT: every step runs with TaskContext.WorkingSubpath: null, so its
+        // writes land at the base root even when the chat row carries a WorkingDirectory. Asserted so a
+        // future "just copy the row's value" tweak cannot point the probe at a folder nothing wrote to.
+        using var h = new DurabilityHarness();
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await h.Chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "t",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), WorkingDirectory = "projects/alpha",
+            Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await h.Runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "the goal"),
+            TestContext.Current.CancellationToken);
+
+        var ctx = new RunContext("the goal", RunProfile.Interactive) { WorkingSubpath = "projects/alpha" };
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+
+        await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
+        Assert.Null(ctx.WorkingSubpath);
+    }
 }
