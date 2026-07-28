@@ -266,7 +266,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // calls the non-terminal OnPausedAsync instead) or a crash mid-run lost every step reply, and the
         // D2 resume seeding then re-seeded an empty chat. Awaited so writes stay serialized within the run.
         if (persistInterim)
-            await PersistChatAsync(title: null, interim: true, CancellationToken.None).ConfigureAwait(false);
+            await PersistChatAsync(InterimTitle(), interim: true, CancellationToken.None).ConfigureAwait(false);
 
         return new StepTurnResult(
             Succeeded: succeeded,
@@ -307,12 +307,14 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// (upsert + DELETE/re-INSERT of the message rows in one transaction). So per-step durability costs one
     /// full replace per COMPLETED STEP; deliberately not per tool round and not per token.
     /// </para>
+    /// <paramref name="interim"/> only distinguishes the log/warning text — the caller resolves the title
+    /// (<see cref="InterimTitle"/> mid-run, the LLM/derived one at the end).
     /// </summary>
     private async Task PersistChatAsync(string? title, bool interim, CancellationToken ct)
     {
         try
         {
-            var chat = BuildChatSnapshot(interim ? InterimTitle() : title);
+            var chat = BuildChatSnapshot(title);
             await _chatService.SaveAsync(chat, ct).ConfigureAwait(false);
             if (interim)
             {
