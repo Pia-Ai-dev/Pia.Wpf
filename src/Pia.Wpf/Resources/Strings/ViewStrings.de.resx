@@ -904,8 +904,36 @@
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
   <data name="Flow_Todo_OverdueDays" xml:space="preserve"><value>Überfällig · {0}T</value></data>
+  <data name="Lever_Chat" xml:space="preserve"><value>Chat</value></data>
+  <data name="Lever_Agent" xml:space="preserve"><value>Agent</value></data>
+  <data name="Lever_Disabled_NoTools" xml:space="preserve"><value>Der Agentenmodus benötigt eine Persona mit Tools.</value></data>
+  <data name="Lever_WeakProvider_Tooltip" xml:space="preserve"><value>Dieser Anbieter plant möglicherweise nicht zuverlässig.</value></data>
+  <data name="Suggestion_TryAgent" xml:space="preserve"><value>Im Agentenmodus versuchen</value></data>
+  <data name="Agent_WeakProvider_Body" xml:space="preserve"><value>Dieser Anbieter plant möglicherweise nicht zuverlässig.</value></data>
+  <data name="Agent_Warn_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
+  <data name="Agent_Warn_ChooseProvider" xml:space="preserve"><value>Anbieter wählen…</value></data>
+  <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Im Chat bleiben</value></data>
+  <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Bei Budget gestoppt</value></data>
   <data name="Run_Unverified" xml:space="preserve"><value>Ergebnis nicht geprüft</value></data>
   <data name="Run_EndedEarly" xml:space="preserve"><value>Vorzeitig beendet</value></data>
+  <data name="Run_State_Planning" xml:space="preserve"><value>Planung</value></data>
+  <data name="Run_State_Running" xml:space="preserve"><value>Läuft</value></data>
+  <data name="Run_State_Completed" xml:space="preserve"><value>Abgeschlossen</value></data>
+  <data name="Run_State_Failed" xml:space="preserve"><value>Fehlgeschlagen</value></data>
+  <data name="Run_State_WaitingForInput" xml:space="preserve"><value>Wartet auf dich</value></data>
+  <data name="Run_State_Paused" xml:space="preserve"><value>Pausiert</value></data>
+  <data name="Run_Activity_Planning" xml:space="preserve"><value>Plan wird erstellt…</value></data>
+  <data name="Run_Activity_Working" xml:space="preserve"><value>Arbeitet…</value></data>
+  <data name="Run_Activity_Verifying" xml:space="preserve"><value>Ergebnis wird geprüft…</value></data>
+  <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Bei Budget gestoppt – fortsetzen?</value></data>
+  <data name="Run_Action_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
+  <data name="Flow_Run_Title" xml:space="preserve"><value>Agent-Ausführung</value></data>
+  <data name="Flow_Run_Completed" xml:space="preserve"><value>Fertig – zum Ansehen tippen</value></data>
+  <data name="Flow_Run_Failed" xml:space="preserve"><value>Mit Fehler beendet</value></data>
+  <data name="Flow_Run_Gone" xml:space="preserve"><value>Diese Ausführung ist nicht mehr verfügbar.</value></data>
+  <data name="Flow_Action_OpenRun" xml:space="preserve"><value>Ausführung öffnen</value></data>
+  <data name="Flow_Run_WaitingAtBudget" xml:space="preserve"><value>Bei ihrem Budget gestoppt – fortsetzen?</value></data>
+  <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Ausführung fortsetzen</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Kürzer</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Ausführlicher</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-fertig</value></data>
