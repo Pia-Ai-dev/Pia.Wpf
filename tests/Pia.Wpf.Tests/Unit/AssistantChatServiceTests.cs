@@ -9,9 +9,14 @@ using Xunit;
 
 namespace Pia.Wpf.Tests.Unit;
 
+/// <summary>
+/// net10.0-windows cannot execute on macOS — these tests are written, not run; execution is deferred to
+/// Windows/CI.
+/// </summary>
 public class AssistantChatServiceTests : IDisposable
 {
     private readonly SqliteContext _ctx;
+    private readonly AgentRunService _runs;
     private readonly AssistantChatService _service;
     private readonly string _tmpDir;
     private readonly List<Guid> _createdIds = [];
@@ -21,12 +26,15 @@ public class AssistantChatServiceTests : IDisposable
         _tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tmpDir);
         _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
-        _service = new AssistantChatService(_ctx, new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance));
+        _runs = new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance);
+        _service = new AssistantChatService(_ctx, _runs);
     }
 
     [Fact]
     public async Task SaveAsync_PopulatesFtsRow()
     {
+        // W1 canary: the service writes on its OWN dedicated connection, so this assertion — issued on the
+        // SHARED _ctx.GetConnection() handle — is now also a cross-connection commit-visibility check.
         var chat = MakeChat(title: "UniqueWordABC title", body: "UniqueWordXYZ body");
         await _service.SaveAsync(chat);
         _createdIds.Add(chat.Id);
@@ -36,6 +44,87 @@ public class AssistantChatServiceTests : IDisposable
         countFts.CommandText = "SELECT COUNT(*) FROM AssistantChatsFts WHERE ChatId = @Id";
         countFts.Parameters.AddWithValue("@Id", chat.Id.ToString());
         Assert.Equal(1, Convert.ToInt32(await countFts.ExecuteScalarAsync()));
+    }
+
+    [Fact]
+    public async Task SaveAsync_OnTheDedicatedConnection_IsVisibleToAReaderOnTheSharedConnection()
+    {
+        // W1: the chat store no longer writes through SqliteContext.GetConnection(). A commit on the private
+        // handle must be visible to the ten services still sharing the context connection — this is the
+        // assertion that would fail if the dedicated connection ever opened a different file, or if a write
+        // were left in an uncommitted transaction.
+        var chat = MakeChat(title: "Cross connection", body: "committed body");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        var shared = _ctx.GetConnection();
+        using var readRow = shared.CreateCommand();
+        readRow.CommandText = "SELECT Title FROM AssistantChats WHERE Id = @Id";
+        readRow.Parameters.AddWithValue("@Id", chat.Id.ToString());
+        Assert.Equal("Cross connection", (string?)await readRow.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+
+        using var readMessages = shared.CreateCommand();
+        readMessages.CommandText = "SELECT COUNT(*) FROM AssistantChatMessages WHERE ChatId = @Id";
+        readMessages.Parameters.AddWithValue("@Id", chat.Id.ToString());
+        Assert.Equal(1, Convert.ToInt32(await readMessages.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
+    }
+
+    [Fact]
+    public async Task ChatsChangedSubscriber_MayCallBackIntoTheService_WithoutDeadlocking()
+    {
+        // W1: the gate is NOT reentrant, so ChatsChanged must be raised strictly AFTER the gate is released.
+        // Real subscribers do exactly this (the history view model posts a SearchAsync; HeadlessRunLauncher
+        // does a recursive Directory.Delete). If the event were raised under the gate this test would hang.
+        var chat = MakeChat(title: "Reentrant", body: "body");
+        SyncAssistantChat? readBack = null;
+        _service.ChatsChanged += (_, e) =>
+        {
+            if (e.Kind == AssistantChatChangeKind.Upserted)
+                readBack = _service.GetAsync(e.Id).GetAwaiter().GetResult();
+        };
+
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        Assert.NotNull(readBack);
+        Assert.Equal(chat.Id, readBack!.Id);
+    }
+
+    [Fact]
+    public async Task DeleteAllAsync_RaisesOneEventPerDeletedId_AfterTheGateIsReleased()
+    {
+        var a = MakeChat(title: "a", body: "a");
+        var b = MakeChat(title: "b", body: "b");
+        await _service.SaveAsync(a, TestContext.Current.CancellationToken);
+        await _service.SaveAsync(b, TestContext.Current.CancellationToken);
+
+        var deleted = new List<Guid>();
+        _service.ChatsChanged += (_, e) =>
+        {
+            if (e.Kind != AssistantChatChangeKind.Deleted) return;
+            deleted.Add(e.Id);
+            // Re-entering under the gate would deadlock; the row is already gone, so this must return null.
+            Assert.Null(_service.GetAsync(e.Id).GetAwaiter().GetResult());
+        };
+
+        var ids = await _service.DeleteAllAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, ids.Count);
+        Assert.Equal(ids.OrderBy(i => i), deleted.OrderBy(i => i));
+    }
+
+    [Fact]
+    public async Task Dispose_ThenSaveAsync_NoOpsInsteadOfThrowing()
+    {
+        // FlowPersistenceStore.Dispose semantics: _disposed is set UNDER the gate and BEFORE the handle is
+        // closed, so an in-flight headless step's persist can never reach a half-disposed connection.
+        var chat = MakeChat(title: "after dispose", body: "x");
+
+        _service.Dispose();
+
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken); // must not throw
+        Assert.Null(await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken));
+        _service.Dispose(); // idempotent
     }
 
     [Fact]
@@ -307,7 +396,11 @@ public class AssistantChatServiceTests : IDisposable
     public void Dispose()
     {
         // The whole database lives under _tmpDir, so disposing the connection and
-        // deleting the directory discards everything this fixture created.
+        // deleting the directory discards everything this fixture created. W1: the chat service and the run
+        // service each own a DEDICATED connection to that file, so both must be closed before the delete or
+        // Windows keeps the temp file locked.
+        _service.Dispose();
+        _runs.Dispose();
         _ctx.Dispose();
         try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
     }
