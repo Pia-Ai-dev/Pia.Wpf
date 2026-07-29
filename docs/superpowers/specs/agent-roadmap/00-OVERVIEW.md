@@ -42,11 +42,11 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 
 **Git position:** the branch **is** pushed and tracks `origin/feature/agent-run-spine`, which is now at
 `1c49b08` — the earlier "last pushed commit is `e7df175` / 50 commits local-only" figure is stale. As of
-2026-07-29 there are **17 local-only commits** (do not trust a hardcoded count here; it goes stale on the next
-commit — read it from git). Check with `git rev-list --count origin/feature/agent-run-spine..HEAD` and
-`git branch -vv`.
+2026-07-29 there are **29 local-only commits** (do not trust a hardcoded count here; it goes stale on the next
+commit — read it from git; the "17" printed here earlier was already stale when read). Check with
+`git rev-list --count origin/feature/agent-run-spine..HEAD` and `git branch -vv`.
 Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true --no-incremental`. Re-measured at
-`87fa403`: **0 errors, 194 warnings**, all pre-existing and unchanged across this pass: 3× `CS8602` in
+`87fa403` and again at `7815ce1`: **0 errors, 194 warnings**, all pre-existing and unchanged across this pass: 3× `CS8602` in
 `Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
 duplicate `Memory_Refresh` key present twice in each of the three resx files, and 186 xUnit analyzer warnings
 in the test project. **The “0 warnings” figure used earlier in this file was wrong** — it came from an
@@ -59,16 +59,22 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
 >    The suite executes on Windows; the "net10.0-windows cannot run here" premise was a property of the
 >    authoring sessions (macOS), not of the code. Measured with
 >    `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`:
->    **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, and **2157 / 0 failed** after the
->    residual-hazard pass. So the ~240 assertions across those commits **do** hold, including the two Batch 11
+>    **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, **2157 / 0 failed** after the
+>    residual-hazard pass, and **2194 total / 0 failed / 1 skipped** re-measured on a clean tree at `7815ce1`.
+>    So the ~240 assertions across those commits **do** hold, including the two Batch 11
 >    assertions flagged as fixture-sensitive — no threshold or fixture tuning was needed.
 >    **What this does NOT cover, and still outranks the batches below:** the entire **manual Windows smoke
 >    list** (Batch 11) is undone. A green unit suite is not a smoke test — the two package-bump behaviour
 >    concentrations (streamed tool-call coalescing, the seven `OPENAI001` pragma sites) need a real provider
->    round, and the image-attachment hazard is *expected* to fail when smoked. Also unproven: whether the W1
+>    round. Also unproven: whether the W1
 >    concurrency tests would go red on a revert of `78e16dd` (asserted by reasoning, not demonstration).
+>    **Corrected 2026-07-29:** this callout used to add "and the image-attachment hazard is *expected* to fail
+>    when smoked". It is not — hazard C was **closed by `b59cfe5`** in the Tier-2 pass, so that smoke item is now
+>    the primary *regression check* for that fix, not a known break to confirm.
 > 2. **Push.** Still local-only from `1c49b08` onward — `git rev-list --count
->    origin/feature/agent-run-spine..HEAD` (17 at the time of writing).
+>    origin/feature/agent-run-spine..HEAD` (29 at the time of writing). Owner decision 2026-07-29: **hold the
+>    push until the manual Windows smoke round is done**, so a provider regression can be fixed before it
+>    reaches `origin`.
 
 ---
 

@@ -256,5 +256,10 @@ pass).
 **The manual Windows smoke list is still undone** — an executed unit suite is not a smoke test: unconfigured
 provider behaves as on main; interactive chat unchanged with a window configured; a long run with a small window
 completes and still obeys its step goal; park/resume keeps every prior step reply; an image attachment on the
-Live agent path loses neither the attachment nor the goal (this last one is **expected to fail** — see “Still
-open”, hazard C).
+Live agent path loses neither the attachment nor the goal.
+
+**Corrected 2026-07-29:** the image item above used to be annotated “**expected to fail** — see Still open,
+hazard C”. That is stale in this very file: hazard C was **closed by `b59cfe5`** (see “Closed by the Tier-2
+decision pass” above), so the image case is now the **primary regression check for that fix** — a failure there
+is a real defect, not the documented gap. Same correction applied in
+[`00-OVERVIEW.md`](00-OVERVIEW.md).
