@@ -96,6 +96,7 @@
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Conversation vocale</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Exécuter en arrière-plan</value></data>
+  <data name="Assistant_BackgroundRunActive_Hint" xml:space="preserve"><value>Une exécution en arrière-plan écrit dans ce chat. L'envoi reprend dès qu'elle est terminée.</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Impossible de démarrer l'exécution en arrière-plan : {0}</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Exécutions d'agent</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limites auxquelles une exécution d'agent s'arrête, pour qu'elle ne s'emballe jamais. Une exécution qui atteint une limite se met en pause et vous attend — vous pouvez la reprendre depuis le panneau d'exécution.</value></data>

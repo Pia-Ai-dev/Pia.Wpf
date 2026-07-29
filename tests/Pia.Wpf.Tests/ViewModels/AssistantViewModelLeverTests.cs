@@ -223,8 +223,8 @@ public class AssistantViewModelLeverTests
     public void CanSend_IsFalse_WhileAForeignRunIsExecuting()
     {
         // The data-loss guard: a live turn here would be a SECOND full-chat writer against a headless
-        // executor that is mid-run, and its full replace deletes the run's step rows. No new resx string —
-        // the embedded run-progress panel is already on screen showing the run executing.
+        // executor that is mid-run, and its full replace deletes the run's step rows. The composer's
+        // Assistant_BackgroundRunActive_Hint line explains the disabled Send in words; this fact pins the gate.
         var vm = CreateSut();
         vm.InputText = "hello";
         Assert.True(vm.SendMessageCommand.CanExecute(null));

@@ -484,6 +484,18 @@
               </ui:Button>
             </Grid>
           </Grid>
+
+          <!-- W2 composer hint: a headless run owns this chat's writes, so Send stays disabled until it
+               stops. The pinned run-progress panel in row 0 shows the run, but nothing there attributes the
+               dead Send to it. Bound to ForeignRunActive alone, so it never appears for the streaming or
+               empty-composer disabled states. Collapsed costs zero height in this StackPanel (the composer
+               row is Auto), so the layout does not shift when the hint is hidden. -->
+          <TextBlock Text="{loc:Str Assistant_BackgroundRunActive_Hint}"
+                     Margin="2,6,0,0"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Visibility="{Binding ForeignRunActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
         </StackPanel>
       </Border>
     </Border>
