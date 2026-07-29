@@ -204,12 +204,29 @@ the test comments first.
   (`SyncMapper.cs:342-343`), keeping them device-local without letting the pull erase them.
 - **The tool-loop insertion had no test at any level.** Closed by `261410f`.
 
+### Closed by the Tier-2 decision pass (2026-07-29)
+
+- **The image eviction — `b59cfe5`.** Image-bearing turns are withheld from the compacted range and re-attached
+  immediately before the pinned instruction, in original relative order. What made this look like its own batch
+  — "needs a real image token estimate" — collapsed into a constant: `ImageAttachmentProcessor` caps the long
+  edge at **1568**, so the largest image reaching a provider is ~3278 tokens at `w*h/750`, bounded by
+  `ImageTokenCharge = 3500`. Admitted newest-first under a sub-cap (half the remaining input budget, floored at
+  one image), with a hard stop refusing any image that would push the window down to `MaxOutputTokens` —
+  otherwise a many-image request trips the skip path and goes out **uncompacted**, which is a provider 400
+  rather than a shrink. Tool content is never withheld, so a call is never separated from its result. The
+  eviction *unit* was confirmed rather than assumed: `ToChatMessage` fuses `[TextContent, DataContent]` into one
+  message, so a whole turn is pinned.
+- **The backwards pinned-cost comment — `b59cfe5`,** in the same commit that made the charge correct.
+- **Release-invisible compaction — `b59cfe5` + `9022980`.** Success line → `Information`; skip line → `Warning`
+  with its numbers; and one line per executor seam naming which run (and, on the live path, which step) was
+  shrunk, since the compactor holds neither id. **A user-visible surface is still deliberately absent** — the
+  persisted-ledger option was costed (~9 files, two broken fakes, a resx decision) and queued.
+
 ### Still open
 
-An image attachment is the first thing evicted on the Live agent path (measured: in=7 → out=6, no `DataContent`
-survives; the pin protects the goal that refers to it, so the step answers about an image it cannot see) ·
 `bytes/4` accounting is wrong in both directions and unfixable while `Create` is `internal` ·
-`ToolEvictionThreshold` is close to inert, so truncation does all the work · the step-1 request is
+`ToolEvictionThreshold` is close to inert, so truncation does all the work · **no user-visible compaction
+surface** (a release log now answers "did this run lose context", but the app does not) · the step-1 request is
 never compacted, so an oversized *goal* still fails — though **at planning, not at step 1**: `AgentPlanner`
 passes no `contextBudget` at all (`AgentPlanner.cs:118-119`), so the run settles `Failed` at Planning and step 1
 never runs — and as of 2026-07-29 the failure at least *names itself* when tools are enabled at round 0 (the
@@ -219,11 +236,10 @@ diagnosis only, retry behaviour unchanged, and an unlisted provider phrasing deg
 Not to be confused with the early return in `AgentContextCompactor.CompactAsync`: that tests
 `window <= MaxOutputTokens`, and `MaxOutputTokens` defaults to **0**, so it degenerates to `window <= 0` and
 fires only when the pinned prefix alone consumes the entire window — it is **not** the oversized-goal path ·
-compaction is invisible to the user in every **release** build, because the log level is
-compile-time only (`Bootstrapper.cs:307`/`:317` read `IsDevMode`, which is `#if DEBUG`) — so the two `LogDebug`
-outcome lines are unrecoverable, not merely inconvenient · **the comment at `:139-142` is backwards**: it claims
-under-charging a pinned image "errs toward compacting", but a smaller `pinnedCost` yields a *larger* `window` and
-therefore *less* compaction, i.e. it errs toward silently overflowing · the package bump's streamed tool-call
+the diagnosis only fires when `useTools && round == 0`, since that is the only condition reaching the
+tool-not-supported catch, so a provider with tool calling off still overflows undiagnosed · a machine-readable
+reason code on the run is still deferred (the classifier is internal to `AiClientService` and unreachable from
+`AgentRunOrchestrator`, which swallows the exception into `ExtraJson`) · the package bump's streamed tool-call
 coalescing and the seven `OPENAI001` pragma sites are unverified beyond compiling (`74f964c` is the first commit
 to revert if provider behaviour regresses).
 

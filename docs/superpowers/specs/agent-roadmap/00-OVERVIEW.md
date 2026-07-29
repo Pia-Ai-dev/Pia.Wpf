@@ -258,10 +258,56 @@ parses, the `loc:Str` key resolves (the hint was located *by its rendered text*)
 `ForeignRunActive == false` and `Visible` at `true`, and a deliberately misspelled binding path was confirmed to
 produce the silent always-visible failure **with the build still at 0 errors**.
 
+### Tier-2 decision pass (2026-07-29) — `cbe90a2` → `0784c69`
+
+The five hazards the residual-hazard pass deliberately left for an owner decision were presented as options,
+decided, and implemented. Six commits.
+
+| Commit | Hazard | What |
+|---|---|---|
+| `cbe90a2` + `ee6a2e2` | **B** | A `Once` job retries **only on a pre-model failure** (2 attempts, ~10 min) |
+| `b59cfe5` | **C** + **D-A** | Image-bearing turns pinned and charged; outcome logs promoted to release-visible |
+| `9022980` | **D-A′** | Each executor seam names WHICH run (and, on the live path, which step) was shrunk |
+| `a62ba69` | **A** | The composer gates from a launch-bracket index, closing the ungated `SingleTurn` hole |
+| `0784c69` | **E** | A context overflow is named instead of being reported as a tool-support problem |
+| `5a6f196` | — | The UI-dispatcher abstraction spec'd as [Batch 12](12-ui-dispatcher-abstraction.md) |
+
+**Gate: 0 errors, exactly 194 warnings (`--no-incremental`), 2194 tests, 0 failed.** Every behavioural fix was
+demonstrated red before green by neutralising the fix and re-running — the activation seed, the `SingleTurn`
+bracket, image detection, and pre-model classification each fail their own tests when disabled. Three items
+carry a guard rather than a regression test and say so in their own comments.
+
+**Two decisions narrowed a recommendation, and both were right to.** B was scoped to **pre-model** failures
+only, which removes the duplicate-vault-write risk a whole-run retry carries (a scheduled `AgentTask` runs with
+`write_file` granted and attempt 2 replans from scratch). A's index biases toward a **missing** entry rather
+than a stale one, because the failure modes are not symmetric: a stale entry is a permanently dead composer
+(re-activation takes the live-attach branch and does not re-seed), while a missing one is only the pre-existing
+race, which `SaveMergedAsync` already bounds.
+
+**Two claims in the hazard register were wrong and are corrected in place:** the oversized goal fails at
+**planning**, not at step 1, and the compactor's pinned-cost comment had its direction **backwards**.
+
+**A pre-existing flake was observed**, not introduced: one full-suite run showed 2 failures and 6 further runs
+were clean, and `ChatSessionManagerTests.RunChanged_OwnRunTerminal_RetiresOwnership` failed once under
+full-suite parallelism while passing 5/5 in isolation. These are marshaled-event tests whose callbacks depend
+on `SynchronizationContext` timing. Not diagnosed further; if it recurs, that test is the place to start.
+
 ### Opened by Batch 10 (2026-07-28) — known, reasoned, not closed
 
-- **`ActivateAsync` races the composer against `RestoreActiveRunAsync`.** Activating a hydrated chat returns the
-  session (composer live) *before* the fire-and-forget run lookup can set `ForeignRunActive`
+- ~~**`ActivateAsync` races the composer against `RestoreActiveRunAsync`.**~~ **CLOSED `a62ba69`** (2026-07-29)
+  by a third option neither of the two known fixes suggested: `IExecutingRunStore`, a lock-free in-process
+  index of runs that are actually executing, populated from the **launch brackets** rather than from run rows,
+  so activation seeds `ForeignRunActive` **synchronously** before the composer goes live — no await, no lock,
+  no flicker, no swallowed Enter. It also closed a hole that was never recorded and had **no bound at all**: a
+  `RunShape.SingleTurn` background turn was gated nowhere (the handler matched `session.ActiveRunId` and
+  `RestoreActiveRunAsync` filtered `RunShape == Planned`), so `BackgroundAssistantTurnRunner`'s single plain
+  `SaveAsync` deleted the user's message outright with no `SaveMergedAsync` to heal it. `Release` is idempotent
+  and runs from both the `RunChanged` handler and the launcher's `finally`, because `RunChanged` is raised
+  before that `finally`; the reverse lookup is read *before* the release or it erases the answer; registration
+  sits after the slot wait, which is deliberately fail-open. `AgentRunBracketTests` pins the bracket premise,
+  which was the owner's stated argument against this design. The original description follows for context.
+  ~~Activating a hydrated chat returns the session (composer live) *before* the fire-and-forget run lookup can
+  set `ForeignRunActive`~~
   (`ChatSessionManager.cs:432`, marked `KNOWN OPEN WINDOW` in code). **Needs an owner decision, not code** —
   both fixes are visible interactive regressions: awaiting the lookup stalls every history click behind
   `AgentRunService`'s `lock` (which the executing run holds), and pessimistically disabling the composer is a
@@ -303,20 +349,33 @@ produce the silent always-visible failure **with the build still at 0 errors**.
   real users — **belongs in the release notes.** Silently retiring them would have swallowed one-offs someone is
   still waiting for. Settled rows are also never garbage-collected (a `Completed` one-off's
   `LastResultEntryId` links to user-visible chat history).
-- **`MarkRunFailedAsync` retires a `Once` job on its *first* failure.** One transient provider error kills a
-  one-off the user asked for (they do get the failure toast). Chosen over five unattended re-runs in 150 s; it
-  is deliberately its own line in the diff so a reviewer can drop it without reopening W3. Its `Once` branch
-  also writes `Status='Failed'` unconditionally where the recurring branch preserves a non-Active status —
-  unreachable in practice (only `Active` jobs are fired) but wrong for a direct caller.
+- ~~**`MarkRunFailedAsync` retires a `Once` job on its *first* failure.**~~ **CLOSED `cbe90a2`** (+ `ee6a2e2`
+  for a third stale doc). A one-off now gets two attempts ~10 min apart, but **only when the failure is
+  provably pre-model** — `NoProvider`, where no `AgentRuns` row exists, no tokens were spent and nothing was
+  written. That scoping is the decision, not a simplification: a whole-run retry is not idempotent, because a
+  scheduled `AgentTask` runs with `write_file` granted and attempt 2 replans from scratch, so it could silently
+  duplicate vault writes. Reasons derived from `run.State` or a caught message describe a run that already
+  exists and still settle terminally on the first strike. Zero storage cost — `ConsecutiveFailures` already
+  exists, is absent from `SyncScheduledJob`, and survives a pull. Still one statement and one round-trip, with
+  all three conditional writes chosen by `CASE` off the same atomic `ConsecutiveFailures + 1`. The `UpdatedAt`
+  trap is handled explicitly: a settle bumps it (or the first pull reverts the settle), a re-arm must not (it
+  moves only device-local state). The `ELSE Status` asymmetry noted below is fixed too. **Known gap, recorded
+  in code:** `LaunchAsync` can also fail genuinely pre-model but arrives as a bare message, so such a one-off
+  still dies on the first strike.
 
 ### Opened by Batch 11 (2026-07-28) — known, reasoned, not closed
 
-- **An image attachment is the first thing evicted on the Live agent path.** Measured, not theorised: a
-  `DataContent` message is scored at *raw bytes / 4*, so a 300 KB JPEG reports ~76k phantom tokens where a
-  provider would count ~1–2k. The pin protects the system prefix, the goal and the step instruction — so the
-  step keeps a goal that refers to an image it can no longer see. Fixing it needs pinning arbitrary mid-list
-  `DataContent` *plus* a real image token estimate. Recorded as `KNOWN OPEN HAZARD` on the shipped test and
-  deliberately not asserted in either direction.
+- ~~**An image attachment is the first thing evicted on the Live agent path.**~~ **CLOSED `b59cfe5`**
+  (2026-07-29). Image-bearing turns are withheld from the compacted range and re-attached immediately before
+  the pinned instruction, in original relative order. The "real image token estimate" that made this look like
+  its own batch collapsed into a compile-time constant: `ImageAttachmentProcessor` caps the long edge at
+  **1568**, so the largest image that can reach a provider is ~3278 tokens at `w*h/750`, and
+  `ImageTokenCharge = 3500` bounds it. Admitted newest-first under a sub-cap (half the remaining input budget,
+  floored at one image) with a hard stop refusing any image that would push the window to `MaxOutputTokens` —
+  otherwise a many-image request would trip the skip path and be sent **uncompacted**, a provider 400 instead
+  of a shrink. Tool content is never withheld, so a function call can never be separated from its result. The
+  eviction *unit* was also confirmed: `ToChatMessage` fuses `[TextContent, DataContent]` into one message, so
+  what is pinned is a whole turn, never a bare image.
 - **`bytes/4` token accounting is wrong in both directions and unfixable from Pia.**
   `CompactionMessageIndex.Create` is `internal`, so no tokenizer can be injected even though
   `Microsoft.ML.Tokenizers` is already a dependency. Dense JSON *under*-counts (absorbed by lowering the
@@ -354,11 +413,18 @@ produce the silent always-visible failure **with the build still at 0 errors**.
   unreachable from `AgentRunOrchestrator`, which sees only `ex.Message` and swallows it into `ExtraJson`
   (`AgentRunOrchestrator.cs:269` → `AgentRunService.FailAsync`), while `ScheduledJobBackgroundService` reads
   `run?.State.ToString()` (`:245`) and never sees the exception at all.
-- **Compaction is invisible to the user** — no Flow event, no audit entry, no cost-ledger annotation.
-  **Sharpened 2026-07-29:** the real defect is that both outcome lines are `LogDebug` and the log level is
-  **compile-time only** (`Bootstrapper.cs:307`/`:317` read `IsDevMode`, which is `#if DEBUG`; no `AddFilter`, no
-  `Logging` config), so in a release build the information is unrecoverable and the user cannot raise the level.
-  The degrade path at `:213-217` is already `LogWarning` and does reach the support log.
+- ~~**Compaction is invisible to the user**~~ — **CLOSED for diagnosability** by `b59cfe5` + `9022980`, and the
+  hazard was *sharpened* on the way: the real defect was not the absence of a Flow card but that both outcome
+  lines were `LogDebug` while the log level is **compile-time only** (`Bootstrapper.cs:307`/`:317` read
+  `IsDevMode`, which is `#if DEBUG`; no `AddFilter`, no `Logging` config), so a release build could never report
+  whether compaction ran and the user could not raise the level to find out. Now: the success line is
+  `Information`, the skip line is `Warning` with its numbers (the send that follows it is very likely a provider
+  400), and each executor seam adds one line naming **which run** — and, on the live path, **which step** — was
+  shrunk, because the compactor holds neither id. Counts and ids only; never message content.
+  **Still open, deliberately: there is no USER-VISIBLE surface.** "Why did step 7 forget what step 3 found" is
+  now answerable from a release log, which is what a support ticket needs, but not from the app. The persisted
+  option (an ambient tally through `StepTurnResult` into the `StepLedger`, ~9 files, breaking two hand-written
+  `IAgentRunService` fakes, plus a resx decision) was costed and queued rather than taken.
 - ~~**Two smaller leaks**~~ **BOTH CLOSED** (2026-07-29): the `System`-message drop by `045edea` (skip by
   reference identity over the pinned instances, not by role; red-before/green-after test), and
   `AssistantViewModel.Dispose` by `42802e0` (plus a symmetric guard on the sibling event).
@@ -369,10 +435,11 @@ produce the silent always-visible failure **with the build still at 0 errors**.
   the pragma to exactly one site and asserting no csproj/`Directory.Build.props`/`.editorconfig` mentions
   `MAAI001`. **The build bar provably cannot catch this** — injecting a `static ContextWindowCompactionStrategy`
   field into the pragma'd file builds with **zero** `MAAI001` warnings; the test names the field.
-- **`AgentContextCompactor`'s pinned-cost comment (`:139-142`) is backwards.** Found 2026-07-29. It claims
-  under-charging a pinned image "errs toward compacting"; the arithmetic says the opposite — a smaller
-  `pinnedCost` yields a *larger* `window` at `:154`, hence *less* compaction, i.e. it errs toward silently
-  overflowing. Comment-only defect today, but it is load-bearing if image pinning is ever added.
+- ~~**`AgentContextCompactor`'s pinned-cost comment is backwards.**~~ **CLOSED `b59cfe5`**, in the same commit
+  that made the charge correct — which is why it was folded in rather than fixed as a one-liner a later commit
+  would immediately edit again. The replacement states the real direction: `pinnedCost` is *subtracted* from
+  the window, so under-charging leaves a larger input budget and therefore *less* compaction, erring toward
+  silently overflowing.
 - **The package bump's two behaviour-sensitive concentrations are unverified beyond compiling**: streamed
   tool-call coalescing at `AiClientService.cs:263` (`updates.ToChatResponse()`), and the seven `OPENAI001`
   pragma sites riding the OpenAI 2.10.0 pin that `Microsoft.Extensions.AI.OpenAI` moves. Both need a real

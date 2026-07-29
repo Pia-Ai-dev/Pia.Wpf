@@ -206,18 +206,28 @@ mock unchanged.
 - **`AssistantViewModel.Dispose` forgot `ForeignRunActiveChanged`.** Closed by `42802e0`, plus a symmetric guard
   on the sibling event so removing either unsubscribe goes red.
 
+### Closed by the Tier-2 decision pass (2026-07-29)
+
+- **`ActivateAsync`'s composer race — `a62ba69`.** Neither of the two fixes this file called visible
+  regressions was taken. A third option: `IExecutingRunStore`, a lock-free index of runs that are actually
+  executing, fed from the **launch brackets** rather than from run rows, so activation seeds the flag
+  **synchronously** before the composer goes live. It also closed the wider hole recorded here — a
+  `RunShape.SingleTurn` turn was gated nowhere and its single plain `SaveAsync` had no `SaveMergedAsync` bound.
+  `Release` is idempotent and called from both the `RunChanged` handler and the launcher's `finally` (the event
+  fires before the `finally`), the reverse lookup is read before the release, and registration sits after the
+  slot wait, which is deliberately fail-open. `AgentRunBracketTests` pins the bracket premise.
+- **`MarkRunFailedAsync` retiring a one-off on its first failure — `cbe90a2`** (+ `ee6a2e2`). Scoped to
+  **pre-model** failures only — the zero-token `NoProvider` path this file flagged as the cheapest — because a
+  whole-run retry is not idempotent: a scheduled `AgentTask` holds `write_file` and attempt 2 replans from
+  scratch. No migration; `ConsecutiveFailures` already existed and already survived a pull.
+
 ### Still open
 
-`ActivateAsync`'s composer race (needs an owner decision — and it is **wider than recorded**: a
-`RunShape.SingleTurn` background turn is never gated at all, because `OnAgentRunChanged` matches on
-`session.ActiveRunId` and `RestoreActiveRunAsync` filters `RunShape == Planned`, so a
-`BackgroundAssistantTurnRunner` turn's single plain `SaveAsync` deletes the user's message outright, unbounded by
-`SaveMergedAsync`) · W2's residual window (a live turn already streaming when Continue is clicked) · the
-incremental write that would retire the class · chat-deletion resurrection (`HeadlessRunLauncher.cs:419`) · no
-real re-arm surface for a settled one-off (Batch 09) · no backfill, so every existing past-dated `Once` job
-fires **once more** (release notes) · `MarkRunFailedAsync` retiring a one-off on its first failure — note the
-cheapest path costs **zero tokens** (`ScheduledJobBackgroundService.cs:171-174` retires on `NoProvider`, before
-any model call).
+W2's residual window (a live turn already streaming when Continue is clicked) · the incremental write that
+would retire the class · chat-deletion resurrection (`HeadlessRunLauncher.cs:419`) · no real re-arm surface for
+a settled one-off (Batch 09) · no backfill, so every existing past-dated `Once` job fires **once more**
+(release notes) · a one-off whose `LaunchAsync` fails genuinely pre-model still dies on the first strike,
+because that failure arrives as a bare message rather than a reason the caller can vouch for.
 
 ## Tests written (and now executed — all green)
 
