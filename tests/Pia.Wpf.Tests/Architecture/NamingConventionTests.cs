@@ -25,29 +25,17 @@ public class NamingConventionTests
     [Fact]
     public void ServiceClasses_MustFollowNamingConvention()
     {
-        var allowedSuffixes = new[] { "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine", "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner", "Indexer", "Watcher", "Renderer", "Clusterer", "Extractor" };
-
-        // Domain-named service/helper classes that legitimately do not carry one of the suffixes above.
-        // ChromiumProvisioner / TeamsMeetingSession / AudioHopResampler are agent-noun / stateful helpers
-        // named by domain convention rather than the generic suffix list; ChromiumDownloadProgress is a
-        // progress-DTO record mirroring ModelDownloadProgress (which lives under Services.Interfaces and
-        // is therefore already excluded). Keep this list narrow — do not exclude whole namespaces, so
-        // future non-conforming service classes are still caught.
-        var exemptNames = new HashSet<string>
+        // Agent nouns are first-class here, not exceptions. A service named for what it DOES
+        // (Planner/Orchestrator/Verifier/Launcher/Executor) is as conventional as one suffixed "Service";
+        // "Context" covers the runtime state carriers (RunContext). Provisioner/Session/Resampler were
+        // previously carried as exempt NAMES, which made three ordinary domain nouns look like debt.
+        var allowedSuffixes = new[]
         {
-            "ChromiumProvisioner",
-            "TeamsMeetingSession",
-            "AudioHopResampler",
-            "ChromiumDownloadProgress",
-            // BrowserLaunchSpec is a launch-description DTO record (how to launch + how to recognise the
-            // process), not a service — same category as ChromiumDownloadProgress above.
-            "BrowserLaunchSpec",
-            // ClusterResult is a result-DTO record from SpeakerClusterer (assignments + cut distance),
-            // not a service — same category as ChromiumDownloadProgress / BrowserLaunchSpec above.
-            "ClusterResult",
-            // IngestStateEntry is the row-DTO record of IngestStateStore (hash + outcome + touched
-            // pages), not a service — same category as ClusterResult above.
-            "IngestStateEntry",
+            "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine",
+            "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner",
+            "Indexer", "Watcher", "Renderer", "Clusterer", "Extractor",
+            "Planner", "Orchestrator", "Verifier", "Launcher", "Executor", "Context",
+            "Provisioner", "Session", "Resampler",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)
@@ -64,8 +52,17 @@ public class NamingConventionTests
             // e.g. AUDIOCLIENT_ACTIVATION_PARAMS / WAVEFORMATEX, which must mirror the native API names,
             // and the ambient context record struct TaskContext) are data carriers, not services, and
             // are excluded. This only ever narrows scrutiny; a misnamed reference-type service is still caught.
-            .Where(t => !t.IsNestedPrivate && !t.IsValueType && !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
-            .Where(t => !exemptNames.Contains(t.Name))
+            .Where(t => !t.IsValueType && !t.GetCustomAttributes<System.Runtime.CompilerServices.CompilerGeneratedAttribute>().Any())
+            // NESTED types (not just nested-private) are named by their CONTAINING type — AgentPlanner.PlanStepArg
+            // and BackgroundAssistantTurnRunner.ExchangeResult read correctly at every use site, and the outer
+            // type already carries the naming burden this rule enforces.
+            .Where(t => !t.IsNested)
+            // RECORDS are data carriers by definition, so a service-naming rule has nothing to say about them.
+            // Every name this test used to carry as an exemption was a record (ChromiumDownloadProgress,
+            // BrowserLaunchSpec, ClusterResult, IngestStateEntry) — the exemption list was really an
+            // "is-not-a-service" list maintained by hand. Where records may LIVE is a separate, structural
+            // question, asserted by RecordTypes_MustNotLiveInTheServicesRootNamespace below.
+            .Where(t => !IsRecord(t))
             .Where(t => !allowedSuffixes.Any(suffix => t.Name.EndsWith(suffix)))
             .Select(t => t.Name)
             .ToList();
@@ -73,6 +70,40 @@ public class NamingConventionTests
         Assert.True(violations.Count == 0,
             $"service classes must end with one of [{string.Join(", ", allowedSuffixes)}], but these don't: {string.Join(", ", violations)}");
     }
+
+    /// <summary>
+    /// Structural companion to the naming rule: the ROOT <c>Pia.Services</c> namespace is for services, so a
+    /// record declared there is misfiled. Contracts belong with the interface they serve
+    /// (<c>Pia.Services.Interfaces</c> — where <c>ModelDownloadProgress</c>, <c>StepTurnSpec</c> and friends
+    /// already live); feature-local DTOs belong in their feature sub-namespace (<c>Pia.Services.Wiki</c>,
+    /// <c>Pia.Services.MeetingAttendee</c>, …), which is why sub-namespaces are deliberately out of scope here.
+    /// <para>
+    /// This is the rule that keeps the naming test honest. Every hand-maintained exemption it used to carry
+    /// existed because a DTO had been dropped into a service namespace, and the only repair the old design
+    /// offered was another name in a list — so the list grew and the signal decayed.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void RecordTypes_MustNotLiveInTheServicesRootNamespace()
+    {
+        var misfiled = PiaAssembly.GetTypes()
+            .Where(t => t.Namespace == ServicesNamespace)
+            .Where(t => !t.IsNested && !t.IsValueType && IsRecord(t))
+            .Select(t => t.Name)
+            .OrderBy(n => n)
+            .ToList();
+
+        Assert.True(misfiled.Count == 0,
+            "records in the Pia.Services root namespace are misfiled — move a contract to Pia.Services.Interfaces "
+            + $"or a feature DTO to its feature sub-namespace: {string.Join(", ", misfiled)}");
+    }
+
+    /// <summary>
+    /// Records are identified by the compiler-synthesised <c>&lt;Clone&gt;$</c> member, which is the only
+    /// reliable IL-level marker (there is no <c>Type.IsRecord</c>).
+    /// </summary>
+    private static bool IsRecord(Type type) =>
+        type.GetMethod("<Clone>$", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance) is not null;
 
     [Fact]
     public void ServiceInterfaces_MustStartWith_I()
