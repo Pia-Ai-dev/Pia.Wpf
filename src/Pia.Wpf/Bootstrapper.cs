@@ -472,7 +472,10 @@ public static class Bootstrapper
         // Headless background assistant-turn runner. Transient (resolved per-run from a
         // fresh scope by the scheduled-job service) so its transient AI-client decorator
         // doesn't cache tokenization state across runs.
-        services.AddTransient<IBackgroundAssistantTurnRunner, BackgroundAssistantTurnRunner>();
+        // The concrete type is registered too: HeadlessTurnExecutor depends on it directly for
+        // RunExchangeAsync (per-step), which is not on the single-turn interface.
+        services.AddTransient<BackgroundAssistantTurnRunner>();
+        services.AddTransient<IBackgroundAssistantTurnRunner>(sp => sp.GetRequiredService<BackgroundAssistantTurnRunner>());
         // Agent orchestration loop (1.2, §13.10). Planner + orchestrator are transient/stateless per
         // call; the headless executor is resolved inside a fresh per-run DI scope. The live executor
         // is NOT registered — ChatSessionManager new's it on the UI thread bound to the session.
