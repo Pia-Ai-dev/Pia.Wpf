@@ -691,6 +691,44 @@ Notes the implementing agent must honour in this file:
 
 ---
 
+## 10a. As built (deviations recorded at implementation time)
+
+1. **`ReasoningEffort` does NOT resolve unqualified in `AgentPlanner`** (§6 claimed it does). `using
+   Microsoft.Extensions.AI;` brings its own `ReasoningEffort` into scope, so the gate reads
+   `Pia.Models.ReasoningEffort.None` fully qualified — the same collision `MistralProviderHandler` already
+   works around. `AgentPlannerTests` hits it too and takes a `using ReasoningEffort = Pia.Models.ReasoningEffort;`
+   alias so `[InlineData(ReasoningEffort.None)]` stays readable.
+2. **`LlmTimeoutException` lives in `namespace Pia.Services.Exceptions`**, not `Pia.Services` as R10's path
+   implied; the test file takes that using.
+3. **T16 moved out of `AgentPlannerTests`** into a new `tests/Pia.Wpf.Tests/Models/AppSettingsAgentPlanningTests.cs`
+   (namespace `Pia.Tests.Models`, following `AppSettingsMeetingBrowserTests`), so the settings commit ships
+   with its own test instead of the assertion landing in the planner commit. It gained a **camelCase JSON
+   round-trip test** — the only automated proof that toggling the CheckBox can actually persist, since §9.2
+   rules out an `AssistantSettingsViewModel` unit test.
+4. **Two gate-robustness tests added** beyond T1–T19: `PlanAsync_GateOn_UnregisteredProviderType_StillPlans`
+   and `PlanAsync_GateOn_SettingsUnavailable_StillPlans`. §6.4's catch-all names exactly these two hazards
+   (`AiProviderHandlerResolver.Get` throwing, `GetSettingsAsync` doing I/O) and nothing else covered either.
+5. **`AgentPlannerTests` couples the handler type to the provider type** in one `PlannerFor(...)` helper rather
+   than taking them as independent parameters. A mismatch would make `Get` throw, the gate swallow it, and
+   every gate assertion pass for the wrong reason.
+6. **`AssertReasoningTurns`/`AssertConstrainedTurns` use `Received(count)` with `count: 0` for
+   `DidNotReceive`** and discard the returned task with `_ =` rather than awaiting it, so no assertion can
+   depend on NSubstitute's auto-value for `Task<ChatResponse>` in the received-calls route.
+7. **Neutralization proof (each restored before committing).** Handler flag: `OllamaProviderHandler` flipped to
+   `=> false;` → 1 red; rewritten as `{ get; } = true;` → 1 red (the `GetUninitializedObject` trap §4 warns
+   about). Planner: gate forced false → **8** red, and only the reason-then-emit ones; discarded-turn usage
+   returned as `(null, null)` → `…_StillAccruesItsUsage` red; **both** cancellation guards removed → the
+   cancellation test red (removing only the dedicated `catch` does **not** red it, because
+   `ct.ThrowIfCancellationRequested()` in the general catch still propagates — the test pins the invariant,
+   not the mechanism); truncation disabled → the truncation test red; analysis moved to the System prompt →
+   3 red, which is what pins D5's placement. Localization: the `de` header key deleted →
+   `AllTranslations_MustBeComplete` red naming that exact key.
+8. **Measured gate.** `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → 0 errors, **194**
+   warnings (unchanged). Full suite → **2218** total / **0** failed / 1 skipped (baseline 2194/0/1; +24 = 18
+   planner cases, 3 handler-flag, 3 settings).
+
+---
+
 ## 11. Open questions (none blocking)
 
 1. **`MaxAnalysisChars = 4000` is a judgement call**, not a measurement. If a local 8k-context model still
