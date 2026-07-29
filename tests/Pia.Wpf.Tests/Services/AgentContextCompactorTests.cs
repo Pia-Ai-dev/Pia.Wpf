@@ -7,8 +7,9 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Unit coverage for the compaction adapter. Execution is deferred to Windows/CI — net10.0-windows
-/// cannot run on the machine these were written on.
+/// Unit coverage for the compaction adapter. Every in/out count in the comments below is MEASURED by
+/// running this file, not derived: the net10.0-windows target does execute on the machines this repo is
+/// built on, so a fixture retune is always something to verify rather than guess.
 /// <para>
 /// No Microsoft.Agents.AI.Compaction type appears here: the experimental (MAAI001) surface is
 /// contained inside AgentContextCompactor.cs, and these tests exercise it through Pia-only types.
@@ -70,6 +71,21 @@ public class AgentContextCompactorTests
         Assert.True(
             AgentContextCompactor.TruncationThreshold >= AgentContextCompactor.ToolEvictionThreshold,
             "the compaction strategy constructor throws when truncation < tool eviction");
+    }
+
+    [Fact]
+    public void ImageTokenCharge_StaysAtTheRecordedBound()
+    {
+        // A BOUND, not a measurement, and its derivation is only checkable here: Pia re-encodes every
+        // attachment through ImageAttachmentProcessor, whose MaxLongEdge = 1568 scales the long edge
+        // down, so the biggest image that can reach a provider is 1568 x 1568 — about 3278 tokens at
+        // Anthropic's w * h / 750. Dropping the charge under that re-opens the decision, and in the
+        // dangerous direction: pinnedCost is subtracted from the window, so an under-charged pin leaves
+        // a larger input budget and errs toward overflowing the context rather than toward compacting.
+        Assert.Equal(3500, AgentContextCompactor.ImageTokenCharge);
+        Assert.True(
+            AgentContextCompactor.ImageTokenCharge >= 1568 * 1568 / 750,
+            "the charge must bound the largest image Pia can send (ImageAttachmentProcessor.MaxLongEdge = 1568)");
     }
 
     [Fact]
@@ -359,30 +375,52 @@ public class AgentContextCompactorTests
         Assert.Equal(messages.Count, result.Count);
     }
 
+    /// <summary>
+    /// A stand-in for what ImageAttachmentProcessor produces. Only the BYTE COUNT matters: the library
+    /// scores a DataContent at raw bytes / 4, so 300 KB reports ~75k phantom tokens.
+    /// </summary>
+    private static byte[] Jpeg()
+    {
+        var data = new byte[300 * 1024];
+        Random.Shared.NextBytes(data);
+        return data;
+    }
+
+    /// <summary>
+    /// The exact shape AssistantMessage.ToChatMessage builds for a message with an attachment: ONE
+    /// ChatMessage fusing [TextContent, DataContent]. That fused TURN is the unit the pin protects —
+    /// there is no such thing as a bare image message on either executor path.
+    /// </summary>
+    private static ChatMessage ImageTurn(ChatRole role, string text) =>
+        new(role, [new TextContent(text), new DataContent(Jpeg(), "image/jpeg")]);
+
     [Fact]
-    public async Task ImageAttachment_DoesNotEvictTheGoal()
+    public async Task ImageAttachment_MidList_IsPinnedRatherThanEvicted()
     {
         // The library scores a DataContent at raw bytes / 4, so a 300 KB JPEG reports ~75k phantom
         // tokens on a list whose text is a handful of tokens. That inflation is unfixable from here
-        // (the tokenizer seam is internal), which is exactly why the pin exists rather than trusting
-        // the thresholds.
+        // (the tokenizer seam is internal), which is exactly why the fix is a PIN rather than a
+        // threshold.
         //
-        // KNOWN OPEN HAZARD, measured, deliberately NOT asserted either way: on this fixture the
-        // attachment MESSAGE itself is evicted (in=7 -> out=6, no DataContent survives), so a
-        // multi-step Live agent run on a provider with a window loses the image from step 2 onward
-        // while the goal that refers to it stays pinned — a confidently wrong answer instead of a
-        // failure. Fixing it means pinning arbitrary mid-list DataContent messages and inventing a
-        // real token estimate for them (a provider counts a 300 KB JPEG at ~1-2k tokens, not 76k),
-        // which is a bigger change than this file's splice. Not asserted as "image survives" (it
-        // does not) and not asserted as "image is dropped" (that would freeze the bug in place).
-        var jpeg = new byte[300 * 1024];
-        Random.Shared.NextBytes(jpeg);
+        // This WAS the file's KNOWN OPEN HAZARD, deliberately asserted in neither direction: the
+        // attachment turn was evicted (measured in=7 -> out=6, no DataContent surviving), so a
+        // multi-step Live agent run lost the image from step 2 onward while the goal that REFERS to it
+        // stayed pinned — a confidently wrong answer instead of a failure. Image-bearing turns are
+        // withheld from the compacted range now and charged ImageTokenCharge instead of bytes/4, so the
+        // hazard is closed and this asserts the direction it used to refuse to assert.
+        //
+        // DERIVED, not measured, and therefore NOT asserted: withholding the 300 KB DataContent also
+        // drops what the library counts to roughly 10 tokens against a trigger near 1742, so this small
+        // fixture is expected back unchanged (out=7). That also makes the ordering check at the bottom a
+        // GUARD here rather than the real proof — OverBudget_ReattachesThePinnedImageJustBeforeTheInstruction
+        // is the test that proves re-attachment order after an actual eviction pass.
+        var image = ImageTurn(ChatRole.User, "here is the screenshot");
 
         var messages = new List<ChatMessage>
         {
             new(ChatRole.System, "system"),
             new(ChatRole.User, "THE GOAL: describe the screenshot."),
-            new(ChatRole.User, [new DataContent(jpeg, "image/jpeg")]),
+            image,
             new(ChatRole.Assistant, "step 1 reply"),
             new(ChatRole.Assistant, "step 2 reply"),
             new(ChatRole.Assistant, "step 3 reply"),
@@ -392,9 +430,149 @@ public class AgentContextCompactorTests
         var result = await AgentContextCompactor.CompactAsync(
             messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
 
+        // The pins that already held.
         Assert.Equal(ChatRole.System, result[0].Role);
         Assert.Same(messages[0], result[0]);
         Assert.Contains("THE GOAL", result[1].Text);
+
+        // The pin this test exists for: the attachment turn is still there, exactly once, still the
+        // caller's own fused instance, and still carrying its text. Filtered with plain LINQ rather than
+        // an Assert predicate so no Enumerable.Any() ever lands inside an assertion argument.
+        var withImages = result.Where(m => m.Contents.OfType<DataContent>().Any()).ToList();
+        var survivor = Assert.Single(withImages);
+        Assert.Same(image, survivor);
+        Assert.Contains("here is the screenshot", survivor.Text);
+
+        var imageAt = result.FindIndex(m => ReferenceEquals(m, image));
+        var instructionAt = result.FindIndex(m => ReferenceEquals(m, messages[^1]));
+        Assert.True(
+            imageAt >= 0 && imageAt < instructionAt,
+            $"the pinned image must precede the instruction, but landed at {imageAt} against {instructionAt}");
+    }
+
+    [Fact]
+    public async Task OverBudget_ReattachesThePinnedImageJustBeforeTheInstruction()
+    {
+        // The image case at a size where compaction really runs: the test above proves the pin, this
+        // one proves the pin survives an eviction pass and comes back in the right place. Over budget
+        // for the reason recorded on AgentStepShapedMessages — 12 replies of 2014 chars / 4 ≈ 6040
+        // estimated tokens against a truncation trigger of 0.70 × (8000 − 2000 − pinnedCost ≈ 3511) ≈
+        // 1742, so it is 3.4x over. pinnedCost is ~3500 above the text-only fixtures precisely because
+        // the image is charged now (goal 33 chars / 4 = 8, instruction 15 / 4 = 3, + 3500), and the
+        // JPEG's own bytes never reach the library at all: the turn is withheld.
+        var image = ImageTurn(ChatRole.User, "screenshot of the failing test");
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "You are Pia, an agent."),
+            new(ChatRole.User, "THE GOAL: explain the screenshot."),
+        };
+        for (var i = 1; i <= 6; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+        messages.Add(image);
+        for (var i = 7; i <= 12; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+        messages.Add(new ChatMessage(ChatRole.User, "Execute step 13"));
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            result.Count < messages.Count,
+            $"this fixture must be over budget or it proves nothing, but {messages.Count} messages came back as {result.Count}");
+
+        // The tail pin group, in order: the image, then the instruction about it, last.
+        Assert.Same(image, result[^2]);
+        Assert.Same(messages[^1], result[^1]);
+
+        // ...and the head pins are unaffected by the third pin class.
+        Assert.Same(messages[0], result[0]);
+        Assert.Contains("THE GOAL", result[1].Text);
+    }
+
+    [Fact]
+    public async Task ChargingThePinnedImage_TipsAFixtureThatUsedToFit_IntoCompaction()
+    {
+        // DIRECTION. The comment this replaced claimed an under-charged image "errs toward compacting";
+        // it is the other way round — pinnedCost is SUBTRACTED from the window, so a smaller charge
+        // leaves a LARGER input budget and errs toward overflowing. Both halves run the SAME history and
+        // the same provider; the only difference is a DataContent fused onto the pinned instruction:
+        //
+        //  * text only:  pinnedCost = 14 (goal 44 chars / 4 = 11, instruction 14 / 4 = 3), trigger =
+        //                0.70 × (8000 − 14 − 2000) ≈ 4190 against a history of ≈ 4028 — under budget,
+        //                comes back untouched. That is the measurement already recorded on
+        //                AgentStepShapedMessages: in=11, out=11.
+        //  * with image: pinnedCost = 3514, trigger = 0.70 × (8000 − 3514 − 2000) ≈ 1740 against the
+        //                same ≈ 4028 — over budget, compacts.
+        //
+        // The JPEG's bytes are irrelevant here: the instruction is WITHHELD from the list the library
+        // scores, so this isolates the CHARGE and nothing else. The under-budget half has only a ~4%
+        // margin (4028 of 4190), so KEEP THE TWO HALVES' priorSteps IDENTICAL if it ever needs retuning
+        // — the differential is the whole point and drifting them apart would prove nothing.
+        var budget = AgentContextBudget.From(Provider(8_000, 2_000));
+
+        var textOnly = AgentStepShapedMessages();
+        var textOnlyResult = await AgentContextCompactor.CompactAsync(
+            textOnly, budget, Logger, TestContext.Current.CancellationToken);
+        Assert.True(
+            textOnlyResult.Count == textOnly.Count,
+            $"the text-only half must stay UNDER budget or this differential proves nothing, but {textOnly.Count} messages came back as {textOnlyResult.Count}; if this fails, drop BOTH halves to priorSteps: 6");
+
+        var withImage = AgentStepShapedMessages();
+        withImage[^1] = ImageTurn(ChatRole.User, withImage[^1].Text);
+
+        var withImageResult = await AgentContextCompactor.CompactAsync(
+            withImage, budget, Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            withImageResult.Count < withImage.Count,
+            $"charging the pinned image must tip this fixture over budget, but {withImage.Count} messages came back as {withImageResult.Count}");
+
+        // The instruction is still pinned, still last, and still carries its image.
+        Assert.Same(withImage[^1], withImageResult[^1]);
+        Assert.Contains("Execute step 9", withImageResult[^1].Text);
+        Assert.Contains(withImageResult[^1].Contents, c => c is DataContent);
+    }
+
+    [Fact]
+    public async Task ManyImages_ArePinnedNewestFirstUnderTheSubCap()
+    {
+        // THE BOUND, and why it is not optional. ImageTokenCharge is 3500 of an 8000 window, so pinning
+        // BOTH images would charge 7000 on top of 11 tokens of text pins, leaving window = 989, which is
+        // below MaxOutputTokens = 2000: that trips the "pinned prefix leaves no input budget" early
+        // return and sends all 17 messages UNCOMPACTED — a provider 400 instead of a shrink. The sub-cap
+        // (half the remaining input budget, floored at one image, hard-stopped before it can reach that
+        // early return) admits the NEWEST image only, which is the one the instruction is about. That
+        // the request still compacts IS the assertion: it is what the early return not firing looks
+        // like from outside.
+        var older = ImageTurn(ChatRole.User, "the first screenshot");
+        var newer = ImageTurn(ChatRole.User, "the second screenshot");
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "You are Pia, an agent."),
+            new(ChatRole.User, "THE GOAL: compare the screenshots."),
+        };
+        for (var i = 1; i <= 6; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+        messages.Add(older);
+        for (var i = 7; i <= 12; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+        messages.Add(newer);
+        messages.Add(new ChatMessage(ChatRole.User, "Execute step 13"));
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            result.Count < messages.Count,
+            $"the sub-cap must keep this request compactable, but {messages.Count} messages came back as {result.Count}");
+
+        // Newest-first: the second screenshot is the pinned one, re-attached immediately before the
+        // instruction. What becomes of the OLDER image is the library's decision, not Pia's — it goes
+        // into the compacted range like any other unpinned turn, and is asserted in neither direction.
+        Assert.Same(newer, result[^2]);
+        Assert.Same(messages[^1], result[^1]);
     }
 
     [Fact]
