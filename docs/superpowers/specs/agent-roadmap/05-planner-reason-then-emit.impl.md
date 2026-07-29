@@ -723,6 +723,13 @@ Notes the implementing agent must honour in this file:
    not the mechanism); truncation disabled → the truncation test red; analysis moved to the System prompt →
    3 red, which is what pins D5's placement. Localization: the `de` header key deleted →
    `AllTranslations_MustBeComplete` red naming that exact key.
+   Two anti-vacuousness checks on the new assertion helpers themselves: `AssertReasoningTurns(1)` inflated to
+   `(2)` reds with NSubstitute's *"Expected to receive exactly 2 calls … Actually received 1 matching call"*,
+   so the `_ =`-discarded `Received(count)` really does assert and every `AssertReasoningTurns(0)` is
+   load-bearing; and the gate's catch-all rewritten to `throw;` reds **both** robustness tests, so the
+   settings-unavailable one genuinely reaches the catch rather than passing via an ordinary gate-false path.
+   `SensitiveDebug` was confirmed to be the `[Conditional("DEBUG")]` helper in `Pia.Logging/SafeLog.cs`, so
+   the analysis text and the failure detail are erased from release IL along with their arguments.
 8. **Measured gate.** `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → 0 errors, **194**
    warnings (unchanged). Full suite → **2218** total / **0** failed / 1 skipped (baseline 2194/0/1; +24 = 18
    planner cases, 3 handler-flag, 3 settings).
