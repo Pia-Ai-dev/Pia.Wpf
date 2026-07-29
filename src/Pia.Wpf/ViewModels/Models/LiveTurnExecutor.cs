@@ -1,9 +1,9 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
-using Pia.ViewModels.Models;
 
-namespace Pia.Services;
+namespace Pia.ViewModels.Models;
 
 /// <summary>
 /// Interactive act-step executor bound to a live <see cref="ChatSession"/>. Constructed on the UI
