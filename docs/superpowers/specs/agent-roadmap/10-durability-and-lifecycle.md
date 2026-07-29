@@ -8,9 +8,16 @@ This file now describes **the code as built**, not as planned. Where the origina
 overturned at design time, the recommendation and the reason are kept — deleting them would invite someone to
 re-litigate the same choice.
 
-> **Build:** `dotnet build -p:EnableWindowsTargeting=true` → 0 errors, 194 pre-existing warnings, none in a file
-> this batch touched. **Tests: written, never executed.** net10.0-windows cannot run on macOS; `dotnet test`
-> was not invoked at any point. Execution is deferred to Windows/CI.
+> **Build:** `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → 0 errors, 194 pre-existing warnings,
+> none in a file this batch touched.
+>
+> **Tests: WRITTEN AND NOW EXECUTED — green.** This supersedes the original note, which said "written, never
+> executed / net10.0-windows cannot run on macOS / execution deferred to Windows/CI". That was true of the
+> session that built the batch; it is not a property of the code. Measured on Windows 11 at `8add90c`:
+> `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`
+> → **2149 total, 0 failed, 2148 passed, 1 skipped** (21 s). Every test this batch wrote passes, and the
+> qualification below about the W1 concurrency tests being "asserted to fail on the pre-W1 tree by reasoning,
+> not by demonstration" is still unresolved — a green suite does not confirm they exercise the collision.
 
 ---
 
@@ -179,14 +186,40 @@ mock unchanged.
 
 ## Still open (see 00-OVERVIEW “Opened by Batch 10”)
 
-`ActivateAsync`'s composer race (needs an owner decision — both fixes are visible interactive regressions) ·
-W2's residual window (a live turn already streaming when Continue is clicked) · the incremental write that would
-retire the class · chat-deletion resurrection (`HeadlessRunLauncher.cs:419`) · no composer hint string ·
-`SQLITE_BUSY_SNAPSHOT` on read-first deferred transactions · no real re-arm surface for a settled one-off
-(Batch 09) · no backfill, so every existing past-dated `Once` job fires **once more** (release notes) ·
-`MarkRunFailedAsync` retiring a one-off on its first failure.
+### Closed after the fact
 
-## Tests written (never executed)
+- **No composer hint string.** Closed by `87fa403`. `Assistant_BackgroundRunActive_Hint` in all three resx files
+  (real German and French, not English copies) plus a collapsed `TextBlock` in the composer bound to
+  `ForeignRunActive` alone, so it never shows for the streaming or empty-composer disabled states. Reuses the
+  `BooleanToVisibilityConverter` already in `App.xaml`; `ViewStrings.Designer.cs` untouched, because `loc:Str`
+  resolves through `ResourceManager.GetString` at runtime.
+- **`SQLITE_BUSY_SNAPSHOT` on read-first deferred transactions — THE PREMISE WAS FALSE.** Closed by `a5a34a7`,
+  with **no behaviour change**. `DeleteAllUnderGateAsync` is indeed the one read-first transaction in the class,
+  but it was never exposed: `BeginTransaction()` already emits `BEGIN IMMEDIATE`, because **non-deferred is
+  Microsoft.Data.Sqlite's default**, not something this store asks for. Verified empirically on the pinned
+  10.0.9 — a transaction with zero statements executed already refuses another connection's write (SQLITE_BUSY
+  5/5), `deferred: true` lets it straight through, and `ReadUncommitted` is the only isolation level the
+  provider maps to a deferred BEGIN. So the fix was to write the load-bearing default down and pin it: the test
+  *demonstrates* the real 517 failure using a deliberately deferred transaction, then asserts the default
+  overload holds the write lock. The other eight `BeginTransaction()` sites all write first — `SaveMergedAsync`
+  included, whose read is untransacted, *before* `SaveUnderGateAsync` begins its transaction.
+- **`AssistantViewModel.Dispose` forgot `ForeignRunActiveChanged`.** Closed by `42802e0`, plus a symmetric guard
+  on the sibling event so removing either unsubscribe goes red.
+
+### Still open
+
+`ActivateAsync`'s composer race (needs an owner decision — and it is **wider than recorded**: a
+`RunShape.SingleTurn` background turn is never gated at all, because `OnAgentRunChanged` matches on
+`session.ActiveRunId` and `RestoreActiveRunAsync` filters `RunShape == Planned`, so a
+`BackgroundAssistantTurnRunner` turn's single plain `SaveAsync` deletes the user's message outright, unbounded by
+`SaveMergedAsync`) · W2's residual window (a live turn already streaming when Continue is clicked) · the
+incremental write that would retire the class · chat-deletion resurrection (`HeadlessRunLauncher.cs:419`) · no
+real re-arm surface for a settled one-off (Batch 09) · no backfill, so every existing past-dated `Once` job
+fires **once more** (release notes) · `MarkRunFailedAsync` retiring a one-off on its first failure — note the
+cheapest path costs **zero tokens** (`ScheduledJobBackgroundService.cs:171-174` retires on `NoProvider`, before
+any model call).
+
+## Tests written (and now executed — all green)
 
 `AssistantChatConcurrencyTests` (11) · `AssistantChatServiceTests` (+) · `SqliteContextTests` (3) ·
 `ScheduledJobServiceTests` (19) · `RecurrenceCalculatorTests` (+2) · `SyncMapperNewEntitiesTests` (+2) ·
@@ -208,4 +241,6 @@ retire the class · chat-deletion resurrection (`HeadlessRunLauncher.cs:419`) ·
 
 No swallowed persistence failures under the E2 per-step write cadence ✅ · one chat row has exactly one effective
 writer at a time ✅ **except** the residual window above · a `Once` job fires once ✅ (existing rows fire once
-more first, by design) · build green ✅ · tests written, execution deferred to Windows/CI ✅.
+more first, by design) · build green ✅ · **tests written AND executed green ✅** (2149 total, 0 failed, on
+Windows 11 at `8add90c`) — the two honest limits on that coverage above still stand, because a green suite does
+not demonstrate that the W1 concurrency tests would go red on a revert of `78e16dd`.

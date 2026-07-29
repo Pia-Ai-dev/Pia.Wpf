@@ -38,29 +38,35 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 10 | `74f964c` → `a06358d` | **[Batch 11](11-context-compaction.md)** — `Microsoft.Agents.AI.Compaction` behind one adapter, per-provider context budget | ✅ done |
 | 11 | `aab9a06` → `601090e` | Joint review fix pass over 10 + 11 (4 must-fixes, 6 should-fixes; two should-fixes deliberately left open — see below) | ✅ done |
 
-**Git position:** the branch **is** pushed — `origin/feature/agent-run-spine` exists and the branch tracks
-it; the last pushed commit is `e7df175`. Everything from `19c7a03` onward (hardening + Batch 10 + Batch 11 +
-the fix pass, plus this doc commit) is **local-only** — **50 commits** as of 2026-07-28 (do not trust a
-hardcoded count here; it goes stale on the next commit — read it from git). Check with
-`git rev-list --count origin/feature/agent-run-spine..HEAD` and `git branch -vv`.
-Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true`. At `601090e` this is **0 errors, 194
-warnings**, all pre-existing: 3× `CS8602` in `Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in
-`ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a duplicate `Memory_Refresh` key present twice in each
-of the three resx files, and 186 xUnit analyzer warnings in the test project. **The “0 warnings” figure used
-earlier in this file was wrong** — it came from an incremental build, which skips `CoreCompile` and therefore
-does not re-emit analyzer warnings. The real bar these batches held is *adds zero warnings*, verified with
-`--no-incremental` before and after.
+**Git position:** the branch **is** pushed and tracks `origin/feature/agent-run-spine`, which is now at
+`1c49b08` — the earlier "last pushed commit is `e7df175` / 50 commits local-only" figure is stale. As of
+2026-07-29 there are **17 local-only commits** (do not trust a hardcoded count here; it goes stale on the next
+commit — read it from git). Check with `git rev-list --count origin/feature/agent-run-spine..HEAD` and
+`git branch -vv`.
+Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true --no-incremental`. Re-measured at
+`87fa403`: **0 errors, 194 warnings**, all pre-existing and unchanged across this pass: 3× `CS8602` in
+`Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
+duplicate `Memory_Refresh` key present twice in each of the three resx files, and 186 xUnit analyzer warnings
+in the test project. **The “0 warnings” figure used earlier in this file was wrong** — it came from an
+incremental build, which skips `CoreCompile` and therefore does not re-emit analyzer warnings. The real bar
+these batches held is *adds zero warnings*, verified with `--no-incremental` before and after. Always pass
+`--no-incremental` when quoting a warning count.
 
 > **Two things that are not batches, and outrank every batch below.**
-> 1. **Run the tests.** The unexecuted surface has *grown*, not shrunk. The ~147 agent-related
->    `[Fact]`/`[Theory]` from the hardening batch have still never been executed by any runner
->    (`AgentRunService` 31, `AgentRunOrchestrator` 32, `AgentVerifier` 20, `AgentRunNotificationSurface` 16,
->    `RunProgress` 15, `HeadlessRunLauncher` 14, `AgentPlanner` 11, `HeadlessTurnExecutor` 8) — and Batches 10
->    and 11 added **90 more** `[Fact]`/`[Theory]`, also never executed. Roughly **240 assertions across 20
->    commits rest on code nothing has run.** This is by far the largest risk on the branch, and two of the new
->    assertions are *known* to be fixture-sensitive rather than production-sensitive (see Batch 11).
-> 2. **Push.** Everything from `19c7a03` onward is local-only — `git rev-list --count
->    origin/feature/agent-run-spine..HEAD` (50 at the time of writing).
+> 1. ~~**Run the tests.**~~ **DONE 2026-07-29 — and this was the branch's largest risk, so read the result.**
+>    The suite executes on Windows; the "net10.0-windows cannot run here" premise was a property of the
+>    authoring sessions (macOS), not of the code. Measured with
+>    `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`:
+>    **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, and **2157 / 0 failed** after the
+>    residual-hazard pass. So the ~240 assertions across those commits **do** hold, including the two Batch 11
+>    assertions flagged as fixture-sensitive — no threshold or fixture tuning was needed.
+>    **What this does NOT cover, and still outranks the batches below:** the entire **manual Windows smoke
+>    list** (Batch 11) is undone. A green unit suite is not a smoke test — the two package-bump behaviour
+>    concentrations (streamed tool-call coalescing, the seven `OPENAI001` pragma sites) need a real provider
+>    round, and the image-attachment hazard is *expected* to fail when smoked. Also unproven: whether the W1
+>    concurrency tests would go red on a revert of `78e16dd` (asserted by reasoning, not demonstration).
+> 2. **Push.** Still local-only from `1c49b08` onward — `git rev-list --count
+>    origin/feature/agent-run-spine..HEAD` (17 at the time of writing).
 
 ---
 
@@ -144,7 +150,7 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Run the test suite on Windows/CI** — not a batch; see the callout above. ~240 assertions across 20 local-only commits have never been executed | — | S | a Windows runner |
+| ~~**1**~~ | — | ~~**Run the test suite on Windows/CI**~~ **DONE 2026-07-29: 2157 total, 0 failed.** What remains is the **manual Windows smoke list**, which a unit suite cannot cover — see the callout above | — | S | a Windows runner |
 | 2 | 02 | [Cost ledger](02-cost-ledger.md) — price table populates `CostUsd` | 2 | S | — |
 | 3 | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) — boosted planning effort on Chat-Completions | 2 | S–M | — |
 | 4 | 03 | [Audit timeline](03-audit-timeline.md) — per-tool decision trace (plan §11) | 2 | M–L | — |
@@ -191,6 +197,41 @@ Each of these was seen and left; the reason is the point.
   into the shared assistant folder; the per-run dir stays scratch. A1 narrowed the default grant to
   `{write_file}` and B2 blocks destructive external tools, which lowers the risk but does not isolate.
   hermes-comparison §4(b)(3)/rec #6.
+
+### Residual-hazard pass (2026-07-29) — `045edea` → `87fa403`
+
+Closed six of the items Batches 10 and 11 logged and left open. Five commits, one audit that deliberately
+produced no commit, and **the first executed test run on this branch**.
+
+| Commit | What |
+|---|---|
+| `045edea` | `Compaction: skip only the system prefix we pinned` — role filter → reference identity |
+| `42802e0` | `ViewModels: unsubscribe the foreign-run event on dispose` |
+| `a5a34a7` | `Chats: pin the non-deferred BeginTransaction the delete-all relies on` — **no behaviour change; the premise was false** |
+| `6895b89` | `Tests: pin the MAAI001 containment premise` |
+| `87fa403` | `Composer: explain the paused Send while a background run writes the chat` |
+| *(none)* | Transitive-package audit → **do not exclude**, recorded above |
+
+**The headline is the test run.** Both batch files claimed "Tests: written, never executed — net10.0-windows
+cannot run on macOS, execution deferred to Windows/CI". That was a property of the authoring session, not of
+the code. Executed on Windows 11: **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, rising to
+**2157 / 0 failed** after this pass (+8). Two consequences worth recording: the two shrink assertions Batch 11
+flagged as possibly-red-on-CI **pass**, so the fix-pass fixtures are sound and the thresholds were never
+suspect; and the 19-failure baseline noted mid-branch was closed by the `fedb86c`…`8add90c` test-repair run.
+
+**Two premises turned out to be false, and that is the pass's most useful output.** (i) The
+`SQLITE_BUSY_SNAPSHOT` hazard did not exist — `BeginTransaction()` is already `BEGIN IMMEDIATE` because
+non-deferred is Microsoft.Data.Sqlite's default (verified empirically on the pinned 10.0.9). (ii) The
+transitive-package exclusion would have made the CVE reporting *worse*, not better, by promoting two clean
+packages to top-level. Both were investigated before being implemented, which is why neither produced a
+wrong change.
+
+Each fix's test was checked for red-before/green-after where the fix was behavioural: the compaction and
+dispose regressions were both demonstrated red on a stashed revert, and the containment test was demonstrated
+to catch an injected `static ContextWindowCompactionStrategy` field that the **build bar cannot see** (zero
+`MAAI001` warnings). The MAAI001 source-scan and the `BeginTransaction` premise pin are guards, not
+regressions, and say so in their own comments.
+
 ### Opened by Batch 10 (2026-07-28) — known, reasoned, not closed
 
 - **`ActivateAsync` races the composer against `RestoreActiveRunAsync`.** Activating a hydrated chat returns the
@@ -214,12 +255,19 @@ Each of these was seen and left; the reason is the point.
   is already FK-cascade-gone. Same root as W2, different failure (resurrection, not loss). The fix is to
   **cancel** the run, which means deciding cancellation semantics for Clear-all
   (`AssistantSettingsViewModel.cs:408`/`:437`) — a lifecycle decision no spec raises yet.
-- **No composer hint explains the disabled Send.** Deliberate: keeping a data-loss fix off the localisation
-  path. The reason is inferred from the on-screen `RunProgress` panel, so if that panel is ever collapsed the
-  disabled Send reads as a bug. Costs three resx files + XAML.
-- **`WAL` adds one failure mode `busy_timeout` does not cover.** A deferred transaction that READS before its
-  first write can get `SQLITE_BUSY_SNAPSHOT`, for which SQLite does **not** invoke the busy handler.
-  `AssistantChatService.DeleteAllUnderGateAsync` is exactly that shape (SELECT `Id`, then DELETE). Unhandled.
+- ~~**No composer hint explains the disabled Send.**~~ **CLOSED `87fa403`** (2026-07-29).
+  `Assistant_BackgroundRunActive_Hint` in all three resx files with real German and French, plus a collapsed
+  composer `TextBlock` bound to `ForeignRunActive` alone so it never shows for the streaming or empty-composer
+  disabled states. No new converter; `Designer.cs` untouched (`loc:Str` resolves via `ResourceManager.GetString`).
+- ~~**`WAL` adds one failure mode `busy_timeout` does not cover.**~~ **CLOSED `a5a34a7`** (2026-07-29) — and
+  **the premise was false, so nothing needed fixing.** `DeleteAllUnderGateAsync` is indeed the only read-first
+  transaction, but `BeginTransaction()` already emits `BEGIN IMMEDIATE`: **non-deferred is
+  Microsoft.Data.Sqlite's default.** Verified empirically on the pinned 10.0.9 — a transaction with zero
+  statements executed already refuses another connection's write (SQLITE_BUSY 5/5), `deferred: true` lets it
+  through, and `ReadUncommitted` is the only isolation level mapping to a deferred BEGIN. The commit writes the
+  load-bearing default down and pins it with a test that *demonstrates* the real 517 error via a deliberately
+  deferred transaction. The other eight `BeginTransaction()` sites all write first, `SaveMergedAsync` included
+  (its read is untransacted, before the transaction opens).
 - **A settled `Once` job has almost no re-arm surface.** `UpdateAsync` re-arms `Completed`→`Active` only when
   the recomputed `NextFireAt` lands in the **future**, and it has no `specificDate` parameter — so a settled
   one-off whose date is in the past cannot be moved at all. `ScheduledJobToolHandler` exposes only
@@ -251,34 +299,63 @@ Each of these was seen and left; the reason is the point.
   entire tool result into its `[Tool Calls]` summary, so “eviction” is really *tool-group collapse* and the only
   mechanism that actually reduces tokens is truncation at 0.70. A truncating formatter was rejected: it makes
   the model lose data it just fetched and invites a re-call spiral inside a 10-round cap.
-- **A sync pull silently disables compaction.** `SyncMapper.FromSyncProvider` does not map
-  `MaxContextWindowTokens`/`MaxOutputTokens` (verified: they appear nowhere in `SyncMapper.cs`) and the pull path
-  replaces the whole local provider row, so a pull resets a configured window to `null`. The fields were
-  deliberately kept out of `SyncProvider` as device-local; that decision did not account for the pull
-  overwriting them.
-- **The in-step tool-loop insertion has no test at any level.** `DurabilityHarness` substitutes
-  `IAiClientService` outright, so the real round loop never executes in any harness. A wrong guard, wrong
-  variable or wrong round index at `AiClientService.cs:189` is invisible until runtime on an agent step with a
-  configured window. Named follow-up: a scripted fake `IChatClient` that can drive multi-round tool loops.
+- ~~**A sync pull silently disables compaction.**~~ **CLOSED `1c49b08`** — `SyncMapper` now carries
+  `MaxContextWindowTokens`/`MaxOutputTokens` over from the existing local row on a pull
+  (`SyncMapper.cs:342-343`), so the fields stay device-local without the pull erasing them.
+- ~~**The in-step tool-loop insertion has no test at any level.**~~ **CLOSED `261410f`.**
 - **The step-1 request is never compacted**, by design and by library behaviour, so a run whose *goal alone*
-  overflows the window still fails its first step exactly as today. Compaction cannot fix an oversized goal —
-  but it means the acceptance criterion holds for *accumulated* context, not for every overflow.
-- **Compaction is invisible to the user** — no Flow event, no audit entry, no cost-ledger annotation. “Why did
-  step 7 forget what step 3 found” requires Debug logs. Left out to avoid new strings + a persisted-enum change;
-  most likely support complaint.
-- **Two smaller leaks**: `AgentContextCompactor` drops **every** `System` message the library returns, not just
-  the pinned prefix, so a non-leading system message is silently deleted; and `AssistantViewModel.Dispose`
-  (`:1547`) unsubscribes `ActiveRunChanged` but not the new `ForeignRunActiveChanged`.
-- **Nothing enforces the `MAAI001` containment premise.** Verified by full rebuild that it appears zero times,
-  but a future contributor caching a `ContextWindowCompactionStrategy` field outside the adapter re-opens the
-  pressure for a project-wide `NoWarn`, which would then hide experimental-API adoption everywhere. The build
-  check is the only guard; there is no test.
+  overflows still fails. **Mis-sited, corrected 2026-07-29:** it fails **at planning, not at step 1** —
+  `AgentPlanner` passes no `contextBudget` at all (`AgentPlanner.cs:118-119`, correctly: two messages, nothing
+  to drop), the provider 400s, and `AgentRunOrchestrator` settles the run `Failed` at Planning so step 1 never
+  runs. The framed "step 1 fails" case exists only in the middle band where planning succeeds. Amplifier:
+  `IsToolNotSupportedError` (`AiClientService.cs:846-859`) returns true for *any* 400, so an overflow logs
+  "retrying without tools" and re-sends the same oversized list — a wrong top-line diagnosis. The real cause
+  survives only as `ExtraJson`, which nothing renders.
+- **Compaction is invisible to the user** — no Flow event, no audit entry, no cost-ledger annotation.
+  **Sharpened 2026-07-29:** the real defect is that both outcome lines are `LogDebug` and the log level is
+  **compile-time only** (`Bootstrapper.cs:307`/`:317` read `IsDevMode`, which is `#if DEBUG`; no `AddFilter`, no
+  `Logging` config), so in a release build the information is unrecoverable and the user cannot raise the level.
+  The degrade path at `:213-217` is already `LogWarning` and does reach the support log.
+- ~~**Two smaller leaks**~~ **BOTH CLOSED** (2026-07-29): the `System`-message drop by `045edea` (skip by
+  reference identity over the pinned instances, not by role; red-before/green-after test), and
+  `AssistantViewModel.Dispose` by `42802e0` (plus a symmetric guard on the sibling event).
+- ~~**Nothing enforces the `MAAI001` containment premise.**~~ **CLOSED `6895b89`**
+  (`ExperimentalApiContainmentTests`): a reflection walk over every declared surface comparing **namespace
+  strings** (so the test project stays free of the `Microsoft.Agents.AI` reference, itself part of the
+  containment), carrying a positive control so an empty result cannot read as a pass; plus a source scan pinning
+  the pragma to exactly one site and asserting no csproj/`Directory.Build.props`/`.editorconfig` mentions
+  `MAAI001`. **The build bar provably cannot catch this** — injecting a `static ContextWindowCompactionStrategy`
+  field into the pragma'd file builds with **zero** `MAAI001` warnings; the test names the field.
+- **`AgentContextCompactor`'s pinned-cost comment (`:139-142`) is backwards.** Found 2026-07-29. It claims
+  under-charging a pinned image "errs toward compacting"; the arithmetic says the opposite — a smaller
+  `pinnedCost` yields a *larger* `window` at `:154`, hence *less* compaction, i.e. it errs toward silently
+  overflowing. Comment-only defect today, but it is load-bearing if image pinning is ever added.
 - **The package bump's two behaviour-sensitive concentrations are unverified beyond compiling**: streamed
   tool-call coalescing at `AiClientService.cs:263` (`updates.ToChatResponse()`), and the seven `OPENAI001`
   pragma sites riding the OpenAI 2.10.0 pin that `Microsoft.Extensions.AI.OpenAI` moves. Both need a real
   provider round on Windows. **`74f964c` is the commit to revert first if provider behaviour regresses.**
-  Unaudited transitive weight came with it: `Microsoft.Extensions.AI.Evaluation` 10.6.0 and
-  `Microsoft.Extensions.VectorData.Abstractions` 9.7.0 are in the restore graph and nothing in Pia uses them.
+  ~~Unaudited transitive weight came with it: `Microsoft.Extensions.AI.Evaluation` 10.6.0 and
+  `Microsoft.Extensions.VectorData.Abstractions` 9.7.0 are in the restore graph and nothing in Pia uses them.~~
+  **AUDITED 2026-07-29 — verdict: DO NOT EXCLUDE, no change made.** Both edges come from
+  `Microsoft.Agents.AI` 1.15.0 and from nothing else (swept every node in `project.assets.json`); neither
+  `Microsoft.Extensions.AI` nor `.AI.OpenAI` pulls them. Nothing in Pia references either — the only
+  `Microsoft.Agents.AI` usage in the tree is `AgentContextCompactor.cs`, and a raw scan of the shipped
+  `Microsoft.Agents.AI.dll` finds no reflective-load path. Five reasons the exclusion fails its own goal:
+  **(1)** asset exclusion does not touch the restore graph — both stay in `--include-transitive` and
+  `--vulnerable --include-transitive` and in any graph-derived SBOM, and the only mechanism that prunes a
+  *transitive* package's assets is an explicit **direct** `PackageReference`, which **promotes** them from
+  transitive to top-level in exactly those reports. In this repo a direct ref is the *CVE-remediation* pattern
+  (see the `SQLitePCLRaw.bundle_e_sqlite3` 3.0.3 comment), so using it to hide clean packages inverts the
+  signal. **(2)** Payload is 67,424 + 81,952 = **149,376 bytes of a 237,428,184-byte single-file installer =
+  0.063%**. **(3)** Pinning them as direct refs makes the next `Microsoft.Agents.AI` bump emit **NU1605**
+  downgrade warnings against the zero-new-warnings-over-194 bar, on packages nobody uses. **(4)**
+  `ExcludeAssets="all"` would turn a future compile error into a runtime `FileNotFoundException` inside a
+  shipped single-file build. **(5)** There is no consumer of the benefit: no trimming (publish is
+  `--self-contained -p:PublishSingleFile=true`, **untrimmed**), no SBOM, no CodeQL/Trivy/Snyk, no dependabot,
+  and `dotnet list package --vulnerable --include-transitive` reports **no vulnerable packages**. Revisit only
+  if a CVE lands on one of them, or if an SBOM/scanner is adopted — then the correct minimal form is a direct
+  ref with `ExcludeAssets="runtime"` (not `"all"`), which still would not propagate across the test
+  `ProjectReference`.
 
 **Promoted out of this list on 2026-07-28 and now shipped:** the `Once`-job relaunch loop, two writers on one
 chat row, the missing write gate on the shared `SqliteContext` connection (all → Batch 10), and

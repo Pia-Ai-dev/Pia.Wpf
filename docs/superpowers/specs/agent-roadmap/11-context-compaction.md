@@ -8,10 +8,14 @@ This file now describes **the code as built**. Two of the original spec's recomm
 design time and one at the fix pass; each is kept below with the reason, because both were plausible and would
 otherwise be re-proposed.
 
-> **Build:** `dotnet build -p:EnableWindowsTargeting=true` → 0 errors, 194 pre-existing warnings; **`MAAI001`
-> appears zero times**, so the single-pragma containment holds. **Tests: written, never executed.** `dotnet test`
-> was not invoked. Execution is deferred to Windows/CI — and see the fixture warning below, which is the one
-> place a CI red might not mean a production bug.
+> **Build:** `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → 0 errors, 194 pre-existing
+> warnings; **`MAAI001` appears zero times**, so the single-pragma containment holds — and it is now pinned by
+> a test rather than by the build bar alone (see "Closed after the fact").
+>
+> **Tests: WRITTEN AND NOW EXECUTED — green.** This supersedes the original note ("written, never executed /
+> execution deferred to Windows/CI"). Measured on Windows 11 at `8add90c`: **2149 total, 0 failed, 2148 passed,
+> 1 skipped**. Critically, **both fixture-sensitive assertions flagged below PASS** — the fix-pass fixtures are
+> sound and no threshold tuning was needed.
 
 ---
 
@@ -173,27 +177,61 @@ shipped fixtures that **provably never triggered compaction** (measured in = out
 knobs. **If either goes red on CI, tune the fixture, not the thresholds** — check the measured in/out counts in
 the test comments first.
 
+> **RESOLVED 2026-07-29: both pass.** The suite was executed on Windows and neither assertion is red, so the
+> repaired fixtures do trigger compaction and the thresholds were never the problem. The warning is kept because
+> the underlying fragility is real — the defaults are still unpublished, so a package bump can still move them,
+> and the instruction above still applies if that happens.
+
 ## Still open (see 00-OVERVIEW “Opened by Batch 11”)
+
+### Closed after the fact
+
+- **The adapter dropped *every* returned `System` message, not just the pinned prefix.** Closed by `045edea`.
+  The re-concatenation filtered `kept` by `ChatRole.System`; it now skips by **reference identity** over the
+  instances that went into `head`, so a library-synthesized or non-leading system message survives. Measured on
+  the new fixture: in=16, kept=10 containing two system messages, out was 11 with the mid-list reminder deleted
+  and is 12 now. Red before, green after.
+- **Nothing enforced the `MAAI001` containment premise.** Closed by `6895b89`
+  (`ExperimentalApiContainmentTests`). A reflection walk over every declared surface in the assembly —
+  recursed through generic arguments, array/by-ref/pointer elements and nullable underlying types — comparing
+  **namespace strings**, so the test project stays free of the `Microsoft.Agents.AI` reference, which is itself
+  part of the containment; plus a source scan pinning the pragma to exactly one occurrence in
+  `AgentContextCompactor.cs` and asserting no csproj / `Directory.Build.props` / `.editorconfig` mentions
+  `MAAI001`. **The build bar provably cannot catch this**: injecting a `static ContextWindowCompactionStrategy`
+  field into the pragma'd file builds with **zero** `MAAI001` warnings, and the reflection test names the field.
+- **A sync pull silently reset the configured window to `null`.** Closed by `1c49b08` — `SyncMapper` now
+  preserves `MaxContextWindowTokens`/`MaxOutputTokens` from the existing local row across a pull
+  (`SyncMapper.cs:342-343`), keeping them device-local without letting the pull erase them.
+- **The tool-loop insertion had no test at any level.** Closed by `261410f`.
+
+### Still open
 
 An image attachment is the first thing evicted on the Live agent path (measured: in=7 → out=6, no `DataContent`
 survives; the pin protects the goal that refers to it, so the step answers about an image it cannot see) ·
 `bytes/4` accounting is wrong in both directions and unfixable while `Create` is `internal` ·
-`ToolEvictionThreshold` is close to inert, so truncation does all the work · **a sync pull silently resets the
-configured window to `null`** because `SyncMapper.FromSyncProvider` does not map the two new fields and the pull
-replaces the whole provider row · the tool-loop insertion has **no test at any level** · the step-1 request is
-never compacted, so an oversized *goal* still fails step 1 · compaction is invisible to the user · the adapter
-drops **every** returned `System` message, not just the pinned prefix · nothing enforces the `MAAI001`
-containment premise · the package bump's streamed tool-call coalescing and the seven `OPENAI001` pragma sites
-are unverified beyond compiling (`74f964c` is the first commit to revert if provider behaviour regresses).
+`ToolEvictionThreshold` is close to inert, so truncation does all the work · the step-1 request is
+never compacted, so an oversized *goal* still fails — though **at planning, not at step 1**: `AgentPlanner`
+passes no `contextBudget` at all (`AgentPlanner.cs:118-119`), so the run settles `Failed` at Planning and step 1
+never runs · compaction is invisible to the user in every **release** build, because the log level is
+compile-time only (`Bootstrapper.cs:307`/`:317` read `IsDevMode`, which is `#if DEBUG`) — so the two `LogDebug`
+outcome lines are unrecoverable, not merely inconvenient · **the comment at `:139-142` is backwards**: it claims
+under-charging a pinned image "errs toward compacting", but a smaller `pinnedCost` yields a *larger* `window` and
+therefore *less* compaction, i.e. it errs toward silently overflowing · the package bump's streamed tool-call
+coalescing and the seven `OPENAI001` pragma sites are unverified beyond compiling (`74f964c` is the first commit
+to revert if provider behaviour regresses).
 
 The **fallback** (vendoring ~700 LOC) was not needed and should not be revisited: the bump was clean.
 
 ## Acceptance — met for accumulated context, and unproven at runtime
 
 A step whose tool loop would overflow now compacts instead of failing ✅ *in the adapter, unit-tested; the
-tool-loop wiring itself is untested at any level* · persistence unchanged ✅ (type-enforced and asserted) ·
-build green with `MAAI001` contained ✅ · tests written, execution deferred to Windows/CI ✅. **The entire manual
-Windows smoke list is undone**: unconfigured provider behaves as on main; interactive chat unchanged with a
-window configured; a long run with a small window completes and still obeys its step goal; park/resume keeps
-every prior step reply; an image attachment on the Live agent path loses neither the attachment nor the goal
-(this last one is **expected to fail** — see “Still open”).
+tool-loop wiring is covered as of `261410f`* · persistence unchanged ✅ (type-enforced and asserted) ·
+build green with `MAAI001` contained ✅ **and now pinned by a test, not by the build bar** · **tests written AND
+executed green ✅** (2149 total, 0 failed, on Windows 11 at `8add90c`; both fixture-sensitive shrink assertions
+pass).
+
+**The manual Windows smoke list is still undone** — an executed unit suite is not a smoke test: unconfigured
+provider behaves as on main; interactive chat unchanged with a window configured; a long run with a small window
+completes and still obeys its step goal; park/resume keeps every prior step reply; an image attachment on the
+Live agent path loses neither the attachment nor the goal (this last one is **expected to fail** — see “Still
+open”, hazard C).
