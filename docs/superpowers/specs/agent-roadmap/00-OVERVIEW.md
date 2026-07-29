@@ -232,6 +232,30 @@ to catch an injected `static ContextWindowCompactionStrategy` field that the **b
 `MAAI001` warnings). The MAAI001 source-scan and the `BeginTransaction` premise pin are guards, not
 regressions, and say so in their own comments.
 
+#### ⚠️ NO TEST IN THIS SUITE PARSES A `View`, and it cannot without breaking 42 others
+
+Worth knowing before anyone tries to close it. Every test works against ViewModels, so in `AssistantView.xaml`
+an unresolvable `StaticResource`, a missing `loc:Str` key, or a **misspelled `Binding` path** is invisible to a
+green build *and* a green suite — markup compilation catches malformed XAML and unknown types/properties, but
+resource-key resolution and binding paths are runtime concerns, and a wrong binding path fails **silently**.
+
+A view-parse test was built and then **withdrawn**, because parsing a View requires an `Application` whose
+`Resources` carry App.xaml's converters, and `Application.Current` is **process-wide**. Creating it makes
+`App.Current.Dispatcher` real — a dispatcher owned by the test's STA thread — so every ViewModel that marshals
+through `App.Current.Dispatcher.InvokeAsync` stops running its work inline (today it takes a null-`App.Current`
+synchronous fallback). Measured: **42 `MeetingAttendeeViewModelTests` failures**, e.g. state updates never
+applying before the assertion. Two further traps found on the way: a thread-per-test design dies with
+"Initialization of `Wpf.Ui.Controls.Button` threw an exception" on the *second* test, because the App's merged
+control styles are owned by the thread that built them; and binding values do not transfer until the Dispatcher
+queue is drained to `SystemIdle`, so an unpumped test asserts the property default.
+
+Closing this properly needs a dispatcher abstraction injected into the ViewModels (so `App.Current` is never
+touched directly), or a separate test process. **Until then, XAML changes need manual smoke.** The composer hint
+in `87fa403` was nevertheless verified empirically with the throwaway test before it was withdrawn: the view
+parses, the `loc:Str` key resolves (the hint was located *by its rendered text*), the hint is `Collapsed` at
+`ForeignRunActive == false` and `Visible` at `true`, and a deliberately misspelled binding path was confirmed to
+produce the silent always-visible failure **with the build still at 0 errors**.
+
 ### Opened by Batch 10 (2026-07-28) — known, reasoned, not closed
 
 - **`ActivateAsync` races the composer against `RestoreActiveRunAsync`.** Activating a hydrated chat returns the
