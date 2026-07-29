@@ -387,4 +387,40 @@ public class AssistantViewModelLeverTests
         await _manager.Received(1).StartTurnAsync(
             session, "plan my week", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: true);
     }
+
+    // ---- Dispose is unsubscribe-only, so it has to unsubscribe EVERY session event ----
+
+    [Fact]
+    public void Dispose_StopsReactingToForeignRunActiveChanged()
+    {
+        // The manager owns session lifetime, so the session outlives the ViewModel - that is exactly what
+        // lets Assistant -> History -> Assistant not kill a running turn. Any event Dispose forgets
+        // therefore keeps the dead ViewModel in the live session's invocation list for good (one leaked
+        // ViewModel per round-trip) and its handler still runs on every foreign-run flip.
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: false);
+        Activate(session);
+        Assert.False(vm.ForeignRunActive);
+
+        vm.Dispose();
+        session.SetForeignRunActive(true);   // false -> true, so this really does raise (the setter no-ops on equal)
+
+        Assert.False(vm.ForeignRunActive);
+    }
+
+    [Fact]
+    public void Dispose_StopsReactingToActiveRunChanged()
+    {
+        // Regression guard for the sibling event, which Dispose already unsubscribes: this one is green
+        // today, and goes red if that unsubscribe is ever removed.
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: false);
+        Activate(session);
+        Assert.Null(vm.ActiveRunProgress);   // attaching a run-less session leaves the panel unembedded
+
+        vm.Dispose();
+        session.SetActiveRun(Guid.NewGuid());   // null -> an id, so this really does raise
+
+        Assert.Null(vm.ActiveRunProgress);
+    }
 }

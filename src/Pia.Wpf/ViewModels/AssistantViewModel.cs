@@ -1545,6 +1545,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.ToolSucceeded -= OnActiveSessionToolSucceeded;
             session.RunFailed -= OnActiveSessionRunFailed;
             session.ActiveRunChanged -= OnActiveRunChanged;
+            session.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
         }
         _runProgress?.Dispose(); // unsubscribes the last RunChanged handler off the singleton
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
