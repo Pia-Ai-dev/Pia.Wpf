@@ -24,6 +24,11 @@ public sealed class MistralProviderHandler : IAiProviderHandler
         "mistral-small-latest",
         "mistral-medium-latest",
         "mistral-medium-3.5",
+        // Both Magistral sizes are Mistral's reasoning family and think by DEFAULT, so both need
+        // reasoning_effort sent explicitly — including `none` to suppress it. magistral-small-latest was
+        // missing here while magistral-medium-latest was present, so on small the field was omitted and
+        // reasoning stayed on regardless of the user's setting: the exact gap this set exists to close.
+        "magistral-small-latest",
         "magistral-medium-latest",
     };
 

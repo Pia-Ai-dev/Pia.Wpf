@@ -9,13 +9,18 @@ namespace Pia.Wpf.Tests.Unit.Providers;
 public class MistralProviderHandlerTests
 {
     // Mistral's API returns HTTP 422 when `reasoning_effort` is sent to a model
-    // that doesn't accept it. Only mistral-small-latest, mistral-medium-latest,
-    // and mistral-medium-3.5 currently accept the field, and only with values
-    // `none` or `high`.
+    // that doesn't accept it. The models that accept the field are mistral-small-latest,
+    // mistral-medium-latest, mistral-medium-3.5 and both Magistral sizes, and only with
+    // values `none` or `high`.
+    //
+    // magistral-medium-latest used to appear in BOTH theories below — it was listed as capable
+    // (matching ReasoningCapableModels) and as non-capable, so the pair could never both pass.
+    // The capable half is the correct one: Magistral is Mistral's reasoning family.
 
     [Theory]
     [InlineData("mistral-small-latest")]
     [InlineData("mistral-medium-latest")]
+    [InlineData("magistral-small-latest")]
     [InlineData("magistral-medium-latest")]
     [InlineData("mistral-medium-3.5")]
     public void ShouldEmitReasoning_True_ForCapableModels(string model)
@@ -29,8 +34,6 @@ public class MistralProviderHandlerTests
 
     [Theory]
     [InlineData("mistral-large-latest")]
-    [InlineData("magistral-small-latest")]
-    [InlineData("magistral-medium-latest")]
     [InlineData("codestral-latest")]
     [InlineData("mistral-tiny")]
     public void ShouldEmitReasoning_False_ForNonCapableModels(string model)
