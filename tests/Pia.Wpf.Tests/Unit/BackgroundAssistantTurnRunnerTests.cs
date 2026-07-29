@@ -69,7 +69,8 @@ public class BackgroundAssistantTurnRunnerTests
 
             return new BackgroundAssistantTurnRunner(
                 Ai, Plugins, Composer, Personas, Chats, Titles, Settings,
-                TokenMapFactory, Runs, NullLogger<BackgroundAssistantTurnRunner>.Instance);
+                TokenMapFactory, Runs, new ExecutingRunStore(),
+                NullLogger<BackgroundAssistantTurnRunner>.Instance);
         }
 
         private async IAsyncEnumerable<ChatStreamItem> Drive(

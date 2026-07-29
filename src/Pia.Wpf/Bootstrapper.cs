@@ -486,6 +486,10 @@ public static class Bootstrapper
         // Headless "Run in background" / scheduled-AgentTask launcher (§17.1/17.5). Singleton: owns the
         // shared concurrency cap, shutdown token, and per-run workspace cleanup map. One instance also
         // serves IAgentRunResumeService (budget-pause resume re-launches through this same machinery).
+        // A2: the launch-bracket index of runs that are actually executing. Singleton and shared by both
+        // brackets (this launcher and BackgroundAssistantTurnRunner) and by every window's ChatSessionManager,
+        // which reads it synchronously when a chat is activated. Holds no state that outlives a run.
+        services.AddSingleton<IExecutingRunStore, ExecutingRunStore>();
         services.AddSingleton<HeadlessRunLauncher>();
         services.AddSingleton<IHeadlessRunLauncher>(sp => sp.GetRequiredService<HeadlessRunLauncher>());
         services.AddSingleton<IAgentRunResumeService>(sp => sp.GetRequiredService<HeadlessRunLauncher>());

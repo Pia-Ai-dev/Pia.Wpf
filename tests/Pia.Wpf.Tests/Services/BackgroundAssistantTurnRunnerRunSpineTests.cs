@@ -33,7 +33,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         string answer = "ANSWER",
         bool throwMidStream = false,
         bool throwMidStreamCanceled = false,
-        IAssistantPromptComposer? composer = null)
+        IAssistantPromptComposer? composer = null,
+        IExecutingRunStore? executingRuns = null)
     {
         var ai = Substitute.For<IAiClientService>();
         var plugins = Substitute.For<IPluginService>();
@@ -60,7 +61,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
 
         return new BackgroundAssistantTurnRunner(
             ai, plugins, composer, personas, chats, titles, settings,
-            TokenMapFactory, runs, NullLogger<BackgroundAssistantTurnRunner>.Instance);
+            TokenMapFactory, runs, executingRuns ?? new ExecutingRunStore(),
+            NullLogger<BackgroundAssistantTurnRunner>.Instance);
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> Drive(UsageDetails? usage, string answer)
@@ -124,6 +126,48 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         var result = await runner.RunAsync(new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
 
         Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task SingleTurnRun_HoldsTheComposerBracket_AcrossItsFullReplaceWrite()
+    {
+        // A2's bracket premise for RunShape.SingleTurn — the hole A2 closes. This runner's terminal SaveAsync
+        // is a FULL REPLACE with no merge and no bound, so a user message that lands while it is in flight is
+        // deleted outright; the bracket must therefore be open across exactly that write, and gone once
+        // RunAsync returns (a stale entry is a permanently dead composer).
+        var store = new ExecutingRunStore();
+        var bracketOpenAtWrite = new List<bool>();
+
+        var chats = Substitute.For<IAssistantChatService>();
+        chats.SaveAsync(Arg.Do<SyncAssistantChat>(c => bracketOpenAtWrite.Add(store.IsExecuting(c.Id))), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        // The CreateAsync stub is LOAD-BEARING, not decoration: unconfigured, NSubstitute yields a null
+        // AgentRun, the runner proceeds run-less, no bracket is ever registered — and the assertions below
+        // would pass vacuously with the whole feature deleted.
+        var runId = Guid.NewGuid();
+        var runs = Substitute.For<IAgentRunService>();
+        runs.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(new AgentRun
+            {
+                Id = runId,
+                ChatId = ci.Arg<AgentRunCreateRequest>().ChatId,
+                RunShape = RunShape.SingleTurn,
+                State = AgentRunState.Running,
+            }));
+
+        var runner = BuildRunner(chats, runs, executingRuns: store);
+        var result = await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        // Two writes: the FK stub, which precedes the run row and has nothing to lose (the chat is empty), and
+        // the terminal full replace, which is the one that must be bracketed.
+        Assert.Collection(bracketOpenAtWrite,
+            stub => Assert.False(stub),
+            terminal => Assert.True(terminal));
+        Assert.False(store.IsExecuting(result.ChatId));
+        Assert.Null(store.GetChatId(runId));
     }
 
     [Fact]

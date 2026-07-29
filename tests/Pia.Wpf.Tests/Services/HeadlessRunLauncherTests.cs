@@ -26,6 +26,9 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     private readonly AssistantChatService _chats;
     private readonly string _runsBase;
 
+    /// <summary>The real A2 launch-bracket index — the launcher's registrations are asserted through it.</summary>
+    private readonly ExecutingRunStore _executing = new();
+
     // Gate that a FakePlanner blocks on, letting a test hold a run inside the orchestrator to probe
     // concurrency / shutdown.
     private sealed class FakePlanner : IAgentPlanner
@@ -146,6 +149,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // The orchestrator's terminal critic pass; the default (empty queue) FakeVerifier accepts.
         services.AddSingleton<IAgentVerifier>(new FakeVerifier());
         services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
+        // A2: the same index the launcher below is given, because the per-run scope resolves
+        // HeadlessTurnExecutor -> concrete BackgroundAssistantTurnRunner, which now requires it. Omit this
+        // and the resolve throws inside the launcher's dispatch task, which is swallowed there.
+        services.AddSingleton<IExecutingRunStore>(_executing);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
         services.AddTransient<AgentRunOrchestrator>();
@@ -153,7 +160,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var launcher = new HeadlessRunLauncher(
             sp.GetRequiredService<IServiceScopeFactory>(), _chats, _runs, settings, providers, personas,
-            NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase);
+            _executing, NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase);
         return (launcher, planner);
     }
 
@@ -546,5 +553,39 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(AgentRunState.WaitingForInput, after!.State); // re-parked, still resumable
 
         try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task LaunchedRun_HoldsTheComposerBracket_WhileItExecutes_AndReleasesWhenItEnds()
+    {
+        // A2's bracket premise for this launcher. ChatSessionManager reads this index SYNCHRONOUSLY when a
+        // chat is activated, so it must be open for the whole span in which the executor writes the chat — and
+        // empty again afterwards, because a stale entry is a permanently dead composer. Drop either the
+        // Register or the Release edit in HeadlessRunLauncher and this fails; a future refactor that
+        // dispatched the orchestrator from somewhere other than those two lambdas fails here too.
+        var release = new TaskCompletionSource();
+        var (launcher, _) = BuildLauncher(onPlan: () => release.Task);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("a", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+
+        // Registration is AFTER the concurrency-slot wait (deliberately: that window is fail-open), so wait
+        // for the run to actually be inside the orchestrator rather than assuming it already is.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!_executing.IsExecuting(handle.ChatId) && DateTime.UtcNow < deadline)
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+
+        Assert.True(_executing.IsExecuting(handle.ChatId), "the launch bracket must be open while the run executes");
+        Assert.Equal<Guid?>(handle.ChatId, _executing.GetChatId(handle.RunId));
+
+        release.SetResult();
+        // Awaiting Completion is what makes the post-assertions deterministic: the launcher's finally (which
+        // releases the bracket) has run by the time this task completes.
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        Assert.False(_executing.IsExecuting(handle.ChatId), "a finished run must not leave the composer gated");
+        Assert.Null(_executing.GetChatId(handle.RunId));
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
     }
 }

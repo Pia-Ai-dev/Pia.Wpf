@@ -28,6 +28,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     private readonly ISettingsService _settingsService;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly IAgentRunService _runService;
+    private readonly IExecutingRunStore _executingRuns;
     private readonly ILogger<BackgroundAssistantTurnRunner> _logger;
 
     public BackgroundAssistantTurnRunner(
@@ -40,6 +41,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         ISettingsService settingsService,
         Func<ITokenMapService> tokenMapFactory,
         IAgentRunService runService,
+        IExecutingRunStore executingRuns,
         ILogger<BackgroundAssistantTurnRunner> logger)
     {
         _aiClient = aiClient;
@@ -51,6 +53,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         _settingsService = settingsService;
         _tokenMapFactory = tokenMapFactory;
         _runService = runService;
+        _executingRuns = executingRuns;
         _logger = logger;
     }
 
@@ -90,6 +93,20 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Run bookkeeping (create) failed for chat {ChatId}", chatId);
+            }
+
+            // A2: open the composer bracket for this SingleTurn run. This shape was gated NOWHERE before:
+            // ChatSessionManager matched runs by ChatSession.ActiveRunId and RestoreActiveRunAsync only ever
+            // attaches RunShape.Planned, so a user opening this chat from history mid-turn could Send — and the
+            // single SaveAsync below is a FULL REPLACE with no merge and no bound, so their message was deleted
+            // outright. Registered only once the run row exists: the handler-side release keys off RunChanged,
+            // which every `run is not null` guard below suppresses for a run-less turn, so a surrogate key
+            // could never be cleared and would strand a dead composer. A run-less turn therefore fails OPEN,
+            // which is the recoverable direction. Bookkeeping — a fault must never fail the turn (§12.5).
+            if (run is { } registeredRun)
+            {
+                try { _executingRuns.Register(chatId, registeredRun.Id); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Executing-run bookkeeping (register) failed for chat {ChatId}", chatId); }
             }
 
             var settings = await _settingsService.GetSettingsAsync();
@@ -259,6 +276,17 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 catch (Exception bk) { _logger.LogWarning(bk, "Run bookkeeping (fail) failed for {RunId}", run.Id); }
             }
             return new BackgroundTurnResult(chatId, false, ex.Message);
+        }
+        finally
+        {
+            // A2: close the composer bracket on EVERY exit — success, empty response, cancel, fault. Idempotent
+            // with ChatSessionManager's release-on-RunChanged, which normally gets there first because
+            // CompleteAsync raises the terminal event before this finally runs. Never throws into the turn.
+            if (run is { } bracketedRun)
+            {
+                try { _executingRuns.Release(bracketedRun.Id); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Executing-run bookkeeping (release) failed for chat {ChatId}", chatId); }
+            }
         }
     }
 

@@ -45,6 +45,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IProviderCapabilityService _providerCapabilityService;
     private readonly IHeadlessRunLauncher _headlessRunLauncher;
     private readonly IWindowManagerService _windowManager;
+    private readonly IExecutingRunStore _executingRuns;
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -112,7 +113,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IAgentRunService agentRunService,
         IProviderCapabilityService providerCapabilityService,
         IHeadlessRunLauncher headlessRunLauncher,
-        IWindowManagerService windowManager)
+        IWindowManagerService windowManager,
+        IExecutingRunStore executingRuns)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -136,6 +138,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _providerCapabilityService = providerCapabilityService;
         _headlessRunLauncher = headlessRunLauncher;
         _windowManager = windowManager;
+        _executingRuns = executingRuns;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
 
@@ -156,8 +159,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// propagate back into <c>RecordStepResultAsync</c>'s caller.
     /// </para>
     /// <para>
-    /// Matched by <see cref="ChatSession.ActiveRunId"/> rather than by chat id: the event carries no chat id,
-    /// and a session only tracks the run it has attached — which is exactly the run that could write it.
+    /// A2: recomputed from the launch-bracket index (<see cref="IExecutingRunStore"/>) keyed on the CHAT id,
+    /// reverse-looked-up from the run id because the event carries no chat id. That is what gates a
+    /// <see cref="RunShape.SingleTurn"/> background turn, which no session ever has attached and which was
+    /// therefore gated nowhere. UNIONED with the older <see cref="ChatSession.ActiveRunId"/> match, which the
+    /// index alone cannot replace: <c>TryBeginResumeAsync</c> raises <c>RunChanged(Running)</c> at its CAS,
+    /// before the launcher's post-slot registration, so a resume of a run attached to an already-open chat
+    /// would otherwise leave the composer live until the run's next state change.
     /// A run this manager launched itself (<see cref="_ownRunIds"/>) is skipped WHILE IT EXECUTES: that
     /// session's own <c>IsStreaming</c> already blocks Send, and flagging it would be an interactive
     /// regression. Its first non-executing state retires the ownership entry (see below), so a later headless
@@ -173,9 +181,30 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             {
                 if (_disposed) return;
 
+                // A2: the chat this run's LAUNCH BRACKET names, captured BEFORE the release below. The event
+                // carries no chat id, so this reverse lookup is the only way the handler knows which chat the
+                // run belongs to — and it must be read first, or the release would erase the answer.
+                var bracketedChatId = _executingRuns.GetChatId(e.RunId);
+
+                // A2: release from HERE as well as from the launcher's finally, whichever runs first (Release
+                // is idempotent). Load-bearing: AgentRunService raises RunChanged OUTSIDE its gate and BEFORE
+                // the launcher task's finally releases, so a handler landing in that gap would otherwise
+                // recompute "still executing" from an entry that is about to vanish, with no further event
+                // ever to correct it — and a stale true is unrecoverable, because re-activating takes the
+                // live-attach branch (no re-seed) and RestoreActiveRunAsync early-returns once a run is
+                // attached. A missing entry is only the original race; a stuck one is a dead composer.
+                //
+                // Every open window's manager runs this, so several release the same key. That converges: the
+                // release only fires when the run is NOT executing, and any other window's recompute then
+                // evaluates `false || (executing && ...)` = false — the same answer. One window's release can
+                // never leave another window's session stale.
+                if (!executing)
+                    _executingRuns.Release(e.RunId);
+
                 // Checked HERE, not on the raising thread: _ownRunIds is written by the UI-thread Planned
                 // branch, so probing it from a pool thread would be a data race on a plain HashSet.
-                if (_ownRunIds.Contains(e.RunId))
+                var isOwnRun = _ownRunIds.Contains(e.RunId);
+                if (isOwnRun)
                 {
                     // Ownership lasts exactly as long as the LIVE executor is the one running the run. The
                     // first non-executing state — parked at its step budget (WaitingForInput/Paused) or
@@ -185,14 +214,34 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                     // thread while IsStreaming is false and the composer is live again. So retire the entry
                     // here: the next executing state is then treated as what it is — a second full-chat
                     // writer — and the set stops growing for the lifetime of the process.
-                    if (executing) return;
-                    _ownRunIds.Remove(e.RunId);
+                    // Retired only when it STOPS executing; a still-executing own run keeps its exemption.
+                    // (No early return any more — the recompute below is keyed on chats, so bailing out here
+                    // would also skip every OTHER session's recompute.)
+                    if (!executing)
+                        _ownRunIds.Remove(e.RunId);
                 }
 
                 foreach (var session in _allSessions)
                 {
-                    if (session.ActiveRunId == e.RunId)
-                        session.SetForeignRunActive(executing);
+                    if (session.Id is not { } chatId)
+                        continue; // a first-turn chat has no id yet, so no run can be writing it
+
+                    // Only the sessions this event can actually speak for: the chat the bracket names, or the
+                    // session holding this very run. Anything else keeps what it was seeded with — notably
+                    // RestoreActiveRunAsync's post-restart backfill for a run that began before this process
+                    // and so has no in-process bracket, which a blanket recompute would wrongly clear.
+                    if (chatId != bracketedChatId && session.ActiveRunId != e.RunId)
+                        continue;
+
+                    var foreign = _executingRuns.IsExecuting(chatId)
+                        // Unioned with the pre-A2 rule: a resume's CAS raises RunChanged(Running) BEFORE the
+                        // launcher's post-slot Register, so the index is briefly empty for it. This term only
+                        // ever asserts a true that THIS event justifies, so it cannot strand a stale one. Own
+                        // runs stay exempt while they execute — their session's IsStreaming already blocks
+                        // Send, and flagging them would be an interactive regression.
+                        || (executing && !isOwnRun && session.ActiveRunId == e.RunId);
+
+                    session.SetForeignRunActive(foreign);
                 }
             }
             catch (Exception ex)
@@ -417,6 +466,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         session.SetIdentity(chat.Id, chat.CreatedAt, chat.ProviderId, chat.Title, autoTitleApplied: true);
         session.SetWorkingDirectory(chat.WorkingDirectory);
         _sessions[chat.Id] = session;
+
+        // A2 (closes W2c): seed the composer gate SYNCHRONOUSLY from the launch-bracket index, BEFORE
+        // SetActive makes the composer live. SetActive raises ActiveChanged, which is the instant the view
+        // model attaches and reads ChatSession.ForeignRunActive — so with no await, no lock, no flicker and no
+        // dropped Enter press, Send is already refused for a chat a headless run is writing. Covers the
+        // RunShape.SingleTurn case too, which is attached to no session and so was gated nowhere.
+        session.SetForeignRunActive(_executingRuns.IsExecuting(chat.Id));
+
         SetActive(session);
 
         _logger.LogInformation("Resumed chat {ChatId} ({MessageCount} messages)", chat.Id, chat.Messages.Count);
@@ -429,16 +486,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // this lookup. Only the hydrate path needs it — the live-attach branch above returns a session that
         // already carries its run id (SetActiveRun ran when the run was created).
         //
-        // KNOWN OPEN WINDOW (W2c): SetActive above has already made the composer live, so between here and
-        // the moment the lookup lands there is an interval in which Send is enabled for a chat whose
-        // headless run IS executing — and the lookup's Task.Run blocks on AgentRunService's synchronous
-        // lock, which the run itself holds while committing a step, so the interval is a lock round-trip
-        // rather than microseconds. Closing it needs a product decision this fix-up did not take: either
-        // await the lookup before the composer goes live (a visible stall on every history click) or gate
-        // the composer pessimistically for the duration (a flicker-disable on every activation, which
-        // silently drops an Enter press). Bounded, in the meantime, by the store-level merge: a live turn
-        // landing in that window no longer deletes the run's rows outright (SaveMergedAsync re-absorbs them
-        // on the run's next write) — but a run that has already made its terminal write is still exposed.
+        // W2c is CLOSED (A2): the composer gate no longer waits on this lookup — it was seeded synchronously
+        // from the launch-bracket index above, before SetActive. What remains here is the BACKFILL for a run
+        // that began before this process started (after an app restart), where no in-process bracket ever
+        // fired: only the persisted rows know about it. Still fire-and-forget on a pool thread, because
+        // IAgentRunService is a synchronous lock-holding store and an activation must never stall on it.
         RestoreActiveRunAsync(session).SafeFireAndForget(_logger);
 
         try
@@ -502,8 +554,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // predates this session, often this process). So a re-attached run that is still EXECUTING is by
         // definition foreign, i.e. a second full-chat writer, and Send must be blocked until it stops.
         // WaitingForInput/Paused deliberately do NOT set it: the parked "continue in chat" path stays open.
+        // A2: OR'd with the launch-bracket index, never assigned from the row alone — this backfill runs
+        // AFTER the synchronous seed in ActivateAsync, and a bare assignment would clear a live
+        // RunShape.SingleTurn bracket on a chat that also happens to carry a parked Planned run.
         session.SetForeignRunActive(
-            resumable.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying);
+            _executingRuns.IsExecuting(chatId)
+            || resumable.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying);
 
         // Ids + enum only — a run Goal is user content (CLAUDE.md privacy logging).
         _logger.LogInformation("Re-attached run {RunId} ({State}) to activated chat {ChatId}",

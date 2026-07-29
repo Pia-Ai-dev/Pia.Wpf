@@ -31,6 +31,12 @@ public class ChatSessionManagerTests
     private readonly IHeadlessRunLauncher _headlessLauncher = Substitute.For<IHeadlessRunLauncher>();
     private readonly IWindowManagerService _windowManager = Substitute.For<IWindowManagerService>();
 
+    /// <summary>
+    /// The REAL A2 launch-bracket index: these tests assert through it, not around it. Fully qualified
+    /// because this file deliberately has no `using Pia.Services;` (see AgentRunOrchestrator below).
+    /// </summary>
+    private readonly Pia.Services.ExecutingRunStore _executingRuns = new();
+
     public ChatSessionManagerTests()
     {
         _settings.GetSettingsAsync().Returns(new AppSettings());
@@ -56,7 +62,7 @@ public class ChatSessionManagerTests
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
             () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
-            _headlessLauncher, _windowManager);
+            _headlessLauncher, _windowManager, _executingRuns);
     }
 
     [Fact]
@@ -1137,5 +1143,83 @@ public class ChatSessionManagerTests
         Assert.NotNull(rehydrated);
         Assert.Equal(victimId, rehydrated!.Id);
         Assert.Single(rehydrated.Messages);
+    }
+
+    // ---- A2: the composer gate is seeded SYNCHRONOUSLY from the launch-bracket index (closes W2c) ----
+
+    [Fact]
+    public async Task ActivateAsync_BracketedRun_GatesTheComposer_BeforeItEverGoesLive()
+    {
+        // The gate must already be set by the time SetActive raises ActiveChanged — that is the instant
+        // AssistantViewModel attaches and reads ChatSession.ForeignRunActive (AssistantViewModel.cs:356),
+        // i.e. the instant Send becomes clickable. Before A2 the flag arrived from a fire-and-forget lookup
+        // that blocked on AgentRunService's gate, so an Enter press in that window reached a full-replace
+        // SaveAsync. Drop the seed line from ActivateAsync and this test fails.
+        //
+        // It also pins the SingleTurn hole: nothing is ATTACHED to this session (RestoreActiveRunAsync only
+        // ever attaches RunShape.Planned), yet the composer is gated — which is the whole point of keying the
+        // decision on the chat rather than on ChatSession.ActiveRunId.
+        var chatId = Guid.NewGuid();
+        var runId = Guid.NewGuid();
+        _executingRuns.Register(chatId, runId);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+
+        var sut = CreateSut();
+        bool? gatedWhenActivated = null;
+        sut.ActiveChanged += (_, s) => gatedWhenActivated = s?.ForeignRunActive;
+
+        var session = await sut.ActivateAsync(chatId);
+
+        Assert.NotNull(session);
+        Assert.True(gatedWhenActivated);
+        Assert.True(session!.ForeignRunActive);
+        Assert.Null(session.ActiveRunId);
+    }
+
+    [Fact]
+    public async Task ActivateAsync_NoBracketedRun_LeavesTheComposerLive()
+    {
+        // GUARD, not a regression test: this passes before and after. It exists because the rejected
+        // alternative to A2 was a pessimistic flicker-disable on every activation, and this is what would
+        // catch that — an ordinary history click must not disable Send.
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+
+        Assert.NotNull(session);
+        Assert.False(session!.ForeignRunActive);
+    }
+
+    [Fact]
+    public async Task RunChanged_Terminal_ReleasesTheBracket_AndUngatesTheComposer()
+    {
+        // The release must happen HERE and not only in the launcher's finally: AgentRunService raises the
+        // terminal RunChanged BEFORE that finally runs (it raises outside its own gate), so a handler that
+        // merely recomputed would read a still-present entry, conclude "executing", and never be woken again —
+        // a permanently dead composer, because re-activating takes the live-attach branch and never re-seeds.
+        var chatId = Guid.NewGuid();
+        var runId = Guid.NewGuid();
+        _executingRuns.Register(chatId, runId);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        Assert.True(session!.ForeignRunActive);
+
+        // AgentRunService raises RunChanged from a pool thread; the manager marshals the flip (G3), so poll.
+        // The handler releases BEFORE it recomputes, so a cleared flag proves the release already landed.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed));
+
+        for (var i = 0; i < 200 && session.ForeignRunActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.False(session.ForeignRunActive);
+        Assert.Null(_executingRuns.GetChatId(runId)); // reverse-looked-up from the run id alone
+
+        // ...and the launcher's later finally is a harmless no-op.
+        _executingRuns.Release(runId);
+        Assert.False(_executingRuns.IsExecuting(chatId));
     }
 }

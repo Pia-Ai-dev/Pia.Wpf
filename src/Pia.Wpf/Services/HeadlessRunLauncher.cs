@@ -56,6 +56,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     private readonly ISettingsService _settingsService;
     private readonly IProviderService _providerService;
     private readonly IPersonaService _personaService;
+    private readonly IExecutingRunStore _executingRuns;
     private readonly ILogger<HeadlessRunLauncher> _logger;
 
     /// <summary>Base directory for all run workspaces (<c>%LOCALAPPDATA%\Pia\runs</c> in production, precedent
@@ -71,6 +72,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         ISettingsService settingsService,
         IProviderService providerService,
         IPersonaService personaService,
+        IExecutingRunStore executingRuns,
         ILogger<HeadlessRunLauncher> logger,
         string? runsBaseDirOverride = null)
     {
@@ -80,6 +82,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         _settingsService = settingsService;
         _providerService = providerService;
         _personaService = personaService;
+        _executingRuns = executingRuns;
         _logger = logger;
         _runsBaseDir = runsBaseDirOverride ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "runs");
@@ -180,6 +183,15 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 // (the reserved opt-in-sandbox seam).
                 executor.Initialize(workspaceRoot: null, grants, provider);
                 started = true;
+
+                // A2: open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
+                // the queue-wait window is FAIL-OPEN and that is correct, because the executor re-seeds from
+                // the persisted rows when the run begins (HeadlessTurnExecutor.BeginRunAsync), so a message
+                // landing before this run's first write is not lost — whereas covering the wait would disable
+                // the composer for minutes during which nothing can go wrong. Released in the finally below
+                // AND by ChatSessionManager's RunChanged handler, whichever gets there first.
+                _executingRuns.Register(chatId, run.Id);
+
                 await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -206,6 +218,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             finally
             {
                 if (acquired) _slots.Release();
+
+                // A2: close the composer bracket on EVERY exit, including the never-started paths (a no-op
+                // there). Deliberately AFTER the slot release: this is bookkeeping, and it must never be able
+                // to strand the shared concurrency slot. Idempotent with the release ChatSessionManager
+                // already did when the terminal RunChanged arrived — CompleteAsync raises that event before
+                // this finally runs, so either side may get here first.
+                _executingRuns.Release(run.Id);
                 RemoveInflight(run.Id, runCts);
                 runCts.Dispose();
             }
@@ -288,6 +307,11 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
                     executor.Initialize(workspaceRoot: null, grants, provider);
                     started = true;
+                    // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
+                    // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,
+                    // i.e. before this line, which is why ChatSessionManager keeps its ActiveRunId-matched
+                    // term as well as reading this index.
+                    _executingRuns.Register(run.ChatId, run.Id);
                     await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token, resume: true)
                         .ConfigureAwait(false); // resume:true → no re-plan, drains the Pending remainder (D1)
                 }
@@ -321,6 +345,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 finally
                 {
                     if (acquired) _slots.Release();
+
+                    // A2: see the launch path (and the same after-the-slot ordering, for the same reason). A
+                    // resume dispatch that starts while the previous dispatch is still unwinding re-registers
+                    // the same key, so this release can close the NEWER bracket — fail-open, which is the
+                    // recoverable direction (a stale true is not recoverable).
+                    _executingRuns.Release(run.Id);
                     RemoveInflight(run.Id, runCts);
                     runCts.Dispose();
                 }

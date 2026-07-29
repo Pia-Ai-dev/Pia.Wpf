@@ -74,9 +74,11 @@ public sealed class HeadlessTurnExecutorTests
         settings.GetSettingsAsync().Returns(new AppSettings());
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
+        // The executor uses this runner only as its per-step RunExchangeAsync engine, never RunAsync, so the
+        // A2 bracket is not exercised here — a throwaway index keeps the composition explicit.
         var engine = new BackgroundAssistantTurnRunner(
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
-            NullLogger<BackgroundAssistantTurnRunner>.Instance);
+            new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
@@ -204,7 +206,7 @@ public sealed class HeadlessTurnExecutorTests
 
         var engine = new BackgroundAssistantTurnRunner(
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
-            NullLogger<BackgroundAssistantTurnRunner>.Instance);
+            new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
@@ -286,7 +288,7 @@ public sealed class HeadlessTurnExecutorTests
 
         var engine = new BackgroundAssistantTurnRunner(
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
-            NullLogger<BackgroundAssistantTurnRunner>.Instance);
+            new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
@@ -470,7 +472,7 @@ public sealed class HeadlessTurnExecutorTests
 
             var engine = new BackgroundAssistantTurnRunner(
                 Ai, plugins, composer, personas, Chats, titles, settings, TokenMapFactory, Runs,
-                NullLogger<BackgroundAssistantTurnRunner>.Instance);
+                new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
             return new HeadlessTurnExecutor(
                 engine, Chats, settings, personas, providers, composer, titles, TokenMapFactory,
                 ExecutorLog);
