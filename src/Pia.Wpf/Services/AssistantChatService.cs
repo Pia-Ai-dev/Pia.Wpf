@@ -537,6 +537,26 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         return deletedIds.AsReadOnly();
     }
 
+    /// <summary>
+    /// The ONE transaction in this class that READS before it writes: SELECT the ids, then DELETE. Every other
+    /// transaction here issues a write as its first statement.
+    /// <para>
+    /// Under WAL that read-first shape is only safe because the transaction takes the WRITE LOCK AT BEGIN. A
+    /// transaction that had merely read would hold a read snapshot, and the moment any other connection commits
+    /// its first write fails with SQLITE_BUSY_SNAPSHOT (extended code 517) — which SQLite raises WITHOUT
+    /// invoking the busy handler, so neither <c>PRAGMA busy_timeout=3000</c> nor Microsoft.Data.Sqlite's own
+    /// command-level retry (bounded by <c>CommandTimeout</c>) can clear it; the snapshot stays stale until the
+    /// transaction ends, so retrying would mean re-running the SELECT and re-deriving <c>deletedIds</c>.
+    /// </para>
+    /// <para>
+    /// NOTHING HERE NEEDS CHANGING: <c>BeginTransaction()</c> already emits <c>BEGIN IMMEDIATE</c> —
+    /// non-deferred is Microsoft.Data.Sqlite's DEFAULT, and the method always intends to write anyway. It is
+    /// written down because that default is load-bearing HERE and nowhere else in this file, and there are two
+    /// ways to lose it: passing <c>deferred: true</c>, or passing <c>IsolationLevel.ReadUncommitted</c> (the one
+    /// isolation level the provider maps to a deferred BEGIN). <c>AssistantChatConcurrencyTests</c> pins both
+    /// the default and the 517 failure it protects against.
+    /// </para>
+    /// </summary>
     private async Task<List<Guid>> DeleteAllUnderGateAsync(CancellationToken ct)
     {
         var connection = Connection();

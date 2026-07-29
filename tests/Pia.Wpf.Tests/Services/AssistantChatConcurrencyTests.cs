@@ -422,6 +422,136 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
         Assert.Single(runView.Messages);
     }
 
+    /// <summary>
+    /// One-off command on a RAW probe connection. <c>CommandTimeout</c> is pinned to one second on purpose:
+    /// Microsoft.Data.Sqlite retries SQLITE_BUSY itself for <c>CommandTimeout</c> (THIRTY SECONDS by default),
+    /// on top of <c>PRAGMA busy_timeout</c>, so a probe write that is blocked by a write lock would otherwise
+    /// stall the suite for half a minute per statement instead of failing fast.
+    /// </summary>
+    private static async Task ExecAsync(SqliteConnection connection, string sql, SqliteTransaction? transaction = null)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = 1;
+        command.Transaction = transaction;
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task TheProvidersTransactions_TakeTheWriteLockAtBegin_NotAtTheirFirstWrite()
+    {
+        // PREMISE PIN, not a bug reproduction — nothing on this tree is broken. DeleteAllUnderGateAsync is the
+        // one transaction in the store that READS (SELECT Id FROM AssistantChats) before it WRITES, and under
+        // WAL that shape is safe only while BeginTransaction() keeps emitting BEGIN IMMEDIATE. Non-deferred is
+        // Microsoft.Data.Sqlite's default rather than something the store asks for, so it is verified here
+        // instead of assumed. Both halves are DETERMINISTIC: no interleaving is left to the scheduler.
+        await _chats.SaveAsync(Chat(Guid.NewGuid(), "seed", "body"), TestContext.Current.CancellationToken);
+
+        using var holder = new SqliteConnection(_ctx.ConnectionString);
+        using var probe = new SqliteConnection(_ctx.ConnectionString);
+        await holder.OpenAsync(TestContext.Current.CancellationToken);
+        await probe.OpenAsync(TestContext.Current.CancellationToken);
+        await ExecAsync(probe, "PRAGMA busy_timeout=100;");
+        await ExecAsync(probe, "CREATE TABLE IF NOT EXISTS BusySnapshotProbe (V TEXT)");
+
+        // Half 1: the default overload holds the write lock from BEGIN with NO statement executed yet, so a
+        // foreign write is refused. A deferred BEGIN would let it straight through.
+        using (holder.BeginTransaction())
+        {
+            var refused = await Assert.ThrowsAsync<SqliteException>(
+                () => ExecAsync(probe, "INSERT INTO BusySnapshotProbe VALUES ('blocked')"));
+            Assert.Equal(5, refused.SqliteErrorCode);   // SQLITE_BUSY: the writer lock is already taken
+        }
+
+        // Half 2: what the read-first shape WOULD hit if that BEGIN ever became deferred. deferred:true is a
+        // shape no src/ code uses, and that is the point of the guard — do NOT "improve" this half by routing it
+        // through AssistantChatService, because the store has no seam inside its transaction and the assertion
+        // would simply disappear.
+        using (var deferred = holder.BeginTransaction(deferred: true))
+        {
+            using (var select = holder.CreateCommand())
+            {
+                select.CommandText = "SELECT Id FROM AssistantChats";
+                select.Transaction = deferred;
+                using var reader = await select.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+                while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+                {
+                }
+            }
+
+            // A foreign commit lands INSIDE the read snapshot's window — permitted, because a deferred
+            // transaction that has only read holds no write lock.
+            await ExecAsync(probe, "INSERT INTO BusySnapshotProbe VALUES ('committed')");
+
+            var stale = await Assert.ThrowsAsync<SqliteException>(
+                () => ExecAsync(holder, "DELETE FROM AssistantChats", deferred));
+            Assert.Equal(5, stale.SqliteErrorCode);
+            Assert.Equal(517, stale.SqliteExtendedErrorCode);   // SQLITE_BUSY_SNAPSHOT — busy_timeout cannot help
+            deferred.Rollback();
+        }
+    }
+
+    [Fact]
+    public async Task DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes()
+    {
+        // FORWARD GUARD on the read-first SELECT-then-DELETE transaction, deliberately not framed as a
+        // reproduction: it passes on today's tree, because BeginTransaction() is already BEGIN IMMEDIATE.
+        // What it asserts unconditionally is that DeleteAllAsync survives a foreign connection committing
+        // throughout — the same invariant as AWriteFromAnotherConnection_DoesNotBlockTheChatStoreIndefinitely,
+        // on the delete path instead of the write path.
+        //
+        // HONEST LIMITATION: if that BEGIN ever became deferred, the commits below would land inside the
+        // delete's read snapshot and its first DELETE would fail with SQLITE_BUSY_SNAPSHOT — but detection of
+        // that here is PROBABILISTIC, not guaranteed: the window between the SELECT and the DELETE is
+        // microseconds wide and there are only five rounds. The DETERMINISTIC guard for that regression is
+        // TheProvidersTransactions_TakeTheWriteLockAtBegin_NotAtTheirFirstWrite; this is the behavioural half.
+        using var writer = new SqliteConnection(_ctx.ConnectionString);
+        await writer.OpenAsync(TestContext.Current.CancellationToken);
+        await ExecAsync(writer, "PRAGMA busy_timeout=100;");
+        await ExecAsync(writer, "CREATE TABLE IF NOT EXISTS BusySnapshotProbe (V TEXT)");
+
+        using var stopWriting = new CancellationTokenSource();
+        var committed = 0;
+        var committer = Task.Run(async () =>
+        {
+            while (!stopWriting.IsCancellationRequested)
+            {
+                // The delete transaction holds the write lock from BEGIN, so THIS writer's commits are the ones
+                // expected to be refused while it runs. Only the delete's outcome is asserted.
+                try
+                {
+                    await ExecAsync(writer, "INSERT INTO BusySnapshotProbe VALUES ('w')");
+                    committed++;
+                }
+                catch (SqliteException) { }
+                await Task.Delay(1, TestContext.Current.CancellationToken);
+            }
+        }, TestContext.Current.CancellationToken);
+
+        var errors = new List<Exception>();
+        for (var round = 0; round < 5; round++)
+        {
+            // Seeds and delete share one try so that a throw cannot skip the cancel-then-await below and leave
+            // the writer task running against a connection this method is about to dispose.
+            try
+            {
+                for (var i = 0; i < 3; i++)
+                    await _chats.SaveAsync(Chat(Guid.NewGuid(), $"round {round} chat {i}", "body"),
+                        TestContext.Current.CancellationToken);
+
+                await _chats.DeleteAllAsync(TestContext.Current.CancellationToken);
+            }
+            catch (Exception ex) { errors.Add(ex); }
+        }
+
+        await stopWriting.CancelAsync();
+        await committer;
+
+        Assert.Empty(errors);
+        Assert.True(committed > 0, "the foreign writer never committed, so nothing actually raced the delete");
+        Assert.Empty(await _chats.GetAllIdsAsync(TestContext.Current.CancellationToken));
+    }
+
     public void Dispose()
     {
         // Both stores own a DEDICATED connection to the file under _dir, so both must be closed before the
