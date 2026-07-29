@@ -521,7 +521,9 @@ public class SyncMapper
         {
             (sync.EncryptedPayload, sync.WrappedDek) = _e2ee!.EncryptRecord(
                 new VaultSyncPayload(path, content), userId, "vault_file", id.ToString());
-            // C5: leave Path/Data null — path lives only inside EncryptedPayload.
+            // C5: leave Path/Data UNSET — path and content live only inside EncryptedPayload. Note Data is
+            // not actually null afterwards: SyncMemory initialises it to "{}", which is what every other
+            // E2EE branch in this file also ships. Empty object, so no plaintext reaches the server.
         }
         else
         {

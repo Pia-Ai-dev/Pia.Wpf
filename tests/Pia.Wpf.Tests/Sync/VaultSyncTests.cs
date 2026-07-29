@@ -164,7 +164,14 @@ public sealed class VaultSyncTests : IDisposable
         Assert.Equal("CIPHER", sync.EncryptedPayload);
         Assert.Equal("WDEK", sync.WrappedDek);
         Assert.Null(sync.Path);    // C5: server never sees a plaintext path
-        Assert.Null(sync.Data);
+
+        // NOT null: SyncMemory.Data is initialised to "{}" by the DTO itself, and the E2EE branch simply
+        // never assigns it — as in all 11 E2EE branches in SyncMapper, none of which nulls Data. So "{}"
+        // is the layer-wide shape and this was the only assertion claiming otherwise. C5 still holds: the
+        // requirement is that no plaintext PATH or CONTENT reaches the server, and an empty JSON object
+        // carries neither. Asserting the literal keeps the guarantee explicit — if a future change ever
+        // let real content into Data under E2EE, this fails.
+        Assert.Equal("{}", sync.Data);
         e2ee.Received().EncryptRecord(
             Arg.Any<object>(), UserId, "vault_file", id.ToString());
     }
