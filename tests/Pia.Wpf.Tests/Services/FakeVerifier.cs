@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Interfaces;
 
 namespace Pia.Tests.Services;
 

@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
 
-namespace Pia.Services;
+namespace Pia.Services.Interfaces;
 
 /// <summary>
 /// The result of a plan/replan. Either an ordered set of steps to execute, or a signal to

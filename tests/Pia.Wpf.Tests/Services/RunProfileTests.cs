@@ -1,4 +1,4 @@
-using Pia.Services;
+using Pia.Services.Interfaces;
 using Xunit;
 
 namespace Pia.Tests.Services;

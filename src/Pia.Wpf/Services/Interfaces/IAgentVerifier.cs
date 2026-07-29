@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
 
-namespace Pia.Services;
+namespace Pia.Services.Interfaces;
 
 /// <summary>
 /// The terminal critic verdict (§13.x). Either an ACCEPT (the run achieved its goal) or a FAIL

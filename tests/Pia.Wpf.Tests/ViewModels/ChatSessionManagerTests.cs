@@ -46,7 +46,7 @@ public class ChatSessionManagerTests
             SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
         var orchestrator = new Pia.Services.AgentRunOrchestrator(
-            _runService, Substitute.For<Pia.Services.IAgentPlanner>(),
+            _runService, Substitute.For<Pia.Services.Interfaces.IAgentPlanner>(),
             new Pia.Tests.Services.FakeVerifier(),
             NullLogger<Pia.Services.AgentRunOrchestrator>.Instance);
 

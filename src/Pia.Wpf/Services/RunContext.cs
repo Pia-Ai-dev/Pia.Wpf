@@ -2,34 +2,9 @@ using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Services.Interfaces;
 
 namespace Pia.Services;
-
-/// <summary>Summary of a completed step, carried forward as context for later steps + replanning.</summary>
-/// <param name="ExpectedArtifact">
-/// The deliverable the planner declared for this step (free text; SENSITIVE user content — a prompt may
-/// carry it, a log may not). Carried here so the verifier can probe it against the filesystem instead of
-/// judging the model's self-summary alone (H1); the loop already holds the step, so this is strictly
-/// cheaper than re-reading the persisted plan at verify time.
-/// </param>
-/// <param name="FromEarlierSegment">
-/// True for a step seeded from persistence on RESUME — it ran in an earlier segment of this same run,
-/// before the budget pause (E2). Its <paramref name="VisibleText"/> is not recoverable from the run
-/// context today, so prompts must say the result text is unavailable rather than imply the step never
-/// happened.
-/// </param>
-public sealed record CompletedStepSummary(
-    int Ordinal, string Title, string Intent, bool Succeeded, string VisibleText,
-    string? ExpectedArtifact = null, bool FromEarlierSegment = false)
-{
-    /// <summary>
-    /// What every prompt puts where a <see cref="FromEarlierSegment"/> step's result text would go. One
-    /// shared string so the critic and the replan judge are told the same thing: the step RAN, its text
-    /// just is not in this context — the alternative (an empty result) reads like a step that did nothing.
-    /// </summary>
-    public const string EarlierSegmentNote =
-        "(completed before this run was paused for budget; its result text is not available in this context — treat it as executed, not as missing)";
-}
 
 /// <summary>
 /// Adds up the provider usage of the extra (non-step) turns the run loop spends — the plan/replan

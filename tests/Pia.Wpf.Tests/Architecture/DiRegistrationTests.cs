@@ -54,7 +54,14 @@ public class DiRegistrationTests
         // IPluginToolHandler implementations are created by PluginService based on plugin kind.
         // IMeetingSession is created by MeetingAttendeeService at runtime with the provisioned Chromium
         // path (it has no parameterless seam), so it is intentionally not container-registered.
-        var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler", "IOptimizeFastPathHandle", "IMeetingSession" };
+        // IAgentTurnExecutor is never a container service type: both implementations are constructed
+        // explicitly because each is bound to something the container does not own. HeadlessTurnExecutor is
+        // registered as its CONCRETE type and resolved from a fresh per-run scope; LiveTurnExecutor is
+        // new'd by ChatSessionManager on the UI thread, bound to one ChatSession, and lives in
+        // Pia.ViewModels.Models. (This interface only became visible to this test when the agent-spine
+        // interface files were moved into Pia.Services.Interfaces — before that they declared the parent
+        // namespace and escaped the sweep entirely.)
+        var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler", "IOptimizeFastPathHandle", "IMeetingSession", "IAgentTurnExecutor" };
 
         var unregistered = allInterfaces
             .Where(i => !factoryCreated.Contains(i.Name))
