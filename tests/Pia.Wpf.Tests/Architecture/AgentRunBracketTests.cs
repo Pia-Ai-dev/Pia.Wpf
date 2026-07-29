@@ -1,70 +1,75 @@
-using NetArchTest.Rules;
+using System.Reflection;
+using Pia.Services.Interfaces;
 using Xunit;
 using static Pia.Tests.Architecture.ArchitectureTestBase;
 
 namespace Pia.Tests.Architecture;
 
 /// <summary>
-/// A2's BRACKET PREMISE. The executing-run index is populated from launch brackets, not from run state, so
-/// the whole design rests on every code path that dispatches an agent run also registering it. A future
-/// third dispatcher that forgot would under-report SILENTLY: the composer would stay live for a chat a
-/// headless run is writing — the exact data-loss window A2 closes — and no behavioural test would fail,
-/// because nothing observable changes until a user happens to Send in that window. This is that test.
+/// A2's BRACKET PREMISE. The executing-run index is populated from launch brackets, not from run state, so the
+/// whole design rests on every path that actually EXECUTES an agent run also registering it. A future executor
+/// that forgot would under-report SILENTLY: the composer would stay live for a chat a headless run is writing —
+/// the exact data-loss window A2 closes — and no behavioural test would fail, because nothing observable
+/// changes until a user happens to Send in that window. This is that test.
 /// </summary>
 public class AgentRunBracketTests
 {
-    private const string Orchestrator = "Pia.Services.AgentRunOrchestrator";
-    private const string BracketStore = "Pia.Services.Interfaces.IExecutingRunStore";
+    /// <summary>
+    /// The execution entry points. BOTH are required, and the second is the one that matters most: it is
+    /// <c>RunShape.SingleTurn</c>, which before A2 was gated NOWHERE and — unlike the Planned path — had no
+    /// <c>SaveMergedAsync</c> to heal a clobbered transcript.
+    /// </summary>
+    private static readonly Type[] ExecutorContracts =
+    [
+        typeof(IHeadlessRunLauncher),
+        typeof(IBackgroundAssistantTurnRunner),
+    ];
 
+    /// <summary>
+    /// Keyed on IMPLEMENTING an executor contract rather than on depending on one, which is the distinction
+    /// that makes this rule mean something. An earlier form asked "does this type reference the orchestrator or
+    /// the runner interface", and that was wrong in both directions: it MISSED
+    /// <c>BackgroundAssistantTurnRunner</c> (it never references <c>AgentRunOrchestrator</c>, so the SingleTurn
+    /// bracket sat outside the very rule meant to pin it), and it FLAGGED
+    /// <c>ScheduledJobBackgroundService</c>, which only dispatches BY DELEGATION to the launcher and the runner
+    /// and correctly owns no bracket of its own.
+    /// </summary>
     [Fact]
-    public void EveryTypeThatDispatchesAnAgentRun_MustAlsoOwnTheExecutingRunBracket()
+    public void EveryAgentRunExecutor_MustOwnTheExecutingRunBracket()
     {
-        var bracketOwners = TopLevelTypesDependingOn(BracketStore);
-        var dispatchers = TopLevelTypesDependingOn(Orchestrator)
-            // A type is not its own dispatcher. AgentRunOrchestrator names itself (ILogger<T>, its own async
-            // state machines), and NetArchTest's dependency search reads method bodies and generic arguments,
-            // so it may or may not report that self-edge. Excluding it makes the rule independent of which
-            // way that goes instead of silently depending on it.
-            .Where(t => t.FullName != Orchestrator)
-            .ToHashSet();
+        var executors = PiaAssembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false })
+            .Where(t => ExecutorContracts.Any(c => c.IsAssignableFrom(t)))
+            .ToList();
 
-        // Guards against the rule passing vacuously if the dependency search ever stops matching: today
-        // Bootstrapper, HeadlessRunLauncher and ChatSessionManager all reach AgentRunOrchestrator.
-        Assert.NotEmpty(dispatchers);
+        // Anti-vacuity: HeadlessRunLauncher and BackgroundAssistantTurnRunner are both present today, so a
+        // rule that finds fewer than two has stopped matching and would pass without asserting anything.
+        Assert.True(executors.Count >= 2,
+            "the executor scan must find both production executors, but it found: "
+            + string.Join(", ", executors.Select(t => t.Name)));
 
-        var unbracketed = dispatchers
-            .Where(t => !bracketOwners.Contains(t))
+        var unbracketed = executors
+            .Where(t => !IsInjectedWithTheBracketStore(t))
             .Select(t => t.Name)
             .OrderBy(n => n)
             .ToList();
 
         Assert.True(unbracketed.Count == 0,
-            "a type that dispatches an agent run must also register it with IExecutingRunStore (A2's launch "
-            + "bracket), or an activation of that run's chat cannot know a foreign writer owns the transcript. "
+            "a type that EXECUTES an agent run must take IExecutingRunStore and bracket the run, or an "
+            + "activation of that run's chat cannot know a foreign writer owns the transcript. "
             + $"Unbracketed: {string.Join(", ", unbracketed)}. "
-            // Both sets are printed so a failure is self-diagnosing: if the offender is a type nobody would
-            // call a dispatcher, this is a NetArchTest artefact (add it to the filter above), not a real gap.
-            + $"All dispatchers seen: {string.Join(", ", dispatchers.Select(t => t.Name).OrderBy(n => n))}. "
-            + $"All bracket owners seen: {string.Join(", ", bracketOwners.Select(t => t.Name).OrderBy(n => n))}");
+            + $"Executors seen: {string.Join(", ", executors.Select(t => t.Name).OrderBy(n => n))}");
     }
 
     /// <summary>
-    /// Both sides are normalised to the TOP-LEVEL declaring type on purpose: the launcher resolves the
-    /// orchestrator inside an async dispatch lambda, so the reference may be attributed to a compiler-
-    /// generated state machine. Comparing declaring types makes the rule hold whichever way the dependency
-    /// search treats those, instead of quietly depending on it.
+    /// Constructor injection is the check, because it is the only thing a test can assert cheaply AND is a
+    /// genuine precondition: a type cannot bracket a run without a reference to the store. It does not prove
+    /// the type CALLS <c>Register</c>/<c>Release</c> — that is what the behavioural tests
+    /// (<c>LaunchedRun_HoldsTheComposerBracket_…</c>, <c>SingleTurnRun_HoldsTheComposerBracket_…</c>) cover, and
+    /// each was verified to go red when its bracket is removed. Together they cover both halves; neither alone
+    /// does.
     /// </summary>
-    private static HashSet<Type> TopLevelTypesDependingOn(string dependency) =>
-        Types.InAssembly(PiaAssembly)
-            .That().HaveDependencyOn(dependency)
-            .GetTypes()
-            .Select(TopLevel)
-            .ToHashSet();
-
-    private static Type TopLevel(Type type)
-    {
-        while (type.DeclaringType is { } declaring)
-            type = declaring;
-        return type;
-    }
+    private static bool IsInjectedWithTheBracketStore(Type type) =>
+        type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .Any(c => c.GetParameters().Any(p => p.ParameterType == typeof(IExecutingRunStore)));
 }

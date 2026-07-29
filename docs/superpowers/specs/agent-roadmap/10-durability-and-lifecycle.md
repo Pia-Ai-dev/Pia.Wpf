@@ -215,7 +215,11 @@ mock unchanged.
   `RunShape.SingleTurn` turn was gated nowhere and its single plain `SaveAsync` had no `SaveMergedAsync` bound.
   `Release` is idempotent and called from both the `RunChanged` handler and the launcher's `finally` (the event
   fires before the `finally`), the reverse lookup is read before the release, and registration sits after the
-  slot wait, which is deliberately fail-open. `AgentRunBracketTests` pins the bracket premise.
+  slot wait, which is deliberately fail-open. `AgentRunBracketTests` pins the bracket premise, keyed on
+  *implementing* an executor contract rather than on referencing `AgentRunOrchestrator` — the latter both missed
+  `BackgroundAssistantTurnRunner` and falsely flagged `ScheduledJobBackgroundService`, which only delegates.
+  A2 also introduced one bug of its own, fixed in `4ddb281`: the recompute required a chat id, which silently
+  dropped a run attached to a not-yet-persisted first-turn chat.
 - **`MarkRunFailedAsync` retiring a one-off on its first failure — `cbe90a2`** (+ `ee6a2e2`). Scoped to
   **pre-model** failures only — the zero-token `NoProvider` path this file flagged as the cheapest — because a
   whole-run retry is not idempotent: a scheduled `AgentTask` holds `write_file` and attempt 2 replans from

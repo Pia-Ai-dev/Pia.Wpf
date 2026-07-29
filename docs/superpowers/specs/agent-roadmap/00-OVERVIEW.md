@@ -287,10 +287,29 @@ race, which `SaveMergedAsync` already bounds.
 **Two claims in the hazard register were wrong and are corrected in place:** the oversized goal fails at
 **planning**, not at step 1, and the compactor's pinned-cost comment had its direction **backwards**.
 
-**A pre-existing flake was observed**, not introduced: one full-suite run showed 2 failures and 6 further runs
-were clean, and `ChatSessionManagerTests.RunChanged_OwnRunTerminal_RetiresOwnership` failed once under
-full-suite parallelism while passing 5/5 in isolation. These are marshaled-event tests whose callbacks depend
-on `SynchronizationContext` timing. Not diagnosed further; if it recurs, that test is the place to start.
+**A flake was NOT pre-existing after all, and chasing it found a real bug — `4ddb281`.** The first version of
+this entry called it "observed, not introduced", which was an assumption, not a measurement. Measuring it (6
+full-suite runs at `a62ba69` versus 6 at `9022980`) gave **2/6 failures against 0/6**, i.e. A2 caused it. Two
+distinct defects were behind it:
+
+- **A product bug.** The A2 recompute skipped any session with no chat id, on the stated grounds that "a
+  first-turn chat has no id yet, so no run can be writing it". False: `StartPlannedTurnAsync` attaches a run to
+  a brand-new session and the id is only assigned when the first turn *persists*, so a run can be attached to
+  an id-less chat — and the pre-A2 handler covered that by matching `ActiveRunId` with no id requirement. The
+  race between the persist and the event is what made the loss intermittent instead of obvious.
+- **A fixture defect, latent before A2 and exposed by it.** A bare `SynchronizationContext` forwards `Post` to
+  the ThreadPool, which guarantees **no ordering**, so two `RunChanged` events raised in quick succession could
+  be handled out of order. A2's heavier handler widened the window. The test context now runs callbacks inline
+  and in order — faithful, not merely convenient, since that is what the WPF dispatcher does for a post
+  originating on the UI thread.
+
+After both fixes: **0/15 isolated and 0/8 full-suite runs fail.** The lesson is worth keeping: a single red
+observation is not a rate, and "pre-existing" is a claim that needs two measurements.
+
+**One genuinely pre-existing flake remains, in a file this work never touched:**
+`TaskExtensionsTests.SafeFireAndForget_SlowTask_DoesNotBlock` asserts a task containing `Task.Delay(200)` has
+not completed immediately after being fired, so any descheduling longer than 200 ms under parallel load fails
+it (~1 run in 8). It is a wall-clock assumption in the test, not a product defect.
 
 ### Opened by Batch 10 (2026-07-28) — known, reasoned, not closed
 
@@ -304,7 +323,13 @@ on `SynchronizationContext` timing. Not diagnosed further; if it recurs, that te
   `SaveAsync` deleted the user's message outright with no `SaveMergedAsync` to heal it. `Release` is idempotent
   and runs from both the `RunChanged` handler and the launcher's `finally`, because `RunChanged` is raised
   before that `finally`; the reverse lookup is read *before* the release or it erases the answer; registration
-  sits after the slot wait, which is deliberately fail-open. `AgentRunBracketTests` pins the bracket premise,
+  sits after the slot wait, which is deliberately fail-open. `AgentRunBracketTests` pins the bracket premise —
+  and its **second** version is the one that does. Keyed on *implementing* an executor contract
+  (`IHeadlessRunLauncher` / `IBackgroundAssistantTurnRunner`), because the first version keyed on *depending on*
+  `AgentRunOrchestrator` and was wrong in both directions: it MISSED `BackgroundAssistantTurnRunner`, which
+  never references the orchestrator — so the SingleTurn bracket sat outside the very rule meant to pin it — and
+  it FLAGGED `ScheduledJobBackgroundService`, which only dispatches by delegation and correctly owns no bracket
+  of its own. Verified by adding a forgetful executor temporarily and watching the rule name it,
   which was the owner's stated argument against this design. The original description follows for context.
   ~~Activating a hydrated chat returns the session (composer live) *before* the fire-and-forget run lookup can
   set `ForeignRunActive`~~
