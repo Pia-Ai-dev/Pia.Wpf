@@ -18,7 +18,11 @@ public enum ScheduledJobStatus
     /// <summary>Switched off by the user. Re-arming via EnableAsync is expected and re-fires the job.</summary>
     Disabled,
 
-    /// <summary>Retired by repeated failures (or, for a one-off, by its single failure).</summary>
+    /// <summary>
+    /// Retired by failure: five consecutive strikes for a recurring job; for a one-off, its single failure —
+    /// except a PRE-MODEL failure (the pinned provider could not be resolved, so nothing ran), which earns
+    /// one re-arm and only retires on the second attempt. See <c>MarkRunFailedAsync</c>.
+    /// </summary>
     Failed,
 
     /// <summary>
