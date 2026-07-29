@@ -223,23 +223,29 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
                 foreach (var session in _allSessions)
                 {
-                    if (session.Id is not { } chatId)
-                        continue; // a first-turn chat has no id yet, so no run can be writing it
+                    // The session that holds THIS run, whether or not it has a chat id yet. An id is NOT a
+                    // precondition: StartPlannedTurnAsync attaches a run to a brand-new session, and that
+                    // session's id is only assigned when its first turn persists — so a run can absolutely be
+                    // attached to an id-less chat, and the pre-A2 handler gated exactly that case by matching
+                    // ActiveRunId with no id requirement. Requiring an id here silently dropped it, and the
+                    // race between the persist and the event made the loss intermittent.
+                    var holdsThisRun = session.ActiveRunId == e.RunId;
 
                     // Only the sessions this event can actually speak for: the chat the bracket names, or the
                     // session holding this very run. Anything else keeps what it was seeded with — notably
                     // RestoreActiveRunAsync's post-restart backfill for a run that began before this process
                     // and so has no in-process bracket, which a blanket recompute would wrongly clear.
-                    if (chatId != bracketedChatId && session.ActiveRunId != e.RunId)
+                    var isBracketedChat = session.Id is { } id && id == bracketedChatId;
+                    if (!isBracketedChat && !holdsThisRun)
                         continue;
 
-                    var foreign = _executingRuns.IsExecuting(chatId)
+                    var foreign = (session.Id is { } chatId && _executingRuns.IsExecuting(chatId))
                         // Unioned with the pre-A2 rule: a resume's CAS raises RunChanged(Running) BEFORE the
                         // launcher's post-slot Register, so the index is briefly empty for it. This term only
                         // ever asserts a true that THIS event justifies, so it cannot strand a stale one. Own
                         // runs stay exempt while they execute — their session's IsStreaming already blocks
                         // Send, and flagging them would be an interactive regression.
-                        || (executing && !isOwnRun && session.ActiveRunId == e.RunId);
+                        || (executing && !isOwnRun && holdsThisRun);
 
                     session.SetForeignRunActive(foreign);
                 }

@@ -45,11 +45,36 @@ public class ChatSessionManagerTests
             .Returns(PlanningCapability.Capable);
     }
 
+    /// <summary>
+    /// Runs every posted callback INLINE, on the posting thread, in order.
+    /// <para>
+    /// A bare <see cref="SynchronizationContext"/> forwards <c>Post</c> to the ThreadPool, which guarantees
+    /// NO ordering — so two <c>RunChanged</c> events raised in quick succession could have their handlers
+    /// execute out of order, and a test that raises "terminal, then Running" would observe the Running
+    /// recompute first and settle on the wrong final state. That produced a real intermittent failure in
+    /// <c>RunChanged_OwnRunTerminal_RetiresOwnership</c> (~1 run in 6 under full-suite load), which is a
+    /// FIXTURE defect, not a product one: in production these events are separated by real work, and the
+    /// handler is invoked on the WPF dispatcher, which is ordered.
+    /// </para>
+    /// <para>
+    /// Inline is the faithful choice rather than merely the convenient one — it is exactly what the WPF
+    /// dispatcher does when a post originates on the UI thread, which is the case these tests model. It also
+    /// makes the handler's effects observable immediately after the raise, so a test never has to sleep to
+    /// find out whether bookkeeping ran.
+    /// </para>
+    /// </summary>
+    private sealed class InlineSynchronizationContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) => d(state);
+
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
+    }
+
     private ChatSessionManager CreateSut()
     {
-        // The manager guards against a missing UI SynchronizationContext.
-        if (SynchronizationContext.Current is null)
-            SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
+        // Set unconditionally, not only when null: xunit reuses pool threads, so a context left behind by an
+        // earlier test would otherwise be inherited and reintroduce the reordering this replaces.
+        SynchronizationContext.SetSynchronizationContext(new InlineSynchronizationContext());
 
         var orchestrator = new Pia.Services.AgentRunOrchestrator(
             _runService, Substitute.For<Pia.Services.Interfaces.IAgentPlanner>(),
