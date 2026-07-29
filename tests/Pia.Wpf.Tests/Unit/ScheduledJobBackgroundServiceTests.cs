@@ -177,6 +177,36 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_NoProvider_PassesTheSharedPreModelReasonAndDoesNotLaunch()
+    {
+        // PASSES BEFORE AND AFTER this change (the reason's VALUE is unchanged) — a parity guard, not a
+        // regression test. ScheduledJobService keys the ONE retryable failure off this exact reason value, so
+        // BOTH dispatch legs must hand it the same constant; a literal typo'd apart in the AgentTask leg would
+        // silently downgrade agent one-offs back to dying on the first blip, and no assertion in
+        // ScheduledJobServiceTests could see it. FakeJobService deliberately does not model the retry — the
+        // re-arm behaviour itself is pinned against the real service.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        var notifications = new FakeNotificationSurface();
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(null), notifications,
+            launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Single(jobs.Failed);
+        Assert.Equal(ScheduledJobService.NoProviderFailureReason, jobs.Failed[0].Reason);
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        Assert.Equal(1, notifications.FailureCount);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_LateBy20Min_AsksUserAndSkipsIfDeclined()
     {
         var jobs = new FakeJobService();

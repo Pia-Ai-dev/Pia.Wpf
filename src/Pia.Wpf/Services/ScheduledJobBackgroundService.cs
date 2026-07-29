@@ -169,7 +169,10 @@ public class ScheduledJobBackgroundService : BackgroundService
             var provider = await _providers.ResolveAsync(job.ProviderId);
             if (provider is null)
             {
-                const string reason = "NoProvider";
+                // The one PRE-MODEL failure: nothing ran, so ScheduledJobService is allowed to re-arm a
+                // one-off here instead of retiring it (B). Pass its constant, never a local literal — the
+                // two legs and the classifier must not drift apart.
+                const string reason = ScheduledJobService.NoProviderFailureReason;
                 await _jobs.MarkRunFailedAsync(job.Id, reason);
                 _notifications.NotifyFailure(job, reason);
                 _logger.LogWarning("Scheduled agent job {Id} failed: no provider available", job.Id);
@@ -259,7 +262,9 @@ public class ScheduledJobBackgroundService : BackgroundService
             var provider = await _providers.ResolveAsync(job.ProviderId);
             if (provider is null)
             {
-                const string reason = "NoProvider";
+                // Pre-model, exactly as in ExecuteAgentTaskAsync — the shared constant is what earns a
+                // one-off one more attempt, so both legs must hand over the same value.
+                const string reason = ScheduledJobService.NoProviderFailureReason;
                 await _jobs.MarkRunFailedAsync(job.Id, reason);
                 _notifications.NotifyFailure(job, reason);
                 _logger.LogWarning("Scheduled job {Id} failed: no provider available", job.Id);

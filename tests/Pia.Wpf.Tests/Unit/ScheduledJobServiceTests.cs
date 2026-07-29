@@ -121,7 +121,9 @@ public class ScheduledJobServiceTests : IDisposable
     // (whose AdvanceMissedRunAsync hardcodes +1d and whose GetDueJobsAsync has no Status clause) — a test
     // written there passes on unfixed code and is worthless.
     //
-    // Execution is deferred: net10.0-windows cannot run on macOS, so these are written, not run.
+    // (B) extends the section: a PRE-MODEL failure (ScheduledJobService.NoProviderFailureReason) no longer
+    // retires a one-off outright, it re-arms once — so the old "fails on first failure" test is split into
+    // its post-model and pre-model halves below rather than deleted.
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
@@ -174,9 +176,14 @@ public class ScheduledJobServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task MarkRunFailedAsync_OnceJob_FailsOnFirstFailure()
+    public async Task MarkRunFailedAsync_OnceJob_PostModelFailure_FailsOnFirstFailure()
     {
-        // A one-off has no future occurrence to retry INTO, so it does not wait for the 5-strike valve.
+        // Half one of the split, and it PASSES BEFORE AND AFTER this change — a guard, not new coverage.
+        // A one-off has no future occurrence to retry INTO, and once the run has STARTED a retry is not
+        // idempotent (the first attempt may already have written to the vault), so a failure carrying
+        // anything other than the pre-model reason retires the job on the first strike and does not wait for
+        // the 5-strike valve. This is the non-idempotency guard: a raw provider or exception string must NEVER
+        // buy a second unattended run.
         var job = await _service.CreateAsync("TEST_OnceFails", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-1));
         var plantedFire = DateTime.Now.AddMinutes(-5);
@@ -190,6 +197,120 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Equal(plantedFire, after.NextFireAt, TimeSpan.FromSeconds(1));
 
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task MarkRunFailedAsync_OnceJob_PreModelFailure_ReArmsInsteadOfRetiring()
+    {
+        // Half two, and this one FAILS on the pre-change tree (the row settles Failed immediately today).
+        // NoProvider costs nothing — no AgentRuns row, no tokens, no writes — and is often momentary (a
+        // pinned provider row missing for the seconds a sync pull takes to re-import it), yet it used to
+        // spend the job's only firing.
+        var job = await _service.CreateAsync("TEST_OncePreModel", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
+        var plantedUpdate = DateTime.Now.AddHours(-3);
+        await ForceUpdatedAtAsync(job.Id, plantedUpdate);
+
+        await _service.MarkRunFailedAsync(job.Id, ScheduledJobService.NoProviderFailureReason);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, after!.Status);
+        Assert.Equal(1, after.ConsecutiveFailures);
+        Assert.True(after.NextFireAt > DateTime.Now, "a re-armed one-off must have a FUTURE fire time");
+        // Far enough forward that the row genuinely leaves the 30 s due window rather than re-running at once.
+        Assert.True(after.NextFireAt > DateTime.Now.AddMinutes(5), "the retry must not fire on the next tick");
+        // NextFireAt/ConsecutiveFailures are device-local execution state and are not synced at all, so the
+        // re-arm must NOT bump UpdatedAt — that would force a pointless push and let a local retry outrank a
+        // genuine remote edit in SyncClientService's merge.
+        Assert.Equal(plantedUpdate, after.UpdatedAt, TimeSpan.FromSeconds(1));
+        Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+        // Still Active, so the row is still listed and still owns a scheduled firing.
+        Assert.Contains(await _service.GetActiveAsync(), j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task MarkRunFailedAsync_OnceJob_SecondPreModelFailure_SettlesFailed()
+    {
+        // The cap: retry once, then stop. A one-off that cannot resolve a provider twice, ten minutes apart,
+        // is broken in a way a third unattended attempt will not fix. FAILS on the pre-change tree at the
+        // intermediate Active assertion.
+        var job = await _service.CreateAsync("TEST_OncePreModelTwice", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
+
+        await _service.MarkRunFailedAsync(job.Id, ScheduledJobService.NoProviderFailureReason);
+        Assert.Equal(ScheduledJobStatus.Active, (await _service.GetAsync(job.Id))!.Status);
+
+        await _service.MarkRunFailedAsync(job.Id, ScheduledJobService.NoProviderFailureReason);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Failed, after!.Status);
+        Assert.Equal(2, after.ConsecutiveFailures);
+        Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+        Assert.DoesNotContain(await _service.GetActiveAsync(), j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task MarkRunFailedAsync_OnceJob_PreModelRetryThenSettle_SurvivesASyncPull()
+    {
+        // The UpdatedAt trap, both directions. SyncClientService's pull merge applies the REMOTE row when
+        // remote.UpdatedAt >= local.UpdatedAt, and UpsertFromSyncAsync then writes Status back to 'Active' —
+        // so a SETTLE that does not bump looks green locally and is reverted by the first pull. The RE-ARM is
+        // the mirror case: it changes only device-local execution state, so it must not bump. FAILS on the
+        // pre-change tree, where attempt 1 already settles and bumps.
+        var job = await _service.CreateAsync("TEST_OnceFailSync", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        var remote = (await _service.GetAsync(job.Id))!;   // stands in for the row the server still holds
+        var plantedUpdate = DateTime.Now.AddHours(-3);
+        await ForceUpdatedAtAsync(job.Id, plantedUpdate);
+        remote.UpdatedAt = plantedUpdate;
+
+        // Attempt 1 re-arms: local execution state only, so UpdatedAt must not move.
+        await _service.MarkRunFailedAsync(job.Id, ScheduledJobService.NoProviderFailureReason);
+        var reArmed = (await _service.GetAsync(job.Id))!;
+        Assert.Equal(plantedUpdate, reArmed.UpdatedAt, TimeSpan.FromSeconds(1));
+
+        // Attempt 2 settles. The bump makes the local row strictly newer, so the merge predicate
+        // `remote.UpdatedAt >= local.UpdatedAt` is false and the pull is skipped.
+        await _service.MarkRunFailedAsync(job.Id, ScheduledJobService.NoProviderFailureReason);
+        var settled = (await _service.GetAsync(job.Id))!;
+        Assert.Equal(ScheduledJobStatus.Failed, settled.Status);
+        Assert.False(remote.UpdatedAt.ToUniversalTime() >= settled.UpdatedAt.ToUniversalTime(),
+            "a terminal settle must bump UpdatedAt or the next pull reverts it to Active");
+
+        // And this is what the revert WOULD do if the predicate held — which is why the bump matters. It also
+        // pins the storage premise behind the whole retry: UpsertFromSyncAsync leaves ConsecutiveFailures
+        // alone (it is absent from SyncScheduledJob), so the attempt budget is not reset by a pull.
+        remote.Status = ScheduledJobStatus.Active;
+        await _service.UpsertFromSyncAsync(remote);
+        var pulled = (await _service.GetAsync(job.Id))!;
+        Assert.Equal(ScheduledJobStatus.Active, pulled.Status);
+        Assert.Equal(2, pulled.ConsecutiveFailures);
+    }
+
+    [Fact]
+    public async Task MarkRunFailedAsync_RecurringJob_PreModelFailure_StillUsesTheFiveStrikeBudget()
+    {
+        // PASSES BEFORE AND AFTER this change (the recurring SQL is untouched) — a scoping guard against a
+        // future refactor that merges the two branches, not a regression test. The retry is for one-offs: a
+        // recurring job already has a next occurrence to retry into, so the pre-model reason must neither
+        // shorten nor lengthen its 5-strike budget.
+        var job = await _service.CreateAsync("TEST_DailyPreModel", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
+
+        for (var i = 0; i < 4; i++)
+            await _service.MarkRunFailedAsync(job.Id, ScheduledJobService.NoProviderFailureReason);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, after!.Status);
+        Assert.Equal(4, after.ConsecutiveFailures);
+        // Only that the row re-armed into the future — deliberately no magnitude assertion, because a Daily
+        // 09:00 job's next occurrence is minutes away if the suite runs at 08:45 and ~24 h away at 09:05.
+        Assert.True(after.NextFireAt > DateTime.Now, "a recurring job must still re-arm");
+
+        await _service.MarkRunFailedAsync(job.Id, ScheduledJobService.NoProviderFailureReason);
+        Assert.Equal(ScheduledJobStatus.Failed, (await _service.GetAsync(job.Id))!.Status);
     }
 
     [Fact]

@@ -13,6 +13,36 @@ public class ScheduledJobService : IScheduledJobService
 {
     private const int MaxConsecutiveFailures = 5;
 
+    /// <summary>
+    /// Attempts a <see cref="RecurrenceType.Once"/> job gets when its failure was PRE-MODEL. Two, not the
+    /// recurring five: the point is to survive a momentary blip — a pinned provider row missing for the
+    /// seconds a sync pull takes to re-import it — not to grind. A one-off that cannot resolve a provider
+    /// twice, ten minutes apart, is broken in a way a third attempt will not fix.
+    /// </summary>
+    private const int MaxOncePreModelAttempts = 2;
+
+    /// <summary>
+    /// How far forward a re-armed one-off is pushed. The magnitude has exactly ONE job: comfortably clear the
+    /// background service's 30 s poll, so the row genuinely leaves the due window instead of re-firing on the
+    /// very next tick.
+    /// <para>
+    /// It is NOT what keeps the retry quiet, and raising it would NOT make the retry noisy: the missed-run
+    /// grace is measured as <c>DateTime.Now - job.NextFireAt</c>, and the re-arm MOVES NextFireAt, so the
+    /// retry comes due barely late and fires silently at any delay. The one case that still prompts is the
+    /// process being closed across the retry instant and restarted more than the grace period later — then the
+    /// user is asked about a run whose first attempt they never saw fail.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan _oncePreModelRetryDelay = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// The one <c>reason</c> value <see cref="MarkRunFailedAsync"/> treats as pre-model: the pinned provider
+    /// could not be resolved, so nothing ran — no AgentRuns row was created, no tokens were spent, nothing
+    /// was written. Both dispatch legs of <see cref="ScheduledJobBackgroundService"/> pass this exact
+    /// constant rather than their own literal, so producer and consumer cannot drift apart.
+    /// </summary>
+    public const string NoProviderFailureReason = "NoProvider";
+
     private readonly SqliteContext _context;
     private readonly IRecurrenceCalculator _calculator;
     private readonly ISettingsService _settingsService;
@@ -273,30 +303,73 @@ public class ScheduledJobService : IScheduledJobService
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
         var settleOnce = existing.Recurrence == RecurrenceType.Once;
+        var preModel = IsPreModelFailure(reason);
+        DateTime? onceRetryAt = null;
 
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
 
         if (settleOnce)
         {
-            // W3: a one-off has no future occurrence to retry INTO, so it retires on the FIRST failure
-            // rather than waiting for the 5-strike valve. Leaving it Active would re-run the same past
-            // instant on every 30 s tick until the valve trips — five unattended agent runs with real
-            // token spend inside 150 s, each serialized behind the tick's run lock, which also starves
-            // the other due jobs. The user still gets NotifyFailure and can re-enable, and re-enabling
-            // now costs exactly ONE more run instead of an unbounded loop.
+            // W3: a one-off has no future occurrence to retry INTO, so a failure that happened while the run
+            // was EXECUTING settles it terminally on the first strike rather than waiting for the 5-strike
+            // valve. Leaving it Active would re-run the same past instant on every 30 s tick until the valve
+            // trips — five unattended agent runs with real token spend inside 150 s, each serialized behind
+            // the tick's run lock, which also starves the other due jobs. Retrying a partially-executed run
+            // is not idempotent either: the first attempt may already have written to the vault, so "retry
+            // the whole run" can silently duplicate work.
             //
-            // ConsecutiveFailures still increments so the row records what happened. NextFireAt is left
-            // at its past instant, like the other two settles. UpdatedAt is bumped for the same sync
-            // reason as the recurring branch below.
+            // (B): the ONE exception is a PRE-MODEL failure — see IsPreModelFailure. There the pinned
+            // provider could not be resolved, so no AgentRuns row exists, no tokens were spent and nothing
+            // was written; the job's single firing used to be retired for FREE, by a blip that is often gone
+            // seconds later (a provider row missing while a sync pull re-imports it). Such a failure re-arms
+            // the row _oncePreModelRetryDelay out and settles 'Failed' on attempt MaxOncePreModelAttempts.
+            // NextFireAt still stays at its past instant on a SETTLE — the honest record of when the job was
+            // meant to fire — so only a re-arm moves it.
+            //
+            // ONE statement, ONE round-trip, and all three conditional writes chosen by CASE off the SAME
+            // atomic `ConsecutiveFailures + 1`: this call site is not try/catch-wrapped in
+            // ScheduledJobBackgroundService, so a second statement here could abort the tick's remaining due
+            // jobs (guardrail 1), and reading the counter in C# to pick a branch would lose a concurrent
+            // increment.
+            //
+            // Status gains ELSE Status, so a re-arm no longer stamps 'Failed' over a row a direct caller had
+            // Disabled (the unconditional 'Failed' this replaces did). The preservation arm is the RETRY arm,
+            // mirroring the recurring branch's sub-threshold ELSE Status; a terminal settle writes 'Failed'
+            // regardless of prior status, exactly as the recurring branch does at threshold.
+            //
+            // UpdatedAt is the trap. SyncClientService's pull merge applies the REMOTE row when
+            // remote.UpdatedAt >= local.UpdatedAt, and UpsertFromSyncAsync then writes Status back to
+            // 'Active' — so a SETTLE that does not bump is reverted by the first pull while testing green
+            // locally. It therefore bumps, like the other two settles. The RE-ARM must NOT bump: it changes
+            // only NextFireAt and ConsecutiveFailures, which are device-local execution state that is never
+            // synced (both are absent from SyncScheduledJob), so bumping would force a pointless push and
+            // let a local retry outrank a genuine remote edit.
             command.CommandText = """
                 UPDATE ScheduledJobs
                 SET LastFiredAt = @Now,
                     ConsecutiveFailures = ConsecutiveFailures + 1,
-                    Status = 'Failed',
-                    UpdatedAt = @UpdatedAt
+                    Status = CASE
+                        WHEN @PreModel = 1 AND ConsecutiveFailures + 1 < @MaxAttempts THEN Status
+                        ELSE 'Failed'
+                    END,
+                    NextFireAt = CASE
+                        WHEN @PreModel = 1 AND ConsecutiveFailures + 1 < @MaxAttempts THEN @RetryAt
+                        ELSE NextFireAt
+                    END,
+                    UpdatedAt = CASE
+                        WHEN @PreModel = 1 AND ConsecutiveFailures + 1 < @MaxAttempts THEN UpdatedAt
+                        ELSE @UpdatedAt
+                    END
                 WHERE Id = @Id
                 """;
+            var retryAt = DateTime.Now.Add(_oncePreModelRetryDelay);
+            // Mirrors the CASE above for the log line only; the SQL's own predicate is the authority.
+            if (preModel && existing.ConsecutiveFailures + 1 < MaxOncePreModelAttempts)
+                onceRetryAt = retryAt;
+            command.Parameters.AddWithValue("@PreModel", preModel ? 1 : 0);
+            command.Parameters.AddWithValue("@MaxAttempts", MaxOncePreModelAttempts);
+            command.Parameters.AddWithValue("@RetryAt", retryAt.ToString("O"));
         }
         else
         {
@@ -327,10 +400,38 @@ public class ScheduledJobService : IScheduledJobService
         await command.ExecuteNonQueryAsync();
 
         _logger.LogWarning("Scheduled job {Id} run failed", id);
-        if (settleOnce)
+        if (onceRetryAt is { } retry)
+            _logger.LogInformation(
+                "Scheduled job {Id} is one-off; pre-model failure {Attempt}/{MaxAttempts}, re-armed for {RetryAt:g}",
+                id, existing.ConsecutiveFailures + 1, MaxOncePreModelAttempts, retry);
+        else if (settleOnce)
             _logger.LogInformation("Scheduled job {Id} is one-off; retired as Failed, will not fire again", id);
         _logger.SensitiveDebug("Scheduled job {Id} run failed reason: {Reason}", id, reason);
     }
+
+    /// <summary>
+    /// True for the one failure <see cref="MarkRunFailedAsync"/> can PROVE happened before the run started
+    /// spending anything, and which is therefore safe to retry: <see cref="NoProviderFailureReason"/>, raised
+    /// by both dispatch legs when the pinned provider cannot be resolved. The test is exact ordinal equality,
+    /// never a substring match, so an unrelated caller string can only be mistaken for pre-model by being
+    /// byte-identical to the constant.
+    /// <para>
+    /// Deliberately narrow, and deliberately NOT extended to the other reasons the background service passes.
+    /// A <c>run.State.ToString()</c> and a caught <c>ex.Message</c> both describe a run that already exists:
+    /// an initial-planning HTTP failure, for instance, has spent tokens and left an AgentRuns row plus a stub
+    /// chat, and its message is indistinguishable from a fault raised mid-act, where a step may already have
+    /// written to the vault. Re-firing those is the duplicate-write risk this scoping exists to avoid, so they
+    /// settle terminally on the first strike.
+    /// </para>
+    /// <para>
+    /// KNOWN GAP, accepted: <c>IHeadlessRunLauncher.LaunchAsync</c> can also fail genuinely pre-model (its own
+    /// provider resolve, the stub-chat save, workspace setup), and that arrives here as a bare message, so
+    /// such a one-off still dies on the first strike. Widening needs a reason value the CALLER can vouch for —
+    /// never a substring match on provider error text.
+    /// </para>
+    /// </summary>
+    private static bool IsPreModelFailure(string reason) =>
+        string.Equals(reason, NoProviderFailureReason, StringComparison.Ordinal);
 
     public async Task AdvanceMissedRunAsync(Guid id)
     {
