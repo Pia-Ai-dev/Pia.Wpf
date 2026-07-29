@@ -110,6 +110,13 @@ public class DependencyInjectionTests
                 // Allowed: delegates (Func<>, Action<>) for manually-created ViewModels
                 if (typeof(Delegate).IsAssignableFrom(paramType)) continue;
 
+                // Allowed: value types and string — DATA, not a dependency. This rule exists to stop a
+                // ViewModel taking a concrete SERVICE (which defeats substitution and pins it to one
+                // implementation); a Guid identifying which run a per-run ViewModel represents is an
+                // argument, not something DI could ever have supplied. RunProgressViewModel(Guid runId)
+                // is constructed on the UI thread by AssistantViewModel, not resolved from the container.
+                if (paramType.IsValueType || paramType == typeof(string)) continue;
+
                 violations.Add($"{vmType.Name} injects concrete type {paramType.Name} via parameter '{param.Name}'");
             }
         }
