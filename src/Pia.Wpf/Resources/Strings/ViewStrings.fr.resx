@@ -109,6 +109,9 @@
   <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Replanifications en cas d'échec</value></data>
   <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} replanifications</value></data>
   <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>Combien de fois une exécution peut réviser son plan après l'échec d'une étape.</value></data>
+  <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planification</value></data>
+  <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Réfléchir avant de planifier</value></data>
+  <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Ajoute un court tour de réflexion sans outils avant la création du plan, afin que le modèle puisse raisonner au niveau d'effort que vous avez configuré. Utile chez les fournisseurs qui désactivent le raisonnement lorsque des outils sont attachés — et double le coût de l'étape de planification.</value></data>
   <data name="Settings_Scheduled_Section_Header" xml:space="preserve"><value>Exécutions en arrière-plan et planifiées</value></data>
   <data name="Settings_Scheduled_Section_Description" xml:space="preserve"><value>Limites auxquelles une exécution sans surveillance s'arrête — un « Exécuter en arrière-plan » ou une tâche d'agent planifiée. Plus généreuses que les exécutions interactives, car personne ne surveille.</value></data>
   <data name="Settings_Scheduled_MaxSteps_Label" xml:space="preserve"><value>Étapes maximales</value></data>

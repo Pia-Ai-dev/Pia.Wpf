@@ -171,6 +171,14 @@ public class AppSettings
     public int AgentMaxReplans { get; set; } = 2;
     public int AgentWallClockMinutes { get; set; } = 20;
 
+    // Reason-then-emit planning. When true, a plan turn on a provider whose handler DROPS the configured
+    // reasoning effort as soon as tools are attached (AzureOpenAI / Ollama / Mistral — see
+    // IAiProviderHandler.DropsReasoningEffortWithTools) is split into TWO provider turns: a tool-FREE
+    // free-form reasoning turn at the configured effort, then the constrained emit_plan turn seeded with
+    // that analysis. Default OFF: it doubles the plan-turn cost, and the plan turn already costs ≥2 rounds
+    // (§16 R6). Global, not per-provider — the same answer applies to interactive, detached and scheduled runs.
+    public bool AgentPlanReasoningTurnEnabled { get; set; } = false;
+
     // Scheduled/headless-run budget envelope (§17.5) — the caps an unattended run (a "Run in background"
     // detach or a scheduled AgentTask job) stops at. Separate from the interactive Agent* knobs because
     // an unattended run has no user watching and gets a longer envelope. Defaults match RunProfile.Scheduled.

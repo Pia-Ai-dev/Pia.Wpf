@@ -923,6 +923,9 @@
   <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Re-plans on failure</value></data>
   <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} re-plans</value></data>
   <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>How many times a run may revise its plan after a step fails.</value></data>
+  <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planning</value></data>
+  <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Think before planning</value></data>
+  <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Adds a short tool-free thinking turn before the plan is created, so the model can reason at the effort you configured. Helps on providers that switch reasoning off while tools are attached — and doubles the cost of the planning turn.</value></data>
   <data name="Settings_Scheduled_Section_Header" xml:space="preserve"><value>Background &amp; scheduled runs</value></data>
   <data name="Settings_Scheduled_Section_Description" xml:space="preserve"><value>Limits an unattended run stops at — a "Run in background" detach or a scheduled agent job. More generous than interactive runs, because no one is watching.</value></data>
   <data name="Settings_Scheduled_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>

@@ -296,6 +296,18 @@ public partial class AssistantSettingsViewModel : ObservableObject
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // Reason-then-emit opt-in: split a plan turn into a tool-free reasoning turn plus the constrained
+    // emit_plan turn on providers that drop the configured reasoning effort once tools are attached.
+    // Global (not per-provider, and it covers unattended runs too), default OFF — it doubles the plan-turn
+    // cost. No …Display property: a CheckBox's label is the resx string, there is no numeric readout.
+    [ObservableProperty]
+    private bool _agentPlanReasoningTurnEnabled;
+
+    partial void OnAgentPlanReasoningTurnEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -317,6 +329,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         AgentMaxSteps = Math.Clamp(settings.AgentMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
         AgentMaxReplans = Math.Clamp(settings.AgentMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
         AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
+        AgentPlanReasoningTurnEnabled = settings.AgentPlanReasoningTurnEnabled;
 
         ScheduledMaxSteps = Math.Clamp(settings.ScheduledMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
         ScheduledMaxReplans = Math.Clamp(settings.ScheduledMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
@@ -464,6 +477,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.AgentMaxSteps = AgentMaxSteps;
         settings.AgentMaxReplans = AgentMaxReplans;
         settings.AgentWallClockMinutes = AgentWallClockMinutes;
+        settings.AgentPlanReasoningTurnEnabled = AgentPlanReasoningTurnEnabled;
         settings.ScheduledMaxSteps = ScheduledMaxSteps;
         settings.ScheduledMaxReplans = ScheduledMaxReplans;
         settings.ScheduledWallClockMinutes = ScheduledWallClockMinutes;
