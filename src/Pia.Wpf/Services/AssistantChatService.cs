@@ -727,7 +727,16 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 Role = reader.GetString(1),
                 Content = reader.GetString(2),
                 ThinkingContent = reader.IsDBNull(3) ? null : reader.GetString(3),
-                Timestamp = DateTime.Parse(reader.GetString(4)),
+                // ToUniversalTime is REQUIRED, not cosmetic. The column holds ISO-8601 UTC ("O", so
+                // "...Z"), and DateTime.Parse on a "Z" string returns Kind=Local with the offset
+                // ALREADY APPLIED — 09:02Z comes back as 11:02 Local under CEST. SaveMergedAsync then
+                // sorts these DB-read rows against the caller's own Kind=Utc rows, comparing shifted
+                // ticks against unshifted ones, and every absorbed row lands after every caller row.
+                // That is exactly the "step reply printed before the question the user typed mid-run"
+                // ordering the merge exists to prevent, and it reproduces on any machine east of UTC.
+                // Matches the ToUniversalTime already used by GetMaxUpdatedAtAsync above; the display
+                // layer calls .ToLocalTime() everywhere, which was silently a no-op until now.
+                Timestamp = DateTime.Parse(reader.GetString(4)).ToUniversalTime(),
                 Tokens = reader.IsDBNull(5) ? null : reader.GetInt32(5),
                 ModelName = reader.IsDBNull(6) ? null : reader.GetString(6),
                 Persona = reader.IsDBNull(7)
@@ -807,9 +816,16 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             Id = Guid.Parse(reader.GetString(0)),
             SchemaVersion = reader.GetInt32(1),
             Title = reader.IsDBNull(2) ? null : reader.GetString(2),
-            CreatedAt = DateTime.Parse(reader.GetString(3)),
-            UpdatedAt = DateTime.Parse(reader.GetString(4)),
-            LastAccessedAt = DateTime.Parse(reader.GetString(5)),
+            // Same Kind=Local hazard as GetMessagesAsync (see the note there). These three feed a
+            // documented invariant: SaveUnderGateAsync stores them with ToString("O") and relies on
+            // "fixed-width ISO-8601 UTC" so SQLite's lexicographic max(LastAccessedAt, ...) is
+            // chronological. A Kind=Local value formats with a "+02:00" offset instead of "Z" — a
+            // different width AND a different sort order — so a load-then-save round trip
+            // (ChatSessionManager reads via GetAsync, writes via SaveAsync) would poison that column
+            // and the MAX(UpdatedAt) sync cursor with strings that no longer compare chronologically.
+            CreatedAt = DateTime.Parse(reader.GetString(3)).ToUniversalTime(),
+            UpdatedAt = DateTime.Parse(reader.GetString(4)).ToUniversalTime(),
+            LastAccessedAt = DateTime.Parse(reader.GetString(5)).ToUniversalTime(),
             WindowMode = reader.GetString(6),
             ProviderId = reader.IsDBNull(7) ? null : Guid.Parse(reader.GetString(7)),
             WorkingDirectory = reader.IsDBNull(8) ? null : reader.GetString(8),
