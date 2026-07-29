@@ -74,6 +74,14 @@ internal static class AgentContextCompactor
         ILogger logger,
         CancellationToken ct)
     {
+        // Checked HERE, before any early return, because the "cancellation is rethrown" contract below is
+        // unconditional but the catch-and-rethrow could only honour it when the library happened to observe
+        // the token — and it only gets the chance on a request that is actually over budget. An under-budget
+        // request (or one short-circuited by the two early returns) did the whole pin/index pass on a run
+        // that had already been stopped and reported success. A cancelled run should not be compacting at
+        // all, and every caller propagates OperationCanceledException already.
+        ct.ThrowIfCancellationRequested();
+
         if (budget is not { } contextBudget || messages.Count < MinimumCompactableMessageCount)
             return [.. messages];
 
