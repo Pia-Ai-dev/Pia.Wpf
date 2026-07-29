@@ -428,4 +428,86 @@ public class AgentContextCompactorTests
         Assert.Same(messages[0], result[0]);
         Assert.Contains("Execute step 13", result[^1].Text);
     }
+
+    [Fact]
+    public async Task OverBudget_KeepsANonLeadingSystemMessage()
+    {
+        // The re-concatenation used to filter 'kept' by ROLE to skip the pinned prefix it had already
+        // emitted from 'head', so EVERY system message the library returned was deleted — including one a
+        // caller placed after a user message, which is not in 'head' at all and lives only in the list
+        // handed to the library. The skip is by reference identity now, and this reminder proves it.
+        //
+        // MEASURED against Microsoft.Agents.AI 1.15.0, not derived: in=16, 14 handed to the library,
+        // kept=10 — of which TWO are system messages: the pinned prefix (reference-identical to
+        // messages[0], which is what makes identity exclusion work) and this reminder. out=12 now; it was
+        // 11, with the reminder silently gone, under the role filter.
+        //
+        // Over budget for the reason recorded on AgentStepShapedMessages: 12 replies of 2014 chars / 4 ≈
+        // 6040 estimated tokens against a truncation trigger of 0.70 × (8000 − 2000 − pinnedCost ≈ 14) ≈
+        // 4190. The same 12-reply / 8000 / 2000 fixture as OverBudget_ShrinksButKeepsSystemAndGoalFirst
+        // (in=15, out=11) plus this one small message.
+        //
+        // The reminder sits among the NEWEST groups on purpose: Microsoft.Agents.AI documents
+        // TruncationCompactionStrategy as "preserves system messages and removes the oldest non-system
+        // message groups first", so the library handing it back is guaranteed twice over and the only
+        // thing left for this test to fail on is Pia's own splice.
+        const string reminder = "SYSTEM REMINDER: cite file paths in every step reply.";
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "You are Pia, an agent."),
+            new(ChatRole.User, "THE GOAL: ship the context compaction batch."),
+        };
+        for (var i = 1; i <= 12; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+        messages.Add(new ChatMessage(ChatRole.System, reminder));
+        messages.Add(new ChatMessage(ChatRole.User, "Execute step 13"));
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            result.Count < messages.Count,
+            $"this fixture must be over budget or it proves nothing, but {messages.Count} messages came back as {result.Count}");
+
+        // Present exactly once, and still a system message: not deleted, and not smuggled back inside
+        // someone else's text.
+        var survivor = Assert.Single(result, m => m.Text.Contains(reminder, StringComparison.Ordinal));
+        Assert.Equal(ChatRole.System, survivor.Role);
+
+        // The other half of trading a role filter for identity: the pinned prefix is in BOTH lists, so it
+        // must still ship exactly once. Matched on TEXT rather than identity, so a future package version
+        // that returns a CLONE of the prefix — which identity exclusion would no longer skip — fails here
+        // instead of quietly sending the system prompt twice.
+        Assert.Single(result, m => m.Text.Contains("You are Pia", StringComparison.Ordinal));
+
+        // The pins are unaffected by the switch.
+        Assert.Same(messages[0], result[0]);
+        Assert.Contains("THE GOAL", result[1].Text);
+        Assert.Contains("Execute step 13", result[^1].Text);
+    }
+
+    [Fact]
+    public async Task OverBudget_EmitsThePinnedSystemPrefixExactlyOnce()
+    {
+        // The prefix is deliberately in BOTH lists — 'head', and the list handed to the library so its
+        // grouping still sees a System group — so the skip in the re-concatenation is the only thing that
+        // keeps it from shipping twice. A GUARD, not a regression test: it held under the role filter too,
+        // and it fails the moment identity exclusion degrades into "keep everything", or the library starts
+        // returning a CLONE of the prefix instead of the caller's instance. Measured in=15, out=11 both
+        // before and after the change — kept's only system message here IS the pinned one, so skipping by
+        // role and skipping by identity remove the same single message on this fixture.
+        var messages = AgentStepShapedMessages(priorSteps: 12);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            result.Count < messages.Count,
+            $"this fixture must be over budget or it proves nothing, but {messages.Count} messages came back as {result.Count}");
+
+        var system = Assert.Single(result, m => m.Role == ChatRole.System);
+        Assert.Same(messages[0], system);
+        Assert.Same(messages[0], result[0]);
+    }
 }

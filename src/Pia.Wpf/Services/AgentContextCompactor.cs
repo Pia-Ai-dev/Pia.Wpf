@@ -187,11 +187,28 @@ internal static class AgentContextCompactor
             // tool result), it keeps the surviving call/result pairs adjacent, and it states the step the
             // model must finish as the most recent thing it was told.
             var pinnedCount = head.Count + (instruction is null ? 0 : 1);
+            // The pinned system run is in head AND was handed to the library inside toCompact (so its
+            // grouping still saw a System group), so it comes back in 'kept' and has to be skipped here or
+            // it ships twice. Skipped BY IDENTITY, not by role: a role filter also deleted every OTHER
+            // system message the library returned — one it synthesized, or a non-leading system message a
+            // caller placed after a user message, which the head loop above never reaches, IS inside
+            // toCompact, and must survive. ReferenceEqualityComparer keeps ChatMessage value equality from
+            // making two distinct-but-equal messages indistinguishable. The pinned goal and instruction
+            // need no entry: they were withheld from toCompact, so the library cannot hand them back. Left
+            // null when there is no leading system run at all — nothing to exclude, nothing to allocate.
+            HashSet<ChatMessage>? pinnedSystem = null;
+            if (systemCount > 0)
+            {
+                pinnedSystem = new HashSet<ChatMessage>(systemCount, ReferenceEqualityComparer.Instance);
+                for (var i = 0; i < systemCount; i++)
+                    pinnedSystem.Add(messages[i]);
+            }
+
             var compacted = new List<ChatMessage>(pinnedCount + kept.Count);
             compacted.AddRange(head);
             foreach (var message in kept)
             {
-                if (message.Role != ChatRole.System)
+                if (pinnedSystem is null || !pinnedSystem.Contains(message))
                     compacted.Add(message);
             }
             if (instruction is not null)
