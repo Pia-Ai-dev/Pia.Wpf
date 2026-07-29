@@ -38,6 +38,19 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
         TaskAmbient.Current = new TaskContext(Guid.NewGuid(), WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _runRoot);
     }
 
+    /// <summary>
+    /// Reads a member off one of FilesToolHandler's private result records (WriteResult and friends are
+    /// <c>private sealed record</c>s, so a test cannot name the type). Same helper as
+    /// <c>FilesToolHandlerWriteTests.Prop</c>; the positional record parameters are lower-cased, so the
+    /// member names here are the wire names (<c>success</c>, <c>error</c>).
+    /// </summary>
+    private static T Prop<T>(object obj, string name)
+    {
+        var p = obj.GetType().GetProperty(name);
+        Assert.NotNull(p);
+        return (T)p!.GetValue(obj)!;
+    }
+
     public void Dispose()
     {
         TaskAmbient.Current = null;
@@ -57,10 +70,19 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
             new Dictionary<string, object?> { ["path"] = vector, ["content"] = "pwned" });
         var (result, pending) = await _handler.HandleToolCallAsync(call);
 
-        // Escape → error string, no pending write to approve.
+        // Escape → structured failure, no pending write to approve.
+        //
+        // NOT a string. write_file's prepare-time hard failures return the private WriteResult record
+        // (FilesToolHandler.WriteResult.Failed), so the cast this assertion used to do — (string)result —
+        // threw InvalidCastException and took all five theory cases down BEFORE any containment claim was
+        // checked, including the "nothing written outside" check below. Read the record's members by
+        // reflection, as FilesToolHandlerWriteTests does, and assert the failure rather than merely that
+        // the call returned something. (delete_file below still returns a plain string, which is why only
+        // the write vector crashed.)
         Assert.Null(pending);
         Assert.NotNull(result);
-        Assert.Contains("Error", (string)result!, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("Error", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
 
         // The out-of-run "secret.txt" is untouched; no stray file appeared outside the run root.
         Assert.Equal("TOP SECRET", File.ReadAllText(Path.Combine(_outside, "secret.txt")));
