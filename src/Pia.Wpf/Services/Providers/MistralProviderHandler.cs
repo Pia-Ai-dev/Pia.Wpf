@@ -34,12 +34,24 @@ public sealed class MistralProviderHandler : IAiProviderHandler
 
     public AiProviderType ProviderType => AiProviderType.Mistral;
 
-    // ShouldEmitReasoning returns (false, default) for any non-None effort once hasTools is true, so
-    // turning reasoning ON is dropped on a tool-using turn.
-    // The flag is transport-level and deliberately cannot know whether ModelName is in
-    // ReasoningCapableModels: for a non-reasoning Mistral model the planner therefore spends one extra
-    // free-form turn at default effort. Accepted — reason-then-emit is itself the mechanism (the analysis
-    // seeds the constrained turn); the boosted effort is an amplifier, not the whole benefit.
+    // TRANSPORT FACT (what this flag states): ShouldEmitReasoning returns (false, default) for any non-None
+    // effort once hasTools is true, and CreateChatOptions then returns a bare ChatOptions — so
+    // `reasoning_effort` is OMITTED from every tool-using request. That is what `true` means here.
+    //
+    // What it does NOT mean for Mistral, on either half of the model list: that a tool-free turn recovers a
+    // HIGHER effort. Neither half does, for different reasons.
+    //   • Model NOT in ReasoningCapableModels: the field is never sent on either turn (the model-list check
+    //     runs before the hasTools check), so the tool-free turn is at default effort as well. This is D7.
+    //   • Model IN ReasoningCapableModels: an absent field leaves reasoning ON (see the comment in
+    //     ShouldEmitReasoning), and Mistral's ladder is `none` | `high` only — so the tool-using turn is
+    //     already thinking at the one ON rung that exists, and the tool-free turn's explicit `high` is the
+    //     same rung. No boost to recover here either.
+    // Accepted deliberately, for both halves: reason-then-emit is itself the mechanism (a free-form
+    // decomposition the constrained turn consumes); the boosted effort is an amplifier, not the whole
+    // benefit. So on Mistral the opt-in buys the split and not the boost — one extra round on a globally
+    // opted-in setting. Do NOT "fix" this by flipping the flag to false: the flag is a transport constant
+    // read off an uninitialised instance by the conformance test, and false would contradict the request
+    // this handler demonstrably builds. Narrowing it needs a model-aware member, which D7 rejected.
     public bool DropsReasoningEffortWithTools => true;
 
     public Task<IChatClient> CreateChatClientAsync(

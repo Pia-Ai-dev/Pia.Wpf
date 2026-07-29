@@ -9,11 +9,19 @@ public interface IAiProviderHandler
     AiProviderType ProviderType { get; }
 
     /// <summary>
-    /// True when this handler's request shape drops the configured reasoning effort as soon as tools are
-    /// attached — i.e. a tool-using turn always reasons at the provider's DEFAULT effort no matter what
-    /// <see cref="AiProvider.ReasoningEffort"/> says. <c>AgentPlanner</c> reads this to decide whether a
-    /// plan turn is worth splitting into a free-form reasoning turn (tool-free, so the effort survives)
-    /// followed by the constrained <c>emit_plan</c> turn.
+    /// TRANSPORT-ONLY: true when this handler's request shape omits the configured reasoning effort as soon
+    /// as tools are attached — i.e. a tool-using turn is sent WITHOUT
+    /// <see cref="AiProvider.ReasoningEffort"/> and therefore reasons at the provider's default, whatever
+    /// that is. It says nothing about how good or bad that default is.
+    /// <para>
+    /// <c>AgentPlanner</c> reads it as "this plan turn is worth splitting into a free-form reasoning turn
+    /// (tool-free, so the effort IS sent) followed by the constrained <c>emit_plan</c> turn". That is an
+    /// APPROXIMATION, and knowingly so: on a provider whose default-on level already equals its maximum, the
+    /// split still buys the free-form decomposition but recovers no extra effort (see the comment on
+    /// <c>MistralProviderHandler</c>, which is exactly that case). Do not narrow the flag to "…and the boost
+    /// is worth it" — no handler can answer that without knowing the model, which would turn a transport
+    /// constant into a per-provider query.
+    /// </para>
     /// <para>
     /// The knowledge lives next to the handler that HAS it: whether effort survives tools is decided by the
     /// exact request this handler builds in <see cref="CreateChatOptions"/> (or by the DelegatingHandler it

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -31,10 +32,11 @@ public sealed class AgentPlannerTests
     private static AiProvider Provider(
         AiProviderType type = AiProviderType.OpenAI,
         ReasoningEffort? effort = null,
-        bool supportsTools = true)
+        bool supportsTools = true,
+        string name = "P")
         => new()
         {
-            Name = "P",
+            Name = name,
             Endpoint = "https://x",
             ProviderType = type,
             ReasoningEffort = effort,
@@ -43,6 +45,14 @@ public sealed class AgentPlannerTests
 
     private static Persona Persona() => new() { Name = "Pia", SystemPrompt = "sys" };
     private static RunContext Ctx() => new("build a thing", RunProfile.Interactive);
+
+    /// <summary>
+    /// The goal every test plans. It must NOT be a substring of the analysis wrapper that
+    /// <c>BuildPlanMessages</c> composes ("--- Your analysis of this <b>goal</b> …"): with the literal
+    /// "goal" as the goal, <c>Assert.Contains(goal, LastUserPrompt)</c> is satisfied by the wrapper alone
+    /// and the "the goal survives into the analysis-seeded user message" guarantee has zero coverage.
+    /// </summary>
+    private const string Goal = "ship the widget catalogue";
 
     private AgentPlanner BuildPlanner() => BuildPlanner(AiProviderType.OpenAI, dropsEffortWithTools: false);
 
@@ -173,7 +183,7 @@ public sealed class AgentPlannerTests
             ("Draft", "write the draft", null),
             ("Review", "check the draft", "final")));
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
         Assert.Equal(3, result.Steps.Count);
@@ -190,7 +200,7 @@ public sealed class AgentPlannerTests
     {
         ReturnsPlan(emitArgs: null); // no emit_plan call on either attempt
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.FallBackToSingleTurn);
         Assert.Empty(result.Steps);
@@ -204,7 +214,7 @@ public sealed class AgentPlannerTests
             ("Same", "do a", null),
             ("Same", "do b", null))); // duplicate titles → semantic-invalid
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.FallBackToSingleTurn);
         Assert.Empty(result.Steps);
@@ -216,7 +226,7 @@ public sealed class AgentPlannerTests
     {
         ReturnsPlan(new Dictionary<string, object?> { ["steps"] = Array.Empty<object>() });
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.FallBackToSingleTurn);
     }
@@ -229,7 +239,7 @@ public sealed class AgentPlannerTests
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)),
             new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 });
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
         Assert.NotNull(result.Usage);
@@ -244,7 +254,7 @@ public sealed class AgentPlannerTests
         // fallback result must carry the SUM (the firm retry's usage is the one most easily lost).
         ReturnsPlan(emitArgs: null, usage: new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 });
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.FallBackToSingleTurn);
         Assert.NotNull(result.Usage);
@@ -261,7 +271,7 @@ public sealed class AgentPlannerTests
         ReturnsPlan(Steps(("Same", "do a", null), ("Same", "do b", null)),
             new UsageDetails { InputTokenCount = 5, OutputTokenCount = 2 });
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.FallBackToSingleTurn);
         Assert.Equal(5, result.Usage!.InputTokenCount);
@@ -328,7 +338,7 @@ public sealed class AgentPlannerTests
         // A provider that never reports usage must not fabricate a zero-token ledger write.
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        var result = await BuildPlanner().PlanAsync("goal", Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+        var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.Null(result.Usage);
     }
@@ -345,13 +355,17 @@ public sealed class AgentPlannerTests
         ReturnsReasoning(Analysis);
         ReturnsPlan(Steps(("Gather", "collect the inputs", null), ("Draft", "write the draft", null)));
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         AssertReasoningTurns(1);
         AssertConstrainedTurns(1);
         Assert.False(result.FallBackToSingleTurn);
         Assert.Equal(new[] { "Gather", "Draft" }, result.Steps.Select(s => s.Title).ToArray());
-        Assert.Contains("goal", LastUserPrompt);
+        // StartsWith, not Contains: the goal must LEAD the composed user message. Contains would also pass if
+        // the goal were appended after the analysis block, which is a different (worse) prompt shape — and
+        // BuildPlanMessages' system prompt never carries the goal, so losing it here means planning for
+        // nothing.
+        Assert.StartsWith(Goal, LastUserPrompt, StringComparison.Ordinal);
         Assert.Contains(Analysis, LastUserPrompt);
     }
 
@@ -365,12 +379,17 @@ public sealed class AgentPlannerTests
         ReturnsReasoning(Analysis);
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.True(_reasoningToolsCaptured); // the call really happened; the assertion is not vacuous
         Assert.False(_reasoningSawTools);
         // The reasoning turn must not be told about emit_plan — no tool schema is even attached to it.
         Assert.DoesNotContain("emit_plan", _reasoningRequests[^1][0].Text ?? string.Empty);
+        // …and it must actually ASK about something: the goal on the user message, the persona on the system
+        // one. ReturnsReasoning hands back the canned analysis whatever was sent, so without these two the
+        // reasoning turn could be spending a full provider round on an empty request.
+        Assert.Equal(Goal, _reasoningRequests[^1][1].Text);
+        Assert.Contains(Persona().SystemPrompt, _reasoningRequests[^1][0].Text ?? string.Empty);
     }
 
     [Fact]
@@ -381,12 +400,12 @@ public sealed class AgentPlannerTests
             AiProviderType.Ollama, dropsEffortWithTools: true, ReasoningEffort.High, reasoningTurnEnabled: false);
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         AssertReasoningTurns(0);
         AssertConstrainedTurns(1);
         Assert.False(result.FallBackToSingleTurn);
-        Assert.Equal("goal", LastUserPrompt);
+        Assert.Equal(Goal, LastUserPrompt);
     }
 
     [Fact]
@@ -397,12 +416,12 @@ public sealed class AgentPlannerTests
             AiProviderType.OpenAI, dropsEffortWithTools: false, ReasoningEffort.High, reasoningTurnEnabled: true);
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         AssertReasoningTurns(0);
         AssertConstrainedTurns(1);
         Assert.False(result.FallBackToSingleTurn);
-        Assert.Equal("goal", LastUserPrompt);
+        Assert.Equal(Goal, LastUserPrompt);
     }
 
     [Theory]
@@ -415,7 +434,7 @@ public sealed class AgentPlannerTests
             AiProviderType.Ollama, dropsEffortWithTools: true, effort, reasoningTurnEnabled: true);
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         AssertReasoningTurns(0);
         AssertConstrainedTurns(1);
@@ -431,7 +450,7 @@ public sealed class AgentPlannerTests
             supportsTools: false);
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         AssertReasoningTurns(0);
     }
@@ -444,11 +463,11 @@ public sealed class AgentPlannerTests
         ThrowsFromReasoning(new LlmTimeoutException("P", 300));
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
         AssertConstrainedTurns(1);
-        Assert.Equal("goal", LastUserPrompt); // degraded cleanly to today's single turn
+        Assert.Equal(Goal, LastUserPrompt); // degraded cleanly to today's single turn
     }
 
     [Fact]
@@ -459,11 +478,11 @@ public sealed class AgentPlannerTests
         ReturnsReasoning("   ");
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
         AssertConstrainedTurns(1);
-        Assert.Equal("goal", LastUserPrompt);
+        Assert.Equal(Goal, LastUserPrompt);
     }
 
     [Fact]
@@ -477,7 +496,7 @@ public sealed class AgentPlannerTests
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)),
             new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 });
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result.Usage);
         Assert.Equal(10, result.Usage!.InputTokenCount);
@@ -493,7 +512,7 @@ public sealed class AgentPlannerTests
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)),
             new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 });
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
         Assert.Equal(10, result.Usage!.InputTokenCount);
@@ -508,7 +527,7 @@ public sealed class AgentPlannerTests
         ReturnsReasoning(Analysis, new UsageDetails { InputTokenCount = 3, OutputTokenCount = 1 });
         ReturnsPlan(emitArgs: null, usage: new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 });
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.True(result.FallBackToSingleTurn);
         Assert.Equal(17, result.Usage!.InputTokenCount); // reasoning + 2 constrained attempts
@@ -526,11 +545,12 @@ public sealed class AgentPlannerTests
         ReturnsReasoning(Analysis);
         ReturnsPlan(emitArgs: null);
 
-        await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         AssertReasoningTurns(1);
         AssertConstrainedTurns(2);
-        Assert.Contains(Analysis, LastUserPrompt); // the retry carries the SAME analysis
+        Assert.Contains(Analysis, LastUserPrompt);                   // the retry carries the SAME analysis
+        Assert.StartsWith(Goal, LastUserPrompt, StringComparison.Ordinal); // …and still leads with the goal
     }
 
     [Fact]
@@ -545,7 +565,7 @@ public sealed class AgentPlannerTests
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => planner.PlanAsync("goal", Ctx(), Persona(), provider, cts.Token));
+            () => planner.PlanAsync(Goal, Ctx(), Persona(), provider, cts.Token));
 
         AssertConstrainedTurns(0);
     }
@@ -560,7 +580,7 @@ public sealed class AgentPlannerTests
         ReturnsReasoning(new string('x', 10_000));
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.Contains("analysis truncated", LastUserPrompt);
         Assert.True(LastUserPrompt.Length < 5_000, $"user prompt was {LastUserPrompt.Length} chars");
@@ -592,7 +612,7 @@ public sealed class AgentPlannerTests
         var provider = Provider(AiProviderType.Mistral, ReasoningEffort.High); // no Mistral handler registered
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
-        var result = await planner.PlanAsync("goal", Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+        var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
         AssertReasoningTurns(0);
@@ -612,11 +632,93 @@ public sealed class AgentPlannerTests
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
         var result = await planner.PlanAsync(
-            "goal", Ctx(), Persona(), Provider(AiProviderType.Ollama, ReasoningEffort.High),
+            Goal, Ctx(), Persona(), Provider(AiProviderType.Ollama, ReasoningEffort.High),
             TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
         AssertReasoningTurns(0);
         AssertConstrainedTurns(1);
+    }
+
+    // ---- privacy: nothing this batch logs may put user content at a release-visible level ----
+
+    /// <summary>
+    /// Deliberately NOT a substring of any log line this class emits — "P" is a substring of
+    /// "Plan reason-then-emit is ON…", so the default provider name would make the assertions below fail
+    /// on correct code and teach the wrong lesson.
+    /// </summary>
+    private const string SecretProviderName = "my-secret-box";
+
+    private (AgentPlanner Planner, AiProvider Provider, CapturingLogger Log) PlannerWithLog()
+    {
+        _appSettings.AgentPlanReasoningTurnEnabled = true;
+        _settingsService.GetSettingsAsync().Returns(_ => Task.FromResult(_appSettings));
+        var handler = Substitute.For<IAiProviderHandler>();
+        handler.ProviderType.Returns(AiProviderType.Ollama);
+        handler.DropsReasoningEffortWithTools.Returns(true);
+        var log = new CapturingLogger();
+        var planner = new AgentPlanner(_ai, new AiProviderHandlerResolver([handler]), _settingsService, log);
+        return (planner, Provider(AiProviderType.Ollama, ReasoningEffort.High, name: SecretProviderName), log);
+    }
+
+    [Fact]
+    public async Task PlanAsync_ReasoningTurn_LogsProviderTypeAndCost_ButNotTheNameGoalOrAnalysis()
+    {
+        // CLAUDE.md: a provider NAME is user-named, and goal/analysis text is user content. The cost line
+        // must therefore identify the provider by TYPE, and the analysis may only go to SensitiveDebug.
+        var (planner, provider, log) = PlannerWithLog();
+        ReturnsReasoning(Analysis);
+        ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
+
+        await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+
+        var release = log.ReleaseVisible();
+        Assert.Contains(release, m => m.Contains("Ollama", StringComparison.Ordinal));       // the type identifies it…
+        Assert.Contains(release, m => m.Contains("doubled", StringComparison.Ordinal));      // …and the cost is stated
+        Assert.DoesNotContain(release, m => m.Contains(SecretProviderName, StringComparison.Ordinal));
+        Assert.DoesNotContain(release, m => m.Contains(Analysis, StringComparison.Ordinal));
+        Assert.DoesNotContain(release, m => m.Contains(Goal, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PlanAsync_ReasoningTurnFails_LogsTheExceptionType_NotTheProviderName()
+    {
+        // LlmTimeoutException's MESSAGE embeds the provider name, so the degrade warning carries the
+        // exception TYPE only and the detail goes to SensitiveDebug.
+        var (planner, provider, log) = PlannerWithLog();
+        ThrowsFromReasoning(new LlmTimeoutException(SecretProviderName, 300));
+        ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
+
+        await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
+
+        var release = log.ReleaseVisible();
+        // Positive first: without it, deleting the warning outright would make the DoesNotContain pass.
+        Assert.Contains(release, m => m.Contains(nameof(LlmTimeoutException), StringComparison.Ordinal));
+        Assert.DoesNotContain(release, m => m.Contains(SecretProviderName, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Captures every line with its level. <c>ReleaseVisible</c> is the subset a support log actually keeps:
+    /// <c>SensitiveDebug</c> is <c>[Conditional("DEBUG")]</c> and the test build IS Debug, so an unfiltered
+    /// "the analysis appears in no log line" assertion would be red against correct code.
+    /// </summary>
+    private sealed class CapturingLogger : ILogger<AgentPlanner>
+    {
+        private readonly List<(LogLevel Level, string Message)> _entries = new();
+
+        public List<string> ReleaseVisible()
+        {
+            var lines = _entries.Where(e => e.Level >= LogLevel.Information).Select(e => e.Message).ToList();
+            Assert.NotEmpty(lines); // stops every DoesNotContain here from passing on an empty log
+            return lines;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+            => _entries.Add((logLevel, formatter(state, exception)));
     }
 }

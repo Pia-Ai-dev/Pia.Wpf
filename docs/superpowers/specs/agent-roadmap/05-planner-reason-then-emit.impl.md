@@ -125,15 +125,31 @@ because when it is false the constrained turn **already** gets `hasTools: false`
 being sent — *and* `emit_plan` is never attached, so planning is heading for the SingleTurn degrade anyway. A
 reasoning turn there burns a round for nothing.
 
-### D7 — Mistral's model-list nuance: **accept the wasted turn**
+### D7 — Mistral: **accept the wasted boost** (corrected — it is BOTH halves of the model list)
 `ShouldEmitReasoning` also requires `provider.ModelName ∈ ReasoningCapableModels` (R3), which a per-handler
 flag cannot know. Accepted: for a non-reasoning-capable Mistral model the reasoning turn still runs, at
-default effort. It is not useless — *reason-then-emit is itself the mechanism* (a free-form decomposition the
-constrained turn consumes); the boosted effort is an amplifier, not the whole benefit. Cost is one extra
-round on a globally opted-in setting.
+default effort.
+
+**Correction (post-review).** As first written, D7 described only that half. The other half is no different,
+for a different reason: for a model that IS in `ReasoningCapableModels`, the tool-using turn omits
+`reasoning_effort` (`CreateChatOptions` returns a bare `ChatOptions`), and an absent field leaves reasoning
+**ON** — see the comment inside `ShouldEmitReasoning` — while Mistral's ladder is `none` | `high` only. So the
+tool-using turn is already thinking at the single ON rung, and the tool-free turn's explicit `high` is that
+same rung. **There is no Mistral configuration in which the extra round recovers a higher effort.**
+
+Still accepted, for both halves, on the same ground: *reason-then-emit is itself the mechanism* (a free-form
+decomposition the constrained turn consumes); the boosted effort is an amplifier, not the whole benefit. On
+Mistral the opt-in therefore buys the split and not the boost — one extra round on a globally opted-in
+setting.
 Rejected: making the member a method `bool DropsReasoningEffortWithTools(AiProvider provider)` so Mistral
 could consult `ReasoningCapableModels`. It would turn a transport constant into a model-dependent query,
 contradict D2's literal per-handler values, and make the conformance test (§8, T16) non-static.
+Also rejected: flipping `MistralProviderHandler.DropsReasoningEffortWithTools` to `false`. The flag is a
+**transport constant** — "does this request omit the field when tools are attached" — and Mistral's request
+demonstrably does. `false` would contradict the handler's own code, and it would quietly redefine the flag as
+"…and the boost is worth it", which no handler can answer statically. The durable fix is the doc: the
+`IAiProviderHandler` XML comment now states the transport-only contract and names `AgentPlanner`'s reading of
+it as an approximation.
 **Record this in the code comment on the Mistral implementation.**
 
 ### D8 — The injected analysis is capped at 4000 chars
@@ -744,5 +760,6 @@ Notes the implementing agent must honour in this file:
    boosted-effort round happens, degrades safely and is paid for. Judging quality needs the human smoke of
    §9.3 on a weak/local provider.
 3. **`ReplanAsync` (D3)** stays single-turn. Revisit only with evidence that replans specifically plan worse.
-4. **Mistral non-reasoning models spend one extra turn** at default effort (D7, accepted). Narrowing needs the
-   flag to become a method taking `AiProvider`, which was rejected.
+4. **Mistral gets the split but never the boost** — *both* halves of the model list, not just the one D7
+   originally described (D7, corrected below and accepted). Narrowing needs the flag to become a method taking
+   `AiProvider`, which was rejected.

@@ -23,7 +23,10 @@ public class AiProviderHandlerReasoningEffortFlagTests
         // ToOpenAi(effort, hasTools) omits the parameter once tools are present.
         [typeof(AzureOpenAiProviderHandler)] = true,
         [typeof(OllamaProviderHandler)] = true,
-        // ShouldEmitReasoning returns (false, default) for a non-None effort once hasTools.
+        // ShouldEmitReasoning returns (false, default) for a non-None effort once hasTools, so
+        // CreateChatOptions omits the field. TRANSPORT ONLY: for a reasoning-capable Mistral model an absent
+        // field leaves reasoning ON, and the ladder is `none`|`high`, so nothing HIGHER is recoverable by a
+        // tool-free turn — see the comment on MistralProviderHandler.DropsReasoningEffortWithTools.
         [typeof(MistralProviderHandler)] = true,
         // Reasoning injected by a DelegatingHandler, unconditionally — already boosted under tools.
         [typeof(OpenRouterProviderHandler)] = false,
@@ -78,9 +81,54 @@ public class AiProviderHandlerReasoningEffortFlagTests
         Assert.NotNull(ReasoningEffortMapping.ToOpenAiResponses(ReasoningEffort.High));
     }
 
+    [Theory]
+    [InlineData(typeof(AzureOpenAiProviderHandler))]
+    [InlineData(typeof(OllamaProviderHandler))]
+    [InlineData(typeof(MistralProviderHandler))]
+    public void HandlersDeclaringTheDrop_ReallyOmitReasoningEffortUnderTools_AndSendItWithout(Type handlerType)
+    {
+        // The link the two tests above do NOT make: one pins the flag against a table, the other pins the
+        // mapping — nothing tied a handler's DECLARED transport behaviour to the request it actually builds.
+        // Mutate OllamaProviderHandler.CreateChatOptions to ToOpenAi(effort, hasTools: false) and both stay
+        // green while the flag becomes a lie and AgentPlanner burns one round per plan turn for nothing.
+        var handler = (IAiProviderHandler)Activator.CreateInstance(handlerType)!;
+        Assert.True(handler.DropsReasoningEffortWithTools); // ties this test to the table above
+
+        var provider = new AiProvider
+        {
+            Name = "X",
+            Endpoint = "https://x",
+            ProviderType = handler.ProviderType,
+            // Only Mistral reads ModelName in CreateChatOptions (ReasoningCapableModels membership);
+            // Azure and Ollama ignore it there.
+            ModelName = "magistral-medium-latest",
+            ReasoningEffort = ReasoningEffort.High,
+        };
+
+        Assert.False(SendsReasoningEffort(handler.CreateChatOptions(provider, hasTools: true)));
+        Assert.True(SendsReasoningEffort(handler.CreateChatOptions(provider, hasTools: false)));
+    }
+
+    /// <summary>
+    /// Whether <c>reasoning_effort</c> reaches the wire at all. Two shapes count as omitted: no
+    /// <c>RawRepresentationFactory</c> (Mistral returns a bare <c>ChatOptions</c>) and a factory whose
+    /// <c>ChatCompletionOptions</c> leaves <c>ReasoningEffortLevel</c> unset (Azure, Ollama).
+    /// </summary>
+    private static bool SendsReasoningEffort(Microsoft.Extensions.AI.ChatOptions options)
+    {
+        if (options.RawRepresentationFactory is null) return false;
+#pragma warning disable OPENAI001
+        var raw = (OpenAI.Chat.ChatCompletionOptions)options.RawRepresentationFactory(null!)!;
+        return raw.ReasoningEffortLevel is not null;
+#pragma warning restore OPENAI001
+    }
+
     [Fact]
     public void MistralShouldEmitReasoning_SuppressedUnderTools_ButHighWithout()
     {
+        // Pins EMISSION, not the reasoning level: under tools the field is omitted, which for a
+        // reasoning-capable Mistral model leaves reasoning at its default — which is ON. Do not read
+        // `emitWithTools == false` as "this turn does not reason".
         var provider = new AiProvider
         {
             Name = "M",
