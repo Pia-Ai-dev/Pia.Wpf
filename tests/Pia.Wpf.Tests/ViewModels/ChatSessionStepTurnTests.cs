@@ -1,5 +1,5 @@
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -24,6 +24,9 @@ public sealed class ChatSessionStepTurnTests
     private readonly ITokenMapService _tokenMap = Substitute.For<ITokenMapService>();
     private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
 
+    /// <summary>The session's log, so a fixture can assert on the compaction diff LINE (D-A').</summary>
+    private readonly CapturingLogger<ChatSession> _log = new();
+
     public ChatSessionStepTurnTests()
     {
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
@@ -31,7 +34,7 @@ public sealed class ChatSessionStepTurnTests
     }
 
     private ChatSession CreateSession() => new(
-        _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
+        _tokenMap, _ai, _plugins, _cards, _permissions, _loc, _log, _ => true);
 
     private static StepTurnSpec Spec(bool tokenizationEnabled, AiProvider? provider = null) => new(
         RunId: Guid.NewGuid(),
@@ -165,8 +168,9 @@ public sealed class ChatSessionStepTurnTests
         for (var i = 1; i <= 12; i++)
             session.Messages.Add(new AssistantMessage(ChatRole.Assistant, $"step {i} reply: " + new string('x', 2_000)));
 
+        var spec = Spec(tokenizationEnabled: false, budgeted);
         var result = await session.RunStepTurnAsync(
-            Spec(tokenizationEnabled: false, budgeted),
+            spec,
             new RunContext("THE GOAL: audit the repo.", RunProfile.Interactive),
             CancellationToken.None);
 
@@ -180,6 +184,16 @@ public sealed class ChatSessionStepTurnTests
         Assert.Contains("Execute step 1", sent[^1].Text);
         // ...and the same budget is relayed so the IN-STEP tool loop is bounded too.
         Assert.Equal(new AgentContextBudget(8_000, 2_000), relayed);
+
+        // D-A': the seam names WHICH run and WHICH step shrank. Keyed on the IDS rather than on the
+        // wording - the compactor logs to this same logger and structurally cannot emit either id, and no
+        // other ChatSession log template starts "Agent run", so Assert.Single stays honest even if the
+        // compactor's own line is reworded or promoted to Information.
+        var diff = Assert.Single(
+            _log.Entries,
+            e => e.Message.Contains($"Agent run {spec.RunId} step {spec.Ordinal}", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Information, diff.Level);
+        Assert.Contains($"from 15 to {sent!.Count}", diff.Message);
     }
 
     [Fact]
@@ -204,13 +218,23 @@ public sealed class ChatSessionStepTurnTests
         for (var i = 1; i <= 12; i++)
             session.Messages.Add(new AssistantMessage(ChatRole.Assistant, $"step {i} reply: " + new string('x', 2_000)));
 
+        var spec = Spec(tokenizationEnabled: false);
         await session.RunStepTurnAsync(
-            Spec(tokenizationEnabled: false),
+            spec,
             new RunContext("THE GOAL: audit the repo.", RunProfile.Interactive),
             CancellationToken.None);
 
         Assert.Null(relayed);
         Assert.Equal(15, sent!.Count);
+
+        // A GUARD, NOT A REGRESSION TEST: this passes before the D-A' change too. What it pins is that the
+        // diff line only appears when something actually shrank - a null budget returns at CompactAsync's
+        // budget guard before anything is logged, and the seam's count comparison finds no difference.
+        // Keyed on the SEAM's own id prefix, never on a bare "compaction": the compactor logs through this
+        // same logger instance, so a bare substring would couple this guard to the compactor's wording.
+        Assert.DoesNotContain(_log.Entries, e =>
+            e.Message.Contains($"Agent run {spec.RunId} step", StringComparison.Ordinal)
+            && e.Message.Contains("compaction", StringComparison.Ordinal));
     }
 
     [Fact]

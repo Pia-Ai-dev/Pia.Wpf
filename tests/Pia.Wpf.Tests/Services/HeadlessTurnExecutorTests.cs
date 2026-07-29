@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
@@ -417,6 +418,10 @@ public sealed class HeadlessTurnExecutorTests
         public readonly AiProvider Provider = new() { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         public readonly Persona Persona = new() { Name = "Pia", SystemPrompt = "sys" };
         public readonly IAiClientService Ai = Substitute.For<IAiClientService>();
+
+        /// <summary>The executor's log, so a fixture can assert on the compaction diff LINE (D-A').</summary>
+        public readonly CapturingLogger<HeadlessTurnExecutor> ExecutorLog = new();
+
         public int Turns;
 
         /// <summary>
@@ -468,7 +473,7 @@ public sealed class HeadlessTurnExecutorTests
                 NullLogger<BackgroundAssistantTurnRunner>.Instance);
             return new HeadlessTurnExecutor(
                 engine, Chats, settings, personas, providers, composer, titles, TokenMapFactory,
-                NullLogger<HeadlessTurnExecutor>.Instance);
+                ExecutorLog);
         }
 
         public async Task<AgentRun> NewRunAsync(string goal)
@@ -884,6 +889,47 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal("the goal", persisted.Messages[0].Content);
         for (var turn = 1; turn <= 6; turn++)
             Assert.Equal(LongReply(turn), persisted.Messages[turn].Content);
+
+        // D-A': and the log says WHICH run lost context - the compactor itself holds no run id, so
+        // without this line a support log can say context was dropped but not where. Keyed on the RUN ID
+        // (which the compactor's own line structurally cannot carry) AND on "compaction" (which the four
+        // other "Headless run {RunId}" lines in this executor do not carry), so neither side can be
+        // reworded into satisfying it by accident. Not vacuous: the assertion above already proved a
+        // request shrank at this 4000/1000 window.
+        Assert.Contains(h.ExecutorLog.Entries, e =>
+            e.Level == LogLevel.Information
+            && e.Message.Contains($"Headless run {run.Id}", StringComparison.Ordinal)
+            && e.Message.Contains("compaction", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task NoConfiguredWindow_SendsTheWholeRequest_AndLogsNoCompactionDiff()
+    {
+        // A GUARD, NOT A REGRESSION TEST: this passes before the D-A' change too, because before it there
+        // was no diff line at all. What it pins is the MEANING of the line - "context WAS dropped on this
+        // step", not "compaction ran" - and it is what fails if someone later moves the log outside the
+        // count-difference guard. On an unconfigured provider (every provider after upgrade)
+        // AgentContextBudget.From returns null, CompactAsync returns at its budget guard before it logs
+        // anything, and the seam's count comparison finds no difference.
+        using var h = new DurabilityHarness(); // Provider leaves the window and max output unset.
+        var run = await h.NewRunAsync("the goal");
+        var planner = new FakePlanner(Steps(6));
+        var captured = CaptureLongReplyRequests(h);
+
+        await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
+            new RunProfile(MaxSteps: 6, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20)),
+            TestContext.Current.CancellationToken);
+
+        // system + goal + 5 prior replies + the step instruction - the full 8 the compacted run cut down.
+        Assert.Equal(6, captured.Count);
+        Assert.Equal(8, captured[^1].Count);
+
+        // Keyed on the SEAM's own signature (run id AND "compaction"), never on a bare "compaction":
+        // the compactor logs through this same logger instance, so a bare substring would couple this
+        // guard to the compactor's wording and level.
+        Assert.DoesNotContain(h.ExecutorLog.Entries, e =>
+            e.Message.Contains($"Headless run {run.Id}", StringComparison.Ordinal)
+            && e.Message.Contains("compaction", StringComparison.Ordinal));
     }
 
     [Fact]

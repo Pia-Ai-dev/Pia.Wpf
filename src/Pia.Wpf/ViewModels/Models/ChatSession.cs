@@ -783,7 +783,21 @@ public sealed class ChatSession : IDisposable
 
         // No ConfigureAwait(false) — this session is UI-thread-affine (see the class remarks), and the
         // caller resumes into code that touches Messages and the streaming target message.
-        return await AgentContextCompactor.CompactAsync(chatMessages, AgentContextBudget.From(spec.Provider), _logger, ct);
+        var compacted = await AgentContextCompactor.CompactAsync(chatMessages, AgentContextBudget.From(spec.Provider), _logger, ct);
+
+        // WHICH run and WHICH step lost context. The compactor logs the counts but holds neither id;
+        // RunContext carries no run id either, but the step spec carries BOTH (it is already read for
+        // spec.RunId when the ambient TaskContext is set), so the correlation happens here. Ordinal is
+        // the raw 0-based value — the instruction text above says step Ordinal + 1. Counts and ids only:
+        // this lands in a support-attachable log.
+        if (compacted.Count != chatMessages.Count)
+        {
+            _logger.LogInformation(
+                "Agent run {RunId} step {StepOrdinal} context compaction changed the step request from {BeforeCount} to {AfterCount} messages",
+                spec.RunId, spec.Ordinal, chatMessages.Count, compacted.Count);
+        }
+
+        return compacted;
     }
 
     private async Task<object?> HandleToolCallWithStatus(FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled)

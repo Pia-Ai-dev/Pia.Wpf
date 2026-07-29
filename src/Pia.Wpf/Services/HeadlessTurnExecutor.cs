@@ -246,6 +246,18 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             .CompactAsync(exchangeMessages, contextBudget, _logger, ct)
             .ConfigureAwait(false);
 
+        // WHICH run lost context. The compactor logs the counts but holds no run id, so the correlation
+        // has to happen here, where _runId is in scope. NO step ordinal: this one seam serves
+        // ExecuteStepAsync, the R10 fallback turn and the resume path, and the ordinal only ever reaches
+        // the instruction STRING - surfacing it would mean a new parameter, which one log line does not
+        // justify. Counts and ids only: this lands in a support-attachable log.
+        if (request.Count != exchangeMessages.Count)
+        {
+            _logger.LogInformation(
+                "Headless run {RunId} context compaction changed the step request from {BeforeCount} to {AfterCount} messages",
+                _runId, exchangeMessages.Count, request.Count);
+        }
+
         // Per-step ambient bracket (§16 R9): run-stable TaskId, no file-chip sink (headless has no UI).
         // Set here — not in BeginRunAsync — so the AsyncLocal is live inside THIS exchange's flow.
         var previousAmbient = TokenMapAmbient.Current;
