@@ -27,6 +27,22 @@ public class ScheduledJobBackgroundServiceTests
         TimeoutSeconds = 60
     };
 
+    /// <summary>
+    /// Any test whose job reaches <c>ExecuteAgentTaskAsync</c> MUST use this rather than a bare
+    /// <c>Substitute.For&lt;ISettingsService&gt;()</c>. <c>ISettingsService.GetSettingsAsync</c> returns a
+    /// non-nullable <c>Task&lt;AppSettings&gt;</c>, so production always has settings — but an unstubbed
+    /// NSubstitute double hands back a completed task wrapping <c>null</c>, and the AgentTask path
+    /// dereferences it immediately to build the run budget. The result is a NullReferenceException from
+    /// production code that cannot happen in production, which masks whatever the test meant to assert.
+    /// The defaults (24 steps / 2 replans / 45 min) are what RunProfile.FromBudget clamps against.
+    /// </summary>
+    private static ISettingsService NewSettings()
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        return settings;
+    }
+
     [Fact]
     public async Task ExecuteOnceAsync_Success_MarksCompleteWithChatIdAndNotifies()
     {
@@ -324,7 +340,7 @@ public class ScheduledJobBackgroundServiceTests
         var notifications = new FakeNotificationSurface();
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
-            notifications, launcher, Substitute.For<ISettingsService>(), runService,
+            notifications, launcher, NewSettings(), runService,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -366,7 +382,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
-            new FakeNotificationSurface(), launcher, Substitute.For<ISettingsService>(), runService,
+            new FakeNotificationSurface(), launcher, NewSettings(), runService,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -400,7 +416,7 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(), launcher,
-            Substitute.For<ISettingsService>(), runService,
+            NewSettings(), runService,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);

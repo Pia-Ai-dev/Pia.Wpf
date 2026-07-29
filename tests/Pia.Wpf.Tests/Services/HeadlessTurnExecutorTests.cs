@@ -753,6 +753,7 @@ public sealed class HeadlessTurnExecutorTests
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(2));
+        var savesBefore = h.Chats.SaveCalls;
 
         h.OnTurn = turn =>
         {
@@ -763,8 +764,21 @@ public sealed class HeadlessTurnExecutorTests
         await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
             RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        var runRow = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Completed, runRow!.State);
+        // The run row is GONE, not Completed — and asserting Completed here was unachievable by design,
+        // not a production defect. AgentRuns declares
+        // FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE, Microsoft.Data.Sqlite
+        // enables foreign keys by default, and DurabilityHarness.NewRunAsync inserts the chat row before
+        // the run row (it has to, or the run INSERT would trip the constraint). So deleting the chat
+        // mid-run cascades the run row away, and the orchestrator's terminal SetStateAsync updates zero
+        // rows inside SafeSetState — which is exactly the failure-isolated bookkeeping it promises.
+        Assert.Null(await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken));
+
+        // What the guardrail is actually about: RunAsync returned normally (reaching this line at all
+        // proves it did not throw or hang), and PersistChatAsync kept writing after the chat vanished
+        // instead of aborting the run on the first failed merge.
+        Assert.True(
+            h.Chats.SaveCalls > savesBefore,
+            "the run must keep persisting after its chat is deleted, not abort on the failed merge");
     }
 
     [Fact]

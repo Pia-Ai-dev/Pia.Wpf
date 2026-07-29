@@ -320,7 +320,17 @@ public sealed class ChatSessionGoldenTranscriptTests
         var msg = session.Messages.Last(m => !m.IsUser);
         Assert.Single(msg.Sources); // ApplyWebCitations ran on the final content
         Assert.Contains("example.com", msg.Sources[0].Url);
-        Assert.DoesNotContain("https://example.com/page", msg.Content); // link rewritten to a citation marker
+
+        // The URL legitimately SURVIVES in the content: WebCitationExtractor rewrites an inline link into
+        // a numbered chip marker whose href is still the source URL — `[\[1\]](url)` — so that Markdig
+        // renders a clickable "[1]". That contract is pinned by WebCitationExtractorTests, which predates
+        // this branch and is the verified reference; its own guard is DoesNotContain("][http"). The
+        // previous assertion here (DoesNotContain of the raw URL) therefore contradicted the extractor and
+        // could only ever pass if citations stopped linking anywhere. Assert the rewrite instead: the chip
+        // marker is present and the original link TEXT is no longer carrying the URL.
+        Assert.Contains("[\\[1\\]](https://example.com/page)", msg.Content);
+        Assert.DoesNotContain("[Example](https://example.com/page)", msg.Content);
+        Assert.DoesNotContain("][http", msg.Content);
         Assert.Equal(ChatState.Idle, session.State);
     }
 
