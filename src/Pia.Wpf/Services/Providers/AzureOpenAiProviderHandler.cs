@@ -12,6 +12,9 @@ public sealed class AzureOpenAiProviderHandler : IAiProviderHandler
 {
     public AiProviderType ProviderType => AiProviderType.AzureOpenAI;
 
+    // ToOpenAi(effort, hasTools) omits the reasoning-effort parameter entirely when tools are present.
+    public bool DropsReasoningEffortWithTools => true;
+
     public Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,

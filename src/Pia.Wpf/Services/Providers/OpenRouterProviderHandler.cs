@@ -13,6 +13,10 @@ public sealed class OpenRouterProviderHandler : IAiProviderHandler
 {
     public AiProviderType ProviderType => AiProviderType.OpenRouter;
 
+    // OpenRouterReasoningHandler rewrites the body to reasoning:{effort} unconditionally, tool-independent,
+    // so a tool-using turn already carries the configured effort — nothing for a second turn to recover.
+    public bool DropsReasoningEffortWithTools => false;
+
     public Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,

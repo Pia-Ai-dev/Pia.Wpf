@@ -19,6 +19,9 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
 
     public AiProviderType ProviderType => AiProviderType.OpenAI;
 
+    // Responses API: ToOpenAiResponses has no tool gate, so the configured effort already survives tools.
+    public bool DropsReasoningEffortWithTools => false;
+
     public Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,

@@ -25,6 +25,9 @@ public sealed class PiaCloudProviderHandler : IAiProviderHandler
 
     public AiProviderType ProviderType => AiProviderType.PiaCloud;
 
+    // CreateChatOptions never sets an effort, with or without tools — nothing for a second turn to recover.
+    public bool DropsReasoningEffortWithTools => false;
+
     public async Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,

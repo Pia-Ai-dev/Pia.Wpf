@@ -12,6 +12,9 @@ public sealed class OllamaProviderHandler : IAiProviderHandler
 {
     public AiProviderType ProviderType => AiProviderType.Ollama;
 
+    // Same ToOpenAi(effort, hasTools) tool gate as Azure: with tools attached the effort is never sent.
+    public bool DropsReasoningEffortWithTools => true;
+
     public Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,

@@ -18,6 +18,10 @@ public sealed class OpenAiCompatibleProviderHandler : IAiProviderHandler
 {
     public AiProviderType ProviderType => AiProviderType.OpenAICompatible;
 
+    // Never sends any reasoning field, with or without tools — so there is nothing a second turn could
+    // recover.
+    public bool DropsReasoningEffortWithTools => false;
+
     public Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,

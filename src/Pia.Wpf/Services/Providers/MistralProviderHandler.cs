@@ -34,6 +34,14 @@ public sealed class MistralProviderHandler : IAiProviderHandler
 
     public AiProviderType ProviderType => AiProviderType.Mistral;
 
+    // ShouldEmitReasoning returns (false, default) for any non-None effort once hasTools is true, so
+    // turning reasoning ON is dropped on a tool-using turn.
+    // The flag is transport-level and deliberately cannot know whether ModelName is in
+    // ReasoningCapableModels: for a non-reasoning Mistral model the planner therefore spends one extra
+    // free-form turn at default effort. Accepted — reason-then-emit is itself the mechanism (the analysis
+    // seeds the constrained turn); the boosted effort is an amplifier, not the whole benefit.
+    public bool DropsReasoningEffortWithTools => true;
+
     public Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,

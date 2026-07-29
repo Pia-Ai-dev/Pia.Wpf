@@ -13,6 +13,10 @@ public sealed class VLlmProviderHandler : IAiProviderHandler
 {
     public AiProviderType ProviderType => AiProviderType.VLlm;
 
+    // VLlmThinkingHandler sets chat_template_kwargs.enable_thinking unconditionally (boolean only, no
+    // effort granularity), so tools never turn thinking off here.
+    public bool DropsReasoningEffortWithTools => false;
+
     public Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,
