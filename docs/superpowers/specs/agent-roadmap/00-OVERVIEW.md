@@ -1,11 +1,13 @@
 # Agent System — Roadmap & Status
 
-_Snapshot: 2026-07-28 — as-built at `601090e`. **Batches 10 and 11 have shipped** (plus a joint review fix
-pass); they were promoted out of “Deliberately open” earlier the same day and are now in the chronicle. Build
-verified here: `dotnet build -p:EnableWindowsTargeting=true` → **0 errors, 194 warnings** (all pre-existing —
+_Snapshot: 2026-07-29 — as-built at the head of the residual-hazard pass and the Tier-2 decision pass.
+**Batches 10 and 11 have shipped** (plus a joint review fix pass); they were promoted out of “Deliberately
+open” and are now in the chronicle. Build verified with
+`dotnet build -p:EnableWindowsTargeting=true --no-incremental` → **0 errors, 194 warnings** (all pre-existing —
 8 in `src` in files untouched by these batches, 186 xUnit analyzer warnings in the test project; the older
-“0 warnings” claim in this file was an incremental-build artifact and has been corrected). **Zero tests have
-been executed** on this Mac at any point._ Living index
+“0 warnings” claim in this file was an incremental-build artifact and has been corrected). **The suite has now
+been executed, on Windows, and is green** — the earlier “zero tests have been executed on this Mac” note
+described the authoring session, not the code; see the callout below for the measured counts._ Living index
 of what the Agent System has shipped and what is left to build. Authoritative design:
 [`../2026-07-18-agent-system-phase1-plan.md`](../2026-07-18-agent-system-phase1-plan.md)
 (referenced below as “the plan §N”). The open items in the last section come from
@@ -334,7 +336,24 @@ produce the silent always-visible failure **with the build still at 0 errors**.
   runs. The framed "step 1 fails" case exists only in the middle band where planning succeeds. Amplifier:
   `IsToolNotSupportedError` (`AiClientService.cs:846-859`) returns true for *any* 400, so an overflow logs
   "retrying without tools" and re-sends the same oversized list — a wrong top-line diagnosis. The real cause
-  survives only as `ExtraJson`, which nothing renders.
+  survives only as `ExtraJson`, which nothing renders. **Diagnosis fixed 2026-07-29.** The compaction
+  boundary is *right* and was not touched: pinning the goal is correct, and truncating it would let
+  `AgentVerifier` PASS a run against a goal the user never gave. So the defect addressed is only that the
+  failure lied about itself. `IsContextLengthError` now sits beside its sibling and is consulted FIRST in both
+  tool-not-supported catch bodies of `GetChatCompletionWithToolsAsync`, emitting one metadata-only
+  `LogWarning` — provider *type* (not the user-named provider), round, message count, whether a budget was
+  configured and its numbers; never the provider's raw error string, never the messages. Both executors share
+  that method (Headless via `HeadlessTurnExecutor.cs:263` → `BackgroundAssistantTurnRunner.cs:293`, Live via
+  `ChatSession.cs:548`), so one insertion per provider path covers the whole fleet. **Scope, precisely:** only
+  when `useTools && round == 0`, because that is the only condition reaching those catch bodies, so a provider
+  with `SupportsToolCalling` off still overflows undiagnosed. Substring matching, so it will miss provider
+  phrasings that are not in the list; a miss degrades to exactly the old behaviour, never to worse.
+  **Control flow is untouched by design** — the tool-disabled retry still fires and still costs its round
+  trip, which is what keeps the interactive-regression risk at nil. **Still deferred: a machine-readable
+  reason code on the run.** Re-verified, not assumed: the classifier is internal to `AiClientService` and
+  unreachable from `AgentRunOrchestrator`, which sees only `ex.Message` and swallows it into `ExtraJson`
+  (`AgentRunOrchestrator.cs:269` → `AgentRunService.FailAsync`), while `ScheduledJobBackgroundService` reads
+  `run?.State.ToString()` (`:245`) and never sees the exception at all.
 - **Compaction is invisible to the user** — no Flow event, no audit entry, no cost-ledger annotation.
   **Sharpened 2026-07-29:** the real defect is that both outcome lines are `LogDebug` and the log level is
   **compile-time only** (`Bootstrapper.cs:307`/`:317` read `IsDevMode`, which is `#if DEBUG`; no `AddFilter`, no

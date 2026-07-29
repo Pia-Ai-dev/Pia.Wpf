@@ -212,7 +212,14 @@ survives; the pin protects the goal that refers to it, so the step answers about
 `ToolEvictionThreshold` is close to inert, so truncation does all the work · the step-1 request is
 never compacted, so an oversized *goal* still fails — though **at planning, not at step 1**: `AgentPlanner`
 passes no `contextBudget` at all (`AgentPlanner.cs:118-119`), so the run settles `Failed` at Planning and step 1
-never runs · compaction is invisible to the user in every **release** build, because the log level is
+never runs — and as of 2026-07-29 the failure at least *names itself* when tools are enabled at round 0 (the
+only case that reaches the tool-not-supported catch): `IsContextLengthError` runs BEFORE the "retrying without
+tools" warning in both provider paths of `GetChatCompletionWithToolsAsync`, one metadata-only `LogWarning`,
+diagnosis only, retry behaviour unchanged, and an unlisted provider phrasing degrades to the old behaviour.
+Not to be confused with the early return in `AgentContextCompactor.CompactAsync`: that tests
+`window <= MaxOutputTokens`, and `MaxOutputTokens` defaults to **0**, so it degenerates to `window <= 0` and
+fires only when the pinned prefix alone consumes the entire window — it is **not** the oversized-goal path ·
+compaction is invisible to the user in every **release** build, because the log level is
 compile-time only (`Bootstrapper.cs:307`/`:317` read `IsDevMode`, which is `#if DEBUG`) — so the two `LogDebug`
 outcome lines are unrecoverable, not merely inconvenient · **the comment at `:139-142` is backwards**: it claims
 under-charging a pinned image "errs toward compacting", but a smaller `pinnedCost` yields a *larger* `window` and

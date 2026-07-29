@@ -216,6 +216,10 @@ public class AiClientService : IAiClientService
                 }
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
+                    // Diagnosis only, and FIRST so the real cause outranks the line below: the filter above
+                    // says true for essentially any 400, so a context overflow arrives here dressed as a
+                    // tool-support problem. The retry itself is unchanged either way.
+                    LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
                     options = providerHandler.CreateChatOptions(provider, hasTools: false);
                     useTools = false;
@@ -299,6 +303,9 @@ public class AiClientService : IAiClientService
                 }
                 catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                 {
+                    // Same ordering as the streaming path above, for the same reason: name the real cause
+                    // before the tool-support line. Diagnosis only; the retry below is untouched.
+                    LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
                     _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
                     options = providerHandler.CreateChatOptions(provider, hasTools: false);
                     useTools = false;
@@ -856,6 +863,104 @@ public class AiClientService : IAiClientService
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Provider phrasings for "this request is larger than the model's context window", matched as
+    /// substrings. Substring matching is the only option available: HTTP 400 is the only part of the shape
+    /// every provider agrees on, and the machine-readable discriminator lives in the response body, which
+    /// neither <see cref="ClientResultException"/> nor <see cref="HttpRequestException"/> surfaces in a typed
+    /// form. The list WILL miss providers whose phrasing is not here, and it misses a provider that carries
+    /// the body only on an inner exception; every miss degrades to exactly the previous behaviour (the extra
+    /// log line is simply not emitted, the retry runs as before) and never to worse.
+    /// </summary>
+    private static readonly string[] ContextLengthErrorMarkers =
+    [
+        "context_length_exceeded",           // OpenAI / Azure OpenAI / vLLM error code
+        "context length",                    // "This model's maximum context length is 8192 tokens"
+        "context window",                    // Anthropic / OpenRouter prose
+        "context size",                      // llama.cpp / Ollama: "exceeds the available context size"
+        "prompt is too long",                // Anthropic: "prompt is too long: 218898 tokens > 199999 maximum"
+        "too many tokens",                   // Mistral: "Too many tokens in prompt"
+        "input token count",                 // Gemini: "The input token count (...) exceeds the maximum"
+        "reduce the length of the messages", // OpenAI's own remediation hint
+    ];
+
+    /// <summary>
+    /// True when <paramref name="ex"/> is a provider rejection whose body says the request exceeded the
+    /// model's context window.
+    /// <para>
+    /// WHY: <see cref="IsToolNotSupportedError"/> answers true for essentially ANY 400, so a context overflow
+    /// at round 0 was reported as "retrying without tools" — the wrong top-line diagnosis for whoever reads a
+    /// support log, on top of one wasted round trip that re-sends the same oversized list. This classifier
+    /// exists ONLY to name the real cause in the log. It gates no control flow: the tool-disabled retry runs
+    /// exactly as it did before, whatever this answers.
+    /// </para>
+    /// <para>
+    /// Same defensive posture as its sibling: only the two exception types a provider adapter actually throws
+    /// are considered, everything else is false. The status code is deliberately NOT re-checked — every call
+    /// site sits inside a filter that has already established 400/404 via
+    /// <see cref="IsToolNotSupportedError"/>, and a re-check would go blind on a
+    /// <see cref="ClientResultException"/> that carries a body but no response (its <c>Status</c> is 0 then,
+    /// measured). <c>internal</c> rather than <c>private</c> so the classification can be unit-tested directly
+    /// through <c>InternalsVisibleTo</c>; it is the only new logic here.
+    /// </para>
+    /// </summary>
+    internal static bool IsContextLengthError(Exception ex)
+    {
+        if (ex is not (ClientResultException or HttpRequestException))
+        {
+            return false;
+        }
+
+        var message = ex.Message;
+        if (string.IsNullOrEmpty(message))
+        {
+            return false;
+        }
+
+        foreach (var marker in ContextLengthErrorMarkers)
+        {
+            if (message.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Emits the ONE metadata-only line that names a context overflow for what it is, so a support log does
+    /// not read as a tool-capability problem. Called as the FIRST statement of each tool-not-supported catch
+    /// body, i.e. ahead of that body's "retrying without tools" warning — the ordering is the whole point, and
+    /// nothing about the retry changes. It follows that the line only appears when <c>useTools</c> and
+    /// <c>round == 0</c>, since that is the only condition reaching those catch bodies.
+    /// <para>
+    /// Privacy: no message content, no goal text, and NOT the provider's raw error string — release logs get
+    /// attached to support tickets. Counts, the round index and the configured budget only, and the provider
+    /// TYPE rather than the user-named provider.
+    /// </para>
+    /// </summary>
+    private void LogContextLengthRejection(
+        Exception ex, AiProvider provider, int round, int messageCount, AgentContextBudget? contextBudget)
+    {
+        if (!IsContextLengthError(ex))
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Context overflow, NOT a tool-support problem: providerType={ProviderType} rejected round {Round}; " +
+            "the request carried {MessageCount} message(s), contextBudgetConfigured={BudgetConfigured}, " +
+            "windowTokens={WindowTokens}, maxOutputTokens={MaxOutputTokens}. The tool-disabled retry logged " +
+            "next re-sends the same request and is expected to fail the same way.",
+            provider.ProviderType,
+            round + 1,
+            messageCount,
+            contextBudget is not null,
+            contextBudget?.WindowTokens ?? 0,
+            contextBudget?.MaxOutputTokens ?? 0);
     }
 
     private static string Truncate(string value, int max)
