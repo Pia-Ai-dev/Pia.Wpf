@@ -110,7 +110,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     public string LedgerSummary => FormatLedger();
 
     /// <summary>
-    /// Rows of the run's tool-decision trace (Batch 03). Loaded ON FIRST EXPAND, not on every
+    /// Rows of the run's tool-decision trace (Batch 03). Loaded ON EACH EXPAND, and never on
     /// <c>RunChanged</c>: the timeline deliberately does not participate in live projection, which is what
     /// keeps ~500 emits per run off the projection path.
     /// </summary>
@@ -130,20 +130,38 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// uses <c>BooleanToVisibilityConverter</c>, and an unresolved <c>StaticResource</c> inside a
     /// <c>DataTemplate</c> throws at TEMPLATE INSTANTIATION — i.e. the first time a user expands this — which
     /// no test in the suite reaches.
+    /// <para>
+    /// "Nothing was recorded" is a POSITIVE claim about the run, so it is only ever made about a read that
+    /// SUCCEEDED. A read that faulted sets <see cref="HasTimelineReadError"/> instead.
+    /// </para>
     /// </summary>
     [ObservableProperty]
     private bool _hasNoTimeline = true;
 
+    /// <summary>Drives the "could not be read" line — the other half of <see cref="HasNoTimeline"/>. A trace
+    /// the store refused to hand over is not a run that recorded nothing.</summary>
+    [ObservableProperty]
+    private bool _hasTimelineReadError;
+
     /// <summary>
-    /// Load-once latch. Deliberately not <c>Timeline.Count == 0</c>: a run with no recorded decisions would
-    /// then re-query the store on every expand.
+    /// The in-flight (or last) load, exposed so a fact can await the fire-and-forget the expand kicks off.
+    /// The read itself is off-thread now, so a test that set <see cref="IsTimelineExpanded"/> and asserted
+    /// immediately would race it.
     /// </summary>
-    private bool _timelineLoaded;
+    internal Task? TimelineLoadTask { get; private set; }
 
     partial void OnIsTimelineExpandedChanged(bool value)
     {
-        if (value && !_timelineLoaded)
-            LoadTimelineAsync().SafeFireAndForget(_logger);
+        if (!value) return;
+
+        // Re-read on EVERY expand, not once. A load-once latch made the panel state a falsehood: a trace read
+        // while step 1 was still planning would keep rendering "no tool decisions were recorded" for the rest
+        // of the session, because nothing else in this VM ever re-reads it (RunChanged deliberately does not),
+        // AssistantViewModel.SyncRunProgress keeps the same VM for the run's whole life, and there is no
+        // refresh command. One indexed read per user click is the cheaper mistake.
+        var load = LoadTimelineAsync();
+        TimelineLoadTask = load;
+        load.SafeFireAndForget(_logger);
     }
 
     public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization,
@@ -270,26 +288,39 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     internal async Task LoadTimelineAsync()
     {
-        _timelineLoaded = true;
         if (_timelineService is null)
         {
-            HasNoTimeline = true;
+            await ApplyTimelineAsync(rows: null, readFailed: false);
             return;
         }
 
         IReadOnlyList<AgentTimelineEvent> rows;
         try
         {
-            rows = await _timelineService.GetForRunAsync(_runId);
+            // OFF the caller's thread. GetForRunAsync's own first await does not suspend when the writer tail
+            // is already complete — the normal case for a finished run — so without this hop the store's
+            // connection lock and the mapping of up to 501 rows would run on the dispatcher.
+            rows = await Task.Run(() => _timelineService.GetForRunAsync(_runId));
         }
         catch (Exception ex)
         {
-            // A trace that cannot be read renders as empty; it never breaks the panel.
+            // A trace that cannot be read says so; it never claims the run recorded nothing, and it never
+            // breaks the panel.
             _logger.LogWarning(ex, "Run {RunId} timeline could not be read", _runId);
-            HasNoTimeline = true;
+            await ApplyTimelineAsync(rows: null, readFailed: true);
             return;
         }
 
+        await ApplyTimelineAsync(rows, readFailed: false);
+    }
+
+    /// <summary>
+    /// The ONE place this VM mutates the trace's bound state, and it always runs on the UI thread (G3) —
+    /// including the null-service and read-failure arms, which used to assign straight from whatever thread
+    /// the load happened to be on.
+    /// </summary>
+    private Task ApplyTimelineAsync(IReadOnlyList<AgentTimelineEvent>? rows, bool readFailed)
+    {
         var done = new TaskCompletionSource();
         _uiContext.Post(_ =>
         {
@@ -298,8 +329,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 Timeline.Clear();
                 IsTimelineTruncated = false;
                 TimelineNote = null;
+                HasTimelineReadError = readFailed;
 
-                foreach (var row in rows)
+                foreach (var row in rows ?? [])
                 {
                     if (row.Kind == AgentTimelineEventKind.TraceTruncated)
                     {
@@ -312,7 +344,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                     Timeline.Add(Project(row));
                 }
 
-                HasNoTimeline = Timeline.Count == 0;
+                HasNoTimeline = !readFailed && Timeline.Count == 0;
             }
             finally
             {
@@ -320,7 +352,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             }
         }, null);
 
-        await done.Task;
+        return done.Task;
     }
 
     private TimelineRowViewModel Project(AgentTimelineEvent row) => new()

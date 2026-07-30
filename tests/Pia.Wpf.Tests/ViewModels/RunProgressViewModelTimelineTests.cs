@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -9,9 +10,9 @@ using Xunit;
 namespace Pia.Tests.ViewModels;
 
 /// <summary>
-/// Batch 03's render surface: the tool-activity trace on the run panel. Read-only, loaded on FIRST expand
-/// only, and deliberately outside live projection — a run emits up to ~500 events and none of them may drive
-/// a re-projection.
+/// Batch 03's render surface: the tool-activity trace on the run panel. Read-only, re-read on EACH expand,
+/// and deliberately outside live projection — a run emits up to ~500 events and none of them may drive a
+/// re-projection.
 /// </summary>
 public sealed class RunProgressViewModelTimelineTests
 {
@@ -31,22 +32,63 @@ public sealed class RunProgressViewModelTimelineTests
     }
 
     [Fact]
-    public async Task TimelineLoadsOnFirstExpandOnly()
+    public async Task TimelineIsReReadOnEveryExpand()
     {
         var vm = CreateVm();
         await _timeline.DidNotReceive().GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
 
-        // Deterministic without a wait: the stubbed read returns an already-completed task and the UI context
-        // runs Post inline, so the whole load finishes synchronously inside the property set.
+        // Awaited through the VM's own seam: the read now hops off the caller's thread, so asserting straight
+        // after the property set would race it.
         vm.IsTimelineExpanded = true;
-        await _timeline.Received(1).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
-
-        // Collapse and re-expand: still exactly one read. A `Timeline.Count == 0` guard instead of the
-        // load-once latch would re-query here, because this run recorded nothing.
-        vm.IsTimelineExpanded = false;
-        vm.IsTimelineExpanded = true;
+        await vm.TimelineLoadTask!;
         await _timeline.Received(1).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
         Assert.True(vm.HasNoTimeline);
+
+        // A trace read BEFORE the run's first gated call must not pin "nothing was recorded" for the session.
+        // This is the load-once latch's defect, mechanized: with the latch the second expand reads nothing and
+        // the panel keeps rendering the empty line over a run that has since recorded two decisions.
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+        });
+
+        vm.IsTimelineExpanded = false;
+        vm.IsTimelineExpanded = true;
+        await vm.TimelineLoadTask!;
+
+        await _timeline.Received(2).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+        Assert.Collection(vm.Timeline,
+            first => Assert.Equal("Run_Timeline_Decision_Approved", first.DecisionLabel),
+            second => Assert.Equal("Run_Timeline_Decision_AutoApproved", second.DecisionLabel));
+        Assert.False(vm.HasNoTimeline);
+    }
+
+    [Fact]
+    public async Task AFailedReadSaysSo_AndIsNeverRenderedAsAnEmptyTrace()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("the store is gone"));
+
+        var vm = CreateVm();
+        await vm.LoadTimelineAsync();
+
+        // "No tool decisions were recorded" is a POSITIVE claim about the run and this read proved nothing of
+        // the sort. Same standard the CardCancelled decision is held to on the write side.
+        Assert.True(vm.HasTimelineReadError);
+        Assert.False(vm.HasNoTimeline);
+        Assert.Empty(vm.Timeline);
+
+        // And it is not sticky: a read that later succeeds clears the error line.
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce),
+        });
+
+        await vm.LoadTimelineAsync();
+
+        Assert.False(vm.HasTimelineReadError);
+        Assert.Single(vm.Timeline);
     }
 
     [Fact]
@@ -97,6 +139,32 @@ public sealed class RunProgressViewModelTimelineTests
 
         Assert.Equal("Run_Timeline_Outcome_Failed", vm.Timeline[0].OutcomeSuffix);
         Assert.Null(vm.Timeline[1].OutcomeSuffix);
+    }
+
+    [Fact]
+    public async Task ARowIsAttributedToItsStep_WhileThatStepIsStillInThePlan()
+    {
+        // StepLabel and OutcomeSuffix are both RENDERED now (the row template binds five columns, not three),
+        // so the projection that fills them is load-bearing rather than decorative.
+        var stepId = Guid.NewGuid();
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            State = AgentRunState.Running,
+            Plan = [new AgentStep { Id = stepId, Ordinal = 0, Title = "Read the notes", Status = AgentStepStatus.Running }],
+        });
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce, stepId: stepId),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce),
+        });
+
+        var vm = CreateVm();
+        await vm.LoadTimelineAsync();
+
+        Assert.Equal("Run_Timeline_Step", vm.Timeline[0].StepLabel); // the stubbed Format echoes the key
+        // A replanned-away step (here: a row with no step at all) stays unattributed rather than guessing.
+        Assert.Null(vm.Timeline[1].StepLabel);
     }
 
     [Theory]
@@ -161,10 +229,10 @@ public sealed class RunProgressViewModelTimelineTests
 
     private AgentTimelineEvent Row(
         long seq, AgentTimelineEventKind kind, ToolGateDecision decision,
-        AgentTimelineOutcome outcome = AgentTimelineOutcome.Ok) => new(
+        AgentTimelineOutcome outcome = AgentTimelineOutcome.Ok, Guid? stepId = null) => new(
         Id: Guid.NewGuid(),
         RunId: _runId,
-        StepId: null,
+        StepId: stepId,
         Seq: seq,
         Kind: kind,
         Surface: ToolGateSurface.Interactive,

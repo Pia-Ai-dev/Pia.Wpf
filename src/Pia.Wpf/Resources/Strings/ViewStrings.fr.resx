@@ -939,6 +939,7 @@
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Activité des outils</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Aucune décision d'outil n'a été enregistrée pour cette exécution.</value></data>
+  <data name="Run_Timeline_ReadFailed" xml:space="preserve"><value>L'activité des outils de cette exécution n'a pas pu être lue.</value></data>
   <data name="Run_Timeline_Truncated" xml:space="preserve"><value>Trace raccourcie — seules les {0} premières décisions de cette exécution ont été enregistrées.</value></data>
   <data name="Run_Timeline_Step" xml:space="preserve"><value>Étape {0}</value></data>
   <data name="Run_Timeline_Decision_AutoApproved" xml:space="preserve"><value>Approuvé automatiquement</value></data>

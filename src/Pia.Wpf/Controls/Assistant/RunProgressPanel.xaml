@@ -95,23 +95,41 @@
           <TextBlock Text="{loc:Str Run_Timeline_Empty}" Margin="0,2,0,2" FontSize="11" TextWrapping="Wrap"
                      Foreground="{DynamicResource TextMutedBrush}"
                      Visibility="{Binding HasNoTimeline, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <!-- "Could not be read" is NOT the empty state: a read that faulted must never render as the
+               positive claim that the run recorded no decisions. -->
+          <TextBlock Text="{loc:Str Run_Timeline_ReadFailed}" Margin="0,2,0,2" FontSize="11" TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     Visibility="{Binding HasTimelineReadError, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <ItemsControl ItemsSource="{Binding Timeline}">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
+                <!-- Five columns: time, step attribution, tool, outcome, decision. The outcome column is what
+                     keeps an Error row from rendering byte-identically to a successful one — on an audit
+                     surface that is the most interesting fact in the row. Both StepLabel and OutcomeSuffix are
+                     null on the ordinary row and a null Text is a zero-width TextBlock, so neither needs a
+                     converter (and this template still introduces no new resource lookup). -->
                 <Grid Margin="0,1">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="{Binding TimeLabel}" FontSize="11" Margin="0,0,8,0"
                              VerticalAlignment="Center"
                              Foreground="{DynamicResource TextSubtleBrush}" />
-                  <TextBlock Grid.Column="1" Text="{Binding ToolName}" FontSize="11"
+                  <TextBlock Grid.Column="1" Text="{Binding StepLabel}" FontSize="11" Margin="0,0,8,0"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextSubtleBrush}" />
+                  <TextBlock Grid.Column="2" Text="{Binding ToolName}" FontSize="11"
                              VerticalAlignment="Center"
                              TextTrimming="CharacterEllipsis"
                              Foreground="{DynamicResource TextDefaultBrush}" />
-                  <TextBlock Grid.Column="2" Text="{Binding DecisionLabel}" FontSize="11" Margin="8,0,0,0"
+                  <TextBlock Grid.Column="3" Text="{Binding OutcomeSuffix}" FontSize="11" Margin="8,0,0,0"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextMutedBrush}" />
+                  <TextBlock Grid.Column="4" Text="{Binding DecisionLabel}" FontSize="11" Margin="8,0,0,0"
                              VerticalAlignment="Center"
                              Foreground="{DynamicResource TextMutedBrush}" />
                 </Grid>
