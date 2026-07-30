@@ -21,9 +21,11 @@ public static class ToolClassifier
     /// class by naming its plugin "files".
     /// <para>
     /// Otherwise the BUILT-IN plugin names map 1:1 (the full set from <c>BuiltInPluginDefaults</c>), and
-    /// anything else is <see cref="ToolClass.External"/> — which is correct because a pending action can only
-    /// come from a registered plugin, and every registered non-built-in plugin is an MCP server. Comparison
-    /// is ordinal: the names are literals in <c>BuiltInPluginDefaults</c>, not user input.
+    /// anything else is <see cref="ToolClass.Unknown"/> — deliberately NOT <see cref="ToolClass.External"/>.
+    /// A NAME must never make a tool external at a gate: today the only source of externality there is
+    /// <c>IsMcpTool</c>, and a plugin whose name this build does not recognise (a built-in renamed through
+    /// <c>ApplyServerMetadata</c>, say) would otherwise become grantable-as-external by name. Comparison is
+    /// ordinal: the names are literals in <c>BuiltInPluginDefaults</c>, not user input.
     /// </para>
     /// </summary>
     public static ToolClass Classify(string? pluginName, bool isExternalRoute)
@@ -31,16 +33,37 @@ public static class ToolClassifier
         if (isExternalRoute)
             return ToolClass.External;
 
-        return pluginName switch
-        {
-            "memory" => ToolClass.Memory,
-            "todo" => ToolClass.Todo,
-            "reminder" => ToolClass.Reminder,
-            "files" => ToolClass.Files,
-            "git" => ToolClass.Git,
-            "scheduled-research" => ToolClass.Scheduling,
-            "ingest" => ToolClass.Ingest,
-            _ => ToolClass.External,
-        };
+        return MapBuiltInName(pluginName);
     }
+
+    /// <summary>
+    /// Name-only classification with an unrecognised name PRESUMED <see cref="ToolClass.External"/>.
+    /// <para>
+    /// <b>Never call this from a gate.</b> It exists for the action-card builder, which has no plugin route to
+    /// consult and has always presumed "not one of the built-in names ⇒ an external tool" — that presumption
+    /// is what puts the "Always allow" offer on a genuine MCP tool's card, and dropping it would remove a
+    /// capability users have today. A GATE must not guess: a built-in renamed through
+    /// <c>ApplyServerMetadata</c> would then become grantable-as-external by name, so a gate calls
+    /// <see cref="Classify"/> with the route it already derived. In production the gate hands the builder the
+    /// authoritative class, so this guess is only reached when nobody supplied one.
+    /// </para>
+    /// </summary>
+    public static ToolClass ClassifyPresumedExternal(string? pluginName)
+    {
+        var mapped = MapBuiltInName(pluginName);
+        return mapped is ToolClass.Unknown ? ToolClass.External : mapped;
+    }
+
+    /// <summary>The built-in plugin names, 1:1. An unrecognised name is <see cref="ToolClass.Unknown"/>.</summary>
+    private static ToolClass MapBuiltInName(string? pluginName) => pluginName switch
+    {
+        "memory" => ToolClass.Memory,
+        "todo" => ToolClass.Todo,
+        "reminder" => ToolClass.Reminder,
+        "files" => ToolClass.Files,
+        "git" => ToolClass.Git,
+        "scheduled-research" => ToolClass.Scheduling,
+        "ingest" => ToolClass.Ingest,
+        _ => ToolClass.Unknown,
+    };
 }

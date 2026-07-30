@@ -673,6 +673,60 @@ public class ChatSessionStateMachineTests
         await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
     }
 
+    /// <summary>
+    /// 04 D8 / T-GATE-5. The interactive gate used to call <c>IPluginService.IsMcpTool</c> BARE while its
+    /// headless twin has wrapped it since M3, so a derivation fault propagated out of the tool loop and failed
+    /// the whole turn. Nothing pinned that either way — this is the absence 04 §0.3 names. The guard fails
+    /// CLOSED (treat as external), so a delete-like tool is still not auto-approved.
+    /// </summary>
+    [Fact]
+    public async Task WhenMcpDerivationThrows_TheTurnSurvives_AndTheToolIsTreatedAsExternal()
+    {
+        var executed = false;
+        var pluginId = BuiltInPluginDefaults.FilesPluginId;
+        var pending = new PluginToolCall(
+            ToolName: "delete_file",
+            PluginId: pluginId,
+            PluginName: "files",
+            Description: "Delete a file",
+            Details: null,
+            Execute: () => { executed = true; return Task.FromResult<object?>("done"); });
+
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+        _plugins.IsMcpTool("delete_file").Returns(_ => throw new InvalidOperationException("route table exploded"));
+
+        // Even a (forged) standing grant must not auto-run it: fail-closed makes the class External, and a
+        // delete-like external tool is never auto-approved.
+        _permissions.IsAutoApproveEligible("delete_file").Returns(false);
+        _permissions.IsGranted(pluginId, "delete_file").Returns(true);
+
+        var card = NewCard("delete_file", pluginId);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+
+        var session = CreateSession();
+        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
+
+        await WaitUntilAsync(() => card.IsPending);
+        Assert.False(executed);                                   // not auto-approved
+        Assert.Equal(ChatState.WaitingForTool, session.State);
+
+        card.AlwaysAllowCommand.Execute(null);
+        await run;
+
+        // The turn completed instead of throwing out of the tool loop.
+        Assert.NotEqual(ChatState.Error, session.State);
+        Assert.True(executed);                                    // degraded to AllowOnce
+        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+    }
+
     private static ActionCardInfo NewCard(string toolName, Guid pluginId) => new()
     {
         Title = toolName,

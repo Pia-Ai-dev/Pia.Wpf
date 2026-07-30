@@ -31,6 +31,7 @@ public class ToolClassifierTests
     public void EveryBuiltInPluginNameMapsToANamedClass(string pluginName, ToolClass expected)
     {
         Assert.Equal(expected, ToolClassifier.Classify(pluginName, isExternalRoute: false));
+        Assert.Equal(expected, ToolClassifier.ClassifyPresumedExternal(pluginName));
     }
 
     [Theory]
@@ -38,12 +39,26 @@ public class ToolClassifierTests
     [InlineData("")]
     [InlineData("notion")]
     [InlineData("some-mcp-server")]
-    public void AnUnrecognisedPluginNameIsExternal(string? pluginName)
+    public void AnUnrecognisedPluginNameIsUnknown_NotExternal(string? pluginName)
     {
-        // A pending action can only come from a REGISTERED plugin, and every registered non-built-in plugin
-        // is an MCP server — so External is the honest answer, and it preserves today's card shape exactly
-        // (an external tool keeps its "Always allow" offer). Unknown is reserved for a class NAME read back
-        // from a persisted document that this build does not recognise, which Covers() hardcodes to false.
-        Assert.Equal(ToolClass.External, ToolClassifier.Classify(pluginName, isExternalRoute: false));
+        // Externality at a GATE is a ROUTE property and nothing else. Making an unrecognised NAME external
+        // here would be a semantic change with a real hole behind it: a built-in plugin renamed through
+        // ApplyServerMetadata would become grantable-as-external by name. Measured, not theorised —
+        // BackgroundAssistantTurnRunnerTests.GrantedBuiltInDeleteFile_StillExecutes_TheFloorIsExternalOnly
+        // goes red on an External fallback, because its fake pending action's plugin is called "plugin".
+        Assert.Equal(ToolClass.Unknown, ToolClassifier.Classify(pluginName, isExternalRoute: false));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("notion")]
+    [InlineData("some-mcp-server")]
+    public void TheCardsNameOnlyGuessPresumesExternal(string? pluginName)
+    {
+        // The card builder has no route to consult and has always presumed "not a built-in name ⇒ external",
+        // which is what puts the "Always allow" offer on a genuine MCP tool's card. Kept as a SEPARATE entry
+        // point so a gate can never reach it (pinned by ToolAutonomyRuleTests).
+        Assert.Equal(ToolClass.External, ToolClassifier.ClassifyPresumedExternal(pluginName));
     }
 }

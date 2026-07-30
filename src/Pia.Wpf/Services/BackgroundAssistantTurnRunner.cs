@@ -379,28 +379,41 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
         if (pending is not null)
         {
-            if (grantedWrites.Contains(pending.ToolName))
+            // 04 D5: ONE resolver, shared with the interactive gate. The destructive-external FLOOR (B2) is
+            // evaluated inside Resolve BEFORE any policy or grant branch, so it stays unliftable: there is no
+            // user here to confirm an irreversible action against a third-party system, and an MCP tool's name
+            // and effect are server-defined, so a grant list authored days earlier (or a server that renamed
+            // its tools) is not informed consent. Scoped to external tools ONLY — IsDeleteLike("delete_file")
+            // is true for the BUILT-IN file tool, and an explicit grant for a built-in delete is the user's own
+            // auditable decision, so it still executes.
+            var toolClass = ToolClassifier.Classify(pending.PluginName, IsExternalTool(pending.ToolName));
+            var verdict = ToolAutonomy.Resolve(new ToolGateInput(
+                ToolGateSurface.Unattended, pending.ToolName, toolClass,
+                // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
+                // injected nowhere in this file. That is today's behaviour restated, not a regression.
+                IsAllowlisted: false,
+                // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
+                HasStandingGrant: false,
+                IsNamedGrant: grantedWrites.Contains(pending.ToolName),
+                // No per-run policy reaches this gate yet — commit 4 threads it in from the launch envelope.
+                Policy: null));
+
+            switch (verdict.Outcome)
             {
-                // Destructive-external FLOOR (B2): a delete-like EXTERNAL (MCP) tool is refused even when it
-                // IS in the grant set. There is no user here to confirm an irreversible action against a
-                // third-party system, and an MCP tool's name and effect are server-defined — a grant list
-                // authored days earlier (or a server that renamed its tools) cannot be treated as informed
-                // consent for that. Scoped to external tools ONLY: IsDeleteLike("delete_file") is true for
-                // the BUILT-IN file tool, and an explicit grant for a built-in delete is the user's own
-                // auditable decision, so it still executes.
-                if (ToolPermissionService.IsDeleteLike(pending.ToolName) && IsExternalTool(pending.ToolName))
-                {
+                case ToolGateOutcome.AutoRun:
+                    _logger.LogInformation("Background turn executing {ToolName} ({Decision})",
+                        pending.ToolName, verdict.Decision);
+                    return await pending.Execute();
+
+                case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedDestructiveFloor:
                     _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);
                     return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
                            + "even when granted. Do not retry.";
-                }
 
-                _logger.LogInformation("Background turn executing granted write tool {ToolName}", pending.ToolName);
-                return await pending.Execute();
+                default:
+                    _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
+                    return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
             }
-
-            _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
-            return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
         }
 
         return "Tool call handled.";

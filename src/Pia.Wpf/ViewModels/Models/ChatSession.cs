@@ -874,13 +874,25 @@ public sealed class ChatSession : IDisposable
         {
             var pluginId = pendingAction.PluginId;
             var tool = pendingAction.ToolName;
-            // Eligibility comes from the SERVICE, never the card — the gate re-checks it so a
-            // forged/stale grant on an ineligible tool (e.g. write_file, or a destructive MCP tool) cannot
-            // auto-bypass. MCP tools are grantable as a class (external, server-defined; the user may
-            // "always allow" per tool) EXCEPT destructive ones — a delete-like external tool never gets a
-            // standing grant, matching the built-in delete stance.
-            var eligible = _permissions.IsAutoApproveEligible(tool)
-                || (_pluginService.IsMcpTool(tool) && !ToolPermissionService.IsDeleteLike(tool));
+            // 04 D5: ONE resolver for both gates. The destructive-external FLOOR lives inside Resolve and is
+            // evaluated before any policy or grant branch, so no policy value can reach an auto-approval past
+            // it — it used to be this line and an independent expression in BackgroundAssistantTurnRunner,
+            // with no shared chokepoint. Grant lookups stay with their OWNERS and arrive as bools (D7): the
+            // three sets involved use three different comparers today and this batch changes none of them.
+            // Eligibility still comes from the SERVICE, never the card, so a forged/stale grant on an
+            // ineligible tool (write_file, a destructive MCP tool) cannot auto-bypass.
+            var allowlisted = _permissions.IsAutoApproveEligible(tool);
+            var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
+            // Held as a local because the AlwaysAllow branch below needs the same answer the card's button set
+            // was built from: an AlwaysAllow on a non-offerable tool executes once and persists NO grant.
+            var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted);
+            var verdict = ToolAutonomy.Resolve(new ToolGateInput(
+                ToolGateSurface.Interactive, tool, toolClass,
+                IsAllowlisted: allowlisted,
+                HasStandingGrant: _permissions.IsGranted(pluginId, tool),
+                IsNamedGrant: false,
+                // No per-run policy reaches this gate yet — commit 4 threads it in from StepTurnSpec.
+                Policy: null));
 
             // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
             // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.
@@ -906,18 +918,23 @@ public sealed class ChatSession : IDisposable
                 return actionResult;
             }
 
-            // Bypass: an eligible tool the user has already granted auto-executes. Render a
-            // resolved auto-approved card FIRST (audit trace, never silent) and log only the
-            // non-sensitive tool name + plugin id — never the arguments (CLAUDE.md privacy).
-            if (eligible && _permissions.IsGranted(pluginId, tool))
+            // Bypass: an authorized tool auto-executes. Render a resolved auto-approved card FIRST (audit
+            // trace, never silent) and log only the non-sensitive tool name, the decision enum and the plugin
+            // id — never the arguments (CLAUDE.md privacy).
+            if (verdict.Outcome == ToolGateOutcome.AutoRun)
             {
                 var autoCard = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, autoApproved: true);
                 // UI-affine loop: the continuation already runs on the UI thread.
                 message.ActionCards.Add(autoCard);
-                _logger.LogInformation("Auto-approved {ToolName} via standing grant (plugin {PluginId})", tool, pluginId);
+                _logger.LogInformation("Auto-approved {ToolName} ({Decision}, plugin {PluginId})",
+                    tool, verdict.Decision, pluginId);
                 return await ExecuteAndReport();
             }
 
+            // ToolGateOutcome.Refuse is UNREACHABLE on the interactive surface (pinned by
+            // ToolAutonomyTests.InteractiveSurface_NeverRefuses) — a human is looking at the card. It
+            // deliberately falls through to the card rather than throwing: a throw here would fail the whole
+            // turn, and degrading toward the card is the safe direction if that ever changes.
             var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled);
             message.ActionCards.Add(card);
 
@@ -946,10 +963,10 @@ public sealed class ChatSession : IDisposable
                     return await ExecuteAndReport();
 
                 case ToolDecision.AlwaysAllow:
-                    // Defensive: never grant an ineligible tool even if its card somehow
-                    // surfaced the option — AlwaysAllow on an ineligible tool degrades to
+                    // Defensive: never grant a non-offerable tool even if its card somehow
+                    // surfaced the option — AlwaysAllow on a non-offerable tool degrades to
                     // AllowOnce (execute once, persist no grant).
-                    if (eligible)
+                    if (offerable)
                     {
                         await _permissions.GrantAsync(pluginId, tool);
                         _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
@@ -963,6 +980,31 @@ public sealed class ChatSession : IDisposable
         }
 
         return "Tool call handled.";
+    }
+
+    /// <summary>
+    /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the
+    /// unattended gate uses — never from a name pattern and never from the pending action, so a renamed or
+    /// spoofed tool cannot talk its way out of the destructive-external floor. A derivation fault fails
+    /// CLOSED (treat as external): the only consequence is extra friction on a granted built-in delete.
+    /// <para>
+    /// 04 D8: the call this wraps used to be BARE here while the headless twin
+    /// (<c>BackgroundAssistantTurnRunner.IsExternalTool</c>) has had the guard since M3, so a throw
+    /// propagated out of the tool loop and failed the whole turn. Failure-isolated bookkeeping: reading a
+    /// classification must never fail a step.
+    /// </para>
+    /// </summary>
+    private bool IsExternalTool(string toolName)
+    {
+        try
+        {
+            return _pluginService.IsMcpTool(toolName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not derive MCP-ness for tool {ToolName}; treating it as external", toolName);
+            return true;
+        }
     }
 
     private string DetokenizeForDisplay(string text, bool tokenizationEnabled) =>
