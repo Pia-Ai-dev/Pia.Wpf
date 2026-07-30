@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
@@ -42,6 +43,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly SynchronizationContext _uiContext;
     private readonly ILocalizationService _localization;
     private readonly IAgentRunResumeService _resumeService;
+    private readonly IAgentTimelineService? _timelineService;
     private readonly ILogger _logger;
     private bool _disposed;
 
@@ -107,9 +109,50 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     public string LedgerSummary => FormatLedger();
 
-    public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization,
-        IAgentRunResumeService resumeService, ILogger logger)
+    /// <summary>
+    /// Rows of the run's tool-decision trace (Batch 03). Loaded ON FIRST EXPAND, not on every
+    /// <c>RunChanged</c>: the timeline deliberately does not participate in live projection, which is what
+    /// keeps ~500 emits per run off the projection path.
+    /// </summary>
+    public ObservableCollection<TimelineRowViewModel> Timeline { get; } = [];
+
+    [ObservableProperty]
+    private bool _isTimelineExpanded;
+
+    [ObservableProperty]
+    private bool _isTimelineTruncated;
+
+    [ObservableProperty]
+    private string? _timelineNote;
+
+    /// <summary>
+    /// Drives the "nothing recorded" line. A BOOL the VM owns, not an inverse converter: the panel already
+    /// uses <c>BooleanToVisibilityConverter</c>, and an unresolved <c>StaticResource</c> inside a
+    /// <c>DataTemplate</c> throws at TEMPLATE INSTANTIATION — i.e. the first time a user expands this — which
+    /// no test in the suite reaches.
+    /// </summary>
+    [ObservableProperty]
+    private bool _hasNoTimeline = true;
+
+    /// <summary>
+    /// Load-once latch. Deliberately not <c>Timeline.Count == 0</c>: a run with no recorded decisions would
+    /// then re-query the store on every expand.
+    /// </summary>
+    private bool _timelineLoaded;
+
+    partial void OnIsTimelineExpandedChanged(bool value)
     {
+        if (value && !_timelineLoaded)
+            LoadTimelineAsync().SafeFireAndForget(_logger);
+    }
+
+    public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization,
+        IAgentRunResumeService resumeService, ILogger logger,
+        // Batch 03. Trailing and defaulted because this type is hand-constructed with a POSITIONAL argument
+        // list in production and in its tests; null ⇒ the trace renders as empty and reads nothing.
+        IAgentTimelineService? timelineService = null)
+    {
+        _timelineService = timelineService;
         _runService = runService;
         _runId = runId;
         _localization = localization;
@@ -219,6 +262,99 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             IsResuming = false;
         }
     }
+
+    /// <summary>
+    /// Read the run's tool-decision trace and project it. <c>internal</c> so the facts can await it directly
+    /// rather than racing the <c>_uiContext.Post</c> the collection fill is marshaled through (G3, by the same
+    /// mechanism <see cref="RefreshAsync"/> already uses — not a new one).
+    /// </summary>
+    internal async Task LoadTimelineAsync()
+    {
+        _timelineLoaded = true;
+        if (_timelineService is null)
+        {
+            HasNoTimeline = true;
+            return;
+        }
+
+        IReadOnlyList<AgentTimelineEvent> rows;
+        try
+        {
+            rows = await _timelineService.GetForRunAsync(_runId);
+        }
+        catch (Exception ex)
+        {
+            // A trace that cannot be read renders as empty; it never breaks the panel.
+            _logger.LogWarning(ex, "Run {RunId} timeline could not be read", _runId);
+            HasNoTimeline = true;
+            return;
+        }
+
+        var done = new TaskCompletionSource();
+        _uiContext.Post(_ =>
+        {
+            try
+            {
+                Timeline.Clear();
+                IsTimelineTruncated = false;
+                TimelineNote = null;
+
+                foreach (var row in rows)
+                {
+                    if (row.Kind == AgentTimelineEventKind.TraceTruncated)
+                    {
+                        // A statement about the TRACE, not a tool call — surfaced as a note, never as a row.
+                        IsTimelineTruncated = true;
+                        TimelineNote = _localization.Format("Run_Timeline_Truncated", AgentTimelineService.MaxEventsPerRun);
+                        continue;
+                    }
+
+                    Timeline.Add(Project(row));
+                }
+
+                HasNoTimeline = Timeline.Count == 0;
+            }
+            finally
+            {
+                done.TrySetResult();
+            }
+        }, null);
+
+        await done.Task;
+    }
+
+    private TimelineRowViewModel Project(AgentTimelineEvent row) => new()
+    {
+        ToolName = row.ToolName,
+        DecisionLabel = _localization[DecisionLabelKey(row.Decision)],
+        OutcomeSuffix = row.Outcome == AgentTimelineOutcome.Error
+            ? _localization["Run_Timeline_Outcome_Failed"]
+            : null,
+        StepLabel = row.StepId is { } stepId && Steps.Any(s => s.StepId == stepId)
+            ? _localization.Format("Run_Timeline_Step", Steps.IndexOf(Steps.First(s => s.StepId == stepId)) + 1)
+            : null,
+        TimeLabel = row.CreatedAt.ToLocalTime().ToString("t"),
+    };
+
+    /// <summary>
+    /// Eleven persisted decision ordinals collapse to five user-facing categories — the DB stays precise, the
+    /// panel stays readable. Written as a switch with an explicit default arm, never an array index, so an
+    /// ordinal from a future build renders as "unknown" instead of throwing (the append-only rule's other
+    /// half).
+    /// </summary>
+    internal static string DecisionLabelKey(ToolGateDecision decision) => decision switch
+    {
+        ToolGateDecision.AutoApprovedStandingGrant or ToolGateDecision.AutoApprovedPolicy
+            or ToolGateDecision.GrantedByName or ToolGateDecision.AutoApprovedAllowlist
+            => "Run_Timeline_Decision_AutoApproved",
+        ToolGateDecision.ApprovedOnce or ToolGateDecision.ApprovedAlways
+            => "Run_Timeline_Decision_Approved",
+        ToolGateDecision.DeclinedByUser or ToolGateDecision.CardCancelled
+            or ToolGateDecision.DeniedNotGranted or ToolGateDecision.UnknownTool
+            => "Run_Timeline_Decision_Denied",
+        ToolGateDecision.DeniedDestructiveFloor => "Run_Timeline_Decision_Blocked",
+        _ => "Run_Timeline_Decision_Unknown",
+    };
 
     // Truncated-Completed marker lives in ExtraJson as {truncated:true,reason} (IAgentRunService.CompleteAsync).
     // Both halves are read in one parse: the flag drives the state, the reason drives the chip copy.
@@ -354,4 +490,28 @@ public sealed partial class StepRowViewModel : ObservableObject
         AssignedPersonaId = step.AssignedPersonaId,
         Status = step.Status,
     };
+}
+
+/// <summary>
+/// Read-only row for one recorded tool decision (Batch 03). Everything here is metadata — the store holds no
+/// tool arguments, no results and no paths, so there is nothing else to project and nothing here to reveal.
+/// A property that named a file or carried a payload would fail the reflection assert in
+/// <c>RunProgressViewModelTimelineTests</c>.
+/// </summary>
+public sealed class TimelineRowViewModel
+{
+    /// <summary>Schema, not user content: a built-in constant or an MCP server's declared tool name.</summary>
+    public string ToolName { get; init; } = string.Empty;
+
+    /// <summary>One of five localized categories over the eleven persisted decision ordinals.</summary>
+    public string DecisionLabel { get; init; } = string.Empty;
+
+    /// <summary>Localized "failed" when the authorized call threw; null otherwise.</summary>
+    public string? OutcomeSuffix { get; init; }
+
+    /// <summary>"Step N" when the row's step is still in the projected plan; null when it is not (a replan
+    /// deletes step rows, and the trail deliberately outlives them).</summary>
+    public string? StepLabel { get; init; }
+
+    public string TimeLabel { get; init; } = string.Empty;
 }

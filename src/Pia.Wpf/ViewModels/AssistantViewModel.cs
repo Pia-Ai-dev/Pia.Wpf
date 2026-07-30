@@ -45,6 +45,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAssistantPromptComposer _promptComposer;
     private readonly IProviderCapabilityService _providerCapabilityService;
     private readonly IAgentRunService _agentRunService;
+    private readonly IAgentTimelineService? _agentTimelineService;
     private readonly IAgentRunResumeService _resumeService;
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IWorkingDirectoryService _workingDirectoryService;
@@ -219,7 +220,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IMarkdownExportService markdownExportService,
         IDialogService dialogService,
         IUiDispatcher uiDispatcher,
-        IToolPermissionService permissions)
+        IToolPermissionService permissions,
+        // Batch 03: handed to the hand-constructed RunProgressViewModel so the run panel can show the
+        // tool-decision trace. Trailing and defaulted so the existing test constructions keep compiling.
+        IAgentTimelineService? agentTimelineService = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -244,6 +248,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _promptComposer = promptComposer;
         _providerCapabilityService = providerCapabilityService;
         _agentRunService = agentRunService;
+        _agentTimelineService = agentTimelineService;
         _resumeService = resumeService;
         _chatSessionManager = chatSessionManager;
         _workingDirectoryService = workingDirectoryService;
@@ -389,7 +394,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
         _runProgress = runId is { } id
-            ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger)
+            ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
+                _agentTimelineService)
             : null;
         ActiveRunProgress = _runProgress;
     }

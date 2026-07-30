@@ -912,6 +912,18 @@
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Checking the work…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Stopped at budget — continue?</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
+  <!-- Batch 03: the per-run tool-decision trace. Eleven persisted decision ordinals collapse to five
+       user-facing categories; anything a build does not recognise renders as Unknown. -->
+  <data name="Run_Timeline_Header" xml:space="preserve"><value>Tool activity</value></data>
+  <data name="Run_Timeline_Empty" xml:space="preserve"><value>No tool decisions were recorded for this run.</value></data>
+  <data name="Run_Timeline_Truncated" xml:space="preserve"><value>Trace shortened — only the first {0} decisions of this run were recorded.</value></data>
+  <data name="Run_Timeline_Step" xml:space="preserve"><value>Step {0}</value></data>
+  <data name="Run_Timeline_Decision_AutoApproved" xml:space="preserve"><value>Auto-approved</value></data>
+  <data name="Run_Timeline_Decision_Approved" xml:space="preserve"><value>Approved</value></data>
+  <data name="Run_Timeline_Decision_Denied" xml:space="preserve"><value>Denied</value></data>
+  <data name="Run_Timeline_Decision_Blocked" xml:space="preserve"><value>Blocked</value></data>
+  <data name="Run_Timeline_Decision_Unknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="Run_Timeline_Outcome_Failed" xml:space="preserve"><value>failed</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agent runs</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limits an Agent run stops at, so it never runs away. A run that reaches a limit pauses and waits for you — you can continue it from the run panel.</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>

@@ -937,6 +937,16 @@
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Vérification du travail…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Arrêtée au budget — continuer ?</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
+  <data name="Run_Timeline_Header" xml:space="preserve"><value>Activité des outils</value></data>
+  <data name="Run_Timeline_Empty" xml:space="preserve"><value>Aucune décision d'outil n'a été enregistrée pour cette exécution.</value></data>
+  <data name="Run_Timeline_Truncated" xml:space="preserve"><value>Trace raccourcie — seules les {0} premières décisions de cette exécution ont été enregistrées.</value></data>
+  <data name="Run_Timeline_Step" xml:space="preserve"><value>Étape {0}</value></data>
+  <data name="Run_Timeline_Decision_AutoApproved" xml:space="preserve"><value>Approuvé automatiquement</value></data>
+  <data name="Run_Timeline_Decision_Approved" xml:space="preserve"><value>Approuvé</value></data>
+  <data name="Run_Timeline_Decision_Denied" xml:space="preserve"><value>Refusé</value></data>
+  <data name="Run_Timeline_Decision_Blocked" xml:space="preserve"><value>Bloqué</value></data>
+  <data name="Run_Timeline_Decision_Unknown" xml:space="preserve"><value>Inconnu</value></data>
+  <data name="Run_Timeline_Outcome_Failed" xml:space="preserve"><value>échec</value></data>
   <data name="Flow_Run_Title" xml:space="preserve"><value>Exécution d'agent</value></data>
   <data name="Flow_Run_Completed" xml:space="preserve"><value>Terminé — appuyez pour consulter</value></data>
   <data name="Flow_Run_Failed" xml:space="preserve"><value>Terminé avec une erreur</value></data>

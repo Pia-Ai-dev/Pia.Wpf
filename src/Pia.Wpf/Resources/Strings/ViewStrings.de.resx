@@ -937,6 +937,16 @@
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Ergebnis wird geprüft…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Bei Budget gestoppt – fortsetzen?</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
+  <data name="Run_Timeline_Header" xml:space="preserve"><value>Werkzeug-Aktivität</value></data>
+  <data name="Run_Timeline_Empty" xml:space="preserve"><value>Für diese Ausführung wurden keine Werkzeug-Entscheidungen aufgezeichnet.</value></data>
+  <data name="Run_Timeline_Truncated" xml:space="preserve"><value>Protokoll gekürzt – nur die ersten {0} Entscheidungen dieser Ausführung wurden aufgezeichnet.</value></data>
+  <data name="Run_Timeline_Step" xml:space="preserve"><value>Schritt {0}</value></data>
+  <data name="Run_Timeline_Decision_AutoApproved" xml:space="preserve"><value>Automatisch freigegeben</value></data>
+  <data name="Run_Timeline_Decision_Approved" xml:space="preserve"><value>Freigegeben</value></data>
+  <data name="Run_Timeline_Decision_Denied" xml:space="preserve"><value>Abgelehnt</value></data>
+  <data name="Run_Timeline_Decision_Blocked" xml:space="preserve"><value>Blockiert</value></data>
+  <data name="Run_Timeline_Decision_Unknown" xml:space="preserve"><value>Unbekannt</value></data>
+  <data name="Run_Timeline_Outcome_Failed" xml:space="preserve"><value>fehlgeschlagen</value></data>
   <data name="Flow_Run_Title" xml:space="preserve"><value>Agent-Ausführung</value></data>
   <data name="Flow_Run_Completed" xml:space="preserve"><value>Fertig – zum Ansehen tippen</value></data>
   <data name="Flow_Run_Failed" xml:space="preserve"><value>Mit Fehler beendet</value></data>
