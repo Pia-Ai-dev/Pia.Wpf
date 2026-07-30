@@ -16,11 +16,21 @@ namespace Pia.Services;
 /// <c>AgentTimelineEvents</c> DDL — has run before this one opens.
 /// </para>
 /// <para>
-/// <b>Emit is fire-and-forget by design.</b> <c>Seq</c> is allocated synchronously under the lock (a handful
-/// of instructions on an in-memory dictionary) and the INSERT is chained onto a serial writer task. A
-/// synchronous DB write would block the WPF message pump, because the interactive gate runs on the UI thread —
-/// the hazard <c>AssistantChatService</c>'s class remarks were written to document. Ordering therefore does
-/// not depend on when the writes land: it depends only on the synchronous <c>Seq</c> allocation.
+/// <b>Emit is fire-and-forget by design.</b> <c>Seq</c> is allocated synchronously under
+/// <see cref="_gate"/> (a handful of instructions on an in-memory dictionary) and the INSERT is chained onto a
+/// serial writer task. A synchronous DB write would block the WPF message pump, because the interactive gate
+/// runs on the UI thread — the hazard <c>AssistantChatService</c>'s class remarks were written to document.
+/// Ordering therefore does not depend on when the writes land: it depends only on the synchronous <c>Seq</c>
+/// allocation.
+/// </para>
+/// <para>
+/// <b>TWO locks, and the split is what makes the paragraph above TRUE.</b> <see cref="_gate"/> guards only the
+/// in-memory allocator state (<c>_slots</c>, <c>_writeTail</c>); <see cref="_ioGate"/> guards every use of the
+/// connection. With a single lock the fast path would block behind an <c>INSERT</c> — or behind the retention
+/// prune's whole-table <c>DELETE</c> — on a file shared with three other connections at
+/// <c>busy_timeout=3000</c>, i.e. exactly the message-pump stall the design claims to avoid. Lock ordering is
+/// one-way: <see cref="_ioGate"/> may be taken while holding <see cref="_gate"/> (the first-touch seed query,
+/// the only nesting), never the reverse.
 /// </para>
 /// <para>
 /// <b>Two bounds.</b> A hard per-run cap of <see cref="MaxEventsPerRun"/> real rows plus one synthetic
@@ -41,11 +51,20 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
 
     private readonly string _connectionString;
     private readonly ILogger<AgentTimelineService> _logger;
+
+    /// <summary>Guards the in-memory allocator state only: <c>_slots</c> and <c>_writeTail</c>. Held for a few
+    /// instructions on the caller's thread — which for the interactive gate is the UI thread.</summary>
     private readonly object _gate = new();
+
+    /// <summary>Guards every use of <c>_connection</c>. Never taken before <see cref="_gate"/>.</summary>
+    private readonly object _ioGate = new();
+
     private readonly Dictionary<Guid, RunSlot> _slots = [];
     private SqliteConnection? _connection;
     private Task _writeTail = Task.CompletedTask;
-    private bool _disposed;
+
+    /// <summary>Volatile so the fast path can check it without serializing against the writer.</summary>
+    private volatile bool _disposed;
 
     /// <summary>Per-run emit state. Seeded from the DB on first touch, which is a CORRECTNESS case and not an
     /// optimization: a run parked in one process and resumed in another must continue its <c>Seq</c>.</summary>
@@ -66,6 +85,7 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         context.GetConnection();
     }
 
+    /// <summary>Must be called while holding <see cref="_ioGate"/>.</summary>
     private SqliteConnection Connection()
     {
         if (_connection is null)
@@ -151,9 +171,11 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
     /// </summary>
     private void WriteRow(AgentTimelineEvent row)
     {
+        if (_disposed) return;
+
         try
         {
-            lock (_gate)
+            lock (_ioGate)
             {
                 if (_disposed) return;
 
@@ -196,6 +218,11 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
     /// First touch of a run seeds <c>NextSeq</c>/<c>Count</c> from the table itself, so a resume in a new
     /// process continues the sequence instead of restarting it (and re-applies the cap instead of appending a
     /// second truncation marker).
+    /// <para>
+    /// This is the ONE place that touches the connection while holding <see cref="_gate"/>, and it is the
+    /// allowed nesting direction. It costs one indexed aggregate per RUN, not per event — the steady-state
+    /// emit never reaches <see cref="_ioGate"/> at all, which is the whole point of the split.
+    /// </para>
     /// </summary>
     private RunSlot SeedSlotLocked(Guid runId)
     {
@@ -205,15 +232,18 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         var slot = new RunSlot();
         try
         {
-            using var cmd = Connection().CreateCommand();
-            cmd.CommandText =
-                "SELECT COALESCE(MAX(Seq), 0), COUNT(*) FROM AgentTimelineEvents WHERE RunId = @RunId;";
-            cmd.Parameters.AddWithValue("@RunId", runId.ToString());
-            using var reader = cmd.ExecuteReader();
-            if (reader.Read())
+            lock (_ioGate)
             {
-                slot.NextSeq = reader.GetInt64(0);
-                slot.Count = reader.GetInt32(1);
+                using var cmd = Connection().CreateCommand();
+                cmd.CommandText =
+                    "SELECT COALESCE(MAX(Seq), 0), COUNT(*) FROM AgentTimelineEvents WHERE RunId = @RunId;";
+                cmd.Parameters.AddWithValue("@RunId", runId.ToString());
+                using var reader = cmd.ExecuteReader();
+                if (reader.Read())
+                {
+                    slot.NextSeq = reader.GetInt64(0);
+                    slot.Count = reader.GetInt32(1);
+                }
             }
         }
         catch (Exception ex)
@@ -237,7 +267,7 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         await DrainAsync().ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
 
-        lock (_gate)
+        lock (_ioGate)
         {
             if (_disposed) return [];
 
@@ -271,7 +301,9 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
     {
         await DrainAsync().ConfigureAwait(false);
 
-        lock (_gate)
+        int deleted;
+        // Under _ioGate only — a whole-table range DELETE must not hold the lock a UI-thread Emit takes.
+        lock (_ioGate)
         {
             if (_disposed) return 0;
 
@@ -280,17 +312,7 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                 using var cmd = Connection().CreateCommand();
                 cmd.CommandText = "DELETE FROM AgentTimelineEvents WHERE CreatedAt < @Cutoff;";
                 cmd.Parameters.AddWithValue("@Cutoff", cutoff.ToString("O"));
-                var deleted = cmd.ExecuteNonQuery();
-
-                if (deleted > 0)
-                {
-                    // Every in-memory slot's Count is now a lie; drop them so the next emit re-seeds. NextSeq
-                    // is re-derived from MAX(Seq), so a pruned run's ordering still never collides.
-                    _slots.Clear();
-                    _logger.LogInformation("Timeline retention deleted {Count} events older than the cutoff", deleted);
-                }
-
-                return deleted;
+                deleted = cmd.ExecuteNonQuery();
             }
             catch (Exception ex)
             {
@@ -298,6 +320,19 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                 return 0;
             }
         }
+
+        if (deleted > 0)
+        {
+            // Every in-memory slot's Count is now a lie; drop them so the next emit re-seeds. NextSeq is
+            // re-derived from MAX(Seq), so a pruned run's ordering still never collides. OUTSIDE _ioGate,
+            // because taking _gate while holding it would be the forbidden direction.
+            lock (_gate)
+                _slots.Clear();
+
+            _logger.LogInformation("Timeline retention deleted {Count} events older than the cutoff", deleted);
+        }
+
+        return deleted;
     }
 
     /// <summary>
@@ -345,12 +380,13 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         }
 
         // Let queued rows land before the connection closes. Bounded so a stuck writer cannot hang shutdown.
+        // Awaited while holding NO lock, so the writer can still take _ioGate to finish.
         try { tail.Wait(TimeSpan.FromSeconds(2)); }
         catch (Exception ex) { _logger.LogWarning(ex, "Timeline writer did not drain cleanly on dispose"); }
 
-        lock (_gate)
+        _disposed = true;
+        lock (_ioGate)
         {
-            _disposed = true;
             _connection?.Dispose();
             _connection = null;
         }

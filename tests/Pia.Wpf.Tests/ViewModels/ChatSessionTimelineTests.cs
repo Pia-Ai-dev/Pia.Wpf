@@ -131,6 +131,8 @@ public sealed class ChatSessionTimelineTests
             Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         Assert.True(result.Succeeded, result.Error);
+        // The read path really ran — otherwise "no rows" would be true of a turn where nothing happened.
+        await _plugins.Received().RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>());
         Assert.Empty(_timeline.Rows);
     }
 
@@ -153,13 +155,15 @@ public sealed class ChatSessionTimelineTests
     public async Task AnOrdinaryChatTurnRecordsNothing()
     {
         // Control for the fact above: the identical arrangement through RunTurnAsync — no spec, no scope — is
-        // silent, which is the whole opt-in mechanism.
-        ArrangeAutoApproved("create_todo", BuiltInPluginDefaults.TodoPluginId, "todo");
+        // silent, which is the whole opt-in mechanism. The "it ran" probe is asserted so that a stub that
+        // stops matching RunTurnAsync's call shape cannot make this pass for free.
+        var ran = ArrangeAutoApproved("create_todo", BuiltInPluginDefaults.TodoPluginId, "todo");
         ArrangeStream(["create_todo"]);
 
         var session = CreateSession();
         await session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
 
+        Assert.True(ran(), "the gated tool must have run on the ordinary turn path");
         Assert.Empty(_timeline.Rows);
     }
 

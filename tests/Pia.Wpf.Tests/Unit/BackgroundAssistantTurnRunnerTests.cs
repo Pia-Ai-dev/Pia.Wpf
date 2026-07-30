@@ -578,20 +578,27 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
-    public async Task NoScope_MeansNoRows()
+    public async Task NoScope_MeansNoRows_AndTheGateStillRuns()
     {
-        // Control for the fact above (which proves the same code path DOES record): the SingleTurn background
-        // path carries no run policy and no timeline scope, so it stays silent.
+        // Control for the fact above (which proves the same code path DOES record). A null scope is what the
+        // SingleTurn background path passes, and it must make every emit arm a no-op WITHOUT changing the
+        // gate's answer — so the granted tool having run is asserted, not assumed. Without it "no rows" would
+        // also be true of a turn where nothing happened at all.
         var timeline = new Pia.Tests.Services.RecordingTimelineService();
+        var executed = false;
         var h = new Harness();
         h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
-            .Returns(((object?)null, (PluginToolCall?)Pending("write_file", "files", () => { })));
+            .Returns(((object?)null, (PluginToolCall?)Pending("write_file", "files", () => executed = true)));
 
         var runner = h.Build([Call("write_file")]);
-        await runner.RunAsync(
-            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), GrantedWriteTools = ["write_file"] },
-            TestContext.Current.CancellationToken);
+        await runner.RunExchangeAsync(
+            [new ChatMessage(ChatRole.User, "go")], Provider(),
+            new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "write_file" },
+            TestContext.Current.CancellationToken,
+            timeline: null);
 
+        Assert.True(executed, "the granted write must still run with no audit scope");
         Assert.Empty(timeline.Rows);
     }
 }
