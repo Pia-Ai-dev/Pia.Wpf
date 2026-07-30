@@ -44,10 +44,11 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 
 **Git position:** the branch **is** pushed and tracks `origin/feature/agent-run-spine`, which is now at
 `73e15e8` — both the earlier "`1c49b08` / 29 local-only" and the older "`e7df175` / 50 local-only" figures are
-stale. As of 2026-07-30 there are **2 local-only commits** at `d3c8c61` (`ba2c266` + `d3c8c61`, Batch 05's
-polish pass), i.e. **3 once this roadmap commit lands** (do not trust a hardcoded count here; it goes stale on
-the next commit — read it from git; the "17" printed here earlier was already stale when read). Check with
-`git rev-list --count origin/feature/agent-run-spine..HEAD` and `git branch -vv`.
+stale. **The local-only tail is described, not counted** — every count printed in this paragraph has gone stale
+on the next commit (the "17" was already stale when read, then 29, then 2). As of 2026-07-30 that tail is
+exactly Batch 05's polish pass (`ba2c266`, `d3c8c61`) plus this Batch-05 roadmap pass; everything up to and
+including `73e15e8` is on `origin`. Read the number from
+`git rev-list --count origin/feature/agent-run-spine..HEAD`, and `git branch -vv` for the tracking line.
 Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true --no-incremental`. Re-measured at
 `87fa403`, at `7815ce1` and again at `d3c8c61`: **0 errors, 194 warnings**, all pre-existing and unchanged
 across every pass since — 3× `CS8602` in `Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
@@ -81,9 +82,9 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
 >    the primary *regression check* for that fix, not a known break to confirm.
 > 2. **Push — DONE 2026-07-29, and that changes the risk posture. Read why it happened.**
 >    `origin/feature/agent-run-spine` is at `73e15e8`, so everything through Batch 05's review-fix commit is on
->    `origin` and pullable by anyone; only Batch 05's polish pass is local (2 commits at `d3c8c61`, 3 once this
->    roadmap commit lands — read the count from git). **The owner pushed it to preserve the work across a
->    machine shutdown, NOT because the smoke round was done.** Do not read this line as the smoke list having
+>    `origin` and pullable by anyone; local-only are just Batch 05's polish pass and this roadmap pass (see
+>    “Git position” above — read the count from git, never from this file). **The owner pushed it to preserve
+>    the work across a machine shutdown, NOT because the smoke round was done.** Do not read this line as the smoke list having
 >    been completed: it is untouched, and it still outranks every batch below.
 >    The 2026-07-29 owner decision recorded here until 2026-07-30 — "hold the push until the manual Windows
 >    smoke round is done, so a provider regression can be fixed before it reaches `origin`" — is therefore
