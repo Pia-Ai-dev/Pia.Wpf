@@ -17,13 +17,15 @@ namespace Pia.Wpf.Tests.Unit;
 public class SqliteContextTests : IDisposable
 {
     private readonly string _tmpDir;
+    private readonly string _dbPath;
     private readonly SqliteContext _ctx;
 
     public SqliteContextTests()
     {
         _tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tmpDir);
-        _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
+        _dbPath = Path.Combine(_tmpDir, "history.db");
+        _ctx = new SqliteContext(_dbPath);
     }
 
     [Fact]
@@ -65,6 +67,47 @@ public class SqliteContextTests : IDisposable
         var mode = (string?)cmd.ExecuteScalar();
 
         Assert.Equal("wal", mode?.ToLowerInvariant());
+    }
+
+    [Fact]
+    public void EnsureSchema_CreatesAgentTimelineEvents_Idempotently()
+    {
+        // The table lives inside EnsureSchema's CREATE TABLE IF NOT EXISTS command string — which runs on
+        // EVERY open — so an existing database gets it on next launch with no MigrateSchema entry, and a
+        // second open over the same file is a no-op that must not throw.
+        Assert.True(TableExists(_ctx.GetConnection(), "AgentTimelineEvents"));
+
+        using var reopened = new SqliteContext(_dbPath);
+        Assert.True(TableExists(reopened.GetConnection(), "AgentTimelineEvents"));
+    }
+
+    [Fact]
+    public void AgentTimelineEvents_HasExactlyTheMetadataColumns()
+    {
+        // The audit table's privacy contract as a schema assertion: adding ANY column — an ExtraJson, a Path,
+        // an ArgsHash — fails here rather than passing review.
+        string[] expected =
+        [
+            "Id", "SchemaVersion", "RunId", "StepId", "Seq", "Kind", "Surface", "Decision", "Outcome",
+            "ToolName", "ToolClass", "PluginId", "ArgsChars", "ResultChars", "DurationMs", "CreatedAt",
+        ];
+
+        using var cmd = _ctx.GetConnection().CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(AgentTimelineEvents)";
+        var actual = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            actual.Add(reader.GetString(1));
+
+        Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal), actual.OrderBy(c => c, StringComparer.Ordinal));
+    }
+
+    private static bool TableExists(Microsoft.Data.Sqlite.SqliteConnection conn, string table)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@n";
+        cmd.Parameters.AddWithValue("@n", table);
+        return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
     }
 
     public void Dispose()

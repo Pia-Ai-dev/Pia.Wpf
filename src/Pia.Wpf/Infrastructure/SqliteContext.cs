@@ -328,6 +328,39 @@ public class SqliteContext : IDisposable
             );
 
             CREATE INDEX IF NOT EXISTS IX_AgentSteps_RunId ON AgentSteps(RunId, Ordinal);
+
+            CREATE TABLE IF NOT EXISTS AgentTimelineEvents (
+                Id                  TEXT PRIMARY KEY,
+                SchemaVersion       INTEGER NOT NULL DEFAULT 1,
+                RunId               TEXT    NOT NULL,
+                -- StepId is deliberately NOT a foreign key. ReplaceStepsAsync DELETEs every AgentSteps row
+                -- for the run and re-inserts on EVERY replan, keeping only the Done ones: a CASCADE would
+                -- wipe the audit trail of the steps that already ran, and a non-cascading FK would make that
+                -- DELETE throw into a swallowing Safe* wrapper, leaving the run executing a stale plan. A
+                -- dangling StepId is the correct outcome here — the trail outlives the plan row it names.
+                StepId              TEXT    NULL,
+                -- Monotonic per RUN, allocated in memory at emit time. NOT a timestamp: DateTime.UtcNow has
+                -- ~1 ms resolution on Windows and several tool calls in one round finish faster than that.
+                Seq                 INTEGER NOT NULL,
+                Kind                INTEGER NOT NULL,
+                Surface             INTEGER NOT NULL,
+                Decision            INTEGER NOT NULL,
+                Outcome             INTEGER NOT NULL,
+                ToolName            TEXT    NOT NULL,
+                ToolClass           INTEGER NOT NULL,
+                PluginId            TEXT    NULL,
+                -- METADATA ONLY (03 §3): lengths, never content. No args, no results, no paths, no hashes,
+                -- and deliberately no ExtraJson — a free-text column on an audit table is where payloads go
+                -- to hide, so the column list is asserted exactly by a test rather than left to review.
+                ArgsChars           INTEGER NULL,
+                ResultChars         INTEGER NULL,
+                DurationMs          INTEGER NULL,
+                CreatedAt           TEXT    NOT NULL,
+                FOREIGN KEY (RunId) REFERENCES AgentRuns(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AgentTimelineEvents_RunId     ON AgentTimelineEvents(RunId, Seq);
+            CREATE INDEX IF NOT EXISTS IX_AgentTimelineEvents_CreatedAt ON AgentTimelineEvents(CreatedAt);
             """;
         command.ExecuteNonQuery();
 

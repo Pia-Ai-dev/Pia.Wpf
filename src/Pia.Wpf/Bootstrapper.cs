@@ -466,6 +466,10 @@ public static class Bootstrapper
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IAssistantChatService, AssistantChatService>();
         services.AddSingleton<IAgentRunService, AgentRunService>();
+        // The per-run audit timeline (Batch 03). Singleton for the same reason AgentRunService is: it owns a
+        // dedicated SQLite connection and a per-run Seq allocator, and a second instance would allocate
+        // colliding sequence numbers for the same run.
+        services.AddSingleton<IAgentTimelineService, AgentTimelineService>();
         // Assistant turn collaborators (extracted from AssistantViewModel).
         services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
         services.AddTransient<IChatTitleService, ChatTitleService>();
