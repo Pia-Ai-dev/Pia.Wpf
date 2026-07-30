@@ -1,51 +1,80 @@
-# Batch 02 — Cost ledger (price table → `CostUsd`)
+# Batch 02 — Remove `CostUsd` (pricing withdrawn)
 
-**Phase 2 · Size S · Work on `feature/agent-run-spine`** (the only ref this system was built on — see the
+**Phase 2 · Size XS · Work on `feature/agent-run-spine`** (the only ref this system was built on — see the
 chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
-The run ledger already accrues input/output tokens + wall-clock live (plan §5, Q7 transparency). Cost is the one
-column left unpopulated — the panel renders `CostUsd` only when non-null, and today nothing sets it.
+**This batch used to be "price table populates `CostUsd`". That is withdrawn by decision, 2026-07-30.** Pia
+will not show a money figure for a run. The batch is now the opposite of what it was: it *removes* the
+half-built pricing seam so nothing later mistakes it for a plan.
 
-Two inputs got trustworthy in the hardening batch: `wallClockMs` is now accumulated **active** time (a parked
-run no longer reports the hours it sat waiting), and plan/replan/verify/single-turn-fallback turns all accrue
-run-level, so the token total is complete. What is still missing is per-phase attribution — every non-step turn
-lands in the same run-level total with no marker distinguishing planning from verifying.
+## Why pricing was withdrawn
+
+A price figure Pia can compute is a figure Pia cannot stand behind:
+
+- **Pia Cloud** — the client cannot know what a turn costs; only the server can. The default provider would
+  therefore be the one with a permanently blank cost column.
+- **Custom / OpenAI-compatible / vLLM / Azure** — unknowable by construction, or per-agreement. Azure's label
+  is a *deployment* name, not a model id.
+- **Nothing arrives from the wire.** `AiClientService.BuildFinishedItem` builds `UsageDetails` from
+  input/output counts it aggregated itself; no provider-reported cost or credit field is parsed anywhere, and
+  OpenRouter's spend value is inside the raw representation the adapter drops.
+- So the only possible source was a **bundled static table**, which goes stale silently and reads to a user
+  like a bill rather than a guess. Publishing an estimate that drifts is worse than publishing nothing.
+
+The ledger's substance was never the money. Tokens and **active** wall-clock are exact for every provider,
+and they are what the strip already shows.
 
 ## Goal
 
-Populate `Ledger.CostUsd` from a per-provider/per-model price table so the run-progress ledger strip shows a live
-running cost, per-step and total.
+`CostUsd` no longer exists — not in the DTOs, not in the persisted ledger, not in the UI, not as a TODO.
 
-## Key seams
+## The seams to remove
 
-- `RunProgressViewModel.cs:151` — `CostUsd = ledger.CostUsd; // TODO Phase 2: price table populates cost`
-  (the line moved as the panel grew; it is the only `CostUsd` read in the UI).
-- `AgentRunService.AddUsageAsync` / the `Ledger`/`StepLedger` DTOs — where token deltas are accrued; the natural
-  place to also accrue a cost delta once a price lookup exists.
-- The model label rides on `Finished(UsageDetails?, string Model, …)` (`Models/ChatStreamItem.cs`) — the per-round
-  usage carries the model, so cost can be computed at accrual time.
-- `AiProvider` — provider identity/type; the price table keys off provider + model.
+| Site | What is there |
+|---|---|
+| `Services/AgentRunService.cs:819` | `Ledger.CostUsd` — the persisted DTO field |
+| `ViewModels/RunProgressViewModel.cs:105` | `private double? _costUsd;` — the `[ObservableProperty]` backing field |
+| `ViewModels/RunProgressViewModel.cs:212` | `CostUsd = ledger.CostUsd; // TODO Phase 2: price table populates cost` |
+| `ViewModels/RunProgressViewModel.cs:465` | `if (CostUsd is { } cost) parts.Add($"${cost:0.##}");` in `FormatLedger` |
+| `ViewModels/RunProgressViewModel.cs:482` | `CostUsd` on the VM's mirror of the ledger DTO |
+| `Models/AgentRun.cs:49` | the `costUsd?` term in the `LedgerJson` shape comment |
 
-## Decisions to resolve
+That is the whole surface. There is no price table, no rate constant, no settings entry, and no test that
+asserts a cost — nothing else was built in this direction.
 
-- **Price source:** a static bundled table (per model, input/output $/1M tokens) vs. a user-editable setting.
-  Recommend a static table with an override hook; note staleness.
-- **Where cost is computed:** at accrual (`AddUsageAsync` stores a cost delta into the ledger) vs. at render
-  (VM multiplies tokens × rate). Recommend at accrual so `LedgerJson` is self-describing and headless runs record
-  cost too.
-- **Unknown model/provider:** leave `CostUsd` null (panel already hides it) — never guess.
+## Persisted-data compatibility
+
+`JsonOptions` sets only `PropertyNamingPolicy` — no `IgnoreNullValues` — so **every ledger written so far
+carries a literal `"costUsd": null`**. After the removal:
+
+- writes stop emitting the key;
+- reads ignore it, because `System.Text.Json` skips unknown members by default.
+
+No migration, no schema bump, no reader shim. Confirm this with a round-trip test over a legacy JSON string
+that still contains `"costUsd": 0.42` — it must parse, and the tokens/time must survive.
 
 ## Guardrails
 
-- Additive only; `LedgerJson` stays backward-compatible (append fields, F5 camelCase).
-- Cost is best-effort metadata beside the ledger, never on a run's critical path.
-- No sensitive data (model names are fine; nothing user-content here).
+- Removal only. Do not add per-phase attribution, cache-token classes, or any other ledger field here —
+  those are separate future batches, and one of them is what makes a ledger *more* honest, not richer.
+- `LedgerSummary` keeps its `Tokens · seconds` shape; only the `$…` segment disappears.
+- No currency symbol, no `Usd`, no "est." anywhere in the run panel.
 
 ## Tests
 
-- Accrual computes the expected cost for a known model; unknown model → null cost, tokens still accrue.
-- Round-trips through `LedgerJson` (writer/reader camelCase parity with `RunProgressViewModel`).
+- `FormatLedger` renders `Tokens · Ns` and never a `$` segment.
+- Legacy `LedgerJson` containing `costUsd` deserializes cleanly; input/output tokens and `wallClockMs` are
+  unchanged.
+- Existing `RunProgressViewModelTests` stay green (none of them referenced cost).
 
 ## Acceptance
 
-The ledger strip shows a live cost for known providers; unknown providers show tokens/time only; build green.
+`grep -ri costusd src tests` returns nothing; the ledger strip shows tokens and active time only; build green
+in Debug **and** Release at `0 Warning(s)`.
+
+## If a real cost figure is ever wanted
+
+It does not come back as a client-side table. The prerequisite is the **provider reporting spend on the
+wire** — Pia Cloud returning cost or credits in its usage payload, and `AiClientService` recovering
+OpenRouter's from the raw representation. Accrue what a provider states; show nothing otherwise. That is a
+server work item first, and out of scope for this roadmap.

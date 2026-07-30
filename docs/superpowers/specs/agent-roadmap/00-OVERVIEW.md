@@ -280,7 +280,7 @@ each other by number. Read the **Rank** column for priority.
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
 | **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2232 / **0 failed** / 1 skipped on the merged tree, 2026-07-30, which also cleared Batch 12's never-executed facts. What a unit suite cannot cover remains: a real provider round — see the callout above | — | S | a Windows runner + a live provider |
-| 2 | 02 | [Cost ledger](02-cost-ledger.md) — price table populates `CostUsd` | 2 | S | — |
+| 2 | 02 | [Remove `CostUsd`](02-cost-ledger.md) — pricing **withdrawn** by decision 2026-07-30; the batch now deletes the half-built seam | 2 | XS | — |
 | 3 | 03 | [Audit timeline](03-audit-timeline.md) — per-tool decision trace (plan §11) | 2 | M–L | — |
 | 4 | 04 | [Autonomy policy](04-autonomy-policy.md) — `PolicyJson` per-run approval policy | 2 | M–L | MCP gate |
 | 5 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
