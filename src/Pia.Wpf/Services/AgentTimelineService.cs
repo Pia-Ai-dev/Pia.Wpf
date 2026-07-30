@@ -24,13 +24,23 @@ namespace Pia.Services;
 /// allocation.
 /// </para>
 /// <para>
-/// <b>TWO locks, and the split is what makes the paragraph above TRUE.</b> <see cref="_gate"/> guards only the
+/// <b>TWO locks.</b> <see cref="_gate"/> guards only the
 /// in-memory allocator state (<c>_slots</c>, <c>_writeTail</c>); <see cref="_ioGate"/> guards every use of the
-/// connection. With a single lock the fast path would block behind an <c>INSERT</c> — or behind the retention
+/// connection. With a single lock EVERY emit would block behind an <c>INSERT</c> — or behind the retention
 /// prune's whole-table <c>DELETE</c> — on a file shared with three other connections at
-/// <c>busy_timeout=3000</c>, i.e. exactly the message-pump stall the design claims to avoid. Lock ordering is
+/// <c>busy_timeout=3000</c>. Lock ordering is
 /// one-way: <see cref="_ioGate"/> may be taken while holding <see cref="_gate"/> (the first-touch seed query,
 /// the only nesting), never the reverse.
+/// </para>
+/// <para>
+/// <b>What the split does NOT do, stated rather than implied.</b> It makes the STEADY-STATE emit free of I/O
+/// locks; it does not make the fast path lock-free at FIRST TOUCH. <c>SeedSlotLocked</c> takes
+/// <see cref="_ioGate"/> — and on the very first use opens the connection and runs a <c>PRAGMA</c> —
+/// synchronously on the CALLER's thread, which for the interactive gate is the UI thread. The bound is one
+/// indexed aggregate per RUN (plus one retry per emit while a seed keeps failing), and the worst case is
+/// waiting out whatever the writer or the prune currently holds. Moving the seed onto the writer thread would
+/// mean allocating <c>Seq</c> before knowing where a parked segment stopped — the exact correctness property
+/// the seed exists for — so the trade is declined, not hidden.
 /// </para>
 /// <para>
 /// <b>Two bounds.</b> A hard per-run cap of <see cref="MaxEventsPerRun"/> real rows plus one synthetic
@@ -73,6 +83,10 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         public long NextSeq;
         public int Count;
         public bool CapNoted;
+
+        /// <summary>The seed query threw. The slot is still cached (so the segment keeps a usable sequence) but
+        /// it is NOT trusted: the next emit re-attempts the aggregate.</summary>
+        public bool SeedFailed;
     }
 
     public AgentTimelineService(SqliteContext context, ILogger<AgentTimelineService> logger)
@@ -226,10 +240,12 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
     /// </summary>
     private RunSlot SeedSlotLocked(Guid runId)
     {
-        if (_slots.TryGetValue(runId, out var existing))
+        if (_slots.TryGetValue(runId, out var existing) && !existing.SeedFailed)
             return existing;
 
-        var slot = new RunSlot();
+        // Reuse the slot on a RETRY: it may already have handed out Seq values from its in-memory-only
+        // sequence, and those cannot be walked back.
+        var slot = existing ?? new RunSlot();
         try
         {
             lock (_ioGate)
@@ -241,21 +257,29 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                 using var reader = cmd.ExecuteReader();
                 if (reader.Read())
                 {
-                    slot.NextSeq = reader.GetInt64(0);
-                    slot.Count = reader.GetInt32(1);
+                    // Math.Max, not assignment, for the retry case above: the reconciled value must never move
+                    // the sequence BACKWARDS over rows this segment already emitted.
+                    slot.NextSeq = Math.Max(slot.NextSeq, reader.GetInt64(0));
+                    slot.Count = Math.Max(slot.Count, reader.GetInt32(1));
                 }
+
+                slot.SeedFailed = false;
             }
         }
         catch (Exception ex)
         {
-            // A seeding fault must not fail the step either: an in-memory-only sequence still orders THIS
-            // segment correctly, which is strictly better than refusing to record.
-            _logger.LogWarning(ex, "Timeline seq seeding failed for run {RunId}", runId);
+            // A seeding fault must not fail the step. But it must not be cached AS A SUCCESSFUL SEED either:
+            // a run parked at 40 rows and resumed after a failed seed would restart Seq at 1, duplicating the
+            // parked segment's values (ORDER BY Seq then interleaves the two segments by rowid tie-break) and
+            // resetting a per-run cap it had already reached. Flagged, so the next emit re-attempts it.
+            slot.SeedFailed = true;
+            _logger.LogWarning(ex, "Timeline seq seeding failed for run {RunId}; retrying on the next emit", runId);
         }
 
         // A row count above the cap can only mean the marker is already in the table (rows come from here
-        // alone), so do not append a second one.
-        slot.CapNoted = slot.Count > MaxEventsPerRun;
+        // alone), so do not append a second one. ORed, never re-derived: a retry must not clear a cap that
+        // already fired against the in-memory count this session.
+        slot.CapNoted = slot.CapNoted || slot.Count > MaxEventsPerRun;
         _slots[runId] = slot;
         return slot;
     }

@@ -124,6 +124,50 @@ public sealed class AgentTimelineServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AFailedSeedIsRetried_SoAResumedRunNeverDuplicatesSeq()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        var scope = new AgentTimelineScope(_service, run.Id, stepId: null);
+        for (var i = 0; i < 3; i++)
+            scope.Emit(ToolGateSurface.Unattended, "write_file", ToolClass.Files, null, ToolGateDecision.GrantedByName, AgentTimelineOutcome.Ok);
+        await _service.DrainAsync();
+        _service.Dispose();
+
+        // Make the seed query FAIL for a resumed run, the way SQLITE_BUSY or an I/O error would: rename the
+        // table out from under a fresh instance. A rename (not a drop) is what keeps the parked segment's three
+        // rows alive, which is the whole point — the hazard is the resumed segment colliding with them.
+        Exec("ALTER TABLE AgentTimelineEvents RENAME TO AgentTimelineEvents_hidden;");
+
+        using var second = new AgentTimelineService(_ctx, NullLogger<AgentTimelineService>.Instance);
+        var resumed = new AgentTimelineScope(second, run.Id, stepId: null);
+        resumed.Emit(ToolGateSurface.Unattended, "write_file", ToolClass.Files, null, ToolGateDecision.GrantedByName, AgentTimelineOutcome.Ok);
+        await second.DrainAsync();
+
+        // Table back: the store is readable again and the slot must NOT still be trusting its failed seed.
+        Exec("ALTER TABLE AgentTimelineEvents_hidden RENAME TO AgentTimelineEvents;");
+
+        resumed.Emit(ToolGateSurface.Unattended, "write_file", ToolClass.Files, null, ToolGateDecision.GrantedByName, AgentTimelineOutcome.Ok);
+
+        var rows = await second.GetForRunAsync(run.Id, ct);
+
+        // Caching the failed seed (NextSeq = 0) restarted the sequence at 1, so this row landed as Seq 2 —
+        // a DUPLICATE of the parked segment's second row, and ORDER BY Seq then interleaved the two segments
+        // by rowid tie-break. Retrying the aggregate is what makes it 4.
+        Assert.Equal(new long[] { 1, 2, 3, 4 }, rows.Select(r => r.Seq).ToArray());
+        Assert.Equal(rows.Count, rows.Select(r => r.Seq).Distinct().Count());
+    }
+
+    /// <summary>DDL against the SHARED context connection — the store holds its own, so this is how a test
+    /// changes the world under it.</summary>
+    private void Exec(string sql)
+    {
+        using var cmd = _ctx.GetConnection().CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
+    }
+
+    [Fact]
     public async Task Emit_NeverThrows_WhenTheStoreIsBroken()
     {
         var ct = TestContext.Current.CancellationToken;
