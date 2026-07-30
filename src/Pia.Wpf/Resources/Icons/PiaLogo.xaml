@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Pia logo as vector geometry, for every in-app surface.
+
+  Path data is verbatim from pia-logo-kurz_schwarz_RGB.svg (the "P" mark) and
+  pia-logo_schwarz_RGB.svg (the full "pia" wordmark) in this folder; the wordmark's
+  <polygon> is rewritten as M/L/Z because WPF's mini-language has no polygon
+  form. FillRule="Nonzero" is SVG's default — WPF's default is EvenOdd, which
+  fills the counter of the P.
+
+  Prefer a Path with Fill="{DynamicResource PiaAccentBrush}" so the mark follows
+  the theme accent. PiaMarkImage is only for slots that insist on an ImageSource
+  (ui:TitleBar.Icon and friends), so it carries a fixed brand blue.
+
+  scripts/generate-brand-assets.ps1 rasterises the same path data into Pia.ico
+  and the MSI banner strip — keep the two in sync.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Short mark: just the P. Ink bounds 96.01 x 104. -->
+  <PathGeometry x:Key="PiaMarkGeometry"
+                FillRule="Nonzero"
+                Figures="M152.1,121.58h-40.43c-15.32,0-27.81,12.49-27.81,27.81v76.19l20-11.55v-64.52c0-4.64,3.82-8.46,8.46-8.46h39.13c4.64,0,8.41,3.82,8.41,8.46v22.16c0,4.64-3.77,8.41-8.41,8.41h-35.11v19.5h35.77c15.32,0,27.76-12.44,27.76-27.76v-22.43c0-15.32-12.43-27.81-27.76-27.81Z" />
+
+  <!-- Full wordmark: "pia". Ink bounds 244 x 107.44. -->
+  <PathGeometry x:Key="PiaWordmarkGeometry"
+                FillRule="Nonzero"
+                Figures="M152.1,121.58h-40.43c-15.32,0-27.81,12.49-27.81,27.81v76.19l20-11.55v-64.52c0-4.64,3.82-8.46,8.46-8.46h39.13c4.64,0,8.41,3.82,8.41,8.46v22.16c0,4.64-3.77,8.41-8.41,8.41h-35.11v19.5h35.77c15.32,0,27.76-12.44,27.76-27.76v-22.43c0-15.32-12.43-27.81-27.76-27.81Z M195.86,202.92L215.86,191.37L215.86,118.14L195.86,129.69Z M300.05,121.58h-40.43c-15.32,0-27.76,12.49-27.76,27.81v22.43c0,15.32,12.43,27.76,27.76,27.76h35.74v-19.5h-35.09c-4.64,0-8.41-3.77-8.41-8.41v-22.16c0-4.64,3.77-8.46,8.41-8.46h39.13c4.64,0,8.46,3.82,8.46,8.46v53.41l20-9.33v-44.2c0-15.32-12.49-27.81-27.81-27.81Z" />
+
+  <!-- Fixed brand blue (PiaAccentColor, light theme). Only for IconElement
+       slots, which take an ImageSource and so cannot be theme-tinted. -->
+  <DrawingImage x:Key="PiaMarkImage">
+    <DrawingImage.Drawing>
+      <GeometryDrawing Brush="#2563EB" Geometry="{StaticResource PiaMarkGeometry}" />
+    </DrawingImage.Drawing>
+  </DrawingImage>
+
+</ResourceDictionary>

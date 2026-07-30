@@ -4,11 +4,12 @@
              xmlns:controls="clr-namespace:Pia.Controls"
              Focusable="False">
   <Grid>
-    <!-- The two built-in Pia personas use the app icon (same as the assistant chat avatar). -->
-    <Image x:Name="PiaIcon"
-           Source="pack://application:,,,/Resources/Icons/Pia.ico"
-           Stretch="Uniform"
-           Visibility="Collapsed" />
+    <!-- The two built-in Pia personas use the Pia mark (same as the assistant chat avatar). -->
+    <Path x:Name="PiaIcon"
+          Data="{StaticResource PiaMarkGeometry}"
+          Fill="{DynamicResource PiaAccentBrush}"
+          Stretch="Uniform"
+          Visibility="Collapsed" />
     <!-- All other personas keep their emoji glyph, rendered in color via the OS text stack. -->
     <controls:EmojiPresenter x:Name="EmojiImage"
                              HorizontalAlignment="Center"

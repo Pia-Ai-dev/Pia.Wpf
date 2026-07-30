@@ -24,7 +24,9 @@ public class PiaTileImageIcon : ImageIcon
         border.SetResourceReference(Border.BackgroundProperty, "BgCanvasBrush");
         if (image is FrameworkElement fe)
         {
-            fe.Margin = new Thickness(1);
+            // The mark is tight-cropped to its ink, so the tile supplies the
+            // inset that an app-icon lockup needs — roughly two thirds glyph.
+            fe.Margin = new Thickness(3);
         }
         return border;
     }

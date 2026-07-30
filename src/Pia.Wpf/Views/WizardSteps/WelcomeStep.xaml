@@ -54,6 +54,17 @@
 
         <!-- Text content -->
         <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="24,0,0,0">
+          <!-- Wordmark — the one screen with room for the full logo. Width is
+               explicit so the Path measures to the mark instead of the column,
+               which would centre it under a left-aligned heading. 68x30 is the
+               geometry's own 2.271 aspect. -->
+          <Path Data="{StaticResource PiaWordmarkGeometry}"
+                Fill="{DynamicResource PiaAccentBrush}"
+                Stretch="Uniform"
+                Width="68" Height="30"
+                HorizontalAlignment="Left"
+                Margin="0,0,0,14" />
+
           <!-- Heading -->
           <TextBlock Text="{loc:Str Wizard_Welcome_Title}"
                      Style="{StaticResource H1TextStyle}"

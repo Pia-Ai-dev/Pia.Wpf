@@ -17,6 +17,9 @@
         <!-- Pia design tokens (light baseline; ThemeService swaps to Dark at runtime).
              Must load BEFORE PiaStyles so its StaticResource lookups resolve. -->
         <ResourceDictionary Source="Resources/Theme/PiaTokens.Light.xaml" />
+
+        <!-- Logo geometry, shared by the avatar, title bars and persona glyphs. -->
+        <ResourceDictionary Source="Resources/Icons/PiaLogo.xaml" />
         <ResourceDictionary Source="Resources/Theme/PiaStyles.xaml" />
 
         <!-- Custom Styles -->

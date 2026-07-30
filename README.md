@@ -1,8 +1,7 @@
 <p align="center">
-  <img src="src/Pia.Wpf/Resources/Icons/Pia.ico" width="96" alt="Pia icon" />
+  <img src="src/Pia.Wpf/Resources/Icons/pia-logo_blau_RGB.svg" width="260" alt="Pia" />
 </p>
 
-<h1 align="center">Pia</h1>
 <p align="center"><strong>Personal Intelligent Assistant</strong></p>
 
 <p align="center">

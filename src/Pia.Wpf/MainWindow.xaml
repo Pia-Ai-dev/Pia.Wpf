@@ -201,7 +201,7 @@
                  Title="{Binding WindowTitle}"
                  CloseWindowByDoubleClickOnIcon="True">
       <ui:TitleBar.Icon>
-        <piactl:PiaTileImageIcon Source="pack://application:,,,/Resources/Icons/Pia.ico"
+        <piactl:PiaTileImageIcon Source="{StaticResource PiaMarkImage}"
                                  Width="18" Height="18" />
       </ui:TitleBar.Icon>
     </ui:TitleBar>

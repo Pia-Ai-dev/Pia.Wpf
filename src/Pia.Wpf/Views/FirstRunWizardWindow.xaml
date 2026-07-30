@@ -40,7 +40,7 @@
                  ShowMaximize="False"
                  ShowMinimize="False">
       <ui:TitleBar.Icon>
-        <ui:ImageIcon Source="pack://application:,,,/Resources/Icons/Pia.ico" />
+        <ui:ImageIcon Source="{StaticResource PiaMarkImage}" />
       </ui:TitleBar.Icon>
     </ui:TitleBar>
 

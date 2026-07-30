@@ -3,8 +3,9 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
-  <!-- Pia avatar — 28x28 rounded square containing the Pia app icon,
-       styled like an iOS app icon (~22% corner radius). Theme-neutral.
+  <!-- Pia avatar — 28x28 rounded square containing the Pia mark, styled like an
+       iOS app icon (~22% corner radius). The mark is drawn in the theme accent,
+       so it stays legible on the light and the dark canvas.
        Targets ContentControl because Border has no Template DP. -->
   <Style x:Key="PiaAvatarStyle" TargetType="ContentControl">
     <Setter Property="Width"     Value="28"/>
@@ -19,9 +20,13 @@
               <DropShadowEffect Color="#0F1729" Opacity="0.18"
                                 BlurRadius="6" ShadowDepth="1"/>
             </Border.Effect>
-            <Image Source="pack://application:,,,/Resources/Icons/Pia.ico"
-                   Stretch="Uniform"
-                   Margin="2"/>
+            <!-- DynamicResource, not Static: this is the only cross-dictionary
+                 lookup inside a ControlTemplate, and a StaticResource there
+                 would depend on PiaLogo.xaml being merged first. -->
+            <Path Data="{DynamicResource PiaMarkGeometry}"
+                  Fill="{DynamicResource PiaAccentBrush}"
+                  Stretch="Uniform"
+                  Margin="5"/>
           </Border>
         </ControlTemplate>
       </Setter.Value>
