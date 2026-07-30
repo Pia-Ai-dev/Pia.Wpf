@@ -23,13 +23,17 @@ namespace Pia.Services.Interfaces;
 public interface IUiDispatcher
 {
     /// <summary>
-    /// Queues <paramref name="action"/> onto the UI thread and returns immediately. Always a queue —
-    /// even when the caller is already on the UI thread — so the caller's remaining statements still
-    /// run first. Runs inline when there is no live <c>Application</c>.
+    /// Queues <paramref name="action"/> onto the UI thread and returns immediately. With a live
+    /// <c>Application</c> this is always a queue — even when the caller is already on the UI thread — so
+    /// the caller's remaining statements run first; that is the whole difference from
+    /// <see cref="PostOrRun"/>. Runs inline when there is no live <c>Application</c>, and the test double
+    /// runs inline unconditionally, so the queue is a production ordering guarantee and NOT something a
+    /// caller may depend on for correctness. Do not use where the next statement reads state the action
+    /// mutates — that is <see cref="PostAsync"/>.
     /// <para>
-    /// Fire-and-forget: nothing can observe a failure, so the implementation logs one rather than
-    /// letting it escape into an event handler. Use from handlers that cannot await. Do not use where
-    /// the next statement reads state the action mutates — that is <see cref="PostAsync"/>.
+    /// Fire-and-forget: nothing can observe a failure, so the implementation logs one — from the marshal,
+    /// from the inline fallback, and from the queued execution — rather than letting it escape into an
+    /// event handler. Use from handlers that cannot await.
     /// </para>
     /// </summary>
     void Post(Action action);

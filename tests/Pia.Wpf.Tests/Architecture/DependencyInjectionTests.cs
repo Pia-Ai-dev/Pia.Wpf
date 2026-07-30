@@ -17,16 +17,24 @@ public class DependencyInjectionTests
         // MeetingAttendeeViewModel, even with its base still dirty, because NetArchTest 1.3.2 does not
         // resolve base-type dependencies transitively.
         //
-        // AssistantViewModel is flagged DIRECTLY, and not for the dispatcher: it names
-        // System.Windows.Media.Imaging for the clipboard-image paste path (:7 using, the
-        // IAsyncRelayCommand<BitmapSource> property, its AsyncRelayCommand<BitmapSource> construction,
-        // and ExecuteHandleImagePasted(BitmapSource?)). NetArchTest matches dependencies by name
-        // prefix, so "System.Windows" catches "System.Windows.Media.Imaging.BitmapSource" — measured at
-        // full type-name depth. Closing that means moving the clipboard→attachment conversion out of the
-        // VM (call site: AssistantView.xaml.cs:153-154), which is a separate change. The dispatcher ban
-        // is still enforced for it, explicitly, by AssistantViewModel_MustNotReference_DispatcherOrApplication
+        // AssistantViewModel is flagged DIRECTLY, and not for the dispatcher. Its COMPLETE System.Windows
+        // dependency set was measured with Mono.Cecil over the built assembly, and it has TWO roots:
+        //   1. System.Windows.Media.Imaging.BitmapSource — the clipboard-image paste path (:7 using, the
+        //      IAsyncRelayCommand<BitmapSource> property, its AsyncRelayCommand<BitmapSource>
+        //      construction, and ExecuteHandleImagePasted(BitmapSource?)); member signatures only, no IL
+        //      site. Call site of the paste: AssistantView.xaml.cs:153-154.
+        //   2. System.Windows.Input.ICommand — two `callvirt ICommand::Execute(Object)` sites:
+        //      OnMeetingAttendeeSummarizeRequested (:622 SendMessageCommand.Execute(null)) and
+        //      CancelPendingActionCards (:832 card.CancelCommand.Execute(null)). Execute is declared on
+        //      ICommand, so a cast to the toolkit's IRelayCommand does NOT avoid it; closing this one
+        //      means calling the commands' own methods instead of going through the ICommand face.
+        // NetArchTest matches dependencies by name prefix, so "System.Windows" catches both at full
+        // type-name depth. BOTH must go before this exemption can be deleted — removing only the
+        // BitmapSource path turns the rule red again, naming AssistantViewModel. The dispatcher ban is
+        // still enforced for it, explicitly, by AssistantViewModel_MustNotReference_DispatcherOrApplication
         // below. (The comment this replaces claimed AssistantViewModel was flagged "transitively because
-        // it creates VoiceModeViewModel". That was never the mechanism.)
+        // it creates VoiceModeViewModel". That was never the mechanism — and the comment that replaced
+        // THAT one named only the BitmapSource half, which is the same class of error.)
         //
         // TranscriptOverlayViewModel and MeetingAttendeeViewModel were removed in Batch 12 Unit 2:
         // the base's DispatchToUi now goes through IUiDispatcher, so neither names System.Windows at
@@ -45,10 +53,13 @@ public class DependencyInjectionTests
     [Fact]
     public void AssistantViewModel_MustNotReference_DispatcherOrApplication()
     {
-        // AssistantViewModel is exempt from the blanket System.Windows rule above, but ONLY for
-        // BitmapSource. Keep the dispatcher ban enforced for it explicitly, so nobody reintroduces
-        // App.Current.Dispatcher under cover of that exemption. Measured before the migration: this
-        // failed, naming AssistantViewModel — so it is not vacuous.
+        // AssistantViewModel is exempt from the blanket System.Windows rule above, but only for
+        // BitmapSource and ICommand (both roots measured — see that rule's comment) and NEVER for the
+        // Dispatcher or Application. Keep the dispatcher ban enforced for it explicitly, so nobody
+        // reintroduces App.Current.Dispatcher under cover of that exemption. Measured before the
+        // migration: this failed, naming AssistantViewModel — so it is not vacuous. Measured as an
+        // instrument after it: the same two prefixes flag OutputService and UiDispatcherService, which do
+        // read Application.Current.Dispatcher.
         var target = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .And().HaveName("AssistantViewModel")

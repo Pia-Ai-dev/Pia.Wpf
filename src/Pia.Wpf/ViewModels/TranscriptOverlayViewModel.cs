@@ -416,11 +416,18 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     protected void DispatchToUi(Action action)
     {
-        // The try/catch stays HERE, wrapped around the call, because it also covers an exception
-        // thrown by `action` on the inline path — and two callers rely on that: RelabelSpeaker (:321)
-        // and MeetingAttendeeViewModel.OnServiceStateChanged (:362) have no try/catch of their own.
-        // (AddUtterance :166 and ApplyReassignments :256 do.) Under the InlineUiDispatcher test double,
-        // which catches nothing, this is the only net.
+        // The try/catch stays HERE, wrapped around the call, so nothing thrown by `action` on the inline
+        // path can escape into a caller that has no net of its own: RelabelSpeaker (:321) and
+        // MeetingAttendeeViewModel.OnServiceStateChanged (:362) have none. (AddUtterance :166 and
+        // ApplyReassignments :256 do.)
+        //
+        // In PRODUCTION it is now the OUTER of two nets and will rarely fire: UiDispatcherService.PostOrRun
+        // has its own try/catch around the inline call, so an action that throws on the UI thread is logged
+        // there as "UI dispatch failed (PostOrRun)" under the Pia.Services.UiDispatcherService category,
+        // not here — and a queued action's failure is logged there too. Keeping this catch is still right:
+        // it is the only net under the InlineUiDispatcher test double, which catches nothing, and it is
+        // what makes an exception from a *future* propagating IUiDispatcher land in the attendee's own
+        // logger. Do not read "Dispatcher invoke failed" as the string a release support bundle will show.
         try
         {
             _uiDispatcher.PostOrRun(action);
