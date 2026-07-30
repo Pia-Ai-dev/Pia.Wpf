@@ -800,19 +800,22 @@ each test's comment.
    `AssistantView.xaml` places `<assistant:RunProgressPanel>` as a **plain element** with no `Template`
    ancestor, so `AssistantView.InitializeComponent()` constructs the panel and runs its own
    `InitializeComponent()` — the Expander's non-deferred markup, its `Header` and its two `TextBlock`s have been
-   parsed by the existing `AssistantViewParseTests` since they landed. The genuinely uncovered half was the
-   **deferred row template**, and the review fix pass added
-   `RunProgressPanel_RendersATimelineRow_WithItsStepOutcomeAndDecision`, which `LoadContent()`s the real
-   `ItemTemplate` and pins all five row paths (`TimeLabel`, `StepLabel`, `ToolName`, `OutcomeSuffix`,
-   `DecisionLabel`) plus `HasNoTimeline`'s visibility. **What is left for a human:** only the `loc:Str` header,
-   which binds `Header` (invisible to a logical walk — the same documented limitation the parse suite already
-   records for its 18 non-`Text` usages), and the end-to-end "rows appear for a real run" confidence check.
+   parsed by the existing `AssistantViewParseTests` since they landed. The genuinely uncovered half is the
+   **deferred row template**. The review fix pass wrote that fact
+   (`RunProgressPanel_RendersATimelineRow_WithItsStepOutcomeAndDecision` — `LoadContent()` over the real
+   `ItemTemplate`, pinning `TimeLabel`/`StepLabel`/`ToolName`/`OutcomeSuffix`/`DecisionLabel` plus
+   `HasNoTimeline`) and then **withdrew it**: it passes on its own but raised the full-gate failure rate from
+   0/3 to 2/3 by amplifying a pre-existing `WpfStaHost` fragility (a 60 s timeout inside `Pump()`, victim =
+   whichever test pumps next; it fires without this fact too). **So this item stays open**, narrowed: the row
+   template's five paths, the `loc:Str` header (which binds `Header`, invisible to a logical walk — the same
+   limitation the parse suite records for its 18 non-`Text` usages), and the end-to-end "rows appear for a real
+   run" check. Re-landing the fact needs the host fixed first.
 2. ~~**Every `StaticResource` in the new `DataTemplate` resolves.**~~ **DOES NOT APPLY to the template that
    shipped.** The row `DataTemplate` contains **no `StaticResource` at all** — only `DynamicResource` (which
    yields `null` rather than throwing) and `Binding`. The template-instantiation hazard this item was written
-   against therefore has no instance here, and item 1's new fact instantiates the template anyway. Retained only
-   as the rule for the NEXT change to this file: a `StaticResource` added inside the template throws when a user
-   first opens the expander, so either avoid one or extend that fact.
+   against therefore has no instance here. Retained only as the rule for the NEXT change to this file: a
+   `StaticResource` added inside the template throws when a user first opens the expander, so either avoid one
+   or land the item-1 fact first.
 3. **A real headless run's trace, after a restart.** Launch a background run, let it park at its budget, **quit
    and relaunch the app**, click *Continue*, then expand the trace. The rows from both segments must be present
    and in order with no duplicate positions — the live proof of T-SEQ-2's cross-process `Seq` seeding.

@@ -758,6 +758,19 @@ hermes-comparison §5/rec #5.
   path that could reach the other two deliberately exempts chats bearing a `Planned` run — precisely the runs a
   timeline is for — so the two older tables have no bound at all. Unchanged by design: giving them one is a
   retention decision about a user's own run history, not a fix.
+- **DISCOVERED, and it belongs to Batch 12: `WpfStaHost` does not tolerate another test.** The host is one
+  process-wide STA thread whose `Dispatcher.Run()` is *re-entered* when an exception escapes a queued operation
+  (its own comment says so), while every test drives it through `Dispatcher.PushFrame`. Adding an eighth
+  frame-pushing test to the `WpfApplicationStatic` collection took the full gate from **0/3 to 2/3 failing**;
+  a clean teardown in the new test only got it to 1/3. The signature is always identical — a **60 s timeout
+  inside `Pump()`**, i.e. the queue never reaching `SystemIdle` — and the victim is whichever test pumps next,
+  most often one of `UiDispatcherServiceTests`' two deliberately-throwing facts. **It is not caused by the new
+  test:** with that test SKIPPED the collection still failed 1 run in 3, on a fact the skipped test cannot
+  influence. Batch 03 therefore **withdrew** its row-render fact rather than ship a 2-in-3 red gate (see
+  `03-audit-timeline.impl.md` §9.1), which is why that manual-smoke item is still open. The file's own header
+  already warned that a hang would make `Dispatcher.Run()` the first suspect; this is that warning coming true.
+  Fixing it — one frame per test, or a host that does not re-enter `Run()` — unblocks both the withdrawn fact and
+  any future `View` test.
 - **Nothing measures UI-thread blocking, and no test can go red for it.** The store's two-lock split closes the
   mechanism by which a steady-state emit could stall the message pump, and the first emit of each run is now
   documented as the exception it always was (one indexed aggregate, on the caller's thread). But "Emit is cheap
