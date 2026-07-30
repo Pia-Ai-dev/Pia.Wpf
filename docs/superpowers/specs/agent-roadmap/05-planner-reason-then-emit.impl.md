@@ -515,10 +515,19 @@ they need a numeric readout; a CheckBox's label is the resx string.
 
 ### 7.2 `AssistantView.xaml`
 
-Append **after** the Scheduled `MaxReplans` `StackPanel` (currently ends at `:449`) and **before** the
-closing `</StackPanel>` of the tab's panel, so the two budget envelopes stay adjacent and the new knob reads
-as its own subject. Copy the exact shape of the working `Settings_MeetingBrowser_ShowWindow` CheckBox
-(`:348-353`) — `IsChecked` on a `CheckBox` is TwoWay by default, so no `Mode=TwoWay`:
+Insert **after** the interactive `AgentMaxReplans` `StackPanel` and **before** the
+`<!-- Scheduled / background-run budget -->` comment. Copy the exact shape of the working
+`Settings_MeetingBrowser_ShowWindow` CheckBox (`:348-353`) — `IsChecked` on a `CheckBox` is TwoWay by
+default, so no `Mode=TwoWay`:
+
+> **Corrected after review.** This block was first appended at the very BOTTOM of the tab, after the
+> Scheduled `MaxReplans` `StackPanel`, on the reasoning that "the two budget envelopes stay adjacent". They
+> do not: `Planning` is not a budget envelope. Placed there it fell inside the visual run of the
+> "Background & scheduled runs" section and, sharing `PiaSettingsSectionLabelStyle` with the individual
+> scheduled knob labels, read as a fourth *unattended-runs* option — while it is in fact global and doubles
+> the plan-turn cost of every INTERACTIVE Planned run too. It now sits in the un-headed interactive block that
+> the tab-level `Settings_Agent_Section_Description` already governs, and the scheduled section is contiguous
+> again. The XAML itself is unchanged; only its position moved.
 
 ```xml
             <!-- Planning (Batch 05): global, applies to interactive AND unattended runs. -->
@@ -555,8 +564,22 @@ Insert after the `Settings_Agent_MaxReplans_Description` entry in each file
 ```xml
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planung</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Vor der Planung nachdenken</value></data>
-  <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Fügt vor dem Erstellen des Plans einen kurzen werkzeugfreien Denkschritt hinzu, damit das Modell mit der von dir eingestellten Denkstufe arbeiten kann. Hilft bei Anbietern, die das Nachdenken abschalten, solange Werkzeuge aktiv sind – und verdoppelt die Kosten des Planungsschritts.</value></data>
+  <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Fügt vor dem Erstellen des Plans einen kurzen werkzeugfreien Denkschritt hinzu, damit das Modell mit dem von dir eingestellten Denkaufwand arbeiten kann. Hilft bei Anbietern, die das Nachdenken abschalten, solange Werkzeuge aktiv sind – und verdoppelt die Kosten des Planungsschritts.</value></data>
 ```
+
+> **Corrected after review.** The German description first said `der von dir eingestellten Denkstufe`.
+> "Denkstufe" names no control that exists: the localized German label for this setting is **Denkaufwand**
+> (`Dialog_PersonaEdit_ReasoningEffort`), so a German user went hunting for a control by a coined name, left
+> the provider's effort unset, and the toggle they had just enabled then did nothing on every run — the gate
+> returns `false` when `provider.ReasoningEffort` is null. Now `dem von dir eingestellten Denkaufwand`
+> (dative masculine — `der` → `dem`, hence the adjective ending changes too). The en and fr strings were
+> already consistent with their own labels and are untouched.
+>
+> Out of scope, still open: `ProviderEditContentDialog.xaml:96` — the dialog that actually sets
+> `AiProvider.ReasoningEffort`, i.e. the value this gate reads — has a **hardcoded English** `"Reasoning
+> effort"` label instead of a `loc:Str`. So the only localized "Denkaufwand" a German user can find is the
+> *persona* dialog's. Localizing it needs a new resx key in all three files (en/de/fr parity is test-enforced),
+> which is a separate change from this batch.
 
 `ViewStrings.fr.resx`:
 ```xml
@@ -763,3 +786,56 @@ Notes the implementing agent must honour in this file:
 4. **Mistral gets the split but never the boost** — *both* halves of the model list, not just the one D7
    originally described (D7, corrected below and accepted). Narrowing needs the flag to become a method taking
    `AiProvider`, which was rejected.
+
+---
+
+## 12. Polish pass (after the review-fix commit)
+
+Five reviewer nits survived `73e15e8`. Three were mutation escapes in the test suite, two were user-visible
+defects in the UI. Each escape was proved as a 2×2 — mutation applied against the **old** test (must stay
+green, or the nit was wrong) and against the **new** test (must red) — because "red after the fix" alone does
+not establish that the coverage was missing in the first place.
+
+1. **Truncation direction was unpinned.** The fixture was a homogeneous `new string('x', 10_000)`, so it could
+   not observe *which* 4000 chars survived. Mutating `text[..MaxAnalysisChars]` → `text[^MaxAnalysisChars..]`
+   — which hands the plan turn a conclusion with the reasoning that produced it cut away — left the old test
+   **green** (31/0). The fixture now brackets the filler with `HEAD-OF-ANALYSIS` / `TAIL-OF-ANALYSIS` and
+   asserts head-present + tail-absent; under the same mutation it reds with *"Assert.Contains() Failure:
+   Sub-string not found"*.
+   Separately, the length bound was loose: a correct run composes **exactly 4137** chars (goal 25 + wrapper 89
+   + cap 4000 + truncation marker 23), so the old bound of 5000 also passed with the cap raised to **4800**
+   (measured: 4937 chars). Bound tightened to 4300; the cap-raise mutation now reds with *"user prompt was
+   4937 chars"*.
+2. **The two degrade tests could not self-certify.** Neither `…ReasoningTurnThrows_StillProducesAValidPlan` nor
+   `…ReasoningTurnEmpty_StillProducesAValidPlan` asserted the reasoning turn had fired, so a gate that stopped
+   firing would leave them asserting nothing. Measured: the gate killed to `return false;` reds **10** tests in
+   this class and *neither of those two was among them*. Both now call `AssertReasoningTurns(1)`, which takes
+   the same mutation to **12** red.
+3. **`ShouldReasonFirstAsync`'s cancellation guard had no test.** Note the asymmetry with the guard in
+   `TryReasonAsync` recorded in §10a.7: removing *that* dedicated `catch` does not red anything, because
+   `ct.ThrowIfCancellationRequested()` in its general catch still propagates. `ShouldReasonFirstAsync` has **no
+   such backstop** — its general catch just returns `false` — so deleting its dedicated `catch` silently
+   converts a cancelled settings read into a gate failure and planning proceeds on a cancelled token. Measured:
+   that deletion reds **nothing** (31/0) against the old suite. New test
+   `PlanAsync_GateOn_SettingsReadCancelled_Rethrows` faults `GetSettingsAsync` with an
+   `OperationCanceledException` under a pre-cancelled token and pins the rethrow plus zero provider turns of
+   either kind; under the deletion it reds with *"Assert.ThrowsAny() Failure: No exception was thrown"*.
+4. **German coined a term.** See §7.3 — `Denkstufe` → `Denkaufwand`.
+5. **The global toggle rendered as a fourth scheduled knob.** See §7.2 — position moved, XAML otherwise byte
+   identical (verified by comparing the diff's removed and added lines as sorted sets: 14 = 14, no intra-line
+   difference, file length unchanged).
+
+**Method note for future batches.** Restoring a mutated source file with `Copy-Item`/`cp` from a backup can
+*preserve the backup's older mtime*, so MSBuild's incremental build skips recompiling and the "restored" run
+silently still exercises the mutated binary. This produced one confusing false red here. Restore by writing the
+file (or `git checkout --`), and treat a post-restore failure as a staleness suspect before believing it.
+
+**Measured gate after the polish pass.** `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → 0
+errors, **194** warnings (unchanged). Full suite → **2224** total / **0** failed / 1 skipped.
+
+Reconciling the three totals recorded in this file, since each was measured at a different commit and none is
+wrong: §10a.8's **2218** is the state this file recorded when it was written (`2a0e537`); the review-fix
+commit `73e15e8` then added five more cases for **2223**; this polish pass adds the one cancellation test for
+**2224**. Likewise §10a.7's "gate forced false → 8 red" was measured at 2218 and is 10 red at `73e15e8`
+(the two new logging tests) and 12 after this pass — the count tracks how many tests exercise the gate, not a
+change in the gate.

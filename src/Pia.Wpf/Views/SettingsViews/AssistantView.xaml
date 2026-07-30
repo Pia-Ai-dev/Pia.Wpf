@@ -407,6 +407,20 @@
                          TextWrapping="Wrap" Margin="0,2,0,0"/>
             </StackPanel>
 
+            <!-- Planning: global, applies to interactive AND unattended runs. -->
+            <TextBlock Text="{loc:Str Settings_Agent_Planning_Section_Header}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,12,0,0"/>
+            <StackPanel Margin="0,0,0,20">
+              <CheckBox Content="{loc:Str Settings_Agent_PlanReasoningTurn}"
+                        IsChecked="{Binding AgentPlanReasoningTurnEnabled}"
+                        Margin="0,8,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Agent_PlanReasoningTurn_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
             <!-- Scheduled / background-run budget (§17.5): the separate envelope an unattended run stops at. -->
             <TextBlock Text="{loc:Str Settings_Scheduled_Section_Header}"
                        Style="{StaticResource PiaSettingsSectionLabelStyle}"
@@ -447,20 +461,6 @@
                       Value="{Binding ScheduledMaxReplans, Mode=TwoWay}"/>
               <TextBlock Text="{Binding ScheduledMaxReplansDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
-            </StackPanel>
-
-            <!-- Planning: global, applies to interactive AND unattended runs. -->
-            <TextBlock Text="{loc:Str Settings_Agent_Planning_Section_Header}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,12,0,0"/>
-            <StackPanel Margin="0,0,0,20">
-              <CheckBox Content="{loc:Str Settings_Agent_PlanReasoningTurn}"
-                        IsChecked="{Binding AgentPlanReasoningTurnEnabled}"
-                        Margin="0,8,0,0"/>
-              <TextBlock Text="{loc:Str Settings_Agent_PlanReasoningTurn_Description}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         TextWrapping="Wrap"
-                         Margin="22,4,0,0"/>
             </StackPanel>
           </StackPanel>
         </ScrollViewer>
