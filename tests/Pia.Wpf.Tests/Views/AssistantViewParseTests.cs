@@ -224,6 +224,7 @@ public class AssistantViewParseTests
             Substitute.For<IFilesToolHandler>(),
             Substitute.For<IMarkdownExportService>(),
             Substitute.For<IDialogService>(),
-            new InlineUiDispatcher());
+            new InlineUiDispatcher(),
+            Substitute.For<IToolPermissionService>());
     }
 }

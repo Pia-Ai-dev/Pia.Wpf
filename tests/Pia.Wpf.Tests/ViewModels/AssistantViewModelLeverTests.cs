@@ -78,7 +78,8 @@ public class AssistantViewModelLeverTests
             Substitute.For<IFilesToolHandler>(),
             Substitute.For<IMarkdownExportService>(),
             Substitute.For<IDialogService>(),
-            new InlineUiDispatcher());
+            new InlineUiDispatcher(),
+            Substitute.For<IToolPermissionService>());
     }
 
     private static Persona PersonaWith(PersonaToolScope scope) =>

@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -52,6 +52,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IDialogService _dialogService;
     private readonly IUiDispatcher _uiDispatcher;
+
+    /// <summary>Tool-permission state consulted by the voice-mode gate (Batch 04 D13).</summary>
+    private readonly IToolPermissionService _permissions;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -215,7 +218,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IFilesToolHandler filesToolHandler,
         IMarkdownExportService markdownExportService,
         IDialogService dialogService,
-        IUiDispatcher uiDispatcher)
+        IUiDispatcher uiDispatcher,
+        IToolPermissionService permissions)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -247,6 +251,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _markdownExportService = markdownExportService;
         _dialogService = dialogService;
         _uiDispatcher = uiDispatcher;
+        _permissions = permissions;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -1478,7 +1483,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             picks.Count, assistantMessage.HasSuggestions);
     }
 
-    private async Task<object?> HandleVoiceModeToolCall(FunctionCallContent toolCall)
+    /// <summary>
+    /// Voice-mode tool dispatch. Reads always run; writes go through the SAME resolver as the chat gate and
+    /// the unattended gate, on <see cref="ToolGateSurface.Voice"/> (Batch 04 D13).
+    /// <para>
+    /// This path used to execute EVERY pending write with no eligibility check, no grant check, no card and no
+    /// destructive floor — so <c>write_file</c>, <c>delete_file</c>, <c>forget</c> and every destructive MCP
+    /// tool ran silently while the user was talking. Nothing pinned that behaviour either way. Closing it is a
+    /// deliberate user-visible TIGHTENING: the four allowlisted create/append tools still run, anything the
+    /// user has already "always allowed" still runs, the settings preset's classes still run, and everything
+    /// else is refused with a remedy instead of being done unseen.
+    /// </para>
+    /// <para>
+    /// There is no run here, so there is no envelope: the policy comes from settings. <c>internal</c> so the
+    /// gate can be tested without standing up a whole voice turn.
+    /// </para>
+    /// </summary>
+    internal async Task<object?> HandleVoiceModeToolCall(FunctionCallContent toolCall)
     {
         _logger.LogInformation("Voice mode tool call: {ToolName}", toolCall.Name);
 
@@ -1490,9 +1511,36 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (result is not null)
             return result;
 
-        // Auto-approve write operations in voice mode (no dialog)
         if (pendingAction is not null)
         {
+            var tool = pendingAction.ToolName;
+            var settings = await _settingsService.GetSettingsAsync();
+            var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
+            var verdict = ToolAutonomy.Resolve(new ToolGateInput(
+                ToolGateSurface.Voice, tool, toolClass,
+                IsAllowlisted: _permissions.IsAutoApproveEligible(tool),
+                HasStandingGrant: _permissions.IsGranted(pendingAction.PluginId, tool),
+                // Voice has no per-job grant list and no run envelope; the policy is the settings preset.
+                IsNamedGrant: false,
+                Policy: RunAutonomyPolicy.FromSettings(settings)));
+
+            if (verdict.Outcome != ToolGateOutcome.AutoRun)
+            {
+                // English literals, like both existing gate refusals: these go to the MODEL, not the UI, so
+                // they need no resx key.
+                if (verdict.Decision == ToolGateDecision.DeniedDestructiveFloor)
+                {
+                    _logger.LogWarning("Voice mode refused destructive external tool {ToolName}", tool);
+                    return $"Denied: '{tool}' is a destructive external (MCP) tool and never runs without an "
+                           + "explicit confirmation. Do not retry.";
+                }
+
+                _logger.LogInformation("Voice mode denied ungranted write tool {ToolName}", tool);
+                return $"Denied: '{tool}' needs your confirmation and voice mode cannot show an approval card. "
+                       + "Ask me again in the chat window.";
+            }
+
+            _logger.LogInformation("Voice mode executing {ToolName} ({Decision})", tool, verdict.Decision);
             var actionResult = await pendingAction.Execute();
 
             // Re-scan for new PII after memory write
@@ -1506,6 +1554,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
 
         return "Tool call handled.";
+    }
+
+    /// <summary>
+    /// Is this an external/MCP tool? Fail-CLOSED (treat as external) like both run gates, so a route-lookup
+    /// fault adds friction instead of failing the voice turn.
+    /// </summary>
+    private bool IsExternalTool(string toolName)
+    {
+        try
+        {
+            return _pluginService.IsMcpTool(toolName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not derive MCP-ness for tool {ToolName}; treating it as external", toolName);
+            return true;
+        }
     }
 
     private void AddVoiceModeConversation(string userText, string assistantText)
