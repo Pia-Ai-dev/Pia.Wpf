@@ -170,6 +170,17 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             ExchangeResult exchange;
             try
             {
+                // NO POLICY ARGUMENT, and that is a DECISION, not an oversight (Batch 04 §0.2 + review close).
+                // A SingleTurn scheduled job has no plan, no steps and no resume path, so it carries no launch
+                // envelope — and this batch deliberately did not give it one. The visible consequence is that
+                // AgentRunAutoApproveBuiltInWrites behaves differently for the two kinds of scheduled job: an
+                // AgentTask job (ScheduledJobBackgroundService → HeadlessRunLauncher) auto-approves the preset
+                // classes, while a Research job lands here and still answers "Denied: 'write_file' is a write
+                // action not granted to this background job" for the identical tool. The direction is
+                // RESTRICTIVE, so nothing unsafe follows; relaying the setting here would WIDEN an unattended
+                // surface, which is not a change to make on the back of a reviewer nit. If a later batch wants
+                // parity, the fix is to pass RunAutonomyPolicy.FromSettings(settings) here — with a test — and
+                // to say so in the settings copy, which today names agent runs and voice mode only.
                 exchange = await RunExchangeAsync(messages, provider, turnSetup, grantedWrites, ct, onUsage);
             }
             finally

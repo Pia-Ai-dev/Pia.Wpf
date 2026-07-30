@@ -1117,4 +1117,28 @@ Mirroring `AppSettingsAgentPlanningTests` exactly (namespace `Pia.Tests.Models`)
 5. **Tool-name route collisions are undetected** (R19). A class-keyed policy is *less* exposed than a
    name-keyed one, but `IsAutoApproveEligible` is still name-only with no `PluginId` restriction, so a
    shadowing MCP server still inherits the allowlist. Unchanged by this batch, and worth a `RegisterHandler`
-   collision warning some day.
+   collision warning some day. **Partly closed at the review**: the voice branch now also requires
+   `ToolClass != External`, so a shadowing server no longer inherits the allowlist on the surface that has no
+   card. Interactive is contained by its standing-grant requirement. The underlying collision is still silent.
+
+### Deferred at the review close, with reasons
+
+6. **`IsExternalTool`'s fault path is fail-closed for the FLOOR and fail-OPEN for grantability.** Mapping a
+   route-lookup fault to `External` makes a non-delete-like BUILT-IN pass `IsStandingGrantOfferable`, so a fault
+   on `write_file` would let the card offer *Always allow* and let the gate persist a grant the allowlist
+   deliberately excludes. Not fixed, for two reasons. It is **unreachable**: every `_toolNameRoutes` mutation in
+   `PluginService` is inside `lock (_handlers)` and `IsMcpTool` is a locked `TryGetValue`, so the only throw is a
+   null tool name, which cannot arrive from a pending action. And the fix — `offerable = routeKnown && …` — would
+   put a **second expression that gates an auto-approval** in the very file T-ARCH-1 guards, to close a path that
+   cannot fire. Both doc comments now state the true direction instead of claiming fail-closed.
+7. **The SingleTurn scheduled path takes no policy.** `BackgroundAssistantTurnRunner.RunAsync` →
+   `RunExchangeAsync` passes no policy, so `AgentRunAutoApproveBuiltInWrites` behaves differently for a scheduled
+   AgentTask job (auto-approves the preset) and a scheduled Research job (still refuses). Recorded as a decision
+   at the call site rather than relayed: the direction is restrictive, and widening an unattended surface is not
+   a change to make off a reviewer nit. The comment names the fix for whoever wants parity.
+8. **`TryRestorePolicy` does not intersect against `PresetClasses`.** Suggested at review and declined:
+   `PresetClasses` is the *settings preset*, not the envelope's legal vocabulary, so pinning the reader to it
+   would silently narrow the first per-run policy a later batch authors, with nothing failing to explain why.
+   §13.2's filtering belongs where a policy is AUTHORED from untrusted input. The reader's *readability* test was
+   fixed instead — it now requires `grantedWrites` to be present, like the grant half, so the two cannot disagree
+   about whether a document is readable.

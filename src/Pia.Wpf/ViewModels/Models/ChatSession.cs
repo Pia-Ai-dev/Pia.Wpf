@@ -994,8 +994,18 @@ public sealed class ChatSession : IDisposable
     /// <summary>
     /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the
     /// unattended gate uses — never from a name pattern and never from the pending action, so a renamed or
-    /// spoofed tool cannot talk its way out of the destructive-external floor. A derivation fault fails
-    /// CLOSED (treat as external): the only consequence is extra friction on a granted built-in delete.
+    /// spoofed tool cannot talk its way out of the destructive-external floor.
+    /// <para>
+    /// A derivation fault returns <c>true</c>, which is fail-CLOSED for the FLOOR (a delete-like tool is then
+    /// refused/carded) and fail-OPEN for GRANTABILITY: <c>External</c> also makes a non-delete-like BUILT-IN
+    /// pass <c>IsStandingGrantOfferable</c>, so a fault on <c>write_file</c> would let the card offer "Always
+    /// allow" and let the gate persist a grant the allowlist deliberately excludes. Stated rather than fixed:
+    /// the fix is a <c>routeKnown</c> signal threaded through <see cref="ToolGateInput"/>, and every
+    /// <c>_toolNameRoutes</c> mutation in <c>PluginService</c> is inside <c>lock (_handlers)</c> with
+    /// <c>IsMcpTool</c> a locked <c>TryGetValue</c>, so the only reachable throw is a null tool name — which
+    /// cannot reach here (the pending action supplied the name). Adding a second condition beside the resolver
+    /// in this file to close an unreachable path is the shape T-ARCH-1 exists to forbid.
+    /// </para>
     /// <para>
     /// 04 D8: the call this wraps used to be BARE here while the headless twin
     /// (<c>BackgroundAssistantTurnRunner.IsExternalTool</c>) has had the guard since M3, so a throw

@@ -5,8 +5,8 @@ using Xunit;
 namespace Pia.Tests.Architecture;
 
 /// <summary>
-/// Batch 04's two structural rules: the two gate files derive no autonomy decision of their own, and the three
-/// PERSISTED gate enums keep their append-only shape.
+/// Batch 04's two structural rules: the THREE gate files derive no autonomy decision of their own, and the
+/// three PERSISTED gate enums keep their append-only shape.
 /// </summary>
 public class ToolAutonomyRuleTests
 {
@@ -14,15 +14,36 @@ public class ToolAutonomyRuleTests
         Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Pia.Wpf"));
 
     /// <summary>
-    /// The two files that decide whether a tool call runs. Scoped deliberately: <c>ActionCardBuilder.cs</c>
-    /// legitimately calls <c>IsDeleteLike</c> for warning text and <c>ClassifyPresumedExternal</c> for its
-    /// name-only guess, so a blanket ban on those tokens would be wrong.
+    /// Every file that decides whether a tool call runs, with the EXACT number of times each gate token may
+    /// appear in it. Exact rather than a ceiling: <c>Assert.True(count &lt;= 1)</c> plus a <c>foreach</c> over the
+    /// matches asserts NOTHING on a zero match, so the rule used to pass just as happily on a gate whose
+    /// allowlist read had been deleted and replaced with a hardcoded <c>false</c> — a silent removal of
+    /// authority, which is the same class of defect as a silent addition.
+    /// <para>
+    /// Scoped deliberately to the gates: <c>ActionCardBuilder.cs</c> legitimately calls <c>IsDeleteLike</c> for
+    /// warning text and <c>ClassifyPresumedExternal</c> for its name-only guess, so a blanket ban would be wrong.
+    /// </para>
+    /// <para>
+    /// <b>If this goes red after an unrelated change, fix the count, do not delete the rule.</b>
+    /// <c>AssistantViewModel.cs</c> is a large ViewModel and the bans below apply to the WHOLE file, so an
+    /// addition anywhere in it can land here. That is the cost of the guarantee: a red line in this file means
+    /// somebody added or removed a second autonomy derivation, and the reviewer wants to know either way.
+    /// </para>
     /// </summary>
-    public static TheoryData<string> GateFiles =>
+    /// <remarks>Columns: file, <c>ToolAutonomy.Resolve</c>, <c>IsMcpTool</c>, <c>IsAutoApproveEligible</c>.</remarks>
+    public static TheoryData<string, int, int, int> GateFiles =>
         new()
         {
-            Path.Combine("ViewModels", "Models", "ChatSession.cs"),
-            Path.Combine("Services", "BackgroundAssistantTurnRunner.cs"),
+            // The interactive gate: reads the allowlist for the offerable/standing-grant question.
+            { Path.Combine("ViewModels", "Models", "ChatSession.cs"), 1, 1, 1 },
+            // The unattended gate: NO allowlist read at all — IToolPermissionService is injected nowhere in the
+            // headless files, so it passes IsAllowlisted: false (§13.3). A 1 here would be a real widening:
+            // four tools would become free on every scheduled job.
+            { Path.Combine("Services", "BackgroundAssistantTurnRunner.cs"), 1, 1, 0 },
+            // The voice gate (D13). A full gate since Batch 04 — its own Resolve call, its own fail-closed
+            // IsExternalTool and its own allowlist read — so a voice-only shortcut past the floor is exactly the
+            // "second decision" this rule forbids and must be caught here too.
+            { Path.Combine("ViewModels", "AssistantViewModel.cs"), 1, 1, 1 },
         };
 
     /// <summary>
@@ -32,14 +53,16 @@ public class ToolAutonomyRuleTests
     /// </summary>
     [Theory]
     [MemberData(nameof(GateFiles))]
-    public void TheTwoGateFilesDeriveNoAutonomyDecisionOfTheirOwn(string relativePath)
+    public void EveryGateFileDerivesNoAutonomyDecisionOfItsOwn(
+        string relativePath, int expectedResolveCalls, int expectedMcpLookups, int expectedAllowlistReads)
     {
         var path = Path.Combine(SourceDirectory, relativePath);
         Assert.True(File.Exists(path), $"gate file not found: {path}");
         var lines = File.ReadAllLines(path);
 
-        // Exactly one Resolve call: the gate's single decision.
-        Assert.Equal(1, lines.Count(l => l.Contains("ToolAutonomy.Resolve(", StringComparison.Ordinal)));
+        // Exactly one Resolve call: the gate's single decision. Not "at most" — a gate with zero is a gate that
+        // has stopped consulting the resolver.
+        Assert.Equal(expectedResolveCalls, lines.Count(l => l.Contains("ToolAutonomy.Resolve(", StringComparison.Ordinal)));
 
         // The floor's own predicate must not be re-derived at a gate at all — it lives inside Resolve.
         Assert.Empty(CodeLinesContaining(lines, "IsDeleteLike"));
@@ -48,19 +71,19 @@ public class ToolAutonomyRuleTests
         // grantable-as-external by name (ToolClassifier.ClassifyPresumedExternal's own doc comment).
         Assert.Empty(CodeLinesContaining(lines, "ClassifyPresumedExternal"));
 
-        // At most one route lookup, and only inside the fail-closed IsExternalTool helper.
+        // The route lookup, exactly as often as expected, and only ever inside the IsExternalTool helper.
         var mcpLines = CodeLinesContaining(lines, "IsMcpTool");
-        Assert.True(mcpLines.Count <= 1,
-            $"{relativePath} derives MCP-ness more than once: {string.Join(" | ", mcpLines)}");
+        Assert.Equal(expectedMcpLookups, mcpLines.Count);
         foreach (var line in mcpLines)
             Assert.Equal("return _pluginService.IsMcpTool(toolName);", line);
 
-        // At most one allowlist lookup, and it must be the hoisted local the resolver's input is built from.
+        // The allowlist read, exactly as often as expected, and only as the hoisted local the resolver's input
+        // is built from. Case-insensitive: ChatSession assigns `var allowlisted = …` while the voice gate names
+        // the record parameter `IsAllowlisted:` on the same line.
         var allowlistLines = CodeLinesContaining(lines, "IsAutoApproveEligible");
-        Assert.True(allowlistLines.Count <= 1,
-            $"{relativePath} reads the allowlist more than once: {string.Join(" | ", allowlistLines)}");
+        Assert.Equal(expectedAllowlistReads, allowlistLines.Count);
         foreach (var line in allowlistLines)
-            Assert.Contains("allowlisted", line, StringComparison.Ordinal);
+            Assert.Contains("allowlisted", line, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Non-comment source lines mentioning <paramref name="token"/>, trimmed.</summary>

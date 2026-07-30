@@ -572,7 +572,16 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// The asymmetry against <see cref="TryRestoreGrantEnvelope"/> is the whole backward-compatibility
     /// guarantee: an unreadable envelope loses the POLICY before it loses the grant list, and losing the
     /// policy is always the restrictive direction. An unreadable grant list has to fall back to something the
-    /// run can work with; an unreadable policy falls back to nothing.
+    /// run can work with; an unreadable policy falls back to nothing. The two readers therefore apply the same
+    /// readability test — version AND a present <c>grantedWrites</c> — so "readable" cannot mean one thing here
+    /// and another there; only the FALLBACK differs.
+    /// </para>
+    /// <para>
+    /// Class names are validated as <see cref="ToolClass"/> members and nothing more. They are deliberately NOT
+    /// intersected with <c>RunAutonomyPolicy.PresetClasses</c>: that list is the SETTINGS preset, not "everything
+    /// an envelope may legally carry", so pinning the reader to it would silently narrow the first per-run policy
+    /// a later batch authors, with no failing test to explain why. §13.2's filtering belongs at the point a
+    /// policy is AUTHORED from untrusted input, which is a different chokepoint from this resume reader.
     /// </para>
     /// <para>
     /// A resume calls this and NEVER <c>RunAutonomyPolicy.FromSettings</c>: the envelope is the run's
@@ -589,7 +598,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         try
         {
             var envelope = JsonSerializer.Deserialize<GrantEnvelope>(policyJson, GrantEnvelopeJsonOptions);
-            if (envelope is null || envelope.V != GrantEnvelopeVersion)
+
+            // The SAME readability test TryRestoreGrantEnvelope applies, `GrantedWrites is null` included, so
+            // both halves of the reader agree on what "a readable envelope" means. Without it the documented
+            // asymmetry INVERTS for one document shape: `{"v":1,"policy":{…}}` with no grantedWrites made the
+            // grant half fall back to the {write_file} floor as if the envelope were unreadable while this half
+            // handed back a full policy — a resumed run auto-running by class with no named grant behind it.
+            if (envelope is null || envelope.V != GrantEnvelopeVersion || envelope.GrantedWrites is null)
                 return null;
 
             var names = envelope.Policy?.AutoApproveClasses;

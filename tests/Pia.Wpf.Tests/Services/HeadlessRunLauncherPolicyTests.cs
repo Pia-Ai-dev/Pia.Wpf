@@ -52,11 +52,35 @@ public class HeadlessRunLauncherPolicyTests
     [InlineData("{\"somethingElse\":true}")]
     [InlineData("{\"v\":1,\"grantedWrites\":[\"write_file\"],\"policy\":{}}")]
     [InlineData("{\"v\":1,\"grantedWrites\":[\"write_file\"],\"policy\":{\"autoApproveClasses\":[]}}")]
+    // A truncated / hand-edited column: policy present, grantedWrites ABSENT.
+    [InlineData("{\"v\":1,\"policy\":{\"autoApproveClasses\":[\"Files\",\"External\"]}}")]
     public void AnUnreadableEnvelopeLosesThePolicyBeforeItLosesTheGrantFloor(string? policyJson)
     {
         // D10's asymmetry: losing the policy is always the RESTRICTIVE direction, so it fails to null (today's
         // behaviour) rather than to a floor. The grant list is the one that needs a floor to work with.
         Assert.Null(HeadlessRunLauncher.TryRestorePolicy(policyJson));
+    }
+
+    /// <summary>
+    /// The two readers must agree on what "readable" MEANS, even though they disagree on the fallback. For
+    /// <c>{"v":1,"policy":{…}}</c> with no <c>grantedWrites</c> the grant half already returns null (⇒ the
+    /// resume applies the <c>{write_file}</c> floor, i.e. it treats the envelope as unreadable); the policy half
+    /// used to return a full policy for the same document, which INVERTS the documented asymmetry — a resumed
+    /// unattended run would auto-approve every non-delete-like tool in the named classes with no grant behind it.
+    /// </summary>
+    [Fact]
+    public void ADocumentWithNoGrantedWrites_IsUnreadableToBothHalvesOfTheReader()
+    {
+        const string truncated = """{"v":1,"policy":{"autoApproveClasses":["Files","External"]}}""";
+
+        Assert.Null(HeadlessRunLauncher.TryRestoreGrantEnvelope(truncated));
+        Assert.Null(HeadlessRunLauncher.TryRestorePolicy(truncated));
+
+        // The same document WITH grantedWrites is readable by both — so the discriminator really is that member
+        // and not something about the policy shape.
+        const string whole = """{"v":1,"grantedWrites":[],"policy":{"autoApproveClasses":["Files"]}}""";
+        Assert.Empty(HeadlessRunLauncher.TryRestoreGrantEnvelope(whole)!);
+        Assert.True(HeadlessRunLauncher.TryRestorePolicy(whole)!.Covers(ToolClass.Files));
     }
 
     [Fact]

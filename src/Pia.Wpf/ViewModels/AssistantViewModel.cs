@@ -1516,9 +1516,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var tool = pendingAction.ToolName;
             var settings = await _settingsService.GetSettingsAsync();
             var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
+            // Hoisted like ChatSession's, so this file reads the allowlist in exactly one place that
+            // ToolAutonomyRuleTests can name.
+            var allowlisted = _permissions.IsAutoApproveEligible(tool);
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Voice, tool, toolClass,
-                IsAllowlisted: _permissions.IsAutoApproveEligible(tool),
+                IsAllowlisted: allowlisted,
                 HasStandingGrant: _permissions.IsGranted(pendingAction.PluginId, tool),
                 // Voice has no per-job grant list and no run envelope; the policy is the settings preset.
                 IsNamedGrant: false,
@@ -1557,8 +1560,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     /// <summary>
-    /// Is this an external/MCP tool? Fail-CLOSED (treat as external) like both run gates, so a route-lookup
-    /// fault adds friction instead of failing the voice turn.
+    /// Is this an external/MCP tool? A route-lookup fault returns <c>true</c> like both run gates, so it adds
+    /// friction instead of failing the voice turn.
+    /// <para>
+    /// "Fail-closed" is only half true and the honest statement matters: <c>true</c> is closed for the
+    /// destructive FLOOR but OPEN for grantability, because <c>External</c> is also what makes a tool
+    /// standing-grantable. On THIS surface that is harmless — voice persists no grants and offers no card — and
+    /// it now also costs the four allowlisted built-ins their voice authority on a fault, which is the
+    /// restrictive direction. See <c>ChatSession.IsExternalTool</c> for why the plumbing fix is deferred rather
+    /// than done: the only reachable throw is a null tool name, which cannot occur here.
+    /// </para>
     /// </summary>
     private bool IsExternalTool(string toolName)
     {
