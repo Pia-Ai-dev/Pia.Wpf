@@ -381,14 +381,18 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
         // deferred PluginToolCall (below), so an ungranted MCP call is denied by the pending-action branch
         // and a granted NON-destructive one executes. No MCP-specific pre-check is needed here anymore.
-        // Length only, measured once and reused by every emit arm below (03 §3).
-        var argsChars = AgentTimelineScope.MeasureArgs(toolCall.Arguments);
+        // Length only, measured once and reused by every emit arm below (03 §3). Gated on the SINK for the same
+        // reason as the interactive twin: the SingleTurn background path passes no scope, and serializing a
+        // multi-megabyte argument dictionary to discard the number is pure waste on the most common path.
+        var argsChars = timeline is null ? null : AgentTimelineScope.MeasureArgs(toolCall.Arguments);
 
         var route = await _pluginService.RouteToolCallAsync(toolCall);
         if (route is null)
         {
             _logger.LogWarning("Background turn: no handler for tool {ToolName}", toolCall.Name);
-            timeline?.Emit(ToolGateSurface.Unattended, toolCall.Name, ToolClass.Unknown, pluginId: null,
+            // Model-authored name on this arm alone — sanitized, exactly as the interactive gate does.
+            timeline?.Emit(ToolGateSurface.Unattended, AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name),
+                ToolClass.Unknown, pluginId: null,
                 ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
             return "Unknown tool.";
         }

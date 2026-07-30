@@ -20,10 +20,17 @@ namespace Pia.Services.Interfaces;
 public interface IAgentTimelineService
 {
     /// <summary>
-    /// Append one row. NEVER throws and NEVER blocks on I/O: <c>Seq</c> is allocated synchronously (which is
-    /// what makes the ordering correct) and the write is queued to a serial background writer. Emitting an
-    /// audit event must never be able to fail a step, so callers invoke this with no <c>await</c> and no
-    /// result to check. <paramref name="e"/>'s <c>Seq</c> is ignored — the service assigns it.
+    /// Append one row. NEVER throws: <c>Seq</c> is allocated synchronously (which is what makes the ordering
+    /// correct) and the write is queued to a serial background writer. Emitting an audit event must never be
+    /// able to fail a step, so callers invoke this with no <c>await</c> and no result to check.
+    /// <paramref name="e"/>'s <c>Seq</c> is ignored — the service assigns it.
+    /// <para>
+    /// <b>Blocking, precisely.</b> The steady-state emit does no I/O at all. The FIRST emit of each run does:
+    /// the SQLite implementation seeds the run's sequence with one indexed aggregate — and, on the very first
+    /// call of the process, opens its connection — synchronously on the CALLER's thread, which for the
+    /// interactive gate is the UI thread. That is a bounded cost per run, not a free one, and it is stated here
+    /// because an earlier version of this comment claimed "NEVER blocks on I/O", which was false.
+    /// </para>
     /// </summary>
     void Emit(AgentTimelineEvent e);
 
@@ -76,8 +83,31 @@ public sealed class AgentTimelineScope
     /// <summary>The step this turn belongs to, or null for a run-level turn (the planner-degrade fallback).</summary>
     public Guid? StepId { get; }
 
-    /// <summary>Same scope, different step — used where one executor walks several steps.</summary>
-    public AgentTimelineScope ForStep(Guid? stepId) => new(_service, RunId, stepId);
+    /// <summary>
+    /// The tool name to persist for a call that DID NOT ROUTE. On that one arm the name is an arbitrary
+    /// MODEL-authored string — providers surface the raw function name verbatim — so a malformed call whose
+    /// name concatenates its arguments (<c>read_file{"path":"C:/…/Therapy notes.md"}</c>) would otherwise put a
+    /// user path in the column whose contract is "never an argument, never a result, never a path", and would
+    /// do it with no length bound. Anything outside a tool-identifier shape becomes a sentinel.
+    /// <para>
+    /// Applied ONLY to the unrouted arm, deliberately. A routed call's name comes from the pending action, i.e.
+    /// from the plugin service's own route table, and rewriting a known-good MCP name to a sentinel because it
+    /// carries a character this charset does not list would be a regression on the good path. Lives here so
+    /// both gates share one definition rather than one each.
+    /// </para>
+    /// </summary>
+    public static string SanitizeUnroutedToolName(string? toolName)
+    {
+        if (string.IsNullOrEmpty(toolName) || toolName.Length > 64) return "(unnamed)";
+
+        foreach (var c in toolName)
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_' && c != '.' && c != ':' && c != '-')
+                return "(unnamed)";
+        }
+
+        return toolName;
+    }
 
     /// <summary>
     /// The LENGTH of a tool call's arguments, for <c>ArgsChars</c>. The serialized form exists only inside

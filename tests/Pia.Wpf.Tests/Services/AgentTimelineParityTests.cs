@@ -28,8 +28,8 @@ public sealed class AgentTimelineParityTests
         var policy = new RunAutonomyPolicy([ToolClass.Files]);
         var filesId = BuiltInPluginDefaults.FilesPluginId;
 
-        var live = await RecordLiveAsync(policy, filesId);
-        var headless = await RecordHeadlessAsync(policy, filesId);
+        var live = await RecordLiveAsync(policy, filesId, Pending(filesId));
+        var headless = await RecordHeadlessAsync(policy, Pending(filesId));
 
         Assert.Equal(ToolGateDecision.AutoApprovedPolicy, live.Decision);
         Assert.Equal(live.Decision, headless.Decision);
@@ -44,7 +44,58 @@ public sealed class AgentTimelineParityTests
         Assert.Equal(ToolGateSurface.Unattended, headless.Surface);
     }
 
-    private static async Task<AgentTimelineEvent> RecordLiveAsync(RunAutonomyPolicy policy, Guid filesId)
+    /// <summary>
+    /// The unrouted arm, on BOTH surfaces. The tool name is the one string on this arm that the MODEL authored,
+    /// so it is the one arm where the column's own contract ("never an argument, never a result, never a path")
+    /// can be broken by a malformed call — and it is the arm the canary sweep in
+    /// <c>AgentTimelinePrivacyTests</c> cannot reach, because that one drives a ROUTED write_file.
+    /// </summary>
+    [Fact]
+    public async Task AnUnroutedModelAuthoredToolNameIsSanitizedOnBothSurfaces()
+    {
+        // A provider surfaces the raw function name verbatim; a model that concatenates its arguments into it
+        // would otherwise put a user path straight into ToolName.
+        const string Malformed = """read_file{"path":"C:/Users/marco/Therapy notes.md"}""";
+
+        var live = await RecordLiveAsync(policy: null, BuiltInPluginDefaults.FilesPluginId,
+            pending: null, toolName: Malformed);
+        var headless = await RecordHeadlessAsync(policy: null, pending: null, toolName: Malformed);
+
+        Assert.Equal(ToolGateDecision.UnknownTool, live.Decision);
+        Assert.Equal(live.Decision, headless.Decision);
+
+        // Parity, and the invariant: neither surface persists the path.
+        Assert.Equal("(unnamed)", live.ToolName);
+        Assert.Equal("(unnamed)", headless.ToolName);
+        Assert.DoesNotContain("Therapy", live.ToolName, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Therapy", headless.ToolName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    // A real tool identifier survives untouched — including the shapes an MCP server produces.
+    [InlineData("write_file", "write_file")]
+    [InlineData("mcp.github:create-issue", "mcp.github:create-issue")]
+    // …and everything that is not one becomes the sentinel.
+    [InlineData("""read_file{"path":"C:/x.md"}""", "(unnamed)")]
+    [InlineData("tool with spaces", "(unnamed)")]
+    [InlineData("", "(unnamed)")]
+    [InlineData(null, "(unnamed)")]
+    public void SanitizeKeepsIdentifiersAndRejectsEverythingElse(string? input, string expected)
+    {
+        Assert.Equal(expected, AgentTimelineScope.SanitizeUnroutedToolName(input));
+    }
+
+    [Fact]
+    public void SanitizeBoundsTheLength()
+    {
+        // The other half of the finding: an unbounded model-authored string is also an audit-table size hazard
+        // (ten calls with 100 KB names each).
+        Assert.Equal("(unnamed)", AgentTimelineScope.SanitizeUnroutedToolName(new string('a', 65)));
+        Assert.Equal(new string('a', 64), AgentTimelineScope.SanitizeUnroutedToolName(new string('a', 64)));
+    }
+
+    private static async Task<AgentTimelineEvent> RecordLiveAsync(
+        RunAutonomyPolicy? policy, Guid filesId, PluginToolCall? pending = null, string toolName = "write_file")
     {
         var timeline = new RecordingTimelineService();
         var ai = Substitute.For<IAiClientService>();
@@ -62,13 +113,15 @@ public sealed class AgentTimelineParityTests
                 Title = "write_file", Summary = "write_file",
                 Category = ActionCardCategory.Files, ToolName = "write_file", PluginId = filesId,
             });
+        // A null pending action means the route MISSED — the unrouted arm — which is why this is a parameter
+        // rather than a fixed stub.
         plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
-            .Returns(((object?)null, (PluginToolCall?)Pending(filesId)));
+            .Returns(Route(pending));
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(),
                 Arg.Any<CancellationToken>(), Arg.Any<AgentContextBudget?>())
-            .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+            .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName));
 
         var session = new ChatSession(
             Substitute.For<ITokenMapService>(), ai, plugins, cards, permissions, loc, NullLogger.Instance, _ => true);
@@ -78,7 +131,7 @@ public sealed class AgentTimelineParityTests
                 RunId: runId, Ordinal: 0, Intent: "write it", ExpectedArtifact: null, SystemPrompt: "system",
                 Persona: new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"), Provider: Provider(),
                 Tools: new List<AITool>(), SupportsTools: true, WebSearchActive: false, TokenizationEnabled: false,
-                Policy: policy, StepId: Guid.NewGuid(),
+                Policy: policy,
                 Timeline: new AgentTimelineScope(timeline, runId, null)),
             new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
@@ -86,7 +139,8 @@ public sealed class AgentTimelineParityTests
         return Assert.Single(timeline.Rows);
     }
 
-    private static async Task<AgentTimelineEvent> RecordHeadlessAsync(RunAutonomyPolicy policy, Guid filesId)
+    private static async Task<AgentTimelineEvent> RecordHeadlessAsync(
+        RunAutonomyPolicy? policy, PluginToolCall? pending = null, string toolName = "write_file")
     {
         var timeline = new RecordingTimelineService();
         var ai = Substitute.For<IAiClientService>();
@@ -94,11 +148,11 @@ public sealed class AgentTimelineParityTests
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings());
         plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
-            .Returns(((object?)null, (PluginToolCall?)Pending(filesId)));
+            .Returns(Route(pending));
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+            .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName));
 
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
         var runner = new BackgroundAssistantTurnRunner(
@@ -123,6 +177,10 @@ public sealed class AgentTimelineParityTests
     private static PluginToolCall Pending(Guid filesId) => new(
         "write_file", filesId, "files", "files: write_file", null, () => Task.FromResult<object?>("written"));
 
+    /// <summary>A null pending action is a route MISS (the unrouted arm); otherwise a deferred write.</summary>
+    private static (object? Result, PluginToolCall? PendingAction)? Route(PluginToolCall? pending) =>
+        pending is null ? null : ((object?)null, pending);
+
     private static AiProvider Provider() => new()
     {
         Id = Guid.NewGuid(),
@@ -132,10 +190,11 @@ public sealed class AgentTimelineParityTests
         TimeoutSeconds = 60,
     };
 
-    private static async IAsyncEnumerable<ChatStreamItem> Drive(Func<FunctionCallContent, Task<object?>>? handler)
+    private static async IAsyncEnumerable<ChatStreamItem> Drive(
+        Func<FunctionCallContent, Task<object?>>? handler, string toolName)
     {
         if (handler is not null)
-            await handler(new FunctionCallContent("call-1", "write_file", new Dictionary<string, object?> { ["path"] = "a.md" }));
+            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?> { ["path"] = "a.md" }));
 
         yield return new TextDelta("Done.");
         yield return new Finished(null, "test-model");

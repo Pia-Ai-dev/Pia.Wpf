@@ -859,8 +859,11 @@ public sealed class ChatSession : IDisposable
         }
 
         // Length only, measured once and reused by every emit arm below (03 §3 — the serialized arguments
-        // themselves never leave AgentTimelineScope.MeasureArgs).
-        var argsChars = AgentTimelineScope.MeasureArgs(toolCall.Arguments);
+        // themselves never leave AgentTimelineScope.MeasureArgs). GATED ON THE SINK: measuring serializes the
+        // whole argument dictionary, so on the ordinary interactive turn (timeline == null) it would materialize
+        // a multi-megabyte write_file body on the UI thread and discard it — and "null means today's behaviour,
+        // byte for byte" would be false. Reads never emit either, but they cannot be told apart before routing.
+        var argsChars = timeline is null ? null : AgentTimelineScope.MeasureArgs(toolCall.Arguments);
 
         var routeResult = await _pluginService.RouteToolCallAsync(toolCall);
         if (routeResult is null)
@@ -868,8 +871,10 @@ public sealed class ChatSession : IDisposable
             _logger.LogWarning("No handler found for tool {ToolName}", toolCall.Name);
             // "The model called a tool that does not exist, 12 times" is a real audit fact, and it cannot
             // flood: the round loop is bounded and the model gets the error text back. No plugin and no
-            // class, because there is no route to derive either from.
-            timeline?.Emit(ToolGateSurface.Interactive, toolCall.Name, ToolClass.Unknown, pluginId: null,
+            // class, because there is no route to derive either from. The NAME is model-authored on this arm
+            // alone, so it is the one arm that sanitizes (see SanitizeUnroutedToolName).
+            timeline?.Emit(ToolGateSurface.Interactive, AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name),
+                ToolClass.Unknown, pluginId: null,
                 ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
             return "Unknown tool.";
         }
