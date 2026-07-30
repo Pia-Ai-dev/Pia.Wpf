@@ -250,6 +250,17 @@ into `BuildSpec`, which sets two appended `StepTurnSpec` members:
     AgentTimelineScope? Timeline = null); // Batch 03: null ⇒ emit nothing (ordinary chat turns, tests)
 ```
 
+> **AS BUILT: `StepTurnSpec.StepId` does NOT exist — the scope is the only carrier of the step id.** It shipped in
+> commit 2, was found to be **written and never read** (attribution comes from the scope's own `StepId`), and was
+> **deleted** by the review fix pass along with the unused `AgentTimelineScope.ForStep`. Two sources of truth for
+> one fact, one of them dead, is the worse failure mode: the *documented* one was the dead one, so a later
+> executor could reasonably construct a spec with `StepId: step.Id` and a run-level scope, and every row for that
+> step would persist `StepId = NULL` with nothing failing — the parity fact already built exactly that mismatched
+> pair and passed. `AgentTimelineEvents.StepId` (the **column**) is unaffected and still the attribution key;
+> every other mention of `StepTurnSpec.StepId` in this file (§2's insertion-order note, §6's file table, §11's
+> commit 2 row) should be read as "the scope only". T-EMIT-3's red-mutation instruction changes accordingly:
+> drop the scope's `stepId`, not a spec member.
+
 `ChatSession.RunStepTurnAsync` forwards `spec.Timeline` into `RunModelExchangeAsync` (one new trailing optional
 parameter) and thence into the handler closure at `:550`. **`ChatSession`'s constructor is not touched** —
 that is the point of putting the sink on the spec rather than injecting the service: `RunTurnAsync`, the
@@ -577,12 +588,35 @@ T-EMIT-1 (live rows appear) and T-UI-1 (the panel loads rows).
     }
 ```
 
+> **AS BUILT — this block was superseded by the review fix pass; the shipped code is the authority.** Two
+> changes, both because the prescription above lets the panel make a claim it has not checked.
+>
+> 1. **Reload on EVERY expand**, not on an empty collection and not behind a load-once latch:
+>    `if (!value) return;` then load. Nothing in the session can ever re-read otherwise — `RunChanged`
+>    deliberately skips the timeline, `SyncRunProgress` keeps the same VM for the run's whole life,
+>    `ChatSession.ActiveRunId` is stamped once, and there is no refresh command — so a trace expanded while step
+>    1 was still planning would keep rendering *"no tool decisions were recorded"* for the rest of the session on
+>    a run that went on to record dozens. One indexed read per user click is the cheaper mistake.
+> 2. **A failed read is NOT the empty state.** A second bool, `HasTimelineReadError`, plus a
+>    `Run_Timeline_ReadFailed` key in all three locales. `HasNoTimeline = !readFailed && Timeline.Count == 0`, so
+>    a store that cannot be read says so instead of asserting that nothing happened. Commit `3e06bbff` spends its
+>    whole message arguing that a cancelled card must not be *stored* as a user denial because it would be a
+>    false statement; the render surface is held to the same standard.
+>
+> Both mutations of bound state — including the null-service and read-failure arms — now go through one
+> `ApplyTimelineAsync` that posts to the UI context, so no `[ObservableProperty]` in this method is ever assigned
+> off-thread (G3 by one path rather than three). The read itself is wrapped in `Task.Run`, because
+> `GetForRunAsync`'s first `await` does **not** suspend when the writer tail is already complete — the normal case
+> for a finished run — which would otherwise put the store's connection lock and the mapping of up to 501 rows on
+> the dispatcher.
+
 `LoadTimelineAsync` reads `GetForRunAsync`, then marshals the collection fill through the **same
 `_uiContext.Post`** the existing `RefreshAsync` uses (R16) — G3 by the same mechanism, not a new one. Inside
 that post: a `TraceTruncated` row sets `IsTimelineTruncated` + `TimelineNote`
 (`Format("Run_Timeline_Truncated", MaxEventsPerRun)`) and is **not** added as an ordinary row; every other row is
-projected; then `HasNoTimeline = Timeline.Count == 0`. A null `_timeline` service (the trailing-optional ctor
-argument, §6) short-circuits to `HasNoTimeline = true` and reads nothing.
+projected; then `HasNoTimeline = Timeline.Count == 0` — **as built, `!readFailed && Timeline.Count == 0`, see the
+note above**. A null `_timeline` service (the trailing-optional ctor argument, §6) short-circuits to
+`HasNoTimeline = true` and reads nothing.
 
 `TimelineRowViewModel` is a plain projection: `ToolName`, `DecisionLabel` (the 5-way category, §8),
 `OutcomeSuffix` (localized *"failed"* when `Outcome == Error`, else null), `StepLabel` (`"Step {n}"` derived by
@@ -632,6 +666,13 @@ user expands the trace, and no test in this suite reaches that. **Introduce no n
 empty-state binds the VM's own `HasNoTimeline` bool rather than an inverse converter.
 
 ### 7.1 resx — 9 keys, all three files, one contiguous block after the Batch 04 block
+
+> **AS BUILT: 11 keys × 3, not 9.** Two were added for reasons this section could not have known.
+> `Run_Timeline_Step` — §7 prescribes `StepLabel` as `"Step {n}"` but names no key for it and no existing `Run_*`
+> key fits. `Run_Timeline_ReadFailed` — the fix pass split *"could not be read"* from *"nothing was recorded"*
+> (see the note in §7). Every other count of “9 keys” in this file (§4's table, §6's file list, §10's guardrail
+> line, §11's commit 5 row) reads 11 as built. The **rule** is unchanged and was honoured: en + de + fr, real
+> German and French, no hand-edited `Designer.cs`.
 
 `ViewStrings.resx` (en):
 ```xml

@@ -1,24 +1,28 @@
 # Agent System — Roadmap & Status
 
-_Snapshot: 2026-07-30 — as-built at the **merge** of **Batch 05** (planner reason-then-emit) and
-[**Batch 12**](12-ui-dispatcher-abstraction.md) (the UI-dispatcher abstraction). Both follow the
-residual-hazard pass and the Tier-2 decision pass, and neither is built on the other: they were authored
-independently from the same base (`73e15e8`) and met in a merge commit, which is why the chronicle below carries
-two same-day rows and why no single commit range covers the tree. **Batches 10, 11, 05 and 12 have shipped**
-(10 and 11 plus a joint review fix pass); 10 and 11 were promoted out of “Deliberately open”, 05 out of
-“Upcoming batches”, and all four are now in the chronicle. Build verified with
-`dotnet build -t:Rebuild -v:n` (Debug **and** Release) → **0 errors, 0 warnings**. **That bar is now absolute
-zero, not “no new warnings over 194”**: commit `6cdd4c9` took the build from 194 to zero and `d9c052f` made zero
-a commit-ready gate in `CLAUDE.md`, so every “194 warnings, all pre-existing” figure elsewhere in this file is
-**historical** — it described the tree before `6cdd4c9` and must not be read as a target. The 194 were 8 in
-`src` plus 186 xUnit analyzer warnings in the test project, which is the trap a batch that adds thirty tests
-walks into: new tests must add **zero**. Read the count off MSBuild's `N Warning(s)` summary line — at `-v:n`
-every warning prints twice, so grepping the log double-counts. **The suite has been
-executed on Windows on the merged tree and reaches `failed: 0` — 2232 total / 0 failed / 1 skipped.** It took
-three full runs to see it: the documented pre-existing `TaskExtensionsTests` wall-clock flake fired on two of
-them and the third was clean, which is a worse rate than the “~1 run in 8” recorded for it below. Those runs are
-also the first execution anywhere of Batch 12's new facts, which had never run on any machine; they pass. See
-the callout below for the numbers and what is still owed._ Living index
+_Snapshot: 2026-07-30 — as-built at `c92dfdd`, the end of a run that shipped **Batch 04** (autonomy policy)
+and then **Batch 03** (audit timeline), each with its own review fix pass. Those two were the last of Phase 2
+apart from Batch 02, **so Phase 2 is now complete except for 02** — which is itself no longer a feature but a
+deletion (pricing was withdrawn by decision the same day). Unlike the previous snapshot, this one **is** a
+single linear range: 04 and 03 were authored in sequence off `dda6703`, 03 on top of 04, so reading the
+chronicle down is correct again. **Batches 10, 11, 05, 12, 04 and 03 have shipped.** Build verified with
+`dotnet build -t:Rebuild -v:n` (Debug **and** Release) → **0 errors, 0 warnings**. Measured on the final tree
+`c92dfdd` twice by two agents; each of the run's four agents also measured it on its own tree, so the bar was
+checked at six points, not asserted once at the end. **That bar
+is absolute zero, not “no new warnings over 194”**: commit `6cdd4c9` took the build from 194 to zero and
+`d9c052f` made zero a commit-ready gate in `CLAUDE.md`, so every “194 warnings, all pre-existing” figure
+elsewhere in this file is **historical** — it described the tree before `6cdd4c9` and must not be read as a
+target. The 194 were 8 in `src` plus 186 xUnit analyzer warnings in the test project, which is the trap a batch
+that adds thirty tests walks into: new tests must add **zero**. This run adds **190 test cases** and held the
+bar, so the trap is avoidable rather than theoretical — though it was not avoided by luck: one `xUnit1051` on
+an untokened `Task.Delay` did fire during Batch 04's fix pass and was cleared before its commit. Read the count
+off MSBuild's `N Warning(s)` summary line — at `-v:n` every warning prints twice, so grepping the log
+double-counts. **The suite reaches `failed: 0` on the final tree — 2422 total / 0 failed / 1 skipped**, and
+unlike the merge run it reached it on the **first** attempt there rather than the third: three runs of the final
+tree exist (two consecutive by Batch 03's fix pass, one independent by the roadmap pass that wrote this line)
+and all three are identical, with no re-run needed to get a clean one. Across the whole run the four agents
+executed roughly **30** full gates, which is what makes the two intermittents recorded below measurements
+rather than anecdotes. See the callout below for the numbers and what is still owed._ Living index
 of what the Agent System has shipped and what is left to build. Authoritative design:
 [`../2026-07-18-agent-system-phase1-plan.md`](../2026-07-18-agent-system-phase1-plan.md)
 (referenced below as “the plan §N”). The open items in the last section come from
@@ -53,7 +57,7 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 12 | `7a41a68` → `d3c8c61` | **[Batch 05](05-planner-reason-then-emit.md)** — opt-in reason-then-emit planning: `IAiProviderHandler.DropsReasoningEffortWithTools` on all eight handlers, a global `AppSettings` toggle (default OFF) + its CheckBox, and a tool-FREE reasoning turn ahead of the constrained `emit_plan` turn on the three handlers that drop the effort under tools. Includes the review-fix commit and the two polish commits; this roadmap commit records it | ✅ done |
 | 13 | `1dced2f` → `cac8251` | **[Batch 12](12-ui-dispatcher-abstraction.md)** — `IUiDispatcher` injected into the 4 remaining ViewModels, the exemption list 4 → 1, and the **first `View` in the repo parsed by a test**. Includes its own 2-commit review fix pass | ✅ done |
 | 14 | `9a8a639` → `cd13c1a` | **[Batch 04](04-autonomy-policy.md)** — one `ToolClassifier` + one `ToolAutonomy.Resolve` for both run gates, a per-run `RunAutonomyPolicy` in the existing `PolicyJson` v1 envelope, an `AppSettings` default for built-in writes, and voice-mode writes routed through the gate. Includes its own review fix pass | ✅ done |
-| 15 | `50d2054` → `eef28a0` | **[Batch 03](03-audit-timeline.md)** — the per-run audit timeline: an append-only metadata-only `AgentTimelineEvents` store (per-run `Seq`, a 500-row cap + one truncation marker, retention prune), a per-step `AgentTimelineScope` carried to BOTH run gates, and a read-only "Tool activity" trace on the run panel. Includes its own 6-commit review fix pass — see “Opened by Batch 03” below | ✅ done |
+| 15 | `50d2054` → `c92dfdd` | **[Batch 03](03-audit-timeline.md)** — the per-run audit timeline: an append-only metadata-only `AgentTimelineEvents` store (per-run `Seq`, a 500-row cap + one truncation marker, retention prune), a per-step `AgentTimelineScope` carried to BOTH run gates, and a read-only "Tool activity" trace on the run panel. Includes its own 10-commit review fix pass — see “Opened by Batch 03” below | ✅ done |
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -71,17 +75,37 @@ table carries 05 as shipped — so the note was **dropped in the merge** rather 
 accurate when written: the Batch-05 roadmap pass it was describing existed only on the other machine. Recorded
 because a reader who saw `b32ca14` will look for it.
 
-**Git position, re-measured 2026-07-30 after the merge:** `origin/feature/agent-run-spine` is at **`b32ca14`**,
-Batch 12's last commit. Every earlier value this paragraph has held — `73e15e8`, `1c49b08`, `e7df175` — is
-stale, and so was every hardcoded *count* printed beside them ("17" was already stale when it was read, then
-29, then 6, then 2). **So the local-only tail is now described, not counted.** It is exactly Batch 05's polish
-pass (`ba2c266`, `d3c8c61`), its roadmap pass, and this merge; Batch 12 in full is already on `origin`. Read it
-from git, always: `git rev-list --count origin/feature/agent-run-spine..HEAD` for the number, `git log
---oneline origin/feature/agent-run-spine..HEAD` for *which* — and the second is the part that actually matters
-when deciding whether a push is safe. `git branch -vv` prints `[ahead N, behind M]`, and **`behind` is not
-hypothetical on this branch**: an unnoticed `behind 7` is what produced this merge.
+**Rows 14 and 15 ARE a sequence — but four commits in that span belong to no batch, and one pair is inside a
+range rather than before it.** Batch 03 was authored on top of Batch 04, so unlike rows 12/13 reading down is
+correct. What the two ranges do **not** own: `c45f792` and `2c3e661` are the Design step, **two impl specs in
+one pair of commits covering BOTH batches**, so neither range can claim them and they sit before row 14's
+start; and `30956c5` → `790defd` (the Batch 02 pricing withdrawal — docs-only, three `.md` files then two) sit
+**inside** row 15's span, between Batch 03's build pass and its fix pass, because the owner re-scoped 02 while
+03 was in review. Same treatment as `30ebb52` below: docs-only, belongs to no batch, does not break the range
+it interrupts. A `git log 50d2054..c92dfdd` therefore lists two commits that are not Batch 03's — check the
+subject line, not the position.
+
+**Git position, re-measured 2026-07-30 at the end of the 04/03 run — and this paragraph's own warning caught
+it:** `origin/feature/agent-run-spine` is at **`5e1d793`** ("add new icon templates"), *not* the `b32ca14` this
+paragraph claimed an edit ago. Every value it has held — `73e15e8`, `1c49b08`, `e7df175`, `b32ca14` — went
+stale, and so did every hardcoded *count* printed beside them ("17" was already stale when it was read, then
+29, then 6, then 2). **So the local-only tail stays described, not counted.** As described: Batch 05's polish
+pass and its roadmap passes, the Batch 12 merge (`d2e56e6`), **the zero-warning work itself** (`6cdd4c9`,
+`d9c052f`), a second merge (`91e3ea5`), the branding pass (`dda6703`) — which was the **base for the 04/03
+run** — and then all of Batches 04 and 03 plus the Batch 02 re-scope. Worth naming explicitly because it is
+easy to misread: **the zero-warning bar this file now states is itself local-only**, so a reader who fetches
+`origin` and builds will still see 194. Read the position from git, always:
+`git rev-list --count origin/feature/agent-run-spine..HEAD` for the number, `git log --oneline
+origin/feature/agent-run-spine..HEAD` for *which* — and the second is the part that actually matters when
+deciding whether a push is safe. `git branch -vv` prints `[ahead N, behind M]`, and **`behind` is not
+hypothetical on this branch**: an unnoticed `behind 7` is what produced the Batch 12 merge. **Still unpushed by
+owner decision, and the 04/03 run did not push, merge or rebase** — it was instructed not to and did not.
 Build check everywhere: `dotnet build -t:Rebuild -v:n`, **and again with `-c Release`** — the bar is
-**0 errors, 0 warnings in BOTH configurations**, measured at `dda6703` and held by Batches 04 and 03.
+**0 errors, 0 warnings in BOTH configurations**, measured at `dda6703` before the 04/03 run and again at
+`c92dfdd` after it, both configurations both times. Two of the run's agents also checked that the rebuild was a
+*genuine* one rather than a skip, by counting `CoreCompile`/`Csc` invocations in the `-v:n` log (4 on the Batch
+03 tree: `Pia.Shared`, `Pia.Wpf`, the `Pia.Wpf_<hash>_wpftmp` XAML markup pass, `Pia.Wpf.Tests`). That check is
+worth copying — a 7-second "rebuild" looks exactly like an incremental no-op from the summary line alone.
 
 **Superseded, kept because the reasoning still applies.** Up to `cac8251` this paragraph read “0 errors, 194
 warnings, all pre-existing” and the bar was *adds zero new warnings*: 3× `CS8602` in
@@ -131,10 +155,15 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
 >    `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`:
 >    **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, **2157 / 0 failed** after the
 >    residual-hazard pass, **2194 total / 0 failed / 1 skipped** re-measured on a clean tree at `7815ce1`, and
->    **2224 total / 0 failed / 1 skipped** at `d3c8c61` after Batch 05 (**+30** cases), and
+>    **2224 total / 0 failed / 1 skipped** at `d3c8c61` after Batch 05 (**+30** cases),
 >    **2232 total / 0 failed / 1 skipped** on the **merged tree** after Batch 12 (**+8**; reached on the third
 >    of three full runs, the other two costing only the known `TaskExtensionsTests` flake — see the ✅ callout
->    above). The `7815ce1` figure is
+>    above), and **2422 total / 0 failed / 1 skipped** at `c92dfdd` after Batches 04 and 03. That last figure
+>    closes arithmetically across four measured stops, which is why it is quoted as a chain rather than as a
+>    total: 2232 → **2342** (Batch 04's build pass, **+110**) → **2356** (its fix pass, **+14**, matching the 14
+>    new facts exactly) → **2410** (Batch 03's build pass, **+54**) → **2422** (its fix pass, **+12**). Nothing
+>    is unaccounted for, and no step was inferred from a diff — every number was read off a run. The `7815ce1`
+>    figure is
 >    still the correct *pre*-Batch-05 baseline even though the batch starts at `7a41a68`: the only commit
 >    between them is `30ebb52`, which is docs-only (two `.md` files) and belongs to no batch. **`d3c8c61` is
 >    likewise the correct pre-Batch-12 baseline**, because Batch 12 branched from `73e15e8` and never saw Batch
@@ -196,11 +225,24 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
   headless launcher stores its resolved set, and the interactive Agent-mode create stores an *empty* set
   (an interactive run holds no standing grant — every write is a card the user clicks), so an interactive-origin
   resume grants nothing rather than picking up the fallback floor. The `{write_file}` floor now applies only
-  to runs created before D1 or with an unreadable envelope.
+  to runs created before D1 or with an unreadable envelope. **Two corrections from Batch 04, which had to read
+  this column closely.** (i) “**Both** producers” is **three**: the launcher, the interactive create, and
+  `SingleTurn`, which writes NULL — so a column-shape claim must allow for the null. (ii) The interactive-origin
+  resume was **wider than its own launch** whenever the serializer faulted, because the fault degraded to `null`
+  and `null` takes the `{write_file}` floor — the exact escalation this bullet says is closed. 04 replaced the
+  degrade with a hardcoded envelope *literal* (an empty grant list, not an absent one), pinned by both a shape
+  test and a round-trip test. **Still open:** the floor itself remains **origin-blind**, so a pre-D1 row or a
+  corrupted column still takes `{write_file}` — see “Opened by Batch 04”.
 - **MCP behind the gate** — interactive approval + unattended grant gate + a destructive-tool guard that
   now covers **both** paths: interactively it never auto-approves a destructive MCP call, and unattended it
   refuses a *granted* tool that is both delete-like and external (fail-closed if MCP-ness can't be derived).
   The delete-like rule covers the whole destructive stem family, not just "delete".
+  **“Fail-closed” was too flat, corrected by Batch 04:** mapping a derivation fault to *external* is closed for
+  the **floor** and **open for grantability** — a non-delete-like *built-in* misread as external would be
+  offered “Always allow”. Both doc comments now state the direction instead of the word. The plumbing to close
+  it was **declined, not refuted** (04 §13.6): the path needs a null tool name, which a pending action that
+  supplied one cannot produce, and the fix would have put a second auto-approval expression inside the very file
+  the architecture rule exists to keep at one.
 - **Verify/critic pass** — a completed run is judged against its goal, with each step's declared
   `ExpectedArtifact` probed against the effective file root (the assistant files folder, narrowed by the
   chat's working subpath the same way the file tools narrow it) and the found/NOT-FOUND facts fed into the
@@ -260,6 +302,40 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
   retry reuses the one analysis. Default OFF because it doubles a plan-turn cost that is already ≥2 rounds.
   `ReplanAsync` stays single-turn by decision (D3). Not every enabled run is *boosted* — see “Opened by
   Batch 05”.
+- **How much a run may do without asking is one decision, taken in one place** (Batch 04) — every gated tool
+  call on every surface now resolves through a single pure function, `ToolAutonomy.Resolve`, fed by a single
+  `ToolClassifier`. What each gate used to decide for itself (is this external? is it delete-like? is it
+  allowlisted? is it granted?) is now an input computed by whoever already owned that answer, so no comparer,
+  allowlist or stem table changed and every pre-existing permission test passes unmodified. The **destructive
+  floor is structural rather than remembered**: it is evaluated *before* any policy branch, a class grant can
+  never cover a delete-like name at all, and a scoped architecture rule pins the three gate files at an exact
+  count of decision calls each — so a *removed* check goes red, not just a duplicated one. On top of that floor
+  sits an **additive** authority: a per-run `RunAutonomyPolicy` (a list of tool *classes*, never names —
+  authored from a settings preset, resolved at launch, and stored in the run's existing `v:1` grant envelope) is
+  the only thing that can widen a run, and it can only widen it over non-destructive built-ins. Class-keyed
+  because a name list cannot work here: three name sets with three different comparers already disagree,
+  tool-name routes are last-wins with no collision detection, and a list authored when a job is created cannot
+  know what MCP tools will exist when it fires. **The envelope is the run's authority of record** — a resume
+  reads the policy from the run, never from settings, so flipping the setting while a run is parked cannot
+  widen it on Continue. Two user-visible consequences: an interactive Planned run with the setting on shows a
+  *pre-resolved accepted* card for a covered write (never nothing — silence would mean the card-before-execute
+  ordering was lost), and **voice mode lost a capability it should never have had** — every write it made was
+  previously ungated, and now goes through the same gate as everything else.
+- **A run records what it was allowed to do** (Batch 03) — `AgentTimelineEvents` is an append-only,
+  **metadata-only** store with one row per *gated* tool call, written after the outcome is known: the decision,
+  the rule behind it, the surface, the tool name and class, argument/result *lengths*, duration. **No hash and
+  no payload, deliberately** — a hash of `{"path":…}` is a brute-forceable confirmation oracle, so a reference
+  here is only ever an id, a count, or a name already safe at `Information`. Attribution reaches the gate on a
+  per-step sink carried by the turn spec, which is the only carrier that knows both the run and the step. The
+  table is **bounded on both axes** — a 500-row per-run cap that appends exactly one truncation marker and
+  survives a restart without appending a second, plus a retention prune on each row's own `CreatedAt` (a
+  crash-swept run's `CompletedAt` is NULL forever, so it could not be the key). Both run gates emit through one
+  shared bracket, so Live and Headless record the *same* decision for the same reason; bookkeeping is
+  failure-isolated, and the store's allocator lock is split from its connection lock so a UI-thread emit cannot
+  queue behind a writer's INSERT or the prune's DELETE. Surfaced as a read-only, collapsed **"Tool activity"**
+  expander on the run panel that re-reads on every expand and distinguishes *"nothing was recorded"* from
+  *"this could not be read"* — it never renders a failed read as a positive claim of emptiness, and never
+  renders an errored call as a success. **Per-device and gates-only** — see “Opened by Batch 03”.
 
 ---
 
@@ -289,19 +365,19 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2232 / **0 failed** / 1 skipped on the merged tree, 2026-07-30, which also cleared Batch 12's never-executed facts. What a unit suite cannot cover remains: a real provider round — see the callout above | — | S | a Windows runner + a live provider |
-| 2 | 02 | [Remove `CostUsd`](02-cost-ledger.md) — pricing **withdrawn** by decision 2026-07-30; the batch now deletes the half-built seam | 2 | XS | — |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. What a unit suite cannot cover remains: a real provider round, a real MCP server, and the DE/FR render — see the callout above and both “Opened by” sections | — | S | a Windows runner + a live provider |
+| 2 | 02 | [Remove `CostUsd`](02-cost-ledger.md) — pricing **withdrawn** by decision 2026-07-30; the batch now deletes the half-built seam. **The last of Phase 2**, and the only batch below that is a deletion rather than a feature | 2 | XS | — |
 | 3 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
 | 4 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
-| 5 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause, sub-agents |
-| 6 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B |
+| 5 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
+| 6 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, sub-agents (07) |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
 | — | 11 | [Context compaction](11-context-compaction.md) | 2 | S–M | ✅ **shipped** `74f964c`→`a06358d` |
 | — | 12 | [UI-dispatcher abstraction](12-ui-dispatcher-abstraction.md) | 2 | M | ✅ **shipped** `1dced2f`→`cac8251` — tests **run green 2026-07-30** on the merged tree |
-| — | 04 | [Autonomy policy](04-autonomy-policy.md) | 2 | M–L | ✅ **shipped** `9a8a639`→`cd13c1a` |
-| — | 03 | [Audit timeline](03-audit-timeline.md) | 2 | M–L | ✅ **shipped** `50d2054`→`eef28a0` — **device-local**, see “Opened by Batch 03” |
+| — | 04 | [Autonomy policy](04-autonomy-policy.md) | 2 | M–L | ✅ **shipped** `9a8a639`→`cd13c1a` — spec'd in `c45f792`, see “Opened by Batch 04” |
+| — | 03 | [Audit timeline](03-audit-timeline.md) | 2 | M–L | ✅ **shipped** `50d2054`→`c92dfdd` — **device-local**, see “Opened by Batch 03” |
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -311,7 +387,13 @@ switch) has never been exercised against a real provider or a real user session,
 gate is a worse failure than the gap it closed. **Batch 05 has now shipped too**, and it was only ever ahead of
 03/04 because it was S–M and unblocked — so with it gone, 03 (audit timeline) and 04 (autonomy policy) move up
 behind 02, and both are M–L. Batch 05 also *added* to the smoke list rather than shortening it, which is one
-more reason the callout above still outranks all of them.
+more reason the callout above still outranks all of them. **04 and 03 have since shipped as well, and the
+argument survives them intact — in fact it strengthened.** Both add a *gate* or a *record of a gate*, which is
+the same category as Batch 10's: a wrong autonomy decision is worse than the friction it removed. Between them
+they added **seven** irreducibly manual items (a real MCP server, a real provider round, the two settings
+CheckBoxes' binding paths, a park→flip→Continue round, the voice-mode refusal, a cross-restart trace, and the
+DE/FR render — now the longest agent-settings string in three locales), so the gap between Rank 1 and Rank 2
+is wider today than it was this morning.
 
 **Batch 12 briefly put “run the tests” back at Rank 1, and that has now been paid.** `b32ca14` argued the point
 literally: 7 (in fact 8) new facts had never run, one creates the process's first `Application`, and the
@@ -320,12 +402,37 @@ could say whether those commits were safe. The merge run did exactly that and ca
 Rank 1 is once again the **manual smoke round alone**. Keep the argument, though: it is the general case. Any
 batch that adds tests which cannot be executed where they are authored re-earns Rank 1 until someone runs them.
 
-Phase 2 now completes at Batch 03/04. Batches 06–09 are Phase 3/4; their seams may shift — re-scope at the
-design step. `PolicyJson` is no longer NULL — it carries the launch grant envelope — so Batch 04 must *extend*
-that document, not claim the column. **Batch 09 picked up two obligations from Batch 10's W3:** it must render
+~~Phase 2 now completes at Batch 03/04.~~ **It has: 03 and 04 both shipped 2026-07-30, so Phase 2 is complete
+except for Batch 02** — and 02 is a **deletion**, not a feature, since pricing was withdrawn the same day. Read
+that as the phase being done in capability terms with one cleanup outstanding. Batches 06–09 are Phase 3/4;
+their seams may shift — re-scope at the design step.
+
+**Two rank changes, both consequences of Batch 04 rather than reprioritisation.** 09 moved ahead of 08 because
+its blocker cleared: 09 owes a job-creation surface whose payload is "goal + schedule + budget + **autonomy
+policy**" (`09-scheduler-ui.md:20`/`:25`, which names the dependency on Batch 04 explicitly), and that policy
+now exists as `RunAutonomyPolicy` with a resolved class list already persisted in `AgentRuns.PolicyJson` and a
+settings preset to author it from — so 09 has something real to bind to, whereas 08 still waits on 07. Nothing
+about 08 got worse.
+
+~~`PolicyJson` is no longer NULL — it carries the launch grant envelope — so Batch 04 must *extend* that
+document, not claim the column.~~ **Done, and the instruction was right about the constraint but the batch
+found it stricter than stated.** Batch 04 added `policy` as an **additive member of the existing `v:1`
+envelope** and deliberately did **not** bump `GrantEnvelopeVersion`, because `envelope.V != 1` is an *exact
+equality* check: a bump makes every already-persisted envelope unreadable at once. `GrantEnvelopeJsonOptions`
+sets no `UnmappedMemberHandling`, so additive members interoperate in **both** directions for free. Proved by
+mutation, not argued: bumping to `v:2` reds five new policy facts *and* the pre-existing
+`GrantEnvelope_IsVersionedCamelCase` tripwire. One correction to the column's own description while we are here
+— **`PolicyJson` has three producers, not two**: the headless launcher, the interactive Agent-mode create, and
+`SingleTurn`, which writes NULL. There is no `UPDATE` path anywhere, which is what makes the envelope the run's
+authority of record.
+
+**Batch 09 picked up two obligations from Batch 10's W3:** it must render
 an unknown/out-of-range `ScheduledJobStatus` safely (an older peer receives the new ordinal `3` over the sync
 wire and stores it as the string `"3"`, unvalidated at `SyncMapper.cs:953`/`:974`), and it owns the missing
-re-arm surface for a settled one-off (see “Deliberately open”).
+re-arm surface for a settled one-off (see “Deliberately open”). **Batch 04 adds a third, and it is the same
+shape:** if 09 ever lets a job carry its *own* policy rather than inheriting the global setting, that class
+list becomes model- or peer-authored input and needs `ParseGrantedTools`' treatment — `SyncScheduledJob`'s
+`GrantedTools` is peer-writable and stored unvalidated today (04 §13.2).
 
 ---
 
@@ -500,6 +607,29 @@ entry said “~1 run in 8”; on the merge run it fired in **2 of 3** full runs,
 to describe as the only one. In isolation the class is **4/4 green**. Practical rule: this test failing alone
 does not fail the gate — re-run it isolated to confirm — but because it is this frequent, a clean full run is
 worth repeating before quoting `failed: 0`.
+
+**Rate corrected AGAIN 2026-07-30, and this entry's own lesson now applies to itself.** Across the 04/03 run
+the four agents executed roughly **30** full gates and it fired **twice**, both in the same agent's series
+(Batch 04's build pass, 2 of 7; then 0 of 3, 0 of 5, 0 of ~14, and 0 of 1 in the roadmap pass). So neither “~1
+in 8” nor “2 of 3” was a rate — the first was a guess and the second was three observations, which is exactly
+the “a single red observation is not a rate” caution recorded above, read against the entry that carries it.
+Best current statement: **low single-digit percent, bursty, load-dependent**, and consistent with a wall-clock
+assumption rather than a defect. The practical rule is unchanged and is the only part worth trusting.
+
+**A SECOND intermittent appeared in this run, and nobody proved it pre-existing — read the uncertainty, it is
+the useful part.** `AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes`
+failed **once in Batch 03's build pass (5 runs)** and **once in its fix pass (~14 runs)**, and is **3/3 then
+4/4 green when its class runs isolated**. Both agents declined to call it pre-existing, for the same honest
+reason: **neither measured it at base**, and Batch 03 named *its own* tests as the most plausible load source —
+the three cap facts each emit 600 events through a serial writer that commits **one row per auto-commit
+transaction**, adding roughly **1500 individual commits** to a parallel run, against a test whose own comment
+says its detection window is “**PROBABILISTIC**, not guaranteed” and microseconds wide at `busy_timeout=100`.
+A base run has weak power (one run against a ~1-in-5 rate) *and* an unresolvable confound (the cap tests do not
+exist at base), which is why neither spent one — a defensible call, and better recorded than papered over. If
+it becomes a nuisance the reachable fix is to **batch the cap tests' emits**; note that the builder's own
+proposed fix — “lower `MaxEventsPerRun` in the fixture” — is **not reachable**, because it is a `public const`
+baked into the test assembly at compile time, and making it an instance property would change the render
+surface, which reads it statically.
 
 ### Opened by Batch 10 (2026-07-28) — known, reasoned, not closed
 
@@ -735,6 +865,106 @@ context/trajectory compression (→ Batch 11, whose design step collapsed when `
 shipped `Microsoft.Agents.AI.Compaction` on 2026-07-22 with the atomic tool-group logic already solved).
 hermes-comparison §5/rec #5.
 
+### Opened by Batch 04 (2026-07-30) — known, reasoned, not closed
+
+Numbered `§13.N` references are to [`04-autonomy-policy.impl.md`](04-autonomy-policy.impl.md), where each of
+these carries its full reasoning and its escape hatch.
+
+- **RELEASE NOTES: voice mode lost a capability, on purpose.** This is the batch's one user-facing *removal*
+  and the only item here a user will notice unprompted. Voice mode used to execute **every** write tool with no
+  gate at all (`AssistantViewModel.cs:1496` before this batch) — no card, no grant, no transcript entry, on the
+  one surface that has nowhere to show a card. It now goes through the same resolver as everything else, so
+  asking Pia out loud to write a file **declines and names the chat window** unless the agent-write setting is
+  on, while the four curated additive tools (todo, reminder, list-append, object-create) still work. Belongs in
+  the release notes for the same reason the `Once`-job backfill does: it is correct, it is deliberate, and a
+  user who relied on it will experience it as a regression unless told.
+- **The resume grant floor is still origin-blind** (§13.1). D12 removed the only *reachable* path by which an
+  interactive-origin resume could end up wider than its launch, but a row created before the policy landed, or
+  one with a corrupted `PolicyJson`, still takes the `{write_file}` floor regardless of which surface created
+  it. **Not implementable from today's signals, and that is the finding**: the interactive Planned create and
+  the “Run in background” detach both persist `TriggerKind = User` + `RunShape.Planned`, so nothing on the row
+  distinguishes them. Closing it needs a new **append-only** `AgentRunTrigger` ordinal — deliberately out of
+  scope, since inventing a persisted ordinal to satisfy a fallback is a schema decision, not a fix. Whoever
+  takes it should also make `ResumeFloorGrants` *reference* `DefaultGrantedWrites` rather than duplicate its
+  value, which is how the two could silently diverge.
+- **A model-authored or per-run policy would need `ParseGrantedTools`' treatment** (§13.2). Today the class list
+  is authored **only** from settings, so nothing untrusted ever reaches it and the reader can be permissive. The
+  moment a per-run editor or a `create_scheduled_research` parameter can author one, that list must be filtered
+  the way tool *names* already are — and must reckon with `SyncScheduledJob.GrantedTools` being **peer-writable
+  and stored unvalidated**. Recorded now because the safety of the current reader is a property of who writes
+  it, not of the reader.
+- **The curated allowlist is honoured interactively and in voice, but NOT unattended** (§13.3) — `IsAllowlisted`
+  is always `false` on the headless path, because `IToolPermissionService` is injected into neither headless
+  file. That is today's behaviour restated rather than a change, and it is now **pinned by a test**
+  (`ToolAutonomyTests.Unattended_TheAllowlistIsNotHonoured`) precisely so a future tidy-up is a deliberate
+  decision with a red test in front of it instead of a quiet widening. Whether those four additive tools
+  *should* be free on a scheduled job is a real question and deserves its own batch.
+- **`ExecutePendingActionAsync` is dead surface on all seven handler interfaces, and “a pending action implies a
+  gated call” is not universally true** (§13.4). Three handlers (`Todo`, `Reminder`, `ScheduledJob`) convert a
+  pending action into an immediate result on their `TargetId`-null error paths, so such a call executes upstream
+  of any gate. Unchanged by this batch, and load-bearing for Batch 03: it is one reason the audit trace is a
+  record of *gated calls*, not of every effect.
+- **Tool-name route collisions are still silent** (§13.5) — `PluginService`'s `_toolNameRoutes` is **last-wins
+  with no collision detection**, and `IsAutoApproveEligible` is name-only with no `PluginId` restriction.
+  **Partly closed:** a shadowing MCP server can no longer inherit the allowlist in voice mode, because that
+  branch now also requires the tool's *class* not to be external — the discriminator is the route, not the name.
+  The underlying registration is still silent, though, and still deserves a `RegisterHandler` collision warning.
+- **Three review findings were DECLINED rather than refuted, and the distinction is the point.** Each premise
+  was **accepted** and the fix judged wrong for a stated reason; none is a disagreement about facts.
+  (i) §13.6, threading a `routeKnown` flag so the derivation-fault path is closed for grantability too: the
+  premise is right and both doc comments were corrected because of it, but the path needs a **null tool name**,
+  which a pending action that supplied one cannot produce — and the fix would have placed a *second*
+  auto-approval expression inside the one file the architecture rule exists to keep at exactly one, where the
+  rule bans tokens and would not have seen it. Trading a live structural invariant for an unreachable path is
+  the wrong direction. (ii) §13.7, relaying the policy into the `SingleTurn` background path: **a named
+  executor-parity gap**, and the direction is *restrictive* — with the setting on, a scheduled `AgentTask` will
+  auto-approve a covered write while a scheduled `Research` job still refuses the identical tool. Recorded at
+  the call site in a 12-line comment naming both job kinds and the exact refusal string, because **widening an
+  unattended write path off a review nit, with no decision behind it, is not a call a fix pass should make**. A
+  future batch should decide it deliberately rather than read the missing argument as an oversight.
+  (iii) §13.8, intersecting the resume reader's class list against the settings preset: declined because the
+  preset is *the settings preset*, not “everything an envelope may legally carry”, so pinning the reader to it
+  would silently narrow the first per-run policy a later batch authors, with no failing test to explain why.
+  The finding's own reachability paragraph agrees it is defence-in-depth. **The other half of that same finding
+  WAS implemented** — both halves of the reader now apply the same readability test, because without it the
+  documented “an unreadable envelope loses the policy before it loses the grant list” asymmetry *inverted* for
+  one document shape.
+- **A premise was DISPROVED empirically, and it is the most useful thing this batch produced.** The classifier
+  was briefly given `_ => ToolClass.External` as its fallback, on the reasonable-sounding grounds that a genuine
+  MCP tool's card should keep offering “Always allow”. That is **wrong at a gate**, and it was caught by a red
+  test rather than by reasoning: an existing fact's fake pending action has a plugin literally named `plugin`,
+  so a **built-in `delete_file`** classified as external and tripped the destructive floor. The lesson
+  generalises past the test that found it — **externality at a gate is a property of the ROUTE and of nothing
+  else**, because otherwise a built-in renamed via `ApplyServerMetadata` becomes grantable-as-external by name.
+  Fixed by restoring `_ => Unknown`, adding a separately-documented name-only guess for the *card* alone, and
+  **banning that method by name from both gate files** in the architecture rule. The one commit-1 test that
+  asserted the old fallback was flipped: the invariant was right, the fallback was not.
+- **The persisted gate vocabulary grew past what the specs said, and both specs were stale in a way that would
+  have landed in the next batch.** `ToolGateDecision` runs **0–11** (`AutoApprovedAllowlist = 11`, appended
+  because voice mode must keep running the four allowlisted tools and no existing value said why) and
+  `ToolClass` runs **0–8** (`Ingest = 8` — `ingest` is in `BuiltInPluginDefaults`, so the classifier must map it
+  or the *exact* scheduled-research-as-external bug recurs the day ingest starts gating; it is deliberately
+  absent from the preset). Both specs said 10 and 7. Corrected in place, and Batch 03's theory was pointed at
+  `Enum.GetValues<ToolGateDecision>()` rather than a literal range so a thirteenth member cannot be missed the
+  way the eleventh was. These are **append-only from `Unknown = 0`** and now mechanized by a golden name→ordinal
+  map, not just a shape check.
+- **Manual smoke debt, none of it automatable — seven items.** (1) The settings CheckBox's `Binding` path:
+  nothing parses `Views/SettingsViews/AssistantView.xaml` and no test constructs `AssistantSettingsViewModel`,
+  so a typo renders a toggle that silently never persists — toggle it, restart, confirm it stuck. (2) A real
+  interactive `Planned` run with the setting **on**: a covered write must show a **pre-resolved accepted** card
+  (never *nothing* — silence would mean the card-before-execute ordering was dropped) while `delete_file` must
+  still show a live Decline/Allow-once pair with **no** Always-allow. (3) The `scheduled-research` card: titled
+  “Create Scheduled job”, **two** buttons not three, detail rows as label/value pairs. (4) Park → flip the
+  setting → Continue: the resumed run must still card every write. The mechanism is pinned by test; only a live
+  round proves envelope → reader → `Initialize` → gate end to end. (5) Voice mode with the setting off (the
+  removal above). (6) **DE/FR without clipping — now MORE relevant, not less**, because the fix pass
+  *lengthened* the longest agent-settings string in all three locales; the German label in particular is very
+  long. `LocalizationTests` proves key parity only, which passes either way. (7) A real MCP server: nothing in
+  the suite routes through a live `McpPluginToolHandler`, so `ToolClass.External` is **only ever faked** —
+  confirm an external tool still prompts with the full triad and that Always-allow still persists. **And the
+  most valuable single check:** with a server exposing a tool named exactly `create_todo`, confirm voice mode
+  now **refuses** it. That was a real must-fix, and its whole chain is faked in tests.
+
 ### Opened by Batch 03 (2026-07-30) — known, reasoned, not closed
 
 - **The trace is DEVICE-LOCAL, and the product does not say so.** `03`'s §0.4 and §12.1 both instruct this file
@@ -758,6 +988,15 @@ hermes-comparison §5/rec #5.
   path that could reach the other two deliberately exempts chats bearing a `Planned` run — precisely the runs a
   timeline is for — so the two older tables have no bound at all. Unchanged by design: giving them one is a
   retention decision about a user's own run history, not a fix.
+- **Manual smoke debt, none of it automatable — five items.** (1) **A real headless run's trace across a
+  restart**, which is the one that matters most: launch a background run, let it park at its budget, **quit and
+  relaunch**, click Continue, expand — rows from both segments present, in order, with no duplicate `Seq`. That
+  is the only live proof of the cross-process seeding; the failed-seed regression test covers it in-process
+  only. (2) A real MCP server, for the same reason as Batch 04 — `ToolClass.External` is only ever faked.
+  (3) The panel must not stutter during a run with many tool calls (the lock split is reasoned, not measured).
+  (4) The prune actually runs: set the retention to 1 day, hand-age a row, confirm the `Information` line reports
+  a non-zero delete. (5) DE/FR without clipping in the narrow decision column — **narrower now**, since the fix
+  pass grew the row from three columns to five, and the German decision label is the long one.
 - **DISCOVERED, and it belongs to Batch 12: `WpfStaHost` does not tolerate another test.** The host is one
   process-wide STA thread whose `Dispatcher.Run()` is *re-entered* when an exception escapes a queued operation
   (its own comment says so), while every test drives it through `Dispatcher.PushFrame`. Adding an eighth
@@ -774,7 +1013,39 @@ hermes-comparison §5/rec #5.
 - **Nothing measures UI-thread blocking, and no test can go red for it.** The store's two-lock split closes the
   mechanism by which a steady-state emit could stall the message pump, and the first emit of each run is now
   documented as the exception it always was (one indexed aggregate, on the caller's thread). But "Emit is cheap
-  on the UI thread" remains *argued*, not measured. The manual smoke round owns it.
+  on the UI thread" remains *argued*, not measured. The manual smoke round owns it. The first-touch seed was
+  **deliberately not moved** onto the writer thread, twice proposed and twice declined for one reason: seeding
+  on the writer means allocating `Seq` before knowing where a parked segment stopped, which is the single
+  correctness property the seed exists for and which ~15 emit-then-observe facts sit on. What changed instead is
+  that the two contract statements which *claimed* the split removed the exposure were corrected, and the bound
+  is now stated. One consequence to know: a permanently broken store retries the aggregate once **per emit**
+  rather than once per run — each retry is one indexed query that fails fast, and the alternative reintroduces
+  duplicate `Seq`. Cap the retries if it ever matters.
+- **A PREMISE WAS DISPROVED, and it was the batch's own.** Both the build pass's open item and the spec's §9.1
+  asserted that **nothing parses `RunProgressPanel.xaml`**. False: `AssistantView.xaml:50` places the panel as a
+  **plain element** inside a `StackPanel` with no `Template` ancestor, so `AssistantView.InitializeComponent()`
+  constructs it and runs its own `InitializeComponent()` — the Expander's non-deferred markup, its header and its
+  `TextBlock`s have been parsed by the existing `AssistantViewParseTests` since the day they landed. The second
+  half fell too: the shipped row `DataTemplate` contains **no `StaticResource` at all** (only `DynamicResource`,
+  which yields `null` rather than throwing), so the smoke item's stated failure mechanism has no instance in it.
+  Both are annotated in the spec in place. **The residue is real, though:** the row template is still deferred,
+  so the five row binding paths and the `loc:Str` header (bound to `Header`, invisible to a logical walk) remain
+  uncovered — and the fact written to cover them was **withdrawn** rather than shipped, because it raised the
+  full gate from 0/3 to 2/3 failing via the `WpfStaHost` defect above. Re-land it once that host is fixed.
+- **`Round` is not recorded, so the trace cannot say "these three calls were in the same round."** Recoverable
+  later only by touching the tool-handler delegate signature — six closures, five with nothing to emit — which is
+  why the decision is written down here rather than left implicit for someone to rediscover as a gap.
+- **A tool call in flight when the process dies leaves NO row**, by the one-row-after-the-outcome design.
+  Accepted rather than fixed: the run dies with it and the startup crash sweep settles it `Cancelled`, and a
+  half-written row claiming "approved" for a call whose effect is unknown would be **worse than no row** on an
+  audit surface. A two-row (intent + outcome) design would close it at double the rows and double the cap
+  pressure.
+- **Two spec statements were wrong and the code was right; both are annotated rather than silently edited.**
+  §8.2 asked for an "exact expected 15-name set" over a DDL that prescribes **16** columns — the spec simply
+  miscounted, and the shipped test asserts the real 16. §8.3 said to extend `ChatSessionStateMachineTests`; that
+  suite drives `RunTurnAsync`, which takes no turn spec, so **no sink can reach it** — the same wall Batch 04 hit
+  for the policy, and the reason all of that suite still passes unmodified. Both now carry a “CODE RIGHT, SPEC
+  WRONG” note so the next reader does not “fix” a correct test to match stale prose.
 
 ### Opened by Batch 05 (2026-07-30) — known, reasoned, not closed
 
@@ -857,6 +1128,12 @@ reliable) · 06 marginal (`ConfineWorkingDirectory` overlaps confinement we have
 07 **best reference** — `BackgroundAgents` is a shipped delegation shape worth reading, but it is flagged
 not-production-ready and has no `ParentRunId` persistence, budget roll-up, per-persona provider routing, or
 parent/child crash sweep · 08 weak · 09 none.
+
+**The 03 and 04 verdicts have now been tested by building both, and both held** (2026-07-30). Batch 03 shipped a
+queryable per-run decision table with a 500-row cap and a retention prune — not spans — and 04's per-run policy
+is a class list evaluated *underneath* a structural destructive floor, which is precisely the boundary the
+Harness's own shell docs decline to be ("a UX pre-filter, not a security boundary"). Neither batch imported
+anything. Recorded so the assessment reads as confirmed rather than merely asserted.
 
 **The one exception is compaction — and it does not live in the Harness package.** It shipped as
 [Batch 11](11-context-compaction.md) (`74f964c`→`a06358d`): `Microsoft.Agents.AI` 1.15.0's

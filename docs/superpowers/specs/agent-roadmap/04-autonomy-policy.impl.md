@@ -458,6 +458,16 @@ list is still empty.
 - writes — `ToolAutonomy.Resolve` with `Surface = Voice`, `IsAllowlisted` from `IToolPermissionService`,
   `HasStandingGrant` from `IsGranted(pluginId, name)`, `IsNamedGrant: false`, `Policy` = the settings preset
   (there is no run, so there is no envelope — **stated, not implied**);
+  > **AS BUILT — the voice allowlist branch additionally requires `ToolClass != External`, and that was a
+  > must-fix, not a polish.** `IsAutoApproveEligible` is `AutoApproveAllowlist.Contains(toolName)` with **no
+  > `PluginId`**, and tool-name routes are last-wins (R19), so an MCP server exposing a tool named exactly
+  > `create_todo` — a plausible name for a task-tracker server — would have auto-run on the **one surface with no
+  > card and no transcript entry**, sending the user's spoken content to a third party with only a log line
+  > behind it. The interactive gate was never exposed, because it additionally requires a standing grant, i.e. a
+  > card the user clicked. This narrows nothing intended: all four allowlisted names are built-ins, and a
+  > *renamed* built-in classifies as `Unknown`, not `External`. Pinned at both levels — a resolver theory over
+  > all four names asserting the same name on a **built-in** route still auto-runs (so the discriminator is
+  > provably the class, not the name), plus a ViewModel-level fact driving `HandleVoiceModeToolCall`.
 - `AutoRun` → execute exactly as today (same token-map re-init);
 - `Prompt` → *refuse*, because voice has no card surface: `"Denied: '{tool}' needs your confirmation and voice
   mode cannot show an approval card. Ask me again in the chat window."` — an English literal, like both
@@ -465,7 +475,8 @@ list is still empty.
 - `Refuse` → the destructive-floor refusal string.
 
 **What changes for a user:** `create_todo` / `create_reminder` / `create_object` / `append_to_list` still run
-(allowlist). Anything the user has already "always allowed" still runs (standing grant). With the new setting
+(allowlist) — **as built, only when they route to a built-in**; the same name coming from an MCP server refuses,
+per the note above. Anything the user has already "always allowed" still runs (standing grant). With the new setting
 on, the preset classes still run. `write_file` with the setting off, and **every** `delete_*` / `forget` /
 destructive MCP tool, now refuse instead of executing silently. That is a tightening, it is the documented
 intent of the whole gate, and no test pins the old behaviour (§0.5).
@@ -795,6 +806,17 @@ authority on every scheduled job. Record it as an open question (§13.3), not as
 - `IsAutoApprovable = ToolAutonomy.IsStandingGrantOfferable(toolClass, ToolName, _permissions.IsAutoApproveEligible(ToolName))`
   — the card and the gate now compute eligibility with the **same function**, so the divergence between
   `:102` and `ChatSession.cs:882` cannot recur.
+  > **AS BUILT: `&& !isDestructive` as well** — this line as written above **silently dropped the git-verb
+  > exclusion**, which was caught at review. R17's `isDestructive` is wider than the enforced rule by exactly
+  > `git_switch` / `git_restore` / `git_stash`, none of which is `IsDeleteLike`, so the unified expression alone
+  > would have started offering "Always allow" on an MCP git server's `git_switch` — after which every later call
+  > auto-runs and can discard uncommitted work in the user's repo unattended. D9 explicitly says a change must not
+  > close that gap **silently**; unifying on the shared helper closed it from the other side. The card is therefore
+  > deliberately **narrower** than the gate here, and the asymmetry is stated at the code line, where the next
+  > person editing `IsAutoApprovable` will read it. Note that **T-CARD-5 cannot cover this**: it compares the card
+  > against the same helper production calls, so it is tautological on the shared half — the new row asserts
+  > `IsAutoApprovable == false` **directly**, and was proved load-bearing by neutering the guard (all three rows
+  > red).
 - Details parsing: JSON for `memory` and `ActionCardCategory.Mcp` only. `Scheduled` joins the key/value branch,
   which is what `ScheduledJobToolHandler` actually produces (`:185-197`).
 - Title: `ActionCard_Category_Scheduled` (new key) + two existing verb keys wired up —
