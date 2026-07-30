@@ -531,7 +531,7 @@ must render as *unknown*, never throw and never be re-mapped.
 | `src/Pia.Wpf/Services/BackgroundAssistantTurnRunner.cs` | gate → one `Resolve` call; `RunExchangeAsync` gains a trailing optional `RunAutonomyPolicy? policy = null` |
 | `src/Pia.Wpf/Services/HeadlessTurnExecutor.cs` | `Initialize` gains a trailing optional `RunAutonomyPolicy? policy = null`; relays it into `RunExchangeAsync` |
 | `src/Pia.Wpf/Services/Interfaces/IAgentTurnExecutor.cs` | `StepTurnSpec` gains a trailing `RunAutonomyPolicy? Policy = null` (R24) |
-| `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs` | ctor takes the resolved policy; `BuildSpec` sets it |
+| `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs` | ctor gains a **trailing optional** `RunAutonomyPolicy? policy = null`; `BuildSpec` sets it |
 | `src/Pia.Wpf/ViewModels/Models/ChatSessionManager.cs` | one settings read (D11); policy into the envelope + into `LiveTurnExecutor`; literal fallback (D12) |
 | `src/Pia.Wpf/Services/HeadlessRunLauncher.cs` | `GrantEnvelope.Policy`; `SerializeGrantEnvelope` overload; `TryRestorePolicy`; `InteractiveEmptyEnvelopeJson`; launch + resume wiring |
 | `src/Pia.Wpf/Services/ActionCardBuilder.cs` | classify via `ToolClassifier`; `IsAutoApprovable` via `ToolAutonomy`; `Scheduling` category + title/verb/details fixes |
@@ -545,6 +545,15 @@ must render as *unknown*, never throw and never be re-mapped.
 
 Do **not** hand-edit `ViewStrings.Designer.cs` (it has drifted; `loc:Str` resolves via `ResourceManager`).
 Every new `.cs` file must be **CRLF**.
+
+**Every new parameter in this batch is trailing and defaulted** — on `Build`, on `Initialize`, on
+`RunExchangeAsync`, on `RunModelExchangeAsync`, on `StepTurnSpec`, **and on `LiveTurnExecutor`'s constructor**
+(`RunAutonomyPolicy? policy = null`, documented as *"null ⇒ no per-run policy; today's behaviour"*). That is
+not tidiness: it is what makes commit 2's and commit 4's "the existing suite passes unmodified" claim true, and
+`LiveTurnExecutor` is hand-constructed with a **positional** argument list at `ChatSessionManager.cs:768` and in
+`LiveTurnExecutorPlannedRunTests`, so a non-defaulted parameter there would force test edits into the middle of
+a refactor whose whole proof is that no test needed editing. A *forgotten* argument at the one production call
+site is caught by T-GATE-1, which drives the policy end-to-end through the live executor.
 
 ---
 
@@ -638,7 +647,9 @@ public sealed record RunAutonomyPolicy(IReadOnlyCollection<ToolClass> AutoApprov
         /// reader's `V != 1` equality would turn a bump into "every existing envelope unreadable → the
         /// {write_file} resume floor", which for an interactive-origin envelope (grantedWrites: []) is a
         /// WIDENING. GrantEnvelopeJsonOptions sets no UnmappedMemberHandling, so an older build skips this
-        /// member and still restores the grants.</summary>
+        /// member and still restores the grants. WhenWritingNull is on THIS member only, so a policy-less
+        /// document stays byte-identical to a pre-04 one (T-ENV-5/6).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public PolicyDto? Policy { get; set; }
     }
 
@@ -660,13 +671,14 @@ public sealed record RunAutonomyPolicy(IReadOnlyCollection<ToolClass> AutoApprov
 ```
 
 `SerializeGrantEnvelope` with `policy: null` must **omit** the member, not emit `"policy":null` — otherwise
-T-ENV-5's byte pin and the "pre-04 document is byte-identical" claim both break. Achieve it by leaving
-`GrantEnvelope.Policy` null and adding
-`DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull` to `GrantEnvelopeJsonOptions`. That is safe for
-the existing members: `V` is a non-nullable int, `GrantedWrites` is always assigned a list, and `Trigger` is
-always `trigger.ToString()` — so no currently-emitted member can become absent. **Verify that by running
-`HeadlessRunLauncherTests.GrantEnvelope_IsVersionedCamelCase_AndCarriesTheOriginTrigger` (`:484`), which
-asserts the literal substrings `"v":1`, `"grantedWrites"` and `Schedule`.**
+T-ENV-5's byte pin and the "pre-04 document is byte-identical" claim both break. Achieve it with a
+**per-member** `[JsonIgnore(Condition = WhenWritingNull)]` on `GrantEnvelope.Policy`, as shown above — **not**
+with `DefaultIgnoreCondition` on `GrantEnvelopeJsonOptions`. The options object is shared by the serializer
+*and* the deserializer and governs all four members; scoping the change to the one new member means nothing has
+to be argued about `V` / `GrantedWrites` / `Trigger` at all. Either way, run
+`HeadlessRunLauncherTests.GrantEnvelope_IsVersionedCamelCase_AndCarriesTheOriginTrigger` (`:484`) — it asserts
+the literal substrings `"v":1`, `"grantedWrites"` and `Schedule`, and it is the tripwire if the emitted shape
+moves.
 
 ## 6. The two gates
 
@@ -1031,7 +1043,7 @@ Mirroring `AppSettingsAgentPlanningTests` exactly (namespace `Pia.Tests.Models`)
 | 1 | `Autonomy: one classifier and one resolver for the tool gates` | `ToolGateEnums.cs`, `RunAutonomyPolicy.cs`, `ToolClassifier.cs`, `ToolAutonomy.cs`; T-FLOOR-*, T-RES-*, T-OFF-*, T-CLS-*, T-ARCH-2 | new code, no call sites → the whole existing suite is untouched |
 | 2 | `Autonomy: route both gates through the shared resolver` | both gates rewired with `policy: null`; the fail-closed `IsExternalTool` on `ChatSession`; T-GATE-5, T-ARCH-1 | **all 18 existing gate facts pass UNMODIFIED.** If any needs editing, the refactor changed semantics and is wrong. |
 | 3 | `Cards: scheduled-research is a built-in, not an external tool` | `ActionCardBuilder`, `IActionCardBuilder.Build`'s optional param, `ActionCardCategory.Scheduled`, `ActionCard_Category_Scheduled` ×3, the two verb keys; T-CARD-* | existing `ActionCardBuilderTests` / `…FilesDiffTests` / `GitActionCardTests` unmodified |
-| 4 | `Autonomy: persist a per-run policy in the existing v1 envelope` | `GrantEnvelope.Policy`, the serialize overload, `TryRestorePolicy`, `InteractiveEmptyEnvelopeJson`, launch + resume + `ChatSessionManager` (D11/D12), `HeadlessTurnExecutor.Initialize`, `RunExchangeAsync`, `StepTurnSpec.Policy`, `LiveTurnExecutor`; T-ENV-*, T-GATE-1/2/3/4/6/7/8/9 | existing `HeadlessRunLauncherTests`, `ChatSessionManagerTests`, `HeadlessTurnExecutorTests`, `AgentRunServiceTests` unmodified (every new param is trailing-optional) |
+| 4 | `Autonomy: persist a per-run policy in the existing v1 envelope` | `GrantEnvelope.Policy`, the serialize overload, `TryRestorePolicy`, `InteractiveEmptyEnvelopeJson`, launch + resume + `ChatSessionManager` (D11/D12), `HeadlessTurnExecutor.Initialize`, `RunExchangeAsync`, `StepTurnSpec.Policy`, `LiveTurnExecutor`; T-ENV-*, T-GATE-1/2/3/4/6/7/8/9 | existing `HeadlessRunLauncherTests`, `ChatSessionManagerTests`, `HeadlessTurnExecutorTests`, `LiveTurnExecutorPlannedRunTests`, `ChatSessionStepTurnTests`, `AgentRunServiceTests` unmodified — which holds **only because** every new parameter, `LiveTurnExecutor`'s ctor argument included, is trailing and defaulted (§3). If one of those files needs an edit, a parameter was made required; fix the parameter, not the test. |
 | 5 | `Autonomy: a settings default for built-in writes in agent runs` | `AppSettings`, VM, XAML, 3 resx keys ×3; T-SET-* | `LocalizationTests` green |
 | 6 | `Voice mode: writes go through the tool gate` | `AssistantViewModel`; T-VOICE-* | droppable without stranding 1–5 — but then §11's *"the policy governs all writes"* must be narrowed to *"all writes on the two run gates"* in the roadmap note |
 

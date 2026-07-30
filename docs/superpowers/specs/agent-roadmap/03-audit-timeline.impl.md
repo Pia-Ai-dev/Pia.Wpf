@@ -49,7 +49,7 @@ CLAUDE.md makes zero a commit-ready gate. Both configurations were measured at *
 | `StepTurnSpec` gained a trailing `RunAutonomyPolicy? Policy = null` | **03 appends AFTER it**: the member order becomes `…, UseGoalVerbatim = false, Policy = null, StepId = null, Timeline = null`. |
 | `BackgroundAssistantTurnRunner.RunExchangeAsync` gained a trailing optional `RunAutonomyPolicy? policy = null` | **03 appends after it**: `…, RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null`. |
 | `HeadlessTurnExecutor.Initialize` gained a trailing optional `RunAutonomyPolicy? policy = null` | 2 call sites (`HeadlessRunLauncher.cs` launch + resume) and `HeadlessTurnExecutorTests.cs:215/:297/:677` already compile against it because the param is trailing-optional. 03 adds no further param here (§4 threads the sink per **step**, not per **executor**). |
-| `LiveTurnExecutor`'s ctor gained the resolved policy | **03 adds `IAgentTimelineService` to the same ctor** — one more argument at the one hand-construction site (`ChatSessionManager.cs:768`). |
+| `LiveTurnExecutor`'s ctor gained a **trailing optional** `RunAutonomyPolicy? policy = null` | **03 appends `IAgentTimelineService? timeline = null` after it** — one more defaulted argument at the one hand-construction site (`ChatSessionManager.cs:768`). Keep it trailing-optional for the same reason 04 did: the ctor is called positionally in production **and** in `LiveTurnExecutorPlannedRunTests`. |
 | `HeadlessRunLauncher`: `GrantEnvelope.Policy`, `TryRestorePolicy`, `InteractiveEmptyEnvelopeJson`, `WhenWritingNull` on `GrantEnvelopeJsonOptions` | 03 does not touch `PolicyJson` at all. |
 | `AssistantViewModel.HandleVoiceModeToolCall` now runs the resolver on `ToolGateSurface.Voice` | Voice has **no run**, so it emits **nothing** (§3, D5). Explicit, not an oversight. |
 | `AppSettings.AgentRunAutoApproveBuiltInWrites` + its CheckBox + 4 resx keys ×3 | 03 adds 9 more resx keys ×3; insert them in their own contiguous block. |
@@ -532,16 +532,24 @@ with it fails a test**.
 | `src/Pia.Wpf/Services/AgentTimelineService.cs` | **new (CRLF)** — store, Seq allocation, cap, serial writer, prune |
 | `src/Pia.Wpf/Bootstrapper.cs` | `AddSingleton<IAgentTimelineService, AgentTimelineService>()` |
 | `src/Pia.Wpf/Services/Interfaces/IAgentTurnExecutor.cs` | `StepTurnSpec` gains `Guid? StepId = null, AgentTimelineScope? Timeline = null` (after 04's `Policy`) |
-| `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs` | ctor takes `IAgentTimelineService`; `ExecuteStepAsync` passes `step.Id`; `BuildSpec` builds the scope |
+| `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs` | ctor gains a **trailing optional** `IAgentTimelineService? timeline = null`; `ExecuteStepAsync` passes `step.Id`; `BuildSpec` builds the scope (null service ⇒ null scope ⇒ no rows) |
 | `src/Pia.Wpf/ViewModels/Models/ChatSessionManager.cs` | pass `IAgentTimelineService` into `LiveTurnExecutor` (`:768`) |
 | `src/Pia.Wpf/ViewModels/Models/ChatSession.cs` | `RunModelExchangeAsync` + `HandleToolCallWithStatus` + `HandleToolCall` gain a trailing `AgentTimelineScope? timeline = null`; 6 emit calls; a `Stopwatch` timestamp around `Execute()` |
 | `src/Pia.Wpf/Services/BackgroundAssistantTurnRunner.cs` | `RunExchangeAsync` + `HandleToolCallAsync` gain a trailing `AgentTimelineScope? timeline = null`; 4 emit calls |
 | `src/Pia.Wpf/Services/HeadlessTurnExecutor.cs` | takes `IAgentTimelineService`; builds a per-step scope; relays it through `RunExchangeStepAsync` |
 | `src/Pia.Wpf/Services/AssistantChatRetentionService.cs` | takes `IAgentTimelineService`; one `PruneOlderThanAsync(cutoff, ct)` call inside the existing `try` |
-| `src/Pia.Wpf/ViewModels/RunProgressViewModel.cs` | `Timeline` collection + `TimelineRowViewModel` + `IsTimelineExpanded` + a load-on-expand command; takes `IAgentTimelineService` |
+| `src/Pia.Wpf/ViewModels/RunProgressViewModel.cs` | `Timeline` collection + `TimelineRowViewModel` + `IsTimelineExpanded` + load-on-expand; ctor gains a **trailing optional** `IAgentTimelineService? timeline = null` |
 | `src/Pia.Wpf/Controls/Assistant/RunProgressPanel.xaml` | the read-only `Expander` |
 | `src/Pia.Wpf/ViewModels/AssistantViewModel.cs` | pass `IAgentTimelineService` into the hand-constructed `RunProgressViewModel` (`:387`) |
 | `src/Pia.Wpf/Resources/Strings/ViewStrings{,.de,.fr}.resx` | 9 keys each |
+
+**Every new parameter in this batch is trailing and defaulted** — on `StepTurnSpec`, on `RunExchangeAsync`, on
+`RunModelExchangeAsync`, on both tool handlers, **and on both hand-constructed types' constructors**
+(`LiveTurnExecutor`, `RunProgressViewModel`; `null ⇒ emit/render nothing`). Both of those are constructed with
+**positional** argument lists in production *and* in `LiveTurnExecutorPlannedRunTests` /
+`RunProgressViewModelTests`, so a required parameter would force test edits into commit 2 — whose entire proof is
+that no existing test needed editing. A *forgotten* argument at either production call site is caught by
+T-EMIT-1 (live rows appear) and T-UI-1 (the panel loads rows).
 
 ---
 
@@ -558,6 +566,11 @@ with it fails a test**.
     [ObservableProperty] private bool _isTimelineTruncated;
     [ObservableProperty] private string? _timelineNote;
 
+    /// <summary>Drives the "nothing recorded" line. A BOOL the VM owns, not an inverse converter: the panel
+    /// already uses BooleanToVisibilityConverter, and an unresolved StaticResource inside a DataTemplate throws
+    /// at TEMPLATE INSTANTIATION — i.e. the first time a user expands this — which no test reaches.</summary>
+    [ObservableProperty] private bool _hasNoTimeline = true;
+
     partial void OnIsTimelineExpandedChanged(bool value)
     {
         if (value && Timeline.Count == 0) LoadTimelineAsync().SafeFireAndForget(_logger);
@@ -565,8 +578,11 @@ with it fails a test**.
 ```
 
 `LoadTimelineAsync` reads `GetForRunAsync`, then marshals the collection fill through the **same
-`_uiContext.Post`** the existing `RefreshAsync` uses (R16) — G3 by the same mechanism, not a new one.
-A `TraceTruncated` row sets `IsTimelineTruncated` + `TimelineNote` and is not rendered as an ordinary row.
+`_uiContext.Post`** the existing `RefreshAsync` uses (R16) — G3 by the same mechanism, not a new one. Inside
+that post: a `TraceTruncated` row sets `IsTimelineTruncated` + `TimelineNote`
+(`Format("Run_Timeline_Truncated", MaxEventsPerRun)`) and is **not** added as an ordinary row; every other row is
+projected; then `HasNoTimeline = Timeline.Count == 0`. A null `_timeline` service (the trailing-optional ctor
+argument, §6) short-circuits to `HasNoTimeline = true` and reads nothing.
 
 `TimelineRowViewModel` is a plain projection: `ToolName`, `DecisionLabel` (the 5-way category, §8),
 `OutcomeSuffix` (localized *"failed"* when `Outcome == Error`, else null), `StepLabel` (`"Step {n}"` derived by
@@ -587,7 +603,7 @@ short time). **No path, no args, no result text** — there is none to project.
                      Visibility="{Binding IsTimelineTruncated, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <TextBlock Text="{loc:Str Run_Timeline_Empty}" Margin="0,2,0,2" FontSize="11"
                      Foreground="{DynamicResource TextMutedBrush}"
-                     Visibility="{Binding HasTimeline, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                     Visibility="{Binding HasNoTimeline, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <ItemsControl ItemsSource="{Binding Timeline}">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
@@ -609,9 +625,11 @@ short time). **No path, no args, no result text** — there is none to project.
       </Expander>
 ```
 
-**Verify at implementation time** that `InverseBooleanToVisibilityConverter` is a registered resource in this
-app; if it is not, add a `HasNoTimeline` bool on the VM instead of inventing a converter. `PiaCardStyle`,
-`BooleanToVisibilityConverter`, `TextMutedBrush` and `TextSubtleBrush` are all already used in this file.
+Every `StaticResource` / `DynamicResource` used above is **already used in this same file**
+(`BooleanToVisibilityConverter`, `TextMutedBrush`, `TextSubtleBrush` — R17), which is deliberate: an unresolved
+`StaticResource` inside a `DataTemplate` throws when the template is first instantiated, i.e. the first time a
+user expands the trace, and no test in this suite reaches that. **Introduce no new converter** — that is why the
+empty-state binds the VM's own `HasNoTimeline` bool rather than an inverse converter.
 
 ### 7.1 resx — 9 keys, all three files, one contiguous block after the Batch 04 block
 
@@ -687,7 +705,7 @@ Use the same in-memory/temp-file `SqliteContext` fixture `AgentRunServiceTests` 
 | T-CAP-3 | `TheCapSurvivesARestart` | 501 rows in the DB, new service instance, emit → still 501 (`Count` seeded from the DB) | seed `Count` as 0 → red |
 | T-PRUNE-1 | `PruneOlderThan_DeletesByTheRowsOwnCreatedAt` | rows at cutoff−1d and cutoff+1d, **both** runs' `CompletedAt` NULL → only the old row goes. **The D6 red-before-green.** | prune by a join on `AgentRuns.CompletedAt` → red (nothing is deleted) |
 | T-PRUNE-2 | `PruneReturnsTheDeletedCount_AndNeverThrows` | count matches; a disposed service returns 0 | — |
-| T-FK-1 | `DeletingTheChatCascadesTheTimelineAway` | insert chat → run → 3 events, `DELETE FROM AssistantChats` → 0 events (R5's chain, extended) | drop the `RunId` FK from the DDL → red |
+| T-FK-1 | `DeletingTheChatCascadesTheTimelineAway` | insert chat → run → 3 events, **`await DrainAsync()`, assert 3 rows PRESENT**, then `DELETE FROM AssistantChats`, then assert 0 (R5's chain, extended). **The pre-assert is mandatory, not belt-and-braces:** `Emit` is fire-and-forget and the `RunId` FK is enforced, so an undrained queue means the delete cascades nothing *and* the later insert fails the FK — 0 rows, green, and the test proves nothing. | drop the `RunId` FK from the DDL → red on the post-delete assert |
 | T-FK-2 | `AReplanThatReplacesStepsLeavesTheTimelineIntact` | 3 events with `StepId` set, then `ReplaceStepsAsync` with a fresh plan → all 3 rows still there, `StepId` unchanged (now dangling). **The D1 hazard, as a test.** | add `FOREIGN KEY (StepId) … ON DELETE CASCADE` → red (rows gone) |
 
 ### 8.2 `tests/Pia.Wpf.Tests/Unit/SqliteContextTests.cs` — extend
@@ -745,12 +763,19 @@ Use the same in-memory/temp-file `SqliteContext` fixture `AgentRunServiceTests` 
 
 ### 8.6 One testing hazard the implementer must handle deliberately
 
-`Emit` is fire-and-forget (D7), so **every** test that emits and then reads must synchronize. Do **not** sleep.
-Expose `internal Task DrainAsync()` on `AgentTimelineService` (the serial writer's tail task, or a
+`Emit` is fire-and-forget (D7), so **every** test that emits and then observes must synchronize — and
+"observes" includes *mutating* (T-FK-1 deletes the chat, T-CAP-3 re-opens the DB). Do **not** sleep. Expose
+`internal Task DrainAsync()` on `AgentTimelineService` (the serial writer's tail task, or a
 `Channel.Reader.Completion`-style barrier), reachable through the existing
 `InternalsVisibleTo Pia.Wpf.Tests` (`Pia.Wpf.csproj:69`), and `await` it. A `Task.Delay`-based test here would
 be a second `SafeFireAndForget_SlowTask_DoesNotBlock`-class flake, and this batch adds ~15 tests that would all
 have it.
+
+**A drained-but-unasserted precondition is the vacuity trap for this whole file.** Any test whose expected
+result is *"zero rows"* — T-EMIT-2, T-EMIT-9, T-FK-1, T-UI-2 — passes for free if the emission never happened.
+Each of those must either assert a **non-zero** control case in the same test (T-FK-1, T-EMIT-2) or pair with a
+sibling that proves the same code path does emit (T-EMIT-9 ↔ T-EMIT-8, T-UI-2 ↔ T-UI-1). State the pairing in
+each test's comment.
 
 ---
 
@@ -762,9 +787,11 @@ have it.
    chat view, which *hosts* this panel via `DataContext` but does not instantiate its template). **Check:** run
    a Planned run with 3+ tool calls, expand "Tool activity", confirm rows appear with times, tool names and
    decisions.
-2. **`InverseBooleanToVisibilityConverter` resolves.** A missing `StaticResource` in a `DataTemplate` throws at
-   **template instantiation**, i.e. only when the expander is first opened — a crash no test reaches (§7 says
-   to verify the resource exists at implementation time; this is the belt).
+2. **Every `StaticResource` in the new `DataTemplate` resolves.** An unresolved one throws at **template
+   instantiation** — i.e. only when the expander is first opened — which no test in this suite reaches. §7
+   avoids the risk by reusing only resources already present in this file (and by binding the VM's own
+   `HasNoTimeline` instead of introducing an inverse converter); **this item is the belt.** Open the expander on
+   a run with rows **and** on a run with none, so both branches of the template are actually instantiated.
 3. **A real headless run's trace, after a restart.** Launch a background run, let it park at its budget, **quit
    and relaunch the app**, click *Continue*, then expand the trace. The rows from both segments must be present
    and in order with no duplicate positions — the live proof of T-SEQ-2's cross-process `Seq` seeding.
@@ -822,10 +849,10 @@ have it.
 | # | Commit | Contents | Green means |
 |---|---|---|---|
 | 1 | `Timeline: an append-only per-run tool-decision store` | the DDL, `AgentTimelineEvent` + 2 enums, `IAgentTimelineService` + `AgentTimelineScope`, `AgentTimelineService` (Seq, cap, serial writer, prune, `DrainAsync`), the `Bootstrapper` line; T-STORE-*, T-SEQ-2, T-CAP-*, T-PRUNE-*, T-FK-*, T-DDL-1, T-PRIV-2, T-VOCAB-2 | nothing calls it yet → the existing suite is untouched; `DiRegistrationTests` proves the registration |
-| 2 | `Timeline: both executors carry a per-step sink to the gate` | `StepTurnSpec.StepId`/`.Timeline`, `LiveTurnExecutor` + `ChatSessionManager`, `HeadlessTurnExecutor`, the trailing params on `RunModelExchangeAsync` / `RunExchangeAsync` / both handlers — **plumbing only, no emit calls** | every existing executor and session test passes **unmodified** (all new params are trailing-optional, R12) |
+| 2 | `Timeline: both executors carry a per-step sink to the gate` | `StepTurnSpec.StepId`/`.Timeline`, `LiveTurnExecutor` + `ChatSessionManager`, `HeadlessTurnExecutor`, the trailing params on `RunModelExchangeAsync` / `RunExchangeAsync` / both handlers — **plumbing only, no emit calls** | `LiveTurnExecutorPlannedRunTests`, `ChatSessionStepTurnTests`, `HeadlessTurnExecutorTests`, `ChatSessionStateMachineTests` and `BackgroundAssistantTurnRunnerTests` all pass **unmodified** — which holds only because every new parameter, **`LiveTurnExecutor`'s ctor argument included**, is trailing and defaulted (§6, R12). If one needs an edit, a parameter was made required; fix the parameter, not the test. |
 | 3 | `Timeline: both gates record one event per gated tool call` | the 6 + 4 emit calls, the `Stopwatch` bracket, the rethrowing `Error` catch; T-EMIT-*, T-PARITY-1, T-PRIV-1, T-PRIV-3, T-VOCAB-1 | the 18 pre-existing gate facts still pass unmodified |
 | 4 | `Timeline: prune the trace with chat retention` | `AssistantChatRetentionService`; T-RET-* | — |
-| 5 | `Timeline: a read-only tool-activity trace on the run panel` | `RunProgressViewModel`, `RunProgressPanel.xaml`, `AssistantViewModel`'s construction site, 9 resx keys ×3; T-UI-* | `LocalizationTests` green. **Droppable**: cutting it leaves the store and the emission complete, and the acceptance met minus the word "exposes". |
+| 5 | `Timeline: a read-only tool-activity trace on the run panel` | `RunProgressViewModel`, `RunProgressPanel.xaml`, `AssistantViewModel`'s construction site (`:387`), 9 resx keys ×3; T-UI-* | `LocalizationTests` green, and the existing `RunProgressViewModelTests` pass **unmodified** — the ctor's new `IAgentTimelineService?` is trailing-optional for exactly that reason (§6). **Droppable**: cutting it leaves the store and the emission complete, and the acceptance met minus the word "exposes". |
 
 ---
 
