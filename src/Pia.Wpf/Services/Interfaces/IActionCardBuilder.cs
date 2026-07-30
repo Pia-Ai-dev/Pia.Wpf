@@ -14,8 +14,18 @@ public interface IActionCardBuilder
     /// <summary>Builds the confirmation card. When <paramref name="detokenize"/>
     /// is true, privacy tokens in the summary/details are resolved for display.
     /// When <paramref name="autoApproved"/> is true the card is returned pre-resolved
-    /// (Accepted, <see cref="ActionCardInfo.IsAutoApproved"/>) for the standing-grant bypass render.</summary>
-    ActionCardInfo Build(PluginToolCall pendingAction, bool detokenize, bool autoApproved = false);
+    /// (Accepted, <see cref="ActionCardInfo.IsAutoApproved"/>) for the standing-grant bypass render.
+    /// <para>
+    /// <paramref name="toolClass"/> is the AUTHORITATIVE class the gate already derived from the plugin ROUTE
+    /// (Batch 04 D4). Pass it whenever it is known — it is what stops the card and the gate from disagreeing
+    /// about whether a tool is external. When null the builder falls back to
+    /// <c>ToolClassifier.ClassifyPresumedExternal</c>, i.e. the name-only guess the card has always made.
+    /// </para></summary>
+    ActionCardInfo Build(
+        PluginToolCall pendingAction,
+        bool detokenize,
+        bool autoApproved = false,
+        ToolClass? toolClass = null);
 
     /// <summary>The transient status line shown while a tool call is running.</summary>
     string ResolveStatusText(string toolName);

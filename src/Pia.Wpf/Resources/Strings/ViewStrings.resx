@@ -767,6 +767,7 @@
   <data name="ActionCard_Diff_TruncatedNotice" xml:space="preserve"><value>Diff truncated — remaining lines not shown</value></data>
   <data name="ActionCard_Category_Git" xml:space="preserve"><value>Git</value></data>
   <data name="ActionCard_Category_Mcp" xml:space="preserve"><value>External tool</value></data>
+  <data name="ActionCard_Category_Scheduled" xml:space="preserve"><value>Scheduled job</value></data>
   <data name="ActionCard_Action_Initialize" xml:space="preserve"><value>Initialize</value></data>
   <data name="ActionCard_Action_Stage" xml:space="preserve"><value>Stage</value></data>
   <data name="ActionCard_Action_Commit" xml:space="preserve"><value>Commit</value></data>

@@ -789,6 +789,7 @@
   <data name="ActionCard_Diff_TruncatedNotice" xml:space="preserve"><value>Diff tronqué – lignes restantes masquées</value></data>
   <data name="ActionCard_Category_Git" xml:space="preserve"><value>Git</value></data>
   <data name="ActionCard_Category_Mcp" xml:space="preserve"><value>Outil externe</value></data>
+  <data name="ActionCard_Category_Scheduled" xml:space="preserve"><value>Tâche planifiée</value></data>
   <data name="ActionCard_Action_Initialize" xml:space="preserve"><value>Initialiser</value></data>
   <data name="ActionCard_Action_Stage" xml:space="preserve"><value>Indexer</value></data>
   <data name="ActionCard_Action_Commit" xml:space="preserve"><value>Valider</value></data>

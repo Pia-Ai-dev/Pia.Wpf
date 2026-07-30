@@ -22,7 +22,15 @@ public enum ActionCardCategory
     Git,
 
     /// <summary>An external (MCP) plugin tool — server-defined, gated per-call (Phase 2 MCP gate).</summary>
-    Mcp
+    Mcp,
+
+    /// <summary>
+    /// The built-in scheduled-job tools (plugin <c>scheduled-research</c>). APPENDED (Batch 04): these cards
+    /// used to fall through to <see cref="Mcp"/>, so a built-in scheduling tool was titled "External tool",
+    /// offered an "Always allow" button the gate then silently ignored, and had its key/value details parsed
+    /// as JSON. Not persisted — but appended anyway, because renumbering a UI enum is a bad habit to keep.
+    /// </summary>
+    Scheduled
 }
 
 public record ActionCardDetail(string Label, string Value);

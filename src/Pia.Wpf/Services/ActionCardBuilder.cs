@@ -26,16 +26,29 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         _permissions = permissions;
     }
 
-    public ActionCardInfo Build(PluginToolCall pendingAction, bool detokenize, bool autoApproved = false)
+    public ActionCardInfo Build(
+        PluginToolCall pendingAction,
+        bool detokenize,
+        bool autoApproved = false,
+        ToolClass? toolClass = null)
     {
-        var category = pendingAction.PluginName switch
+        // ONE class truth, shared with both gates (04 D4). The gate passes the class it derived from the
+        // plugin ROUTE; with no class supplied we fall back to the name-only guess this builder has always
+        // made (an unrecognised plugin name is presumed external). Before this, "scheduled-research" — a
+        // BUILT-IN plugin missing from the old switch — fell into the Mcp bucket, so its cards claimed to be
+        // external tools and offered a standing grant the gate then refused to honour.
+        var resolvedClass = toolClass ?? ToolClassifier.ClassifyPresumedExternal(pendingAction.PluginName);
+        var category = resolvedClass switch
         {
-            "memory" => ActionCardCategory.Memory,
-            "todo" => ActionCardCategory.Todo,
-            "reminder" => ActionCardCategory.Reminder,
-            "files" => ActionCardCategory.Files,
-            "git" => ActionCardCategory.Git,
-            // Any non-built-in plugin is an external (MCP) tool — server-defined name.
+            ToolClass.Memory => ActionCardCategory.Memory,
+            ToolClass.Todo => ActionCardCategory.Todo,
+            ToolClass.Reminder => ActionCardCategory.Reminder,
+            ToolClass.Files => ActionCardCategory.Files,
+            ToolClass.Git => ActionCardCategory.Git,
+            ToolClass.Scheduling => ActionCardCategory.Scheduled,
+            // External, Unknown (a plugin name this build does not recognise, e.g. a renamed built-in) and
+            // Ingest (which returns no pending action, so it never reaches a card) all render as the generic
+            // external-tool card — today's shape for anything the builder cannot name.
             _ => ActionCardCategory.Mcp
         };
 
@@ -71,7 +84,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         if (!isFilesDiff && pendingAction.Details is not null)
         {
             // Memory + MCP carry structured JSON detail (MCP passes the raw tool-call arguments);
-            // the built-in write plugins use key/value text.
+            // the built-in write plugins use key/value text. ActionCardCategory.Scheduled belongs to the
+            // key/value branch — ScheduledJobToolHandler builds "Label: value" TEXT — and used to be parsed
+            // as JSON here (via the Mcp mis-categorization), which silently yielded no detail rows at all.
             var parsed = pendingAction.PluginName == "memory" || category == ActionCardCategory.Mcp
                 ? JsonHelper.ParseToDetails(pendingAction.Details)
                 : JsonHelper.ParseKeyValueText(pendingAction.Details);
@@ -95,12 +110,14 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             Category = category,
             ToolName = pendingAction.ToolName,
             PluginId = pendingAction.PluginId,
-            // MCP tools are grantable as a class: they aren't in the built-in safe allowlist, but an
-            // external tool is a specific named capability the user may choose to "always allow" per tool
-            // (unlike the catch-all write_file, which stays never-auto-approvable). A DESTRUCTIVE external
-            // tool is excluded — no one-click standing grant on a delete. The gate re-checks all of this.
-            IsAutoApprovable = _permissions.IsAutoApproveEligible(pendingAction.ToolName)
-                || (category == ActionCardCategory.Mcp && !isDestructive),
+            // The card and the gate now compute grantability with the SAME function (04 D4/D5), so the
+            // divergence between this line and ChatSession's gate cannot recur. MCP tools are grantable as a
+            // class: they aren't in the built-in safe allowlist, but an external tool is a specific named
+            // capability the user may choose to "always allow" per tool (unlike the catch-all write_file,
+            // which stays never-auto-approvable). A DESTRUCTIVE external tool is excluded — no one-click
+            // standing grant on a delete. The gate re-checks all of this.
+            IsAutoApprovable = ToolAutonomy.IsStandingGrantOfferable(
+                resolvedClass, pendingAction.ToolName, _permissions.IsAutoApproveEligible(pendingAction.ToolName)),
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,
@@ -168,14 +185,17 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ActionCardCategory.Reminder => "ActionCard_Category_Reminder",
             ActionCardCategory.Files => "ActionCard_Category_File",
             ActionCardCategory.Git => "ActionCard_Category_Git",
+            ActionCardCategory.Scheduled => "ActionCard_Category_Scheduled",
             _ => "ActionCard_Category_Memory"
         };
 
         var actionKey = toolName switch
         {
             "create_todo" or "create_reminder" => "ActionCard_Action_Create",
-            "remember" or "update_todo" or "update_reminder" => "ActionCard_Action_Update",
-            "forget" or "delete_todo" or "delete_reminder" or "delete_file" => "ActionCard_Action_Delete",
+            "remember" or "update_todo" or "update_reminder"
+                or "update_scheduled_research" => "ActionCard_Action_Update",
+            "forget" or "delete_todo" or "delete_reminder" or "delete_file"
+                or "delete_scheduled_research" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
             "write_file" => "ActionCard_Action_Write",
             "git_init" => "ActionCard_Action_Initialize",

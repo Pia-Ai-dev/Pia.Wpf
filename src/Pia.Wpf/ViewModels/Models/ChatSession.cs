@@ -923,7 +923,7 @@ public sealed class ChatSession : IDisposable
             // id — never the arguments (CLAUDE.md privacy).
             if (verdict.Outcome == ToolGateOutcome.AutoRun)
             {
-                var autoCard = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, autoApproved: true);
+                var autoCard = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, autoApproved: true, toolClass);
                 // UI-affine loop: the continuation already runs on the UI thread.
                 message.ActionCards.Add(autoCard);
                 _logger.LogInformation("Auto-approved {ToolName} ({Decision}, plugin {PluginId})",
@@ -935,7 +935,9 @@ public sealed class ChatSession : IDisposable
             // ToolAutonomyTests.InteractiveSurface_NeverRefuses) — a human is looking at the card. It
             // deliberately falls through to the card rather than throwing: a throw here would fail the whole
             // turn, and degrading toward the card is the safe direction if that ever changes.
-            var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled);
+            // The AUTHORITATIVE class goes to BOTH cards, not just the auto-approved one: the prompted card's
+            // button set has to agree with the gate that just resolved it (04 D4).
+            var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, toolClass: toolClass);
             message.ActionCards.Add(card);
 
             ToolDecision decision;
