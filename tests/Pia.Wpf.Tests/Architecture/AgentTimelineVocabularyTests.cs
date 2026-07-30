@@ -11,6 +11,53 @@ namespace Pia.Tests.Architecture;
 /// </summary>
 public class AgentTimelineVocabularyTests
 {
+    /// <summary>
+    /// Every decision the two RUN gates can reach, and which of Batch 03's emit arms writes it. Derived by
+    /// walking the arms, not by copying the enum.
+    /// </summary>
+    private static readonly ToolGateDecision[] EmittedByAGate =
+    [
+        ToolGateDecision.AutoApprovedStandingGrant, // interactive AutoRun (verdict.Decision)
+        ToolGateDecision.AutoApprovedPolicy,        // either surface, AutoRun (verdict.Decision)
+        ToolGateDecision.GrantedByName,             // unattended AutoRun (verdict.Decision)
+        ToolGateDecision.ApprovedOnce,              // interactive card, AllowOnce
+        ToolGateDecision.ApprovedAlways,            // interactive card, AlwaysAllow
+        ToolGateDecision.DeclinedByUser,            // interactive card, declined
+        ToolGateDecision.CardCancelled,             // interactive card, cancelled (NOT a user denial)
+        ToolGateDecision.DeniedNotGranted,          // unattended default
+        ToolGateDecision.DeniedDestructiveFloor,    // unattended floor refusal
+        ToolGateDecision.UnknownTool,               // either surface, null route
+    ];
+
+    /// <summary>
+    /// Decisions a gate can produce that this batch deliberately does NOT record, each with its reason.
+    /// A new entry here is a decision, not an omission.
+    /// </summary>
+    private static readonly ToolGateDecision[] NotEmittedByDesign =
+    [
+        // Voice-mode only (04 D13). A voice turn has no run, so there is no RunId to attach a row to and the
+        // enforced FK would reject one. The value exists so a later batch that gives voice turns a run needs
+        // no new ordinal.
+        ToolGateDecision.AutoApprovedAllowlist,
+    ];
+
+    [Fact]
+    public void EveryToolGateDecision_IsEitherEmittedOrDocumentedAsNotEmitted()
+    {
+        var unaccounted = Enum.GetValues<ToolGateDecision>()
+            .Where(d => d != ToolGateDecision.Unknown)
+            .Where(d => !EmittedByAGate.Contains(d) && !NotEmittedByDesign.Contains(d))
+            .ToArray();
+
+        // Adding a decision to Batch 04 without deciding what Batch 03 does with it fails HERE.
+        Assert.Empty(unaccounted);
+
+        // The two sets are disjoint and neither claims Unknown (which is a render value, never written).
+        Assert.Empty(EmittedByAGate.Intersect(NotEmittedByDesign));
+        Assert.DoesNotContain(ToolGateDecision.Unknown, EmittedByAGate);
+        Assert.DoesNotContain(ToolGateDecision.Unknown, NotEmittedByDesign);
+    }
+
     [Fact]
     public void PersistedTimelineEnumsStartAtUnknownZero_AndNeverCollide()
     {

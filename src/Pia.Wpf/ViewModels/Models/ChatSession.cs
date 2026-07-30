@@ -858,10 +858,19 @@ public sealed class ChatSession : IDisposable
             return "Noted — offered Agent mode to the user.";
         }
 
+        // Length only, measured once and reused by every emit arm below (03 §3 — the serialized arguments
+        // themselves never leave AgentTimelineScope.MeasureArgs).
+        var argsChars = AgentTimelineScope.MeasureArgs(toolCall.Arguments);
+
         var routeResult = await _pluginService.RouteToolCallAsync(toolCall);
         if (routeResult is null)
         {
             _logger.LogWarning("No handler found for tool {ToolName}", toolCall.Name);
+            // "The model called a tool that does not exist, 12 times" is a real audit fact, and it cannot
+            // flood: the round loop is bounded and the model gets the error text back. No plugin and no
+            // class, because there is no route to derive either from.
+            timeline?.Emit(ToolGateSurface.Interactive, toolCall.Name, ToolClass.Unknown, pluginId: null,
+                ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
             return "Unknown tool.";
         }
 
@@ -906,9 +915,32 @@ public sealed class ChatSession : IDisposable
 
             // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
             // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.
-            async Task<object?> ExecuteAndReport()
+            //
+            // <paramref name="decision"/> is the audit reason this call was authorized (Batch 03). Only the
+            // Execute() call is bracketed for the timeline: ResolveSuccessTitle and the ToolSucceeded
+            // subscribers run afterwards, and recording a fault in either as "the tool failed" would be a
+            // false audit statement.
+            async Task<object?> ExecuteAndReport(ToolGateDecision decision)
             {
-                var actionResult = await pendingAction.Execute();
+                var startedAt = Stopwatch.GetTimestamp();
+                object? actionResult;
+                try
+                {
+                    actionResult = await pendingAction.Execute();
+                }
+                catch
+                {
+                    timeline?.Emit(ToolGateSurface.Interactive, tool, toolClass, pluginId,
+                        decision, AgentTimelineOutcome.Error, argsChars, resultChars: null,
+                        durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+                    // Rethrow: what a throwing tool does to the turn is untouched by this batch.
+                    throw;
+                }
+
+                timeline?.Emit(ToolGateSurface.Interactive, tool, toolClass, pluginId,
+                    decision, AgentTimelineOutcome.Ok, argsChars,
+                    resultChars: (actionResult as string)?.Length, durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+
                 _logger.LogInformation("Executed {ToolName} action successfully", tool);
 
                 var snackbarTitle = _actionCardBuilder.ResolveSuccessTitle(pendingAction.PluginName);
@@ -938,7 +970,7 @@ public sealed class ChatSession : IDisposable
                 message.ActionCards.Add(autoCard);
                 _logger.LogInformation("Auto-approved {ToolName} ({Decision}, plugin {PluginId})",
                     tool, verdict.Decision, pluginId);
-                return await ExecuteAndReport();
+                return await ExecuteAndReport(verdict.Decision);
             }
 
             // ToolGateOutcome.Refuse is UNREACHABLE on the interactive surface (pinned by
@@ -951,6 +983,10 @@ public sealed class ChatSession : IDisposable
             message.ActionCards.Add(card);
 
             ToolDecision decision;
+            // A cancelled card (new chat / retry / scope dispose) is mapped to ToolDecision.Decline below,
+            // and recording THAT as "the user declined" would be a false audit statement. The flag survives
+            // the mapping so the decline arm can tell the two apart.
+            var cardCancelled = false;
             SetState(ChatState.WaitingForTool);
             try
             {
@@ -959,6 +995,7 @@ public sealed class ChatSession : IDisposable
             catch (TaskCanceledException)
             {
                 _logger.LogInformation("Tool action cancelled for {ToolName}", tool);
+                cardCancelled = true;
                 decision = ToolDecision.Decline;
             }
             finally
@@ -972,7 +1009,7 @@ public sealed class ChatSession : IDisposable
             {
                 case ToolDecision.AllowOnce:
                     _logger.LogInformation("User allowed {ToolName} action once", tool);
-                    return await ExecuteAndReport();
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce);
 
                 case ToolDecision.AlwaysAllow:
                     // Defensive: never grant a non-offerable tool even if its card somehow
@@ -983,10 +1020,13 @@ public sealed class ChatSession : IDisposable
                         await _permissions.GrantAsync(pluginId, tool);
                         _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     }
-                    return await ExecuteAndReport();
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedAlways);
 
                 default:
                     _logger.LogInformation("User declined {ToolName} action", tool);
+                    timeline?.Emit(ToolGateSurface.Interactive, tool, toolClass, pluginId,
+                        cardCancelled ? ToolGateDecision.CardCancelled : ToolGateDecision.DeclinedByUser,
+                        AgentTimelineOutcome.NotExecuted, argsChars);
                     return $"User declined the {tool} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }

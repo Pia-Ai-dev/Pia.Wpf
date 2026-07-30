@@ -524,4 +524,74 @@ public class BackgroundAssistantTurnRunnerTests
         // The empty path marks the run Failed so a resolvable (stub) chat still carries a Failed run.
         await h.Runs.Received().FailAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
+
+    // ---- Batch 03: the unattended gate records its decisions ----
+
+    [Fact]
+    public async Task UnattendedDecisionsAreRecorded()
+    {
+        var timeline = new Pia.Tests.Services.RecordingTimelineService();
+        var runId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
+        var h = new Harness();
+
+        var pendings = new Dictionary<string, PluginToolCall>(StringComparer.Ordinal)
+        {
+            // granted by name → runs
+            ["write_file"] = Pending("write_file", "files", () => { }),
+            // not granted → denied
+            ["update_todo"] = Pending("update_todo", "todo", () => { }),
+            // granted AND destructive AND external → the floor refuses it anyway
+            ["mcp_delete_thing"] = Pending("mcp_delete_thing", "some-mcp-server", () => { }),
+        };
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((object?)null, (PluginToolCall?)pendings[ci.ArgAt<FunctionCallContent>(0).Name]));
+        h.Plugins.IsMcpTool("mcp_delete_thing").Returns(true);
+
+        var runner = h.Build([Call("write_file"), Call("update_todo"), Call("mcp_delete_thing")]);
+        await runner.RunExchangeAsync(
+            [new ChatMessage(ChatRole.User, "go")], Provider(),
+            new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "write_file", "mcp_delete_thing" },
+            TestContext.Current.CancellationToken,
+            timeline: new Pia.Services.Interfaces.AgentTimelineScope(timeline, runId, stepId));
+
+        var rows = timeline.Rows;
+        Assert.Equal(3, rows.Count);
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(ToolGateSurface.Unattended, r.Surface);
+            Assert.Equal(runId, r.RunId);
+            Assert.Equal(stepId, r.StepId);
+        });
+
+        Assert.Equal(ToolGateDecision.GrantedByName, rows[0].Decision);
+        Assert.Equal(AgentTimelineOutcome.Ok, rows[0].Outcome);
+        Assert.Equal("write-done".Length, rows[0].ResultChars);
+
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, rows[1].Decision);
+        Assert.Equal(AgentTimelineOutcome.NotExecuted, rows[1].Outcome);
+
+        Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, rows[2].Decision);
+        Assert.Equal(AgentTimelineOutcome.NotExecuted, rows[2].Outcome);
+        Assert.Equal(ToolClass.External, rows[2].ToolClass);
+    }
+
+    [Fact]
+    public async Task NoScope_MeansNoRows()
+    {
+        // Control for the fact above (which proves the same code path DOES record): the SingleTurn background
+        // path carries no run policy and no timeline scope, so it stays silent.
+        var timeline = new Pia.Tests.Services.RecordingTimelineService();
+        var h = new Harness();
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)Pending("write_file", "files", () => { })));
+
+        var runner = h.Build([Call("write_file")]);
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), GrantedWriteTools = ["write_file"] },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(timeline.Rows);
+    }
 }

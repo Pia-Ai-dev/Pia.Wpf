@@ -381,10 +381,15 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
         // deferred PluginToolCall (below), so an ungranted MCP call is denied by the pending-action branch
         // and a granted NON-destructive one executes. No MCP-specific pre-check is needed here anymore.
+        // Length only, measured once and reused by every emit arm below (03 §3).
+        var argsChars = AgentTimelineScope.MeasureArgs(toolCall.Arguments);
+
         var route = await _pluginService.RouteToolCallAsync(toolCall);
         if (route is null)
         {
             _logger.LogWarning("Background turn: no handler for tool {ToolName}", toolCall.Name);
+            timeline?.Emit(ToolGateSurface.Unattended, toolCall.Name, ToolClass.Unknown, pluginId: null,
+                ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
             return "Unknown tool.";
         }
 
@@ -419,15 +424,41 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 case ToolGateOutcome.AutoRun:
                     _logger.LogInformation("Background turn executing {ToolName} ({Decision})",
                         pending.ToolName, verdict.Decision);
-                    return await pending.Execute();
+                    // Only Execute() is bracketed for the timeline; a fault anywhere else is not this tool's
+                    // outcome. The rethrow keeps a throwing tool's effect on the turn unchanged.
+                    var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                    object? executed;
+                    try
+                    {
+                        executed = await pending.Execute();
+                    }
+                    catch
+                    {
+                        timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                            verdict.Decision, AgentTimelineOutcome.Error, argsChars, resultChars: null,
+                            durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+                        throw;
+                    }
+
+                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                        verdict.Decision, AgentTimelineOutcome.Ok, argsChars,
+                        resultChars: (executed as string)?.Length,
+                        durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+                    return executed;
 
                 case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedDestructiveFloor:
                     _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);
+                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                        verdict.Decision, AgentTimelineOutcome.NotExecuted, argsChars);
                     return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
                            + "even when granted. Do not retry.";
 
                 default:
                     _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
+                    // verdict.Decision rather than a literal, so the persisted reason is always the one the
+                    // shared resolver actually returned (DeniedNotGranted on this surface today).
+                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                        verdict.Decision, AgentTimelineOutcome.NotExecuted, argsChars);
                     return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
             }
         }

@@ -80,6 +80,27 @@ public sealed class AgentTimelineScope
     public AgentTimelineScope ForStep(Guid? stepId) => new(_service, RunId, stepId);
 
     /// <summary>
+    /// The LENGTH of a tool call's arguments, for <c>ArgsChars</c>. The serialized form exists only inside
+    /// this method: it is measured and discarded, never stored and never logged. Shared by both gates so the
+    /// number means the same thing on either surface. Returns null rather than throwing — a bookkeeping
+    /// measurement must not be able to fail a tool call.
+    /// <para>
+    /// Measured where the HANDLER sees the arguments, i.e. inside
+    /// <c>TokenizingAiClientService.WrapToolHandler</c>'s decoration, so this is the pre-tokenization length.
+    /// </para>
+    /// </summary>
+    public static int? MeasureArgs(IDictionary<string, object?>? arguments)
+    {
+        if (arguments is null) return null;
+        try { return System.Text.Json.JsonSerializer.Serialize(arguments).Length; }
+        catch { return null; }
+    }
+
+    /// <summary>Whole milliseconds since a <c>Stopwatch.GetTimestamp()</c> reading, for <c>DurationMs</c>.</summary>
+    public static long ElapsedMs(long startTimestamp) =>
+        (long)System.Diagnostics.Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+    /// <summary>
     /// Record one gated tool call. Fills the ids, the row id, the timestamp and
     /// <see cref="AgentTimelineEventKind.ToolCall"/>; the caller supplies the decision vocabulary. Never
     /// throws — the service's <c>Emit</c> is the failure boundary and this adds one of its own.

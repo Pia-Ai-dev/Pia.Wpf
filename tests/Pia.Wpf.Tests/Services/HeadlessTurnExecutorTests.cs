@@ -314,6 +314,89 @@ public sealed class HeadlessTurnExecutorTests
         try { Directory.Delete(dir, true); } catch { /* best effort */ }
     }
 
+    [Fact]
+    public async Task HeadlessStep_RecordsItsGateDecisions_AttributedToTheRunAndStep()
+    {
+        // Batch 03: proves the executor→RunExchangeAsync relay actually carries a scope. Everything below the
+        // relay is covered by the gate suite; a forgotten argument HERE would be invisible there, because
+        // those facts call RunExchangeAsync directly.
+        var dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        using var ctx = new SqliteContext(Path.Combine(dir, "history.db"));
+        using var runs = new AgentRunService(ctx, NullLogger<AgentRunService>.Instance);
+        var chats = new AssistantChatService(ctx, runs);
+        var timeline = new RecordingTimelineService();
+
+        var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
+        var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
+        var toolCalls = new List<FunctionCallContent>
+        {
+            new(Guid.NewGuid().ToString(), "write_file", new Dictionary<string, object?>()),
+            new(Guid.NewGuid().ToString(), "delete_file", new Dictionary<string, object?>()),
+        };
+
+        var ai = Substitute.For<IAiClientService>();
+        ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
+                Arg.Any<AgentContextBudget?>())
+            .Returns(ci => DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls));
+
+        var plugins = Substitute.For<IPluginService>();
+        plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((object?)null, (PluginToolCall?)new PluginToolCall(
+                ci.ArgAt<FunctionCallContent>(0).Name, Guid.NewGuid(), "files", "d", null,
+                () => Task.FromResult<object?>("ok"))));
+
+        var composer = Substitute.For<IAssistantPromptComposer>();
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
+        var personas = Substitute.For<IPersonaService>();
+        personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        var providers = Substitute.For<IProviderService>();
+        var titles = Substitute.For<IChatTitleService>();
+        titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
+
+        var engine = new BackgroundAssistantTurnRunner(
+            ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
+            new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
+        var executor = new HeadlessTurnExecutor(
+            engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
+            NullLogger<HeadlessTurnExecutor>.Instance, timeline);
+
+        executor.Initialize(null, new[] { "write_file" }, provider);
+
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "stub",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "goal"), TestContext.Current.CancellationToken);
+
+        var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+        await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var rows = timeline.Rows;
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(run.Id, r.RunId);
+            // The step id really travels: HeadlessTurnExecutor used to discard it at ExecuteStepAsync.
+            Assert.NotNull(r.StepId);
+            Assert.Equal(ToolGateSurface.Unattended, r.Surface);
+        });
+        Assert.Equal(ToolGateDecision.GrantedByName, rows[0].Decision);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, rows[1].Decision);
+
+        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithTool(
         Func<FunctionCallContent, Task<object?>>? handler, IReadOnlyList<FunctionCallContent> toolCalls)
     {
