@@ -58,6 +58,84 @@ public class AgentTimelineVocabularyTests
         Assert.DoesNotContain(ToolGateDecision.Unknown, NotEmittedByDesign);
     }
 
+    /// <summary>
+    /// The golden ordinal map for every enum this batch PERSISTS — the append-only guardrail, mechanized.
+    /// <para>
+    /// The shape assertions below (min 0, Unknown at 0, distinct, contiguous) do NOT catch the failure they
+    /// exist to prevent: alphabetizing <c>ToolGateDecision</c> or inserting a member keeps all four true while
+    /// swapping <c>ApprovedOnce</c> and <c>ApprovedAlways</c>, so every already-persisted row would read back
+    /// as a decision the user never made — and these ordinals also travel in <c>AgentRuns.PolicyJson</c>, where
+    /// an older peer's stored value gets reinterpreted. A name→ordinal map is the only assertion that turns a
+    /// rename, a renumber and a removal all red, with a diff naming the member.
+    /// </para>
+    /// <para>
+    /// APPENDING to one of these enums is legal and requires adding the new member HERE with its ordinal.
+    /// Changing an existing pair is not.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void PersistedEnumOrdinalsMatchTheGoldenMap()
+    {
+        AssertGoldenMap(new Dictionary<string, int>
+        {
+            ["Unknown"] = 0,
+            ["ToolCall"] = 1,
+            ["TraceTruncated"] = 2,
+        }, Enum.GetValues<AgentTimelineEventKind>());
+
+        AssertGoldenMap(new Dictionary<string, int>
+        {
+            ["Unknown"] = 0,
+            ["Ok"] = 1,
+            ["Error"] = 2,
+            ["NotExecuted"] = 3,
+        }, Enum.GetValues<AgentTimelineOutcome>());
+
+        AssertGoldenMap(new Dictionary<string, int>
+        {
+            ["Unknown"] = 0,
+            ["Memory"] = 1,
+            ["Todo"] = 2,
+            ["Reminder"] = 3,
+            ["Files"] = 4,
+            ["Git"] = 5,
+            ["Scheduling"] = 6,
+            ["External"] = 7,
+            ["Ingest"] = 8,
+        }, Enum.GetValues<ToolClass>());
+
+        AssertGoldenMap(new Dictionary<string, int>
+        {
+            ["Unknown"] = 0,
+            ["Interactive"] = 1,
+            ["Unattended"] = 2,
+            ["Voice"] = 3,
+        }, Enum.GetValues<ToolGateSurface>());
+
+        AssertGoldenMap(new Dictionary<string, int>
+        {
+            ["Unknown"] = 0,
+            ["AutoApprovedStandingGrant"] = 1,
+            ["AutoApprovedPolicy"] = 2,
+            ["GrantedByName"] = 3,
+            ["ApprovedOnce"] = 4,
+            ["ApprovedAlways"] = 5,
+            ["DeclinedByUser"] = 6,
+            ["CardCancelled"] = 7,
+            ["DeniedNotGranted"] = 8,
+            ["DeniedDestructiveFloor"] = 9,
+            ["UnknownTool"] = 10,
+            ["AutoApprovedAllowlist"] = 11,
+        }, Enum.GetValues<ToolGateDecision>());
+    }
+
+    private static void AssertGoldenMap<TEnum>(Dictionary<string, int> expected, TEnum[] values)
+        where TEnum : struct, Enum
+    {
+        var actual = values.ToDictionary(v => Enum.GetName(v)!, v => Convert.ToInt32(v));
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void PersistedTimelineEnumsStartAtUnknownZero_AndNeverCollide()
     {
