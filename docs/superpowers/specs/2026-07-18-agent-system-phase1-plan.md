@@ -85,7 +85,7 @@ Goal                text    -- SENSITIVE (SensitiveDebug; E2EE-eligible on sync)
 FirstMessageId      Guid?   -- run's transcript slice, by STABLE message Id (NOT positional ordinal — §16 R3)
 LastMessageId       Guid?
 PolicyJson          text?   -- reserved for Phase 2 autonomy policy
-LedgerJson          text    -- tokens/cost/wall-clock, per step + total (Q7)
+LedgerJson          text    -- tokens/wall-clock, per step + total (Q7); cost withdrawn 2026-07-30
 CreatedAt / UpdatedAt / StartedAt? / CompletedAt?
 ExtraJson           text?
 ```
@@ -232,8 +232,15 @@ turn, exactly reproducing today.
   `truncated` marker in `ExtraJson` (`{truncated:true, reason}`), rendered distinctly by §15.1 and
   never presented as clean success. Budget-*pauses-into-`WaitingForInput`* is Phase 2.
 - **Ledger is live and visible** (Q7): `LedgerJson` accrues per-step + total input/output
-  tokens (we already aggregate `UsageDetails` across rounds), wall-clock, and cost where a
-  price table exists. The run-progress component (§7) renders it as it grows.
+  tokens (we already aggregate `UsageDetails` across rounds) and wall-clock. The run-progress
+  component (§7) renders it as it grows.
+
+> **Amendment 2026-07-30 — cost is withdrawn from Q7 transparency.** Every "cost where a price
+> table exists" clause in this plan is void, and `costUsd` leaves the `LedgerJson` shape. Pia has no
+> trustworthy price source: nothing in the usage path carries provider-reported spend, Pia Cloud's
+> cost is server-only, and a bundled table would go stale silently while reading like a bill.
+> Transparency is served by tokens + **active** wall-clock, which are exact for every provider.
+> The removal is [agent-roadmap Batch 02](agent-roadmap/02-cost-ledger.md).
 
 ---
 
@@ -290,7 +297,7 @@ turn, exactly reproducing today.
 A first-class control (design pass via the frontend-design skill when built). Responsibilities:
 - Ordered **step list** with status glyphs (Pending/Running/Done/Failed), current step
   highlighted, and a live **current-activity** line (e.g. "reading notes.md…").
-- **Ledger strip** (Q7 transparency): per-step + total tokens / cost / elapsed, updating live.
+- **Ledger strip** (Q7 transparency): per-step + total tokens / elapsed, updating live (no cost — see the 2026-07-30 amendment in §5).
 - **States:** Planning (spinner + "building a plan"), Running (step list + activity),
   Completed/Failed (summary + artifacts), and a **`truncated`-marked Completed** rendered
   distinctly ("stopped at budget", §16 R5). `WaitingForInput`/`Paused`/`Verifying` are **not**
@@ -513,7 +520,7 @@ public interface IAgentRunService
 }
 ```
 
-`LedgerJson` shape: `{ inputTokens, outputTokens, costUsd?, wallClockMs, perStep: [...] }`.
+`LedgerJson` shape: `{ inputTokens, outputTokens, wallClockMs, perStep: [...] }` (`costUsd?` withdrawn 2026-07-30; legacy rows may still carry it and readers ignore it).
 `AddUsageAsync` accrues from the `Finished` stream item's `UsageDetails` (already aggregated
 across tool rounds in `AiClientService`). One call per turn today; one per step under Planned.
 
@@ -940,8 +947,8 @@ trace is Phase 2 §11).
   step highlighted, each row carrying a `PiaPersonaAvatar` (single active persona in Phase 1).
 - **Current-activity line:** active step title + optional in-flight tool status (reuses the
   existing per-message `StatusText` surface); a spinner while `Planning`.
-- **Ledger strip (Q7 transparency):** per-step + total input/output tokens, cost where a price
-  table exists, elapsed — updating live.
+- **Ledger strip (Q7 transparency):** per-step + total input/output tokens and elapsed — updating
+  live. No cost figure (amendment 2026-07-30).
 - **States:** `Planning` (spinner + "building a plan"), `Running` (list + activity),
   `Completed`/`Failed` (summary), and a **`truncated`-marked `Completed`** rendered distinctly
   ("stopped at budget", §16 R5). `Verifying` (pass-through), `WaitingForInput`, `Paused` are

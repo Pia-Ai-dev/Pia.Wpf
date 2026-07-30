@@ -30,17 +30,22 @@ and they are what the strip already shows.
 
 ## The seams to remove
 
-| Site | What is there |
-|---|---|
-| `Services/AgentRunService.cs:819` | `Ledger.CostUsd` — the persisted DTO field |
-| `ViewModels/RunProgressViewModel.cs:105` | `private double? _costUsd;` — the `[ObservableProperty]` backing field |
-| `ViewModels/RunProgressViewModel.cs:212` | `CostUsd = ledger.CostUsd; // TODO Phase 2: price table populates cost` |
-| `ViewModels/RunProgressViewModel.cs:465` | `if (CostUsd is { } cost) parts.Add($"${cost:0.##}");` in `FormatLedger` |
-| `ViewModels/RunProgressViewModel.cs:482` | `CostUsd` on the VM's mirror of the ledger DTO |
-| `Models/AgentRun.cs:49` | the `costUsd?` term in the `LedgerJson` shape comment |
+Anchored **by name, not line** — batches 03/04 are editing `RunProgressViewModel.cs` while this is written, so
+every number below would be stale by the time the batch runs. Find them with `grep -ri costusd src tests`.
 
-That is the whole surface. There is no price table, no rate constant, no settings entry, and no test that
-asserts a cost — nothing else was built in this direction.
+| File | What is there |
+|---|---|
+| `Services/AgentRunService.cs` | `CostUsd` on the private `Ledger` DTO — the persisted field |
+| `ViewModels/RunProgressViewModel.cs` | `private double? _costUsd;` — the `[ObservableProperty]` backing field |
+| `ViewModels/RunProgressViewModel.cs` | `CostUsd = ledger.CostUsd; // TODO Phase 2: price table populates cost` in `Project` |
+| `ViewModels/RunProgressViewModel.cs` | the `$"${cost:0.##}"` segment in `FormatLedger` |
+| `ViewModels/RunProgressViewModel.cs` | `CostUsd` on the VM's private mirror of the ledger DTO |
+| `Models/AgentRun.cs` | the `costUsd?` term in the `LedgerJson` shape comment |
+
+That is the whole surface, verified `30956c5`: no price table, no rate constant, no settings entry, no resx
+key, no XAML binding (`RunProgressPanel.xaml` binds only `LedgerSummary`), and no test that asserts a cost.
+Also strike the pricing clauses in the parent plan if they somehow survive — they were amended out on
+2026-07-30 (`../2026-07-18-agent-system-phase1-plan.md` §5 amendment, §7, §9, §16.1 shape line).
 
 ## Persisted-data compatibility
 
@@ -69,7 +74,7 @@ that still contains `"costUsd": 0.42` — it must parse, and the tokens/time mus
 
 ## Acceptance
 
-`grep -ri costusd src tests` returns nothing; the ledger strip shows tokens and active time only; build green
+`grep -rniE "costusd|\\\$\{?cost" src tests` returns nothing; the ledger strip shows tokens and active time only; build green
 in Debug **and** Release at `0 Warning(s)`.
 
 ## If a real cost figure is ever wanted
