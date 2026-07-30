@@ -5,6 +5,7 @@ using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
+using Pia.Tests.Services;
 using Pia.ViewModels;
 using Xunit;
 
@@ -15,8 +16,12 @@ namespace Pia.Tests.ViewModels;
 /// <see cref="IMeetingAttendeeService"/>: URL validation + consent gating of the Join command,
 /// utterance→bubble mapping (ported behaviour), and state→status mapping. Bubble mapping is driven
 /// through the internal <c>AddUtterance</c> seam and status through a raised <c>StateChanged</c> so the
-/// tests are deterministic and never spin the background reader (DispatchToUi runs inline when there is
-/// no WPF Application).
+/// tests are deterministic and never spin the background reader. Determinism comes from the injected
+/// <c>InlineUiDispatcher</c>, not from the absence of a WPF <c>Application</c>: once
+/// <c>AssistantViewParseTests</c> creates one (same batch), <c>Application.Current</c> is non-null for
+/// the rest of the process, and the old null-static fallback that used to make <c>DispatchToUi</c> run
+/// inline is gone. 31 of the 48 methods here (about 46 of the 67 xunit cases) have an assertion that
+/// flips if a dispatched action is deferred; 5 more reach the seam but would pass either way.
 /// </summary>
 public class MeetingAttendeeViewModelTests
 {
@@ -740,7 +745,7 @@ public class MeetingAttendeeViewModelTests
 
         var vm = new MeetingAttendeeViewModel(
             service, settingsService, loc, files, dialog,
-            NullLogger<MeetingAttendeeViewModel>.Instance);
+            NullLogger<MeetingAttendeeViewModel>.Instance, new InlineUiDispatcher());
 
         return (vm, service, dialog);
     }
@@ -762,7 +767,7 @@ public class MeetingAttendeeViewModelTests
 
         var vm = new MeetingAttendeeViewModel(
             service, settingsService, loc, files, dialog,
-            NullLogger<MeetingAttendeeViewModel>.Instance);
+            NullLogger<MeetingAttendeeViewModel>.Instance, new InlineUiDispatcher());
 
         return (vm, service, settingsService);
     }

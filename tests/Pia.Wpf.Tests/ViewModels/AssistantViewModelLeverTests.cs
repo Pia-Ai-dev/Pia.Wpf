@@ -5,6 +5,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.MeetingAttendee;
+using Pia.Tests.Services;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
@@ -17,7 +18,9 @@ namespace Pia.Tests.ViewModels;
 /// the ToolScope==None defence-in-depth guard forces Chat, the global default persists on change but not on
 /// seed, reopen restores it, <c>SwitchToAgent</c> re-dispatches a goal as Planned, and the Weak-provider
 /// banner surfaces without ever blocking. The VM is constructed off any thread with a stub
-/// <see cref="System.Threading.SynchronizationContext"/> (the lever paths never touch the WPF dispatcher).
+/// <see cref="System.Threading.SynchronizationContext"/>, and the lever paths never touch the WPF
+/// dispatcher — since Batch 12 that holds because an <c>InlineUiDispatcher</c> is injected, not because
+/// <c>Application.Current</c> happens to be null (<c>AssistantViewParseTests</c> creates a real one).
 /// </summary>
 public class AssistantViewModelLeverTests
 {
@@ -42,7 +45,8 @@ public class AssistantViewModelLeverTests
             Substitute.For<ILocalizationService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<IDialogService>(),
-            NullLogger<MeetingAttendeeViewModel>.Instance);
+            NullLogger<MeetingAttendeeViewModel>.Instance,
+            new InlineUiDispatcher());
 
         return new AssistantViewModel(
             NullLogger<AssistantViewModel>.Instance,
@@ -73,7 +77,8 @@ public class AssistantViewModelLeverTests
             _workingDir,
             Substitute.For<IFilesToolHandler>(),
             Substitute.For<IMarkdownExportService>(),
-            Substitute.For<IDialogService>());
+            Substitute.For<IDialogService>(),
+            new InlineUiDispatcher());
     }
 
     private static Persona PersonaWith(PersonaToolScope scope) =>

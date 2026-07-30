@@ -35,8 +35,11 @@ Never pass `--nologo` to `dotnet test`. Known flake, do not chase:
 3. **Test-blindness claim, corrected.** `LocalizationTests.AllXamlLocalizationKeys_MustExistInResources`
    (`tests/Pia.Wpf.Tests/Architecture/LocalizationTests.cs:50`) DOES catch a `loc:Str` key that is missing
    from the resources, and `AllTranslations_MustBeComplete` (:113) DOES catch en/de/fr parity. What genuinely
-   stays uncaught, because no test parses a View: the two `Binding` **paths** and the `StaticResource` style
-   names in new XAML. Those are the manual-smoke items (§9), nothing more.
+   stays uncaught, because no test parses the **settings** view: the two `Binding` **paths** and the
+   `StaticResource` style names in new XAML. Those are the manual-smoke items (§9), nothing more.
+   *(Corrected 2026-07-30, when Batch 12 merged in: this said "no test parses a View". One now does —
+   `AssistantViewParseTests` over `Pia.Views.AssistantView`, the chat view — but not
+   `Pia.Views.SettingsViews.AssistantView`, where this batch's CheckBox is. The uncaught set is unchanged.)*
 
 ---
 
@@ -698,7 +701,9 @@ Notes the implementing agent must honour in this file:
 ## 9. Manual-smoke debt (no automated coverage exists)
 
 1. **The two XAML `Binding` paths.** `AgentPlanReasoningTurnEnabled` on the CheckBox is resolved at runtime
-   only; a typo fails silently (checkbox renders, never persists). No test parses a View.
+   only; a typo fails silently (checkbox renders, never persists). No test parses the **settings** view —
+   Batch 12's `AssistantViewParseTests` parses the **chat** `Pia.Views.AssistantView`, not the same-named
+   `Pia.Views.SettingsViews.AssistantView` this CheckBox is in, so this item survived that batch unchanged.
    `LocalizationTests` *does* cover the three `loc:Str` keys and their en/de/fr parity (§0.3), so those are
    not on this list. **Check:** open Settings → Assistant → Agent runs, confirm the "Planning" header and the
    checkbox render, toggle it, restart the app, confirm the state persisted.

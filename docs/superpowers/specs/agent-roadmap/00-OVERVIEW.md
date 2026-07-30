@@ -1,14 +1,19 @@
 # Agent System — Roadmap & Status
 
-_Snapshot: 2026-07-30 — as-built at the head of **Batch 05** (planner reason-then-emit), which shipped on top
-of the residual-hazard pass and the Tier-2 decision pass.
-**Batches 10, 11 and 05 have shipped** (10 and 11 plus a joint review fix pass); 10 and 11 were promoted out of
-“Deliberately open”, 05 out of “Upcoming batches”, and all three are now in the chronicle. Build verified with
+_Snapshot: 2026-07-30 — as-built at the **merge** of **Batch 05** (planner reason-then-emit) and
+[**Batch 12**](12-ui-dispatcher-abstraction.md) (the UI-dispatcher abstraction). Both follow the
+residual-hazard pass and the Tier-2 decision pass, and neither is built on the other: they were authored
+independently from the same base (`73e15e8`) and met in a merge commit, which is why the chronicle below carries
+two same-day rows and why no single commit range covers the tree. **Batches 10, 11, 05 and 12 have shipped**
+(10 and 11 plus a joint review fix pass); 10 and 11 were promoted out of “Deliberately open”, 05 out of
+“Upcoming batches”, and all four are now in the chronicle. Build verified with
 `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → **0 errors, 194 warnings** (all pre-existing —
 8 in `src` in files untouched by these batches, 186 xUnit analyzer warnings in the test project; the older
-“0 warnings” claim in this file was an incremental-build artifact and has been corrected). **The suite has now
-been executed, on Windows, and is green** — the earlier “zero tests have been executed on this Mac” note
-described the authoring session, not the code; see the callout below for the measured counts._ Living index
+“0 warnings” claim in this file was an incremental-build artifact and has been corrected). **The suite has been
+executed on Windows on the merged tree — 2232 total / 1 failed / 1 skipped, and the one failure is the
+documented pre-existing `TaskExtensionsTests` wall-clock flake (4/4 green in isolation), not a merge
+regression.** That run is the first execution anywhere of Batch 12's new facts, which had never run on any
+machine; they pass. See the callout below for the numbers and what is still owed._ Living index
 of what the Agent System has shipped and what is left to build. Authoritative design:
 [`../2026-07-18-agent-system-phase1-plan.md`](../2026-07-18-agent-system-phase1-plan.md)
 (referenced below as “the plan §N”). The open items in the last section come from
@@ -41,17 +46,28 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 10 | `74f964c` → `a06358d` | **[Batch 11](11-context-compaction.md)** — `Microsoft.Agents.AI.Compaction` behind one adapter, per-provider context budget | ✅ done |
 | 11 | `aab9a06` → `601090e` | Joint review fix pass over 10 + 11 (4 must-fixes, 6 should-fixes; two should-fixes deliberately left open — see below) | ✅ done |
 | 12 | `7a41a68` → `d3c8c61` | **[Batch 05](05-planner-reason-then-emit.md)** — opt-in reason-then-emit planning: `IAiProviderHandler.DropsReasoningEffortWithTools` on all eight handlers, a global `AppSettings` toggle (default OFF) + its CheckBox, and a tool-FREE reasoning turn ahead of the constrained `emit_plan` turn on the three handlers that drop the effort under tools. Includes the review-fix commit and the two polish commits; this roadmap commit records it | ✅ done |
+| 13 | `1dced2f` → `cac8251` | **[Batch 12](12-ui-dispatcher-abstraction.md)** — `IUiDispatcher` injected into the 4 remaining ViewModels, the exemption list 4 → 1, and the **first `View` in the repo parsed by a test**. Includes its own 2-commit review fix pass | ✅ done |
+| 14 | the merge commit | **Rows 12 and 13 are siblings, not a sequence.** Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines and met here in a merge. They are ordered by batch number, **not** by ship order — Batch 12 reached `origin` first, as `b32ca14`. The merge touched exactly one file, this one; no source or test file was modified by both sides | ✅ done |
 
-**Git position:** the branch **is** pushed and tracks `origin/feature/agent-run-spine`, which is now at
-`73e15e8` — both the earlier "`1c49b08` / 29 local-only" and the older "`e7df175` / 50 local-only" figures are
-stale. **The local-only tail is described, not counted** — every count printed in this paragraph has gone stale
-on the next commit (the "17" was already stale when read, then 29, then 2). As of 2026-07-30 that tail is
-exactly Batch 05's polish pass (`ba2c266`, `d3c8c61`) plus this Batch-05 roadmap pass; everything up to and
-including `73e15e8` is on `origin`. Read the number from
-`git rev-list --count origin/feature/agent-run-spine..HEAD`, and `git branch -vv` for the tracking line.
+**The chronicle no longer skips Batch 05, and the paragraph that said it did was deleted here.** `b32ca14`
+carried a note explaining that Batch 05 had shipped as `7a41a68` → `73e15e8` but had no row, and that the
+"Upcoming" table below still listed it at Rank 3. Both halves are now false — row 12 is the row, and the rank
+table carries 05 as shipped — so the note was **dropped in the merge** rather than carried forward. It was
+accurate when written: the Batch-05 roadmap pass it was describing existed only on the other machine. Recorded
+because a reader who saw `b32ca14` will look for it.
+
+**Git position, re-measured 2026-07-30 after the merge:** `origin/feature/agent-run-spine` is at **`b32ca14`**,
+Batch 12's last commit. Every earlier value this paragraph has held — `73e15e8`, `1c49b08`, `e7df175` — is
+stale, and so was every hardcoded *count* printed beside them ("17" was already stale when it was read, then
+29, then 6, then 2). **So the local-only tail is now described, not counted.** It is exactly Batch 05's polish
+pass (`ba2c266`, `d3c8c61`), its roadmap pass, and this merge; Batch 12 in full is already on `origin`. Read it
+from git, always: `git rev-list --count origin/feature/agent-run-spine..HEAD` for the number, `git log
+--oneline origin/feature/agent-run-spine..HEAD` for *which* — and the second is the part that actually matters
+when deciding whether a push is safe. `git branch -vv` prints `[ahead N, behind M]`, and **`behind` is not
+hypothetical on this branch**: an unnoticed `behind 7` is what produced this merge.
 Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true --no-incremental`. Re-measured at
-`87fa403`, at `7815ce1` and again at `d3c8c61`: **0 errors, 194 warnings**, all pre-existing and unchanged
-across every pass since — 3× `CS8602` in `Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
+`87fa403`, at `7815ce1`, at `d3c8c61`, at `cac8251`, and again **on the merged tree**: **0 errors, 194 warnings**, all pre-existing and unchanged across every pass — the merge of two batches added none: 3× `CS8602` in
+`Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
 duplicate `Memory_Refresh` key present twice in each of the three resx files, and 186 xUnit analyzer warnings
 in the test project. **The “0 warnings” figure used earlier in this file was wrong** — it came from an
 incremental build, which skips `CoreCompile` and therefore does not re-emit analyzer warnings. The real bar
@@ -59,41 +75,84 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
 `--no-incremental` when quoting a warning count.
 
 > **Two things that are not batches, and outrank every batch below.**
+>
+> **✅ Resolved 2026-07-30 by the merge run. `b32ca14` said "no executed run describes the current tree, and a
+> fresh Windows run is owed" — that run has now happened, and Batch 12's never-executed facts pass.** Measured
+> on the merged tree with the standard gate command: **2232 total / 1 failed / 2230 passed / 1 skipped**. The
+> single failure is `TaskExtensionsTests.SafeFireAndForget_SlowTask_DoesNotBlock`, the pre-existing wall-clock
+> flake already documented below in “Deliberately open” — **4/4 green when its class is run in isolation**, in a
+> file neither batch touched, so it is not a merge regression. Every item on `b32ca14`'s watch list came back
+> green, checked individually as well as in the full run: `AssistantViewParseTests` **2/2** — the first `View`
+> ever parsed by this suite, and the first execution of `WpfStaHost` and of the process's first
+> `System.Windows.Application`; `UiDispatcherServiceTests` **5/5**; `WindowManagerServiceTests` **1/1**, i.e.
+> `ShowAgentRun_MissingRun_RetractsStaleItem_AndDoesNotThrow` green rather than **hung** (its failure mode under
+> a non-pumping host is a hang, not a red test, so this was the run's real risk); `MeetingAttendeeViewModelTests`
+> **67/67**, which means Batch 12's `InlineUiDispatcher` double is right. The whole suite finished in 24 s —
+> nothing hung.
+>
+> **One number in `b32ca14` was wrong, and it was the acceptance criterion.** It asked for "`failed: 0` at a
+> total **7** above the previous run". The real delta is **+8**: 2 facts in `AssistantViewParseTests` + 5 in
+> `UiDispatcherServiceTests` + **1 more in `DependencyInjectionTests`** (the narrower dispatcher-ban `[Fact]`),
+> which the "7" overlooked by counting only the two new files. 2224 (`d3c8c61`) + 8 = 2232, exactly as measured,
+> so the arithmetic closes with nothing unaccounted for. Full ordered list in
+> [`12-ui-dispatcher-abstraction.md`](12-ui-dispatcher-abstraction.md) §9 — **its §9 still describes the run as
+> owed**, and has not been rewritten here.
+>
+> **What this does not resolve:** the **manual Windows smoke round** is still untouched, and it is still the top
+> open item (Rank 1 below). A green unit suite is not a smoke test.
+>
 > 1. ~~**Run the tests.**~~ **DONE 2026-07-29 — and this was the branch's largest risk, so read the result.**
 >    The suite executes on Windows; the "net10.0-windows cannot run here" premise was a property of the
 >    authoring sessions (macOS), not of the code. Measured with
 >    `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`:
 >    **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, **2157 / 0 failed** after the
 >    residual-hazard pass, **2194 total / 0 failed / 1 skipped** re-measured on a clean tree at `7815ce1`, and
->    **2224 total / 0 failed / 1 skipped** at `d3c8c61` after Batch 05 (**+30** cases). The `7815ce1` figure is
+>    **2224 total / 0 failed / 1 skipped** at `d3c8c61` after Batch 05 (**+30** cases), and
+>    **2232 total / 1 failed / 2230 passed / 1 skipped** on the **merged tree** after Batch 12 (**+8**; the one
+>    failure is the known `TaskExtensionsTests` flake — see the ✅ callout above). The `7815ce1` figure is
 >    still the correct *pre*-Batch-05 baseline even though the batch starts at `7a41a68`: the only commit
->    between them is `30ebb52`, which is docs-only (two `.md` files) and belongs to no batch.
+>    between them is `30ebb52`, which is docs-only (two `.md` files) and belongs to no batch. **`d3c8c61` is
+>    likewise the correct pre-Batch-12 baseline**, because Batch 12 branched from `73e15e8` and never saw Batch
+>    05's two polish commits — the +8 is measured across the merge, not across a linear range, and no single
+>    commit range covers it.
 >    So the ~240 assertions across those commits **do** hold, including the two Batch 11
 >    assertions flagged as fixture-sensitive — no threshold or fixture tuning was needed.
 >    **What this does NOT cover, and still outranks the batches below:** the entire **manual Windows smoke
 >    list** (Batch 11) is undone. A green unit suite is not a smoke test — the two package-bump behaviour
 >    concentrations (streamed tool-call coalescing, the seven `OPENAI001` pragma sites) need a real provider
->    round. **Batch 05 lengthened that list**: its opt-in toggle is XAML, and no test in this suite parses a
->    `View`, so the checkbox→settings wiring and a real two-call plan are both unverified (see “Opened by
->    Batch 05”). Also unproven: whether the W1
+>    round. **Batch 05 lengthened that list, and Batch 12 did not shorten it** — a premise here changed on
+>    2026-07-30 without changing the conclusion, so read the distinction. Batch 05's entry used to say "no test
+>    in this suite parses a `View`". That is now false in general (`AssistantViewParseTests` parses one) but
+>    still true *where it matters here*: the view Batch 12 parses is `Pia.Views.AssistantView`, the **chat**
+>    view, whereas Batch 05's CheckBox lives in `Pia.Views.SettingsViews.AssistantView` — a **different type in
+>    a different namespace** that happens to share a file name. So the checkbox→settings wiring and a real
+>    two-call plan are **both still unverified** (see “Opened by Batch 05”), for the same reason as before.
+>    Also unproven: whether the W1
 >    concurrency tests would go red on a revert of `78e16dd` (asserted by reasoning, not demonstration).
 >    **Corrected 2026-07-29:** this callout used to add "and the image-attachment hazard is *expected* to fail
 >    when smoked". It is not — hazard C was **closed by `b59cfe5`** in the Tier-2 pass, so that smoke item is now
 >    the primary *regression check* for that fix, not a known break to confirm.
-> 2. **Push — DONE 2026-07-29, and that changes the risk posture. Read why it happened.**
->    `origin/feature/agent-run-spine` is at `73e15e8`, so everything through Batch 05's review-fix commit is on
->    `origin` and pullable by anyone; local-only are just Batch 05's polish pass and this roadmap pass (see
->    “Git position” above — read the count from git, never from this file). **The owner pushed it to preserve
->    the work across a machine shutdown, NOT because the smoke round was done.** Do not read this line as the smoke list having
->    been completed: it is untouched, and it still outranks every batch below.
->    The 2026-07-29 owner decision recorded here until 2026-07-30 — "hold the push until the manual Windows
->    smoke round is done, so a provider regression can be fixed before it reaches `origin`" — is therefore
->    **void**, overtaken by the push rather than by the smoke round. Plainly: **the smoke round no longer gates
->    the push, and the obligation is unchanged.** What moved is the cost of a failure. The round now validates
->    code that is *already* on `origin`, so a provider regression it finds is a fix-forward on a shared ref that
->    others may have pulled, not a private rebase — and it can no longer stop such a regression from reaching
->    `origin` at all, only from reaching `main`. `74f964c` remains the commit to revert first if provider
->    behaviour regresses.
+> 2. **Push — the 2026-07-29 hold is void, and the two sides of this merge disagreed about that. Read why one
+>    won.** `origin/feature/agent-run-spine` is at `b32ca14`; local-only is just Batch 05's polish pass, its
+>    roadmap pass, and the merge (see “Git position” above — read it from git, never from this file). The hold
+>    being void is a fact about **what happened**, not a decision anyone made: the owner pushed Batch 05's range
+>    to survive a machine shutdown, and Batch 12's six commits went to `origin` as well. **Neither push waited
+>    for the smoke round.** So the 2026-07-29 decision — "hold the push until the manual Windows smoke round is
+>    done, so a provider regression can be fixed before it reaches `origin`" — was overtaken by events on both
+>    machines independently, and is recorded here only as history.
+>
+>    `b32ca14` re-asserted the hold and **extended** it to a second concern: Batch 12's acceptance test had never
+>    been executed anywhere and fails by *hanging*, so pushing it unrun risked putting a suite-blocking test on
+>    `origin`. That was a sound reason, it was written before the push it was trying to gate, and it is now
+>    **closed on the merits rather than dismissed**: the suite has been run on Windows, those tests pass, and
+>    nothing hung (✅ callout above). The risk it named was real and is retired by measurement.
+>
+>    **What is unchanged: the smoke obligation itself.** It no longer *gates* anything — it cannot, the code is
+>    already on `origin` and pullable — but it is still owed, still untouched, and still outranks every batch
+>    below. What the pushes moved is the **cost of a failure**: a provider regression the round finds is now a
+>    fix-forward on a shared ref others may have pulled, not a private rebase, and the round can no longer keep
+>    such a regression off `origin` at all — only off `main`. `74f964c` remains the commit to revert first if
+>    provider behaviour regresses.
 
 ---
 
@@ -141,6 +200,19 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
 - **A `Once` scheduled job fires once** (Batch 10) — a new terminal `ScheduledJobStatus.Completed` (ordinal 3,
   append-only) is written by all three settle doors; `NextFireAt` is deliberately **not** clamped, and
   `RecurrenceCalculator` is untouched. An `UpdateAsync` that re-schedules forward re-arms a settled one-off.
+- **A ViewModel's threading behaviour is a constructor argument** (Batch 12) — `IUiDispatcher`
+  (`Post`/`PostAsync`/`PostOrRun`) is injected into the four ViewModels that used to reach for
+  `App.Current.Dispatcher`, and `UiDispatcherService` is now the **only** place in the ViewModel layer's reach
+  that reads it. `git grep "Application\.Current" -- src/Pia.Wpf/ViewModels/` returns **nothing**. The prize is
+  not the deletion, it is that threading became **substitutable, greppable and reviewable**: Batch 10's
+  `ForeignRunActive` marshaling and Batch 11's compaction both had to *reason* about "which thread is this on",
+  and that reasoning is now a parameter you can see in a ctor signature, swap in a test, and pin with a rule.
+  Which it is: the blanket "ViewModels must not reference `System.Windows`" rule went from **4** hand-maintained
+  exemptions to **1** (`AssistantViewModel`, and only for `BitmapSource` + `ICommand` — both roots measured),
+  with a second narrower `[Fact]` keeping the dispatcher ban enforced for even that one. And because the
+  process-global static is gone, **the first `View` in this repo is now parsed by a test**
+  (`AssistantViewParseTests` over `AssistantView`), which is what the callout below used to say was impossible
+  — the 42 failures it costs no longer exist to be paid.
 - **Long-run context is bounded** (Batch 11) — `AgentContextCompactor` wraps
   `ContextWindowCompactionStrategy` behind one Pia-only signature (so `MAAI001` is contained to one file),
   pins the leading system run + the run goal + the step instruction, and degrades to *send uncompacted* on any
@@ -192,7 +264,7 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| ~~**1**~~ | — | ~~**Run the test suite on Windows/CI**~~ **DONE 2026-07-29: 2157 total, 0 failed.** What remains is the **manual Windows smoke list**, which a unit suite cannot cover — see the callout above | — | S | a Windows runner |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2232 / 1 failed (known flake) / 1 skipped on the merged tree, 2026-07-30, which also cleared Batch 12's never-executed facts. What a unit suite cannot cover remains: a real provider round — see the callout above | — | S | a Windows runner + a live provider |
 | 2 | 02 | [Cost ledger](02-cost-ledger.md) — price table populates `CostUsd` | 2 | S | — |
 | 3 | 03 | [Audit timeline](03-audit-timeline.md) — per-tool decision trace (plan §11) | 2 | M–L | — |
 | 4 | 04 | [Autonomy policy](04-autonomy-policy.md) — `PolicyJson` per-run approval policy | 2 | M–L | MCP gate |
@@ -204,15 +276,24 @@ each other by number. Read the **Rank** column for priority.
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
 | — | 11 | [Context compaction](11-context-compaction.md) | 2 | S–M | ✅ **shipped** `74f964c`→`a06358d` |
+| — | 12 | [UI-dispatcher abstraction](12-ui-dispatcher-abstraction.md) | 2 | M | ✅ **shipped** `1dced2f`→`cac8251` — tests **run green 2026-07-30** on the merged tree |
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
 10's items were live data-loss paths. They have shipped, so the top risk is no longer a known bug — it is that
 the *fix* for those data-loss paths (a semaphore-gated dedicated SQLite connection, a merge write, a WAL
-switch) has never been exercised against a real provider or a real user session, only by the unit suite. A wrong gate is a worse failure than the gap it closed. **Batch 05 has now shipped
-too**, and it was only ever ahead of 03/04 because it was S–M and unblocked — so with it gone, 03 (audit
-timeline) and 04 (autonomy policy) move up behind 02, and both are M–L. Batch 05 also *added* to the smoke
-list rather than shortening it, which is one more reason the callout above still outranks all of them.
+switch) has never been exercised against a real provider or a real user session, only by the unit suite. A wrong
+gate is a worse failure than the gap it closed. **Batch 05 has now shipped too**, and it was only ever ahead of
+03/04 because it was S–M and unblocked — so with it gone, 03 (audit timeline) and 04 (autonomy policy) move up
+behind 02, and both are M–L. Batch 05 also *added* to the smoke list rather than shortening it, which is one
+more reason the callout above still outranks all of them.
+
+**Batch 12 briefly put “run the tests” back at Rank 1, and that has now been paid.** `b32ca14` argued the point
+literally: 7 (in fact 8) new facts had never run, one creates the process's first `Application`, and the
+neighbour most likely to notice fails by *hanging* — so the cheapest item on the list was also the only one that
+could say whether those commits were safe. The merge run did exactly that and came back green, which is why
+Rank 1 is once again the **manual smoke round alone**. Keep the argument, though: it is the general case. Any
+batch that adds tests which cannot be executed where they are authored re-earns Rank 1 until someone runs them.
 
 Phase 2 now completes at Batch 03/04. Batches 06–09 are Phase 3/4; their seams may shift — re-scope at the
 design step. `PolicyJson` is no longer NULL — it carries the launch grant envelope — so Batch 04 must *extend*
@@ -277,7 +358,41 @@ to catch an injected `static ContextWindowCompactionStrategy` field that the **b
 `MAAI001` warnings). The MAAI001 source-scan and the `BeginTransaction` premise pin are guards, not
 regressions, and say so in their own comments.
 
-#### ⚠️ NO TEST IN THIS SUITE PARSES A `View`, and it cannot without breaking 42 others
+#### ⚠️ ~~NO TEST IN THIS SUITE PARSES A `View`, and it cannot without breaking 42 others~~ — HALF CLOSED by Batch 12
+
+**Corrected 2026-07-30. Read the correction first, then the original, which is kept because its diagnosis is
+what made the fix possible.**
+
+**One view is now parsed:** `AssistantViewParseTests` parses `AssistantView`, asserts the composer hint is
+located by its rendered EN text and that its `Visibility` tracks `ForeignRunActive`, and sweeps the parsed tree
+for unresolved `loc:Str` keys. So the headline claim ("no test parses a `View`") is **false as of `aca30bd`**,
+and the "it cannot without breaking 42 others" clause is false too — **the 42-failure cost this callout
+records is exactly what [Batch 12](12-ui-dispatcher-abstraction.md) removed.** The diagnosis below was right
+about the mechanism and right about the fix: the blocker was never the view test, it was that the ViewModel
+layer's threading depended on a process-global static. `IUiDispatcher` made that a ctor argument, the test
+project injects an inline double, and the live `Application` stopped being able to change any ViewModel's
+behaviour. Both "further traps" below were also load-bearing and both were reproduced verbatim in the shipped
+design: **one** shared never-torn-down STA thread (a thread-per-test host really does die on the second test),
+and a `Pump()` to `SystemIdle` before every bound read.
+
+**Three things stay true, and they are why this callout is only *half* closed:**
+
+1. **`AssistantView` is the first view parsed, not the last.** Every other `View` in the repo still carries the
+   full silent-misspelled-binding hazard, unchanged. What Batch 12 bought is that the *next* view test is a
+   ~20-line file reusing `WpfStaHost`, instead of a batch — so the remaining exposure is now a chore, not a
+   blocker.
+2. **The sweep is narrower than it sounds.** It sees `TextBlock.Text` only: 4 of `AssistantView.xaml`'s 22
+   `loc:Str` usages. `ToolTip=` (11), `Content=` (5), `PlaceholderText=` and `Value=` need template
+   application, which the test deliberately never triggers.
+3. ~~**The new test has never been executed.**~~ **EXECUTED 2026-07-30, green.** It was authored on macOS, where
+   the suite cannot run at all, and its worst failure mode was a *hang* in `WindowManagerServiceTests` rather
+   than a red test. Both are now settled by measurement on the merged tree: `AssistantViewParseTests` 2/2,
+   `WindowManagerServiceTests` 1/1 (not hung), whole suite 2232 / 1 known flake in 24 s. So **"one view is
+   parsed" is now a claim about a green result, not just about the code** — which is what item 1 and item 2
+   above are scoped against, and neither of them changed.
+
+**XAML changes outside `AssistantView` still need manual smoke.** The original entry follows, unedited — its
+last paragraph is the prediction this batch cashed:
 
 Worth knowing before anyone tries to close it. Every test works against ViewModels, so in `AssistantView.xaml`
 an unresolvable `StaticResource`, a missing `loc:Str` key, or a **misspelled `Binding` path** is invisible to a
@@ -535,6 +650,52 @@ it (~1 run in 8). It is a wall-clock assumption in the test, not a product defec
   ref with `ExcludeAssets="runtime"` (not `"all"`), which still would not propagate across the test
   `ProjectReference`.
 
+### Opened by Batch 12 (2026-07-30) — known, reasoned, not closed
+
+- ~~**Batch 12's own tests have never been executed** — 7 facts, on any machine.~~ **CLOSED 2026-07-30 by the
+  merge run**, and it was the branch's highest-priority open item until then. The concern was specific and
+  sound: one fact creates the process's first `System.Windows.Application`, and a neighbour it perturbs
+  (`WindowManagerServiceTests.ShowAgentRun_MissingRun_RetractsStaleItem_AndDoesNotThrow`) fails by **hanging**
+  rather than by going red, so an unrun push risked a suite-blocking test. Measured on the merged tree:
+  `AssistantViewParseTests` 2/2, `UiDispatcherServiceTests` 5/5, `WindowManagerServiceTests` 1/1 not hung,
+  `MeetingAttendeeViewModelTests` 67/67, suite 2232 / 1 pre-existing flake / 1 skipped in 24 s. **The count was
+  8, not 7** — the eighth is the new `[Fact]` in `DependencyInjectionTests`; see the ✅ callout at the top.
+  The remaining bullets in this section are **not** closed by that run: they are design consequences of a
+  process-wide `Application`, not predictions about one suite execution.
+- **A live `Application` now exists for every collection scheduled after `WpfApplicationStatic`** — and xunit,
+  not us, decides whether the serial group runs before or after the parallel group. If before, the exposure is
+  the whole suite. Inspection narrows the blast radius a long way (no test constructs any of the ~13
+  `TryFindResource` converters, `OutputService`, `ThemeService` or `TrayIconService`; the notification surfaces
+  are entered through internal seams that bypass their dispatcher reads), but `EmojiInlineBuilderTests` under a
+  live cross-thread resource dictionary remains a genuine unknown. **Narrowed, not closed, by the 2026-07-30
+  run:** the full suite went green apart from the known `TaskExtensionsTests` flake, so on *that* ordering
+  nothing in the blast radius broke. This bullet's whole point, though, is that the ordering is xunit's choice
+  and not ours — so one green observation is not a proof over orderings, which is exactly the "a single red
+  observation is not a rate" lesson recorded below, read in the other direction. Treat an
+  `EmojiInlineBuilderTests` failure that appears without a source change as this, not as a flake.
+- **The STA host is a process-wide singleton that can never be torn down**, so a future test needing a
+  *different* `Application` configuration cannot have one. `Application.Current` is not nullable once set.
+- **Category (d): 11 service sites in 7 files still read `Application.Current` directly**, and
+  `OutputService.cs`'s is **still unguarded** — which this batch made *more* dangerous, not less: with a live
+  `Application` in the test process, that blocking `Invoke` becomes a hang rather than an NRE if a test ever
+  reaches it. Adopting `IUiDispatcher` there is now mechanical.
+- **`AssistantViewModel`'s exemption needs TWO refactors, not one.** Measured: its complete `System.Windows`
+  set is `{System.Windows.Input.ICommand, System.Windows.Media.Imaging.BitmapSource}`. Moving the
+  clipboard→attachment conversion out of the VM (the story the exemption comment used to tell on its own) is
+  necessary but **not sufficient** — two `ICommand.Execute(null)` call sites remain, and `Execute` is declared
+  on `ICommand`, so casting to the toolkit's `IRelayCommand` does not help.
+- **`MeetingAttendeeViewModel`'s exemption was vestigial for three batches, because NetArchTest 1.3.2 does not
+  resolve base-type dependencies transitively.** The ViewModel rule is a ratchet on the type that *physically
+  names* the dependency, so a future ViewModel can inherit a `System.Windows` dependency and stay green. Worth
+  knowing before trusting that rule as a boundary.
+- **The ViewModel-level `Post`-vs-`PostOrRun` choice is unpinned.** `UiDispatcherServiceTests` pins the
+  service's three semantics against a real pumping dispatcher, but the test double collapses all three to an
+  inline call by design — so no ViewModel test would notice if `VoiceModeViewModel`'s silence-timer site were
+  switched from `Post` (queue) to `PostOrRun` (which would run `TransitionToProcessingAsync` inside
+  `Timer.Elapsed`).
+- **Views other than `AssistantView` are still unparsed**, and the loc-key sweep covers `TextBlock.Text` only —
+  see the corrected callout above.
+
 **Promoted out of this list on 2026-07-28 and now shipped:** the `Once`-job relaunch loop, two writers on one
 chat row, the missing write gate on the shared `SqliteContext` connection (all → Batch 10), and
 context/trajectory compression (→ Batch 11, whose design step collapsed when `Microsoft.Agents.AI` 1.15.0
@@ -579,10 +740,16 @@ hermes-comparison §5/rec #5.
   toggle's German string (`Denkstufe` → `Denkaufwand`, `d3c8c61`) and left alone as out of scope: it is a
   pre-existing gap in a different dialog and a new key needs en/de/fr parity. The polish pass **refuted none** of
   the five nits it examined — all five were real and all five are fixed.
-- **Manual-smoke debt, and the toggle is XAML.** The CheckBox's two `Binding` paths
-  (`AgentPlanReasoningTurnEnabled`) and the `AssistantView.xaml` relocation in `d3c8c61` resolve only at
-  runtime, and **no test in this suite parses a `View`** (see the callout above — closing that needs Batch 12's
-  dispatcher abstraction or a separate test process), so a typo renders a checkbox that silently never persists.
+- **Manual-smoke debt, and the toggle is XAML. Still open after Batch 12 — the premise moved, the conclusion did
+  not.** The CheckBox's two `Binding` paths (`AgentPlanReasoningTurnEnabled`) and the `AssistantView.xaml`
+  relocation in `d3c8c61` resolve only at runtime, so a typo renders a checkbox that silently never persists.
+  This bullet used to justify that with "**no test in this suite parses a `View`**", and **that sentence is
+  false as of the merge** — `AssistantViewParseTests` parses one. It does not help *here*, because the two files
+  share a name and nothing else: Batch 12 parses `Pia.Views.AssistantView` (`Views/AssistantView.xaml`, the
+  **chat** view), while this CheckBox lives in `Pia.Views.SettingsViews.AssistantView`
+  (`Views/SettingsViews/AssistantView.xaml`, the **settings** view) — a different type in a different namespace,
+  never constructed by any test. Batch 12 did make closing this cheap rather than blocking: per its own callout
+  the next view test is a ~20-line file reusing `WpfStaHost`. Until someone writes that one, the debt stands.
   `LocalizationTests` *does* cover the three `loc:Str` keys and their en/de/fr parity, and
   `AppSettingsAgentPlanningTests`' camelCase JSON round-trip is the automated proof that the flag **can**
   persist — the untested part is the wiring between them, plus the relocation itself. There is also no
@@ -636,6 +803,37 @@ parent/child crash sweep · 08 weak · 09 none.
 4. **Independently verify** — after the workflow, confirm the build green and spot-check the top guardrails
    yourself; fix any clear correctness gap the workflow left open.
 5. **Commit per group, don't push.** Present decisions/assumptions/open items at the end.
+
+### Measuring the architecture rules without a Windows runner (learned in Batch 12 — reusable, use it)
+
+If you are working where `dotnet test` cannot run (macOS: it fails with *"To install missing framework …
+`Microsoft.WindowsDesktop.App` … osx-arm64"*, **0 tests executed**), you can still **execute** most of this
+repo's architecture rules rather than reasoning about them. **`NetArchTest.Rules` 1.3.2 targets
+`netstandard2.0`, is built on `Mono.Cecil` (pure metadata analysis, no runtime loading), and exposes
+`Types.FromFile(string)`.** So a throwaway **`net10.0`** console project — which *does* run — referencing
+`NetArchTest.Rules` 1.3.2 + `Mono.Cecil` 0.11.5 can be pointed at the built
+`src/Pia.Wpf/bin/Debug/net10.0-windows*/Pia.Wpf.dll` and run the real rule bodies verbatim, with the selection
+chain copied character for character out of the test file and only `InAssembly(...)` swapped for
+`FromFile(...)`. Build first with `--no-incremental` so the DLL is fresh.
+
+That works for `DependencyInjectionTests`, `NamingConventionTests`, `LayerDependencyTests`, `MvvmPatternTests`
+and `AsyncSafetyTests`. Three things to know before you trust the output, all learned the hard way:
+
+- **A rule over an EMPTY type set returns `IsSuccessful = true`.** Any `HaveName(...)`-scoped fact needs a
+  non-vacuity guard (`Assert.Single(target)`) or a rename silently turns it green — and every probe run should
+  carry a control expression (e.g. `ShouldNot().HaveDependencyOn("System.Object")`) proving the selection
+  resolved at all.
+- **Rules that end in `.GetTypes()` and then LINQ over reflection `Type` objects cannot be run as written** —
+  reflection over `Pia.Wpf` outside the Windows test host throws `FileNotFoundException`. Either run the
+  NetArchTest half of the selection and **invert** the assertion so `FailingTypeNames` enumerates the scanned
+  set, or re-implement the predicate over Cecil (`IsInitOnly` for the readonly-field rule,
+  `AsyncStateMachineAttribute` + `void` for `async void`). Say which one you did.
+- **`DiRegistrationTests` and `BootstrapperGraphValidationTests` cannot be measured at all** — they *invoke*
+  `Bootstrapper.ConfigureServices` by reflection. Verify by inspection and label it as inspection.
+
+Cecil also answers questions the rules only hint at: dumping a type's **complete** `System.Windows` dependency
+set (member signatures *and* IL operands) is what caught an exemption comment naming one of two real roots.
+Batch 12 §1 has the worked example.
 
 **Standing guardrails (every batch):** failure-isolated bookkeeping (Safe* wrappers); no interactive regression
 (the Live terminal settle stays correct); executor parity (Live + Headless); off-thread `RunChanged` stays

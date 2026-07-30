@@ -11,6 +11,14 @@ namespace Pia.ViewModels;
 /// rules out <c>Dispatcher</c>; <see cref="SynchronizationContext"/> is the DI-safe, testable
 /// equivalent. When no context was captured (unit tests construct off any thread) the action runs
 /// inline, so those tests stay synchronous.
+/// <para>
+/// This is not the only sanctioned marshal any more: Batch 12 added the injected
+/// <c>Pia.Services.Interfaces.IUiDispatcher</c>, whose <c>Post</c>/<c>PostAsync</c>/<c>PostOrRun</c> are
+/// named after these and behave the same way (inline when there is nothing to marshal to). Choosing
+/// between them: prefer <c>IUiDispatcher</c> when the ViewModel may be constructed OFF the UI thread, or
+/// when a test must substitute the marshal itself; prefer this base when the VM is always built on the UI
+/// thread and should not grow a constructor parameter. Do not use both in one type.
+/// </para>
 /// </summary>
 public abstract class UiThreadViewModel : ObservableObject
 {

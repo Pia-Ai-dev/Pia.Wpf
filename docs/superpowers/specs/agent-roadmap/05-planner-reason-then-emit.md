@@ -14,9 +14,13 @@ otherwise be re-proposed.
 > → **2224 total / 0 failed / 1 skipped** at `d3c8c61`, from a pre-batch baseline of **2194 / 0 / 1** at
 > `7815ce1` (**+30** cases — the only commit between `7815ce1` and this batch's first is the docs-only
 > `30ebb52`, which added no tests and belongs to no batch).
-> **What that does NOT cover:** the settings toggle is XAML and **no test in this suite parses a `View`**, and
+> **What that does NOT cover:** the settings toggle is XAML and **no test parses the settings view**, and
 > efficacy is unmeasured — the suite proves the extra round happens, degrades safely and is paid for, never
 > that it produces better plans. See "Opened by Batch 05" in [`00-OVERVIEW.md`](00-OVERVIEW.md).
+> **Corrected 2026-07-30, when Batch 12 merged in:** this line said "no test in this suite parses a `View`",
+> which is no longer true — `AssistantViewParseTests` parses `Pia.Views.AssistantView`, the **chat** view. It
+> does not reach this batch's CheckBox, which lives in the same-named but unrelated
+> `Pia.Views.SettingsViews.AssistantView`. The gap is unchanged; only the reason it exists is narrower.
 
 ---
 

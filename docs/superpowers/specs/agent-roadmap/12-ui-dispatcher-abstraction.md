@@ -1,432 +1,528 @@
-# Batch 12 — The UI-dispatcher abstraction (`IUiDispatcher`) — 📋 SPEC, NOT BUILT
+# Batch 12 — The UI-dispatcher abstraction (`IUiDispatcher`) — ✅ SHIPPED
 
-**Phase 2 · Size M · own batch · written against `feature/agent-run-spine` at `6852e2f`**
+**Phase 2 · Size M · `feature/agent-run-spine` · `1dced2f` → `cac8251`**
+(four build commits + a two-commit review fix pass; see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
-Approved as its own batch, so nothing here is applied yet. Every line reference below was read at `6852e2f`
-and re-verified once adversarially; where a claim is an inference rather than an inspection it says so, and
-§3's **Step 0** exists to settle the one inference that decides the acceptance criterion. Re-anchor by content
-if the tree has moved.
+This file now describes **the code as built**. The spec's own predictions are kept wherever the build
+overturned them, because each was plausible and would otherwise be re-proposed — including the two that were
+*wrong about this batch's central question* and were only caught because §3's Step 0 was executed instead of
+reasoned about.
 
-> **Baseline this batch must not regress:** `dotnet build -p:EnableWindowsTargeting=true --no-incremental`
-> → 0 errors, **exactly 194 warnings**. `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj --
-> --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"` → **2157 total, 0 failed, 2156 passed,
-> 1 skipped**, on Windows 11. net10.0-windows tests **do** execute on this machine; any older note in these
-> specs claiming otherwise is stale.
+> **Build:** `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → **0 errors, exactly 194
+> warnings**, re-measured at `cac8251` by this documentation pass. Every commit in the range held that bar;
+> the batch adds **zero** warnings, and a per-site warning diff against `73e15e8` (built in a throwaway
+> worktree) shows the same 186 unique warning sites on both sides — the count did not merely coincide.
+>
+> **⚠️ Tests: WRITTEN, NEVER EXECUTED — including the acceptance test that is the point of the batch.**
+> This *reverses* the baseline note the spec opened with ("net10.0-windows tests **do** execute on this
+> machine"). They execute on the owner's **Windows 11** box; they do not execute where this batch was
+> authored. On macOS `dotnet test` fails before running anything — *"To install missing framework …
+> `Microsoft.WindowsDesktop.App` … osx-arm64"*, **0 tests executed** — and it was deliberately not attempted
+> again after that was confirmed. So the `2157 / 0 failed` figure the spec quoted is an inherited measurement
+> from an earlier commit, and **nothing in this range has been run**. What *was* measured here, and how, is
+> §3 and §9. The smoke list is §10.
 
-## Why this batch exists
+---
 
-No test in this suite parses a `View`. So in `AssistantView.xaml` an unresolvable `StaticResource`, a missing
-`loc:Str` key, or a **misspelled `Binding` path** is invisible to a green build *and* a green suite: markup
-compilation catches malformed XAML and unknown types/properties, but resource-key resolution and binding paths
-are runtime concerns, and a wrong binding path fails **silently**. That was confirmed, not assumed — a
-deliberately misspelled path on the composer hint produced the always-visible failure with the build still at
-**0 errors**.
+## What shipped
 
-A view-parse test was built and **withdrawn**. Parsing a View needs an `Application` whose `Resources` carry
-App.xaml's converters (`App.xaml:34` declares `BooleanToVisibilityConverter`, which the hint's `Visibility`
-binding at `AssistantView.xaml:498` resolves as a `StaticResource`), and `Application.Current` is
-**process-wide**. Creating it makes `App.Current.Dispatcher` real — owned by the test's STA thread — so every
-ViewModel that marshals through it stops running its work inline (today it takes the null-`App.Current`
-synchronous fallback). Measured cost: **42 `MeetingAttendeeViewModelTests` failures** (that file has 48 test
-methods).
+| Commit | What |
+|---|---|
+| `1dced2f` | `IUiDispatcher` + `UiDispatcherService` + `InlineUiDispatcher` + the `AddSingleton` registration. Foundation only — no ViewModel migrated, so the interface's only consumer was DI |
+| `2fc593a` | Unit 1: `VoiceModeViewModel` (2 sites) then `AssistantViewModel` (6 sites); the `VoiceModeViewModel` exemption deleted; the narrower `[Fact]` added |
+| `d6dd73f` | Unit 2: `TranscriptOverlayViewModel.DispatchToUi` onto the injected dispatcher, `MeetingAttendeeViewModel` forwarded; the last two exemptions deleted |
+| `aca30bd` | The acceptance test — `WpfStaHost` (one STA thread, running dispatcher, the process's only `Application`), `WpfApplicationCollection`, `AssistantViewParseTests` |
+| `39025cc` | Fix pass: a **queued** marshal failure is logged instead of lost; the exemption comment's second root named; three doc corrections |
+| `cac8251` | Fix pass: the STA host keeps pumping when its own startup fails; `UiDispatcherServiceTests` (5 facts) pins the three member semantics; the loc sweep gets a non-vacuity anchor |
 
-So the blocker is not the view test. The blocker is that the ViewModel layer's threading behaviour depends on
-a **process-global static**. This batch removes that dependency; the view test is what proves it.
+**16 files, +981/−36.** 7 new (`IUiDispatcher.cs`, `UiDispatcherService.cs`, `InlineUiDispatcher.cs`,
+`UiDispatcherServiceTests.cs`, `WpfStaHost.cs`, `WpfApplicationCollection.cs`, `AssistantViewParseTests.cs`),
+9 edited (4 ViewModels + `UiThreadViewModel.cs` + `Bootstrapper.cs` + `DependencyInjectionTests.cs` +
+2 ViewModel test files). §4's cost table predicted 4 new / 9 edited — see "Deviations".
 
-## What ships
+---
 
-| # | What | Files |
-|---|---|---|
-| 0 | **Step 0 measurement** (§3) — no code, decides #6 and #8's criterion | 0 |
-| 1 | `IUiDispatcher` (`Post` / `PostAsync` / `PostOrRun`) in `Pia.Services.Interfaces` | +1 |
-| 2 | `UiDispatcherService` in `Pia.Services` — the only new place `Application.Current.Dispatcher` is read | +1 |
-| 3 | `Bootstrapper` registers it `AddSingleton` (mandatory — see the DI rule below) | 1 |
-| 4 | Unit 1: `VoiceModeViewModel`, then `AssistantViewModel` migrated | 2 |
-| 5 | Unit 2: `TranscriptOverlayViewModel.DispatchToUi`, then `MeetingAttendeeViewModel` migrated | 2 |
-| 6 | Exemption names deleted from `DependencyInjectionTests.cs:24-27` — **how many, Step 0 decides** | 1 |
-| 7 | `InlineUiDispatcher` test double (runs inline) + the 4 test construction sites | 3 |
-| 8 | `AssistantViewParseTests` — the acceptance test, + the stale comment at `MeetingAttendeeViewModelTests.cs:18-19` | +1, 1 |
+## 1. Step 0: the measurement, and the technique that made it possible
 
-## 1. The inventory
+**This is the most reusable thing in the batch, and nobody else in this repo knew it was possible.**
 
-Exhaustive sweep of `src/` (`*.cs`) for `App.Current`, `Application.Current` and `Dispatcher`.
-`App.Current`/`Application.Current`: **42 lines / 16 files**. `Dispatcher`: **69 lines / 35 files**.
-**`src/Pia.Shared` has zero hits** (net10.0, no WPF reference) — it was checked. Category totals below were
-recounted line by line.
+The spec's §3 ordered a measurement before any code: delete all four exemption names and run *only*
+`ViewModels_MustNotReference_SystemWindows`. On macOS that is unrunnable through xunit — the whole test host
+needs `Microsoft.WindowsDesktop.App`. But the rule itself does not:
 
-### (a) ViewModel marshaling a callback onto the UI thread — **8 expressions in 3 files. This is the batch.**
+**`NetArchTest.Rules` 1.3.2 targets `netstandard2.0` and is built on `Mono.Cecil` — pure static analysis over
+the assembly's metadata, no runtime loading — and it exposes `Types.FromFile(string)` beside
+`Types.InAssembly(Assembly)`.** So a throwaway **`net10.0`** console project (which *does* run on macOS) can
+reference `NetArchTest.Rules` 1.3.2 + `Mono.Cecil` 0.11.5, take the path of the built
+`net10.0-windows10.0.17763.0/Pia.Wpf.dll`, and execute the repo's **real** architecture rules verbatim — the
+selection chain copied character for character out of the test file, only `InAssembly` swapped for `FromFile`.
+Build the DLL first with `dotnet build -p:EnableWindowsTargeting=true --no-incremental`; the probe reads the
+same bytes the Windows test host would.
 
-- `AssistantViewModel.cs` — **6**: `:317` (`await App.Current.Dispatcher.InvokeAsync`, default working dir),
-  `:371` (`OnActiveRunChanged`), `:376` (`OnForeignRunActiveChanged`), `:498` (personas, awaited so
-  `_isLoadingPersonas` still guards), `:1007` (**blocking `.Invoke`** inside a `Task.Run(async …)` whose
-  `try/catch` logs, TTS init), `:1468` (follow-up suggestions).
-- `TranscriptOverlayViewModel.cs:416` — **1**, the `DispatchToUi` seam (method at `:414`):
-  `System.Windows.Application.Current?.Dispatcher`, `CheckAccess()` → inline, else `BeginInvoke`, whole thing
-  in a try/catch that logs (`:417-425`). **9 callers** route through it: same file `:163`, `:253`, `:318`;
-  `MeetingAttendeeViewModel.cs:135`, `:165`, `:175`, `:197` (passed on as an `Action<Action>` to
-  `SpeakerModelDownloadUi`), `:224`, `:361`. It is that file's **only** `System.Windows` token — fully
-  qualified, no `using` — so after migration the file greps clean.
-- `VoiceModeViewModel.cs:59` — **1**, `Dispatcher.CurrentDispatcher` into the `_dispatcher` field (`:21`);
-  used at `:124` and `:164`. Its `System.Windows` tokens are exactly `:4` (`using System.Windows.Threading;`),
-  `:21`, `:59`, `:124`, `:164` — so it too goes fully clean.
+That turned Step 0 from an inference into a measurement, and it was used again after every commit in this
+range. It generalises: **five** of the repo's architecture-test files are NetArchTest-shaped and therefore
+measurable this way on macOS — `DependencyInjectionTests`, `NamingConventionTests`, `LayerDependencyTests`,
+`MvvmPatternTests`, `AsyncSafetyTests`. Two caveats, both hit during this batch:
 
-Nothing else in `Pia.ViewModels` qualifies. `TodoViewModel.cs:192` and
-`ViewModels/Models/SpeakerModelDownloadUi.cs:50` are **comments** mentioning a dispatcher, no call.
+- Rules that end in `.GetTypes()` and then apply LINQ over **reflection** `Type` objects (that is
+  `NamingConventionTests`, `MvvmPatternTests`, `AsyncSafetyTests` and
+  `ViewModels_MustOnlyInject_InterfacesOrViewModels`) cannot be run as written — reflection over `Pia.Wpf`
+  outside the Windows test host throws `FileNotFoundException`. Two workarounds were used and both are sound
+  if you say which one you used: run the NetArchTest half of the selection and **invert** the assertion so
+  `FailingTypeNames` enumerates the scanned set (that is how "the naming rule really does scan
+  `UiDispatcherService`, and 'Service' really is on its allow-list" was established), or re-implement the
+  predicate directly over Cecil (`IsInitOnly` for the readonly-field rule, `AsyncStateMachineAttribute` +
+  `void` for `async void`).
+- **`DiRegistrationTests` and `BootstrapperGraphValidationTests` cannot be measured at all** — they *invoke*
+  `Bootstrapper.ConfigureServices` by reflection, i.e. real execution. Those were verified by inspection, and
+  this file says so rather than implying a run.
 
-**`MeetingAttendeeViewModel` has no `System.Windows` token of its own** — no `using`, no fully-qualified use.
-Everything it does goes through the inherited `DispatchToUi`.
+**One property of NetArchTest that a probe teaches you and reading does not: a rule over an EMPTY type set
+returns `IsSuccessful = true`.** Every `HaveName(...)`-scoped fact therefore needs a non-vacuity guard or a
+rename silently turns it green. That is why the new `[Fact]` carries `Assert.Single(target)`, and why every
+probe run in this batch included a control expression against `System.Object`.
 
-### (b) A View / code-behind / behavior touching its own dispatcher — **38 lines in 21 files. Do not touch.**
+### The measured result
 
-A `UserControl` posting to its own `Dispatcher`, or holding a `DispatcherTimer`, is correct WPF and is not
-DI-resolved. 18 `*.xaml.cs` + 3 Behaviors:
-`KanbanDragDropBehavior:28,116` · `DragDropReorderBehavior:24,97` · `AtCommandAutocompleteBehavior:22,122,213`
-· `VoiceModeOverlay:35` · `FirstRunWizardWindow:31` · `AssistantView:100` · `OptimizeView:68,72` ·
-`MeetingAttendeeOverlay:81,120` · `Views/Controls/RecordingIndicator:11,77` ·
-`Views/Controls/DialogOverlayHost:44` · `Dialogs/FolderMoveContentDialog:23` ·
-`Dialogs/ModelDownloadContentDialog:33` · `Dialogs/RecordingContentDialog:24` ·
-`Dialogs/Overlay/RecordingOverlayPanel:25` · `Dialogs/Overlay/OptimizingOverlayPanel:10,19` ·
-`Dialogs/OptimizingContentDialog:10,22` · `Controls/Assistant/PiaChatTitleChip:35,50,110,152,162,189` ·
-`Controls/Assistant/PiaChatQuickSwitcher:17,22` · `Controls/Memory/PiaMemoryCategoryCard:77` ·
-`Controls/Markdown/CodeBlockControl:27,76` · `Controls/MarkdownMessageControl:26,59`.
+Blanket rule (`ResideInNamespace("Pia.ViewModels")`, `DoNotResideInNamespace("Pia.ViewModels.Models")`,
+`ShouldNot().HaveDependencyOn(prefix)`) with **all four** exemption names deleted, against the pre-batch DLL:
 
-### (c) Genuine `Application`-level use — **27 lines in 13 files. Must NOT be abstracted.**
+| probe prefix | flagged types |
+|---|---|
+| `System.Windows` | Assistant, TranscriptOverlay, VoiceMode |
+| `System.Windows.Threading` | Assistant, TranscriptOverlay, VoiceMode |
+| `System.Windows.Application` | Assistant, TranscriptOverlay |
+| `System.Windows.Media` | Assistant |
+| `System.Windows.Media.Imaging` | Assistant |
+| `System.Windows.Media.Imaging.BitmapSource` | Assistant |
 
-Theme-aware resource lookup: `Converters/ChatStateConverters:44` (+`:14` doc) ·
-`Converters/VaultCategoryColorConverter:77,85` · `Converters/ReminderStatusToBrushConverter:33` ·
-`Converters/MemoryTypeToBrushConverter:26,30` · `Converters/RunProgressConverters:41,85,110` ·
-`Controls/Markdown/PiaMarkdownRenderer:178` · `Controls/Markdown/CodeBlockPalette:77,82,83`.
-Merged theme dictionaries: `ThemeService:116,139`. Process shutdown: `TrayIconService:335`.
-Window enumeration / `MainWindow`: `WindowManagerService:265,266` ·
-`ScheduledJobNotificationSurface:175,177,183` · `BackgroundChatNotificationSurface:159,161`.
-A managed window's own dispatcher inside a service: `WindowManagerService:106,289`
-(their `DispatcherPriority` continuation lines `:108`/`:295` are the same two statements and are not counted
-separately, which is why the total is 27 and not 29).
-The global exception hook: `App.xaml.cs:69`.
+**Three corrections came out of that, and all three changed what the batch did:**
 
-`Application.Current` **is** the resource/window/shutdown root; abstracting that would be a second, larger
-batch with no test to buy. Converters are not DI-resolved and their `TryFindResource` is already null-safe.
+1. **`AssistantViewModel` IS flagged for `System.Windows.Media.Imaging`** — prefix matching confirmed at full
+   type-name depth, which the spec called "almost certainly" and refused to assume. So its exemption
+   **survives this batch** and only its *comment* changed. The story it replaced ("flagged transitively
+   because it creates `VoiceModeViewModel`") is provably not the mechanism: constructing a `Pia.ViewModels`
+   type is not a reference to `System.Windows`.
+2. **`MeetingAttendeeViewModel` was NEVER flagged — not even with its base still dirty.** Its entry was
+   **vestigial**, and the reason is a fact about the tool worth carrying forward: **NetArchTest 1.3.2 does not
+   resolve base-type dependencies transitively.** A ViewModel can inherit every `System.Windows` call it makes
+   and this rule will not see it. (Which is also a limit on the rule: the ratchet only bites on the type that
+   physically names the dependency.)
+3. **The batch therefore deleted THREE names, not the four the §4 cost model implied** — `VoiceModeViewModel`
+   in `2fc593a`, `TranscriptOverlayViewModel` + `MeetingAttendeeViewModel` in `d6dd73f`. The exemption list
+   went 4 → **1**.
 
-### (d) Service layer marshaling onto the UI thread — **11 sites in 7 files. Eligible, NOT required.**
+### And a fourth correction, found only in the fix pass
 
-`AgentRunNotificationSurface:74,182` · `BackgroundChatNotificationSurface:77,231` ·
-`ScheduledJobNotificationSurface:122,228` · `OutputService:31` · `ThemeService:90` · `TrayIconService:322` ·
-`WindowManagerService:227,235-237`.
+The replacement comment named `BitmapSource` as the single surviving root — **and repeated the sin of the
+comment it replaced.** A Cecil dump of `AssistantViewModel`'s complete `System.Windows` dependency set returns
+**two** entries:
 
-Same static dependency, but these are Services, not covered by the ViewModel rule, and **none is constructed
-as a real instance anywhere in the suite except `WindowManagerService`, once** (`WindowManagerServiceTests.cs:24`
-— verified by grepping every `new <Service>(` for all seven). **Two of them are load-bearing for the
-acceptance test anyway:**
+```
+System.Windows.Input.ICommand | System.Windows.Media.Imaging.BitmapSource
+```
 
-- **`OutputService.cs:31` is the one site with no null guard** — `Application.Current.Dispatcher.Invoke(...)`.
-  Today that is an NRE if a test ever reaches it; with a live `Application` it becomes a **blocking
-  cross-thread `Invoke`**.
-- `WindowManagerServiceTests.ShowAgentRun_MissingRun_RetractsStaleItem_AndDoesNotThrow` (`:31`) today takes the
-  null branch at `WindowManagerService.cs:227-229`. With a live App it instead
-  `await dispatcher.InvokeAsync(() => ShowStaleRunToast(runId))`. It still *passes* (no window is active, so
-  `TryFindForegroundSnackbarPresenter` returns null and the toast is a no-op) — **but only if that dispatcher
-  is running.** On a non-pumping dispatcher both this and `OutputService` **hang** rather than fail.
+`BitmapSource` enters through member signatures only (no IL site); `ICommand` enters through two
+`callvirt System.Void System.Windows.Input.ICommand::Execute(System.Object)` sites —
+`OnMeetingAttendeeSummarizeRequested` (`SendMessageCommand.Execute(null)`) and `CancelPendingActionCards`
+(`card.CancelCommand.Execute(null)`). So doing the refactor the comment prescribed (move the
+clipboard→attachment conversion out of the VM) and then deleting the exemption on that strength would turn the
+rule **red**, naming `AssistantViewModel`. Both roots are now named at `DependencyInjectionTests.cs`, with the
+note that `Execute` is *declared on* `ICommand`, so casting to the toolkit's `IRelayCommand` changes nothing —
+closing that half means calling the commands' own methods.
 
-That is why "the shared STA thread's dispatcher must be *running*" is a correctness requirement of the
-acceptance test, not a convenience.
+### The optional narrower `[Fact]` was taken, and proven to be an instrument
 
-### (e) Already abstracted — why 14 ViewModels are fine and need no work
+`AssistantViewModel_MustNotReference_DispatcherOrApplication` asserts the one surviving exemption cannot be
+used as cover for reintroducing `App.Current.Dispatcher`. The spec said to decide it after Step 0 and verify
+it *by running*, not by reading. Both halves of that were done: the pre-migration result was measured by
+stashing the four changed files, rebuilding and re-probing (**False**, naming `AssistantViewModel`), so the
+flip False → True across the migration is observed on both sides rather than asserted. And it is a real
+detector, not a tautology: the same two prefixes flag `Pia.Services.OutputService` and
+`Pia.Services.UiDispatcherService`, which genuinely do read `Application.Current.Dispatcher`.
 
-`UiThreadViewModel.cs`: field `:17`, capture `_sync = SynchronizationContext.Current` at `:21`, `Post` `:34`,
-`PostAsync` `:47`, `PostOrRun` `:68`; **no captured context → run inline**, which is exactly the fallback the
-migrated VMs need to keep. Two details worth carrying: it already exposes `HasUiContext` at `:28` (a *capture*
-probe, not a thread probe), and its "must be constructed on the UI thread" throw at `:19-24` is **opt-in**
-(`requireUiThread` defaults to `false`) — which is what keeps option B in §6 structurally available.
-**14 files** derive from it. Explicit captures of the same idiom outside it: `RunProgressViewModel.cs:119`,
-`ViewModels/Models/ChatSessionManager.cs:139`, `ViewModels/Models/LiveTurnExecutor.cs:34`,
-`Services/Plugins/PluginIconLoaderService.cs:19`. `IAgentRunService.cs:45` documents the inverse contract
-(captures nothing, callable from any thread).
+---
 
-So the layer is already **two-thirds converted by convention** — this batch finishes it.
+## 2. As built
 
-### The rule that already says so, and its exemption list
-
-`DependencyInjectionTests.ViewModels_MustNotReference_SystemWindows` (`:13-32`) asserts *"ViewModels must not
-reference System.Windows (use SynchronizationContext instead)"* — and carries **four hand-maintained name
-exemptions** at `:24-27`: `VoiceModeViewModel`, `AssistantViewModel`, `TranscriptOverlayViewModel`,
-`MeetingAttendeeViewModel`.
-
-Note for the next reader: the general claim that this repo's architecture tests have no exemption lists is
-true of `NamingConventionTests` and `LayerDependencyTests` — it is **false of this one**.
-
-**But the list's own rationale is unreliable, and the batch must not build on it.** The comment at `:15-20`
-says AssistantViewModel is flagged *"transitively because it creates VoiceModeViewModel"*. That cannot be the
-mechanism: constructing a `Pia.ViewModels` type is not a reference to `System.Windows`. AssistantViewModel is
-flagged **directly**, and for two independent reasons (next section). Symmetrically,
-`MeetingAttendeeViewModel` has no `System.Windows` token of its own, so its entry is either base-type
-dependency resolution or vestigial. The list was written from reasoning, not from a run. §3's Step 0 replaces
-the reasoning with a measurement.
-
-### The dependency that dispatcher migration does NOT remove
-
-`AssistantViewModel` references `System.Windows` for a second, unrelated reason — the clipboard image paste:
-
-- `:7` `using System.Windows.Media.Imaging;`
-- `:183` `public IAsyncRelayCommand<BitmapSource> HandleImagePastedCommand { get; }`
-- `:265` `new AsyncRelayCommand<BitmapSource>(ExecuteHandleImagePasted)`
-- `:1079-1088` `private async Task ExecuteHandleImagePasted(BitmapSource? source)`, which calls
-  `source.CanFreeze` / `source.Freeze()` and hands the bitmap to `ImageAttachmentProcessor.TryPrepare`.
-  Invoked from `AssistantView.xaml.cs:153-154`.
-
-Those four references are **inspected fact**. What is *not* measured here is the consequence: whether
-`NetArchTest.Rules` 1.3.2's `HaveDependencyOn("System.Windows")` flags a reference to
-`System.Windows.Media.Imaging.BitmapSource`. It almost certainly does (prefix matching), in which case
-`AssistantViewModel`'s exemption **survives this batch** and only its comment changes. Do not guess — Step 0
-measures it in one minute.
-
-## 2. The abstraction
+### The abstraction
 
 ```csharp
 // src/Pia.Wpf/Services/Interfaces/IUiDispatcher.cs — namespace Pia.Services.Interfaces
-public interface IUiDispatcher
-{
-    void Post(Action action);          // fire-and-forget onto the UI thread
-    Task PostAsync(Action action);     // awaited, so the caller observes it applied
-    void PostOrRun(Action action);     // inline when already on the UI thread
-}
+void Post(Action action);          // queued when there is a live Application; never propagates
+Task PostAsync(Action action);     // awaited, so the caller observes it applied — and its failure
+void PostOrRun(Action action);     // inline when already on the UI thread (CheckAccess), else queued
 ```
 
-Three members, mirroring `UiThreadViewModel` so the two idioms read identically.
+Three members, mirroring `UiThreadViewModel`'s so the two idioms read identically. **No `IsOnUiThread`
+probe** — nothing needed the boolean and exposing it invites a check-then-act race. Shipped exactly as spec'd.
 
-**No `IsOnUiThread` probe.** Checked every call site: `DispatchToUi`'s `CheckAccess()` is exactly
-`PostOrRun`; `VoiceModeViewModel`'s two `BeginInvoke`s are `Post`; the six `AssistantViewModel` sites are
-`Post`/`PostAsync`. **Nothing needs the boolean itself**, and exposing it invites a check-then-act race.
-(`UiThreadViewModel:28`'s `HasUiContext` is not a counter-example — it answers "was a context captured", not
-"am I on the UI thread".) Add a probe only when a caller appears that genuinely needs one.
+`UiDispatcherService` (`Pia.Services`, `public sealed`, `ILogger<UiDispatcherService>`) re-reads
+`Application.Current?.Dispatcher` **per call** — not cached, because DI resolution order versus `Application`
+construction is not something a ViewModel should depend on — and a **null dispatcher runs the action inline**,
+which is precisely the fallback the pre-batch code took under the test host. The file names no
+`using System.Windows.Threading`. Registered `AddSingleton<IUiDispatcher, UiDispatcherService>()` inside
+`ConfigureServices`, three lines after `AddSingleton<ILocalizationService, LocalizationService>()`.
 
-**Production:** `UiDispatcherService` (`src/Pia.Wpf/Services/UiDispatcherService.cs`, `Pia.Services`), reading
-`Application.Current?.Dispatcher` per call — **not** cached in a field, because DI resolution order versus
-`Application` construction is not something a ViewModel should depend on. Null dispatcher → run inline
-(preserves today's fallback). `PostOrRun` → `CheckAccess()` then inline. It keeps the try/catch-and-log that
-`TranscriptOverlayViewModel.cs:417-425` has today, so a marshal failure still cannot take down a caller.
+**Error handling is deliberately asymmetric, and the fix pass had to correct it once (see §3):**
+`PostAsync` has **no** try/catch — it returns `dispatcher.InvokeAsync(action).Task` so the fault propagates to
+the awaiter, which is what the callers' own `try/catch` and `SafeFireAndForget` rely on. `Post` and
+`PostOrRun` never propagate: their try/catch covers the **marshal call itself** and the inline fallback, and a
+**queued** action's failure is picked up separately by `LogIfFaulted`, a continuation on the operation's
+`Task` scheduled on `TaskScheduler.Default`.
 
-**Test double:** `InlineUiDispatcher` in the test project — all three members invoke inline, `PostAsync`
-returns `Task.CompletedTask`. This **restores today's behaviour rather than changing it**: the null-`App.Current`
-path already runs inline, so every existing assertion keeps holding, and it does so *deterministically*
-instead of by accident of a static being null.
+### The migrated sites, and which member each became
 
-**Checked against the architecture rules — all five:**
+- **`VoiceModeViewModel`** (6-param ctor → **7**): `using System.Windows.Threading`, the `Dispatcher`
+  field and `Dispatcher.CurrentDispatcher` are gone; the file now has **zero** `System.Windows` tokens. Both
+  sites are `Post`, never `PostOrRun` — `PostOrRun` would run the silence-timer lambda (which starts
+  `TransitionToProcessingAsync`) **synchronously inside `Timer.Elapsed`**, reordering the state transition.
+  Migrating it also removed a latent bug the spec called out: `Dispatcher.CurrentDispatcher` *creates* a
+  dispatcher for the constructing thread, so off-UI-thread construction would have queued to a dispatcher
+  nobody pumps — silently.
+- **`AssistantViewModel`** (29 → **30**, `IUiDispatcher` appended last): `:374`/`:379` are `Post`
+  (expression-bodied non-async void; the pre-batch code already discarded the operation, so this is
+  byte-equivalent and the Batch-10 G3 off-thread `RunChanged` marshal is intact). `:320`, `:501`, `:1472` are
+  **awaited** `PostAsync`, which is what keeps `:501`'s `_isLoadingPersonas` guard closed before its `finally`.
+  `:1010` — the pre-batch **blocking `.Invoke`** — is also an awaited `PostAsync`: a bare `Post` would have
+  moved the exception out of the `catch` that logs *"Failed to initialize TTS on navigation"*, which is that
+  discarded `Task.Run`'s only error sink. `using System.Windows.Media.Imaging;` stays, by design.
+- **`TranscriptOverlayViewModel.DispatchToUi`** is now a single `_uiDispatcher.PostOrRun(action)`. The method
+  **keeps** its name, `protected` visibility, `void DispatchToUi(Action)` shape and its try/catch-and-log,
+  because the signature is bound as an `Action<Action>` method group when `MeetingAttendeeViewModel` feeds
+  `SpeakerModelDownloadUi`. Its protected ctor went 4 → **5** and the field is declared on the **base** — not
+  optional: `MeetingAttendeeViewModel`'s ctor can reach `DispatchToUi` while wiring `_service.StateChanged`,
+  and base ctors run first. **All nine callers and the `Action<Action>` seam changed zero lines**, confirmed by
+  diff, not by claim.
+- **`MeetingAttendeeViewModel`** (6 → **7**) forwards through its single `base(...)` call; it is
+  `TranscriptOverlayViewModel`'s only subclass, so exactly one call updated.
 
-- `DiRegistrationTests.AllServiceInterfaces_MustHaveRegisteredImplementation` (`:25`) sweeps every interface in
-  `Pia.Services.Interfaces`, so `IUiDispatcher` **must** be registered in `Bootstrapper.ConfigureServices`
-  (`AddSingleton`, next to `ILocalizationService` at `Bootstrapper.cs:517`). Forgetting it is a red test, not
-  a runtime surprise. (That test only inspects the `IServiceCollection`; it never builds a provider.)
-- `DependencyInjectionTests.ViewModels_MustOnlyInject_InterfacesOrViewModels` (`:79`) — it is an interface. ✅
-- `NamingConventionTests.ServiceClasses_MustFollowNamingConvention` (`:26`) — the suffix allow-list at
-  `:32-39` has no "Dispatcher", so the class is `UiDispatcherService`. ✅ (rejected alternative in §6)
-- `LayerDependencyTests.Services_ShouldNot_DependOn_ViewModels` (`:22`) — the implementation depends on
-  `System.Windows` only, and no rule forbids that for Services (six of them already do). ✅
-- `MvvmPatternTests.ViewModel_InjectedFields_MustBeReadonly` (`:39`) — the new `_uiDispatcher` field must be
-  `readonly`. · `AsyncSafetyTests` — no `async void` introduced.
+`InlineUiDispatcher` (test project, `internal sealed`, `Pia.Tests.Services`) invokes all three members
+synchronously inline and **catches nothing**. That restores today's behaviour rather than changing it: `new
+Application` / `new App(` appears **nowhere** in the pre-batch test project, so `Application.Current` was
+unconditionally null and `DispatchToUi` was unconditionally inline. No assertion in
+`MeetingAttendeeViewModelTests` could have depended on the marshal being asynchronous — which is a negative
+result with a mechanism, and it is why the double is behaviour-preserving *deterministically* instead of by
+accident of a static being null.
 
-Both VMs that gain a ctor parameter are DI-registered (`Bootstrapper.cs:586` `AddScoped<AssistantViewModel>()`,
-`:587` `AddScoped<MeetingAttendeeViewModel>()`), so a singleton `IUiDispatcher` resolves into them with no
-registration change beyond #3.
+### The acceptance test
 
-## 3. The migration order
+`AssistantViewParseTests` (`[Collection("WpfApplicationStatic")]`, `DisableParallelization`) reproduces the
+withdrawn design rather than reinventing it: **one** lazily created, never-shut-down background STA thread
+with a **running** dispatcher (`WpfStaHost`), the process's only `System.Windows.Application` built with
+`InitializeComponent()` only, the **real** `AssistantViewModel` (30 substituted/inline args) as DataContext,
+and a `Pump()` that drains to `SystemIdle` before every bound read. Two facts: the composer hint is located
+**by its rendered EN text** (which covers three failure modes at once — the view parses, the `loc:Str` key
+resolves, the binding path is right) and its `Visibility` must go `Collapsed` → `Visible` across a
+`ForeignRunActive` flip; plus a sweep asserting no `TextBlock` in the parsed logical tree renders a
+`^\[\w+\]$` literal.
 
-### Step 0 — measure the exemption list before writing any code
+Beyond the design, **every wait in the host is bounded** (60 s startup hand-off, 60 s marshalled body,
+startup exception captured and rethrown with the stage named), because a broken host must fail with a message
+rather than hang the suite — xunit v3 applies no default per-test timeout. `Pump()` is deliberately *not*
+bounded by a timer that releases the frame early: a partially drained queue is exactly the silent
+vacuous-pass mode `Pump()` exists to prevent, so an undrainable frame surfaces as the marshalled-body timeout
+instead. `Run<T>` waits on `((IAsyncResult)operation.Task).AsyncWaitHandle.WaitOne(timeout)` and then
+`GetAwaiter().GetResult()` — `DispatcherOperation.Wait(TimeSpan)` leaves a body's exception unobserved (you
+get a default-valued result and a baffling assertion failure) and `Task.Wait(TimeSpan)` would wrap it in an
+`AggregateException`.
 
-Delete all four names from `DependencyInjectionTests.cs:24-27` **locally and throwaway** (do not commit), run
-*only* `ViewModels_MustNotReference_SystemWindows`, and write down which types it names and — from the
-failure message — on what. That answers, as fact rather than inference:
+---
 
-1. Does `AssistantViewModel` get flagged for `System.Windows.Media.Imaging` alone? If yes (expected), its
-   exemption stays and this batch deletes **three** names, replacing its comment with the real reason
-   (`BitmapSource`, `:7/:183/:265/:1079`) instead of the wrong one (`VoiceModeViewModel`).
-2. Is `MeetingAttendeeViewModel` flagged only via its base? If it is not flagged at all with the base still
-   dirty, its entry is vestigial and can go in Unit 2 regardless.
-3. Is `VoiceModeViewModel` / `TranscriptOverlayViewModel` flagged on exactly the tokens listed in §1(a)?
+## 3. What the review pass changed, and why (`39025cc`, `cac8251`)
 
-Then restore the four names and start Unit 1. Ten lines of notes here prevent a whole unit ending in a red
-test nobody predicted.
+Four real defects, three of them invisible to the build and to every rule this repo has.
 
-### Unit 1 — `VoiceModeViewModel` first, then `AssistantViewModel`
+- **A queued action's exception was silently lost.** `Post`/`PostOrRun` replaced `BeginInvoke(action)` with
+  `InvokeAsync(action)` and **discarded** the operation. `Dispatcher.UnhandledException` — where
+  `App.xaml.cs`'s error MessageBox lives — is raised for `Invoke`/`BeginInvoke`, not for `InvokeAsync`, which
+  captures the failure on `DispatcherOperation.Task` instead. This is **self-proving** from something the
+  batch already relies on: `PostAsync` needs `InvokeAsync` to fault the operation's `Task`, and it cannot both
+  capture and escape. Concretely: the MeetingAttendee reader thread → `AddUtterance` → `DispatchToUi` →
+  queued `Bubbles` mutation → a `CollectionChanged`/converter throw would have shown a dialog before this
+  batch and nothing at all after it. Fixed with `LogIfFaulted` (continuation on `TaskScheduler.Default`,
+  because a shutting-down dispatcher is exactly when it fires), and the comment that asserted the opposite
+  was replaced. **The proposed alternative — revert to `BeginInvoke` — was rejected**: `AssistantViewModel`'s
+  `:374`/`:379` were *already* `InvokeAsync` before this batch, so reverting would have promoted a
+  background-run progress-sync failure from silent to a production MessageBox. That is a behaviour change
+  wearing the costume of a revert.
+- **`WpfStaHost` could abandon a live `Application`.** `System.Windows.Application`'s ctor publishes
+  `Application.Current` *before* `InitializeComponent()` can throw, and the catch's `return` skipped
+  `Dispatcher.Run()`; `Lazy(ExecutionAndPublication)` then caches the failure. Net state: a process-wide
+  `Application` whose `Dispatcher` belongs to a **dead** thread. `AssistantViewParseTests` would fail cleanly,
+  but `WindowManagerServiceTests.ShowAgentRun_MissingRun_RetractsStaleItem_AndDoesNotThrow` awaits a real
+  `DispatcherOperation` and `OutputService` does a blocking `Invoke` — both **hang forever**, which is the
+  exact outcome this file was written to prevent, triggered by the batch's own #1 named unknown (App.xaml
+  resolving under the xunit host). Now the catch records the cause and **falls through** to `Dispatcher.Run()`,
+  which is re-entered if a queued exception escapes it (reachable, because App's own
+  `DispatcherUnhandledException` net is installed inside `OnStartup`, which this host never calls), stopping
+  only on `HasShutdownStarted`.
+- **The loc-key sweep could pass vacuously.** `Assert.True(unresolved.Count == 0)` is equally true over an
+  empty walk, so if `LogicalTreeHelper` ever stops descending, the sweep reports a clean pass over nothing —
+  and the same batch had *already* added `Assert.Single(target)` to the new arch fact for exactly this reason.
+  It now asserts `Assert.Contains(HintText, rendered)` first. **A numeric floor (`>= 4`, `> 20`) was
+  rejected**: the real TextBlock count has never been measured on Windows, and a wrong constant is a false red
+  on the owner's first run. Anchoring on a string the sibling fact already requires adds no new failure mode.
+- **`UiDispatcherService` had zero coverage** — `grep UiDispatcherService -- tests/` returned nothing, and
+  because `InlineUiDispatcher`'s three members are the same one-liner, **no test in the suite could
+  distinguish `Post` from `PostOrRun`**. Every semantic the design spent paragraphs defending was pinned by
+  comments alone. `aca30bd` had, as a side effect, built the instrument that makes this cheap, so
+  `UiDispatcherServiceTests` now has 5 facts, all executed **on** the STA thread inside `WpfStaHost.Run` (no
+  unbounded cross-thread await): `PostOrRun` inline before returning; `Post` queues and runs on the next
+  `Pump()`; `PostAsync` queues and completes with the mutation applied; `PostAsync` faults with the action's
+  own exception; `Post`'s throwing action reaches neither the caller nor the frame. The two throwing facts
+  install a temporary `Dispatcher.UnhandledException` net so a wrong assumption is a red test rather than a
+  dead test **process**.
 
-Smallest blast radius in the repo: 2 use sites, **0 test construction sites**, not DI-registered (constructed
-at `AssistantViewModel.cs:1324`), 6-param ctor → 7. Then AssistantViewModel's 6 sites (29-param ctor → 30).
-Delete whichever names Step 0 says are now clean.
+Two consequences of the batch that are behaviour changes and are recorded rather than fixed:
 
-Migrating `VoiceModeViewModel` also removes a latent bug: `Dispatcher.CurrentDispatcher` **creates** a
-dispatcher for whatever thread constructs the VM, so if that construction ever moved off the UI thread the
-`BeginInvoke`s would queue to a dispatcher nobody pumps — silently. Injection makes the target explicit.
+- **`AssistantViewModel:1010` also changed dispatcher priority, `Send` → `Normal`.** `Dispatcher.Invoke(Action)`
+  defaults to `Send` (jumps the queue); `InvokeAsync(Action)` defaults to `Normal`. So on a busy UI thread
+  during navigation, `EnterVoiceModeCommand.NotifyCanExecuteChanged()` now runs behind already-queued Normal
+  work. Nothing reads the result and it is the last statement in the body, so the impact is cosmetic — it is
+  recorded because the batch's claim is behaviour preservation. If `Send` ordering ever matters, add a
+  priority overload to `IUiDispatcher`; do not reintroduce `Dispatcher`.
+- **The release log string for a failed UI dispatch moved.** With a live `Application` on the UI thread,
+  `PostOrRun` catches an inline action's exception first, so `DispatchToUi`'s own catch becomes an outer net
+  that no longer fires: a support bundle shows **"UI dispatch failed (PostOrRun)"** under
+  `Pia.Services.UiDispatcherService`, not the historical `"Dispatcher invoke failed"` under the ViewModel's
+  category. The method's comment says so. Under `InlineUiDispatcher` (which catches nothing) the ViewModel's
+  catch is still the one that fires, with the original text — so a test asserting the old string still passes,
+  which is the trap.
 
-### Unit 2 — `TranscriptOverlayViewModel`, then `MeetingAttendeeViewModel`
+---
 
-The base is where the work is: replace the body of `DispatchToUi` with `_uiDispatcher.PostOrRun(...)` and
-**keep the method**, its name, its `protected` visibility and its try/catch. All 9 callers, and the
-`Action<Action>` seam that `SpeakerModelDownloadUi` (`MeetingAttendeeViewModel.cs:197`; the only
-`new SpeakerModelDownloadUi(` in the tree) is fed, then change **zero** lines.
-`TranscriptOverlayViewModel` is `abstract` with a `protected` ctor (`:70-74`, 4 params → 5);
-`MeetingAttendeeViewModel` (`:93-99`, 6 params → 7, `: base(...)` at `:100`) is its **only** subclass, so
-exactly one `base(...)` call updates.
+## 4. Deviations from the spec worth knowing
 
-**`MeetingAttendeeViewModel` is the load-bearing one: 42 of the 48 tests in
-`MeetingAttendeeViewModelTests.cs` depend on the current inline fallback.** Do Unit 2 in one commit and run
-the full suite before any exemption deletion. If those 42 stay green with `InlineUiDispatcher` wired, the
-abstraction is behaviour-preserving; if any goes red, the double is wrong, not the tests. Unit 2 also owns the
-stale header comment at `MeetingAttendeeViewModelTests.cs:18-19` ("DispatchToUi runs inline when there is no
-WPF Application") — once the acceptance test exists there *is* one in the process, so rewrite it to say the
-double is what makes the tests inline.
+- **Nearly every anchor the spec quoted had moved by a few lines**, and each seam was located by content.
+  Load-bearing ones: `ILocalizationService` really was at `Bootstrapper.cs:521` (the spec's `:517` was stale),
+  so the registration landed at **`:525`**, and `AddScoped<AssistantViewModel>/<MeetingAttendeeViewModel>`
+  shifted to `:594`/`:595`. Comments written during the batch cite **content, not line numbers**, precisely
+  because this batch shifted three ViewModels and Unit 2 caught itself about to commit stale digits.
+- **The spec's "42 of the 48 tests in `MeetingAttendeeViewModelTests` depend on the current inline fallback"
+  reproduces nothing** and was not used. Counted: the file has 42 `[Fact]` + 6 `[Theory]` = **48 methods**,
+  and 42 + 25 `[InlineData]` = **67 cases** — so the "42" is the `[Fact]` count wearing a dependency claim's
+  clothes. The measured load-bearing subset is **31 methods (~46 of 67 cases)** whose assertions read state a
+  `DispatchToUi` action mutated. That figure is now in the file's own header comment, over a denominator that
+  was independently recounted.
+- **New files are 7, not the 4 the cost table predicted.** `WpfStaHost.cs` and `WpfApplicationCollection.cs`
+  are the acceptance test's plumbing (mandated by §5's design, written before §4's table existed), and
+  `UiDispatcherServiceTests.cs` came from the review pass. `UiThreadViewModel.cs` is likewise an edited file
+  the table did not predict — it gained a pointer to `IUiDispatcher` (below).
+- **Ctor arities were exactly as predicted** — 7 / 30 / 5 / 7, verified by a top-level-comma count rather
+  than by eye — and the spec's "**zero** broken NSubstitute fakes / hand-written stubs" prediction **held**:
+  no `Substitute.For<>` targets any migrated ViewModel, and `MeetingAttendeeViewModel` is the only subclass in
+  the tree. Adding a *new parameter* really does cost nothing beyond the construction sites, unlike Batch 11's
+  widened interface.
+- **Test construction sites: the 4 predicted were updated**, plus 2 in the new acceptance test = 6
+  `new InlineUiDispatcher()`.
+- **The spec's "free extra" over-promised its own coverage.** A `TextBlock`-only logical walk is *not* "a
+  missing-`loc:Str`-key detector for the whole view": `AssistantView.xaml` has **22** `loc:Str` usages, of
+  which `Text=` is **4**. The other 18 are `ToolTip=` (11), `Content=` (5, on `ui:Button` — a string that
+  becomes a `TextBlock` only after template application, which this test deliberately never triggers),
+  `PlaceholderText=` (1) and `Value=` (1), all structurally invisible without layout. The test's doc now says
+  `TextBlock.Text` only. It is still the only instrument in the repo that catches the class of regression at
+  all.
+- **One doc pointer the spec did not ask for.** The batch left two sanctioned marshaling idioms with identical
+  member names — 14 ViewModels on `UiThreadViewModel`'s captured `SynchronizationContext`, 4 on injected
+  `IUiDispatcher` — and only `IUiDispatcher` knew about the other. Worse, `UiThreadViewModel`'s summary said
+  the architecture test "rules out `Dispatcher`", which this batch made false. It now carries a
+  choose-between rule: prefer `IUiDispatcher` when the ViewModel may be constructed off the UI thread or when
+  its marshal target must be substitutable; prefer the base when the VM is always built on the UI thread and
+  wants no extra ctor parameter. (A third idiom persists and was left alone: `RunProgressViewModel`'s
+  `SynchronizationContext.Current ?? new SynchronizationContext()`, whose fallback posts to the **thread
+  pool** rather than running inline.)
+- **`WpfApplicationCollection`'s own doc was corrected.** "Every collection scheduled after this one" assumed
+  xunit schedules the serial group late. It does not promise that: `DisableParallelization` decides that the
+  collection does not *overlap* the parallel group, not which runs **first**. If it runs first,
+  `Application.Current` is live for the entire remainder of the suite — i.e. the "deterministic total
+  exposure" that §5's decision to reject `[assembly: AssemblyFixture]` was meant to avoid. Triage the first
+  Windows run as *total* exposure, not as a concurrency race.
 
-**Then, and only then**, the acceptance test. Run the full suite immediately after the first commit that
-creates a real `Application` — categories (c) and (d) are the residual risk set, and the suite is the only
-instrument that can name what else notices.
+---
 
-## 4. The cost
+## 5. Decisions that held
 
-Counted from the tree, not estimated.
+Every one of these survived the build unchanged, and the reasons are the same ones the spec gave: injection
+rather than "make the four VMs derive from `UiThreadViewModel`" (that keeps behaviour tied to ambient state at
+construction time — seven test files already set or null the ambient context by hand to get determinism);
+`UiThreadViewModel` and its 14 subclasses untouched; `UiDispatcherService`, not `UiDispatcher` plus a new
+entry in `NamingConventionTests`' allow-list (measured: the rule *does* scan the new type and 'Service' *is*
+allow-listed, so no rule needed editing — and no `Pia.Services` class ends in the non-allowed suffix
+'Dispatcher'); `:1010` awaited rather than fire-and-forget; category (d) deliberately out of scope; no
+`IsOnUiThread` probe; and the exemption list's rationale used as a *ratchet*, never as an argument.
 
-- **New files: 3** (`IUiDispatcher.cs`, `UiDispatcherService.cs`, `InlineUiDispatcher.cs` in tests) +1 for
-  the acceptance test. **Edited: 6** (3 VMs + `Bootstrapper.cs` + `DependencyInjectionTests.cs` + the
-  transcript base) plus 3 test files.
-- **Constructor signatures changed: 4** — `VoiceModeViewModel` (6→7), `AssistantViewModel` (29→30),
-  `TranscriptOverlayViewModel` (4→5, `protected`), `MeetingAttendeeViewModel` (6→7).
-- **Test construction sites: 4**, all in 2 files — `AssistantViewModelLeverTests.cs:39` (Meeting) and `:47`
-  (Assistant), `MeetingAttendeeViewModelTests.cs:741` and `:763`. `new VoiceModeViewModel(` appears in
-  **tests zero times** (only `AssistantViewModel.cs:1324`); `new TranscriptOverlayViewModel(` zero (abstract).
-- **NSubstitute / hand-written fakes that break: none.** This adds a *new* parameter rather than widening an
-  existing interface, so unlike Batch 11's `Arg.Any<AgentContextBudget?>()` churn across 6 stub sites, no
-  existing `Substitute.For<>` or hand-rolled stub needs re-stubbing. `InlineUiDispatcher` is a 10-line class,
-  not a mock.
-- **Warnings: must stay at 194.** Watch xUnit1051 (pass `TestContext.Current.CancellationToken`), xUnit2013
-  (`Assert.Single`), and nullable on `Application.Current?.Dispatcher`.
+`LayerDependencyTests` was checked and has **no opinion on `System.Windows` at all** — the only `System.Windows`
+mention in the whole `Architecture/` folder is `DependencyInjectionTests`' ViewModel rule. `UiDispatcherService`
+joins **13** pre-existing `Pia.Services` types that already depend on `System.Windows`; all six layer facts are
+green.
 
-## 5. Acceptance
+---
 
-**Primary, and independent of any NetArchTest matching semantics:** `git grep -n "App\.Current\|Application\.Current"
--- src/Pia.Wpf/ViewModels/` returns **nothing**, and a committed test parses `AssistantView` and asserts the
-composer hint's `Visibility` tracks `ForeignRunActive` — with the full suite still green (2157+, 0 failed) and
-the build at 194 warnings. Both migration targets were verified to reach that state: `TranscriptOverlayViewModel:416`
-is its file's only `System.Windows` token, and `VoiceModeViewModel`'s are exactly `:4/:21/:59/:124/:164`.
+## 6. The inventory, as it stands now
 
-**Secondary, and conditional on Step 0:** the exemption names at `DependencyInjectionTests.cs:24-27` that
-Step 0 showed to be dispatcher-only are deleted, and any name that must stay (expected:
-`AssistantViewModel`, for `BitmapSource`) has its comment rewritten to the reason that actually applies.
+The pre-batch sweep of `src/**/*.cs` found `App.Current`/`Application.Current` on **42 lines / 16 files** and
+`Dispatcher` on **69 lines / 35 files**. `src/Pia.Shared` has **zero** hits (net10.0, no WPF reference).
+Post-batch the line count is still 42 — the 7 ViewModel sites are gone and are replaced by 3 real reads plus
+comments inside the new service — and the categories are:
 
-*Optional, contingent on Step 0's output:* if `AssistantViewModel` must stay exempt from the blanket rule, a
-narrower second `[Fact]` asserting it does not depend on `System.Windows.Threading` or
-`System.Windows.Application` would keep the dispatcher ban enforced for it. This rests on the **same**
-unmeasured matching semantics as the question Step 0 settles, so decide it after Step 0 and verify it by
-running, not by reading.
+- **(a) ViewModel marshaling — was 8 expressions in 3 files. Now ZERO. This was the batch.**
+- **(b) A View / code-behind / behavior touching its own dispatcher — 38 lines in 21 files. Do not touch.**
+  A `UserControl` posting to its own `Dispatcher`, or holding a `DispatcherTimer`, is correct WPF and is not
+  DI-resolved.
+- **(c) Genuine `Application`-level use — 27 lines in 13 files. Must NOT be abstracted.** Theme-aware resource
+  lookup in ~13 converters/renderers, merged theme dictionaries (`ThemeService`), process shutdown
+  (`TrayIconService`), window enumeration / `MainWindow` (`WindowManagerService`, two notification surfaces),
+  and the global exception hook (`App.xaml.cs`). `Application.Current` **is** the resource/window/shutdown
+  root; abstracting it is a larger batch with no test to buy.
+- **(d) Service-layer marshaling — 11 sites in 7 files. Eligible, NOT required, still open.**
+  `AgentRunNotificationSurface` · `BackgroundChatNotificationSurface` · `ScheduledJobNotificationSurface` ·
+  `OutputService` · `ThemeService` · `TrayIconService` · `WindowManagerService`. Two are load-bearing for the
+  acceptance test and are **why a running dispatcher is a correctness requirement**: `OutputService`'s
+  `Application.Current.Dispatcher.Invoke(...)` has **no null guard** at all, and
+  `WindowManagerServiceTests`' one fact stops taking its null branch and awaits a real `DispatcherOperation`.
+  On a non-pumping dispatcher both **hang** rather than fail.
+- **(e) Already abstracted — 14 ViewModels on `UiThreadViewModel`** (+ explicit captures in
+  `RunProgressViewModel`, `ChatSessionManager`, `LiveTurnExecutor`, `PluginIconLoaderService`).
 
-### The withdrawn test design, as the starting point
+A stronger fact than the batch aimed for, measured: **every** type under `Pia.ViewModels`, *including* the
+rule-excluded `Pia.ViewModels.Models` namespace, is now clean of both `System.Windows.Threading` and
+`System.Windows.Application`. The one type the probe flags under `.Models` is `ChatSession`, and a Cecil IL
+dump shows the single reference is `ICommand::Execute` — pre-existing MVVM, not a dispatcher.
 
-It worked before it was withdrawn. Reproduce it, do not re-invent it:
+---
 
-1. **ONE shared long-lived STA thread with a RUNNING dispatcher.** `static Lazy<Dispatcher>`; background
-   thread, `SetApartmentState(STA)`, `IsBackground = true`, signal the created `Dispatcher.CurrentDispatcher`
-   out, then `Dispatcher.Run()`. **Created once, never shut down** — `Application.Current` cannot be torn
-   down, and its merged Wpf.Ui dictionaries are thread-owned. A thread-per-test design dies on the **second**
-   test with *"Initialization of `Wpf.Ui.Controls.Button` threw an exception"*. `Dispatcher.Run` is not
-   optional: see the `OutputService` / `WindowManagerService` hazard in category (d) — an unpumped dispatcher
-   turns a blocking `Invoke` into a hang. Prior art for the STA-thread plumbing (not for the App or the
-   dispatcher loop, which none of them has): `EmojiInlineBuilderTests.cs:70`, `EmojiInkBoundsTests.cs:117`,
-   `EmojiImageRendererTests.cs:144`.
-2. **Create the real `Pia.App` on that thread and call ONLY `InitializeComponent()`.** Never `Run()`,
-   never `OnStartup` — `App.xaml.cs:36`'s `OnStartup` awaits `Bootstrapper.InitializeAsync()`, opens the
-   database and shows windows. `App.xaml.cs:28-29` is the precedent: `new App(); app.InitializeComponent();`.
-   Guard it so it happens at most once per process.
-3. **Assume concurrency, because the runner does.** There is no `xunit.runner.json` in
-   `tests/Pia.Wpf.Tests` and no `[assembly: CollectionBehavior]`, so xunit v3 parallelises test **collections**
-   by default. The `Application` this test creates is therefore visible to other collections running at the
-   same time, and that cannot be ordered around — it has to be **behaviour-neutral**, which is exactly what
-   the migration buys and what the full-suite run after the first App-creating commit verifies.
-4. **Marshal every fact onto that thread.** Construct the view *and* its DataContext there and return only
-   the assertion's value (a `Visibility`, a `string`) back to the test thread.
-5. **`Pump()` after every bound-property change.** Binding values do not transfer until the queue drains:
-   push a `DispatcherFrame`, `BeginInvoke(DispatcherPriority.SystemIdle, () => frame.Continue = false)`,
-   `Dispatcher.PushFrame(frame)`. Without it the test asserts the property default and looks like a pass.
-6. **DataContext is the REAL `AssistantViewModel`.** The claim this batch makes is that real ViewModels are
-   safe under a live `Application`; a lightweight INPC stub would sidestep exactly that and stop being a
-   regression test for the migration. Reuse is **not** free, though: the builder is
-   `private AssistantViewModel CreateSut()` at `AssistantViewModelLeverTests.cs:31` — an *instance* method
-   backed by six instance `Substitute.For<>` fields at `:24-29`. So either the acceptance test builds its own
-   VM (29 args, of which `MeetingAttendeeViewModel` and `ChatTitleChipViewModel` are the point), or the
-   extraction lifts those six fields into parameters of a shared internal builder. Note that `CreateSut`
-   already installs a `SynchronizationContext` when none exists (`:34-35`) — the acceptance test's thread
-   will have a real one, which is the behaviour under test.
-7. **Locate the hint by its rendered text**, as the withdrawn test did — walk the visual/logical tree for a
-   `TextBlock` whose `Text` equals the EN resource *"A background run is writing to this chat. Sending resumes
-   when it finishes."* (`ViewStrings.resx:99`; de/fr at `:99` of their files, both real translations). That
-   single assertion covers three failure modes at once: the view parses, the `loc:Str` key resolves, and the
-   binding path is right. Flip `ForeignRunActive` false→true, `Pump()`, assert `Collapsed` → `Visible`.
+## 7. Acceptance — met on everything that can be measured here
 
-**Record in the test's own comment why it exists:** a deliberately misspelled binding path was **confirmed**
-to produce a silently always-visible hint with the build still at **0 errors**. That is the regression this
-test catches and nothing else in the suite can.
+**Primary (independent of NetArchTest semantics):**
+`git grep -n "App\.Current\|Application\.Current" -- src/Pia.Wpf/ViewModels/` → **no output, exit 1.** The
+ViewModel layer no longer reads the process-global dispatcher anywhere.
+`git grep -n "System\.Windows" -- src/Pia.Wpf/ViewModels/` → **exactly 4 benign lines** (down from 6):
+`AssistantViewModel.cs:7`'s `using System.Windows.Media.Imaging;` plus three comments in `FlowViewModel`,
+`TodoViewModel` and `UiThreadViewModel`.
 
-**Free extra, worth taking:** `LocalizationSource.cs:46` returns the literal `"[Key]"` for an unknown key, and
-`StrExtension.ProvideValue` binds `[{Key}]` against the static `LocalizationSource.Instance` (no DI) whose
-`_culture` defaults to `InvariantCulture`, i.e. the neutral EN resx. So a sweep asserting that no
-`TextBlock.Text` in the parsed tree matches `^\[\w+\]$` is a **missing-`loc:Str`-key detector for the whole
-view**, for about five lines.
+**Secondary (arch probe at `cac8251`, verbatim):**
 
-## 6. Decisions, including the rejected ones
+```
+[1] blanket AS COMMITTED                             -> True   failing=[]
+[2] blanket ZERO exemptions                          -> False  failing=[Pia.ViewModels.AssistantViewModel]
+[3] AssistantVM !Threading/!Application              -> True   failing=[]
+[4a] CONTROL AssistantVM !Media.Imaging              -> False  failing=[Pia.ViewModels.AssistantViewModel]
+[4b] CONTROL AssistantVM !Input                      -> False  failing=[Pia.ViewModels.AssistantViewModel]
+[5] NON-VACUITY AssistantVM !System.Object           -> False  (so the HaveName selection really resolves)
+[6] VoiceMode / TranscriptOverlay / MeetingAttendee  -> True × 9  (each × System.Windows/.Threading/.Application)
+[7] INSTRUMENT OutputService, UiDispatcherService    -> False  (the [3] prefixes detect a real reader)
+[8] AssistantViewModel COMPLETE System.Windows set: System.Windows.Input.ICommand | System.Windows.Media.Imaging.BitmapSource
+```
 
-- **`IUiDispatcher` injection, not "make the four VMs derive from `UiThreadViewModel`".** All three classes
-  derive from `ObservableObject` directly (`AssistantViewModel.cs:24`, `TranscriptOverlayViewModel.cs:30`,
-  `VoiceModeViewModel.cs:14`), and `UiThreadViewModel`'s UI-thread throw is opt-in (`:19-24`,
-  `requireUiThread: false` by default), so option B is structurally *available* and would cost **zero** ctor
-  changes and zero test-site changes. It is rejected because it keeps the behaviour tied to **ambient state at
-  construction time**: `UiThreadViewModel.cs:21` captures whatever `SynchronizationContext.Current` is on the
-  constructing thread, so once a live `Application` exists on a *different* thread than the test's, what a VM
-  does depends on where it happened to be built. The maintenance cost of that coupling is already visible —
-  **seven** test files set or null the ambient context by hand to get determinism:
-  `AssistantHistoryViewModelFilterTests.cs:45`, `RunProgressViewModelTests.cs:67`,
-  `ChatSessionManagerTests.cs:45-46`, `ChatTitleChipFlyoutGroupingTests.cs:32-33`,
-  `FlowViewModelReconcileTests.cs:46`, `AssistantViewModelLeverTests.cs:34-35`,
-  `LiveTurnExecutorPlannedRunTests.cs:146-147`. An injected dispatcher is stated, not sniffed.
-- **`UiThreadViewModel` and its 14 subclasses are NOT touched.** They work, their tests pin them, and
-  rewriting them would multiply this batch's blast radius for no new capability. The two idioms coexist, with
-  identical member names; converging them is a later, optional cleanup.
-- **`UiDispatcherService`, not `UiDispatcher` + a new entry in `allowedSuffixes`.** Adding "Dispatcher" to
-  `NamingConventionTests.cs:32-39` would be defensible (the list already admits Planner/Orchestrator/
-  Launcher/Executor), but editing an architecture rule to admit the code you are writing is the wrong default,
-  and the suffix buys nothing here.
-- **`AssistantViewModel.cs:1007` becomes an awaited `PostAsync`, not a `Post`.** It is a blocking `.Invoke`
-  inside a `Task.Run(async …)` whose `try/catch` logs the failure; fire-and-forget `Post` would move
-  exceptions **out** of that catch. Await it and both the ordering and the error handling are preserved.
-- **Category (d) is out of scope, deliberately.** The 7 service files can adopt `IUiDispatcher` later; they
-  are not blocking the view test and are not covered by the ViewModel rule. Recording the two hazards is
-  enough for now.
-- **No `IsOnUiThread` probe**, as in §2.
-- **The exemption list's rationale is not used as an argument.** Its comment is wrong about
-  `AssistantViewModel` (§1), so the batch measures (Step 0) instead of inheriting the reasoning.
+`[2]` licenses all three deletions (nothing but `AssistantViewModel` is left to flag); `[4a]`/`[4b]` keep the
+surviving exemption honest; `[6]` probes each deleted name **positively**, because "absent from a failing set"
+is also what a misspelled selection produces.
 
-## 7. The risk the owner should weigh
+**Build:** 0 errors, exactly 194 warnings.
 
-The real prize is not the view test. It is that a whole layer stops depending on a process-global static:
-after this batch a ViewModel's threading behaviour is a **constructor argument**, which means it is
-substitutable, greppable and reviewable. Batch 10's `ForeignRunActive` marshaling and Batch 11's compaction
-both had to reason about "which thread is this on"; that reasoning becomes checkable.
+---
 
-The cost is breadth: 4 constructor signatures and 4 test sites in one batch, and **a half-migrated layer is
-worse than either end state** — some ViewModels marshaling through the injected dispatcher and others still
-through `App.Current` means two threading models in one window, and the failure that combination produces
-(work silently queued to a dispatcher nobody pumps) is exactly the class of bug that is invisible to a green
-suite.
+## 8. NOT verified — read this before trusting anything behavioural
 
-**How to avoid that, concretely:** the exemption list is the ratchet — a name can only be deleted once its VM
-actually stops referencing `System.Windows`, and until then the rule is red. That mechanism holds regardless
-of *why* each name is currently on the list, which is the point: do **not** rely on the "two transitive
-pairings" story (the comment's version of it is provably wrong for `AssistantViewModel`). Instead: run Step 0,
-ship each unit as one commit with its now-justified exemption deletions **inside** that commit, and run the
-full suite between the two units. Add the `git grep` check from §5 to the definition of done, because it is
-the one criterion that does not depend on how NetArchTest resolves a namespace prefix.
+**No test in this batch has ever been executed. Not one.** `dotnet test` cannot run on the authoring machine
+and was deliberately not attempted after that was confirmed. Specifically unexercised:
+
+- The **entire runtime behaviour** of `WpfStaHost`: the STA thread start, `new Pia.App()` +
+  `InitializeComponent()`, `Application.LoadComponent` resolving App.xaml's nested relative dictionaries under
+  the xunit v3 host, the `Dispatcher.Run()` loop and the new re-entry path, and `Pump()`'s frame drain.
+- Both `AssistantViewParseTests` facts, all 5 `UiDispatcherServiceTests` facts, and whether every
+  `StaticResource` and `loc:Str` key in the eagerly realized regions actually resolves — this view's own 22
+  `loc:Str` usages plus those of the child controls it instantiates. If one does not, test 1 fails with "the
+  view failed to parse" and test 2 names the key — intended behaviour, but it may fail on the **first** run
+  for a pre-existing defect rather than a regression.
+- The **31 load-bearing `MeetingAttendeeViewModelTests` methods (~46 of 67 cases)**. They are green *by
+  construction*: the pre-batch null-`Application` path invoked inline and `InlineUiDispatcher` invokes inline
+  synchronously. If they go red the **double** is wrong, not the tests.
+- All **21 `AssistantViewModelLeverTests`** facts — a compile-level dependency only (one added ctor argument),
+  and the compile is proven, but no assertion ran. Note the batch also *arms* six previously-dead
+  `AssistantViewModel` paths (they would have NRE'd on a null `App.Current`); inspection says no test reaches
+  any of them (`EnsureSubfolder` is never stubbed, and the dispose tests raise their events after `Dispose()`),
+  so `InlineUiDispatcher` can only arm paths the suite never entered — it cannot flip an existing assertion.
+- `DiRegistrationTests.AllServiceInterfaces_MustHaveRegisteredImplementation` **and**
+  `BootstrapperGraphValidationTests.ProductionServiceGraph_ResolvesAndRespectsScopes` — both execute
+  `Bootstrapper`, so neither is measurable here. By inspection both are satisfied: `IUiDispatcher` is in
+  `Pia.Services.Interfaces`, is not in the first test's `factoryCreated` allow-list, and is registered as a
+  `ServiceType`; the singleton depends only on `ILogger<>`, and an `AddScoped` ViewModel taking a singleton is
+  scope-legal.
+- The **process-wide-`Application` blast radius**: ~13 category-(c) converters start returning real brushes
+  instead of null, and category-(d) dispatcher reads stop taking their null branch. Inspection narrows this a
+  long way — no test constructs any of those converters, `OutputService`, `ThemeService` or `TrayIconService`;
+  all 15 `AgentRunNotificationSurfaceTests` enter through internal seams that bypass the dispatcher reads; and
+  App.xaml's only top-level implicit style targets `controls:OverlayDialogPanel`, with MarkdownStyles' implicit
+  styles nested inside a keyed `Style.Resources`, which largely closes the feared cross-thread-style collision.
+  But **only Windows can settle it.**
+
+---
+
+## 9. The Windows smoke list, ordered by risk
+
+1. **`WindowManagerServiceTests.ShowAgentRun_MissingRun_RetractsStaleItem_AndDoesNotThrow`** — the one test in
+   the suite that builds a real `Application`-dependent service. **Its failure signature is a HANG, not a red
+   test.** If the run wedges, `WpfStaHost`'s `Dispatcher.Run()` is the first suspect: it passes if the host
+   pumps, blocks forever if it does not. (This is the hazard `cac8251` exists to bound.)
+2. **`AssistantViewParseTests.ComposerHint_Parses_AndTracksForeignRunActive`** and
+   **`.ParsedView_HasNoUnresolvedLocalizationKeys`** — first-ever execution of the host, `new Pia.App()`, the
+   XAML parse and `Pump()`. A parse failure names the resource or key; a wrong `Visibility` means the batch's
+   headline claim is unproven, not that the hint is broken.
+3. **`UiDispatcherServiceTests`** (5 facts) — first-ever execution against a live `Application`. A red
+   `PostAsync_WhenTheActionThrows_FaultsTheReturnedTask` or
+   `Post_WhenTheActionThrows_RunsItAndDoesNotReachTheCaller` means an assumption about
+   `DispatcherOperation.Task` is wrong, which would also invalidate `LogIfFaulted`.
+4. **The 31 load-bearing `MeetingAttendeeViewModelTests`** — failure signature is status/bubble assertions
+   reading the **pre-mutation** value (e.g. `StatusText` still showing the ctor's `_Idle` seed, `Bubbles`
+   empty). That means the double is wrong.
+5. **All 21 `AssistantViewModelLeverTests`** — all-21-red, or a compile error naming argument count, means the
+   `CreateSut` edit was half-applied.
+6. **`DiRegistrationTests` + `BootstrapperGraphValidationTests`** — the two DI gates that cannot run on macOS.
+7. **`EmojiInlineBuilderTests`** — the genuine unknown. `DisableParallelization` removes the *concurrent*
+   case, not the *live-`Application`* case; the historical signature is *"Initialization of
+   `Wpf.Ui.Controls.Button` threw an exception"*. `Wpf.Ui` 4.2.0's `ControlsDictionary` is the one part not
+   read.
+8. **Known flake, do not chase:** `TaskExtensionsTests.SafeFireAndForget_SlowTask_DoesNotBlock`.
+
+Command: `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace
+"Pia.Wpf.Tests.Integration.Providers"` (never pass `--nologo`). **Do not expect a specific total** — this
+batch adds **7** xunit facts (5 + 2) on top of whatever the previous run reported; the delta is what matters,
+and `failed: 0` is the bar.
+
+**Manual smoke, because a unit suite cannot cover it:** enter and leave voice mode (both `Post` sites, one on
+the audio thread); run a MeetingAttendee session with live transcription (the reader-thread `DispatchToUi`
+path, now `PostOrRun`); start a background/headless run and watch the composer hint appear and the progress
+panel sync (the two `Post` sites on the off-thread `RunChanged` marshal, i.e. Batch 10's G3); navigate with
+TTS configured (the `:1010` site that changed from a blocking `Invoke` to an awaited `PostAsync` *and* from
+`Send` to `Normal` priority); paste an image into the composer (the `BitmapSource` path the surviving
+exemption protects, untouched but adjacent).
+
+---
 
 ## Still open after this batch
 
-The other Views are still unparsed by any test — `AssistantView` is the first, not the last, and the same
-misspelled-binding hazard remains everywhere else · category (d)'s 11 service sites still read
-`Application.Current` · `OutputService.cs:31` still has no null guard · `AssistantViewModel` probably still
-names `BitmapSource`; closing that means moving the clipboard→attachment conversion out of the VM (the call
-site is `AssistantView.xaml.cs:153-154`), which is a separate change and is not designed here · abstracting
-category (c) (resources / windows / shutdown) is a separate, larger batch with no test to buy · and the shared
-STA thread is a process-wide singleton that can never be torn down, so a future test that needs a *different*
-`Application` configuration cannot have one.
+- **Every other View is still unparsed.** `AssistantView` is the **first**, not the last, and the silent
+  misspelled-binding hazard remains everywhere else. What the abstraction bought is that a second view test is
+  now a ~20-line file, not a batch.
+- **The loc-key sweep sees `TextBlock.Text` only** — 4 of this view's 22 `loc:Str` usages. `ToolTip`,
+  `Content`, `PlaceholderText` and `Value` need template application, which the test deliberately does not do.
+- **Category (d)'s 11 service sites still read `Application.Current`**, and `OutputService`'s is **still
+  unguarded** — which this batch made *more* dangerous, not less: a live `Application` now exists in the test
+  process, so that unguarded blocking `Invoke` is a hang rather than an NRE if any test ever reaches it. These
+  seven files can adopt `IUiDispatcher` mechanically now that it exists.
+- **`AssistantViewModel`'s exemption needs TWO refactors, not one** (measured): moving the
+  clipboard→attachment conversion out of the VM (call site `AssistantView.xaml.cs`) **and** replacing the two
+  `ICommand.Execute(null)` calls with the commands' own methods. Doing only the first leaves the rule red.
+- **Abstracting category (c)** (resources / windows / shutdown) is a separate, larger batch with no test to
+  buy.
+- **The shared STA thread is a process-wide singleton that can never be torn down**, so a future test needing
+  a *different* `Application` configuration cannot have one — and whether xunit schedules the serial group
+  first or last is unmeasured, so worst-case exposure is the whole suite.
+- **The ViewModel-level `Post`-vs-`PostOrRun` choice is still unpinned.** `UiDispatcherServiceTests` now pins
+  the *service's* three semantics, but no ViewModel test would notice if `VoiceModeViewModel`'s silence-timer
+  site were changed from `Post` to `PostOrRun` — `InlineUiDispatcher` collapses them by design.
+- **NetArchTest 1.3.2 does not resolve base-type dependencies transitively**, so the ViewModel rule is a
+  ratchet on the type that *physically names* the dependency. A future ViewModel can inherit a `System.Windows`
+  dependency and stay green.

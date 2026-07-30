@@ -46,6 +46,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     protected readonly ILocalizationService _localizationService;
     protected readonly IFileDialogService _fileDialogService;
     protected readonly ILogger _logger;
+    protected readonly IUiDispatcher _uiDispatcher;
 
     private CancellationTokenSource? _readerCts;
     private Task? _readerTask;
@@ -72,12 +73,14 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         ISettingsService settingsService,
         ILocalizationService localizationService,
         IFileDialogService fileDialogService,
-        ILogger logger)
+        ILogger logger,
+        IUiDispatcher uiDispatcher)
     {
         _settingsService = settingsService;
         _localizationService = localizationService;
         _fileDialogService = fileDialogService;
         _logger = logger;
+        _uiDispatcher = uiDispatcher;
 
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
         SaveTranscriptCommand = new AsyncRelayCommand(SaveTranscriptAsync, CanSaveTranscript);
@@ -413,11 +416,21 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     protected void DispatchToUi(Action action)
     {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        // The try/catch stays HERE, wrapped around the call, so nothing thrown by `action` on the inline
+        // path can escape into a caller that has no net of its own: RelabelSpeaker (:321) and
+        // MeetingAttendeeViewModel.OnServiceStateChanged (:362) have none. (AddUtterance :166 and
+        // ApplyReassignments :256 do.)
+        //
+        // In PRODUCTION it is now the OUTER of two nets and will rarely fire: UiDispatcherService.PostOrRun
+        // has its own try/catch around the inline call, so an action that throws on the UI thread is logged
+        // there as "UI dispatch failed (PostOrRun)" under the Pia.Services.UiDispatcherService category,
+        // not here — and a queued action's failure is logged there too. Keeping this catch is still right:
+        // it is the only net under the InlineUiDispatcher test double, which catches nothing, and it is
+        // what makes an exception from a *future* propagating IUiDispatcher land in the attendee's own
+        // logger. Do not read "Dispatcher invoke failed" as the string a release support bundle will show.
         try
         {
-            if (dispatcher is null || dispatcher.CheckAccess()) action();
-            else dispatcher.BeginInvoke(action);
+            _uiDispatcher.PostOrRun(action);
         }
         catch (Exception ex)
         {
