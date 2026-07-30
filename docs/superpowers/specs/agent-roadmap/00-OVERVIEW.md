@@ -48,7 +48,15 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 11 | `aab9a06` → `601090e` | Joint review fix pass over 10 + 11 (4 must-fixes, 6 should-fixes; two should-fixes deliberately left open — see below) | ✅ done |
 | 12 | `7a41a68` → `d3c8c61` | **[Batch 05](05-planner-reason-then-emit.md)** — opt-in reason-then-emit planning: `IAiProviderHandler.DropsReasoningEffortWithTools` on all eight handlers, a global `AppSettings` toggle (default OFF) + its CheckBox, and a tool-FREE reasoning turn ahead of the constrained `emit_plan` turn on the three handlers that drop the effort under tools. Includes the review-fix commit and the two polish commits; this roadmap commit records it | ✅ done |
 | 13 | `1dced2f` → `cac8251` | **[Batch 12](12-ui-dispatcher-abstraction.md)** — `IUiDispatcher` injected into the 4 remaining ViewModels, the exemption list 4 → 1, and the **first `View` in the repo parsed by a test**. Includes its own 2-commit review fix pass | ✅ done |
-| 14 | the merge commit | **Rows 12 and 13 are siblings, not a sequence.** Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines and met here in a merge. They are ordered by batch number, **not** by ship order — Batch 12 reached `origin` first, as `b32ca14`. The merge touched exactly one file, this one; no source or test file was modified by both sides | ✅ done |
+
+**Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
+Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
+built on the other, and they met in merge commit **`d2e56e6`**. The rows are ordered by **batch number, not ship
+order**: Batch 12 reached `origin` first, as `b32ca14`. The merge has no row of its own because the table
+chronicles batches and a merge is not one; what it did is recorded here instead. It touched exactly one file,
+this one — **no source or test file was modified by both sides**, which is why the code merged with zero
+conflicts. Consequence worth keeping: **no single commit range covers this tree**, so any "measured at `X`"
+claim below that spans both batches is measured across the merge, not across a range.
 
 **The chronicle no longer skips Batch 05, and the paragraph that said it did was deleted here.** `b32ca14`
 carried a note explaining that Batch 05 had shipped as `7a41a68` → `73e15e8` but had no row, and that the
@@ -98,9 +106,11 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
 > total **7** above the previous run". The real delta is **+8**: 2 facts in `AssistantViewParseTests` + 5 in
 > `UiDispatcherServiceTests` + **1 more in `DependencyInjectionTests`** (the narrower dispatcher-ban `[Fact]`),
 > which the "7" overlooked by counting only the two new files. 2224 (`d3c8c61`) + 8 = 2232, exactly as measured,
-> so the arithmetic closes with nothing unaccounted for. Full ordered list in
-> [`12-ui-dispatcher-abstraction.md`](12-ui-dispatcher-abstraction.md) §9 — **its §9 still describes the run as
-> owed**, and has not been rewritten here.
+> so the arithmetic closes with nothing unaccounted for. **Verified by execution, not by counting `[Fact]` lines
+> in a diff:** `DependencyInjectionTests` reports **6** cases on the merged tree against **5** at `d3c8c61`, and
+> the two *modified* ViewModel test files are unchanged at 22 and 48, so the whole +8 is accounted for.
+> Full ordered list in [`12-ui-dispatcher-abstraction.md`](12-ui-dispatcher-abstraction.md) §9, **which now
+> carries the green result at its head** — it was written in the future tense of a run that has since happened.
 >
 > **What this does not resolve:** the **manual Windows smoke round** is still untouched, and it is still the top
 > open item (Rank 1 below). A green unit suite is not a smoke test.

@@ -462,6 +462,29 @@ and was deliberately not attempted after that was confirmed. Specifically unexer
 
 ## 9. The Windows smoke list, ordered by risk
 
+> **✅ RUN 2026-07-30, and every item below came back green. Read this before the list, which is written in the
+> future tense of a run that has now happened.** This batch was merged with Batch 05 (merge commit `d2e56e6`)
+> and the suite was executed on Windows on the merged tree: **2232 total / 0 failed / 1 skipped**, in 24 s —
+> nothing hung. Item by item, checked individually as well as in the full run: **1.**
+> `WindowManagerServiceTests` 1/1, green rather than hung, so `WpfStaHost`'s `Dispatcher.Run()` does pump;
+> **2.** `AssistantViewParseTests` 2/2, so the first-ever `new Pia.App()`, XAML parse and `Pump()` all work and
+> the batch's headline claim is proven, not merely written; **3.** `UiDispatcherServiceTests` 5/5, so the
+> `DispatcherOperation.Task` assumption holds; **4.** `MeetingAttendeeViewModelTests` 67/67, so
+> `InlineUiDispatcher` is a correct double; **5.** `AssistantViewModelLeverTests` all green, so the `CreateSut`
+> edit was fully applied; **6.** the two DI gates run and pass — `DependencyInjectionTests` reports 6 cases,
+> which is **+1** on its pre-merge 5; **7.** `EmojiInlineBuilderTests` green under a live `Application`, which
+> **narrows but does not close** it — xunit chooses the collection ordering, so one green observation is not a
+> proof over orderings.
+>
+> **One number in this batch's own accounting was wrong:** §9 and the roadmap both described "7 facts" added
+> here. The real delta is **+8** — 2 (`AssistantViewParseTests`) + 5 (`UiDispatcherServiceTests`) + **1**, the
+> narrower dispatcher-ban `[Fact]` in `DependencyInjectionTests`, which the count missed by looking only at the
+> two new files. 2224 + 8 = 2232, so the arithmetic closes exactly.
+>
+> The only failure seen at all was `TaskExtensionsTests.SafeFireAndForget_SlowTask_DoesNotBlock`, the
+> pre-existing wall-clock flake in a file this batch never touched — it fired on two of three full runs and the
+> third was clean; 4/4 green in isolation. See [`00-OVERVIEW.md`](00-OVERVIEW.md) for both corrections.
+
 1. **`WindowManagerServiceTests.ShowAgentRun_MissingRun_RetractsStaleItem_AndDoesNotThrow`** — the one test in
    the suite that builds a real `Application`-dependent service. **Its failure signature is a HANG, not a red
    test.** If the run wedges, `WpfStaHost`'s `Dispatcher.Run()` is the first suspect: it passes if the host
