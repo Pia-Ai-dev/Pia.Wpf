@@ -508,10 +508,17 @@ INTEGER column. It is defined in this batch so 03's enum is complete on the firs
 | 8 | `DeniedNotGranted` | no user present and nothing authorized it |
 | 9 | `DeniedDestructiveFloor` | the M3 floor |
 | 10 | `UnknownTool` | `RouteToolCallAsync` returned null |
+| 11 | `AutoApprovedAllowlist` | voice: the curated additive allowlist authorized the call. Voice-only — interactive needs a standing grant as well, unattended has no allowlist. **Batch 03 must carry 0–11, not 0–10.** |
 
 `ToolGateSurface { Unknown = 0, Interactive = 1, Unattended = 2, Voice = 3 }` and `ToolClass`
-(`Unknown = 0, Memory = 1, Todo = 2, Reminder = 3, Files = 4, Git = 5, Scheduling = 6, External = 7`) are
-append-only on the same terms. `ToolGateOutcome` is **not** persisted (it is a control-flow value) and needs no
+(`Unknown = 0, Memory = 1, Todo = 2, Reminder = 3, Files = 4, Git = 5, Scheduling = 6, External = 7,
+Ingest = 8`) are append-only on the same terms. `Ingest` maps the SEVENTH built-in plugin name — `ingest` is in
+`BuiltInPluginDefaults` too — and is deliberately absent from `PresetClasses`. It is unreachable today
+(`IngestToolHandler` runs inline and returns no pending action, so it never reaches a gate or a card) and is
+kept, not dropped, for two reasons: the enum is append-only, so removing the member would be a renumber; and
+`ToolClassifier.Classify` must map every built-in name, or ingest recreates exactly the
+`scheduled-research`-as-external bug of §0.6 the day it starts gating. Batch 03 therefore needs a label for a
+class it will never observe. `ToolGateOutcome` is **not** persisted (it is a control-flow value) and needs no
 ordinal discipline — say so in its doc comment so nobody "fixes" it into the persisted set.
 
 Note `Unknown = 0` on all three persisted enums is the append-only guardrail's other half: an unknown ordinal
@@ -552,8 +559,27 @@ Every new `.cs` file must be **CRLF**.
 not tidiness: it is what makes commit 2's and commit 4's "the existing suite passes unmodified" claim true, and
 `LiveTurnExecutor` is hand-constructed with a **positional** argument list at `ChatSessionManager.cs:768` and in
 `LiveTurnExecutorPlannedRunTests`, so a non-defaulted parameter there would force test edits into the middle of
-a refactor whose whole proof is that no test needed editing. A *forgotten* argument at the one production call
-site is caught by T-GATE-1, which drives the policy end-to-end through the live executor.
+a refactor whose whole proof is that no test needed editing.
+
+**Correction, post-review.** This section originally claimed *"a forgotten argument at the one production call
+site is caught by T-GATE-1, which drives the policy end-to-end through the live executor."* **That was false as
+built.** T-GATE-1 lives in `ChatSessionPolicyGateTests` and constructs `StepTurnSpec(Policy: …)` by hand, so it
+never reaches `ChatSessionManager`'s `new LiveTurnExecutor(…, policy)` or `LiveTurnExecutor.BuildSpec`'s
+`Policy: _policy`. Both are trailing and defaulted, so dropping either **compiles** — and the run would then
+revert to carding every write while its persisted envelope still recorded the preset classes, i.e. the
+record-disagrees-with-behaviour case D11 exists to prevent. The headless twin was covered end to end
+(`HeadlessRunLauncherTests.Launch_WithTheSettingOn_AutoApprovesAWriteWithNoNamedGrant`), so this was an
+executor-PARITY gap in the coverage, not merely a thin spot.
+
+Closed by two facts added in the review-close commit:
+
+- `ChatSessionManagerTests.StartPlannedTurn_PersistsTheSettingsPolicyInTheEnvelope` — pins the manager's
+  serialize argument (verified red by dropping it).
+- `LiveTurnExecutorPlannedRunTests.PlannedRun_CarriesTheRunPolicyIntoTheGate_SoACoveredWriteAutoRuns` — a real
+  orchestrator + real `LiveTurnExecutor` + real `ChatSession` gate; pins `BuildSpec`'s `Policy: _policy`
+  (verified red by dropping it). It is deliberately **bounded** with a `Task.WhenAny` timeout: without the
+  policy the gate prompts and the run blocks on a card nobody clicks, so the naive shape hangs the suite
+  instead of failing it.
 
 ---
 
@@ -580,6 +606,10 @@ public enum ToolClass
     Scheduling = 6,
     /// <summary>An external, server-defined MCP tool. Derived from the ROUTE, never from a name.</summary>
     External = 7,
+    /// <summary>The built-in ingest tool (plugin "ingest"). Runs inline, returns no pending action, so it
+    /// never reaches a gate or a card today — the class exists so it cannot be silently treated as external
+    /// the way scheduled-research was (§0.6). Excluded from PresetClasses.</summary>
+    Ingest = 8,
 }
 
 /// <summary>Which gate asked. PERSISTED by Batch 03 → APPEND-ONLY.</summary>
@@ -599,6 +629,8 @@ public enum ToolGateDecision
     DeniedNotGranted = 8,
     DeniedDestructiveFloor = 9,
     UnknownTool = 10,
+    /// <summary>The curated additive allowlist authorized the call. Voice-mode only (D13).</summary>
+    AutoApprovedAllowlist = 11,
 }
 
 /// <summary>
@@ -780,15 +812,26 @@ authority on every scheduled job. Record it as an open question (§13.3), not as
 **`AppSettings.cs`**, directly under `AgentPlanReasoningTurnEnabled` (`:180`):
 
 ```csharp
-    // Batch 04 — per-run autonomy policy default. When true, an agent run (interactive Planned, "Run in
-    // background" detach, or a scheduled AgentTask) carries a policy that auto-approves Pia's OWN write tools
-    // by CLASS — memory, todo, reminder, scheduling and files — so the run does not stop at a card for every
-    // write. Never covers a delete-like tool (04 D6), never Git (its destructive tools are not delete-like by
-    // name), never an external/MCP tool. Default OFF: with it on, an unattended run can overwrite files in the
-    // assistant folder with nobody watching. Global, like every other Agent*/Scheduled* knob, and local-only
-    // (deliberately absent from SyncSettings).
+    // Batch 04 — per-run autonomy policy default. When true, the preset auto-approves Pia's OWN write tools by
+    // CLASS — memory, todo, reminder, scheduling and files. Never covers a delete-like tool (04 D6), never Git
+    // (its destructive tools are not delete-like by name), never an external/MCP tool.
+    //
+    // FOUR consumers: (1) an interactive Planned run, (2) a "Run in background" detach, (3) a scheduled
+    // AgentTask, and (4) VOICE MODE (D13) — where there is no run and no envelope, so the policy is read
+    // straight from settings. A RESUME is deliberately NOT one: it reads the parked run's envelope (D10).
+    // Default OFF: with it on, an unattended run can overwrite files in the assistant folder with nobody
+    // watching. Global, like every other Agent*/Scheduled* knob, and local-only (absent from SyncSettings).
     public bool AgentRunAutoApproveBuiltInWrites { get; set; } = false;
 ```
+
+**The user-visible copy must name voice mode**, and does. The first draft said *"During an agent run …
+Deleting anything, Git commands and external (MCP) tools always ask"*, which was wrong twice over: the setting
+also governs voice writes (consumer 4 above — a surface with no card at all), and "always ask" is false on the
+two surfaces that cannot ask. Both reviewers raised it independently. The fix is the STRINGS, not the gate —
+D13's voice behaviour is deliberate — so all three locales now read *"During an agent run and in voice mode …
+Deleting anything, Git commands and external (MCP) tools are never covered by this permission."* Unattended, a
+scheduled job whose `GrantedTools` name `delete_file` still executes it with no ask (pre-existing, pinned by
+`GrantedBuiltInDeleteFile_StillExecutes_TheFloorIsExternalOnly`), which is why the copy no longer promises an ask.
 
 **`AssistantSettingsViewModel`** — the four R27 touch points, `OnSuggestionsEnabledChanged` shape (no
 `…Display`, no clamp, no `Format` call):

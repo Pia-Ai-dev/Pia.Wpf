@@ -179,13 +179,22 @@ public class AppSettings
     // (§16 R6). Global, not per-provider — the same answer applies to interactive, detached and scheduled runs.
     public bool AgentPlanReasoningTurnEnabled { get; set; } = false;
 
-    // Batch 04 — per-run autonomy policy default. When true, an agent run (interactive Planned, a "Run in
-    // background" detach, or a scheduled AgentTask) carries a policy that auto-approves Pia's OWN write tools
-    // by CLASS — memory, todo, reminder, scheduling and files — so the run does not stop at a card for every
+    // Batch 04 — per-run autonomy policy default. When true, the preset auto-approves Pia's OWN write tools by
+    // CLASS — memory, todo, reminder, scheduling and files — so the caller does not stop at a card for every
     // write. Never covers a delete-like tool (04 D6), never Git (its destructive tools are not delete-like by
-    // name, so no rule would stop them), never an external/MCP tool. Default OFF: with it on, an unattended
-    // run can overwrite files in the assistant folder with nobody watching. Global, like every other
-    // Agent*/Scheduled* knob, and local-only (deliberately absent from SyncSettings).
+    // name, so no rule would stop them), never an external/MCP tool.
+    //
+    // FOUR consumers, and the fourth is the surprising one — the user-visible copy must name it (it does):
+    //   1. an interactive Planned run (ChatSessionManager → LiveTurnExecutor),
+    //   2. a "Run in background" detach and 3. a scheduled AgentTask (both HeadlessRunLauncher),
+    //   4. VOICE MODE (AssistantViewModel.HandleVoiceModeToolCall, 04 D13) — where there is no run and no
+    //      envelope, so the policy is read straight from these settings. Voice has no card surface, so a
+    //      covered write there executes with no visual confirmation at all.
+    // A RESUME is deliberately NOT a consumer: it reads the parked run's envelope, never this setting, so
+    // flipping the toggle between park and Continue cannot widen a run that is already in flight (04 D10).
+    //
+    // Default OFF: with it on, an unattended run can overwrite files in the assistant folder with nobody
+    // watching. Global, like every other Agent*/Scheduled* knob, and local-only (absent from SyncSettings).
     public bool AgentRunAutoApproveBuiltInWrites { get; set; } = false;
 
     // Scheduled/headless-run budget envelope (§17.5) — the caps an unattended run (a "Run in background"

@@ -501,9 +501,9 @@ vocabulary is:
 
 | Type | Defined in | Persisted by 03 as | Members 03 must handle |
 |---|---|---|---|
-| `ToolGateDecision` | `Models/ToolGateEnums.cs` (Batch 04, D15) | `Decision INTEGER` | all 11 ordinals; 03 **writes** 1–10, and renders 0 (`Unknown`) for anything else |
+| `ToolGateDecision` | `Models/ToolGateEnums.cs` (Batch 04, D15) | `Decision INTEGER` | **all 12 ordinals (0–11)**; 03 **writes** 1–11, and renders 0 (`Unknown`) for anything else |
 | `ToolGateSurface` | same | `Surface INTEGER` | writes `Interactive`(1) and `Unattended`(2); `Voice`(3) exists but is never written (D5) |
-| `ToolClass` | same | `ToolClass INTEGER` | writes all 8 |
+| `ToolClass` | same | `ToolClass INTEGER` | **all 9 members (0–8)**; `Ingest = 8` is never produced today (the ingest handler runs inline and returns no pending action) but still needs a column mapping and a label, because it is a member of an append-only PERSISTED enum |
 | `AgentTimelineEventKind`, `AgentTimelineOutcome` | this batch (D10) | `Kind`, `Outcome` | — |
 
 Coverage check, per the run brief's requirement that 03's enum cover *every* decision Batch 04 can produce —
@@ -755,7 +755,7 @@ Use the same in-memory/temp-file `SqliteContext` fixture `AgentRunServiceTests` 
 | T-RET-3 | `AFailingPruneDoesNotStopTheTimer` | same | `PruneOlderThanAsync` throws → `RunCleanupAsync` returns normally (R18's outer `try` covers it — assert it, do not assume it) |
 | T-UI-1 | `TimelineLoadsOnFirstExpandOnly` | `ViewModels/RunProgressViewModelTimelineTests.cs` (**new**) | `GetForRunAsync` `Received(0)` before expand, `Received(1)` after, still `Received(1)` after collapse+re-expand |
 | T-UI-2 | `TimelineIsNotLoadedByRunChanged` | same | 5 `RunChanged` raises → `GetForRunAsync` `Received(0)`. D7's "no live projection". |
-| T-UI-3 | `EveryDecisionOrdinalMapsToALabel_IncludingUnknownAndOutOfRange` | same | `[Theory]` over all 11 ordinals **plus** `(ToolGateDecision)99` → a non-empty label, never a throw. The append-only render guarantee. |
+| T-UI-3 | `EveryDecisionOrdinalMapsToALabel_IncludingUnknownAndOutOfRange` | same | `[Theory]` over **all 12 ordinals (0–11)** — better, drive it from `Enum.GetValues<ToolGateDecision>()` so a 13th member cannot be missed the way 11 was — **plus** `(ToolGateDecision)99` → a non-empty label, never a throw. The append-only render guarantee. |
 | T-UI-4 | `ATruncatedTraceSetsTheNote_AndIsNotRenderedAsARow` | same | a `TraceTruncated` row → `IsTimelineTruncated` true, `Timeline.Count` excludes it |
 | T-UI-5 | `TimelineRowsCarryNoPathAndNoPayload` | same | `TimelineRowViewModel`'s public property set is exactly the 5 projected names — a reflection assert, so a later `FilePath` property fails here |
 | — | `LocalizationTests` (existing) | — | catches all 9 `loc:Str` keys and their en/de/fr parity — no new test needed |
