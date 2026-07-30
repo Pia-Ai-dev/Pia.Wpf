@@ -466,6 +466,7 @@ public sealed class AgentPlannerTests
         var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
+        AssertReasoningTurns(1); // the degrade is only interesting if the turn actually fired and failed
         AssertConstrainedTurns(1);
         Assert.Equal(Goal, LastUserPrompt); // degraded cleanly to today's single turn
     }
@@ -481,6 +482,7 @@ public sealed class AgentPlannerTests
         var result = await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.False(result.FallBackToSingleTurn);
+        AssertReasoningTurns(1); // without this a gate that stopped firing would leave the test asserting nothing
         AssertConstrainedTurns(1);
         Assert.Equal(Goal, LastUserPrompt);
     }
@@ -570,6 +572,15 @@ public sealed class AgentPlannerTests
         AssertConstrainedTurns(0);
     }
 
+    /// <summary>
+    /// The two ends of the over-long analysis fixture. A homogeneous <c>new string('x', n)</c> cannot say
+    /// WHICH 4000 chars survived: truncating from the tail (<c>text[^MaxAnalysisChars..]</c>) instead of the
+    /// head would hand the plan turn a conclusion with the reasoning that produced it cut away, and still
+    /// look truncated. These markers make the direction observable.
+    /// </summary>
+    private const string AnalysisHead = "HEAD-OF-ANALYSIS";
+    private const string AnalysisTail = "TAIL-OF-ANALYSIS";
+
     [Fact]
     public async Task PlanAsync_LongAnalysis_IsTruncatedIntoThePlanTurn()
     {
@@ -577,13 +588,20 @@ public sealed class AgentPlannerTests
         // model's window and turn a WORKING plan turn into a failing one.
         var (planner, provider) = PlannerFor(
             AiProviderType.Ollama, dropsEffortWithTools: true, ReasoningEffort.High, reasoningTurnEnabled: true);
-        ReturnsReasoning(new string('x', 10_000));
+        ReturnsReasoning(AnalysisHead + new string('x', 10_000) + AnalysisTail);
         ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
 
         await planner.PlanAsync(Goal, Ctx(), Persona(), provider, TestContext.Current.CancellationToken);
 
         Assert.Contains("analysis truncated", LastUserPrompt);
-        Assert.True(LastUserPrompt.Length < 5_000, $"user prompt was {LastUserPrompt.Length} chars");
+        // Direction, not just size: the plan turn needs the OPENING of the analysis — the sub-problems and
+        // the order they go in — so the head is what survives and the tail is what gets dropped.
+        Assert.Contains(AnalysisHead, LastUserPrompt);
+        Assert.DoesNotContain(AnalysisTail, LastUserPrompt);
+        // Tight on purpose. MaxAnalysisChars is 4000 and goal + wrapper + truncation marker add 137, so a
+        // correct run lands on exactly 4137 chars. The old bound of 5000 left enough slack that raising the
+        // cap to 4800 (4937 chars) still passed, i.e. the window-overflow guard was unpinned above 4000.
+        Assert.True(LastUserPrompt.Length < 4_300, $"user prompt was {LastUserPrompt.Length} chars");
     }
 
     [Fact]
@@ -638,6 +656,33 @@ public sealed class AgentPlannerTests
         Assert.False(result.FallBackToSingleTurn);
         AssertReasoningTurns(0);
         AssertConstrainedTurns(1);
+    }
+
+    [Fact]
+    public async Task PlanAsync_GateOn_SettingsReadCancelled_Rethrows()
+    {
+        // The other side of the guard above: the gate's catch-all may swallow a settings read that FAILED,
+        // but not one that was CANCELLED — that would let planning march on with a token the caller already
+        // cancelled. Only ShouldReasonFirstAsync's own catch-when(IsCancellationRequested) prevents it: unlike
+        // TryReasonAsync, its general catch just returns false and never calls ThrowIfCancellationRequested.
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        // Hand-rolled like the test above, and for the same reason: BuildPlanner/PlannerFor/PlannerWithLog all
+        // re-stub GetSettingsAsync to a successful task and would overwrite this cancelled one.
+        var handler = Substitute.For<IAiProviderHandler>();
+        handler.ProviderType.Returns(AiProviderType.Ollama);
+        handler.DropsReasoningEffortWithTools.Returns(true);
+        _settingsService.GetSettingsAsync()
+            .Returns(_ => Task.FromException<AppSettings>(new OperationCanceledException(cts.Token)));
+        var planner = new AgentPlanner(
+            _ai, new AiProviderHandlerResolver([handler]), _settingsService, NullLogger<AgentPlanner>.Instance);
+        ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => planner.PlanAsync(
+            Goal, Ctx(), Persona(), Provider(AiProviderType.Ollama, ReasoningEffort.High), cts.Token));
+
+        AssertReasoningTurns(0);   // the gate never returned an answer…
+        AssertConstrainedTurns(0); // …and planning did NOT proceed on the cancelled token
     }
 
     // ---- privacy: nothing this batch logs may put user content at a release-visible level ----
