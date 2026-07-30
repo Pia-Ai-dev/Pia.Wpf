@@ -498,7 +498,7 @@ public sealed partial class StepRowViewModel : ObservableObject
 /// A property that named a file or carried a payload would fail the reflection assert in
 /// <c>RunProgressViewModelTimelineTests</c>.
 /// </summary>
-public sealed class TimelineRowViewModel
+public sealed class TimelineRowViewModel : ObservableObject
 {
     /// <summary>Schema, not user content: a built-in constant or an MCP server's declared tool name.</summary>
     public string ToolName { get; init; } = string.Empty;
