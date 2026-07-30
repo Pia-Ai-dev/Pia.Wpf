@@ -199,9 +199,10 @@ public sealed class AssistantViewModelVoiceGateTests
     [Fact]
     public async Task AnUnroutedToolIsStillReportedUnknown()
     {
+        // RouteToolCallAsync is deliberately NOT arranged: its return type is a nullable tuple, so
+        // NSubstitute's own default already IS the unrouted answer. An explicit `.Returns(null)` here would
+        // look like an arrangement while being indistinguishable from no arrangement at all.
         var vm = Build();
-        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
-            .Returns(((object?, PluginToolCall?)?)null);
 
         Assert.Equal("Unknown tool: nope", await vm.HandleVoiceModeToolCall(Call("nope")));
     }
