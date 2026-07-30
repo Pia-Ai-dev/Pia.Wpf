@@ -409,7 +409,11 @@ DE/FR render — now the longest agent-settings string in three locales). **Batc
 "behind 02" above is history and Rank 2 is now 06** — and 02 is the one batch in that whole sequence that adds
 **nothing** to this list, for a sharper reason than "it is XS": the `$` segment it deleted was *unreachable*.
 Nothing ever populated `CostUsd`, so no build of Pia has ever rendered a money figure, and there is no
-before/after for a human to compare. So the gap between Rank 1 and Rank 2
+before/after for a human to compare. That is provable rather than assumed, and it needs both halves:
+`AgentRunService` never assigned the field, **and** `AgentRuns.LedgerJson` has no non-local writer — the column
+is written in exactly two places (the `CreateAsync` insert and `WriteLedger`), both in that service, and
+`Pia.Shared` mentions neither `AgentRun` nor `LedgerJson`, so the table is device-local with no sync DTO. Had a
+server or a peer been able to write that column, "no client writer" alone would not have settled it. So the gap between Rank 1 and Rank 2
 is wider today than it was this morning.
 
 **Batch 12 briefly put “run the tests” back at Rank 1, and that has now been paid.** `b32ca14` argued the point
