@@ -317,7 +317,8 @@ public sealed class ChatSessionTimelineTests
         SupportsTools: true,
         WebSearchActive: false,
         TokenizationEnabled: false,
-        StepId: _stepId,
+        // The SCOPE carries the step id; the record has no StepId field of its own (it was written by one
+        // executor and read by nobody, so a spec-level value could silently disagree with the scope's).
         Timeline: new AgentTimelineScope(_timeline, _runId, _stepId));
 
     private static AiProvider TestProvider => new()

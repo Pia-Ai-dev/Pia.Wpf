@@ -53,16 +53,17 @@ public sealed record StepTurnSpec(
     RunAutonomyPolicy? Policy = null,
 
     /// <summary>
-    /// The step this turn belongs to (Batch 03), for audit attribution. Null for a run-level turn — the
-    /// planner-degrade fallback — and for the ordinary interactive turn, which has no run at all.
-    /// </summary>
-    Guid? StepId = null,
-
-    /// <summary>
-    /// The audit-timeline sink for this step (Batch 03). Null ⇒ emit nothing, which is what every non-run
-    /// turn passes. Appended and defaulted for the same reason <see cref="Policy"/> was: both construction
-    /// sites use named arguments and nothing asserts spec equality, so the ordinary interactive path and
-    /// every existing test stay unchanged.
+    /// The audit-timeline sink for this step (Batch 03), which carries the step id itself
+    /// (<c>AgentTimelineScope.StepId</c>). Null ⇒ emit nothing, which is what every non-run turn passes.
+    /// Appended and defaulted for the same reason <see cref="Policy"/> was: both construction sites use named
+    /// arguments and nothing asserts spec equality, so the ordinary interactive path and every existing test
+    /// stay unchanged.
+    /// <para>
+    /// There is deliberately NO separate <c>StepId</c> on this record. One existed, was written by
+    /// <c>LiveTurnExecutor.BuildSpec</c> and read by nobody, and attribution came from the scope — two sources
+    /// of truth for one fact, the dead one being the documented one. A later executor that set the field and
+    /// built a run-level scope would have persisted <c>StepId = NULL</c> for every row with nothing failing.
+    /// </para>
     /// </summary>
     AgentTimelineScope? Timeline = null);
 

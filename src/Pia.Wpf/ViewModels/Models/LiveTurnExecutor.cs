@@ -147,9 +147,10 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             TokenizationEnabled: _tokenizationEnabled,
             UseGoalVerbatim: useGoalVerbatim,
             Policy: _policy,
-            StepId: stepId,
             // No store ⇒ no scope ⇒ no rows. That is the whole opt-in mechanism: nothing downstream has to
-            // reason about a null service.
+            // reason about a null service. The SCOPE is the only carrier of the step id — a second
+            // spec-level StepId field existed here and was read by nobody, so a later executor could have set
+            // it, built a run-level scope, and got NULL step attribution with nothing failing.
             Timeline: _timeline is null ? null : new AgentTimelineScope(_timeline, run.Id, stepId));
 
     /// <summary>Marshals <paramref name="work"/> onto the captured UI context and bridges it back to an awaitable.</summary>
