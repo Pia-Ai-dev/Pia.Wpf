@@ -64,7 +64,9 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
 >    `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`:
 >    **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, **2157 / 0 failed** after the
 >    residual-hazard pass, **2194 total / 0 failed / 1 skipped** re-measured on a clean tree at `7815ce1`, and
->    **2224 total / 0 failed / 1 skipped** at `d3c8c61` after Batch 05 (**+30** cases).
+>    **2224 total / 0 failed / 1 skipped** at `d3c8c61` after Batch 05 (**+30** cases). The `7815ce1` figure is
+>    still the correct *pre*-Batch-05 baseline even though the batch starts at `7a41a68`: the only commit
+>    between them is `30ebb52`, which is docs-only (two `.md` files) and belongs to no batch.
 >    So the ~240 assertions across those commits **do** hold, including the two Batch 11
 >    assertions flagged as fixture-sensitive — no threshold or fixture tuning was needed.
 >    **What this does NOT cover, and still outranks the batches below:** the entire **manual Windows smoke
@@ -202,10 +204,11 @@ each other by number. Read the **Rank** column for priority.
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
 | — | 11 | [Context compaction](11-context-compaction.md) | 2 | S–M | ✅ **shipped** `74f964c`→`a06358d` |
 
-**Why “run the tests” now outranks every batch.** Batches 10 and 11 were ranked 1 and 2 because two of Batch
+**Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
+was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
 10's items were live data-loss paths. They have shipped, so the top risk is no longer a known bug — it is that
 the *fix* for those data-loss paths (a semaphore-gated dedicated SQLite connection, a merge write, a WAL
-switch) has never been executed. A wrong gate is a worse failure than the gap it closed. **Batch 05 has now shipped
+switch) has never been exercised against a real provider or a real user session, only by the unit suite. A wrong gate is a worse failure than the gap it closed. **Batch 05 has now shipped
 too**, and it was only ever ahead of 03/04 because it was S–M and unblocked — so with it gone, 03 (audit
 timeline) and 04 (autonomy policy) move up behind 02, and both are M–L. Batch 05 also *added* to the smoke
 list rather than shortening it, which is one more reason the callout above still outranks all of them.

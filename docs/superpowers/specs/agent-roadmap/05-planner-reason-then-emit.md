@@ -12,7 +12,8 @@ otherwise be re-proposed.
 > pre-existing and unchanged (the bar is *adds zero*).
 > **Tests:** `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`
 > → **2224 total / 0 failed / 1 skipped** at `d3c8c61`, from a pre-batch baseline of **2194 / 0 / 1** at
-> `7815ce1` (**+30** cases).
+> `7815ce1` (**+30** cases — the only commit between `7815ce1` and this batch's first is the docs-only
+> `30ebb52`, which added no tests and belongs to no batch).
 > **What that does NOT cover:** the settings toggle is XAML and **no test in this suite parses a `View`**, and
 > efficacy is unmeasured — the suite proves the extra round happens, degrades safely and is paid for, never
 > that it produces better plans. See "Opened by Batch 05" in [`00-OVERVIEW.md`](00-OVERVIEW.md).
