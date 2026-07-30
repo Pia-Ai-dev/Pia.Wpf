@@ -1,8 +1,9 @@
 # Agent System — Roadmap & Status
 
-_Snapshot: 2026-07-29 — as-built at the head of the residual-hazard pass and the Tier-2 decision pass.
-**Batches 10 and 11 have shipped** (plus a joint review fix pass); they were promoted out of “Deliberately
-open” and are now in the chronicle. Build verified with
+_Snapshot: 2026-07-30 — as-built at the head of **Batch 05** (planner reason-then-emit), which shipped on top
+of the residual-hazard pass and the Tier-2 decision pass.
+**Batches 10, 11 and 05 have shipped** (10 and 11 plus a joint review fix pass); 10 and 11 were promoted out of
+“Deliberately open”, 05 out of “Upcoming batches”, and all three are now in the chronicle. Build verified with
 `dotnet build -p:EnableWindowsTargeting=true --no-incremental` → **0 errors, 194 warnings** (all pre-existing —
 8 in `src` in files untouched by these batches, 186 xUnit analyzer warnings in the test project; the older
 “0 warnings” claim in this file was an incremental-build artifact and has been corrected). **The suite has now
@@ -39,15 +40,17 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 9 | `e4ad6bf` → `770fad3`, `d1c746d` → `630c2c2` | **[Batch 10](10-durability-and-lifecycle.md)** — dedicated gated chat connection + WAL/busy_timeout (W1), one-effective-writer per chat row (W2), `Once`-job settle (W3) | ✅ done |
 | 10 | `74f964c` → `a06358d` | **[Batch 11](11-context-compaction.md)** — `Microsoft.Agents.AI.Compaction` behind one adapter, per-provider context budget | ✅ done |
 | 11 | `aab9a06` → `601090e` | Joint review fix pass over 10 + 11 (4 must-fixes, 6 should-fixes; two should-fixes deliberately left open — see below) | ✅ done |
+| 12 | `7a41a68` → `d3c8c61` | **[Batch 05](05-planner-reason-then-emit.md)** — opt-in reason-then-emit planning: `IAiProviderHandler.DropsReasoningEffortWithTools` on all eight handlers, a global `AppSettings` toggle (default OFF) + its CheckBox, and a tool-FREE reasoning turn ahead of the constrained `emit_plan` turn on the three handlers that drop the effort under tools. Includes the review-fix commit and the two polish commits; this roadmap commit records it | ✅ done |
 
 **Git position:** the branch **is** pushed and tracks `origin/feature/agent-run-spine`, which is now at
-`1c49b08` — the earlier "last pushed commit is `e7df175` / 50 commits local-only" figure is stale. As of
-2026-07-29 there are **29 local-only commits** (do not trust a hardcoded count here; it goes stale on the next
-commit — read it from git; the "17" printed here earlier was already stale when read). Check with
+`73e15e8` — both the earlier "`1c49b08` / 29 local-only" and the older "`e7df175` / 50 local-only" figures are
+stale. As of 2026-07-30 there are **2 local-only commits** at `d3c8c61` (`ba2c266` + `d3c8c61`, Batch 05's
+polish pass), i.e. **3 once this roadmap commit lands** (do not trust a hardcoded count here; it goes stale on
+the next commit — read it from git; the "17" printed here earlier was already stale when read). Check with
 `git rev-list --count origin/feature/agent-run-spine..HEAD` and `git branch -vv`.
 Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true --no-incremental`. Re-measured at
-`87fa403` and again at `7815ce1`: **0 errors, 194 warnings**, all pre-existing and unchanged across this pass: 3× `CS8602` in
-`Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
+`87fa403`, at `7815ce1` and again at `d3c8c61`: **0 errors, 194 warnings**, all pre-existing and unchanged
+across every pass since — 3× `CS8602` in `Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
 duplicate `Memory_Refresh` key present twice in each of the three resx files, and 186 xUnit analyzer warnings
 in the test project. **The “0 warnings” figure used earlier in this file was wrong** — it came from an
 incremental build, which skips `CoreCompile` and therefore does not re-emit analyzer warnings. The real bar
@@ -60,21 +63,34 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
 >    authoring sessions (macOS), not of the code. Measured with
 >    `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`:
 >    **2149 total, 0 failed, 2148 passed, 1 skipped** at `8add90c`, **2157 / 0 failed** after the
->    residual-hazard pass, and **2194 total / 0 failed / 1 skipped** re-measured on a clean tree at `7815ce1`.
+>    residual-hazard pass, **2194 total / 0 failed / 1 skipped** re-measured on a clean tree at `7815ce1`, and
+>    **2224 total / 0 failed / 1 skipped** at `d3c8c61` after Batch 05 (**+30** cases).
 >    So the ~240 assertions across those commits **do** hold, including the two Batch 11
 >    assertions flagged as fixture-sensitive — no threshold or fixture tuning was needed.
 >    **What this does NOT cover, and still outranks the batches below:** the entire **manual Windows smoke
 >    list** (Batch 11) is undone. A green unit suite is not a smoke test — the two package-bump behaviour
 >    concentrations (streamed tool-call coalescing, the seven `OPENAI001` pragma sites) need a real provider
->    round. Also unproven: whether the W1
+>    round. **Batch 05 lengthened that list**: its opt-in toggle is XAML, and no test in this suite parses a
+>    `View`, so the checkbox→settings wiring and a real two-call plan are both unverified (see “Opened by
+>    Batch 05”). Also unproven: whether the W1
 >    concurrency tests would go red on a revert of `78e16dd` (asserted by reasoning, not demonstration).
 >    **Corrected 2026-07-29:** this callout used to add "and the image-attachment hazard is *expected* to fail
 >    when smoked". It is not — hazard C was **closed by `b59cfe5`** in the Tier-2 pass, so that smoke item is now
 >    the primary *regression check* for that fix, not a known break to confirm.
-> 2. **Push.** Still local-only from `1c49b08` onward — `git rev-list --count
->    origin/feature/agent-run-spine..HEAD` (29 at the time of writing). Owner decision 2026-07-29: **hold the
->    push until the manual Windows smoke round is done**, so a provider regression can be fixed before it
->    reaches `origin`.
+> 2. **Push — DONE 2026-07-29, and that changes the risk posture. Read why it happened.**
+>    `origin/feature/agent-run-spine` is at `73e15e8`, so everything through Batch 05's review-fix commit is on
+>    `origin` and pullable by anyone; only Batch 05's polish pass is local (2 commits at `d3c8c61`, 3 once this
+>    roadmap commit lands — read the count from git). **The owner pushed it to preserve the work across a
+>    machine shutdown, NOT because the smoke round was done.** Do not read this line as the smoke list having
+>    been completed: it is untouched, and it still outranks every batch below.
+>    The 2026-07-29 owner decision recorded here until 2026-07-30 — "hold the push until the manual Windows
+>    smoke round is done, so a provider regression can be fixed before it reaches `origin`" — is therefore
+>    **void**, overtaken by the push rather than by the smoke round. Plainly: **the smoke round no longer gates
+>    the push, and the obligation is unchanged.** What moved is the cost of a failure. The round now validates
+>    code that is *already* on `origin`, so a provider regression it finds is a fix-forward on a shared ref that
+>    others may have pulled, not a private rebase — and it can no longer stop such a regression from reaching
+>    `origin` at all, only from reaching `main`. `74f964c` remains the commit to revert first if provider
+>    behaviour regresses.
 
 ---
 
@@ -129,6 +145,21 @@ these batches held is *adds zero warnings*, verified with `--no-incremental` bef
   `MaxOutputTokens`, both null = off, which is what every existing provider upgrades into). Wired into the
   Headless step request, the Live step request, and the in-step tool loop. The interactive chat path is
   deliberately never compacted.
+- **A plan turn can think before it is constrained** (Batch 05, **opt-in, default OFF**) — a plan turn always
+  attaches `emit_plan`, and three of the eight provider handlers (`AzureOpenAI`, `Ollama`, `Mistral`, declared
+  by `IAiProviderHandler.DropsReasoningEffortWithTools`) omit the configured reasoning effort as soon as tools
+  are present, so on those providers the turn that most needs deliberation reasons at the model default. With
+  `AppSettings.AgentPlanReasoningTurnEnabled` on, `AgentPlanner.PlanAsync` first spends a **tool-FREE**
+  free-form turn — `tools: null` is what makes `AiClientService` compute `hasTools:false`, the only shape that
+  still carries the effort — and folds that analysis into the constrained turn: capped at 4000 chars, head
+  kept, appended **after** the goal on the **user** message, never the System prompt, because
+  `TokenizingAiClientService` rewrites only `ChatRole.User` text and hands the reply back *detokenized* — in the
+  System prompt the analysis would ship restored PII past the tokenizer. It can never hard-fail
+  planning: an empty answer, any throw, even a gate that cannot be *evaluated* degrades to today's single
+  constrained turn, while cancellation propagates; every round reaches `PlanResult.Usage` (I1) and the firm
+  retry reuses the one analysis. Default OFF because it doubles a plan-turn cost that is already ≥2 rounds.
+  `ReplanAsync` stays single-turn by decision (D3). Not every enabled run is *boosted* — see “Opened by
+  Batch 05”.
 
 ---
 
@@ -160,22 +191,24 @@ each other by number. Read the **Rank** column for priority.
 |---|---|-------|-------|------|-----------|
 | ~~**1**~~ | — | ~~**Run the test suite on Windows/CI**~~ **DONE 2026-07-29: 2157 total, 0 failed.** What remains is the **manual Windows smoke list**, which a unit suite cannot cover — see the callout above | — | S | a Windows runner |
 | 2 | 02 | [Cost ledger](02-cost-ledger.md) — price table populates `CostUsd` | 2 | S | — |
-| 3 | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) — boosted planning effort on Chat-Completions | 2 | S–M | — |
-| 4 | 03 | [Audit timeline](03-audit-timeline.md) — per-tool decision trace (plan §11) | 2 | M–L | — |
-| 5 | 04 | [Autonomy policy](04-autonomy-policy.md) — `PolicyJson` per-run approval policy | 2 | M–L | MCP gate |
-| 6 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
-| 7 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
-| 8 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause, sub-agents |
-| 9 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B |
+| 3 | 03 | [Audit timeline](03-audit-timeline.md) — per-tool decision trace (plan §11) | 2 | M–L | — |
+| 4 | 04 | [Autonomy policy](04-autonomy-policy.md) — `PolicyJson` per-run approval policy | 2 | M–L | MCP gate |
+| 5 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
+| 6 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
+| 7 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause, sub-agents |
+| 8 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
+| — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
 | — | 11 | [Context compaction](11-context-compaction.md) | 2 | S–M | ✅ **shipped** `74f964c`→`a06358d` |
 
 **Why “run the tests” now outranks every batch.** Batches 10 and 11 were ranked 1 and 2 because two of Batch
 10's items were live data-loss paths. They have shipped, so the top risk is no longer a known bug — it is that
 the *fix* for those data-loss paths (a semaphore-gated dedicated SQLite connection, a merge write, a WAL
-switch) has never been executed. A wrong gate is a worse failure than the gap it closed. Batch 05 remains
-ahead of 03/04 only because it is S–M and unblocked.
+switch) has never been executed. A wrong gate is a worse failure than the gap it closed. **Batch 05 has now shipped
+too**, and it was only ever ahead of 03/04 because it was S–M and unblocked — so with it gone, 03 (audit
+timeline) and 04 (autonomy policy) move up behind 02, and both are M–L. Batch 05 also *added* to the smoke
+list rather than shortening it, which is one more reason the callout above still outranks all of them.
 
 Phase 2 now completes at Batch 03/04. Batches 06–09 are Phase 3/4; their seams may shift — re-scope at the
 design step. `PolicyJson` is no longer NULL — it carries the launch grant envelope — so Batch 04 must *extend*
@@ -503,6 +536,59 @@ chat row, the missing write gate on the shared `SqliteContext` connection (all �
 context/trajectory compression (→ Batch 11, whose design step collapsed when `Microsoft.Agents.AI` 1.15.0
 shipped `Microsoft.Agents.AI.Compaction` on 2026-07-22 with the atomic tool-group logic already solved).
 hermes-comparison §5/rec #5.
+
+### Opened by Batch 05 (2026-07-30) — known, reasoned, not closed
+
+- **`Minimal` / `Low` / `Medium` buy nothing, or less than nothing.** The gate fires for **any** non-`None`
+  `AiProvider.ReasoningEffort`, but `ReasoningEffortMapping` collapses the ladder: `Minimal` *and* `Low` both map
+  to `Low`, `Medium` to `Medium`, and `High` *and* `XHigh` both to `High` — while the constrained turn, which
+  **omits** the field, runs at whatever that provider's own default is. Wherever that default sits at or above
+  the requested rung, the extra round recovers **no boost at all**. Azure OpenAI's o-series is the concrete
+  case: its default is `medium`, so with effort=`Low` the run pays a full extra provider round to produce an
+  analysis reasoned at a **lower** effort than the turn it is meant to improve, and with `Medium` it pays a round
+  to request exactly the default. Ollama's default is model-dependent (so it is unknown, not benign), and
+  Mistral's is the `none`|`high` ON rung (next bullet). Only `High`/`XHigh` are a real boost — and since they are
+  the same rung, `XHigh` is not a further one. **NOT narrowed, deliberately:** `73e15e8`'s committed Mistral
+  rationale states that reason-then-emit is *itself* the mechanism — a free-form decomposition the constrained
+  turn consumes — and that the boosted effort is an amplifier, not the whole benefit. Narrowing the gate to
+  `High`/`XHigh` would contradict that sentence and would deny the decomposition to every `Low`/`Medium` user.
+  Recorded instead, which was the reviewer's own minimum ask. Revisit together with D7: both are the same
+  question (should a transport flag answer "is the boost worth it?") asked from opposite ends.
+- **Mistral gets the split but never the boost** — on *both* halves of its model list, not just one. Already
+  spelled out in `MistralProviderHandler`'s comment; it belongs here too, because the roadmap is where someone
+  decides whether to enable the toggle. A model **not** in `ReasoningCapableModels` never gets the field on
+  either turn (the model-list check runs before the `hasTools` check), so the tool-free turn is at default effort
+  as well. A model **in** it keeps reasoning **on** when the field is absent, and Mistral's ladder is `none` |
+  `high` only — so the tool-using turn already sits on the one ON rung that exists and the tool-free turn's
+  explicit `high` is the same rung. Net: on Mistral the opt-in buys one extra provider round for the
+  decomposition and nothing else.
+- **One review fix was refused and one polish nit was skipped; both with reasons, neither an oversight.**
+  (i) A reviewer asked for `MistralProviderHandler.DropsReasoningEffortWithTools => false`. `73e15e8` accepted
+  the **analysis** (above) and rejected the **fix**: the flag states a **transport** fact the handler
+  demonstrably implements (the field *is* omitted under tools) and the conformance test reads it off an
+  uninitialised instance, so it must stay a constant — `false` would contradict the request the handler builds.
+  What changed instead was the contract: the `IAiProviderHandler` XML doc is now explicitly transport-only and
+  says `AgentPlanner` reads it as an approximation. Narrowing it honestly needs a model-aware member taking
+  `AiProvider`, which D7 rejected. **Do not flip that flag without reopening D7.** (ii)
+  `ProviderEditContentDialog.xaml:96` — the dialog that actually sets the `AiProvider.ReasoningEffort` this gate
+  reads — carries a **hardcoded English** “Reasoning effort” label with no `loc:Str`. Found while fixing the new
+  toggle's German string (`Denkstufe` → `Denkaufwand`, `d3c8c61`) and left alone as out of scope: it is a
+  pre-existing gap in a different dialog and a new key needs en/de/fr parity. The polish pass **refuted none** of
+  the five nits it examined — all five were real and all five are fixed.
+- **Manual-smoke debt, and the toggle is XAML.** The CheckBox's two `Binding` paths
+  (`AgentPlanReasoningTurnEnabled`) and the `AssistantView.xaml` relocation in `d3c8c61` resolve only at
+  runtime, and **no test in this suite parses a `View`** (see the callout above — closing that needs Batch 12's
+  dispatcher abstraction or a separate test process), so a typo renders a checkbox that silently never persists.
+  `LocalizationTests` *does* cover the three `loc:Str` keys and their en/de/fr parity, and
+  `AppSettingsAgentPlanningTests`' camelCase JSON round-trip is the automated proof that the flag **can**
+  persist — the untested part is the wiring between them, plus the relocation itself. There is also no
+  `AssistantSettingsViewModel` test at all (four concrete sub-VM dependencies, judged disproportionate for a
+  checkbox), so a toggle→restart→still-on check is its only coverage. Two things need a real provider round and
+  no unit test can substitute: that a two-call plan against Ollama or Azure OpenAI with an effort configured
+  still validates (the run goes `Planned`, not SingleTurn-degraded) and logs its doubled-cost `Information` line
+  exactly once with the toggle ON and not at all with it OFF; and **whether reason-then-emit actually produces
+  better plans**, which nothing here proves — the suite proves the boosted round happens, degrades safely and is
+  paid for. Full list: `05-planner-reason-then-emit.impl.md` §9.
 
 ---
 
