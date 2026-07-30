@@ -504,7 +504,8 @@ public sealed class ChatSession : IDisposable
         bool tokenizationEnabled,
         CancellationToken token,
         AgentContextBudget? contextBudget = null,
-        RunAutonomyPolicy? policy = null)
+        RunAutonomyPolicy? policy = null,
+        AgentTimelineScope? timeline = null)
     {
         var rawBuffer = new StringBuilder();
         // Reasoning reaches us via two channels that never overlap for a given provider:
@@ -548,7 +549,7 @@ public sealed class ChatSession : IDisposable
 
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             chatMessages, provider, tools,
-            supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled, policy) : null,
+            supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled, policy, timeline) : null,
             nameof(WindowMode.Assistant),
             token,
             contextBudget))
@@ -679,7 +680,7 @@ public sealed class ChatSession : IDisposable
             // bounded too. The INTERACTIVE call site (RunTurnAsync) deliberately leaves it null.
             usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
                 spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct,
-                AgentContextBudget.From(spec.Provider), spec.Policy);
+                AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline);
             succeeded = true;
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)
@@ -803,10 +804,10 @@ public sealed class ChatSession : IDisposable
 
     private async Task<object?> HandleToolCallWithStatus(
         FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled,
-        RunAutonomyPolicy? policy = null)
+        RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
     {
         message.StatusText = _actionCardBuilder.ResolveStatusText(toolCall.Name);
-        var result = await HandleToolCall(toolCall, message, tokenizationEnabled, policy);
+        var result = await HandleToolCall(toolCall, message, tokenizationEnabled, policy, timeline);
         message.StatusText = _localizationService["Msg_Assistant_StatusThinking"];
         return result;
     }
@@ -827,9 +828,11 @@ public sealed class ChatSession : IDisposable
     /// <param name="policy">The run's autonomy policy (Batch 04), from <c>StepTurnSpec.Policy</c>. Null on the
     /// ordinary interactive turn path (<see cref="RunTurnAsync"/>), which has no run — and null therefore
     /// means today's behaviour, byte for byte.</param>
+    /// <param name="timeline">The step's audit sink (Batch 03), from <c>StepTurnSpec.Timeline</c>. Null on the
+    /// ordinary interactive turn path, which has no run to attach a row to — so that path emits nothing.</param>
     private async Task<object?> HandleToolCall(
         FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled,
-        RunAutonomyPolicy? policy = null)
+        RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
     {
         _logger.LogInformation("Handling tool call: {ToolName}", toolCall.Name);
         _logger.LogDebug("Tool call {ToolName} with {ArgCount} arguments", toolCall.Name, toolCall.Arguments?.Count ?? 0);

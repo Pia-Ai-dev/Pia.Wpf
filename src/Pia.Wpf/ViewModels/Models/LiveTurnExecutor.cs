@@ -22,10 +22,13 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     private readonly AssistantTurnSetup _turnSetup;
     private readonly bool _tokenizationEnabled;
     private readonly RunAutonomyPolicy? _policy;
+    private readonly IAgentTimelineService? _timeline;
 
     /// <param name="policy">The run's autonomy policy (Batch 04); null ⇒ no per-run policy, today's
     /// behaviour. Trailing and defaulted on purpose: this type is hand-constructed with a POSITIONAL argument
     /// list, so a required parameter would force edits into every existing call site and test.</param>
+    /// <param name="timeline">The audit-timeline store (Batch 03); null ⇒ this run records nothing. Trailing
+    /// and defaulted for the same reason as <paramref name="policy"/>.</param>
     public LiveTurnExecutor(
         ChatSession session,
         Func<ChatSession, bool> isActive,
@@ -33,7 +36,8 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         AiProvider provider,
         AssistantTurnSetup turnSetup,
         bool tokenizationEnabled,
-        RunAutonomyPolicy? policy = null)
+        RunAutonomyPolicy? policy = null,
+        IAgentTimelineService? timeline = null)
     {
         _session = session;
         _ui = SynchronizationContext.Current
@@ -44,6 +48,7 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         _turnSetup = turnSetup;
         _tokenizationEnabled = tokenizationEnabled;
         _policy = policy;
+        _timeline = timeline;
     }
 
     public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
@@ -68,7 +73,7 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         PostAsync(async () =>
         {
             var result = await _session.RunStepTurnAsync(BuildSpec(run, step.Ordinal, step.Intent ?? string.Empty,
-                step.ExpectedArtifact, useGoalVerbatim: false), ctx, ct);
+                step.ExpectedArtifact, useGoalVerbatim: false, stepId: step.Id), ctx, ct);
 
             // E2 (parity with HeadlessTurnExecutor's per-step write): make this step's assistant message
             // DURABLE now. The interactive path otherwise persists only via TurnCompleted → the manager's
@@ -85,7 +90,9 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     // No interim persist here (same call as HeadlessTurnExecutor's fallback): the R10 degrade path runs
     // EndRunAsync immediately on every branch, and that raises TurnCompleted → the manager persists.
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
-        PostAsync(() => _session.RunStepTurnAsync(BuildSpec(run, 0, ctx.Goal, null, useGoalVerbatim: true), ctx, ct));
+        // stepId: null — the R10 degrade turn belongs to the run but to no step.
+        PostAsync(() => _session.RunStepTurnAsync(
+            BuildSpec(run, 0, ctx.Goal, null, useGoalVerbatim: true, stepId: null), ctx, ct));
 
     public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct) =>
         PostAsync(() =>
@@ -124,7 +131,8 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             return Task.CompletedTask;
         });
 
-    private StepTurnSpec BuildSpec(AgentRun run, int ordinal, string intent, string? expectedArtifact, bool useGoalVerbatim) =>
+    private StepTurnSpec BuildSpec(
+        AgentRun run, int ordinal, string intent, string? expectedArtifact, bool useGoalVerbatim, Guid? stepId) =>
         new(
             RunId: run.Id,
             Ordinal: ordinal,
@@ -138,7 +146,11 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             WebSearchActive: _turnSetup.WebSearchActive,
             TokenizationEnabled: _tokenizationEnabled,
             UseGoalVerbatim: useGoalVerbatim,
-            Policy: _policy);
+            Policy: _policy,
+            StepId: stepId,
+            // No store ⇒ no scope ⇒ no rows. That is the whole opt-in mechanism: nothing downstream has to
+            // reason about a null service.
+            Timeline: _timeline is null ? null : new AgentTimelineScope(_timeline, run.Id, stepId));
 
     /// <summary>Marshals <paramref name="work"/> onto the captured UI context and bridges it back to an awaitable.</summary>
     private Task PostAsync(Func<Task> work) => PostAsync(async () => { await work(); return true; });

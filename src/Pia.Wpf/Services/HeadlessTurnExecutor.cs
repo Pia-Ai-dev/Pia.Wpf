@@ -30,6 +30,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly ILogger<HeadlessTurnExecutor> _logger;
 
+    /// <summary>The audit-timeline store (Batch 03); null ⇒ this run records nothing.</summary>
+    private readonly IAgentTimelineService? _timelineService;
+
     // Per-run accumulating state.
     private readonly List<ChatMessage> _messages = new();
     private readonly List<SyncAssistantChatMessage> _persisted = new();
@@ -65,7 +68,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         IAssistantPromptComposer promptComposer,
         IChatTitleService titleService,
         Func<ITokenMapService> tokenMapFactory,
-        ILogger<HeadlessTurnExecutor> logger)
+        ILogger<HeadlessTurnExecutor> logger,
+        // Trailing and defaulted so the existing positional construction in tests keeps compiling; the
+        // container resolves it because it is registered.
+        IAgentTimelineService? timelineService = null)
     {
         _engine = engine;
         _chatService = chatService;
@@ -76,6 +82,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _titleService = titleService;
         _tokenMapFactory = tokenMapFactory;
         _logger = logger;
+        _timelineService = timelineService;
     }
 
     /// <summary>
@@ -224,14 +231,20 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct) =>
         RunExchangeStepAsync(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact),
-            persistInterim: true, ct);
+            persistInterim: true, ct, TimelineScope(step.Id));
 
     // persistInterim: false — the fallback turn is followed IMMEDIATELY by the terminal EndRunAsync on
     // every branch of the R10 degrade path, so an interim write here would only double the chat rewrite.
+    // stepId: null — the degrade turn belongs to the run but to no step.
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
-        RunExchangeStepAsync(ctx.Goal, persistInterim: false, ct);
+        RunExchangeStepAsync(ctx.Goal, persistInterim: false, ct, TimelineScope(stepId: null));
 
-    private async Task<StepTurnResult> RunExchangeStepAsync(string instruction, bool persistInterim, CancellationToken ct)
+    /// <summary>The per-step audit sink, or null when no store was injected (⇒ record nothing).</summary>
+    private AgentTimelineScope? TimelineScope(Guid? stepId) =>
+        _timelineService is null ? null : new AgentTimelineScope(_timelineService, _runId, stepId);
+
+    private async Task<StepTurnResult> RunExchangeStepAsync(
+        string instruction, bool persistInterim, CancellationToken ct, AgentTimelineScope? timeline = null)
     {
         // Append the EPHEMERAL step instruction to a COPY — the accumulating _messages keeps the
         // clean transcript (system + goal + one assistant reply per step) — §13.7.
@@ -284,7 +297,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // request compacted above can still grow past the window inside AiClientService as tool
             // calls and tool results accumulate over up to 10 rounds.
             exchange = await _engine.RunExchangeAsync(request, _provider, _setup, _grantedWrites, ct,
-                    onUsage: null, contextBudget: contextBudget, policy: _policy)
+                    onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

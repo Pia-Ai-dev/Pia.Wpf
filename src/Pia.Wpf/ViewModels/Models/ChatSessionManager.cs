@@ -46,6 +46,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IHeadlessRunLauncher _headlessRunLauncher;
     private readonly IWindowManagerService _windowManager;
     private readonly IExecutingRunStore _executingRuns;
+    private readonly IAgentTimelineService? _agentTimelineService;
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -114,7 +115,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         IProviderCapabilityService providerCapabilityService,
         IHeadlessRunLauncher headlessRunLauncher,
         IWindowManagerService windowManager,
-        IExecutingRunStore executingRuns)
+        IExecutingRunStore executingRuns,
+        // Batch 03: handed to LiveTurnExecutor so an interactive Planned run records its tool decisions.
+        // Trailing and defaulted so the one hand-constructed test site keeps compiling unchanged; the
+        // container resolves it because it is registered.
+        IAgentTimelineService? agentTimelineService = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -139,6 +144,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _headlessRunLauncher = headlessRunLauncher;
         _windowManager = windowManager;
         _executingRuns = executingRuns;
+        _agentTimelineService = agentTimelineService;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
 
@@ -781,7 +787,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // so the LiveTurnExecutor captures the UI SynchronizationContext.
             var live = new LiveTurnExecutor(session, IsSessionActive,
                 PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled,
-                policy);
+                policy, _agentTimelineService);
 
             // Budget envelope from user settings (clamped in FromBudget); defaults match RunProfile.Interactive.
             var profile = RunProfile.FromBudget(settings.AgentMaxSteps, settings.AgentMaxReplans, settings.AgentWallClockMinutes);

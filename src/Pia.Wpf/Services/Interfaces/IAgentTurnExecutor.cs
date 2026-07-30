@@ -50,7 +50,21 @@ public sealed record StepTurnSpec(
     /// the allowlist and the standing grants do not cover shows an action card. Appended and defaulted so the
     /// interactive single-turn path and every existing construction stay unchanged.
     /// </summary>
-    RunAutonomyPolicy? Policy = null);
+    RunAutonomyPolicy? Policy = null,
+
+    /// <summary>
+    /// The step this turn belongs to (Batch 03), for audit attribution. Null for a run-level turn — the
+    /// planner-degrade fallback — and for the ordinary interactive turn, which has no run at all.
+    /// </summary>
+    Guid? StepId = null,
+
+    /// <summary>
+    /// The audit-timeline sink for this step (Batch 03). Null ⇒ emit nothing, which is what every non-run
+    /// turn passes. Appended and defaulted for the same reason <see cref="Policy"/> was: both construction
+    /// sites use named arguments and nothing asserts spec equality, so the ordinary interactive path and
+    /// every existing test stay unchanged.
+    /// </summary>
+    AgentTimelineScope? Timeline = null);
 
 /// <summary>
 /// The outcome of one act step-turn. Exceptions inside a step become

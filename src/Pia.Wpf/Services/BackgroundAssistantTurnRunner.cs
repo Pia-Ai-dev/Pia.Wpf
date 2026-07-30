@@ -323,7 +323,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         CancellationToken ct,
         Func<UsageDetails, Task>? onUsage = null,
         AgentContextBudget? contextBudget = null,
-        RunAutonomyPolicy? policy = null)
+        RunAutonomyPolicy? policy = null,
+        AgentTimelineScope? timeline = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -333,7 +334,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
-            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy) : null,
+            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy, timeline) : null,
             nameof(WindowMode.Assistant), ct, contextBudget))
         {
             switch (item)
@@ -374,7 +375,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// FLOOR no grant can lift: a destructive EXTERNAL (MCP) tool never runs unattended (B2).
     /// </summary>
     private async Task<object?> HandleToolCallAsync(
-        FunctionCallContent toolCall, HashSet<string> grantedWrites, RunAutonomyPolicy? policy = null)
+        FunctionCallContent toolCall, HashSet<string> grantedWrites, RunAutonomyPolicy? policy = null,
+        AgentTimelineScope? timeline = null)
     {
         // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
         // deferred PluginToolCall (below), so an ungranted MCP call is denied by the pending-action branch
