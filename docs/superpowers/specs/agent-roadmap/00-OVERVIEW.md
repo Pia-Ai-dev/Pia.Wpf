@@ -1,11 +1,14 @@
 # Agent System — Roadmap & Status
 
-_Snapshot: 2026-07-30 — as-built at `c92dfdd`, the end of a run that shipped **Batch 04** (autonomy policy)
-and then **Batch 03** (audit timeline), each with its own review fix pass. Those two were the last of Phase 2
-apart from Batch 02, **so Phase 2 is now complete except for 02** — which is itself no longer a feature but a
-deletion (pricing was withdrawn by decision the same day). Unlike the previous snapshot, this one **is** a
-single linear range: 04 and 03 were authored in sequence off `dda6703`, 03 on top of 04, so reading the
-chronicle down is correct again. **Batches 10, 11, 05, 12, 04 and 03 have shipped.** Build verified with
+_Snapshot: 2026-07-30 — as-built at `df0841a`, which is **Batch 02** and therefore the end of Phase 2: the run
+before it shipped **Batch 04** (autonomy policy) and then **Batch 03** (audit timeline), each with its own review
+fix pass, and 02 was all that remained. **Phase 2 is now complete outright**, with no cleanup outstanding.
+Everything below measured `c92dfdd` (the 04/03 tree) rather than `df0841a`, and that is still the right reading
+of it: 02 is a six-seam deletion plus two facts, re-verified independently at `0 Warning(s)` in Debug and
+Release and `2424 total / 0 failed / 2423 passed / 1 skipped` (**+2**, the two new facts exactly). Unlike the
+previous snapshot, this one **is** a
+single linear range: 04 and 03 were authored in sequence off `dda6703`, 03 on top of 04, and 02 sits after both,
+so reading the chronicle down is correct again. **Batches 10, 11, 05, 12, 04, 03 and 02 have shipped.** Build verified with
 `dotnet build -t:Rebuild -v:n` (Debug **and** Release) → **0 errors, 0 warnings**. Measured on the final tree
 `c92dfdd` twice by two agents; each of the run's four agents also measured it on its own tree, so the bar was
 checked at six points, not asserted once at the end. **That bar
@@ -59,6 +62,7 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 13 | `1dced2f` → `cac8251` | **[Batch 12](12-ui-dispatcher-abstraction.md)** — `IUiDispatcher` injected into the 4 remaining ViewModels, the exemption list 4 → 1, and the **first `View` in the repo parsed by a test**. Includes its own 2-commit review fix pass | ✅ done |
 | 14 | `9a8a639` → `cd13c1a` | **[Batch 04](04-autonomy-policy.md)** — one `ToolClassifier` + one `ToolAutonomy.Resolve` for both run gates, a per-run `RunAutonomyPolicy` in the existing `PolicyJson` v1 envelope, an `AppSettings` default for built-in writes, and voice-mode writes routed through the gate. Includes its own review fix pass | ✅ done |
 | 15 | `50d2054` → `c92dfdd` | **[Batch 03](03-audit-timeline.md)** — the per-run audit timeline: an append-only metadata-only `AgentTimelineEvents` store (per-run `Seq`, a 500-row cap + one truncation marker, retention prune), a per-step `AgentTimelineScope` carried to BOTH run gates, and a read-only "Tool activity" trace on the run panel. Includes its own 10-commit review fix pass — see “Opened by Batch 03” below | ✅ done |
+| 16 | `df0841a` | **[Batch 02](02-cost-ledger.md)** — the `CostUsd` removal (pricing withdrawn by decision, so the batch is a deletion): the ledger DTO field, the VM's mirror + backing field + TODO assignment, and the `$` segment in `FormatLedger`. **No review fix pass, and the one-commit span is the honest size** — six seams, two facts, no new behaviour. Two prose seams the spec's own acceptance grep could not match were live and are also gone; the grep is amended to the pattern that found them | ✅ done |
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -85,6 +89,11 @@ start; and `30956c5` → `790defd` (the Batch 02 pricing withdrawal — docs-onl
 03 was in review. Same treatment as `30ebb52` below: docs-only, belongs to no batch, does not break the range
 it interrupts. A `git log 50d2054..c92dfdd` therefore lists two commits that are not Batch 03's — check the
 subject line, not the position.
+
+**Do not read that pair as Batch 02 itself.** `30956c5` → `790defd` only *re-scoped* the batch — three `.md`
+files then two, no `.cs` touched. The batch is row 16's single `df0841a`, which lands after `c92dfdd`. So the
+number 02 appears at two disjoint places in the log for two different reasons, and the earlier one is the
+decision, not the delivery.
 
 **Git position, re-measured 2026-07-30 at the end of the 04/03 run — and this paragraph's own warning caught
 it:** `origin/feature/agent-run-spine` is at **`5e1d793`** ("add new icon templates"), *not* the `b32ca14` this
@@ -215,6 +224,9 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
 
 - **Runs are first-class + persisted** — plan/act/replan loop, live progress panel + ledger, Flow
   `OpenRun` deep-link. Ledger wall-clock is accumulated **active** time (parked time is not billed).
+  The ledger states **tokens and active time and nothing else** — no money figure, by decision
+  (Batch 02): those two are exact for every provider, and a price is not. "Not billed" above is about
+  the clock, not a currency.
 - **Headless/background runs** — detach a goal, scheduler emission, startup crash sweep. The per-run
   `%LOCALAPPDATA%\Pia\runs\<runId>\` directory is an **ephemeral scratch dir that nothing currently
   writes into**: by owner decision (`d1bf62d`, plan §17.2 amendment) unattended runs write their real
@@ -367,11 +379,10 @@ each other by number. Read the **Rank** column for priority.
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
 | **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. What a unit suite cannot cover remains: a real provider round, a real MCP server, and the DE/FR render — see the callout above and both “Opened by” sections | — | S | a Windows runner + a live provider |
-| 2 | 02 | [Remove `CostUsd`](02-cost-ledger.md) — pricing **withdrawn** by decision 2026-07-30; the batch now deletes the half-built seam. **The last of Phase 2**, and the only batch below that is a deletion rather than a feature | 2 | XS | — |
-| 3 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
-| 4 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
-| 5 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
-| 6 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, sub-agents (07) |
+| 2 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
+| 3 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
+| 4 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
+| 5 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, sub-agents (07) |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
@@ -379,6 +390,7 @@ each other by number. Read the **Rank** column for priority.
 | — | 12 | [UI-dispatcher abstraction](12-ui-dispatcher-abstraction.md) | 2 | M | ✅ **shipped** `1dced2f`→`cac8251` — tests **run green 2026-07-30** on the merged tree |
 | — | 04 | [Autonomy policy](04-autonomy-policy.md) | 2 | M–L | ✅ **shipped** `9a8a639`→`cd13c1a` — spec'd in `c45f792`, see “Opened by Batch 04” |
 | — | 03 | [Audit timeline](03-audit-timeline.md) | 2 | M–L | ✅ **shipped** `50d2054`→`c92dfdd` — **device-local**, see “Opened by Batch 03” |
+| — | 02 | [Remove `CostUsd`](02-cost-ledger.md) | 2 | XS | ✅ **shipped** `df0841a` — a deletion, not a feature; **adds nothing to the smoke list** |
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -393,7 +405,11 @@ argument survives them intact — in fact it strengthened.** Both add a *gate* o
 the same category as Batch 10's: a wrong autonomy decision is worse than the friction it removed. Between them
 they added **seven** irreducibly manual items (a real MCP server, a real provider round, the two settings
 CheckBoxes' binding paths, a park→flip→Continue round, the voice-mode refusal, a cross-restart trace, and the
-DE/FR render — now the longest agent-settings string in three locales), so the gap between Rank 1 and Rank 2
+DE/FR render — now the longest agent-settings string in three locales). **Batch 02 has since shipped too, so
+"behind 02" above is history and Rank 2 is now 06** — and 02 is the one batch in that whole sequence that adds
+**nothing** to this list, for a sharper reason than "it is XS": the `$` segment it deleted was *unreachable*.
+Nothing ever populated `CostUsd`, so no build of Pia has ever rendered a money figure, and there is no
+before/after for a human to compare. So the gap between Rank 1 and Rank 2
 is wider today than it was this morning.
 
 **Batch 12 briefly put “run the tests” back at Rank 1, and that has now been paid.** `b32ca14` argued the point
@@ -403,10 +419,12 @@ could say whether those commits were safe. The merge run did exactly that and ca
 Rank 1 is once again the **manual smoke round alone**. Keep the argument, though: it is the general case. Any
 batch that adds tests which cannot be executed where they are authored re-earns Rank 1 until someone runs them.
 
-~~Phase 2 now completes at Batch 03/04.~~ **It has: 03 and 04 both shipped 2026-07-30, so Phase 2 is complete
-except for Batch 02** — and 02 is a **deletion**, not a feature, since pricing was withdrawn the same day. Read
-that as the phase being done in capability terms with one cleanup outstanding. Batches 06–09 are Phase 3/4;
-their seams may shift — re-scope at the design step.
+~~Phase 2 now completes at Batch 03/04.~~ ~~It has: 03 and 04 both shipped 2026-07-30, so Phase 2 is complete
+except for Batch 02.~~ **Batch 02 shipped the same day as `df0841a`, so Phase 2 is complete outright** — the
+cleanup that was outstanding is done, and nothing in the phase is left in a half-built state. Note what 02
+being a *deletion* means for the list above: it is the one shipped batch that **adds no smoke item**, because it
+removes a rendered figure rather than adding one, so Rank 1's backlog is unchanged by it. Batches 06–09 are
+Phase 3/4; their seams may shift — re-scope at the design step.
 
 **Two rank changes, both consequences of Batch 04 rather than reprioritisation.** 09 moved ahead of 08 because
 its blocker cleared: 09 owes a job-creation surface whose payload is "goal + schedule + budget + **autonomy
