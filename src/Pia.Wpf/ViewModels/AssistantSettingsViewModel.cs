@@ -308,6 +308,18 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // Batch 04 autonomy default: when on, an agent run carries a policy that auto-approves Pia's OWN write
+    // tools BY CLASS (memory / todo / reminder / scheduling / files) so the run does not stop at a card for
+    // every write. Never covers a delete-like tool, never Git, never an external (MCP) tool. Global and
+    // default OFF — with it on, an unattended run can overwrite files with nobody watching.
+    [ObservableProperty]
+    private bool _agentRunAutoApproveBuiltInWrites;
+
+    partial void OnAgentRunAutoApproveBuiltInWritesChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -330,6 +342,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         AgentMaxReplans = Math.Clamp(settings.AgentMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
         AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
         AgentPlanReasoningTurnEnabled = settings.AgentPlanReasoningTurnEnabled;
+        AgentRunAutoApproveBuiltInWrites = settings.AgentRunAutoApproveBuiltInWrites;
 
         ScheduledMaxSteps = Math.Clamp(settings.ScheduledMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
         ScheduledMaxReplans = Math.Clamp(settings.ScheduledMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
@@ -478,6 +491,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.AgentMaxReplans = AgentMaxReplans;
         settings.AgentWallClockMinutes = AgentWallClockMinutes;
         settings.AgentPlanReasoningTurnEnabled = AgentPlanReasoningTurnEnabled;
+        settings.AgentRunAutoApproveBuiltInWrites = AgentRunAutoApproveBuiltInWrites;
         settings.ScheduledMaxSteps = ScheduledMaxSteps;
         settings.ScheduledMaxReplans = ScheduledMaxReplans;
         settings.ScheduledWallClockMinutes = ScheduledWallClockMinutes;

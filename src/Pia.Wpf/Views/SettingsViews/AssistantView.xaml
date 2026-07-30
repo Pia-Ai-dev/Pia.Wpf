@@ -421,6 +421,21 @@
                          Margin="22,4,0,0"/>
             </StackPanel>
 
+            <!-- Autonomy (Batch 04): global; applies to interactive AND unattended agent runs. Placed BEFORE
+                 the scheduled block so a global toggle does not read as a fourth unattended option. -->
+            <TextBlock Text="{loc:Str Settings_Agent_Autonomy_Section_Header}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,12,0,0"/>
+            <StackPanel Margin="0,0,0,20">
+              <CheckBox Content="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
+                        IsChecked="{Binding AgentRunAutoApproveBuiltInWrites}"
+                        Margin="0,8,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
             <!-- Scheduled / background-run budget (§17.5): the separate envelope an unattended run stops at. -->
             <TextBlock Text="{loc:Str Settings_Scheduled_Section_Header}"
                        Style="{StaticResource PiaSettingsSectionLabelStyle}"

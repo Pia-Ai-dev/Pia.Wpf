@@ -112,6 +112,9 @@
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planung</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Vor der Planung nachdenken</value></data>
   <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Fügt vor dem Erstellen des Plans einen kurzen werkzeugfreien Denkschritt hinzu, damit das Modell mit dem von dir eingestellten Denkaufwand arbeiten kann. Hilft bei Anbietern, die das Nachdenken abschalten, solange Werkzeuge aktiv sind – und verdoppelt die Kosten des Planungsschritts.</value></data>
+  <data name="Settings_Agent_Autonomy_Section_Header" xml:space="preserve"><value>Autonomie</value></data>
+  <data name="Settings_Agent_AutoApproveBuiltInWrites" xml:space="preserve"><value>Pias eigene Schreibwerkzeuge während einer Ausführung automatisch freigeben</value></data>
+  <data name="Settings_Agent_AutoApproveBuiltInWrites_Description" xml:space="preserve"><value>Erlaubt Pia während einer Agenten-Ausführung, Dateien, Notizen, Aufgaben, Erinnerungen und geplante Aufträge anzulegen und zu ändern, ohne jedes Mal zu fragen. Löschvorgänge, Git-Befehle und externe (MCP-)Werkzeuge fragen weiterhin immer nach. Standardmäßig aus: eine Ausführung mit dieser Freigabe kann Dateien in deinem Assistenzordner unbeaufsichtigt überschreiben.</value></data>
   <data name="Settings_Scheduled_Section_Header" xml:space="preserve"><value>Hintergrund- &amp; geplante Ausführungen</value></data>
   <data name="Settings_Scheduled_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine unbeaufsichtigte Ausführung stoppt – ein „Im Hintergrund ausführen“ oder ein geplanter Agent-Auftrag. Großzügiger als interaktive Ausführungen, da niemand zusieht.</value></data>
   <data name="Settings_Scheduled_MaxSteps_Label" xml:space="preserve"><value>Maximale Schritte</value></data>
