@@ -179,6 +179,15 @@ public class AppSettings
     // (§16 R6). Global, not per-provider — the same answer applies to interactive, detached and scheduled runs.
     public bool AgentPlanReasoningTurnEnabled { get; set; } = false;
 
+    // Batch 04 — per-run autonomy policy default. When true, an agent run (interactive Planned, a "Run in
+    // background" detach, or a scheduled AgentTask) carries a policy that auto-approves Pia's OWN write tools
+    // by CLASS — memory, todo, reminder, scheduling and files — so the run does not stop at a card for every
+    // write. Never covers a delete-like tool (04 D6), never Git (its destructive tools are not delete-like by
+    // name, so no rule would stop them), never an external/MCP tool. Default OFF: with it on, an unattended
+    // run can overwrite files in the assistant folder with nobody watching. Global, like every other
+    // Agent*/Scheduled* knob, and local-only (deliberately absent from SyncSettings).
+    public bool AgentRunAutoApproveBuiltInWrites { get; set; } = false;
+
     // Scheduled/headless-run budget envelope (§17.5) — the caps an unattended run (a "Run in background"
     // detach or a scheduled AgentTask job) stops at. Separate from the interactive Agent* knobs because
     // an unattended run has no user watching and gets a longer envelope. Defaults match RunProfile.Scheduled.
