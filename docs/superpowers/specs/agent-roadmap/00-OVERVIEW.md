@@ -7,9 +7,13 @@ independently from the same base (`73e15e8`) and met in a merge commit, which is
 two same-day rows and why no single commit range covers the tree. **Batches 10, 11, 05 and 12 have shipped**
 (10 and 11 plus a joint review fix pass); 10 and 11 were promoted out of “Deliberately open”, 05 out of
 “Upcoming batches”, and all four are now in the chronicle. Build verified with
-`dotnet build -p:EnableWindowsTargeting=true --no-incremental` → **0 errors, 194 warnings** (all pre-existing —
-8 in `src` in files untouched by these batches, 186 xUnit analyzer warnings in the test project; the older
-“0 warnings” claim in this file was an incremental-build artifact and has been corrected). **The suite has been
+`dotnet build -t:Rebuild -v:n` (Debug **and** Release) → **0 errors, 0 warnings**. **That bar is now absolute
+zero, not “no new warnings over 194”**: commit `6cdd4c9` took the build from 194 to zero and `d9c052f` made zero
+a commit-ready gate in `CLAUDE.md`, so every “194 warnings, all pre-existing” figure elsewhere in this file is
+**historical** — it described the tree before `6cdd4c9` and must not be read as a target. The 194 were 8 in
+`src` plus 186 xUnit analyzer warnings in the test project, which is the trap a batch that adds thirty tests
+walks into: new tests must add **zero**. Read the count off MSBuild's `N Warning(s)` summary line — at `-v:n`
+every warning prints twice, so grepping the log double-counts. **The suite has been
 executed on Windows on the merged tree and reaches `failed: 0` — 2232 total / 0 failed / 1 skipped.** It took
 three full runs to see it: the documented pre-existing `TaskExtensionsTests` wall-clock flake fired on two of
 them and the third was clean, which is a worse rate than the “~1 run in 8” recorded for it below. Those runs are
@@ -48,6 +52,8 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 11 | `aab9a06` → `601090e` | Joint review fix pass over 10 + 11 (4 must-fixes, 6 should-fixes; two should-fixes deliberately left open — see below) | ✅ done |
 | 12 | `7a41a68` → `d3c8c61` | **[Batch 05](05-planner-reason-then-emit.md)** — opt-in reason-then-emit planning: `IAiProviderHandler.DropsReasoningEffortWithTools` on all eight handlers, a global `AppSettings` toggle (default OFF) + its CheckBox, and a tool-FREE reasoning turn ahead of the constrained `emit_plan` turn on the three handlers that drop the effort under tools. Includes the review-fix commit and the two polish commits; this roadmap commit records it | ✅ done |
 | 13 | `1dced2f` → `cac8251` | **[Batch 12](12-ui-dispatcher-abstraction.md)** — `IUiDispatcher` injected into the 4 remaining ViewModels, the exemption list 4 → 1, and the **first `View` in the repo parsed by a test**. Includes its own 2-commit review fix pass | ✅ done |
+| 14 | `9a8a639` → `cd13c1a` | **[Batch 04](04-autonomy-policy.md)** — one `ToolClassifier` + one `ToolAutonomy.Resolve` for both run gates, a per-run `RunAutonomyPolicy` in the existing `PolicyJson` v1 envelope, an `AppSettings` default for built-in writes, and voice-mode writes routed through the gate. Includes its own review fix pass | ✅ done |
+| 15 | `50d2054` → `eef28a0` | **[Batch 03](03-audit-timeline.md)** — the per-run audit timeline: an append-only metadata-only `AgentTimelineEvents` store (per-run `Seq`, a 500-row cap + one truncation marker, retention prune), a per-step `AgentTimelineScope` carried to BOTH run gates, and a read-only "Tool activity" trace on the run panel. Includes its own 6-commit review fix pass — see “Opened by Batch 03” below | ✅ done |
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -74,14 +80,18 @@ from git, always: `git rev-list --count origin/feature/agent-run-spine..HEAD` fo
 --oneline origin/feature/agent-run-spine..HEAD` for *which* — and the second is the part that actually matters
 when deciding whether a push is safe. `git branch -vv` prints `[ahead N, behind M]`, and **`behind` is not
 hypothetical on this branch**: an unnoticed `behind 7` is what produced this merge.
-Build check everywhere: `dotnet build -p:EnableWindowsTargeting=true --no-incremental`. Re-measured at
-`87fa403`, at `7815ce1`, at `d3c8c61`, at `cac8251`, and again **on the merged tree**: **0 errors, 194 warnings**, all pre-existing and unchanged across every pass — the merge of two batches added none: 3× `CS8602` in
+Build check everywhere: `dotnet build -t:Rebuild -v:n`, **and again with `-c Release`** — the bar is
+**0 errors, 0 warnings in BOTH configurations**, measured at `dda6703` and held by Batches 04 and 03.
+
+**Superseded, kept because the reasoning still applies.** Up to `cac8251` this paragraph read “0 errors, 194
+warnings, all pre-existing” and the bar was *adds zero new warnings*: 3× `CS8602` in
 `Helpers/DroppedFileReader.cs`, 2× `MVVMTK0034` in `ViewModels/Flow/FlowViewModel.cs`, 3× `MSB3568` for a
 duplicate `Memory_Refresh` key present twice in each of the three resx files, and 186 xUnit analyzer warnings
-in the test project. **The “0 warnings” figure used earlier in this file was wrong** — it came from an
-incremental build, which skips `CoreCompile` and therefore does not re-emit analyzer warnings. The real bar
-these batches held is *adds zero warnings*, verified with `--no-incremental` before and after. Always pass
-`--no-incremental` when quoting a warning count.
+in the test project. Commit `6cdd4c9` cleared all 194 and `d9c052f` wrote the zero bar into `CLAUDE.md`, so
+**194 is now a historical number and never a target**. The measurement discipline is unchanged and still
+load-bearing: an **incremental** build skips `CoreCompile` and therefore does not re-emit analyzer warnings, so
+always rebuild (`-t:Rebuild`) when quoting a warning count, and read the count off MSBuild's `N Warning(s)`
+summary line rather than grepping the log — at `-v:n` every warning prints twice.
 
 > **Two things that are not batches, and outrank every batch below.**
 >
@@ -281,17 +291,17 @@ each other by number. Read the **Rank** column for priority.
 |---|---|-------|-------|------|-----------|
 | **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2232 / **0 failed** / 1 skipped on the merged tree, 2026-07-30, which also cleared Batch 12's never-executed facts. What a unit suite cannot cover remains: a real provider round — see the callout above | — | S | a Windows runner + a live provider |
 | 2 | 02 | [Remove `CostUsd`](02-cost-ledger.md) — pricing **withdrawn** by decision 2026-07-30; the batch now deletes the half-built seam | 2 | XS | — |
-| 3 | 03 | [Audit timeline](03-audit-timeline.md) — per-tool decision trace (plan §11) | 2 | M–L | — |
-| 4 | 04 | [Autonomy policy](04-autonomy-policy.md) — `PolicyJson` per-run approval policy | 2 | M–L | MCP gate |
-| 5 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
-| 6 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
-| 7 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause, sub-agents |
-| 8 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B |
+| 3 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
+| 4 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
+| 5 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause, sub-agents |
+| 6 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
 | — | 11 | [Context compaction](11-context-compaction.md) | 2 | S–M | ✅ **shipped** `74f964c`→`a06358d` |
 | — | 12 | [UI-dispatcher abstraction](12-ui-dispatcher-abstraction.md) | 2 | M | ✅ **shipped** `1dced2f`→`cac8251` — tests **run green 2026-07-30** on the merged tree |
+| — | 04 | [Autonomy policy](04-autonomy-policy.md) | 2 | M–L | ✅ **shipped** `9a8a639`→`cd13c1a` |
+| — | 03 | [Audit timeline](03-audit-timeline.md) | 2 | M–L | ✅ **shipped** `50d2054`→`eef28a0` — **device-local**, see “Opened by Batch 03” |
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -445,7 +455,8 @@ decided, and implemented. Six commits.
 | `0784c69` | **E** | A context overflow is named instead of being reported as a tool-support problem |
 | `5a6f196` | — | The UI-dispatcher abstraction spec'd as [Batch 12](12-ui-dispatcher-abstraction.md) |
 
-**Gate: 0 errors, exactly 194 warnings (`--no-incremental`), 2194 tests, 0 failed.** Every behavioural fix was
+**Gate as measured THEN: 0 errors, exactly 194 warnings (`--no-incremental`), 2194 tests, 0 failed** — a
+historical record of this pass, not a bar; `6cdd4c9` later took the build to zero warnings. Every behavioural fix was
 demonstrated red before green by neutralising the fix and re-running — the activation seed, the `SingleTurn`
 bracket, image detection, and pre-model classification each fail their own tests when disabled. Three items
 carry a guard rather than a regression test and say so in their own comments.
@@ -662,7 +673,8 @@ worth repeating before quoting `failed: 0`.
   (see the `SQLitePCLRaw.bundle_e_sqlite3` 3.0.3 comment), so using it to hide clean packages inverts the
   signal. **(2)** Payload is 67,424 + 81,952 = **149,376 bytes of a 237,428,184-byte single-file installer =
   0.063%**. **(3)** Pinning them as direct refs makes the next `Microsoft.Agents.AI` bump emit **NU1605**
-  downgrade warnings against the zero-new-warnings-over-194 bar, on packages nobody uses. **(4)**
+  downgrade warnings against the zero-warnings bar (written when that bar was “no new warnings over 194”; since
+  `6cdd4c9` it is absolute zero, which makes this objection *stronger*), on packages nobody uses. **(4)**
   `ExcludeAssets="all"` would turn a future compile error into a runtime `FileNotFoundException` inside a
   shipped single-file build. **(5)** There is no consumer of the benefit: no trimming (publish is
   `--self-contained -p:PublishSingleFile=true`, **untrimmed**), no SBOM, no CodeQL/Trivy/Snyk, no dependabot,
@@ -722,6 +734,34 @@ chat row, the missing write gate on the shared `SqliteContext` connection (all �
 context/trajectory compression (→ Batch 11, whose design step collapsed when `Microsoft.Agents.AI` 1.15.0
 shipped `Microsoft.Agents.AI.Compaction` on 2026-07-22 with the atomic tool-group logic already solved).
 hermes-comparison §5/rec #5.
+
+### Opened by Batch 03 (2026-07-30) — known, reasoned, not closed
+
+- **The trace is DEVICE-LOCAL, and the product does not say so.** `03`'s §0.4 and §12.1 both instruct this file
+  to record it, so: `AgentTimelineEvents` never crosses the sync wire. There is no `SyncAgentRun` DTO and runs
+  do not replicate, so a user with a desktop and a laptop who opens the same synced chat on both sees a
+  complete-looking "Tool activity" trace on one machine and an empty one on the other, with nothing in the UI
+  distinguishing "this device recorded nothing" from "nothing happened". Closing it needs that DTO **plus** a
+  merge policy for `Seq` across devices — the sequence is allocated per device, so two devices' rows for one run
+  would collide on the value the reader orders by. **Not attempted**: a per-device audit trail that is honest
+  about being per-device is better than a merged one whose ordering is invented.
+- **The trace covers the two RUN gates, not every tool call in the app** (`03` D5 asks for this to be stated).
+  Voice mode emits **nothing** — a voice turn has no run, so there is no `RunId` to attach a row to and the
+  enforced FK would reject one; `ToolGateDecision.AutoApprovedAllowlist` is therefore in the vocabulary test's
+  `NotEmittedByDesign` set. Reads emit nothing either (no decision, unbounded count, and the only interesting
+  thing about a read is its target, which this table must not store). And three handlers
+  (`Todo`/`Reminder`/`ScheduledJob`) convert a pending action into an immediate result on their `TargetId`-null
+  error paths, so such a call executes upstream of any gate and produces no row. An audit trail that quietly
+  omitted a write path would overstate itself, which is why this is written down rather than left implicit.
+- **`AgentRuns` / `AgentSteps` for `Planned` runs are still retained forever.** This batch bounds only the
+  newest table (a 500-row per-run cap plus a retention prune on each row's own `CreatedAt`). The chat-eviction
+  path that could reach the other two deliberately exempts chats bearing a `Planned` run — precisely the runs a
+  timeline is for — so the two older tables have no bound at all. Unchanged by design: giving them one is a
+  retention decision about a user's own run history, not a fix.
+- **Nothing measures UI-thread blocking, and no test can go red for it.** The store's two-lock split closes the
+  mechanism by which a steady-state emit could stall the message pump, and the first emit of each run is now
+  documented as the exception it always was (one indexed aggregate, on the caller's thread). But "Emit is cheap
+  on the UI thread" remains *argued*, not measured. The manual smoke round owns it.
 
 ### Opened by Batch 05 (2026-07-30) — known, reasoned, not closed
 

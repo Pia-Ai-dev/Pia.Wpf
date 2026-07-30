@@ -713,9 +713,23 @@ Use the same in-memory/temp-file `SqliteContext` fixture `AgentRunServiceTests` 
 | # | Test | Asserts |
 |---|---|---|
 | T-DDL-1 | `EnsureSchema_CreatesAgentTimelineEvents_Idempotently` | open twice on the same file → no throw, the table exists |
-| T-PRIV-2 | `AgentTimelineEvents_HasExactlyTheMetadataColumns` | `PRAGMA table_info(AgentTimelineEvents)` name set **equals** the exact expected 15-name set. **Adding any column — an `ExtraJson`, a `Path`, an `ArgsHash` — fails this test rather than passing review.** |
+| T-PRIV-2 | `AgentTimelineEvents_HasExactlyTheMetadataColumns` | `PRAGMA table_info(AgentTimelineEvents)` name set **equals** the exact expected **16**-name set. **Adding any column — an `ExtraJson`, a `Path`, an `ArgsHash` — fails this test rather than passing review.** |
+
+> **CODE RIGHT, SPEC WAS WRONG — the column count.** This row said “15-name set”. The DDL §D1 prescribes
+> **sixteen** columns (`Id`, `SchemaVersion`, `RunId`, `StepId`, `Seq`, `Kind`, `Surface`, `Decision`, `Outcome`,
+> `ToolName`, `ToolClass`, `PluginId`, `ArgsChars`, `ResultChars`, `DurationMs`, `CreatedAt`) and the shipped test
+> asserts sixteen. No column was added or dropped; the spec miscounted. Corrected in place so the next reader
+> does not "fix" the test to match the prose.
 
 ### 8.3 Emission — extend the two existing gate suites (do not fork them)
+
+> **CODE RIGHT, SPEC WAS WRONG — test placement.** This section says to extend
+> `ChatSessionStateMachineTests`. That suite drives `RunTurnAsync`, which takes no `StepTurnSpec`, so no
+> `AgentTimelineScope` can reach it and every fact below would have been vacuous there — the same wall Batch 04
+> hit for the policy. T-EMIT-1/2/4/5/6/7 shipped in a new `ChatSessionTimelineTests` driving
+> `RunStepTurnAsync` (modelled on `ChatSessionPolicyGateTests`), which is exactly why all of
+> `ChatSessionStateMachineTests` still passes unmodified — the property §11's commit table demands. T-EMIT-3's
+> ordinary-chat-turn half does live on the `RunTurnAsync` path, in that same new file.
 
 `tests/Pia.Wpf.Tests/ViewModels/ChatSessionStateMachineTests.cs`:
 
@@ -781,17 +795,24 @@ each test's comment.
 
 ## 9. Manual-smoke debt (no automated coverage exists)
 
-1. **The `Expander`'s three `Binding` paths and the `loc:Str` header.** `IsTimelineExpanded`, `Timeline`,
-   `IsTimelineTruncated` resolve at runtime only; a typo renders an expander that opens onto nothing. No test
-   parses `RunProgressPanel.xaml` (Batch 12's `AssistantViewParseTests` parses `Pia.Views.AssistantView`, the
-   chat view, which *hosts* this panel via `DataContext` but does not instantiate its template). **Check:** run
-   a Planned run with 3+ tool calls, expand "Tool activity", confirm rows appear with times, tool names and
-   decisions.
-2. **Every `StaticResource` in the new `DataTemplate` resolves.** An unresolved one throws at **template
-   instantiation** — i.e. only when the expander is first opened — which no test in this suite reaches. §7
-   avoids the risk by reusing only resources already present in this file (and by binding the VM's own
-   `HasNoTimeline` instead of introducing an inverse converter); **this item is the belt.** Open the expander on
-   a run with rows **and** on a run with none, so both branches of the template are actually instantiated.
+1. ~~**The `Expander`'s three `Binding` paths and the `loc:Str` header.**~~ **PREMISE DISPROVED — mostly
+   covered now.** This item claimed "no test parses `RunProgressPanel.xaml`". False:
+   `AssistantView.xaml` places `<assistant:RunProgressPanel>` as a **plain element** with no `Template`
+   ancestor, so `AssistantView.InitializeComponent()` constructs the panel and runs its own
+   `InitializeComponent()` — the Expander's non-deferred markup, its `Header` and its two `TextBlock`s have been
+   parsed by the existing `AssistantViewParseTests` since they landed. The genuinely uncovered half was the
+   **deferred row template**, and the review fix pass added
+   `RunProgressPanel_RendersATimelineRow_WithItsStepOutcomeAndDecision`, which `LoadContent()`s the real
+   `ItemTemplate` and pins all five row paths (`TimeLabel`, `StepLabel`, `ToolName`, `OutcomeSuffix`,
+   `DecisionLabel`) plus `HasNoTimeline`'s visibility. **What is left for a human:** only the `loc:Str` header,
+   which binds `Header` (invisible to a logical walk — the same documented limitation the parse suite already
+   records for its 18 non-`Text` usages), and the end-to-end "rows appear for a real run" confidence check.
+2. ~~**Every `StaticResource` in the new `DataTemplate` resolves.**~~ **DOES NOT APPLY to the template that
+   shipped.** The row `DataTemplate` contains **no `StaticResource` at all** — only `DynamicResource` (which
+   yields `null` rather than throwing) and `Binding`. The template-instantiation hazard this item was written
+   against therefore has no instance here, and item 1's new fact instantiates the template anyway. Retained only
+   as the rule for the NEXT change to this file: a `StaticResource` added inside the template throws when a user
+   first opens the expander, so either avoid one or extend that fact.
 3. **A real headless run's trace, after a restart.** Launch a background run, let it park at its budget, **quit
    and relaunch the app**, click *Continue*, then expand the trace. The rows from both segments must be present
    and in order with no duplicate positions — the live proof of T-SEQ-2's cross-process `Seq` seeding.
