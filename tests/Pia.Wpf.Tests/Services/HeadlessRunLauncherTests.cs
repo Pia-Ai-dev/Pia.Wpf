@@ -95,8 +95,11 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         public void Record(object? gateResult) => GateResult = gateResult as string;
     }
 
+    /// <param name="appSettings">Trailing and defaulted (Batch 04): the autonomy tests need a launcher whose
+    /// settings have <c>AgentRunAutoApproveBuiltInWrites</c> on, and every existing call site keeps compiling.</param>
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
-        Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null)
+        Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null,
+        AppSettings? appSettings = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -132,7 +135,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var titles = Substitute.For<IChatTitleService>();
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
         var settings = Substitute.For<ISettingsService>();
-        settings.GetSettingsAsync().Returns(new AppSettings());
+        settings.GetSettingsAsync().Returns(appSettings ?? new AppSettings());
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -515,6 +518,114 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         foreach (var id in new[] { parked.Id, parked2.Id })
             try { Directory.Delete(Path.Combine(_runsBase, id.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task Launch_WithTheSettingOn_PersistsThePresetClasses()
+    {
+        // 04 D9: the launch resolves the policy from SETTINGS (it never reads the envelope back) and stores the
+        // RESOLVED class list, not the preset's name — so a later per-run editor needs no document change.
+        var (launcher, _) = BuildLauncher(
+            appSettings: new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var run = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        var policy = HeadlessRunLauncher.TryRestorePolicy(run!.PolicyJson);
+        Assert.NotNull(policy);
+        Assert.True(policy!.Covers(ToolClass.Files));
+        // D9's exclusions, as a test.
+        Assert.False(policy.Covers(ToolClass.Git));
+        Assert.False(policy.Covers(ToolClass.External));
+        // The grant list is untouched by the policy.
+        Assert.Equal(new[] { "write_file" }, HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson));
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task Launch_WithTheSettingOn_AutoApprovesAWriteWithNoNamedGrant()
+    {
+        // The policy is observed at the GATE, not just in the envelope: write_file executes although the run's
+        // grant set is explicitly EMPTY, because the Files class is covered.
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = BuildLauncher(
+            probe: probe, appSettings: new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.True(probe.Executed);
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task Resume_RestoresThePolicyFromTheEnvelope_NotFromSettings()
+    {
+        // 04 D10, the red-before-green for the whole decision: the envelope is the run's authority of record.
+        // This run parked with an envelope carrying NO policy and NO grants. The user then turns the setting
+        // ON. A resume that consulted settings would hand the parked run card-free write_file; it must not.
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = BuildLauncher(
+            probe: probe, appSettings: new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
+
+        var policylessEnvelope = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.Schedule);
+        Assert.Null(HeadlessRunLauncher.TryRestorePolicy(policylessEnvelope));
+
+        var parked = await ParkRunWithPendingStepAsync(policylessEnvelope);
+        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        Assert.False(probe.Executed);
+        Assert.Contains("not granted", probe.GateResult ?? string.Empty);
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task Resume_RestoresAPolicyTheEnvelopeDoesCarry()
+    {
+        // The other half: a run whose envelope DOES carry the policy gets it back on resume, with the setting
+        // off — so the envelope, not the current setting, is what decides.
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = BuildLauncher(probe: probe); // setting OFF
+
+        var envelope = HeadlessRunLauncher.SerializeGrantEnvelope(
+            [], AgentRunTrigger.Schedule, new RunAutonomyPolicy([ToolClass.Files]));
+
+        var parked = await ParkRunWithPendingStepAsync(envelope);
+        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        Assert.True(probe.Executed);
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task ResumedPolicy_StillCannotRunADeleteLikeSiblingOfACoveredClass()
+    {
+        // D6 end-to-end: the Files class covers write_file and delete_file alike, and a POLICY must never be
+        // the reason a delete-like tool ran. Only a NAMED grant can do that.
+        var probe = new ToolProbe("delete_file");
+        var (launcher, _) = BuildLauncher(probe: probe);
+
+        var envelope = HeadlessRunLauncher.SerializeGrantEnvelope(
+            [], AgentRunTrigger.Schedule, new RunAutonomyPolicy([ToolClass.Files]));
+
+        var parked = await ParkRunWithPendingStepAsync(envelope);
+        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        Assert.False(probe.Executed);
+        Assert.Contains("not granted", probe.GateResult ?? string.Empty);
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
     [Fact]

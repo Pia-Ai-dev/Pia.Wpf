@@ -21,14 +21,19 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     private readonly AiProvider _provider;
     private readonly AssistantTurnSetup _turnSetup;
     private readonly bool _tokenizationEnabled;
+    private readonly RunAutonomyPolicy? _policy;
 
+    /// <param name="policy">The run's autonomy policy (Batch 04); null ⇒ no per-run policy, today's
+    /// behaviour. Trailing and defaulted on purpose: this type is hand-constructed with a POSITIONAL argument
+    /// list, so a required parameter would force edits into every existing call site and test.</param>
     public LiveTurnExecutor(
         ChatSession session,
         Func<ChatSession, bool> isActive,
         PersonaAttribution persona,
         AiProvider provider,
         AssistantTurnSetup turnSetup,
-        bool tokenizationEnabled)
+        bool tokenizationEnabled,
+        RunAutonomyPolicy? policy = null)
     {
         _session = session;
         _ui = SynchronizationContext.Current
@@ -38,6 +43,7 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         _provider = provider;
         _turnSetup = turnSetup;
         _tokenizationEnabled = tokenizationEnabled;
+        _policy = policy;
     }
 
     public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
@@ -131,7 +137,8 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             SupportsTools: _turnSetup.SupportsTools,
             WebSearchActive: _turnSetup.WebSearchActive,
             TokenizationEnabled: _tokenizationEnabled,
-            UseGoalVerbatim: useGoalVerbatim);
+            UseGoalVerbatim: useGoalVerbatim,
+            Policy: _policy);
 
     /// <summary>Marshals <paramref name="work"/> onto the captured UI context and bridges it back to an awaitable.</summary>
     private Task PostAsync(Func<Task> work) => PostAsync(async () => { await work(); return true; });

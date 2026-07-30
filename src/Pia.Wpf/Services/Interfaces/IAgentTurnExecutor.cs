@@ -43,7 +43,14 @@ public sealed record StepTurnSpec(
     bool SupportsTools,
     bool WebSearchActive,
     bool TokenizationEnabled,
-    bool UseGoalVerbatim = false);
+    bool UseGoalVerbatim = false,
+
+    /// <summary>
+    /// The run's autonomy policy (Batch 04), or null ⇒ no per-run policy, i.e. today's behaviour: every write
+    /// the allowlist and the standing grants do not cover shows an action card. Appended and defaulted so the
+    /// interactive single-turn path and every existing construction stay unchanged.
+    /// </summary>
+    RunAutonomyPolicy? Policy = null);
 
 /// <summary>
 /// The outcome of one act step-turn. Exceptions inside a step become

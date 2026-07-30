@@ -745,9 +745,23 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // Persist the honoured-empty envelope instead: the resume restores "no write grants", which is
             // exactly what the launch had. Bookkeeping, so a serializer fault must not fail the turn
             // (guardrail 1); null degrades to the floor, which is the documented fallback.
-            string? policyJson = null;
-            try { policyJson = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to serialize the interactive run's grant envelope"); }
+            // ONE settings read for all three consumers below — the envelope, the LiveTurnExecutor and the
+            // RunProfile (04 D11). Two reads could straddle a settings save and give the persisted envelope
+            // and the live executor DIFFERENT policies, i.e. a run whose record disagrees with what it did.
+            var settings = await _settingsService.GetSettingsAsync();
+            var policy = RunAutonomyPolicy.FromSettings(settings);
+
+            // On a serializer fault, fall back to the exact policy-less EMPTY-grant document rather than to
+            // null (04 D12): null makes the resume apply the {write_file} floor, which is WIDER than what this
+            // launch granted (nothing), and this batch makes the document richer, i.e. likelier to fault. The
+            // fallback deliberately carries no policy either — narrower on fault is the only safe direction.
+            string? policyJson;
+            try { policyJson = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, policy); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to serialize the interactive run's grant envelope");
+                policyJson = HeadlessRunLauncher.InteractiveEmptyEnvelopeJson;
+            }
 
             var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
                 session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText, PolicyJson: policyJson));
@@ -766,11 +780,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // ChatSession.Cancel() propagates to the run + in-flight step. Constructed on the UI thread
             // so the LiveTurnExecutor captures the UI SynchronizationContext.
             var live = new LiveTurnExecutor(session, IsSessionActive,
-                PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled);
+                PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled,
+                policy);
 
             // Budget envelope from user settings (clamped in FromBudget); defaults match RunProfile.Interactive.
-            var budget = await _settingsService.GetSettingsAsync();
-            var profile = RunProfile.FromBudget(budget.AgentMaxSteps, budget.AgentMaxReplans, budget.AgentWallClockMinutes);
+            var profile = RunProfile.FromBudget(settings.AgentMaxSteps, settings.AgentMaxReplans, settings.AgentWallClockMinutes);
 
             _agentRunOrchestrator
                 .RunAsync(run, live, persona, request.Provider, profile, session.Cts!.Token)

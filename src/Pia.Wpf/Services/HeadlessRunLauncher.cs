@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -42,8 +43,27 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// </summary>
     private static readonly string[] ResumeFloorGrants = ["write_file"];
 
-    /// <summary>Envelope shape currently written/understood by this launcher. Anything else → the floor.</summary>
+    /// <summary>
+    /// Envelope shape currently written/understood by this launcher. Anything else → the floor.
+    /// <para>
+    /// Batch 04 added the <c>policy</c> member WITHOUT touching this (04 D1). The reader below compares with
+    /// <c>!=</c>, so a bump would make every envelope written before that batch unreadable → the resume floor
+    /// → and for an interactive-origin envelope (<c>grantedWrites: []</c>) the floor is WIDER than the launch,
+    /// i.e. a silent escalation of every in-flight interactive run. <see cref="GrantEnvelopeJsonOptions"/>
+    /// sets no <c>UnmappedMemberHandling</c>, so additive members interoperate in both directions for free.
+    /// </para>
+    /// </summary>
     private const int GrantEnvelopeVersion = 1;
+
+    /// <summary>
+    /// The exact document <c>SerializeGrantEnvelope([], AgentRunTrigger.User)</c> produces with no policy.
+    /// Used by <c>ChatSessionManager</c> when serialization FAULTS: <c>null</c> there would make the resume
+    /// fall back to <see cref="ResumeFloorGrants"/> (<c>{write_file}</c>), which is WIDER than what an
+    /// interactive launch granted (nothing). Deliberately carries no <c>policy</c> member — a fault fallback
+    /// grants nothing and auto-approves nothing, and narrower-on-fault is the only acceptable direction.
+    /// Pinned byte-for-byte against the serializer by <c>HeadlessRunLauncherPolicyTests</c>.
+    /// </summary>
+    internal const string InteractiveEmptyEnvelopeJson = """{"v":1,"grantedWrites":[],"trigger":"User"}""";
 
     private static readonly JsonSerializerOptions GrantEnvelopeJsonOptions = new()
     {
@@ -123,9 +143,14 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // "no write grants at all" and is preserved as such (never re-widened to the default).
         var grants = req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites;
 
+        // The autonomy policy is resolved from SETTINGS at launch — the launch never reads the envelope back,
+        // so there is nothing else to resolve it from (04 D9/D10). Off ⇒ null ⇒ the member is omitted and the
+        // persisted document stays byte-identical to a pre-Batch-04 one.
+        var policy = RunAutonomyPolicy.FromSettings(settings);
+
         var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
             chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal,
-            PolicyJson: TrySerializeGrantEnvelope(grants, req.Trigger)), ct)
+            PolicyJson: TrySerializeGrantEnvelope(grants, req.Trigger, policy)), ct)
             .ConfigureAwait(false);
 
         // Per-run scratch/temp workspace under runs\<runId> (§17.2). Real deliverables go to the assistant
@@ -181,7 +206,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 // read/write/delete, contained, like an interactive chat (only MCP is withheld). runRoot stays
                 // the run's ephemeral scratch area. Passing runRoot here instead would confine the run to it
                 // (the reserved opt-in-sandbox seam).
-                executor.Initialize(workspaceRoot: null, grants, provider);
+                executor.Initialize(workspaceRoot: null, grants, provider, policy);
                 started = true;
 
                 // A2: open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
@@ -273,6 +298,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 grants = ResumeFloorGrants;
             }
 
+            // The autonomy policy comes ONLY from the run's own envelope, never from settings (04 D10): a
+            // settings flip between park and Continue must not widen a parked run. Absent/unreadable/absent
+            // member ⇒ null ⇒ today's behaviour, which is the restrictive direction — unlike the grant list,
+            // whose fallback is a floor the run can work with.
+            var policy = TryRestorePolicy(run.PolicyJson, _logger);
+
             // Budget is DELIBERATELY not restored: a FRESH budget envelope IS the "continue" grant
             // (guardrail 4) — that is the whole point of the pause. Only the write grants are restored.
             // The ledger is persisted and accrues across resumes (never reset).
@@ -305,7 +336,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     using var scope = _scopeFactory.CreateScope();
                     var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
                     var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-                    executor.Initialize(workspaceRoot: null, grants, provider);
+                    executor.Initialize(workspaceRoot: null, grants, provider, policy);
                     started = true;
                     // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
                     // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,
@@ -498,11 +529,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// bookkeeping and must never fail a launch). A null result means the resume will apply the FLOOR,
     /// which is the safe direction to degrade in.
     /// </summary>
-    private string? TrySerializeGrantEnvelope(IReadOnlyCollection<string> grants, AgentRunTrigger trigger)
+    private string? TrySerializeGrantEnvelope(
+        IReadOnlyCollection<string> grants, AgentRunTrigger trigger, RunAutonomyPolicy? policy)
     {
         try
         {
-            return SerializeGrantEnvelope(grants, trigger);
+            return SerializeGrantEnvelope(grants, trigger, policy);
         }
         catch (Exception ex)
         {
@@ -516,15 +548,86 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// The run service stores the string verbatim and never parses it, so the shape stays private to this
     /// launcher; <c>v</c> lets a later shape change be detected instead of misread.
     /// </summary>
-    internal static string SerializeGrantEnvelope(IReadOnlyCollection<string> grants, AgentRunTrigger trigger)
+    /// <param name="policy">The run's autonomy policy, or null. Null OMITS the member entirely (not
+    /// <c>"policy":null</c>), so a policy-less document is byte-identical to a pre-Batch-04 one.</param>
+    internal static string SerializeGrantEnvelope(
+        IReadOnlyCollection<string> grants, AgentRunTrigger trigger, RunAutonomyPolicy? policy = null)
         => JsonSerializer.Serialize(
             new GrantEnvelope
             {
                 V = GrantEnvelopeVersion,
                 GrantedWrites = grants.ToList(),
                 Trigger = trigger.ToString(),
+                Policy = policy is null
+                    ? null
+                    : new PolicyDto { AutoApproveClasses = policy.AutoApproveClasses.Select(c => c.ToString()).ToList() },
             },
             GrantEnvelopeJsonOptions);
+
+    /// <summary>
+    /// Read the run's autonomy policy back out of the envelope (04 D10). Returns <c>null</c> — meaning
+    /// "TODAY'S BEHAVIOUR", NOT the grant floor — for an absent/unreadable envelope, an absent <c>policy</c>
+    /// member, or a member whose class names this build does not recognise. Never throws.
+    /// <para>
+    /// The asymmetry against <see cref="TryRestoreGrantEnvelope"/> is the whole backward-compatibility
+    /// guarantee: an unreadable envelope loses the POLICY before it loses the grant list, and losing the
+    /// policy is always the restrictive direction. An unreadable grant list has to fall back to something the
+    /// run can work with; an unreadable policy falls back to nothing.
+    /// </para>
+    /// <para>
+    /// A resume calls this and NEVER <c>RunAutonomyPolicy.FromSettings</c>: the envelope is the run's
+    /// authority of record, so flipping the setting between park and Continue cannot widen a parked run.
+    /// Unrecognised class names are dropped and only their COUNT is logged — an MCP-adjacent string is not
+    /// ours to write to a support log.
+    /// </para>
+    /// </summary>
+    internal static RunAutonomyPolicy? TryRestorePolicy(string? policyJson, ILogger? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(policyJson))
+            return null;
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<GrantEnvelope>(policyJson, GrantEnvelopeJsonOptions);
+            if (envelope is null || envelope.V != GrantEnvelopeVersion)
+                return null;
+
+            var names = envelope.Policy?.AutoApproveClasses;
+            if (names is null || names.Count == 0)
+                return null;
+
+            var classes = new List<ToolClass>();
+            var dropped = 0;
+            foreach (var name in names)
+            {
+                // OrdinalIgnoreCase against the enum member names. Unknown is dropped like any unparseable
+                // name: RunAutonomyPolicy.Covers hardcodes it to false anyway, so carrying it would only make
+                // the restored policy look wider than it is.
+                if (!string.IsNullOrWhiteSpace(name)
+                    && Enum.TryParse<ToolClass>(name.Trim(), ignoreCase: true, out var parsed)
+                    && parsed != ToolClass.Unknown)
+                {
+                    if (!classes.Contains(parsed))
+                        classes.Add(parsed);
+                }
+                else
+                {
+                    dropped++;
+                }
+            }
+
+            if (dropped > 0)
+                logger?.LogInformation("Restored run policy dropped {DroppedCount} unrecognised class names", dropped);
+
+            // No usable class ⇒ no policy, which is today's behaviour rather than an empty-but-present one.
+            return classes.Count == 0 ? null : new RunAutonomyPolicy(classes);
+        }
+        catch (Exception)
+        {
+            // Garbage / foreign JSON is a "no policy" case, not an error case.
+            return null;
+        }
+    }
 
     /// <summary>
     /// Read the grant list a launch persisted, so a resume restores exactly what the launch granted and
@@ -571,6 +674,24 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
         /// <summary>Origin trigger — diagnostics only; never consulted to widen a grant.</summary>
         public string? Trigger { get; set; }
+
+        /// <summary>
+        /// Batch 04 autonomy policy. ADDITIVE at <c>v:1</c> — <see cref="GrantEnvelopeVersion"/> is
+        /// deliberately NOT bumped (see its remarks). <c>WhenWritingNull</c> is scoped to THIS member, not to
+        /// the shared options object, so a policy-less document stays byte-identical to a pre-04 one and
+        /// nothing has to be argued about <c>V</c> / <c>GrantedWrites</c> / <c>Trigger</c>.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public PolicyDto? Policy { get; set; }
+    }
+
+    /// <summary>
+    /// Wire shape of the autonomy policy. Class NAMES, not ordinals: a name an older build cannot parse is
+    /// DROPPED (restrictive) instead of silently colliding with a member it does know.
+    /// </summary>
+    private sealed class PolicyDto
+    {
+        public List<string>? AutoApproveClasses { get; set; }
     }
 
     private static string DeriveTitle(string goal)

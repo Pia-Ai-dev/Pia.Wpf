@@ -53,6 +53,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private string? _workspaceRoot;
     private AiProvider? _providerOverride;
 
+    /// <summary>This run's autonomy policy (Batch 04); null ⇒ no per-run policy, i.e. today's behaviour.</summary>
+    private RunAutonomyPolicy? _policy;
+
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
         IAssistantChatService chatService,
@@ -88,10 +91,18 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// scratch/temp area (auto-cleaned), separate from where real deliverables land.
     /// </para>
     /// </summary>
-    public void Initialize(string? workspaceRoot, IReadOnlyCollection<string> grantedWrites, AiProvider? providerOverride = null)
+    /// <param name="policy">The run's autonomy policy (Batch 04), or null for "today's behaviour": no tool
+    /// class is auto-approved and only the named grant set authorizes a write. Relayed verbatim into the one
+    /// unattended gate; a resume restores it from the run's envelope, never from settings.</param>
+    public void Initialize(
+        string? workspaceRoot,
+        IReadOnlyCollection<string> grantedWrites,
+        AiProvider? providerOverride = null,
+        RunAutonomyPolicy? policy = null)
     {
         _workspaceRoot = workspaceRoot;
         _providerOverride = providerOverride;
+        _policy = policy;
         _grantedWrites.Clear();
         foreach (var w in grantedWrites)
             _grantedWrites.Add(w);
@@ -273,7 +284,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // request compacted above can still grow past the window inside AiClientService as tool
             // calls and tool results accumulate over up to 10 rounds.
             exchange = await _engine.RunExchangeAsync(request, _provider, _setup, _grantedWrites, ct,
-                    onUsage: null, contextBudget: contextBudget)
+                    onUsage: null, contextBudget: contextBudget, policy: _policy)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

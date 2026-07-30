@@ -311,7 +311,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         HashSet<string> grantedWrites,
         CancellationToken ct,
         Func<UsageDetails, Task>? onUsage = null,
-        AgentContextBudget? contextBudget = null)
+        AgentContextBudget? contextBudget = null,
+        RunAutonomyPolicy? policy = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -321,7 +322,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
-            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites) : null,
+            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy) : null,
             nameof(WindowMode.Assistant), ct, contextBudget))
         {
             switch (item)
@@ -361,7 +362,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// writes (tools that return a pending action) run only if explicitly granted to this job — with one
     /// FLOOR no grant can lift: a destructive EXTERNAL (MCP) tool never runs unattended (B2).
     /// </summary>
-    private async Task<object?> HandleToolCallAsync(FunctionCallContent toolCall, HashSet<string> grantedWrites)
+    private async Task<object?> HandleToolCallAsync(
+        FunctionCallContent toolCall, HashSet<string> grantedWrites, RunAutonomyPolicy? policy = null)
     {
         // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
         // deferred PluginToolCall (below), so an ungranted MCP call is denied by the pending-action branch
@@ -395,8 +397,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
                 HasStandingGrant: false,
                 IsNamedGrant: grantedWrites.Contains(pending.ToolName),
-                // No per-run policy reaches this gate yet — commit 4 threads it in from the launch envelope.
-                Policy: null));
+                // The run's autonomy policy, from the launch envelope (or restored from it on resume). Null
+                // for the SingleTurn background path, which has no plan and no policy — today's behaviour.
+                Policy: policy));
 
             switch (verdict.Outcome)
             {

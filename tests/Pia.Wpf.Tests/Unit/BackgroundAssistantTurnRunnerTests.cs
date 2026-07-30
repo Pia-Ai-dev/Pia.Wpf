@@ -95,6 +95,14 @@ public class BackgroundAssistantTurnRunnerTests
     private static FunctionCallContent Call(string name) =>
         new(Guid.NewGuid().ToString(), name, new Dictionary<string, object?>());
 
+    /// <summary>Batch 04: a pending action whose PLUGIN name is real, so ToolClassifier yields a real class.</summary>
+    private static PluginToolCall Pending(string toolName, string pluginName, Action onExecute) =>
+        new(toolName, Guid.NewGuid(), pluginName, "desc", null, () =>
+        {
+            onExecute();
+            return Task.FromResult<object?>("write-done");
+        });
+
     private static PluginToolCall Pending(string toolName, Action onExecute) =>
         new(toolName, Guid.NewGuid(), "plugin", "desc", null, () =>
         {
@@ -343,6 +351,127 @@ public class BackgroundAssistantTurnRunnerTests
         }, CancellationToken.None);
 
         Assert.True(executed);
+    }
+
+    // ---- Batch 04: the per-run autonomy policy at the unattended gate -------------------------------------
+    //
+    // Driven through RunExchangeAsync, which is where the policy arrives (HeadlessTurnExecutor relays it from
+    // Initialize, and the SingleTurn RunAsync path above passes none — that is why every fact above still
+    // holds unchanged).
+
+    private static async Task<object?> RunOneGatedCallAsync(
+        Harness h, PluginToolCall pending, string[] grants, RunAutonomyPolicy? policy)
+    {
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, pending));
+
+        var runner = h.Build([Call(pending.ToolName)]);
+        await runner.RunExchangeAsync(
+            [new ChatMessage(ChatRole.User, "go")],
+            Provider(),
+            new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false),
+            new HashSet<string>(grants, StringComparer.OrdinalIgnoreCase),
+            CancellationToken.None,
+            policy: policy);
+
+        return h.HandlerResults[0].Returned;
+    }
+
+    [Fact]
+    public async Task PolicyCoveredClass_ExecutesWithoutANamedGrant()
+    {
+        var h = new Harness();
+        var executed = false;
+        var returned = await RunOneGatedCallAsync(
+            h, Pending("create_todo", "todo", () => executed = true),
+            grants: [], policy: new RunAutonomyPolicy([ToolClass.Todo]));
+
+        Assert.True(executed);
+        Assert.Equal("write-done", returned);
+    }
+
+    [Fact]
+    public async Task PolicyCoveredClass_DoesNotCoverItsDeleteLikeSibling()
+    {
+        // D6: ToolClass.Files holds write_file AND delete_file. A policy over Files must not hand an
+        // unattended run card-free delete_file — the M3 floor would not stop it (it is external-only).
+        var h = new Harness();
+        var executed = false;
+        var returned = await RunOneGatedCallAsync(
+            h, Pending("delete_file", "files", () => executed = true),
+            grants: [], policy: new RunAutonomyPolicy([ToolClass.Files]));
+
+        Assert.False(executed);
+        Assert.Equal(
+            "Denied: 'delete_file' is a write action not granted to this background job. Do not retry.",
+            Assert.IsType<string>(returned));
+    }
+
+    [Fact]
+    public async Task PolicyCoveredClass_StillExecutesItsNonDeleteSibling()
+    {
+        var h = new Harness();
+        var executed = false;
+        await RunOneGatedCallAsync(
+            h, Pending("write_file", "files", () => executed = true),
+            grants: [], policy: new RunAutonomyPolicy([ToolClass.Files]));
+
+        Assert.True(executed);
+    }
+
+    [Fact]
+    public async Task PolicyOverEveryClass_StillCannotRunADestructiveExternalTool()
+    {
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.IsMcpTool("delete_issue").Returns(true);
+
+        var returned = await RunOneGatedCallAsync(
+            h, Pending("delete_issue", "linear", () => executed = true),
+            grants: ["delete_issue"],
+            policy: new RunAutonomyPolicy(Enum.GetValues<ToolClass>()));
+
+        Assert.False(executed);
+        // Byte-identical to the pre-batch floor refusal.
+        Assert.Equal(
+            "Denied: 'delete_issue' is a destructive external (MCP) tool and never runs unattended, "
+            + "even when granted. Do not retry.",
+            Assert.IsType<string>(returned));
+    }
+
+    [Fact]
+    public async Task PolicyDoesNotCoverTheExternalClass_SoAnMcpWriteStillNeedsAName()
+    {
+        // D9's exclusion, at the gate: a class grant must never cover server-defined tools, or an MCP
+        // server's NEXT tool addition would be auto-approved retroactively.
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.IsMcpTool("create_issue").Returns(true);
+
+        var returned = await RunOneGatedCallAsync(
+            h, Pending("create_issue", "linear", () => executed = true),
+            grants: [], policy: RunAutonomyPolicy.FromSettings(
+                new AppSettings { AgentRunAutoApproveBuiltInWrites = true }));
+
+        Assert.False(executed);
+        Assert.Contains("not granted", Assert.IsType<string>(returned));
+    }
+
+    [Theory]
+    [InlineData("write_file", "files", false, false)]
+    [InlineData("write_file", "files", true, true)]
+    [InlineData("create_object", "memory", false, false)]
+    [InlineData("create_object", "memory", true, true)]
+    public async Task NullPolicy_LeavesTheGrantGateExactlyAsItWas(
+        string toolName, string pluginName, bool granted, bool expectExecuted)
+    {
+        var h = new Harness();
+        var executed = false;
+        await RunOneGatedCallAsync(
+            h, Pending(toolName, pluginName, () => executed = true),
+            grants: granted ? [toolName] : [], policy: null);
+
+        Assert.Equal(expectExecuted, executed);
     }
 
     [Fact]
