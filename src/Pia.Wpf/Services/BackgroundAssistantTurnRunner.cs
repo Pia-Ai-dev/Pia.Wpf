@@ -389,10 +389,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         var route = await _pluginService.RouteToolCallAsync(toolCall);
         if (route is null)
         {
-            _logger.LogWarning("Background turn: no handler for tool {ToolName}", toolCall.Name);
-            // Model-authored name on this arm alone — sanitized, exactly as the interactive gate does.
-            timeline?.Emit(ToolGateSurface.Unattended, AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name),
-                ToolClass.Unknown, pluginId: null,
+            // Parity with the interactive gate: the model-authored name is sanitized for the release-visible
+            // Warning line AND for the persisted row, and survives raw only under SensitiveDebug.
+            var loggedName = AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name);
+            _logger.LogWarning("Background turn: no handler for tool {ToolName}", loggedName);
+            _logger.SensitiveDebug("Unrouted tool call name: {ToolName}", toolCall.Name);
+            timeline?.Emit(ToolGateSurface.Unattended, loggedName, ToolClass.Unknown, pluginId: null,
                 ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
             return "Unknown tool.";
         }

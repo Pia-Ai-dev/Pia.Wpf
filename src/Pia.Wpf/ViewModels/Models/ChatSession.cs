@@ -834,8 +834,14 @@ public sealed class ChatSession : IDisposable
         FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled,
         RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
     {
-        _logger.LogInformation("Handling tool call: {ToolName}", toolCall.Name);
-        _logger.LogDebug("Tool call {ToolName} with {ArgCount} arguments", toolCall.Name, toolCall.Arguments?.Count ?? 0);
+        // Every log line in this method names the tool through THIS local, never toolCall.Name directly. These
+        // lines run BEFORE routing, so they are reachable with a model-authored name that no route will ever
+        // recognize — and a log level is not a privacy gate, it is runtime-configurable (CLAUDE.md). A name that
+        // does route is a route-table key and passes the shape check untouched; the raw string stays available
+        // in a DEBUG build through the SensitiveDebug on the unrouted arm.
+        var loggedName = AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name);
+        _logger.LogInformation("Handling tool call: {ToolName}", loggedName);
+        _logger.LogDebug("Tool call {ToolName} with {ArgCount} arguments", loggedName, toolCall.Arguments?.Count ?? 0);
 #if DEBUG
         Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
 #endif
@@ -868,13 +874,16 @@ public sealed class ChatSession : IDisposable
         var routeResult = await _pluginService.RouteToolCallAsync(toolCall);
         if (routeResult is null)
         {
-            _logger.LogWarning("No handler found for tool {ToolName}", toolCall.Name);
+            // Sanitized at Warning, raw at SensitiveDebug: this is the one place the name is MODEL-authored, so
+            // the release-visible line must not be able to carry a path, while "why did routing miss?" still
+            // needs the string verbatim in a DEBUG build.
+            _logger.LogWarning("No handler found for tool {ToolName}", loggedName);
+            _logger.SensitiveDebug("Unrouted tool call name: {ToolName}", toolCall.Name);
             // "The model called a tool that does not exist, 12 times" is a real audit fact, and it cannot
             // flood: the round loop is bounded and the model gets the error text back. No plugin and no
             // class, because there is no route to derive either from. The NAME is model-authored on this arm
             // alone, so it is the one arm that sanitizes (see SanitizeUnroutedToolName).
-            timeline?.Emit(ToolGateSurface.Interactive, AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name),
-                ToolClass.Unknown, pluginId: null,
+            timeline?.Emit(ToolGateSurface.Interactive, loggedName, ToolClass.Unknown, pluginId: null,
                 ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
             return "Unknown tool.";
         }
