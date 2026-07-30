@@ -5,6 +5,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.MeetingAttendee;
+using Pia.Tests.Services;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
@@ -73,7 +74,8 @@ public class AssistantViewModelLeverTests
             _workingDir,
             Substitute.For<IFilesToolHandler>(),
             Substitute.For<IMarkdownExportService>(),
-            Substitute.For<IDialogService>());
+            Substitute.For<IDialogService>(),
+            new InlineUiDispatcher());
     }
 
     private static Persona PersonaWith(PersonaToolScope scope) =>

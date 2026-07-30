@@ -12,16 +12,29 @@ public class DependencyInjectionTests
     [Fact]
     public void ViewModels_MustNotReference_SystemWindows()
     {
-        // VoiceModeViewModel is a transient UI helper requiring Dispatcher — not DI-registered.
-        // AssistantViewModel is flagged transitively because it creates VoiceModeViewModel.
-        // TranscriptOverlayViewModel is the shared base of the transcript overlay VMs; it owns the
-        // background-thread→UI Dispatcher marshalling for them — same convention as the helpers above.
-        // MeetingAttendeeViewModel inherits that base, so the dependency is reported against it
-        // transitively as well.
+        // MEASURED, not reasoned (Batch 12 Step 0): with every exemption removed this rule flags
+        // AssistantViewModel, TranscriptOverlayViewModel and VoiceModeViewModel — and NOT
+        // MeetingAttendeeViewModel, even with its base still dirty, because NetArchTest 1.3.2 does not
+        // resolve base-type dependencies transitively.
+        //
+        // AssistantViewModel is flagged DIRECTLY, and not for the dispatcher: it names
+        // System.Windows.Media.Imaging for the clipboard-image paste path (:7 using, the
+        // IAsyncRelayCommand<BitmapSource> property, its AsyncRelayCommand<BitmapSource> construction,
+        // and ExecuteHandleImagePasted(BitmapSource?)). NetArchTest matches dependencies by name
+        // prefix, so "System.Windows" catches "System.Windows.Media.Imaging.BitmapSource" — measured at
+        // full type-name depth. Closing that means moving the clipboard→attachment conversion out of the
+        // VM (call site: AssistantView.xaml.cs:153-154), which is a separate change. The dispatcher ban
+        // is still enforced for it, explicitly, by AssistantViewModel_MustNotReference_DispatcherOrApplication
+        // below. (The comment this replaces claimed AssistantViewModel was flagged "transitively because
+        // it creates VoiceModeViewModel". That was never the mechanism.)
+        //
+        // TranscriptOverlayViewModel is the shared base of the transcript overlay VMs; it still owns the
+        // background-thread→UI Dispatcher marshalling for them, and Batch 12 Unit 2 moves that seam onto
+        // IUiDispatcher. MeetingAttendeeViewModel's entry is vestigial per the measurement above — it is
+        // not flagged at all — and goes with it.
         var result = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .And().DoNotResideInNamespace(ViewModelModelsNamespace)
-            .And().DoNotHaveNameMatching("VoiceModeViewModel")
             .And().DoNotHaveNameMatching("AssistantViewModel")
             .And().DoNotHaveNameMatching("TranscriptOverlayViewModel")
             .And().DoNotHaveNameMatching("MeetingAttendeeViewModel")
@@ -30,6 +43,32 @@ public class DependencyInjectionTests
 
         Assert.True(result.IsSuccessful,
             $"ViewModels must not reference System.Windows (use SynchronizationContext instead), but these do: {FormatFailingTypes(result)}");
+    }
+
+    [Fact]
+    public void AssistantViewModel_MustNotReference_DispatcherOrApplication()
+    {
+        // AssistantViewModel is exempt from the blanket System.Windows rule above, but ONLY for
+        // BitmapSource. Keep the dispatcher ban enforced for it explicitly, so nobody reintroduces
+        // App.Current.Dispatcher under cover of that exemption. Measured before the migration: this
+        // failed, naming AssistantViewModel — so it is not vacuous.
+        var target = Types.InAssembly(PiaAssembly)
+            .That().ResideInNamespace(ViewModelsNamespace)
+            .And().HaveName("AssistantViewModel")
+            .GetTypes();
+
+        // NetArchTest reports success on an EMPTY type set (measured), so without this guard a rename
+        // would silently turn the assertion below green.
+        Assert.Single(target);
+
+        var result = Types.InAssembly(PiaAssembly)
+            .That().ResideInNamespace(ViewModelsNamespace)
+            .And().HaveName("AssistantViewModel")
+            .ShouldNot().HaveDependencyOnAny("System.Windows.Threading", "System.Windows.Application")
+            .GetResult();
+
+        Assert.True(result.IsSuccessful,
+            $"AssistantViewModel must not reference the WPF Dispatcher or Application (inject IUiDispatcher), but it does: {FormatFailingTypes(result)}");
     }
 
     [Fact]

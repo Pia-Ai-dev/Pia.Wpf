@@ -51,6 +51,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IDialogService _dialogService;
+    private readonly IUiDispatcher _uiDispatcher;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -213,7 +214,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IWorkingDirectoryService workingDirectoryService,
         IFilesToolHandler filesToolHandler,
         IMarkdownExportService markdownExportService,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        IUiDispatcher uiDispatcher)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -244,6 +246,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _filesToolHandler = filesToolHandler;
         _markdownExportService = markdownExportService;
         _dialogService = dialogService;
+        _uiDispatcher = uiDispatcher;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -314,7 +317,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var dir = _workingDirectoryService.EnsureSubfolder(settings.AssistantDefaultWorkingDirectory);
         if (string.IsNullOrEmpty(dir)) return; // unusable or root — leave the chat at root
 
-        await App.Current.Dispatcher.InvokeAsync(() =>
+        await _uiDispatcher.PostAsync(() =>
         {
             var session = _chatSessionManager.ActiveSession;
             if (session is null || session.Messages.Count > 0 || !string.IsNullOrEmpty(session.WorkingDirectory))
@@ -368,12 +371,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // The session raises ActiveRunChanged on the UI thread (its Planned branch runs there), but marshal
     // defensively so a future off-thread caller can't touch the bound RunProgressViewModel cross-thread.
     private void OnActiveRunChanged(object? sender, Guid? runId) =>
-        App.Current.Dispatcher.InvokeAsync(() => SyncRunProgress(runId));
+        _uiDispatcher.Post(() => SyncRunProgress(runId));
 
     // The manager already marshals the flip to the UI thread (G3); marshal defensively anyway, for the same
     // reason OnActiveRunChanged does — this sets a bound property and re-evaluates a command.
     private void OnForeignRunActiveChanged(object? sender, bool active) =>
-        App.Current.Dispatcher.InvokeAsync(() => ForeignRunActive = active);
+        _uiDispatcher.Post(() => ForeignRunActive = active);
 
     private void SyncRunProgress(Guid? runId)
     {
@@ -495,7 +498,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             // Add/Update/DeletePersonaAsync), so marshal the bound-collection mutation to the UI
             // thread. Awaited before the finally so _isLoadingPersonas is still set when the lambda
             // assigns ActivePersona (OnActivePersonaChanged relies on that guard).
-            await App.Current.Dispatcher.InvokeAsync(() =>
+            await _uiDispatcher.PostAsync(() =>
             {
                 AvailablePersonas.Clear();
                 foreach (var persona in personas)
@@ -1004,7 +1007,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     try
                     {
                         await _ttsService.InitializeAsync();
-                        App.Current.Dispatcher.Invoke(() =>
+                        await _uiDispatcher.PostAsync(() =>
                             EnterVoiceModeCommand.NotifyCanExecuteChanged());
                     }
                     catch (Exception ex)
@@ -1327,7 +1330,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _ttsService,
             _loggerFactory.CreateLogger<VoiceModeViewModel>(),
             StreamVoiceModeResponse,
-            AddVoiceModeConversation);
+            AddVoiceModeConversation,
+            _uiDispatcher);
 
         VoiceMode = voiceMode;
         IsVoiceModeActive = true;
@@ -1465,7 +1469,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         }
 
-        await App.Current.Dispatcher.InvokeAsync(() =>
+        await _uiDispatcher.PostAsync(() =>
         {
             foreach (var s in picks)
                 assistantMessage.Suggestions.Add(s);

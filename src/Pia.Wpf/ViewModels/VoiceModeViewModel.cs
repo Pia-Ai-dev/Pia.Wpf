@@ -1,7 +1,6 @@
 ﻿using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -18,11 +17,17 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
     private const float SpeechThreshold = 0.03f;
     private readonly Action<string, string> _addToConversationFunc;
     private readonly IAudioRecordingService _audioRecordingService;
-    private readonly Dispatcher _dispatcher;
     private readonly ILogger _logger;
     private readonly Func<string, CancellationToken, IAsyncEnumerable<string>> _streamResponseFunc;
     private readonly ITranscriptionService _transcriptionService;
     private readonly ITtsService _ttsService;
+
+    /// <summary>
+    /// Injected rather than <c>Dispatcher.CurrentDispatcher</c>, which <i>creates</i> a dispatcher for
+    /// whatever thread constructs this VM: if construction ever moved off the UI thread, the marshaled
+    /// writes below would queue to a dispatcher nobody pumps — silently.
+    /// </summary>
+    private readonly IUiDispatcher _uiDispatcher;
 
     [ObservableProperty]
     private float _audioLevel;
@@ -48,7 +53,8 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
         ITtsService ttsService,
         ILogger logger,
         Func<string, CancellationToken, IAsyncEnumerable<string>> streamResponseFunc,
-        Action<string, string> addToConversationFunc)
+        Action<string, string> addToConversationFunc,
+        IUiDispatcher uiDispatcher)
     {
         _audioRecordingService = audioRecordingService;
         _transcriptionService = transcriptionService;
@@ -56,7 +62,7 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
         _logger = logger;
         _streamResponseFunc = streamResponseFunc;
         _addToConversationFunc = addToConversationFunc;
-        _dispatcher = Dispatcher.CurrentDispatcher;
+        _uiDispatcher = uiDispatcher;
 
         DoneListeningCommand = new RelayCommand(OnDoneListening, () => State == VoiceModeState.Listening);
         StopSpeakingCommand = new RelayCommand(OnStopSpeaking, () => State == VoiceModeState.Speaking);
@@ -121,7 +127,7 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
 
     private void OnAudioLevelChanged(object? sender, float rmsLevel)
     {
-        _dispatcher.BeginInvoke(() => AudioLevel = rmsLevel);
+        _uiDispatcher.Post(() => AudioLevel = rmsLevel);
 
         if (rmsLevel > SpeechThreshold)
         {
@@ -161,7 +167,7 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
             if (_hasSpoken && (DateTime.UtcNow - _lastSpeechTime).TotalMilliseconds > SilenceTimeoutMs)
             {
                 StopSilenceMonitor();
-                _dispatcher.BeginInvoke(() =>
+                _uiDispatcher.Post(() =>
                 {
                     if (State == VoiceModeState.Listening)
                     {
