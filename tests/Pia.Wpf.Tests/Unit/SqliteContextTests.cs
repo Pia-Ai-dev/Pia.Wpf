@@ -82,6 +82,33 @@ public class SqliteContextTests : IDisposable
     }
 
     [Fact]
+    public void EnsureSchema_AddsAgentTimelineEvents_ToAPreBatchDatabase()
+    {
+        // The UPGRADE direction, which the reopen fact above does not cover: a database written before this
+        // batch has no AgentTimelineEvents table. Simulated by dropping it, which leaves exactly that shape.
+        var conn = _ctx.GetConnection();
+        using (var drop = conn.CreateCommand())
+        {
+            drop.CommandText = "DROP TABLE AgentTimelineEvents";
+            drop.ExecuteNonQuery();
+        }
+
+        Assert.False(TableExists(conn, "AgentTimelineEvents"));
+
+        // Opening it with this build creates the table — no MigrateSchema entry needed, because the DDL lives
+        // in EnsureSchema's command string, which runs on every open.
+        using var upgraded = new SqliteContext(_dbPath);
+        var upgradedConn = upgraded.GetConnection();
+        Assert.True(TableExists(upgradedConn, "AgentTimelineEvents"));
+        Assert.True(IndexExists(upgradedConn, "IX_AgentTimelineEvents_RunId"));
+        Assert.True(IndexExists(upgradedConn, "IX_AgentTimelineEvents_CreatedAt"));
+
+        // …and a third open over the now-current schema is a no-op that must not throw.
+        using var again = new SqliteContext(_dbPath);
+        Assert.True(TableExists(again.GetConnection(), "AgentTimelineEvents"));
+    }
+
+    [Fact]
     public void AgentTimelineEvents_HasExactlyTheMetadataColumns()
     {
         // The audit table's privacy contract as a schema assertion: adding ANY column — an ExtraJson, a Path,
@@ -107,6 +134,14 @@ public class SqliteContextTests : IDisposable
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@n";
         cmd.Parameters.AddWithValue("@n", table);
+        return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
+    }
+
+    private static bool IndexExists(Microsoft.Data.Sqlite.SqliteConnection conn, string index)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=@n";
+        cmd.Parameters.AddWithValue("@n", index);
         return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
     }
 
