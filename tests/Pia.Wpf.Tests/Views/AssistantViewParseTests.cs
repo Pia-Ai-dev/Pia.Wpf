@@ -1,0 +1,214 @@
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Pia.Models;
+using Pia.Navigation;
+using Pia.Services;
+using Pia.Services.Interfaces;
+using Pia.Services.MeetingAttendee;
+using Pia.Tests.Services;
+using Pia.ViewModels;
+using Pia.ViewModels.Models;
+using Pia.Views;
+using Xunit;
+
+namespace Pia.Tests.Views;
+
+/// <summary>
+/// The suite's first test that PARSES a View. Markup compilation catches malformed XAML and unknown
+/// types/properties, but resource-key resolution, <c>loc:Str</c> keys and Binding PATHS are runtime
+/// concerns — and a wrong binding path fails SILENTLY. That was confirmed, not assumed: a deliberately
+/// misspelled path on this very composer hint produced an always-visible hint with the build still at
+/// 0 errors and the suite still green. This test is the only thing in the repo that catches that class
+/// of regression.
+/// <para>
+/// One assertion covers three failure modes at once: the view parses (every <c>StaticResource</c> in
+/// the non-templated regions resolves), the <c>loc:Str</c> key resolves, and the Binding path
+/// <c>ForeignRunActive</c> is spelled right.
+/// </para>
+/// <para>
+/// Requires a real <see cref="Application"/>, which is process-wide and cannot be torn down. That is
+/// what Batch 12 paid for: with <c>IUiDispatcher</c> injected, a live <c>Application</c> no longer
+/// changes any ViewModel's threading behaviour. Before that migration this test cost 42
+/// <c>MeetingAttendeeViewModelTests</c> failures and was withdrawn.
+/// </para>
+/// <para>
+/// <b>Honesty, because this file could not be executed where it was written:</b> it was authored on
+/// macOS, where the test host cannot run at all (no <c>Microsoft.WindowsDesktop.App</c> for osx-arm64,
+/// 0 tests executed). It has NEVER been executed — not the STA thread, not <c>new App()</c>, not the
+/// XAML parse, not <c>Pump()</c>. The first Windows run is what validates BOTH this test and the
+/// process-wide-<c>Application</c> risk it introduces for the rest of the suite: the ~13 converters
+/// that read <c>Application.Current?.TryFindResource</c> (category (c)) start returning real brushes,
+/// and the service-layer dispatcher reads in <c>OutputService</c> / <c>WindowManagerService</c> /
+/// the notification surfaces (category (d)) stop taking their null branch. If that run hangs rather
+/// than fails, <c>Dispatcher.Run()</c> in <see cref="WpfStaHost"/> is the first suspect; every wait
+/// this test owns is bounded so it reports a cause instead of blocking the suite.
+/// </para>
+/// <para>
+/// Scope limits, stated so nobody reads this as "the whole view parses": the walk is LOGICAL, so it
+/// descends into <c>AutocompletePopup</c>'s <c>Popup.Child</c> (content a visual walk would skip), and
+/// it does NOT cover the message <c>ItemsControl.ItemTemplate</c> or the persona item template —
+/// <c>Messages</c> and <c>AvailablePersonas</c> are empty, so that deferred content is never realized
+/// and its styles, converters and loc keys stay out of reach.
+/// </para>
+/// </summary>
+[Collection("WpfApplicationStatic")]
+public class AssistantViewParseTests
+{
+    // ViewStrings.resx (neutral = EN). LocalizationSource's culture is InvariantCulture and no test
+    // ever calls SetCulture (the only writer is LocalizationService, and every test substitutes
+    // ILocalizationService), so the neutral resx is deterministically what the view renders.
+    private const string HintText =
+        "A background run is writing to this chat. Sending resumes when it finishes.";
+
+    [Fact]
+    public void ComposerHint_Parses_AndTracksForeignRunActive()
+    {
+        var (found, before, after) = WpfStaHost.Run(() =>
+        {
+            var vm = CreateAssistantViewModel();
+            var view = new AssistantView { DataContext = vm };
+            WpfStaHost.Pump();
+
+            var hint = FindTextBlocks(view).FirstOrDefault(tb => tb.Text == HintText);
+            var visibilityBefore = hint?.Visibility;
+
+            // Set the [ObservableProperty] directly. Going through ChatSession.ForeignRunActiveChanged
+            // would route via the injected dispatcher and add a second thing under test.
+            vm.ForeignRunActive = true;
+            WpfStaHost.Pump();
+            var visibilityAfter = hint?.Visibility;
+
+            vm.Dispose();
+            return (hint is not null, visibilityBefore, visibilityAfter);
+        });
+
+        Assert.True(found,
+            $"No TextBlock in the parsed AssistantView renders '{HintText}'. Either the view failed to " +
+            "parse, or the loc:Str key Assistant_BackgroundRunActive_Hint no longer resolves.");
+        Assert.Equal(Visibility.Collapsed, before);
+        Assert.Equal(Visibility.Visible, after);
+    }
+
+    [Fact]
+    public void ParsedView_HasNoUnresolvedLocalizationKeys()
+    {
+        // LocalizationSource returns the literal "[Key]" for an unknown key, and StrExtension.ProvideValue
+        // binds [{Key}] against the static LocalizationSource.Instance with an explicit Source (no
+        // DataContext, no DI). So this is a missing-loc-key detector for the whole NON-TEMPLATED part of
+        // the view, for five lines.
+        var unresolved = WpfStaHost.Run(() =>
+        {
+            var vm = CreateAssistantViewModel();
+            var view = new AssistantView { DataContext = vm };
+            WpfStaHost.Pump();
+
+            var hits = FindTextBlocks(view)
+                .Select(tb => tb.Text)
+                .Where(t => t is not null && Regex.IsMatch(t, @"^\[\w+\]$"))
+                .Distinct()
+                .ToList();
+
+            vm.Dispose();
+            return hits;
+        });
+
+        Assert.True(unresolved.Count == 0,
+            $"unresolved loc:Str keys in the parsed AssistantView: {string.Join(", ", unresolved)}");
+    }
+
+    /// <summary>
+    /// LOGICAL tree, not visual: AssistantView is a UserControl, i.e. a templated ContentControl, so its
+    /// Content is not a VISUAL child until the template is applied — a VisualTreeHelper walk from a
+    /// freshly constructed view finds ZERO children. Making a visual walk work would require layout, and
+    /// layout is exactly what drags in the Wpf.Ui measure paths, a PresentationSource and the Loaded
+    /// handlers this test must not arm. The logical tree is populated by InitializeComponent() with no
+    /// layout at all, and binding evaluation needs no layout either — Visibility is a DP set by the
+    /// BindingExpression, which Pump() drains.
+    /// </summary>
+    private static IEnumerable<TextBlock> FindTextBlocks(DependencyObject root)
+    {
+        if (root is TextBlock tb)
+            yield return tb;
+
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+            foreach (var descendant in FindTextBlocks(child))
+                yield return descendant;
+    }
+
+    /// <summary>
+    /// The REAL AssistantViewModel — a lightweight INPC stub would sidestep exactly the claim this test
+    /// exists to prove. Must be called ON the STA thread: the ctor builds ChatTitleChipViewModel, which
+    /// derives from UiThreadViewModel with <c>base(requireUiThread: true)</c> and throws when
+    /// <c>SynchronizationContext.Current</c> is null.
+    /// <para>
+    /// Built inline rather than by reusing <c>AssistantViewModelLeverTests.CreateSut</c>: that is an
+    /// instance method over six instance substitute fields shared by all 21 of its facts, and lifting
+    /// them into a shared builder is a refactor whose only verification is the Windows run. This copy is
+    /// purely additive — if it is wrong, only this file fails. It also must NOT install the bare
+    /// SynchronizationContext that CreateSut installs, because the real DispatcherSynchronizationContext
+    /// on the STA thread is the behaviour under test.
+    /// </para>
+    /// <para>
+    /// Hard prohibitions, each a measured hazard: never touch <c>vm.InputText</c> (the composer's
+    /// AtCommandAutocompleteBehavior hooks an <c>async</c> DispatcherTimer.Tick, an unhandled-exception
+    /// source on a pumping dispatcher); never raise <c>IPersonaService.PersonasChanged</c>
+    /// (LoadPersonasAsync NREs on <c>active.Id</c> before it reaches the dispatcher); never open a
+    /// Window, force Loaded, or call Measure/Arrange/UpdateLayout (a PresentationSource arms
+    /// AssistantView.OnLoaded, TodoPanelControl.OnLoaded's DI + LoadTodosAsync, and
+    /// ViewModelLocator.OnElementLoaded); never call <c>Application.Shutdown()</c>.
+    /// </para>
+    /// </summary>
+    private static AssistantViewModel CreateAssistantViewModel()
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+
+        // IWorkingDirectoryService is left UNSTUBBED on purpose: EnsureSubfolder's default (null/empty)
+        // makes ApplyDefaultWorkingDirectoryAsync — fired from the ctor — return before it reaches the
+        // dispatcher. Stub it to a real path and the queued callback mutates the session's working
+        // directory at an unpredictable later Pump().
+        var meeting = new MeetingAttendeeViewModel(
+            Substitute.For<IMeetingAttendeeService>(),
+            settings,
+            Substitute.For<ILocalizationService>(),
+            Substitute.For<IFileDialogService>(),
+            Substitute.For<IDialogService>(),
+            NullLogger<MeetingAttendeeViewModel>.Instance,
+            new InlineUiDispatcher());
+
+        return new AssistantViewModel(
+            NullLogger<AssistantViewModel>.Instance,
+            Substitute.For<IAiClientService>(),
+            Substitute.For<IProviderService>(),
+            Substitute.For<IPersonaService>(),
+            settings,
+            Substitute.For<IOutputService>(),
+            Substitute.For<IPluginService>(),
+            Substitute.For<IVoiceInputService>(),
+            Substitute.For<ITtsService>(),
+            Substitute.For<IAudioRecordingService>(),
+            Substitute.For<ITranscriptionService>(),
+            NullLoggerFactory.Instance,
+            Substitute.For<global::Wpf.Ui.ISnackbarService>(),
+            Substitute.For<ILocalizationService>(),
+            Substitute.For<ITokenMapService>(),
+            Substitute.For<IAutocompleteService>(),
+            Substitute.For<INavigationService>(),
+            Substitute.For<ISuggestionService>(),
+            Substitute.For<IAssistantChatService>(),
+            meeting,
+            Substitute.For<IAssistantPromptComposer>(),
+            Substitute.For<IProviderCapabilityService>(),
+            Substitute.For<IAgentRunService>(),
+            Substitute.For<IAgentRunResumeService>(),
+            Substitute.For<IChatSessionManager>(),
+            Substitute.For<IWorkingDirectoryService>(),
+            Substitute.For<IFilesToolHandler>(),
+            Substitute.For<IMarkdownExportService>(),
+            Substitute.For<IDialogService>(),
+            new InlineUiDispatcher());
+    }
+}
