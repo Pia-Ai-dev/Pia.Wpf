@@ -96,8 +96,9 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         ILocalizationService localizationService,
         IFileDialogService fileDialogService,
         IDialogService dialogService,
-        ILogger<MeetingAttendeeViewModel> logger)
-        : base(settingsService, localizationService, fileDialogService, logger)
+        ILogger<MeetingAttendeeViewModel> logger,
+        IUiDispatcher uiDispatcher)
+        : base(settingsService, localizationService, fileDialogService, logger, uiDispatcher)
     {
         _service = service;
         _dialogService = dialogService;

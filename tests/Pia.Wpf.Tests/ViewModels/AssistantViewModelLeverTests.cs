@@ -43,7 +43,8 @@ public class AssistantViewModelLeverTests
             Substitute.For<ILocalizationService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<IDialogService>(),
-            NullLogger<MeetingAttendeeViewModel>.Instance);
+            NullLogger<MeetingAttendeeViewModel>.Instance,
+            new InlineUiDispatcher());
 
         return new AssistantViewModel(
             NullLogger<AssistantViewModel>.Instance,

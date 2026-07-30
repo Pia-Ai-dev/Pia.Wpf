@@ -28,16 +28,13 @@ public class DependencyInjectionTests
         // below. (The comment this replaces claimed AssistantViewModel was flagged "transitively because
         // it creates VoiceModeViewModel". That was never the mechanism.)
         //
-        // TranscriptOverlayViewModel is the shared base of the transcript overlay VMs; it still owns the
-        // background-thread→UI Dispatcher marshalling for them, and Batch 12 Unit 2 moves that seam onto
-        // IUiDispatcher. MeetingAttendeeViewModel's entry is vestigial per the measurement above — it is
-        // not flagged at all — and goes with it.
+        // TranscriptOverlayViewModel and MeetingAttendeeViewModel were removed in Batch 12 Unit 2:
+        // the base's DispatchToUi now goes through IUiDispatcher, so neither names System.Windows at
+        // all — and MeetingAttendeeViewModel never did.
         var result = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .And().DoNotResideInNamespace(ViewModelModelsNamespace)
             .And().DoNotHaveNameMatching("AssistantViewModel")
-            .And().DoNotHaveNameMatching("TranscriptOverlayViewModel")
-            .And().DoNotHaveNameMatching("MeetingAttendeeViewModel")
             .ShouldNot().HaveDependencyOn("System.Windows")
             .GetResult();
 
