@@ -11,6 +11,15 @@ dotnet run --project src/Pia.Wpf/Pia.Wpf.csproj       # Run WPF client
 dotnet test                                            # Run all tests
 ```
 
+## Zero-Warning Policy
+
+A feature is not commit-ready until the build reports **`0 Warning(s)` and `0 Error(s)` in both Debug and Release**. Warnings are blocking, not advisory.
+
+- Verify with a **rebuild** — an incremental build does not re-emit warnings from projects it skips: `dotnet build -t:Rebuild -v:n` (and again with `-c Release`).
+- Read the count off MSBuild's `N Warning(s)` summary line. At `-v:n` every warning is printed twice (inline + summary), so grepping the log double-counts.
+- WPF re-reports `src/` warnings a second time under a generated `Pia.Wpf_<hash>_wpftmp.csproj` (the XAML markup-compile pass). Fixing the source clears both — don't chase them separately.
+- If a warning is genuinely wrong for the code, suppress it **narrowly**: a scoped `#pragma warning disable <ID>` / `restore` around the offending lines plus a comment saying why. Do not reach for a project-wide `<NoWarn>`.
+
 ## Solution Structure
 
 | Project | Path | Framework |
@@ -29,6 +38,8 @@ dotnet test                                            # Run all tests
 ## Git Workflow
 
 Main: `main`. Features: `feature/<name>`.
+
+Before treating a feature branch as done, clear the **Zero-Warning Policy** above.
 
 ## Privacy-First Logging
 
