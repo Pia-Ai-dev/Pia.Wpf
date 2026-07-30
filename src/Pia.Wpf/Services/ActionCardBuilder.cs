@@ -87,7 +87,10 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             // the built-in write plugins use key/value text. ActionCardCategory.Scheduled belongs to the
             // key/value branch — ScheduledJobToolHandler builds "Label: value" TEXT — and used to be parsed
             // as JSON here (via the Mcp mis-categorization), which silently yielded no detail rows at all.
-            var parsed = pendingAction.PluginName == "memory" || category == ActionCardCategory.Mcp
+            // Derived from the CLASS resolved above, not the plugin name: a built-in renamed through
+            // ApplyServerMetadata still classifies as Memory by route, and a name test would then run its JSON
+            // details through the key/value parser and render no rows.
+            var parsed = resolvedClass == ToolClass.Memory || category == ActionCardCategory.Mcp
                 ? JsonHelper.ParseToDetails(pendingAction.Details)
                 : JsonHelper.ParseKeyValueText(pendingAction.Details);
             details = new ObservableCollection<ActionCardDetail>(DetokenizeDetails(parsed, detokenize));
@@ -116,8 +119,16 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             // capability the user may choose to "always allow" per tool (unlike the catch-all write_file,
             // which stays never-auto-approvable). A DESTRUCTIVE external tool is excluded — no one-click
             // standing grant on a delete. The gate re-checks all of this.
+            //
+            // `&& !isDestructive` is the card's OWN, WIDER exclusion and must stay (04 D9): isDestructive also
+            // covers git_switch / git_restore / git_stash, which shed uncommitted work yet carry no "delete"
+            // and so are NOT IsDeleteLike. The shared resolver deliberately enforces only the narrower
+            // delete-like floor, so an MCP server exposing a tool literally named `git_switch` would otherwise
+            // be offered a one-click standing grant here. The asymmetry is intentional; the gate is the floor,
+            // the card is allowed to be stricter about what it OFFERS.
             IsAutoApprovable = ToolAutonomy.IsStandingGrantOfferable(
-                resolvedClass, pendingAction.ToolName, _permissions.IsAutoApproveEligible(pendingAction.ToolName)),
+                    resolvedClass, pendingAction.ToolName, _permissions.IsAutoApproveEligible(pendingAction.ToolName))
+                && !isDestructive,
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,

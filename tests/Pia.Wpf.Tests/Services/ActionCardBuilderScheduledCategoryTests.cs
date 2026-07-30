@@ -89,8 +89,47 @@ public class ActionCardBuilderScheduledCategoryTests
     }
 
     /// <summary>
+    /// The card's OWN exclusion, which the shared resolver deliberately does not carry (04 D9). This is a
+    /// DIRECT assertion, not a comparison against the expression production uses — <see cref="CardAndGate_AgreeOnEligibility"/>
+    /// is tautological on this axis by construction, so it cannot cover it.
+    /// <para>
+    /// git_switch / git_restore / git_stash shed uncommitted work yet carry no destructive stem, so
+    /// <c>IsDeleteLike</c> is false and the resolver alone WOULD offer a one-click standing grant to an MCP
+    /// server exposing a tool with one of these names. The last assertion pins that, so deleting the card's
+    /// <c>&amp;&amp; !isDestructive</c> makes this fact red rather than silently widening the offer.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("git_switch")]
+    [InlineData("git_restore")]
+    [InlineData("git_stash")]
+    public void AnExternalGitVerb_IsNeverOfferedAStandingGrant(string toolName)
+    {
+        var pending = new PluginToolCall(
+            toolName, Guid.NewGuid(), "some-mcp-server", $"some-mcp-server: {toolName}", null,
+            () => Task.FromResult<object?>(null));
+
+        var card = CreateBuilder().Build(pending, detokenize: false);
+
+        Assert.Equal(ActionCardCategory.Mcp, card.Category);
+        Assert.True(card.IsDestructive);
+        Assert.False(card.IsAutoApprovable);
+        Assert.Equal(2, card.Decisions.Count);   // the pair, never the triad
+        Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
+
+        // Load-bearing: the shared floor says YES here. Only the card's wider exclusion says no.
+        Assert.False(ToolPermissionService.IsDeleteLike(toolName));
+        Assert.True(ToolAutonomy.IsStandingGrantOfferable(ToolClass.External, toolName, isAllowlisted: false));
+    }
+
+    /// <summary>
     /// T-CARD-5, the regression guard for the divergence 04 R16 names: the card's own eligibility copy and the
     /// gate's used to be two independent expressions over two different notions of "MCP".
+    /// <para>
+    /// Necessarily tautological on the shared half (it calls the same function production calls), so it proves
+    /// only that the card routes through the resolver — not what the resolver decides, and not the card's own
+    /// wider git-verb exclusion. That one has its own direct fact above.
+    /// </para>
     /// </summary>
     [Theory]
     [InlineData("memory", "create_object")]

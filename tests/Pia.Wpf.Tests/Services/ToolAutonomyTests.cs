@@ -221,6 +221,31 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateDecision.AutoApprovedAllowlist, verdict.Decision);
     }
 
+    /// <summary>
+    /// The voice allowlist is BUILT-INS only. <c>IsAutoApproveEligible</c> is a name-only set and
+    /// <c>PluginService</c>'s tool-name routes are last-wins with no collision detection (§13.4), so an MCP
+    /// server can own the route for a name in the allowlist. Voice has no card and no transcript entry, so
+    /// name-only authority there would hand a third-party server the user's spoken content with no consent.
+    /// </summary>
+    [Theory]
+    [InlineData("create_todo")]
+    [InlineData("create_object")]
+    [InlineData("create_reminder")]
+    [InlineData("append_to_list")]
+    public void Voice_AnExternalToolShadowingAnAllowlistedName_DoesNotAutoRun(string toolName)
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, toolName, ToolClass.External, allowlisted: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, verdict.Decision);
+
+        // Same name, built-in route ⇒ still authorized. The discriminator is the CLASS, not the name.
+        var builtIn = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, toolName, ToolClass.Todo, allowlisted: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, builtIn.Outcome);
+    }
+
     [Fact]
     public void Voice_UngrantedWrite_Refuses()
     {

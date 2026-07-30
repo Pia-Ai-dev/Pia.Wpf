@@ -144,14 +144,16 @@ public class ChatSessionManagerTests
         Assert.Null(session);
     }
 
-    [Fact]
-    public async Task StartPlannedTurn_PersistsAnEmptyGrantEnvelope_SoParkingCannotWidenAuthority()
+    /// <summary>
+    /// Drive a real interactive Planned launch and hand back the <see cref="AgentRunCreateRequest"/> the
+    /// manager built, so the persisted envelope can be inspected. Shared by the two facts below: they assert on
+    /// the two independent authority channels of the same document.
+    /// </summary>
+    private async Task<AgentRunCreateRequest> CapturePlannedRunRequestAsync(AppSettings? appSettings = null)
     {
-        // D1's producer half for the INTERACTIVE origin. An interactive run holds no standing write grant:
-        // write_file is not auto-approve eligible, so every write raises an action card the user clicks. A
-        // resume, though, runs UNATTENDED through HeadlessRunLauncher, and a run whose PolicyJson is null
-        // falls back to the {write_file} resume floor — so parking would ESCALATE the run to card-free
-        // writes with nobody watching. The create must persist the honoured-EMPTY envelope instead.
+        if (appSettings is not null)
+            _settings.GetSettingsAsync().Returns(appSettings);
+
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
 
@@ -180,7 +182,60 @@ public class ChatSessionManagerTests
         await sut.StartPlannedTurnAsync(session, "do the thing");
 
         Assert.NotNull(captured);
-        var restored = Pia.Services.HeadlessRunLauncher.TryRestoreGrantEnvelope(captured!.PolicyJson);
+        return captured!;
+    }
+
+    /// <summary>
+    /// The envelope's SECOND authority channel (04 D10/D11). The name of the next fact promises "parking
+    /// cannot widen authority" but its body only inspects the grant LIST, and a resume honours the policy too —
+    /// so with the setting on, a parked run resumes with the Files-covering preset even though its grant list is
+    /// empty. That is D10 working as designed (the launch itself carried the policy), but it has to be stated,
+    /// and it is the only assertion that fails if <c>ChatSessionManager</c>'s <c>SerializeGrantEnvelope(...,
+    /// policy)</c> argument is dropped — it is optional and defaulted, so dropping it compiles.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartPlannedTurn_PersistsTheSettingsPolicyInTheEnvelope(bool settingOn)
+    {
+        var captured = await CapturePlannedRunRequestAsync(
+            new AppSettings { AgentRunAutoApproveBuiltInWrites = settingOn });
+
+        var policy = Pia.Services.HeadlessRunLauncher.TryRestorePolicy(captured.PolicyJson);
+
+        if (!settingOn)
+        {
+            // Off ⇒ NO policy member at all, so the document stays byte-identical to a pre-Batch-04 one.
+            Assert.Null(policy);
+            return;
+        }
+
+        Assert.NotNull(policy);
+        Assert.True(policy!.Covers(ToolClass.Files));
+        Assert.True(policy.Covers(ToolClass.Memory));
+        // Git and External are excluded from the preset: git_switch/git_restore/git_stash shed uncommitted work
+        // without being delete-like, and a class grant on External would cover an MCP server's NEXT tool.
+        Assert.False(policy.Covers(ToolClass.Git));
+        Assert.False(policy.Covers(ToolClass.External));
+
+        // The grant list is still empty — the two channels are independent.
+        Assert.Empty(Pia.Services.HeadlessRunLauncher.TryRestoreGrantEnvelope(captured.PolicyJson)!);
+    }
+
+    [Fact]
+    public async Task StartPlannedTurn_PersistsAnEmptyGrantEnvelope_SoParkingCannotWidenAuthority()
+    {
+        // D1's producer half for the INTERACTIVE origin. An interactive run holds no standing write grant:
+        // write_file is not auto-approve eligible, so every write raises an action card the user clicks. A
+        // resume, though, runs UNATTENDED through HeadlessRunLauncher, and a run whose PolicyJson is null
+        // falls back to the {write_file} resume floor — so parking would ESCALATE the run to card-free
+        // writes with nobody watching. The create must persist the honoured-EMPTY envelope instead.
+        //
+        // Scope: this covers the grant LIST only. The policy channel of the same document is
+        // StartPlannedTurn_PersistsTheSettingsPolicyInTheEnvelope, above.
+        var captured = await CapturePlannedRunRequestAsync();
+
+        var restored = Pia.Services.HeadlessRunLauncher.TryRestoreGrantEnvelope(captured.PolicyJson);
         Assert.NotNull(restored);  // an envelope IS written — null would resume on the {write_file} floor
         Assert.Empty(restored!);   // and it grants nothing, which is exactly what the launch granted
     }

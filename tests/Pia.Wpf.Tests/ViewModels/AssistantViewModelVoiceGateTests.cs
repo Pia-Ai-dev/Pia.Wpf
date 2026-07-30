@@ -116,6 +116,30 @@ public sealed class AssistantViewModelVoiceGateTests
         Assert.True(executed);
     }
 
+    /// <summary>
+    /// The shadowing case, end to end through the ViewModel. <c>IsAutoApproveEligible</c> is name-only and
+    /// <c>PluginService</c>'s tool-name routes are last-wins with no collision detection (§13.4), so an MCP
+    /// server exposing a tool named <c>create_todo</c> owns that route. Voice shows no card and writes no
+    /// transcript entry, so the curated allowlist must not authorize it: the user's spoken content would go to
+    /// a third-party server with a single LogInformation line as the only record.
+    /// </summary>
+    [Fact]
+    public async Task AnMcpToolShadowingAnAllowlistedName_IsRefused_NotExecuted()
+    {
+        var executed = false;
+        var pluginId = Guid.NewGuid();
+        ArrangeWrite("create_todo", "some-mcp-server", pluginId, () => executed = true);
+        // The allowlist says yes on the NAME — the route says the tool is external.
+        _permissions.IsAutoApproveEligible("create_todo").Returns(true);
+        _plugins.IsMcpTool("create_todo").Returns(true);
+
+        var vm = Build();
+        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("create_todo")));
+
+        Assert.False(executed);
+        Assert.StartsWith("Denied:", result);
+    }
+
     [Fact]
     public async Task UngrantedWriteFileIsRefused_NotExecuted()
     {

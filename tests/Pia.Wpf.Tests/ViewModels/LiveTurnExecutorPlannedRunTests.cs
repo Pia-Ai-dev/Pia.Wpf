@@ -143,7 +143,9 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     /// <summary>Sets a plain UI SynchronizationContext, constructs the live executor bound to the session, restores.</summary>
-    private LiveTurnExecutor BuildLiveExecutor(ChatSession session, Func<ChatSession, bool> isActive)
+    private LiveTurnExecutor BuildLiveExecutor(
+        ChatSession session, Func<ChatSession, bool> isActive, RunAutonomyPolicy? policy = null,
+        bool supportsTools = false)
     {
         var prev = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
@@ -153,8 +155,9 @@ public sealed class LiveTurnExecutorPlannedRunTests
                 session, isActive,
                 new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"),
                 Provider(),
-                new AssistantTurnSetup("system", null, false, false),
-                tokenizationEnabled: false);
+                new AssistantTurnSetup("system", null, supportsTools, false),
+                tokenizationEnabled: false,
+                policy);
         }
         finally
         {
@@ -233,6 +236,99 @@ public sealed class LiveTurnExecutorPlannedRunTests
         Assert.Equal(ChatState.Completed, session.State);            // EndRunAsync mirrored the unread-success terminal state
         Assert.NotNull(completed);
         Assert.True(completed!.Succeeded);
+    }
+
+    /// <summary>
+    /// 04 D11's INTERACTIVE half, end to end through the real orchestrator and the real
+    /// <see cref="LiveTurnExecutor"/>. <c>ChatSessionPolicyGateTests</c> constructs <c>StepTurnSpec(Policy: …)</c>
+    /// by hand, so it never touches the two production lines that carry the policy from the manager to the gate:
+    /// <c>ChatSessionManager</c>'s <c>new LiveTurnExecutor(…, policy)</c> and <c>BuildSpec</c>'s
+    /// <c>Policy: _policy</c>. Both are optional/defaulted, so dropping either COMPILES and every other test
+    /// stays green — the run would silently revert to carding every write while its persisted envelope still
+    /// recorded the preset classes, which is exactly the record-disagrees-with-behaviour case D11 forbids.
+    /// <para>
+    /// Verified red both ways before landing: removing <c>Policy: _policy</c> from <c>BuildSpec</c>, and
+    /// removing the <c>policy</c> argument from the executor construction, each fail this fact and nothing else.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task PlannedRun_CarriesTheRunPolicyIntoTheGate_SoACoveredWriteAutoRuns()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1"), false));
+
+        var pluginId = Guid.NewGuid();
+        var executed = false;
+        var pending = new PluginToolCall(
+            "write_file", pluginId, "files", "files: write_file", null,
+            () => { executed = true; return Task.FromResult<object?>("done"); });
+        var card = new ActionCardInfo
+        {
+            Title = "write_file",
+            Summary = "write_file",
+            Category = ActionCardCategory.Files,
+            ToolName = "write_file",
+            PluginId = pluginId,
+        };
+
+        // No allowlist entry and NO standing grant: the run policy is the only authority in play.
+        _permissions.IsAutoApproveEligible("write_file").Returns(false);
+        _permissions.IsGranted(pluginId, "write_file").Returns(false);
+        _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)pending));
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
+        _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        var states = new List<ChatState>();
+        session.StateChanged += (_, e) => states.Add(e.NewState);
+
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), "write_file"));
+
+        var live = BuildLiveExecutor(
+            session, _ => false,
+            RunAutonomyPolicy.FromSettings(new AppSettings { AgentRunAutoApproveBuiltInWrites = true }),
+            supportsTools: true);
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+
+        // BOUNDED on purpose. If the policy does not reach the gate, the gate PROMPTS and the run blocks on a
+        // card nobody clicks — a regression would hang the whole suite instead of failing. Drain it by declining
+        // so the assertion below reports the real cause.
+        var runTask = orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+        var ct = TestContext.Current.CancellationToken;
+        var settled = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(20), ct)) == runTask;
+        if (!settled)
+        {
+            card.DeclineCommand.Execute(null);
+            await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(10), ct));
+        }
+
+        Assert.True(settled, "the run blocked on an action card: the policy never reached the interactive gate");
+        await runTask;
+        Assert.True(executed, "the policy-covered write must have run without a card click");
+        Assert.DoesNotContain(ChatState.WaitingForTool, states);   // never prompted
+        // Auto-approval is not silence: the pre-resolved card is still in the transcript (audit trace).
+        Assert.Contains(card, session.Messages.Last(m => !m.IsUser).ActionCards);
+        // Per-run authority, not a stored one.
+        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> StreamWithToolCall(
+        Func<FunctionCallContent, Task<object?>>? handler, string toolName)
+    {
+        if (handler is not null)
+            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>()));
+
+        yield return new TextDelta("reply");
+        yield return new Finished(null, "m");
+        await Task.Yield();
     }
 
     [Fact]

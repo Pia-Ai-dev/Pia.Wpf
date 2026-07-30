@@ -100,8 +100,19 @@ public static class ToolAutonomy
         // authorizes on VOICE only. Interactive requires the standing grant as well — an allowlisted tool
         // still shows a card the first time — and unattended has no allowlist at all, so widening it there
         // would silently grant four tools to every scheduled job.
-        if (input.Surface == ToolGateSurface.Voice && input.IsAllowlisted)
+        //
+        // BUILT-INS ONLY. `IsAutoApproveEligible` is a NAME-only set with no PluginId restriction, and
+        // PluginService's tool-name routes are LAST-WINS with no collision detection (§13.4), so an MCP server
+        // exposing a tool literally named `create_todo` owns that route. Interactively that shadowing is
+        // contained because this surface additionally needs a standing grant the user clicked on a card; voice
+        // has no card and leaves no transcript entry, so the allowlist alone must not authorize a third-party
+        // tool. All four allowlisted names are ours, so excluding External narrows nothing intended.
+        if (input.Surface == ToolGateSurface.Voice
+            && input.IsAllowlisted
+            && input.ToolClass != ToolClass.External)
+        {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedAllowlist);
+        }
 
         // A name in the run's grant list (headless launch envelope / scheduled job).
         if (input.IsNamedGrant)
