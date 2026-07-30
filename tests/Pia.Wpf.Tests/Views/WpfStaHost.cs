@@ -27,6 +27,9 @@ namespace Pia.Tests.Views;
 /// blocks the whole suite instead of naming a defect. So the hand-off from the STA thread has a
 /// timeout, its startup exception is captured and rethrown on the caller's thread, and marshaled work
 /// has a timeout too. Every one of those paths throws with a message that says which stage failed.
+/// The same reasoning is why a FAILED start still pumps: <c>Application.Current</c> is published by the
+/// <see cref="Application"/> ctor, before anything that can throw, and it can never be unpublished — so
+/// this thread must keep pumping even when it has nothing useful to host.
 /// </para>
 /// <para>
 /// This file was authored on macOS, where the test host cannot execute (no
@@ -50,7 +53,7 @@ internal static class WpfStaHost
     /// </summary>
     private static readonly TimeSpan InvokeTimeout = TimeSpan.FromSeconds(60);
 
-    private static readonly Lazy<Dispatcher> _lazyDispatcher =
+    private static readonly Lazy<Dispatcher> LazyDispatcher =
         new(Start, LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
@@ -58,7 +61,7 @@ internal static class WpfStaHost
     /// hangs — if the host could not be created; <see cref="LazyThreadSafetyMode.ExecutionAndPublication"/>
     /// caches that failure, so a second test reports the same cause instead of retrying a broken start.
     /// </summary>
-    internal static Dispatcher StaDispatcher => _lazyDispatcher.Value;
+    internal static Dispatcher StaDispatcher => LazyDispatcher.Value;
 
     private static Dispatcher Start()
     {
@@ -102,15 +105,40 @@ internal static class WpfStaHost
             }
             catch (Exception ex)
             {
-                // Set the signal on the failure path too, or the caller's bounded wait would burn its
-                // whole timeout to report a cause we already hold.
+                // Record the cause and FALL THROUGH to the pump below. Do NOT return: the
+                // System.Windows.Application base ctor publishes Application.Current before
+                // InitializeComponent() can throw, and Application.Current can never be nulled again.
+                // Abandoning this thread would leave the whole suite with a live Application whose
+                // dispatcher nobody pumps, so every unbounded Application.Current.Dispatcher call
+                // outside this file — WindowManagerService's awaited InvokeAsync, OutputService's
+                // blocking Invoke, the two notification surfaces — would block forever. One failing
+                // test (AssistantViewParseTests, via the throw in Start below) is the outcome we want;
+                // a suite that hangs with no name attached is the one thing worse than that.
                 startupError = ex;
-                ready.Set();
-                return;
             }
 
+            // Set the signal before pumping — including on the failure path, or the caller's bounded
+            // wait would burn its whole timeout to report a cause we already hold.
             ready.Set();
-            Dispatcher.Run();
+
+            // Pump for the life of the process. Run() returns only on InvokeShutdown (never called
+            // here); it can THROW if an exception escapes a queued operation, which is reachable on the
+            // failure path above because App's DispatcherUnhandledException net is installed AFTER
+            // InitializeComponent(). Re-entering keeps the shared dispatcher alive instead of turning
+            // that into the dead-dispatcher hang this whole block exists to prevent.
+            while (true)
+            {
+                try
+                {
+                    Dispatcher.Run();
+                    return;
+                }
+                catch
+                {
+                    if (created is null || created.HasShutdownStarted)
+                        return;
+                }
+            }
         })
         {
             IsBackground = true,

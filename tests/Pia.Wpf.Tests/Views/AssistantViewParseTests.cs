@@ -97,26 +97,41 @@ public class AssistantViewParseTests
     {
         // LocalizationSource returns the literal "[Key]" for an unknown key, and StrExtension.ProvideValue
         // binds [{Key}] against the static LocalizationSource.Instance with an explicit Source (no
-        // DataContext, no DI). So this is a missing-loc-key detector for the whole NON-TEMPLATED part of
-        // the view, for five lines.
-        var unresolved = WpfStaHost.Run(() =>
+        // DataContext, no DI). So an unresolved key is visible as rendered text, for five lines.
+        //
+        // SCOPE, stated so this is not read as "the whole view": the walk yields TextBlocks, so only
+        // loc:Str bound to TextBlock.Text is visible — 4 of the 22 loc:Str usages in AssistantView.xaml
+        // (:65, :247, :493, :587). The other 18 are ToolTip (11), Content (5, on ui:Button, where the
+        // string becomes a TextBlock only after template application), PlaceholderText and Value: all
+        // structurally invisible to a logical walk without layout. Widening it means realizing templates,
+        // which is exactly what this file must not do.
+        var (rendered, unresolved) = WpfStaHost.Run(() =>
         {
             var vm = CreateAssistantViewModel();
             var view = new AssistantView { DataContext = vm };
             WpfStaHost.Pump();
 
-            var hits = FindTextBlocks(view)
-                .Select(tb => tb.Text)
+            var texts = FindTextBlocks(view).Select(tb => tb.Text).ToList();
+            var hits = texts
                 .Where(t => t is not null && Regex.IsMatch(t, @"^\[\w+\]$"))
                 .Distinct()
                 .ToList();
 
             vm.Dispose();
-            return hits;
+            return (texts, hits);
         });
 
+        // NON-VACUITY FLOOR, and it carries the whole assertion below: "no unresolved keys" is trivially
+        // true over an EMPTY walk, which is reachable — if LogicalTreeHelper.GetChildren stops descending
+        // (a container swapped for a templated one, a refactor of FindTextBlocks), this fact would report
+        // a clean sweep over nothing and stay green forever. Anchoring on the one string the composer is
+        // known to render costs nothing (the walk already materialised it), adds no new failure mode the
+        // fact above does not already carry, and proves the walk reached a deep logical descendant.
+        Assert.Contains(HintText, rendered);
+
         Assert.True(unresolved.Count == 0,
-            $"unresolved loc:Str keys in the parsed AssistantView: {string.Join(", ", unresolved)}");
+            $"unresolved loc:Str keys among the {rendered.Count} TextBlocks walked in the parsed " +
+            $"AssistantView: {string.Join(", ", unresolved)}");
     }
 
     /// <summary>
