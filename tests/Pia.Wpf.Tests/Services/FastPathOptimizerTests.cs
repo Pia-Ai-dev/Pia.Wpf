@@ -21,7 +21,7 @@ public class FastPathOptimizerTests
         var captureCalled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var captureGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns(_ =>
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns(_ =>
         {
             captureCalled.TrySetResult(true);
             return captureGate.Task;
@@ -44,7 +44,7 @@ public class FastPathOptimizerTests
     {
         var handle = new FakeFastPathHandle();
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns((string?)null);
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns((string?)null);
 
         await CreateSut().RunAsync();
 
@@ -59,7 +59,7 @@ public class FastPathOptimizerTests
     {
         var handle = new FakeFastPathHandle { OptimizeResult = true, AcceptResult = true };
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns("selected text");
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns("selected text");
         _settings.GetSettingsAsync().Returns(new AppSettings { DefaultOutputAction = OutputAction.CopyToClipboard });
 
         await CreateSut().RunAsync();
@@ -75,7 +75,7 @@ public class FastPathOptimizerTests
     {
         var handle = new FakeFastPathHandle { OptimizeResult = false };
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns("selected text");
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns("selected text");
 
         await CreateSut().RunAsync();
 
@@ -89,7 +89,7 @@ public class FastPathOptimizerTests
     {
         var handle = new FakeFastPathHandle { OptimizeResult = true };
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns("selected text");
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns("selected text");
         _settings.GetSettingsAsync().Returns(new AppSettings { DefaultOutputAction = OutputAction.PasteToPreviousWindow });
         _windowTracking.HasTrackedWindow.Returns(false);
 
@@ -106,7 +106,7 @@ public class FastPathOptimizerTests
     {
         var handle = new FakeFastPathHandle { InputText = "existing draft" };
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns("captured selection");
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns("captured selection");
 
         await CreateSut().RunAsync();
 
@@ -124,7 +124,7 @@ public class FastPathOptimizerTests
     {
         var handle = new FakeFastPathHandle { InputText = "existing draft", OptimizeResult = true, AcceptResult = true };
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns("captured selection");
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns("captured selection");
         _settings.GetSettingsAsync().Returns(new AppSettings { DefaultOutputAction = OutputAction.CopyToClipboard });
 
         var sut = CreateSut();
@@ -145,7 +145,7 @@ public class FastPathOptimizerTests
     {
         var handle = new FakeFastPathHandle { InputText = "existing draft", OptimizeResult = true, AcceptResult = true };
         _windowManager.ShowOptimizeAndGetViewModelAsync().Returns(handle);
-        _selectedText.CaptureAsync().Returns("captured selection");
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns("captured selection");
         _settings.GetSettingsAsync().Returns(new AppSettings { DefaultOutputAction = OutputAction.CopyToClipboard });
 
         var sut = CreateSut();
@@ -155,7 +155,7 @@ public class FastPathOptimizerTests
         // Start a second RunAsync that blocks inside CaptureAsync - keeps _isRunning held.
         var captureGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var captureCalled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _selectedText.CaptureAsync().Returns(_ =>
+        _selectedText.CaptureAsync(Arg.Any<CancellationToken>()).Returns(_ =>
         {
             captureCalled.TrySetResult(true);
             return captureGate.Task;

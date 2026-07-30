@@ -75,7 +75,7 @@ public class OpenRouterReasoningHandlerTests
 
         var body = """{"model":"openai/gpt-5","messages":[],"reasoning_effort":"low"}""";
         var content = new StringContent(body, Encoding.UTF8, "application/json");
-        await client.PostAsync("https://openrouter.ai/api/v1/chat/completions", content);
+        await client.PostAsync("https://openrouter.ai/api/v1/chat/completions", content, TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured.LastBody);
         var node = JsonNode.Parse(captured.LastBody!)!.AsObject();

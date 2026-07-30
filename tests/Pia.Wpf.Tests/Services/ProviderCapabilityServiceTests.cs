@@ -34,7 +34,7 @@ public class ProviderCapabilityServiceTests
         _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>()).Returns(true);
 
         var sut = CreateSut();
-        Assert.Equal(PlanningCapability.Capable, await sut.GetPlanningCapabilityAsync(provider));
+        Assert.Equal(PlanningCapability.Capable, await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class ProviderCapabilityServiceTests
         _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>()).Returns(false);
 
         var sut = CreateSut();
-        Assert.Equal(PlanningCapability.Weak, await sut.GetPlanningCapabilityAsync(provider));
+        Assert.Equal(PlanningCapability.Weak, await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public class ProviderCapabilityServiceTests
         var provider = Provider(supportsTools: false);
 
         var sut = CreateSut();
-        Assert.Equal(PlanningCapability.Weak, await sut.GetPlanningCapabilityAsync(provider));
+        Assert.Equal(PlanningCapability.Weak, await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken));
         await _ai.DidNotReceive().TestToolCallEmittedAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>());
     }
 
@@ -64,9 +64,9 @@ public class ProviderCapabilityServiceTests
         _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>()).Returns(true);
 
         var sut = CreateSut();
-        await sut.GetPlanningCapabilityAsync(provider);
-        await sut.GetPlanningCapabilityAsync(provider);
-        await sut.GetPlanningCapabilityAsync(provider);
+        await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken);
+        await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken);
+        await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken);
 
         await _ai.Received(1).TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>());
     }
@@ -79,11 +79,11 @@ public class ProviderCapabilityServiceTests
             .Returns<bool>(_ => throw new InvalidOperationException("boom"));
 
         var sut = CreateSut();
-        Assert.Equal(PlanningCapability.Unknown, await sut.GetPlanningCapabilityAsync(provider));
+        Assert.Equal(PlanningCapability.Unknown, await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken));
 
         // Not cached — a later successful probe re-evaluates.
         _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>()).Returns(true);
-        Assert.Equal(PlanningCapability.Capable, await sut.GetPlanningCapabilityAsync(provider));
+        Assert.Equal(PlanningCapability.Capable, await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken));
         await _ai.Received(2).TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>());
     }
 
@@ -94,9 +94,9 @@ public class ProviderCapabilityServiceTests
         _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>()).Returns(true);
 
         var sut = CreateSut();
-        await sut.GetPlanningCapabilityAsync(provider);
+        await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken);
         sut.Invalidate(provider.Id);
-        await sut.GetPlanningCapabilityAsync(provider);
+        await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken);
 
         await _ai.Received(2).TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>());
     }

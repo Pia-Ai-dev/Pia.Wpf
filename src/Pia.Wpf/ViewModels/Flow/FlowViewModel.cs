@@ -181,11 +181,14 @@ public partial class FlowViewModel : UiThreadViewModel, IDisposable
     }
 
     // Set the backing field directly so loading the persisted value doesn't trigger a redundant save.
+    // Bypassing the generated property is the whole point here, so MVVMTK0034 is suppressed rather than fixed.
     private void SetPinnedSilently(bool value)
     {
+#pragma warning disable MVVMTK0034 // Direct field access is intentional: the generated setter would re-save.
         if (_isPinned == value)
             return;
         _isPinned = value;
+#pragma warning restore MVVMTK0034
         OnPropertyChanged(nameof(IsPinned));
         RaiseOpenStateChanged();
     }

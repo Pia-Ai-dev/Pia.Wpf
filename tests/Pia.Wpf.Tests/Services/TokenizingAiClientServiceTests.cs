@@ -73,7 +73,7 @@ public class TokenizingAiClientServiceTests
         {
             await foreach (var item in sut.GetChatCompletionWithToolsAsync(
                 new List<ChatMessage> { new(ChatRole.User, "hi") },
-                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI }))
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI }, cancellationToken: TestContext.Current.CancellationToken))
             {
                 items.Add(item);
             }
@@ -127,7 +127,7 @@ public class TokenizingAiClientServiceTests
                 new List<ChatMessage> { new(ChatRole.User, "hi") },
                 new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
                 tools: null,
-                toolHandler: objectResultHandler))
+                toolHandler: objectResultHandler, cancellationToken: TestContext.Current.CancellationToken))
             {
             }
 

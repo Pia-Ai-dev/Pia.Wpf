@@ -36,14 +36,14 @@ public class AssistantChatServiceTests : IDisposable
         // W1 canary: the service writes on its OWN dedicated connection, so this assertion — issued on the
         // SHARED _ctx.GetConnection() handle — is now also a cross-connection commit-visibility check.
         var chat = MakeChat(title: "UniqueWordABC title", body: "UniqueWordXYZ body");
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
         var conn = _ctx.GetConnection();
         using var countFts = conn.CreateCommand();
         countFts.CommandText = "SELECT COUNT(*) FROM AssistantChatsFts WHERE ChatId = @Id";
         countFts.Parameters.AddWithValue("@Id", chat.Id.ToString());
-        Assert.Equal(1, Convert.ToInt32(await countFts.ExecuteScalarAsync()));
+        Assert.Equal(1, Convert.ToInt32(await countFts.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
     }
 
     [Fact]
@@ -228,13 +228,13 @@ public class AssistantChatServiceTests : IDisposable
     public async Task SearchAsync_FindsByTitleAndBody_FullToken()
     {
         var chat = MakeChat(title: "Lunch options today", body: "Should we get pizza?");
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
-        var byTitle = await _service.SearchAsync(searchText: "lunch");
+        var byTitle = await _service.SearchAsync(searchText: "lunch", ct: TestContext.Current.CancellationToken);
         Assert.Contains(byTitle, c => c.Id == chat.Id);
 
-        var byBody = await _service.SearchAsync(searchText: "pizza");
+        var byBody = await _service.SearchAsync(searchText: "pizza", ct: TestContext.Current.CancellationToken);
         Assert.Contains(byBody, c => c.Id == chat.Id);
     }
 
@@ -271,13 +271,13 @@ public class AssistantChatServiceTests : IDisposable
     public async Task SearchAsync_FindsByPrefix_PartialToken()
     {
         var chat = MakeChat(title: "Microservices design", body: "Discussion of Kubernetes");
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
-        var byTitlePrefix = await _service.SearchAsync(searchText: "micro");
+        var byTitlePrefix = await _service.SearchAsync(searchText: "micro", ct: TestContext.Current.CancellationToken);
         Assert.Contains(byTitlePrefix, c => c.Id == chat.Id);
 
-        var byBodyPrefix = await _service.SearchAsync(searchText: "kuber");
+        var byBodyPrefix = await _service.SearchAsync(searchText: "kuber", ct: TestContext.Current.CancellationToken);
         Assert.Contains(byBodyPrefix, c => c.Id == chat.Id);
     }
 
@@ -285,9 +285,9 @@ public class AssistantChatServiceTests : IDisposable
     public async Task SearchAsync_FindsAcrossMultipleTokens()
     {
         var chat = MakeChat(title: "Project Phoenix kickoff", body: "Discussing the roadmap and milestones");
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
 
-        var hits = await _service.SearchAsync(searchText: "phoenix roadmap");
+        var hits = await _service.SearchAsync(searchText: "phoenix roadmap", ct: TestContext.Current.CancellationToken);
         Assert.Contains(hits, c => c.Id == chat.Id);
     }
 
@@ -295,11 +295,11 @@ public class AssistantChatServiceTests : IDisposable
     public async Task SearchAsync_OperatorChars_AreSafe()
     {
         var chat = MakeChat(title: "Test", body: "Hello world");
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
 
         // Should not throw on FTS5 operator chars.
         var exception = await Record.ExceptionAsync(
-            () => _service.SearchAsync(searchText: "hello* OR \"NEAR(\""));
+            () => _service.SearchAsync(searchText: "hello* OR \"NEAR(\"", ct: TestContext.Current.CancellationToken));
         Assert.Null(exception);
     }
 
@@ -310,13 +310,13 @@ public class AssistantChatServiceTests : IDisposable
         _service.ChatsChanged += (_, e) => raised.Add(e);
 
         var chat = MakeChat(title: "Remote chat", body: "remote body");
-        await _service.SaveFromRemoteAsync(chat);
+        await _service.SaveFromRemoteAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
         Assert.Empty(raised);
 
         // Verify the row is actually written so the suppression isn't masking a real bug.
-        var loaded = await _service.GetAsync(chat.Id);
+        var loaded = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
         Assert.Equal("Remote chat", loaded!.Title);
     }
@@ -325,30 +325,30 @@ public class AssistantChatServiceTests : IDisposable
     public async Task DeleteFromRemoteAsync_DoesNotRaiseChatsChanged()
     {
         var chat = MakeChat(title: "to-delete", body: "x");
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
 
         var raised = new List<AssistantChatChangedEventArgs>();
         _service.ChatsChanged += (_, e) => raised.Add(e);
 
-        await _service.DeleteFromRemoteAsync(chat.Id);
+        await _service.DeleteFromRemoteAsync(chat.Id, TestContext.Current.CancellationToken);
 
         Assert.Empty(raised);
-        Assert.Null(await _service.GetAsync(chat.Id));
+        Assert.Null(await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task DeleteFromRemoteAsync_RemovesFromFts()
     {
         var chat = MakeChat(title: "UniqueRemoteWordABC", body: "UniqueRemoteWordXYZ");
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
 
-        await _service.DeleteFromRemoteAsync(chat.Id);
+        await _service.DeleteFromRemoteAsync(chat.Id, TestContext.Current.CancellationToken);
 
         var conn = _ctx.GetConnection();
         using var countFts = conn.CreateCommand();
         countFts.CommandText = "SELECT COUNT(*) FROM AssistantChatsFts WHERE ChatId = @Id";
         countFts.Parameters.AddWithValue("@Id", chat.Id.ToString());
-        Assert.Equal(0, Convert.ToInt32(await countFts.ExecuteScalarAsync()));
+        Assert.Equal(0, Convert.ToInt32(await countFts.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
     }
 
     [Fact]
@@ -361,10 +361,10 @@ public class AssistantChatServiceTests : IDisposable
             ["serverOnlyFutureField"] = futureField,
         };
 
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
-        var loaded = await _service.GetAsync(chat.Id);
+        var loaded = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
         Assert.NotNull(loaded!.ExtensionData);
         Assert.True(loaded.ExtensionData!.TryGetValue("serverOnlyFutureField", out var value));
@@ -387,10 +387,10 @@ public class AssistantChatServiceTests : IDisposable
             Persona = new SyncMessagePersona { Id = personaId, Name = "Marketing Writer", Emoji = "✍️" },
         });
 
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
-        var loaded = await _service.GetAsync(chat.Id);
+        var loaded = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
         var assistant = loaded!.Messages.Single(m => m.Role == "assistant");
         Assert.NotNull(assistant.Persona);
@@ -408,10 +408,10 @@ public class AssistantChatServiceTests : IDisposable
         var chat = MakeChat(title: "WorkingDir test", body: "x");
         chat.WorkingDirectory = "projects/app";
 
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
-        var loaded = await _service.GetAsync(chat.Id);
+        var loaded = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
         Assert.Equal("projects/app", loaded!.WorkingDirectory);
     }
@@ -422,10 +422,10 @@ public class AssistantChatServiceTests : IDisposable
         var chat = MakeChat(title: "Root chat", body: "x");
         chat.WorkingDirectory = null;
 
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
-        var loaded = await _service.GetAsync(chat.Id);
+        var loaded = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
         Assert.Null(loaded!.WorkingDirectory);
     }
@@ -437,13 +437,13 @@ public class AssistantChatServiceTests : IDisposable
         // WorkingDirectory must persist through the ON CONFLICT(Id) DO UPDATE SET path.
         var chat = MakeChat(title: "Repoint test", body: "x");
         chat.WorkingDirectory = "first";
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
         chat.WorkingDirectory = "second/dir";
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
 
-        var loaded = await _service.GetAsync(chat.Id);
+        var loaded = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
         Assert.Equal("second/dir", loaded!.WorkingDirectory);
     }
@@ -455,10 +455,10 @@ public class AssistantChatServiceTests : IDisposable
         // map WorkingDirectory correctly too.
         var chat = MakeChat(title: "SearchableWorkingDir", body: "body");
         chat.WorkingDirectory = "via/search";
-        await _service.SaveAsync(chat);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
 
-        var hits = await _service.SearchAsync(searchText: "SearchableWorkingDir");
+        var hits = await _service.SearchAsync(searchText: "SearchableWorkingDir", ct: TestContext.Current.CancellationToken);
         var found = Assert.Single(hits, c => c.Id == chat.Id);
         Assert.Equal("via/search", found.WorkingDirectory);
     }

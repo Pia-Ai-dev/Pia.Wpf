@@ -220,7 +220,7 @@ public class FilesToolHandlerListTests : IDisposable
 
         var call = new FunctionCallContent("c1", "list_files",
             new Dictionary<string, object?> { ["pattern"] = "docs/*.md" });
-        var (result, action) = await _handler.HandleToolCallAsync(call);
+        var (result, action) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
         Assert.Null(action);
         Assert.Contains("must be a file-name glob", (string)result!);

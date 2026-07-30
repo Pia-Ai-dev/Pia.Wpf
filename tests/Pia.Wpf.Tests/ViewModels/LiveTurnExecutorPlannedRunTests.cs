@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -131,7 +132,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     /// <summary>Fires ChatSession.Cancel() mid-step, then honors the linked run token by blocking on it.</summary>
-    private static async IAsyncEnumerable<ChatStreamItem> CancelThenBlock(ChatSession session, CancellationToken ct)
+    private static async IAsyncEnumerable<ChatStreamItem> CancelThenBlock(
+        ChatSession session, [EnumeratorCancellation] CancellationToken ct)
     {
         session.Cancel(); // user hits Stop while the step exchange is streaming
         await Task.Delay(Timeout.Infinite, ct); // the R13-linked run token must cancel this in-flight step

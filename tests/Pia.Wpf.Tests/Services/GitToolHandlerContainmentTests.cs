@@ -157,7 +157,7 @@ public sealed class GitToolHandlerContainmentTests : IDisposable
 
         // Prepare against sandbox A: a pending action, nothing executed yet.
         var (result, pending) = await handler.HandleToolCallAsync(
-            new FunctionCallContent("id", "git_init", new Dictionary<string, object?>()));
+            new FunctionCallContent("id", "git_init", new Dictionary<string, object?>()), TestContext.Current.CancellationToken);
         Assert.Null(result);
         Assert.NotNull(pending);
 
@@ -190,7 +190,7 @@ public sealed class GitToolHandlerContainmentTests : IDisposable
         if (tool == "git_commit") args["message"] = "msg";
 
         // Prepare against sandbox A → a pending action; nothing mutated yet.
-        var (result, pending) = await handler.HandleToolCallAsync(new FunctionCallContent("id", tool, args));
+        var (result, pending) = await handler.HandleToolCallAsync(new FunctionCallContent("id", tool, args), TestContext.Current.CancellationToken);
         Assert.Null(result);
         Assert.NotNull(pending);
 

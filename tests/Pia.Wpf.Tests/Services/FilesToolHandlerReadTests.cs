@@ -256,7 +256,7 @@ public class FilesToolHandlerReadTests : IDisposable
     {
         WriteFile("greet.ps1", "# greet\nWrite-Host \"hi\"\n");
 
-        var preview = await _handler.ReadPromptPreviewAsync("greet.ps1", workingSubpath: null, maxLines: 100);
+        var preview = await _handler.ReadPromptPreviewAsync("greet.ps1", workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
 
         Assert.True(preview.Found);
         Assert.Null(preview.Error);
@@ -272,7 +272,7 @@ public class FilesToolHandlerReadTests : IDisposable
     {
         WriteFile("many.txt", string.Join('\n', Enumerable.Range(1, 50).Select(i => "line" + i)));
 
-        var preview = await _handler.ReadPromptPreviewAsync("many.txt", workingSubpath: null, maxLines: 10);
+        var preview = await _handler.ReadPromptPreviewAsync("many.txt", workingSubpath: null, maxLines: 10, TestContext.Current.CancellationToken);
 
         Assert.True(preview.Found);
         Assert.Equal(50, preview.TotalLines);
@@ -289,7 +289,7 @@ public class FilesToolHandlerReadTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "proj", "src", "a.cs"), "class A {}\n");
 
         // Path is relative to the chat's working dir ("proj"), mirroring read_file's narrowing.
-        var preview = await _handler.ReadPromptPreviewAsync("src/a.cs", workingSubpath: "proj", maxLines: 100);
+        var preview = await _handler.ReadPromptPreviewAsync("src/a.cs", workingSubpath: "proj", maxLines: 100, TestContext.Current.CancellationToken);
 
         Assert.True(preview.Found);
         Assert.Equal("class A {}", preview.Text);
@@ -298,7 +298,7 @@ public class FilesToolHandlerReadTests : IDisposable
     [Fact]
     public async Task Preview_NotFound_ReturnsFoundFalseWithError()
     {
-        var preview = await _handler.ReadPromptPreviewAsync("ghost.txt", workingSubpath: null, maxLines: 100);
+        var preview = await _handler.ReadPromptPreviewAsync("ghost.txt", workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
 
         Assert.False(preview.Found);
         Assert.Null(preview.Text);
@@ -310,7 +310,7 @@ public class FilesToolHandlerReadTests : IDisposable
     {
         File.WriteAllBytes(Path.Combine(_root, "blob.bin"), new byte[] { 0x41, 0x00, 0x42 });
 
-        var preview = await _handler.ReadPromptPreviewAsync("blob.bin", workingSubpath: null, maxLines: 100);
+        var preview = await _handler.ReadPromptPreviewAsync("blob.bin", workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
 
         Assert.False(preview.Found);
         Assert.Contains("binary", preview.Error!, StringComparison.OrdinalIgnoreCase);
@@ -324,7 +324,7 @@ public class FilesToolHandlerReadTests : IDisposable
         var rel = WriteFile("notrack.txt", "a\nb\n");
         var full = Path.Combine(_root, rel);
 
-        await _handler.ReadPromptPreviewAsync(rel, workingSubpath: null, maxLines: 100);
+        await _handler.ReadPromptPreviewAsync(rel, workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
 
         // Unlike read_file, a partial preview records no baseline — so an out-of-band change is NOT
         // flagged stale, and the model's own read_file before an edit still gets an honest signal.

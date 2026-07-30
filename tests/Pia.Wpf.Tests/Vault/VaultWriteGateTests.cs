@@ -10,8 +10,8 @@ public class VaultWriteGateTests
     public async Task Exclusive_blocks_until_writer_releases()
     {
         var gate = new VaultWriteGate();
-        var writer = await gate.EnterWriteAsync();
-        var exclusive = gate.EnterExclusiveAsync();
+        var writer = await gate.EnterWriteAsync(TestContext.Current.CancellationToken);
+        var exclusive = gate.EnterExclusiveAsync(TestContext.Current.CancellationToken);
         Assert.False(exclusive.IsCompleted);   // blocked while writer holds it
         writer.Dispose();
         var handle = await exclusive;           // now proceeds
@@ -22,8 +22,8 @@ public class VaultWriteGateTests
     public async Task Writer_blocks_while_exclusive_held()
     {
         var gate = new VaultWriteGate();
-        var exclusive = await gate.EnterExclusiveAsync();
-        var writer = gate.EnterWriteAsync();
+        var exclusive = await gate.EnterExclusiveAsync(TestContext.Current.CancellationToken);
+        var writer = gate.EnterWriteAsync(TestContext.Current.CancellationToken);
         Assert.False(writer.IsCompleted);
         exclusive.Dispose();
         (await writer).Dispose();

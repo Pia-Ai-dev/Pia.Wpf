@@ -324,7 +324,6 @@
   <data name="Memory_Sources_Empty" xml:space="preserve"><value>Pas encore de documents sources. Déposez des fichiers dans le dossier sources du coffre et demandez à Pia de les ingérer en mémoire.</value></data>
   <data name="Memory_Sources_OpenFolder" xml:space="preserve"><value>Ouvrir le dossier sources</value></data>
   <data name="Memory_Sources_Ingesting" xml:space="preserve"><value>Ingestion en cours…</value></data>
-  <data name="Memory_Refresh" xml:space="preserve"><value>Actualiser</value></data>
   <data name="Memory_DropSources_Hint" xml:space="preserve"><value>Déposez des fichiers texte ici pour les ajouter à vos sources</value></data>
   <data name="Memory_Help_Tooltip" xml:space="preserve"><value>Comment fonctionne la mémoire</value></data>
   <data name="Memory_Home" xml:space="preserve"><value>Vue d'ensemble du coffre</value></data>

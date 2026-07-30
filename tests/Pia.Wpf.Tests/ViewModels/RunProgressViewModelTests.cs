@@ -73,19 +73,19 @@ public sealed class RunProgressViewModelTests : IDisposable
     {
         var run = await NewPlannedRunAsync();
         var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "Read notes", Status = AgentStepStatus.Pending };
-        await _runs.ReplaceStepsAsync(run.Id, new[] { step });
+        await _runs.ReplaceStepsAsync(run.Id, new[] { step }, TestContext.Current.CancellationToken);
 
         var vm = CreateVm(run.Id);
         await vm.RefreshAsync();
         Assert.Equal("Run_Activity_Planning", vm.CurrentActivity); // Planning note (fake echoes the loc key)
         Assert.True(vm.HasCurrentActivity);
 
-        await _runs.SetStateAsync(run.Id, AgentRunState.Running);
-        await _runs.SetStepStatusAsync(step.Id, AgentStepStatus.Running);
+        await _runs.SetStateAsync(run.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
+        await _runs.SetStepStatusAsync(step.Id, AgentStepStatus.Running, TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
         Assert.Equal("Read notes", vm.CurrentActivity); // active step title
 
-        await _runs.CompleteAsync(run.Id);
+        await _runs.CompleteAsync(run.Id, ct: TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
         Assert.Null(vm.CurrentActivity); // terminal → line hidden
         Assert.False(vm.HasCurrentActivity);
@@ -99,7 +99,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         var run = await NewPlannedRunAsync();
         var stepA = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending };
         var stepB = new AgentStep { Id = Guid.NewGuid(), Ordinal = 1, Title = "B", Status = AgentStepStatus.Pending };
-        await _runs.ReplaceStepsAsync(run.Id, new[] { stepA, stepB });
+        await _runs.ReplaceStepsAsync(run.Id, new[] { stepA, stepB }, TestContext.Current.CancellationToken);
 
         var vm = CreateVm(run.Id);
         await vm.RefreshAsync();
@@ -107,16 +107,16 @@ public sealed class RunProgressViewModelTests : IDisposable
         Assert.Equal(2, vm.Steps.Count);
         Assert.Equal("A", vm.Steps[0].Title);
 
-        await _runs.SetStateAsync(run.Id, AgentRunState.Running);
-        await _runs.SetStepStatusAsync(stepA.Id, AgentStepStatus.Running);
+        await _runs.SetStateAsync(run.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
+        await _runs.SetStepStatusAsync(stepA.Id, AgentStepStatus.Running, TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
         Assert.Equal(RunProgressState.Running, vm.State);
         Assert.True(vm.Steps[0].IsRunning);
         Assert.False(vm.Steps[1].IsRunning);
 
-        await _runs.SetStepStatusAsync(stepA.Id, AgentStepStatus.Done);
-        await _runs.SetStepStatusAsync(stepB.Id, AgentStepStatus.Running);
+        await _runs.SetStepStatusAsync(stepA.Id, AgentStepStatus.Done, TestContext.Current.CancellationToken);
+        await _runs.SetStepStatusAsync(stepB.Id, AgentStepStatus.Running, TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
         Assert.Equal(AgentStepStatus.Done, vm.Steps[0].Status);
@@ -132,7 +132,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         var run = await NewPlannedRunAsync();
         var vm = CreateVm(run.Id);
 
-        await _runs.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 10, OutputTokenCount = 4 });
+        await _runs.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 10, OutputTokenCount = 4 }, TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
         Assert.Equal(10, vm.TotalInputTokens);
@@ -147,7 +147,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     {
         var truncatedRun = await NewPlannedRunAsync();
         var truncVm = CreateVm(truncatedRun.Id);
-        await _runs.CompleteAsync(truncatedRun.Id, truncated: true, truncationReason: "budget");
+        await _runs.CompleteAsync(truncatedRun.Id, truncated: true, truncationReason: "budget", TestContext.Current.CancellationToken);
         await truncVm.RefreshAsync();
         Assert.Equal(RunProgressState.TruncatedCompleted, truncVm.State);
         Assert.True(truncVm.IsTruncated);
@@ -155,7 +155,7 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         var cleanRun = await NewPlannedRunAsync();
         var cleanVm = CreateVm(cleanRun.Id);
-        await _runs.CompleteAsync(cleanRun.Id);
+        await _runs.CompleteAsync(cleanRun.Id, ct: TestContext.Current.CancellationToken);
         await cleanVm.RefreshAsync();
         Assert.Equal(RunProgressState.Completed, cleanVm.State);
         Assert.False(cleanVm.IsTruncated);
@@ -268,7 +268,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     {
         var run = await NewPlannedRunAsync();
         var vm = CreateVm(run.Id);
-        await _runs.FailAsync(run.Id, "generic");
+        await _runs.FailAsync(run.Id, "generic", ct: TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
         Assert.Equal(RunProgressState.Failed, vm.State);
         vm.Dispose();
@@ -284,7 +284,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         var before = vm.State;
 
         // A terminal event for a DIFFERENT run must not reproject this vm (no throw either).
-        await _runs.CompleteAsync(other.Id, truncated: true, truncationReason: "budget");
+        await _runs.CompleteAsync(other.Id, truncated: true, truncationReason: "budget", TestContext.Current.CancellationToken);
 
         Assert.Equal(before, vm.State);
         Assert.False(vm.IsTruncated);
@@ -300,7 +300,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         // Raise a state change from a background thread — the vm must marshal via the captured
         // SynchronizationContext (G3). With the inline context installed on THIS thread, the assert is
         // that no exception escapes; production posts to the WPF dispatcher.
-        await Task.Run(async () => await _runs.SetStateAsync(run.Id, AgentRunState.Running));
+        await Task.Run(async () => await _runs.SetStateAsync(run.Id, AgentRunState.Running), TestContext.Current.CancellationToken);
 
         vm.Dispose();
     }
@@ -311,7 +311,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         var run = await NewPlannedRunAsync();
         var vm = CreateVm(run.Id);
 
-        await _runs.PauseAsync(run.Id, "step-cap");
+        await _runs.PauseAsync(run.Id, "step-cap", TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
         Assert.Equal(RunProgressState.WaitingForInput, vm.State);
@@ -326,7 +326,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     {
         var run = await NewPlannedRunAsync();
         var vm = CreateVm(run.Id);
-        await _runs.PauseAsync(run.Id, "wall-clock");
+        await _runs.PauseAsync(run.Id, "wall-clock", TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
         await vm.ContinueCommand.ExecuteAsync(null);
@@ -340,7 +340,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     {
         var run = await NewPlannedRunAsync();
         var vm = CreateVm(run.Id);
-        await _runs.CompleteAsync(run.Id);
+        await _runs.CompleteAsync(run.Id, ct: TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
         Assert.Equal(RunProgressState.Completed, vm.State);

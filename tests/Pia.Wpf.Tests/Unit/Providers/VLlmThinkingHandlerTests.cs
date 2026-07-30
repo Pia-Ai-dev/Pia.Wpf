@@ -68,7 +68,7 @@ public class VLlmThinkingHandlerTests
 
         var body = """{"model":"Qwen/Qwen3-8B","messages":[]}""";
         var content = new StringContent(body, Encoding.UTF8, "application/json");
-        await client.PostAsync("http://localhost:8000/v1/chat/completions", content);
+        await client.PostAsync("http://localhost:8000/v1/chat/completions", content, TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured.LastBody);
         var node = JsonNode.Parse(captured.LastBody!)!.AsObject();

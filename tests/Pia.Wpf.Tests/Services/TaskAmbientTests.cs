@@ -100,7 +100,7 @@ public class TaskAmbientTests
             await Task.Delay(10);
             observedA = TaskAmbient.Current?.TaskId ?? Guid.Empty;
             subA = TaskAmbient.Current?.WorkingSubpath;
-        });
+        }, TestContext.Current.CancellationToken);
 
         var taskB = Task.Run(async () =>
         {
@@ -109,7 +109,7 @@ public class TaskAmbientTests
             await Task.Delay(10);
             observedB = TaskAmbient.Current?.TaskId ?? Guid.Empty;
             subB = TaskAmbient.Current?.WorkingSubpath;
-        });
+        }, TestContext.Current.CancellationToken);
 
         await Task.WhenAll(taskA, taskB);
 

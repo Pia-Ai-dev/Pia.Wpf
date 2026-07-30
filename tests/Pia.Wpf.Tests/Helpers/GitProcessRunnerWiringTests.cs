@@ -21,7 +21,7 @@ public sealed class GitProcessRunnerWiringTests : IDisposable
         GitLocator.SetExecutableForTests(null);
 
         var result = await new GitProcessRunner().RunAsync(
-            new GitProcessRequest(Path.GetTempPath(), ["status"], GitCommandKind.ReadOnly, CeilingDirectory: null));
+            new GitProcessRequest(Path.GetTempPath(), ["status"], GitCommandKind.ReadOnly, CeilingDirectory: null), TestContext.Current.CancellationToken);
 
         Assert.Equal(-1, result.ExitCode);
         Assert.False(result.Succeeded);
@@ -36,7 +36,7 @@ public sealed class GitProcessRunnerWiringTests : IDisposable
         Assert.SkipUnless(GitLocator.IsAvailable, "git is not installed on this machine");
 
         var result = await new GitProcessRunner().RunAsync(
-            new GitProcessRequest(Path.GetTempPath(), ["--version"], GitCommandKind.ReadOnly, CeilingDirectory: null));
+            new GitProcessRequest(Path.GetTempPath(), ["--version"], GitCommandKind.ReadOnly, CeilingDirectory: null), TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded, $"exit={result.ExitCode} stderr={result.StandardError}");
         Assert.Contains("git version", result.StandardOutput, StringComparison.OrdinalIgnoreCase);

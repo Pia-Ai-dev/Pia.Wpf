@@ -120,7 +120,7 @@ public class ChatSessionManagerTests
                 new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "hi there", Timestamp = DateTime.UtcNow },
             ],
         };
-        _chatService.GetAsync(chatId).Returns(stored);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
 
         var sut = CreateSut();
         var session = await sut.ActivateAsync(chatId);
@@ -129,14 +129,14 @@ public class ChatSessionManagerTests
         Assert.Equal(chatId, session!.Id);
         Assert.Equal(2, session.Messages.Count);
         Assert.Same(session, sut.ActiveSession);
-        await _chatService.Received(1).TouchLastAccessedAsync(chatId);
+        await _chatService.Received(1).TouchLastAccessedAsync(chatId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task ActivateAsync_MissingChat_ReturnsNull()
     {
         var chatId = Guid.NewGuid();
-        _chatService.GetAsync(chatId).Returns((SyncAssistantChat?)null);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns((SyncAssistantChat?)null);
 
         var sut = CreateSut();
         var session = await sut.ActivateAsync(chatId);
@@ -683,8 +683,8 @@ public class ChatSessionManagerTests
 
         Assert.Same(live, attached);                  // live-attach, not a reload
         Assert.Same(live, sut.ActiveSession);
-        await _chatService.DidNotReceive().GetAsync(chatId);
-        await _chatService.DidNotReceive().TouchLastAccessedAsync(chatId);
+        await _chatService.DidNotReceive().GetAsync(chatId, Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().TouchLastAccessedAsync(chatId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1155,7 +1155,7 @@ public class ChatSessionManagerTests
                 new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "user", Content = "remember", Timestamp = DateTime.UtcNow },
             ],
         };
-        _chatService.GetAsync(victimId).Returns(stored);
+        _chatService.GetAsync(victimId, Arg.Any<CancellationToken>()).Returns(stored);
 
         // Churn past the cap so the Idle victim is reaped.
         for (var i = 0; i < 12; i++)

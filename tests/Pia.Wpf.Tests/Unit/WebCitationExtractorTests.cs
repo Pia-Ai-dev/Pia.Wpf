@@ -8,7 +8,9 @@ public class WebCitationExtractorTests
     // Each chip marker round-trips through Markdig as a hyperlink rendering
     // the literal text `[N]`. This helper builds the exact markdown source
     // the extractor emits so tests stay readable.
-    private static string Marker(int number, string url) => $"[\\[{number}\\]]({url})";
+    // url is SourceRef.Url, which is declared string? — a null would interpolate to an empty
+    // href and fail the caller's assertion, which is the behavior we want.
+    private static string Marker(int number, string? url) => $"[\\[{number}\\]]({url})";
 
     [Fact]
     public void Extract_EmptyText_ReturnsEmptyAndNoSources()

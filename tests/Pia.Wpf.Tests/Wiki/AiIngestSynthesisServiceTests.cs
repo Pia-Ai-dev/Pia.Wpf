@@ -47,7 +47,7 @@ public class AiIngestSynthesisServiceTests
 
         var page = await svc.SynthesizeAsync(
             "Pia", "product", "charter",
-            [("sources/a.md", "some raw text")], []);
+            [("sources/a.md", "some raw text")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal(string.Empty, page.Body);
         Assert.Equal(string.Empty, page.Summary);
@@ -81,7 +81,7 @@ public class AiIngestSynthesisServiceTests
 
         var page = await svc.SynthesizeAsync(
             "Alice", "person", "charter",
-            [("sources/a.md", "Alice Anderson leads the project.")], []);
+            [("sources/a.md", "Alice Anderson leads the project.")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal("About Alice Anderson.", page.Summary);
         Assert.Equal("Alice Anderson leads the project.", page.Body);
@@ -101,7 +101,7 @@ public class AiIngestSynthesisServiceTests
 
         var page = await svc.SynthesizeAsync(
             "Alice", "person", "charter",
-            [("sources/a.md", "Alice Anderson leads the project.")], []);
+            [("sources/a.md", "Alice Anderson leads the project.")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal("Plain body about Alice Anderson.", page.Body);
     }
@@ -116,7 +116,7 @@ public class AiIngestSynthesisServiceTests
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter",
-            [("sources/a.md", "raw")], ["acme-corp", "globex-inc"]);
+            [("sources/a.md", "raw")], ["acme-corp", "globex-inc"], TestContext.Current.CancellationToken);
 
         // The exact slugs are embedded and the model is told to link ONLY to them.
         Assert.Contains("acme-corp", aiClient.LastPrompt!);
@@ -135,7 +135,7 @@ public class AiIngestSynthesisServiceTests
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter",
-            [("sources/a.md", "raw")], []);
+            [("sources/a.md", "raw")], [], TestContext.Current.CancellationToken);
 
         Assert.Contains("Do NOT output any [[...]]", aiClient.LastPrompt!);
     }
@@ -153,7 +153,7 @@ public class AiIngestSynthesisServiceTests
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter",
-            [("sources/a.md", "raw")], ["aylin-demir", "marco-altmann"]);
+            [("sources/a.md", "raw")], ["aylin-demir", "marco-altmann"], TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("aylin-demir", aiClient.LastPrompt!);
         Assert.DoesNotContain("marco-altmann", aiClient.LastPrompt!);

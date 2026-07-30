@@ -40,7 +40,7 @@ public class OpenAiReasoningSummaryFallbackHandlerTests
 
         var content = new StringContent(
             """{"reasoning":{"effort":"high","summary":"auto"}}""", Encoding.UTF8, "application/json");
-        var response = await client.PostAsync("https://api.openai.com/v1/responses", content);
+        var response = await client.PostAsync("https://api.openai.com/v1/responses", content, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(2, stub.Calls);
@@ -56,7 +56,7 @@ public class OpenAiReasoningSummaryFallbackHandlerTests
 
         var content = new StringContent(
             """{"reasoning":{"effort":"high"}}""", Encoding.UTF8, "application/json");
-        var response = await client.PostAsync("https://api.openai.com/v1/responses", content);
+        var response = await client.PostAsync("https://api.openai.com/v1/responses", content, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, stub.Calls);

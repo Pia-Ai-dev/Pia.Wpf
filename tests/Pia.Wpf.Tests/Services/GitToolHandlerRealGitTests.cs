@@ -119,7 +119,7 @@ public sealed class GitToolHandlerRealGitTests : IDisposable
 
         // 2. git_init returns a pending action; executing it creates the repo.
         var (initResult, pending) = await handler.HandleToolCallAsync(
-            new FunctionCallContent("id", "git_init", new Dictionary<string, object?>()));
+            new FunctionCallContent("id", "git_init", new Dictionary<string, object?>()), TestContext.Current.CancellationToken);
         Assert.Null(initResult);
         Assert.NotNull(pending);
         var initExecuted = await handler.ExecutePendingActionAsync(pending!);

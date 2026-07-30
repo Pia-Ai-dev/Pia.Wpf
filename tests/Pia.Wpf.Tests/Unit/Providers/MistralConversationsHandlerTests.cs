@@ -179,7 +179,7 @@ public class MistralConversationsHandlerTests
         var client = new HttpClient(handler);
 
         var body = """{"model":"mistral-small","messages":[{"role":"user","content":"hi"}]}""";
-        await client.PostAsync(inputUrl, new StringContent(body, Encoding.UTF8, "application/json"));
+        await client.PostAsync(inputUrl, new StringContent(body, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
 
         Assert.Equal("/v1/conversations", captured.LastRequestUri?.AbsolutePath);
         Assert.NotNull(captured.LastBody);
@@ -204,9 +204,9 @@ public class MistralConversationsHandlerTests
         var body = """{"model":"x","messages":[{"role":"user","content":"hi"}]}""";
         var response = await client.PostAsync(
             "https://api.mistral.ai/v1/chat/completions",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            new StringContent(body, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
 
-        var returned = await response.Content.ReadAsStringAsync();
+        var returned = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         var obj = JsonNode.Parse(returned) as JsonObject;
         Assert.Equal("chat.completion", obj!["object"]?.GetValue<string>());
         var choices = obj["choices"] as JsonArray;
@@ -229,10 +229,10 @@ public class MistralConversationsHandlerTests
         var body = """{"model":"x","messages":[{"role":"user","content":"hi"}],"stream":true}""";
         var response = await client.PostAsync(
             "https://api.mistral.ai/v1/chat/completions",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            new StringContent(body, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
 
         Assert.Equal("text/event-stream", response.Content.Headers.ContentType?.MediaType);
-        var sse = await response.Content.ReadAsStringAsync();
+        var sse = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("data: ", sse);
         Assert.Contains("chat.completion.chunk", sse);
         Assert.Contains("\"content\":\"ready\"", sse);
@@ -265,7 +265,7 @@ public class MistralConversationsHandlerTests
         var handler = new MistralConversationsHandler("ag:1") { InnerHandler = captured };
         var client = new HttpClient(handler);
 
-        await client.GetAsync("https://api.mistral.ai/v1/models");
+        await client.GetAsync("https://api.mistral.ai/v1/models", TestContext.Current.CancellationToken);
 
         Assert.Equal("/v1/models", captured.LastRequestUri?.AbsolutePath);
     }

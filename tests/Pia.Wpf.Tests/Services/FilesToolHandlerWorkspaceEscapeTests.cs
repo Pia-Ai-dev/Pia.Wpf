@@ -68,7 +68,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
     {
         var call = new FunctionCallContent("w", "write_file",
             new Dictionary<string, object?> { ["path"] = vector, ["content"] = "pwned" });
-        var (result, pending) = await _handler.HandleToolCallAsync(call);
+        var (result, pending) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
         // Escape → structured failure, no pending write to approve.
         //
@@ -96,7 +96,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
     {
         var call = new FunctionCallContent("d", "delete_file",
             new Dictionary<string, object?> { ["path"] = vector });
-        var (result, pending) = await _handler.HandleToolCallAsync(call);
+        var (result, pending) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
         Assert.Null(pending);
         Assert.NotNull(result);
@@ -110,7 +110,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
     {
         var call = new FunctionCallContent("r", "read_file",
             new Dictionary<string, object?> { ["path"] = vector });
-        var (result, _) = await _handler.HandleToolCallAsync(call);
+        var (result, _) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.DoesNotContain("TOP SECRET", (string)result!);
@@ -127,7 +127,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
 
         var call = new FunctionCallContent("s", "write_file",
             new Dictionary<string, object?> { ["path"] = "escape-link/secret.txt", ["content"] = "pwned" });
-        var (result, pending) = await _handler.HandleToolCallAsync(call);
+        var (result, pending) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
         Assert.Null(pending);
         Assert.NotNull(result);

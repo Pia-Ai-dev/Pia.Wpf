@@ -77,7 +77,7 @@ public sealed class PluginServiceFileToolRoutingTests : IDisposable
 
         var call = new FunctionCallContent("w", "write_file",
             new Dictionary<string, object?> { ["path"] = "note.txt", ["content"] = "hi" });
-        var (result, pending) = await adapter.HandleToolCallAsync(call);
+        var (result, pending) = await adapter.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
         Assert.NotNull(pending);

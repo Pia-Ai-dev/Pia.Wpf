@@ -39,7 +39,7 @@ public class ScheduledJobToolHandlerTests
             ["grantedTools"] = "create_object, create_todo"
         };
 
-        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args));
+        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args), TestContext.Current.CancellationToken);
 
         Assert.Null(result);
         Assert.NotNull(pending);
@@ -77,7 +77,7 @@ public class ScheduledJobToolHandlerTests
             ["kind"] = "agent"
         };
 
-        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args));
+        var (_, pending) = await handler.HandleToolCallAsync(MakeCall("create_scheduled_research", args), TestContext.Current.CancellationToken);
         Assert.NotNull(pending);
         await handler.ExecutePendingActionAsync(pending!);
 
@@ -257,7 +257,7 @@ public class ScheduledJobToolHandlerTests
             ["id"] = "not-a-guid"
         };
 
-        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("update_scheduled_research", args));
+        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("update_scheduled_research", args), TestContext.Current.CancellationToken);
 
         Assert.Null(pending);
         Assert.NotNull(result);
@@ -276,7 +276,7 @@ public class ScheduledJobToolHandlerTests
             ["id"] = Guid.NewGuid().ToString()
         };
 
-        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("delete_scheduled_research", args));
+        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("delete_scheduled_research", args), TestContext.Current.CancellationToken);
 
         Assert.Null(pending);
         Assert.NotNull(result);
@@ -305,7 +305,7 @@ public class ScheduledJobToolHandlerTests
             ["filter"] = "active"
         };
 
-        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("query_scheduled_research", args));
+        var (result, pending) = await handler.HandleToolCallAsync(MakeCall("query_scheduled_research", args), TestContext.Current.CancellationToken);
 
         Assert.Null(pending);
         Assert.NotNull(result);

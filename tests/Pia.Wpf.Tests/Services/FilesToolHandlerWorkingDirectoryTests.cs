@@ -48,7 +48,7 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
 
         var call = new FunctionCallContent("c1", "read_file",
             new Dictionary<string, object?> { ["path"] = "note.txt" });
-        var (result, _) = await _handler.HandleToolCallAsync(call);
+        var (result, _) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
         Assert.Contains("hello", (string)result!);
     }
@@ -63,7 +63,7 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
         TaskAmbient.Current = new TaskContext(Guid.NewGuid(), "sub");
         var prepareCall = new FunctionCallContent("c1", "write_file",
             new Dictionary<string, object?> { ["path"] = "deferred.txt", ["content"] = "x" });
-        var (prepResult, pending) = await _handler.HandleToolCallAsync(prepareCall);
+        var (prepResult, pending) = await _handler.HandleToolCallAsync(prepareCall, TestContext.Current.CancellationToken);
         Assert.Null(prepResult);
         Assert.NotNull(pending);
 
@@ -92,7 +92,7 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
             // write_file lands under the run root, not the interactive _root.
             var write = new FunctionCallContent("c1", "write_file",
                 new Dictionary<string, object?> { ["path"] = "note.txt", ["content"] = "hello" });
-            var (_, pending) = await _handler.HandleToolCallAsync(write);
+            var (_, pending) = await _handler.HandleToolCallAsync(write, TestContext.Current.CancellationToken);
             Assert.NotNull(pending);
             var execResult = await pending!.Execute();
             Assert.True(Prop<bool>(execResult!, "success"));
@@ -102,12 +102,12 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
             // read_file resolves under the run root.
             var read = new FunctionCallContent("c2", "read_file",
                 new Dictionary<string, object?> { ["path"] = "note.txt" });
-            var (readResult, _) = await _handler.HandleToolCallAsync(read);
+            var (readResult, _) = await _handler.HandleToolCallAsync(read, TestContext.Current.CancellationToken);
             Assert.Contains("hello", (string)readResult!);
 
             // list_files enumerates the run root.
             var list = new FunctionCallContent("c3", "list_files", new Dictionary<string, object?>());
-            var (listResult, _) = await _handler.HandleToolCallAsync(list);
+            var (listResult, _) = await _handler.HandleToolCallAsync(list, TestContext.Current.CancellationToken);
             Assert.Contains("note.txt", (string)listResult!);
         }
         finally

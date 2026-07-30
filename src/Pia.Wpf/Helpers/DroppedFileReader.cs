@@ -90,7 +90,7 @@ public static class DroppedFileReader
                 if (info.Length > MaxTextBytes * 8) return ReadResult.TooLarge;
 
                 using var doc = WordprocessingDocument.Open(path, isEditable: false);
-                var body = doc.MainDocumentPart?.Document.Body;
+                var body = doc.MainDocumentPart?.Document?.Body;
                 if (body is null) return ReadResult.Success(string.Empty);
 
                 var sb = new StringBuilder();
@@ -126,7 +126,7 @@ public static class DroppedFileReader
 
                 using var doc = SpreadsheetDocument.Open(path, isEditable: false);
                 var workbookPart = doc.WorkbookPart;
-                var sheets = workbookPart?.Workbook.Sheets?.Elements<SS.Sheet>().ToList();
+                var sheets = workbookPart?.Workbook?.Sheets?.Elements<SS.Sheet>().ToList();
                 if (workbookPart is null || sheets is null || sheets.Count == 0)
                     return ReadResult.Success(string.Empty);
 
@@ -138,11 +138,12 @@ public static class DroppedFileReader
                     var sheet = sheets[s];
                     if (sheet.Id?.Value is not { } relId) continue;
                     if (workbookPart.GetPartById(relId) is not WorksheetPart wsPart) continue;
+                    if (wsPart.Worksheet is not { } worksheet) continue;
 
                     if (s > 0) sb.AppendLine();
                     sb.Append("## Sheet: ").AppendLine(sheet.Name?.Value ?? $"Sheet{s + 1}");
 
-                    foreach (var row in wsPart.Worksheet.Descendants<SS.Row>())
+                    foreach (var row in worksheet.Descendants<SS.Row>())
                     {
                         ct.ThrowIfCancellationRequested();
 

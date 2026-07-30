@@ -32,7 +32,7 @@ public class PiaCloudChatClientReasoningTests
         var reasoning = new List<string>();
         var text = new List<string>();
         await foreach (var update in client.GetStreamingResponseAsync(
-            new[] { new ChatMessage(ChatRole.User, "hi") }))
+            new[] { new ChatMessage(ChatRole.User, "hi") }, cancellationToken: TestContext.Current.CancellationToken))
         {
             reasoning.AddRange(update.Contents.OfType<TextReasoningContent>().Select(r => r.Text));
             text.AddRange(update.Contents.OfType<TextContent>().Select(t => t.Text));
@@ -48,7 +48,7 @@ public class PiaCloudChatClientReasoningTests
         var json = """{"message":{"role":"assistant","content":"Answer","reasoning":"server thinking"},"model":"m"}""";
         var client = CreateClient(json, "application/json");
 
-        var response = await client.GetResponseAsync(new[] { new ChatMessage(ChatRole.User, "hi") });
+        var response = await client.GetResponseAsync(new[] { new ChatMessage(ChatRole.User, "hi") }, cancellationToken: TestContext.Current.CancellationToken);
 
         var reasoning = response.Messages.SelectMany(m => m.Contents).OfType<TextReasoningContent>().Select(r => r.Text);
         Assert.Contains("server thinking", reasoning);
@@ -64,7 +64,7 @@ public class PiaCloudChatClientReasoningTests
         var json = """{"model":"gpt-x","choices":[{"message":{"role":"assistant","content":"Answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}""";
         var client = CreateClient(json, "application/json");
 
-        var response = await client.GetResponseAsync(new[] { new ChatMessage(ChatRole.User, "hi") });
+        var response = await client.GetResponseAsync(new[] { new ChatMessage(ChatRole.User, "hi") }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("Answer", response.Text);
         Assert.Equal("gpt-x", response.ModelId);
@@ -85,7 +85,7 @@ public class PiaCloudChatClientReasoningTests
 
         var text = new List<string>();
         await foreach (var update in client.GetStreamingResponseAsync(
-            new[] { new ChatMessage(ChatRole.User, "hi") }))
+            new[] { new ChatMessage(ChatRole.User, "hi") }, cancellationToken: TestContext.Current.CancellationToken))
         {
             text.AddRange(update.Contents.OfType<TextContent>().Select(t => t.Text));
         }
@@ -105,7 +105,7 @@ public class PiaCloudChatClientReasoningTests
 
         var text = new List<string>();
         await foreach (var update in client.GetStreamingResponseAsync(
-            new[] { new ChatMessage(ChatRole.User, "hi") }))
+            new[] { new ChatMessage(ChatRole.User, "hi") }, cancellationToken: TestContext.Current.CancellationToken))
         {
             text.AddRange(update.Contents.OfType<TextContent>().Select(t => t.Text));
         }
@@ -123,7 +123,7 @@ public class PiaCloudChatClientReasoningTests
 
         var reasoning = new List<string>();
         await foreach (var update in client.GetStreamingResponseAsync(
-            new[] { new ChatMessage(ChatRole.User, "hi") }))
+            new[] { new ChatMessage(ChatRole.User, "hi") }, cancellationToken: TestContext.Current.CancellationToken))
         {
             reasoning.AddRange(update.Contents.OfType<TextReasoningContent>().Select(r => r.Text));
         }

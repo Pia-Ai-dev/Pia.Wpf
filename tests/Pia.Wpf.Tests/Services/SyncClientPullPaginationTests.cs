@@ -131,7 +131,7 @@ public class SyncClientPullPaginationTests
         await sut.PerformFirstSyncMigrationAsync();
 
         // Even with zero sessions the non-session entities + Settings must still be pushed once.
-        Assert.Equal(1, handler.PushBodies.Count);
+        Assert.Single(handler.PushBodies);
     }
 
     private static int CountSessionIds(string body, IReadOnlyList<Guid> ids) =>
@@ -223,7 +223,7 @@ public class SyncClientPullPaginationTests
 
         // ServerTimestamp does not advance past `since` (DateTime.MinValue) despite HasMore=true,
         // so the strict '>' guard stops the drain instead of looping forever.
-        Assert.Equal(1, handler.RequestUris.Count);
+        Assert.Single(handler.RequestUris);
     }
 
     [Fact]
@@ -240,7 +240,7 @@ public class SyncClientPullPaginationTests
 
         await InvokePullChangesAsync(sut, client, new AppSettings());
 
-        Assert.Equal(1, handler.RequestUris.Count);
+        Assert.Single(handler.RequestUris);
     }
 
     // --- Sec 3.5: catalog-version round-trip ---

@@ -261,7 +261,7 @@ public class FilesToolHandlerSearchTests : IDisposable
         Assert.Contains(rel, search);
 
         var read = new FunctionCallContent("c2", "read_file", new Dictionary<string, object?> { ["path"] = rel });
-        var (readResult, _) = await _handler.HandleToolCallAsync(read);
+        var (readResult, _) = await _handler.HandleToolCallAsync(read, TestContext.Current.CancellationToken);
         var readText = (string)readResult!;
         Assert.Contains("SCOPED hit", readText);
         Assert.DoesNotContain("not found", readText);

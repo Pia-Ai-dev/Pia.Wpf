@@ -19,7 +19,7 @@ public class EmbeddingServiceEnsureAvailableTests
             return;
         }
 
-        var ok = await svc.EnsureAvailableAsync();
+        var ok = await svc.EnsureAvailableAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(ok);
         Assert.Equal(0, factory.RequestCount);
     }
@@ -36,7 +36,7 @@ public class EmbeddingServiceEnsureAvailableTests
             return;
         }
 
-        var ok = await svc.EnsureAvailableAsync();
+        var ok = await svc.EnsureAvailableAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.False(ok);
     }
 

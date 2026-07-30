@@ -86,7 +86,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
                 ["grantedTools"] = "create_memory"
             });
 
-        var (_, pending) = await toolHandler.HandleToolCallAsync(createCall);
+        var (_, pending) = await toolHandler.HandleToolCallAsync(createCall, TestContext.Current.CancellationToken);
         Assert.NotNull(pending);
         await pending!.Execute();
 
@@ -96,14 +96,14 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         using (var cmd = conn.CreateCommand())
         {
             cmd.CommandText = "SELECT Id FROM ScheduledJobs WHERE Name = 'TEST_E2E_Tesla'";
-            jobId = Guid.Parse((string)(await cmd.ExecuteScalarAsync())!);
+            jobId = Guid.Parse((string)(await cmd.ExecuteScalarAsync(TestContext.Current.CancellationToken))!);
         }
         using (var cmd = conn.CreateCommand())
         {
             cmd.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @t WHERE Id = @id";
             cmd.Parameters.AddWithValue("@t", DateTime.Now.AddSeconds(-1).ToString("O"));
             cmd.Parameters.AddWithValue("@id", jobId.ToString());
-            await cmd.ExecuteNonQueryAsync();
+            await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
 
         // Run the background service tick once.
@@ -123,7 +123,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         // Assert: query_scheduled_research renders the job.
         var queryCall = new FunctionCallContent("call2", "query_scheduled_research",
             new Dictionary<string, object?> { ["filter"] = "all" });
-        var (queryResult, _) = await toolHandler.HandleToolCallAsync(queryCall);
+        var (queryResult, _) = await toolHandler.HandleToolCallAsync(queryCall, TestContext.Current.CancellationToken);
 
         Assert.NotNull(queryResult);
         var text = queryResult!.ToString()!;

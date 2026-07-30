@@ -57,7 +57,7 @@ public class OpenAiWebSearchHandlerTests
 
         var body = """{"model":"gpt-4o-mini","input":[]}""";
         var content = new StringContent(body, Encoding.UTF8, "application/json");
-        await client.PostAsync("https://api.openai.com/v1/responses", content);
+        await client.PostAsync("https://api.openai.com/v1/responses", content, TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured.LastBody);
         var tools = JsonNode.Parse(captured.LastBody!)!.AsObject()["tools"]!.AsArray();

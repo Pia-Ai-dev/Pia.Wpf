@@ -374,7 +374,7 @@ public class FilesToolHandlerWriteTests : IDisposable
         var call = new FunctionCallContent("d1", "delete_file",
             new Dictionary<string, object?> { ["path"] = target });
         // A blocked delete is a deterministic rejection — immediate result, no confirmation card.
-        var (result, pending) = await handler.HandleToolCallAsync(call);
+        var (result, pending) = await handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
         Assert.Null(pending);
         Assert.Contains("Refusing to delete", (string)result!);
     }
@@ -390,7 +390,7 @@ public class FilesToolHandlerWriteTests : IDisposable
 
         var call = new FunctionCallContent("r1", "read_file",
             new Dictionary<string, object?> { ["path"] = target });
-        var (result, _) = await handler.HandleToolCallAsync(call);
+        var (result, _) = await handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
         Assert.Contains("Refusing to read", (string)result!);
     }
 
@@ -415,13 +415,13 @@ public class FilesToolHandlerWriteTests : IDisposable
 
         var allowed = new FunctionCallContent("w1", "write_file",
             new Dictionary<string, object?> { ["path"] = workdirTarget, ["content"] = "Write-Output 'hi'" });
-        var (allowedResult, allowedPending) = await handler.HandleToolCallAsync(allowed);
+        var (allowedResult, allowedPending) = await handler.HandleToolCallAsync(allowed, TestContext.Current.CancellationToken);
         Assert.Null(allowedResult);          // not a sensitive-path rejection
         Assert.NotNull(allowedPending);      // a viable write awaiting approval
 
         var blocked = new FunctionCallContent("w2", "write_file",
             new Dictionary<string, object?> { ["path"] = siblingTarget, ["content"] = "Write-Output 'hi'" });
-        var (blockedResult, blockedPending) = await handler.HandleToolCallAsync(blocked);
+        var (blockedResult, blockedPending) = await handler.HandleToolCallAsync(blocked, TestContext.Current.CancellationToken);
         Assert.Null(blockedPending);
         Assert.Contains("Refusing to write", Prop<string?>(blockedResult!, "error")!);
     }

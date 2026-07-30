@@ -30,7 +30,7 @@ public class EmbeddingServiceSemanticTests
         var svc = CreateIfAvailable();
         if (svc is null) return; // model not on disk — skip
 
-        var v = await svc.GenerateEmbeddingAsync("This is a business plan.");
+        var v = await svc.GenerateEmbeddingAsync("This is a business plan.", TestContext.Current.CancellationToken);
 
         Assert.Equal(384, v.Length);
         Assert.All(v, x => Assert.True(float.IsFinite(x), "embedding component must be finite"));
@@ -50,9 +50,9 @@ public class EmbeddingServiceSemanticTests
         var svc = CreateIfAvailable();
         if (svc is null) return;
 
-        var anchor = await svc.GenerateEmbeddingAsync("The cat sat on the mat.");
-        var similar = await svc.GenerateEmbeddingAsync("A cat is sitting on the rug.");
-        var unrelated = await svc.GenerateEmbeddingAsync("Quarterly revenue projections for the fiscal year.");
+        var anchor = await svc.GenerateEmbeddingAsync("The cat sat on the mat.", TestContext.Current.CancellationToken);
+        var similar = await svc.GenerateEmbeddingAsync("A cat is sitting on the rug.", TestContext.Current.CancellationToken);
+        var unrelated = await svc.GenerateEmbeddingAsync("Quarterly revenue projections for the fiscal year.", TestContext.Current.CancellationToken);
 
         var simScore = Cosine(anchor, similar);
         var unrelScore = Cosine(anchor, unrelated);
@@ -70,9 +70,9 @@ public class EmbeddingServiceSemanticTests
         // The whole point of the multilingual model: a German translation must be closer to the English
         // sentence than an unrelated English sentence is. A WordPiece-shaped tokenizer against this XLM-R
         // model produced garbage that could never satisfy this.
-        var english = await svc.GenerateEmbeddingAsync("The cat sat on the mat.");
-        var german = await svc.GenerateEmbeddingAsync("Die Katze saß auf der Matte.");
-        var unrelated = await svc.GenerateEmbeddingAsync("Quarterly revenue projections for the fiscal year.");
+        var english = await svc.GenerateEmbeddingAsync("The cat sat on the mat.", TestContext.Current.CancellationToken);
+        var german = await svc.GenerateEmbeddingAsync("Die Katze saß auf der Matte.", TestContext.Current.CancellationToken);
+        var unrelated = await svc.GenerateEmbeddingAsync("Quarterly revenue projections for the fiscal year.", TestContext.Current.CancellationToken);
 
         var translationScore = Cosine(english, german);
         var unrelScore = Cosine(english, unrelated);
@@ -98,7 +98,7 @@ public class EmbeddingServiceSemanticTests
         Assert.All(vectors, v => Assert.Equal(384, v.Length));
 
         // The corruption outlived the racing calls — a later, uncontended call must also still work.
-        var after = await svc.GenerateEmbeddingAsync("The cat sat on the mat.");
+        var after = await svc.GenerateEmbeddingAsync("The cat sat on the mat.", TestContext.Current.CancellationToken);
         Assert.Equal(384, after.Length);
     }
 

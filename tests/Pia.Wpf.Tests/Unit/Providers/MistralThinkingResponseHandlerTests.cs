@@ -130,8 +130,8 @@ public class MistralThinkingResponseHandlerTests
         };
         var client = new HttpClient(handler);
 
-        var response = await client.GetAsync("https://api.mistral.ai/v1/chat/completions");
-        var body = await response.Content.ReadAsStringAsync();
+        var response = await client.GetAsync("https://api.mistral.ai/v1/chat/completions", TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         Assert.Contains("<think>let me reason</think>", body);
         Assert.DoesNotContain("\"thinking\"", body);
@@ -151,8 +151,8 @@ public class MistralThinkingResponseHandlerTests
         var client = new HttpClient(handler);
 
         var response = await client.GetAsync(
-            "https://api.mistral.ai/v1/chat/completions", HttpCompletionOption.ResponseHeadersRead);
-        var body = await response.Content.ReadAsStringAsync();
+            "https://api.mistral.ai/v1/chat/completions", HttpCompletionOption.ResponseHeadersRead, TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         Assert.Contains("<think>hmm</think>", body);
         Assert.DoesNotContain("\"thinking\"", body);
