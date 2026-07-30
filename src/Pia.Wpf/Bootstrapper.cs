@@ -519,6 +519,10 @@ public static class Bootstrapper
         services.AddSingleton<Services.Flow.IFlowService, Services.Flow.FlowService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
+
+        // The single place Application.Current.Dispatcher is read for a ViewModel marshal (Batch 12).
+        // Singleton is safe and correct: it holds no state and re-reads Application.Current per call.
+        services.AddSingleton<IUiDispatcher, UiDispatcherService>();
         services.AddSingleton<ITtsService, TtsService>();
 
         // Privacy / PII tokenization
