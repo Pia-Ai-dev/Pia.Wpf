@@ -74,8 +74,16 @@ that still contains `"costUsd": 0.42` — it must parse, and the tokens/time mus
 
 ## Acceptance
 
-`grep -rniE "costusd|\\\$\{?cost" src tests` returns nothing; the ledger strip shows tokens and active time only; build green
-in Debug **and** Release at `0 Warning(s)`.
+`grep -rniE "costusd|\\\$\{?cost" src tests` returns **exactly one** hit: the legacy JSON fixture in
+`RunProgressViewModelTests` demanded by the round-trip test above. That is the one occurrence the removal
+*needs* — a test asserting old rows still parse cannot avoid naming the key. Nothing else survives.
+
+Run the grep **widened to bare `cost`/`usd`/`price`** too — the narrow pattern matches neither `Tokens/cost/wall-clock`
+in `AgentRun.LedgerJson`'s doc comment nor `no price table populates it` on the removed backing field, and both were
+live when this was written. Filter the unrelated hits (Argon2 `MemoryCostKb`, the compactor's `pinnedCost`,
+token-cost prose) and confirm no run-panel or ledger surface remains.
+
+The ledger strip shows tokens and active time only; build green in Debug **and** Release at `0 Warning(s)`.
 
 ## If a real cost figure is ever wanted
 

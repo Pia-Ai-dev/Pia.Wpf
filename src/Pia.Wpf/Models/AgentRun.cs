@@ -45,10 +45,11 @@ public sealed class AgentRun
     public string? PolicyJson { get; set; }
 
     /// <summary>
-    /// Tokens/cost/wall-clock, per step + total:
-    /// <c>{ inputTokens, outputTokens, costUsd?, wallClockMs, activeMs, segmentStartedAt?, perStep:[...] }</c>.
+    /// Tokens/wall-clock, per step + total:
+    /// <c>{ inputTokens, outputTokens, wallClockMs, activeMs, segmentStartedAt?, perStep:[...] }</c>.
     /// <c>wallClockMs</c> is accumulated ACTIVE time (parked gaps excluded); <c>activeMs</c> +
-    /// <c>segmentStartedAt</c> are its internal accumulator/open-segment marker.
+    /// <c>segmentStartedAt</c> are its internal accumulator/open-segment marker. A row written before
+    /// 2026-07-30 also carries a withdrawn per-run money field; readers ignore unknown members.
     /// </summary>
     public string? LedgerJson { get; set; }
 

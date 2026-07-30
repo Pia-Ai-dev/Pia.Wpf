@@ -816,7 +816,6 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     {
         public long InputTokens { get; set; }
         public long OutputTokens { get; set; }
-        public double? CostUsd { get; set; }
 
         /// <summary>
         /// REPORTED total worked time = <see cref="ActiveMs"/> + the currently open segment. The only

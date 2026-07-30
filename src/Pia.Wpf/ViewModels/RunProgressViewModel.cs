@@ -100,10 +100,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private long _totalOutputTokens;
 
-    /// <summary>Rendered only when non-null (no price table populates it in Phase 1 — F6/OQ4).</summary>
-    [ObservableProperty]
-    private double? _costUsd;
-
     [ObservableProperty]
     private long _wallClockMs;
 
@@ -209,7 +205,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         {
             TotalInputTokens = ledger.InputTokens;
             TotalOutputTokens = ledger.OutputTokens;
-            CostUsd = ledger.CostUsd; // TODO Phase 2: price table populates cost
             WallClockMs = ledger.WallClockMs;
             ApplyPerStepLedger(ledger);
             OnPropertyChanged(nameof(LedgerSummary));
@@ -462,8 +457,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         var parts = new List<string> { $"{TotalInputTokens + TotalOutputTokens:N0} Tokens" };
         if (WallClockMs > 0)
             parts.Add($"{WallClockMs / 1000.0:0.#}s");
-        if (CostUsd is { } cost)
-            parts.Add($"${cost:0.##}");
         return string.Join(" · ", parts);
     }
 
@@ -479,7 +472,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         public long InputTokens { get; set; }
         public long OutputTokens { get; set; }
-        public double? CostUsd { get; set; }
         public long WallClockMs { get; set; }
         public List<StepLedgerEntry> PerStep { get; set; } = [];
     }

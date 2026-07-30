@@ -349,6 +349,56 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
+    /// <summary>Batch 02: pricing is withdrawn, so the strip is tokens + active seconds and nothing else.
+    /// Asserted as the WHOLE string rather than a Contains — a money segment appended after the seconds
+    /// is exactly what a substring check would let through.</summary>
+    [Fact]
+    public async Task LedgerSummary_IsTokensAndActiveSecondsOnly_WithNoMoneySegment()
+    {
+        var run = await NewPlannedRunAsync();
+        WriteRawLedger(run.Id, """{"inputTokens":10,"outputTokens":4,"wallClockMs":5000,"activeMs":5000,"perStep":[]}""");
+        var vm = CreateVm(run.Id);
+
+        await vm.RefreshAsync();
+
+        Assert.Equal("14 Tokens · 5s", vm.LedgerSummary);
+        Assert.DoesNotContain('$', vm.LedgerSummary);
+        vm.Dispose();
+    }
+
+    /// <summary>Persisted-data compatibility for that removal. The ledger's JSON options never suppressed
+    /// nulls, so every row written before 2026-07-30 carries the withdrawn money key literally; neither
+    /// serializer sets <c>UnmappedMemberHandling</c>, so the reader skips it — no migration, no shim. The
+    /// fixture value is deliberately non-null: a null would also pass against a reader that still bound
+    /// the field. If the key made <c>TryParseLedger</c> throw it would return null and the tokens below
+    /// would read 0, so these asserts are what proves the parse.</summary>
+    [Fact]
+    public async Task LegacyLedger_CarryingTheWithdrawnMoneyKey_ProjectsTokensAndTimeUnchanged()
+    {
+        var run = await NewPlannedRunAsync();
+        WriteRawLedger(run.Id, """{"inputTokens":10,"outputTokens":4,"costUsd":0.42,"wallClockMs":5000,"perStep":[]}""");
+        var vm = CreateVm(run.Id);
+
+        await vm.RefreshAsync();
+
+        Assert.Equal(10, vm.TotalInputTokens);
+        Assert.Equal(4, vm.TotalOutputTokens);
+        Assert.Equal(5_000, vm.WallClockMs); // exact: GetAsync is a pure read, so no clock upgrade runs
+        Assert.Equal("14 Tokens · 5s", vm.LedgerSummary);
+        vm.Dispose();
+    }
+
+    /// <summary>Plants a ledger the service would never write — the only way to stand in a legacy row.</summary>
+    private void WriteRawLedger(Guid runId, string ledgerJson)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE AgentRuns SET LedgerJson = @Ledger WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@Ledger", ledgerJson);
+        cmd.Parameters.AddWithValue("@Id", runId.ToString());
+        cmd.ExecuteNonQuery();
+    }
+
     public void Dispose()
     {
         _runs.Dispose();
