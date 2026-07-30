@@ -40,15 +40,27 @@ public sealed class AssistantChatRetentionServiceTests
     }
 
     [Fact]
-    public async Task RetentionCleanup_SkipsThePruneWhenHistoryIsDisabled()
+    public async Task RetentionCleanup_PrunesToTheOneDayFloorWhenHistoryIsDisabled()
     {
         var ct = TestContext.Current.CancellationToken;
-        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryEnabled = false });
+        // A long retention setting the user cannot even reach with history off — it must not be honoured here.
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryEnabled = false, ChatHistoryRetentionDays = 365 });
+        DateTime? pruneCutoff = null;
+        _timeline.PruneOlderThanAsync(Arg.Do<DateTime>(c => pruneCutoff = c), Arg.Any<CancellationToken>()).Returns(0);
 
         await CreateSut().RunCleanupAsync(ct);
 
-        // Same gate as the chat eviction: history off means nothing accumulates, audit table included.
-        await _timeline.DidNotReceive().PruneOlderThanAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+        // The prune is NOT behind the ChatHistoryEnabled gate, and deliberately so: nothing else in the app
+        // gates chat or run persistence on that flag, so skipping the pass removed the only bound on
+        // AgentTimelineEvents for exactly the user who asked for less retention. History off prunes HARDER —
+        // the one-day floor — and never to UtcNow, which would wipe a live run's trace mid-run.
+        Assert.NotNull(pruneCutoff);
+        var expected = DateTime.UtcNow - TimeSpan.FromDays(1);
+        Assert.True(Math.Abs((pruneCutoff.Value - expected).TotalMinutes) < 5,
+            $"expected a ~1-day cutoff, got {pruneCutoff:O}");
+
+        // The chat eviction IS still gated: turning history off already wiped the chats once, and re-evicting
+        // on a 1-day cutoff is not this flag's contract.
         await _chats.DidNotReceive().EvictOlderThanAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
