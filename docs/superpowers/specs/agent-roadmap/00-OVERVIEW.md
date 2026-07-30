@@ -18,11 +18,12 @@ bar, so the trap is avoidable rather than theoretical — though it was not avoi
 an untokened `Task.Delay` did fire during Batch 04's fix pass and was cleared before its commit. Read the count
 off MSBuild's `N Warning(s)` summary line — at `-v:n` every warning prints twice, so grepping the log
 double-counts. **The suite reaches `failed: 0` on the final tree — 2422 total / 0 failed / 1 skipped**, and
-unlike the merge run it reached it on the **first** attempt there rather than the third: three runs of the final
-tree exist (two consecutive by Batch 03's fix pass, one independent by the roadmap pass that wrote this line)
-and all three are identical, with no re-run needed to get a clean one. Across the whole run the four agents
-executed roughly **30** full gates, which is what makes the two intermittents recorded below measurements
-rather than anecdotes. See the callout below for the numbers and what is still owed._ Living index
+the **three recorded runs of the final tree are identical** (two consecutive by Batch 03's fix pass, one
+independent by the roadmap pass that wrote this line), with no re-run needed to get a clean one. Scoped that way
+on purpose: two intermittents *did* fire earlier in the run on earlier trees (both recorded below), so "clean on
+the final tree" is a claim about `c92dfdd` and **not** an aggregate over the run. Across the whole run the four
+agents executed roughly **30** full gates, which is what makes those two intermittents measurements rather than
+anecdotes — and re-reading them is the better guide to what a fresh run will do than this line is. See the callout below for the numbers and what is still owed._ Living index
 of what the Agent System has shipped and what is left to build. Authoritative design:
 [`../2026-07-18-agent-system-phase1-plan.md`](../2026-07-18-agent-system-phase1-plan.md)
 (referenced below as “the plan §N”). The open items in the last section come from
@@ -412,7 +413,10 @@ its blocker cleared: 09 owes a job-creation surface whose payload is "goal + sch
 policy**" (`09-scheduler-ui.md:20`/`:25`, which names the dependency on Batch 04 explicitly), and that policy
 now exists as `RunAutonomyPolicy` with a resolved class list already persisted in `AgentRuns.PolicyJson` and a
 settings preset to author it from — so 09 has something real to bind to, whereas 08 still waits on 07. Nothing
-about 08 got worse.
+about 08 got worse. **Note that rank now deliberately crosses phase**: 09 is a Phase-4 batch sitting between two
+Phase-3 ones. That is not a typo — per the note above the table, `#` is a file ID and **Rank is the only priority
+column**, so a cleared dependency can move a later-phase batch ahead of an earlier-phase one. It is the first
+time on this branch that it has, which is why it is called out rather than left to be read as an error.
 
 ~~`PolicyJson` is no longer NULL — it carries the launch grant envelope — so Batch 04 must *extend* that
 document, not claim the column.~~ **Done, and the instruction was right about the constraint but the batch
@@ -872,8 +876,10 @@ these carries its full reasoning and its escape hatch.
 
 - **RELEASE NOTES: voice mode lost a capability, on purpose.** This is the batch's one user-facing *removal*
   and the only item here a user will notice unprompted. Voice mode used to execute **every** write tool with no
-  gate at all (`AssistantViewModel.cs:1496` before this batch) — no card, no grant, no transcript entry, on the
-  one surface that has nowhere to show a card. It now goes through the same resolver as everything else, so
+  gate at all — no card, no grant, no transcript entry, on the one surface that has nowhere to show a card.
+  Verified against `dda6703` rather than taken from a report: `AssistantViewModel.cs:1496` is
+  `var actionResult = await pendingAction.Execute();`, sitting under a comment that says it in words —
+  *“Auto-approve write operations in voice mode (no dialog)”* — with no condition between them. It now goes through the same resolver as everything else, so
   asking Pia out loud to write a file **declines and names the chat window** unless the agent-write setting is
   on, while the four curated additive tools (todo, reminder, list-append, object-create) still work. Belongs in
   the release notes for the same reason the `Once`-job backfill does: it is correct, it is deliberate, and a
