@@ -17,9 +17,13 @@ namespace Pia.Tests.Helpers;
 /// developer's real runs folder forever.
 /// </para>
 /// <para>
-/// Shares the <c>RunWorkspaceRedirectsStatic</c> collection with the tests that drive a real promotion,
-/// because the registry is process-global: this class's cap fact deliberately overflows it, and evicting
-/// another class's entry mid-fact would be a fixture-only failure.
+/// Shares the <c>RunWorkspaceRedirectsStatic</c> collection with every other class that reaches
+/// <see cref="RunWorkspaceRedirects.Record"/> at a root the containment gate ACCEPTS, because the registry is
+/// process-global: this class's cap fact deliberately overflows it, and evicting another class's entry mid-fact
+/// would be a fixture-only failure. Those classes are <c>LiveTurnExecutorPlannedRunTests</c> and
+/// <c>RunWorkspacePromotionTests</c> — the latter's real-shape promotion fact drives a CopyOut whose Record call
+/// lands under the real runs root, so it was silently outside this isolation until the Phase 3 fix pass joined
+/// it. Anything new that promotes at the real shape belongs in the collection too.
 /// </para>
 /// </summary>
 [Collection("RunWorkspaceRedirectsStatic")]

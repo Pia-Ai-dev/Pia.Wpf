@@ -102,9 +102,10 @@ public sealed class AgentPlanner : IAgentPlanner
         // mean to assign. Not an index either: an off-by-one silently assigns the WRONG persona, whereas a
         // name mismatch fails closed to null, which is the run persona, which is today.
         [property: Description("Optional: the exact name of one of the listed specialists to run this step")] string? PersonaKey = null,
-        // Steps sharing the same non-null value are declared independent of each other. Persisted for a later
-        // batch to act on (AgentStep.ExtraJson); nothing in this build fans out, so the only effect today is
-        // that a plan can RECORD the intent.
+        // Steps sharing the same non-null value are declared independent of each other. Persisted into
+        // AgentStep.ExtraJson and READ BACK by AgentRunOrchestrator.ParallelGroupOf since G10: a group of two or
+        // more still-pending steps is delegated to sibling child runs and awaited (07 D11), so this number is
+        // load-bearing, not a record of intent. A group of ONE is not a fan-out and runs in-process.
         [property: Description("Optional: steps that can run at the same time, independently, share one number")] int? ParallelGroup = null);
 
     private sealed record EmitPlanArgs(PlanStepArg[]? Steps);

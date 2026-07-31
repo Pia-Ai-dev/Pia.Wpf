@@ -5,19 +5,27 @@
              x:Name="Root"
              Width="28" Height="28"
              Focusable="False">
-  <!-- BorderThickness/BorderBrush add the Batch 07 accent ring (§0.8/§4.5): 1.5px straight into the
-       already-registered HexToBrushConverter, which returns Transparent for a null/blank/unparseable
-       accent — an unset AccentColor renders byte-identical to before this DP existed. -->
-  <Border CornerRadius="6"
-          Background="{DynamicResource BgCanvasBrush}"
-          BorderThickness="1.5"
-          BorderBrush="{Binding AccentColor, ElementName=Root, Converter={StaticResource HexToBrushConverter}}">
-    <Border.Effect>
-      <DropShadowEffect Color="#0F1729" Opacity="0.18" BlurRadius="6" ShadowDepth="1" />
-    </Border.Effect>
-    <controls:PersonaGlyph PersonaId="{Binding PersonaId, ElementName=Root}"
-                           Emoji="{Binding Emoji, ElementName=Root}"
-                           GlyphSize="20"
-                           Margin="2" />
-  </Border>
+  <!-- The Batch 07 accent ring (§0.8/§4.5) is an OVERLAID sibling, not a BorderThickness on the plate below.
+       Border reserves BorderThickness in MeasureOverride and clips Background to the inner rect whether or not
+       BorderBrush is Transparent, so putting 1.5px on the plate shrank the visible 28x28 plate to 25x25 and
+       inset the glyph — for EVERY consumer of this control, including the live chat and the history inspector,
+       neither of which can ever set AccentColor. §4.5's "an unset accent renders exactly as today" is only true
+       with the ring on its own element. HexToBrushConverter returns Transparent for a null/blank/unparseable
+       accent, so an unset accent draws nothing at all. -->
+  <Grid>
+    <Border CornerRadius="6"
+            Background="{DynamicResource BgCanvasBrush}">
+      <Border.Effect>
+        <DropShadowEffect Color="#0F1729" Opacity="0.18" BlurRadius="6" ShadowDepth="1" />
+      </Border.Effect>
+      <controls:PersonaGlyph PersonaId="{Binding PersonaId, ElementName=Root}"
+                             Emoji="{Binding Emoji, ElementName=Root}"
+                             GlyphSize="20"
+                             Margin="2" />
+    </Border>
+    <Border CornerRadius="6"
+            IsHitTestVisible="False"
+            BorderThickness="1.5"
+            BorderBrush="{Binding AccentColor, ElementName=Root, Converter={StaticResource HexToBrushConverter}}" />
+  </Grid>
 </UserControl>

@@ -54,6 +54,13 @@ public sealed class FilesToolHandlerRunsDirGuardTests : IDisposable
         return (T)p!.GetValue(obj)!;
     }
 
+    /// <summary>
+    /// <b>REGRESSION</b>, and the fact carrying R1's whole point — labelled here rather than only in the spec's
+    /// table, as 06 §9's preamble requires. Neutralization: revert the <c>runs</c> entry in
+    /// <c>SensitivePathGuard.BuildAllowedExceptions</c> → the write comes back as
+    /// <c>WriteResult.Failed</c> naming a "protected system or application data directory", because
+    /// <c>%LOCALAPPDATA%\Pia</c> is blocked wholesale and containment passes before the denylist runs.
+    /// </summary>
     [Fact]
     public async Task AWriteInsideARealRunsWorkspace_Succeeds()
     {
@@ -71,6 +78,13 @@ public sealed class FilesToolHandlerRunsDirGuardTests : IDisposable
         Assert.Contains("hi", File.ReadAllText(full));
     }
 
+    /// <summary>
+    /// <b>GUARD</b>, not a regression, and the distinction matters when this pair is next debugged: containment
+    /// is unchanged by G1/G2, so reverting the carve-out leaves this fact GREEN. It is the companion that stops
+    /// the carve-out from being read as "the runs tree is unguarded" — but it cannot itself demonstrate the
+    /// carve-out, because an escape assertion also passes against a root nothing can write to at all. The fact
+    /// above is the control.
+    /// </summary>
     [Fact]
     public async Task EscapeVector_IsStillRejected_InsideARealRunsWorkspace()
     {

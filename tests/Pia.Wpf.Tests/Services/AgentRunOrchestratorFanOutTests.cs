@@ -894,6 +894,63 @@ public sealed class AgentRunOrchestratorFanOutTests
     }
 
     /// <summary>
+    /// T-FAN-13's SECOND ARM, added by the Phase 3 fix pass. §9.8 asks for both arms in as many words — "one
+    /// in-method guard serves both, and driving both arms is what proves it" — and the fact above only ever takes
+    /// the <c>PlanResult.Fallback</c> degrade one. This one lets the child's plan drain normally so it settles
+    /// through the MAIN terminal arm (<c>SafeEndRun</c> → <c>SafePromote</c> → <c>SafeComplete</c>), the path a
+    /// real completed child takes.
+    /// <para>
+    /// <b>GUARD as of today's tree, deliberately labelled so:</b> the guard is a single early return inside
+    /// <c>SafePromote</c> and both call sites funnel through it, so the two arms cannot diverge here and this
+    /// cannot red on a revert that the fact above survives. It exists for the change that MOVES the guard to the
+    /// two call sites — e.g. to keep promoting a child but skip only the teardown — and gets it right on one arm
+    /// and wrong on the other. The parentless control repeats on this arm for the same reason it does above.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AChildRunNeverPromotes_OnTheMainTerminalArmEither()
+    {
+        using var h = new Harness();
+        var parent = await h.NewRunAsync("parent");
+        var child = await h.NewRunAsync("child", parentRunId: parent.Id);
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase)
+        {
+            PromoteResult = new RunPromotionResult(RunWorkspaceMode.Copy, 3, 0, 0, null),
+        };
+        var root = Path.Combine(h.RunsBase, parent.Id.ToString());
+        Directory.CreateDirectory(root);
+
+        // A real plan (no parallelGroup, no launcher) so the drain loop runs the step and reaches the terminal
+        // settle block — NOT the early-returning degrade arm.
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", null)), false));
+
+        await h.BuildOrchestrator(planner, workspaces: workspaces).RunAsync(
+            child, new RecordingExecutor { WorkspaceRoot = root }, Persona(), Provider(),
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Empty(workspaces.Promoted);
+        Assert.Empty(workspaces.TornDown);
+        Assert.True(Directory.Exists(root), "a child must not delete the workspace its siblings are writing");
+
+        // Non-vacuity, on THIS arm: the same plan shape with no parent does promote and does tear down, which is
+        // also the proof that the run really drained through the main terminal settle rather than degrading.
+        var lone = await h.NewRunAsync("lone");
+        var loneRoot = Path.Combine(h.RunsBase, lone.Id.ToString());
+        Directory.CreateDirectory(loneRoot);
+        var lonePlanner = new FakePlanner();
+        lonePlanner.Plans.Enqueue(new PlanResult(MakeSteps(("a", null)), false));
+        var loneExec = new RecordingExecutor { WorkspaceRoot = loneRoot };
+
+        await h.BuildOrchestrator(lonePlanner, workspaces: workspaces).RunAsync(
+            lone, loneExec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["a"], loneExec.Executed); // the step really ran in-process: the main arm, not the fallback
+        Assert.Equal([lone.Id], workspaces.Promoted);
+        Assert.Equal([lone.Id], workspaces.TornDown);
+    }
+
+    /// <summary>
     /// T-FAN-14, <b>REGRESSION</b>. The parent's critic and any replan must SEE what the children produced.
     /// Without the chat read a completed delegated step carries empty visible text and the verifier judges the
     /// whole goal on nothing — the same failure mode <c>CompletedStepSummary.FromEarlierSegment</c> exists for.

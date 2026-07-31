@@ -20,7 +20,15 @@ namespace Pia.Tests.Services;
 /// metadata document carries, and writing that timestamp explicitly is the difference between a fact and a
 /// race against the clock. It also keeps these facts git-free.
 /// </para>
+/// <para>
+/// In the <c>RunWorkspaceRedirectsStatic</c> collection because
+/// <see cref="Promote_AtTheRealRunsRootShape_ActuallyCopiesFilesOut"/> drives a real <c>CopyOut</c>, whose
+/// <c>RunWorkspaceRedirects.Record</c> call lands at a root the containment gate ACCEPTS and therefore mutates
+/// the process-global registry. <c>RunWorkspaceRedirectsTests</c> deliberately overflows that registry's entry
+/// cap, so the two must not run concurrently.
+/// </para>
 /// </summary>
+[Collection("RunWorkspaceRedirectsStatic")]
 public sealed class RunWorkspacePromotionTests : IDisposable
 {
     private readonly string _dir;

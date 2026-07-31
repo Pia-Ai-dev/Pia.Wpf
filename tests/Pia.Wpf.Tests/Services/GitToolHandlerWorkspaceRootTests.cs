@@ -38,6 +38,13 @@ public sealed class GitToolHandlerWorkspaceRootTests : IDisposable
         _runRoot = Path.Combine(_dir, "runs", Guid.NewGuid().ToString());
         Directory.CreateDirectory(_interactive);
         Directory.CreateDirectory(_runRoot);
+        // CANONICALIZE the expectation, exactly as HeadlessRunLauncherTests and LiveTurnExecutorPlannedRunTests
+        // do and for the same reason: GitToolHandler resolves the ambient root through
+        // SafeFolderPath.NormalizeWorkspaceRoot, which canonicalizes (long form, junctions resolved, on-disk
+        // casing). GetTempPath can carry an 8.3 or a link component — a corporate profile redirection or a
+        // service account — so a raw Path.Combine expectation would compare two spellings of the same directory
+        // and red as a git-parity regression that is really a fixture defect.
+        _runRoot = SafeFolderPath.Canonicalize(_runRoot);
     }
 
     public void Dispose()

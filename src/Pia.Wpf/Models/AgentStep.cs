@@ -49,10 +49,14 @@ public sealed class AgentStep
 
     /// <summary>
     /// Free-form per-step JSON. Since Batch 07 G6 the planner writes <c>{"parallelGroup":N}</c> here when the
-    /// plan declares steps independent of one another. Nothing in this build ACTS on it — a plan can record the
-    /// intent and the panel and the loop still run every step sequentially. Deliberately not
+    /// plan declares steps independent of one another, and since G10 the loop ACTS on it: the document's ONE
+    /// consumer is <c>AgentRunOrchestrator.ParallelGroupOf</c>, and a group of two or more still-pending steps is
+    /// dispatched as sibling CHILD RUNS on a separate slot pool rather than executed in-process (07 D11). Absence
+    /// — and any shape that reader cannot parse — means sequential, which is what makes an unreadable value safe
+    /// rather than silent. A second member added here must therefore preserve <c>parallelGroup</c>'s spelling and
+    /// semantics, or every fan-out plan quietly becomes sequential again. Deliberately not
     /// <see cref="DependsOnJson"/>: that stays reserved for a real dependency graph, and a group marker is not
-    /// one. Any reader must treat a parse failure as "absent", i.e. sequential.
+    /// one.
     /// </summary>
     public string? ExtraJson { get; set; }
 }

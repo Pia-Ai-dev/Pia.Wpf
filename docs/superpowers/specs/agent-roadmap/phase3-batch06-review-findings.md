@@ -12,26 +12,62 @@ the moment the run's journal is forgotten. They are recorded here so they can be
 
 ## Status of the 14
 
+Ten of the fourteen were **re-verified independently by the Phase 3 review pass of 2026-07-31** (a second
+review whose scope was G1–G10, with these findings handed to it as inherited items) and then **fixed** by that
+pass. The `Verdict` column below records the outcome; a row still reading NO VERDICT was **not** re-examined —
+it was outside the in-scope group list of the pass that did the work, so "no verdict" still means exactly that.
+
 | Filed by | Finding | Severity as filed | Verdict |
 |---|---|---|---|
-| Lens A | 1 — worktree teardown destroys the run's output | must-fix | **NO VERDICT** |
-| Lens A | 2 — the "output is on branch X" line cannot render on success | should-fix | **NO VERDICT** |
-| Lens A | 3 — `StepPersonaResolver`'s persona lookup is unguarded | should-fix | **NO VERDICT** |
-| Lens A | 4 — metadata deleted even when directory removal failed | should-fix | **NO VERDICT** |
-| Lens A | 5 — automatic promotion with conflicts tears the workspace down | should-fix | **NO VERDICT** |
-| Lens B | 1 — the branch line cannot render for a successful worktree run | must-fix | **NO VERDICT** |
-| Lens B | 2 — nothing commits the work, so worktree mode deletes the deliverable | must-fix | **NO VERDICT** |
-| Lens B | 3 — an automatic promotion's conflicts are logged but never shown | should-fix | **NO VERDICT** |
+| Lens A | 1 — worktree teardown destroys the run's output | must-fix | **CONFIRMED** by the 2026-07-31 pass — **FIXED** in `3b66603` |
+| Lens A | 2 — the "output is on branch X" line cannot render on success | should-fix | **CONFIRMED** (same defect as Lens B 1) — **FIXED** in `3b66603` |
+| Lens A | 3 — `StepPersonaResolver`'s persona lookup is unguarded | should-fix | **CONFIRMED** — **FIXED** (persona taken from the roster list already in hand) |
+| Lens A | 4 — metadata deleted even when directory removal failed | should-fix | **NO VERDICT** (out of the fix pass's in-scope list; but see the note under the table — `3b66603` narrows it by accident) |
+| Lens A | 5 — automatic promotion with conflicts tears the workspace down | should-fix | **CONFIRMED** — **FIXED IN PART** in `3b66603` (the workspace is retained; the count still reaches the user only through the publish note — reasons in that commit) |
+| Lens B | 1 — the branch line cannot render for a successful worktree run | must-fix | **CONFIRMED** — **FIXED** in `3b66603` (torn-down worktree metadata stub) |
+| Lens B | 2 — nothing commits the work, so worktree mode deletes the deliverable | must-fix | **CONFIRMED** — **FIXED** in `3b66603` (app-side commit onto the run branch) |
+| Lens B | 3 — an automatic promotion's conflicts are logged but never shown | should-fix | **CONFIRMED** — **FIXED IN PART** in `3b66603`, as Lens A 5 |
 | Lens C | 1 — French `Run_Output_Branch` says "branch", not "branche" | should-fix | **CONFIRMED** (refuted: false, high confidence) — **FIXED** in `914730d` |
-| Lens C | 2 — git-parity test compares a raw `GetTempPath` expectation | nit | **NO VERDICT** |
-| Lens C | 3 — G1's guard facts carry no REGRESSION/GUARD label | nit | **NO VERDICT** |
-| Lens C | 4 — `RunWorkspaceRedirectsTests`' shared-collection premise is false | nit | **NO VERDICT** |
-| Lens C | 5 — the G5 commit records an incomplete gate | nit | **NO VERDICT** |
-| Lens C | 6 — architecture-rule message states a different threshold | nit | **NO VERDICT** |
+| Lens C | 2 — git-parity test compares a raw `GetTempPath` expectation | nit | **CONFIRMED** — **FIXED** (`_runRoot` canonicalized in the fixture ctor) |
+| Lens C | 3 — G1's guard facts carry no REGRESSION/GUARD label | nit | **CONFIRMED** — **FIXED** (both labels added at the facts) |
+| Lens C | 4 — `RunWorkspaceRedirectsTests`' shared-collection premise is false | nit | **CONFIRMED** — **FIXED** (`RunWorkspacePromotionTests` joined the collection; the comment now names both co-members) |
+| Lens C | 5 — the G5 commit records an incomplete gate | nit | **NO VERDICT** on the record defect itself; the tree was re-measured green (see the history note below) |
+| Lens C | 6 — architecture-rule message states a different threshold | nit | **NO VERDICT** (out of the fix pass's in-scope list) |
 
 Lens A finding 2 and Lens B finding 1 are the **same defect** found twice, independently, by two lenses. Lens A
 finding 1 and Lens B finding 2 likewise overlap. That is worth knowing before verifying them: two lenses
-converging is evidence, but it is not a verdict either.
+converging is evidence, but it is not a verdict either. Both pairs turned out to be real.
+
+**Lens A 4 was not adjudicated, but `3b66603` moved it.** That commit makes `TearDownAsync` leave a torn-down
+STUB behind for worktree mode instead of deleting the document, and the stub keeps `MainWorktree`. The scenario
+Lens A 4 describes — the directory survives a failed removal while the document is deleted, so no later pass can
+ever prune the registration — therefore no longer applies to the worktree case at all: the document that knows
+which repository holds the registration is still there, and the metadata sweep prunes through it when the stub
+ages out. What remains unaddressed is the finding's other half (`TearDownWithoutMetadataAsync` still reports no
+success signal, and the `OnChatsChanged` teardown still does not await the cancelled dispatch's unwind). That is
+a live item, not a closed one.
+
+## History defects in the Phase 3 commit record
+
+Two, both recorded here rather than in two places, and neither is a defect at HEAD:
+
+- **`695e123` (G5) records an incomplete gate** — no warning count and no Release configuration, where every
+  other commit in the run states both. Nothing was shipped red: the 2026-07-31 review pass re-measured a clean
+  detached worktree at Debug and Release `-t:Rebuild`, both **0 Warning(s) / 0 Error(s)** with 4 CoreCompile
+  invocations each. §7's requirement that a builder state both configurations explicitly stands.
+- **`914730d` claims a gate that was actually FAILING.** Its message says "Value-only change: LocalizationTests
+  enforces en/de/fr KEY parity, not translation quality, so nothing was red before this and nothing goes green
+  after it." Its +4/−1 diff carries the French branch-label fix it describes **plus three brand-new keys** —
+  `Run_Children_Header`, `Run_Children_Count`, `Run_Children_Timeline_Empty` — added to `ViewStrings.fr.resx`
+  only. Those keys belong to G10, which landed in the NEXT commit (`9c32999`), and `9c32999`'s diff touches only
+  `ViewStrings.resx` and `ViewStrings.de.resx`. Measured at that boundary:
+  `git show 914730d:…/ViewStrings.resx | grep -c 'Run_Children_'` = 0, same for `de.resx` = 0, while `fr.resx`
+  has all three. `LocalizationTests.AllTranslations_MustBeComplete` computes
+  `orphaned = translatedKeys.Except(baseKeys)` per culture with `tryParents: false`, so at `914730d` the suite
+  had three orphaned FR entries and the fact was **red**. HEAD is fine — `9c32999` supplied the base and DE
+  values. The lesson worth keeping is not the redness but its cause: G10's resx trio was split across two
+  commits, one of which does not mention resx at all, so a bisect lands on a "value-only" commit whose message
+  asserts the opposite of what its own diff did.
 
 ## How to read the anchors
 

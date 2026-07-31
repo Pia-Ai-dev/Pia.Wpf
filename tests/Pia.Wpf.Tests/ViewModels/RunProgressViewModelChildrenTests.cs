@@ -201,6 +201,38 @@ public sealed class RunProgressViewModelChildrenTests
     }
 
     /// <summary>
+    /// T-CHILD-VM-4 (§9.9's <c>TheChildRowCarriesNoPayload</c>), <b>GUARD</b> — specified by 07 §9.9, renumbered
+    /// away when this file shipped, and added by the Phase 3 fix pass. The sibling guard
+    /// <c>RunProgressViewModelTimelineTests.TimelineRowsCarryNoPathAndNoPayload</c> covers the trace rows NESTED
+    /// inside a child row; the child row's OWN members were unpinned.
+    /// <para>
+    /// A later convenience member — <c>LastAnswer</c>, <c>ResultText</c>, an <c>OutputPath</c> for the child's
+    /// deliverable — sourced from the child chat's last assistant message would bind into the row template and
+    /// become a route for tool-result text to reach any surface that dumps VM state. An EXACT member list rather
+    /// than a name blacklist, for the same reason the timeline guard uses one: it is its own non-vacuity control,
+    /// and it fails on ADDITION rather than only on the four names someone thought of. <c>Title</c> is on the list
+    /// and is sensitive, which is why it carries its own bound-never-logged comment at the declaration.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheChildRowCarriesNoPayload()
+    {
+        var actual = typeof(ChildRunRowViewModel)
+            .GetProperties()
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            new[]
+            {
+                "HasNoTimeline", "HasTimelineReadError", "InputTokens", "IsExpanded", "IsFinished",
+                "OutputTokens", "RunId", "State", "Timeline", "Title",
+            },
+            actual);
+    }
+
+    /// <summary>
     /// T-CHILD-VM-7, <b>REGRESSION</b>. A child-read fault leaves the rows exactly as they were and never breaks
     /// the panel — the parent's own projection still lands. Failure-isolated bookkeeping, the standing guardrail.
     /// </summary>
