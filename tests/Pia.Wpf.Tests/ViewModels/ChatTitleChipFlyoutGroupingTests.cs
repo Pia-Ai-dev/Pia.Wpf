@@ -140,8 +140,15 @@ public class ChatTitleChipFlyoutGroupingTests
     [Fact]
     public void Flyout_WithinDateBucket_SortsByUpdatedAtDesc()
     {
-        var older = Chat("older", DateTime.UtcNow.AddHours(-2));
-        var newer = Chat("newer", DateTime.UtcNow);
+        // Anchored to local NOON rather than to "now minus two hours", because the SUT buckets on
+        // UpdatedAt.ToLocalTime().Date against DateTime.Today — both LOCAL. A relative offset from UtcNow put the
+        // older chat in YESTERDAY's bucket whenever the suite ran in the first two local hours of a day, so
+        // Assert.Single(sut.Groups) saw 2 groups: green 22 hours out of 24, red the other 2, and identical in
+        // every configuration. (Found by the Phase 3 consolidation pass at 00:44 local; it is the most likely
+        // identity of the unnamed single failure Phase 3's fix pass recorded and could never reproduce.)
+        var localNoonUtc = DateTime.Now.Date.AddHours(12).ToUniversalTime();
+        var older = Chat("older", localNoonUtc.AddHours(-2));
+        var newer = Chat("newer", localNoonUtc);
         var sut = CreateSut(new List<SyncAssistantChat> { older, newer });
 
         sut.IsFlyoutOpen = true;
