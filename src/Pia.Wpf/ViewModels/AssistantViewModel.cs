@@ -46,6 +46,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IProviderCapabilityService _providerCapabilityService;
     private readonly IAgentRunService _agentRunService;
     private readonly IAgentTimelineService? _agentTimelineService;
+    private readonly IRunWorkspaceService? _runWorkspaces;
     private readonly IAgentRunResumeService _resumeService;
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IWorkingDirectoryService _workingDirectoryService;
@@ -223,7 +224,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IToolPermissionService permissions,
         // Batch 03: handed to the hand-constructed RunProgressViewModel so the run panel can show the
         // tool-decision trace. Trailing and defaulted so the existing test constructions keep compiling.
-        IAgentTimelineService? agentTimelineService = null)
+        IAgentTimelineService? agentTimelineService = null,
+        // Batch 06 G4: handed on to the same hand-constructed panel VM so a settled run can offer to publish
+        // what is still in its workspace, and so a worktree run can say which branch its output is on. Same
+        // trailing-and-defaulted discipline, same reason.
+        IRunWorkspaceService? runWorkspaces = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -249,6 +254,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _providerCapabilityService = providerCapabilityService;
         _agentRunService = agentRunService;
         _agentTimelineService = agentTimelineService;
+        _runWorkspaces = runWorkspaces;
         _resumeService = resumeService;
         _chatSessionManager = chatSessionManager;
         _workingDirectoryService = workingDirectoryService;
@@ -395,7 +401,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
         _runProgress = runId is { } id
             ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService)
+                _agentTimelineService, _runWorkspaces)
             : null;
         ActiveRunProgress = _runProgress;
     }

@@ -937,6 +937,12 @@
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Ergebnis wird geprüft…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Bei Budget gestoppt – fortsetzen?</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
+  <data name="Run_Action_Publish" xml:space="preserve"><value>Dateien veröffentlichen</value></data>
+  <data name="Run_Publish_Pending" xml:space="preserve"><value>Die Dateien dieser Ausführung liegen noch in ihrem Arbeitsbereich.</value></data>
+  <data name="Run_Publish_Done" xml:space="preserve"><value>{0} Datei(en) veröffentlicht.</value></data>
+  <data name="Run_Publish_Conflicts" xml:space="preserve"><value>{0} Datei(en) blieben unberührt, weil sie sich während der Ausführung geändert haben.</value></data>
+  <data name="Run_Publish_Failed" xml:space="preserve"><value>Es konnte nichts veröffentlicht werden – die Dateien liegen weiterhin im Arbeitsbereich der Ausführung.</value></data>
+  <data name="Run_Output_Branch" xml:space="preserve"><value>Das Ergebnis liegt auf Branch {0}</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Werkzeug-Aktivität</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Für diese Ausführung wurden keine Werkzeug-Entscheidungen aufgezeichnet.</value></data>
   <data name="Run_Timeline_ReadFailed" xml:space="preserve"><value>Die Werkzeug-Aktivität dieser Ausführung konnte nicht gelesen werden.</value></data>

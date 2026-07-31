@@ -68,9 +68,21 @@ public sealed class AgentRunOrchestratorTests
         public bool FallbackCalled { get; private set; }
         public bool PausedCalled { get; private set; }
 
+        /// <summary>
+        /// What this executor publishes onto <c>ctx.WorkspaceRoot</c> in <c>BeginRunAsync</c>, exactly as both
+        /// real executors do (Batch 06 B3). Null (the default) is the no-isolation shape every pre-Batch-06
+        /// fact in this file runs in, and it is what keeps them from promoting anything.
+        /// </summary>
+        public string? WorkspaceRoot { get; set; }
+
         public RecordingExecutor(Func<AgentStep, StepTurnResult> result) => _result = result;
 
-        public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) { BeginCalled = true; return Task.CompletedTask; }
+        public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct)
+        {
+            BeginCalled = true;
+            ctx.WorkspaceRoot = WorkspaceRoot;
+            return Task.CompletedTask;
+        }
 
         public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
         {
@@ -147,6 +159,9 @@ public sealed class AgentRunOrchestratorTests
         public bool FailAddUsage { get; set; }
         public bool FailGet { get; set; }
 
+        /// <summary>Shared call log, appended with <c>"complete"</c> (Batch 06 B8's ordering fact).</summary>
+        public List<string>? Order { get; set; }
+
         public Task AddUsageAsync(Guid runId, Guid? stepId, UsageDetails usage, CancellationToken ct = default)
             => FailAddUsage ? throw new InvalidOperationException("ledger boom") : _inner.AddUsageAsync(runId, stepId, usage, ct);
 
@@ -158,7 +173,10 @@ public sealed class AgentRunOrchestratorTests
         public Task SetRunMessageRangeAsync(Guid runId, Guid firstMessageId, Guid lastMessageId, CancellationToken ct = default)
             => _inner.SetRunMessageRangeAsync(runId, firstMessageId, lastMessageId, ct);
         public Task CompleteAsync(Guid runId, bool truncated = false, string? truncationReason = null, CancellationToken ct = default)
-            => _inner.CompleteAsync(runId, truncated, truncationReason, ct);
+        {
+            Order?.Add("complete");
+            return _inner.CompleteAsync(runId, truncated, truncationReason, ct);
+        }
         public Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default) => _inner.FailAsync(runId, error, cancelled, ct);
         public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default) => _inner.PauseAsync(runId, reason, ct);
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => _inner.TryBeginResumeAsync(runId, ct);
@@ -186,10 +204,17 @@ public sealed class AgentRunOrchestratorTests
         public readonly AssistantChatService Chats;
         private readonly string _dir;
 
+        /// <summary>A real directory an isolated run's workspace root can point at (Batch 06 G4). It only has
+        /// to EXIST and be non-null — promotion itself is a fake here; what is under test is the loop's
+        /// ordering, not the copy.</summary>
+        public string RunsBase { get; }
+
         public Harness()
         {
             _dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_dir);
+            RunsBase = Path.Combine(_dir, "runs");
+            Directory.CreateDirectory(RunsBase);
             Ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
             Runs = new AgentRunService(Ctx, NullLogger<AgentRunService>.Instance);
             Chats = new AssistantChatService(Ctx, Runs);
@@ -213,8 +238,13 @@ public sealed class AgentRunOrchestratorTests
             return await Runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: goal));
         }
 
-        public AgentRunOrchestrator BuildOrchestrator(IAgentPlanner planner, IAgentVerifier? verifier = null) =>
-            new(Runs, planner, verifier ?? new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+        public AgentRunOrchestrator BuildOrchestrator(
+            IAgentPlanner planner, IAgentVerifier? verifier = null,
+            // Batch 06 G4, trailing and defaulted like the ctor param it feeds: omitted ⇒ no promotion, i.e.
+            // the pre-Batch-06 loop, which is the shape every existing fact in this file asserts.
+            IRunWorkspaceService? workspaces = null, IAgentRunService? runService = null) =>
+            new(runService ?? Runs, planner, verifier ?? new FakeVerifier(),
+                NullLogger<AgentRunOrchestrator>.Instance, workspaces);
 
         public void Dispose()
         {
@@ -995,5 +1025,172 @@ public sealed class AgentRunOrchestratorTests
         Assert.True(exec.EndCancelled);
         Assert.NotNull(final.FirstMessageId);                 // R3: transcript slice pinned on cancel-during-verify
         Assert.NotEqual(Guid.Empty, final.FirstMessageId!.Value);
+    }
+
+    // ---- Batch 06 G4: promotion on the terminal path ----
+
+    /// <summary>
+    /// T-G4-8, <b>REGRESSION</b>. Batch 06 B8's ordering, asserted as an ORDER and not as three independent
+    /// "it happened" facts: verify runs against the run root, THEN the workspace is promoted, THEN the run is
+    /// marked Completed. Promoting before CompleteAsync is what dissolves the "Completed but its deliverables
+    /// are still only in a workspace the sweep may delete" window without needing a promotion-aware sweep.
+    /// <para>
+    /// The orchestrator is built WITH the service on purpose: its ctor param is trailing-optional, so no
+    /// existing fact in this file supplies one and there is no inherited coverage to lean on.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task CleanRun_Promotes_AfterVerify_AndBeforeCompleteAsync()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var order = new List<string>();
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var verifier = new FakeVerifier { Order = order };
+        var runs = new FaultyRunService(h.Runs) { Order = order };
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase)
+        {
+            Order = order,
+            PromoteResult = new RunPromotionResult(RunWorkspaceMode.Copy, Promoted: 1, Skipped: 0, Conflicts: 0, BranchName: null),
+        };
+        var exec = new RecordingExecutor(_ => Ok()) { WorkspaceRoot = h.RunsBase };
+
+        await h.BuildOrchestrator(planner, verifier, workspaces, runs)
+            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "verify", "promote", "teardown", "complete" }, order);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+    }
+
+    /// <summary>
+    /// T-G4-9, <b>REGRESSION</b>. The R10 single-turn fallback arm is a SECOND terminal path: it returns early
+    /// and never reaches the terminal-settle block, and it settles Complete BEFORE EndRun — the opposite order
+    /// to the main path. Omitting promotion there is this group's most likely silent hole, and it is the
+    /// well-trodden path: every launcher-harness test plans to <c>PlanResult.Fallback</c>.
+    /// <para>
+    /// Its discrimination property was measured, not assumed: with promotion present on the MAIN arm only,
+    /// this fact fails while <see cref="CleanRun_Promotes_AfterVerify_AndBeforeCompleteAsync"/> stays green.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task TheSingleTurnFallbackArm_AlsoPromotes()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var order = new List<string>();
+        var planner = new FakePlanner(); // empty queue then PlanResult.Fallback then the R10 degrade arm
+        var runs = new FaultyRunService(h.Runs) { Order = order };
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase)
+        {
+            Order = order,
+            PromoteResult = new RunPromotionResult(RunWorkspaceMode.Copy, Promoted: 2, Skipped: 0, Conflicts: 0, BranchName: null),
+        };
+        var exec = new RecordingExecutor(_ => Ok()) { WorkspaceRoot = h.RunsBase };
+
+        await h.BuildOrchestrator(planner, verifier: null, workspaces, runs)
+            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.True(exec.FallbackCalled); // non-vacuity: this really is the degrade arm
+        Assert.Equal(new[] { "promote", "teardown", "complete" }, order); // no verify on this arm at all
+    }
+
+    /// <summary>
+    /// T-G4-10, <b>REGRESSION</b>. Plan D3's "Completed auto, ELSE OFFER": a cancelled or failed run is never
+    /// promoted automatically and its workspace is never torn down, so the panel still has something to offer.
+    /// </summary>
+    [Theory]
+    [InlineData("cancel")]
+    [InlineData("step-fail")]
+    [InlineData("fallback-fail")]
+    public async Task ACancelledOrFailedRun_DoesNotPromote_AndKeepsItsWorkspace(string how)
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        if (how != "fallback-fail")
+            planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase)
+        {
+            PromoteResult = new RunPromotionResult(RunWorkspaceMode.Copy, 1, 0, 0, null),
+        };
+        var exec = new RecordingExecutor(_ => how == "cancel" ? Cancel() : Fail("boom"))
+        {
+            WorkspaceRoot = h.RunsBase,
+            FallbackResult = how == "fallback-fail" ? Fail("planner degraded and the turn failed") : null,
+        };
+        // A step failure would otherwise burn a replan and end unverified-Completed; zero replans makes the
+        // failure terminal on the step-fail row.
+        var profile = new RunProfile(MaxSteps: 8, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(5));
+
+        await h.BuildOrchestrator(planner, verifier: null, workspaces)
+            .RunAsync(run, exec, Persona(), Provider(), profile, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.True(final!.State is AgentRunState.Failed or AgentRunState.Cancelled); // non-vacuity
+        Assert.Empty(workspaces.Promoted);
+        Assert.Empty(workspaces.TornDown);
+    }
+
+    /// <summary>
+    /// T-G4-11, <b>GUARD</b>. Failure-isolated bookkeeping: a promotion that throws does not fail an
+    /// otherwise-successful run. The files stay in the workspace and the publish affordance offers them.
+    /// </summary>
+    [Fact]
+    public async Task APromotionFault_DoesNotFailTheRun()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase) { ThrowOnPromote = true };
+        var exec = new RecordingExecutor(_ => Ok()) { WorkspaceRoot = h.RunsBase };
+
+        await h.BuildOrchestrator(planner, verifier: null, workspaces)
+            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.Single(workspaces.Promoted);   // it really was attempted
+        Assert.Empty(workspaces.TornDown);    // and the workspace kept, so the work is not lost
+    }
+
+    /// <summary>
+    /// T-G4-12, <b>GUARD</b>. The pin that the trailing-optional dependency changed nothing: with no workspace
+    /// service — and separately, with a service but no workspace root, which is the no-isolation degrade — the
+    /// loop settles exactly as it did before Batch 06 and nothing is promoted.
+    /// </summary>
+    [Fact]
+    public async Task WithNoWorkspaceService_TheLoopIsByteIdenticalToToday()
+    {
+        using var h = new Harness();
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var noService = await h.NewRunAsync("goal");
+        var exec = new RecordingExecutor(_ => Ok()) { WorkspaceRoot = h.RunsBase };
+
+        await h.BuildOrchestrator(planner).RunAsync(
+            noService, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var settled = await h.Runs.GetAsync(noService.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, settled!.State);
+        Assert.All(settled.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+
+        // Second half: a service IS injected, but the run has no workspace root (provisioning degraded to no
+        // isolation). Promotion must not be attempted against a root that does not exist.
+        var noRoot = await h.NewRunAsync("goal");
+        var planner2 = new FakePlanner();
+        planner2.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase);
+        var unisolated = new RecordingExecutor(_ => Ok()); // WorkspaceRoot stays null
+
+        await h.BuildOrchestrator(planner2, verifier: null, workspaces).RunAsync(
+            noRoot, unisolated, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentRunState.Completed,
+            (await h.Runs.GetAsync(noRoot.Id, TestContext.Current.CancellationToken))!.State);
+        Assert.Empty(workspaces.Promoted);
     }
 }

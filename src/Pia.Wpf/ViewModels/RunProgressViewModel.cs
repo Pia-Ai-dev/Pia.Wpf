@@ -44,6 +44,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly ILocalizationService _localization;
     private readonly IAgentRunResumeService _resumeService;
     private readonly IAgentTimelineService? _timelineService;
+    private readonly IRunWorkspaceService? _workspaces;
     private readonly ILogger _logger;
     private bool _disposed;
 
@@ -140,6 +141,47 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _hasTimelineReadError;
 
     /// <summary>
+    /// Batch 06 G4 / plan D3: a settled run whose isolated workspace still holds files nobody promoted — i.e.
+    /// a FAILED or CANCELLED run, because a clean one promotes automatically before it is marked Completed.
+    /// Drives the offer line and the Publish button.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPublish))]
+    [NotifyCanExecuteChangedFor(nameof(PublishCommand))]
+    private bool _hasUnpublishedFiles;
+
+    /// <summary>True while a publish is in flight — gates the button against a double-click, exactly as
+    /// <see cref="IsResuming"/> gates Continue.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPublish))]
+    [NotifyCanExecuteChangedFor(nameof(PublishCommand))]
+    private bool _isPublishing;
+
+    /// <summary>The localized result line of the last publish attempt; null when there is nothing to say.</summary>
+    [ObservableProperty]
+    private string? _publishNote;
+
+    /// <summary>
+    /// Worktree mode only (plan D5b): the run branch its output lives on. The panel must SAY this, or the
+    /// honest user question after a run that "worked" is "where is my file?" — there is deliberately no merge
+    /// and therefore no conflict handling on an unattended path.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOutputBranch))]
+    [NotifyPropertyChangedFor(nameof(OutputBranchNote))]
+    private string? _outputBranchName;
+
+    public bool HasOutputBranch => !string.IsNullOrEmpty(OutputBranchName);
+
+    /// <summary>The rendered branch line. Formatted HERE rather than by a converter in the panel: the format
+    /// argument is app-owned, the string is localized, and the layer rule keeps this kind of decision in the
+    /// ViewModel.</summary>
+    public string? OutputBranchNote =>
+        HasOutputBranch ? _localization.Format("Run_Output_Branch", OutputBranchName!) : null;
+
+    public bool CanPublish => HasUnpublishedFiles && !IsPublishing;
+
+    /// <summary>
     /// The in-flight (or last) load, exposed so a fact can await the fire-and-forget the expand kicks off.
     /// The read itself is off-thread now, so a test that set <see cref="IsTimelineExpanded"/> and asserted
     /// immediately would race it.
@@ -164,9 +206,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         IAgentRunResumeService resumeService, ILogger logger,
         // Batch 03. Trailing and defaulted because this type is hand-constructed with a POSITIONAL argument
         // list in production and in its tests; null ⇒ the trace renders as empty and reads nothing.
-        IAgentTimelineService? timelineService = null)
+        IAgentTimelineService? timelineService = null,
+        // Batch 06 G4, same discipline for the same reason — LAST, and defaulted. Null ⇒ no publish
+        // affordance and no branch line, i.e. the panel is byte-identical to the pre-Batch-06 one.
+        IRunWorkspaceService? workspaces = null)
     {
         _timelineService = timelineService;
+        _workspaces = workspaces;
         _runService = runService;
         _runId = runId;
         _localization = localization;
@@ -190,6 +236,114 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         var run = await _runService.GetAsync(_runId);
         if (run is null) return;
         _uiContext.Post(_ => Project(run), null); // marshal the mutation to the UI thread (G3)
+
+        // Batch 06 G4: the workspace outcome is read in its OWN terminal-only branch, deliberately not folded
+        // into Project above. DescribeAsync does a file read plus a directory enumeration, and RunChanged
+        // fires on every step, every state flip and every ledger write — putting that on the projection path
+        // would pay for it dozens of times per run to answer a question only a settled run can be asked.
+        if (_workspaces is not null && IsTerminal(run.State))
+            await LoadWorkspaceOutcomeAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A run that will not change again. Written as an explicit set rather than "not one of the live states"
+    /// so a state a future build appends is treated as NON-terminal — the direction that merely defers the
+    /// publish offer instead of offering to publish a workspace a live run is still writing into.
+    /// </summary>
+    private static bool IsTerminal(AgentRunState state) =>
+        state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled;
+
+    /// <summary>
+    /// Read the settled run's workspace outcome (plan D3/D5b) OFF the dispatcher and apply it through
+    /// <see cref="_uiContext"/>, the same mechanism <see cref="ApplyTimelineAsync"/> uses. Failure-isolated:
+    /// a fault leaves the panel with no offer and no branch line, which is the pre-Batch-06 panel.
+    /// </summary>
+    private async Task LoadWorkspaceOutcomeAsync()
+    {
+        RunWorkspaceOutcome? outcome = null;
+        try
+        {
+            // DescribeAsync does its own filesystem work inside a Task.Run and never throws by contract; the
+            // catch is here because "never throws" is a promise about today's implementation, not a type rule.
+            outcome = await _workspaces!.DescribeAsync(_runId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} workspace outcome could not be read", _runId);
+        }
+
+        await ApplyWorkspaceOutcomeAsync(outcome).ConfigureAwait(false);
+    }
+
+    /// <summary>The ONE place the publish affordance's bound state is set, always on the UI thread (G3).</summary>
+    private Task ApplyWorkspaceOutcomeAsync(RunWorkspaceOutcome? outcome)
+    {
+        var done = new TaskCompletionSource();
+        _uiContext.Post(_ =>
+        {
+            try
+            {
+                // Never re-arm an offer the user already answered in this session: a publish clears
+                // HasUnpublishedFiles and tears the workspace down, and the next RunChanged would otherwise
+                // read a describe that raced the teardown.
+                if (!IsPublishing)
+                    HasUnpublishedFiles = outcome?.HasUnpublishedFiles ?? false;
+                OutputBranchName = outcome?.BranchName;
+            }
+            finally
+            {
+                done.TrySetResult();
+            }
+        }, null);
+
+        return done.Task;
+    }
+
+    /// <summary>
+    /// Publish what a settled run left in its workspace (plan D3, the "else offer to publish" half). Declining
+    /// is doing nothing: the workspace is retained and then swept by the launcher's terminal retention rule,
+    /// so an unanswered offer cannot pin a workspace forever. Worktree mode never reaches here — its output is
+    /// a branch, and <see cref="HasUnpublishedFiles"/> is false for it (plan D5b).
+    /// <para>
+    /// <see cref="RunPromotionResult.Skipped"/> is deliberately NOT surfaced: it is the byte-identical no-op
+    /// case, and there is nothing to tell the user about a file that was already correct.
+    /// </para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanPublish))]
+    private async Task Publish()
+    {
+        if (_workspaces is null) return;
+
+        IsPublishing = true;
+        try
+        {
+            var result = await _workspaces.PromoteAsync(_runId, CancellationToken.None);
+            if (result is null)
+            {
+                // Nothing was promoted and the workspace is intact — the offer stays standing so the user can
+                // retry after fixing whatever the service logged (a relocated assistant folder, typically).
+                PublishNote = _localization["Run_Publish_Failed"];
+                return;
+            }
+
+            await _workspaces.TearDownAsync(_runId, CancellationToken.None);
+            HasUnpublishedFiles = false;
+
+            var note = _localization.Format("Run_Publish_Done", result.Promoted);
+            if (result.Conflicts > 0)
+                note += " " + _localization.Format("Run_Publish_Conflicts", result.Conflicts);
+            PublishNote = note;
+        }
+        catch (Exception ex)
+        {
+            // Run id only — a promotion's paths are user content and this logger is release-attachable.
+            _logger.LogWarning(ex, "Run {RunId} publish failed from panel", _runId);
+            PublishNote = _localization["Run_Publish_Failed"];
+        }
+        finally
+        {
+            IsPublishing = false;
+        }
     }
 
     private void Project(AgentRun run)

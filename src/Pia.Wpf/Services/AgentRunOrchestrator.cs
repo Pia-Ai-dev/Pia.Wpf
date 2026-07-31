@@ -19,17 +19,23 @@ public sealed class AgentRunOrchestrator
     private readonly IAgentPlanner _planner;
     private readonly IAgentVerifier _verifier;
     private readonly ILogger<AgentRunOrchestrator> _logger;
+    private readonly IRunWorkspaceService? _workspaces;
 
+    /// <param name="workspaces">Batch 06 G4. TRAILING and DEFAULTED, like every dependency this batch adds:
+    /// this type is hand-constructed positionally in a dozen test sites, and a required parameter would break
+    /// all of them at once. Null ⇒ no promotion, which is the pre-Batch-06 loop exactly.</param>
     public AgentRunOrchestrator(
         IAgentRunService runService,
         IAgentPlanner planner,
         IAgentVerifier verifier,
-        ILogger<AgentRunOrchestrator> logger)
+        ILogger<AgentRunOrchestrator> logger,
+        IRunWorkspaceService? workspaces = null)
     {
         _runService = runService;
         _planner = planner;
         _verifier = verifier;
         _logger = logger;
+        _workspaces = workspaces;
     }
 
     public async Task RunAsync(
@@ -114,6 +120,12 @@ public sealed class AgentRunOrchestrator
                     {
                         if (fr.FirstMessageId != Guid.Empty)
                             await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, cts.Token).ConfigureAwait(false);
+                        // Batch 06 B8, the SECOND terminal path: this arm returns at the `return` below and
+                        // never reaches the terminal-settle block, and it settles Complete BEFORE EndRun —
+                        // the opposite order to the main path. Promotion still goes before CompleteAsync.
+                        // There is no verify on this arm at all (the planner degraded), so "promote what the
+                        // turn wrote" is the whole contract.
+                        await SafePromote(run, ctx, cts.Token).ConfigureAwait(false);
                         await SafeComplete(run.Id, cts.Token).ConfigureAwait(false); // clean; zero steps recorded
                     }
                     await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
@@ -244,6 +256,14 @@ public sealed class AgentRunOrchestrator
                 // is not yet persisted (headless persists only in EndRunAsync). A verify-unverified run
                 // settles Completed+truncated reason "unverified".
                 await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+                // Batch 06 B8: promote BEFORE CompleteAsync. Verify has already run against the RUN ROOT
+                // (B3), so the artifacts it confirmed are the files being promoted; and no RunChanged
+                // consumer can observe a Completed run whose deliverables are still only in a workspace the
+                // sweep may delete (plan R4/R5) — which is what dissolves the "Completed but not yet
+                // promoted" window without a promotion-aware sweep. Failure-isolated: a promotion fault
+                // leaves the files in the workspace for the publish affordance to offer, and never fails an
+                // otherwise-successful run.
+                await SafePromote(run, ctx, cts.Token).ConfigureAwait(false);
                 await SafeComplete(run.Id, cts.Token,
                     truncated: unverifiedTruncated,
                     reason: unverifiedTruncated ? "unverified" : null).ConfigureAwait(false);
@@ -413,6 +433,46 @@ public sealed class AgentRunOrchestrator
         // Terminal fail writes run un-cancelled so a cancel does not swallow the Failed/Cancelled record.
         try { await _runService.FailAsync(runId, error, cancelled, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail) failed for {RunId}", runId); }
+    }
+
+    /// <summary>
+    /// Promote the run's isolated workspace into its destination, then tear the workspace down (Batch 06 B8).
+    /// Only a CLEANLY drained run promotes automatically (plan D3, "Completed auto, else offer to publish"):
+    /// this is only ever called from the two success arms, so a cancelled or failed run keeps its workspace
+    /// and the panel offers to publish it. No-op when no workspace service was injected or the run has no
+    /// workspace root — that is the pre-Batch-06 shape, and every existing orchestrator test hits it.
+    /// <para>
+    /// Executor-agnostic on purpose: it reads <c>ctx.WorkspaceRoot</c>, which BOTH executors assign, so a
+    /// promotion that only fired for headless runs would be a defect rather than a scoping choice.
+    /// Failure-isolated (guardrail 1): a fault logs and returns, and the files stay in the workspace.
+    /// </para>
+    /// </summary>
+    private async Task SafePromote(AgentRun run, RunContext ctx, CancellationToken ct)
+    {
+        if (_workspaces is null || string.IsNullOrEmpty(ctx.WorkspaceRoot))
+            return;
+
+        try
+        {
+            var result = await _workspaces.PromoteAsync(run.Id, ct).ConfigureAwait(false);
+            if (result is null)
+            {
+                // The service already logged why. The workspace is deliberately NOT torn down: it holds the
+                // only copy of the run's work, and the publish affordance can still offer it.
+                return;
+            }
+
+            // Counts, ids and enum values only — a path never reaches Information (there is no
+            // SensitiveError, so the service logs any path through SensitiveWarning instead).
+            _logger.LogInformation(
+                "Run {RunId} promoted in {Mode} mode: {PromotedCount} file(s), {SkippedCount} skipped, {ConflictCount} conflict(s)",
+                run.Id, result.Mode, result.Promoted, result.Skipped, result.Conflicts);
+            await _workspaces.TearDownAsync(run.Id, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run bookkeeping (promote) failed for {RunId}", run.Id);
+        }
     }
 
     private async Task SafeEndRun(IAgentTurnExecutor executor, AgentRun run, RunContext ctx, bool cancelled, bool failed)

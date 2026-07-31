@@ -47,6 +47,14 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         /// </summary>
         public RunContext? PlanContext { get; private set; }
 
+        /// <summary>
+        /// Like the ctor hook, but handed the run's OWN cancellation token (Batch 06 G4): a fact about
+        /// "the dispatch was cancelled" has no other in-process evidence to read, since the teardown that
+        /// follows the cancel is fire-and-forget and says nothing about it. Settable after construction
+        /// because <c>BuildLauncher</c> hands the planner back before the launch.
+        /// </summary>
+        public Func<CancellationToken, Task>? OnPlanWithToken { get; set; }
+
         public FakePlanner(Func<Task>? onPlan = null) => _onPlan = onPlan;
 
         public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -55,6 +63,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             lock (_lock) { Concurrent++; MaxConcurrent = Math.Max(MaxConcurrent, Concurrent); }
             try
             {
+                if (OnPlanWithToken is not null) await OnPlanWithToken(ct);
                 if (_onPlan is not null) await _onPlan();
                 return PlanResult.Fallback; // single-turn fallback → one exchange, then Completed
             }
@@ -839,5 +848,126 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Null(_executing.GetChatId(handle.RunId));
 
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// Creates a chat and a run row in a given terminal/non-terminal state, plus a workspace directory whose
+    /// <c>LastWriteTimeUtc</c> is <paramref name="ageDays"/> old — the two inputs the sweep's retention
+    /// predicate reads.
+    /// </summary>
+    private async Task<Guid> SeedRunWithAgedWorkspaceAsync(AgentRunState state, int ageDays)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await _chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId,
+            SchemaVersion = 1,
+            Title = "t",
+            CreatedAt = now,
+            UpdatedAt = now,
+            LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(),
+            Messages = [],
+        }, ct);
+
+        var run = await _runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.Schedule, Goal: "g"), ct);
+
+        switch (state)
+        {
+            case AgentRunState.Failed:
+                await _runs.FailAsync(run.Id, "boom", cancelled: false, ct);
+                break;
+            case AgentRunState.Cancelled:
+                await _runs.FailAsync(run.Id, null, cancelled: true, ct);
+                break;
+            case AgentRunState.Completed:
+                await _runs.CompleteAsync(run.Id, ct: ct);
+                break;
+            case AgentRunState.WaitingForInput:
+                await _runs.PauseAsync(run.Id, "step-cap", ct);
+                break;
+            default:
+                await _runs.SetStateAsync(run.Id, state, ct);
+                break;
+        }
+
+        var dir = Path.Combine(_runsBase, run.Id.ToString());
+        Directory.CreateDirectory(dir);
+        Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow.AddDays(-ageDays));
+        return run.Id;
+    }
+
+    /// <summary>
+    /// T-G4-13, <b>REGRESSION</b>. Batch 06 B12 — plan D3's retention rule and plan R5's mitigation in one
+    /// predicate. A SETTLED run's workspace is kept only long enough for the user to answer the publish offer;
+    /// anything non-terminal keeps the original 30-day floor because it may still be resumable, and deleting a
+    /// resumable run's only copy of its work is the one mistake this sweep must not make.
+    /// <para>
+    /// Rows (c) and (d) are the non-vacuity controls: a sweep that deleted everything would pass on (a) and
+    /// (b) alone.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Sweep_KeepsANonTerminalRunsWorkspace_ButRemovesASettledOneAfterTheTerminalWindow()
+    {
+        var (launcher, _) = BuildLauncher();
+
+        // (a) no run row at all → removed immediately, unchanged behaviour.
+        var orphan = Path.Combine(_runsBase, Guid.NewGuid().ToString());
+        Directory.CreateDirectory(orphan);
+        // (b) settled, past the terminal window → removed.
+        var staleFailed = await SeedRunWithAgedWorkspaceAsync(AgentRunState.Failed, ageDays: 8);
+        // (c) settled, inside the terminal window → kept: the publish offer is still live.
+        var freshFailed = await SeedRunWithAgedWorkspaceAsync(AgentRunState.Failed, ageDays: 1);
+        // (d) NON-terminal and older than the terminal window → kept on the 30-day floor.
+        var parked = await SeedRunWithAgedWorkspaceAsync(AgentRunState.WaitingForInput, ageDays: 8);
+
+        await launcher.RunStartupSweepAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(Directory.Exists(orphan));
+        Assert.False(Directory.Exists(Path.Combine(_runsBase, staleFailed.ToString())));
+        Assert.True(Directory.Exists(Path.Combine(_runsBase, freshFailed.ToString())));
+        Assert.True(Directory.Exists(Path.Combine(_runsBase, parked.ToString())));
+    }
+
+    /// <summary>
+    /// T-G4-14, <b>REGRESSION</b>. Plan R4 / B13: after Batch 06 a run's workspace holds the only copy of its
+    /// un-promoted work, so a chat deletion must CANCEL a still-live dispatch before tearing that directory
+    /// down rather than deleting it under a live writer. Teardown then happens off the synchronous event
+    /// handler, because it may spawn a git process.
+    /// </summary>
+    [Fact]
+    public async Task ChatDeleted_CancelsAnInFlightRunBeforeTearingDownItsWorkspace()
+    {
+        var planEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var planCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var workspaces = new FakeRunWorkspaceService(_runsBase);
+
+        // The planner parks the dispatch mid-run and reports whether ITS OWN token was cancelled — the only
+        // in-process evidence that the run's CTS fired, since the teardown that follows is fire-and-forget and
+        // says nothing about the cancel.
+        var (launcher, planner) = BuildLauncher(workspaces: workspaces);
+        planner.OnPlanWithToken = async ct =>
+        {
+            planEntered.TrySetResult();
+            using var registration = ct.Register(() => planCancelled.TrySetResult());
+            await planCancelled.Task;
+        };
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("a", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await planEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        await _chats.DeleteAsync(handle.ChatId, TestContext.Current.CancellationToken);
+
+        // Both halves, each awaited rather than polled (xUnit1031: no .Result / .Wait() in a test body).
+        await planCancelled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await workspaces.TornDownOnce.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        Assert.Contains(handle.RunId, workspaces.TornDown);
+
+        await launcher.StopAsync(CancellationToken.None);
     }
 }

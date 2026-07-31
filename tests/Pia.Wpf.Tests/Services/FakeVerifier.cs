@@ -33,9 +33,16 @@ internal sealed class FakeVerifier : IAgentVerifier
     /// honors the linked run token — so the orchestrator's SafeVerify observes a genuine run cancel.</summary>
     public CancellationTokenSource? CancelSessionOnVerify { get; set; }
 
+    /// <summary>
+    /// Shared call log, appended with <c>"verify"</c>. Batch 06 B8's whole claim is an ORDER — verify, then
+    /// promote, then complete — and no single fake can observe it.
+    /// </summary>
+    public List<string>? Order { get; set; }
+
     public Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
     {
         VerifyCalls++;
+        Order?.Add("verify");
         SeenCompletedSteps.Add(ctx.CompletedSteps.ToList());
         SeenWorkspaceRoots.Add(ctx.WorkspaceRoot);
         if (CancelSessionOnVerify is { } src)

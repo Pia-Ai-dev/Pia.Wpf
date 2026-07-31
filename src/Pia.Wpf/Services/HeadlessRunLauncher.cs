@@ -37,6 +37,16 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     private static readonly TimeSpan _workspaceMaxAge = TimeSpan.FromDays(30);
 
     /// <summary>
+    /// Retention floor for a run that has SETTLED (Batch 06 B12, plan D3's retention rule): an unanswered
+    /// publish offer must not pin a workspace forever. A clean run's workspace is already gone — promotion
+    /// tears it down before the run is marked Completed (B8) — so this window really only serves the
+    /// failed/cancelled runs whose offer the user never answered. Anything NON-terminal keeps the 30-day
+    /// floor above, because it may still be resumable. A judgement call, not a measurement: if seven days
+    /// turns out to be short, it is one constant.
+    /// </summary>
+    private static readonly TimeSpan _terminalWorkspaceMaxAge = TimeSpan.FromDays(7);
+
+    /// <summary>
     /// Resume FLOOR (D1): the grant set a resume falls back to when the launch envelope is missing or
     /// unreadable. Deliberately the NARROWEST useful grant — never a destructive one — because a resume
     /// must never be able to widen what the launch actually granted.
@@ -500,7 +510,16 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 try
                 {
                     var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
-                    remove = run is null || Directory.GetLastWriteTimeUtc(dir) < DateTime.UtcNow - _workspaceMaxAge;
+                    // Batch 06 B12 / plan D3's retention rule and plan R5's mitigation, in one predicate. A
+                    // run the DB no longer has goes immediately (unchanged). A SETTLED run keeps its
+                    // workspace only long enough for the user to answer the publish offer. A state this
+                    // build does not know falls through to the 30-day floor with everything non-terminal:
+                    // it may still be resumable, and deleting a resumable run's only copy of its work is
+                    // the one mistake this sweep must not make.
+                    var terminal = run?.State is AgentRunState.Completed
+                        or AgentRunState.Failed or AgentRunState.Cancelled;
+                    var maxAge = terminal ? _terminalWorkspaceMaxAge : _workspaceMaxAge;
+                    remove = run is null || Directory.GetLastWriteTimeUtc(dir) < DateTime.UtcNow - maxAge;
                 }
                 catch { remove = false; }
 
@@ -551,11 +570,20 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
         foreach (var runId in runIds)
         {
+            // Plan R4: this directory is now the only copy of a non-promoted run's work, so it is never
+            // deleted under a LIVE writer — cancel the dispatch first and let it unwind. (Deleting the chat
+            // is an explicit user act that cascades the run row away, so the files going with it is the
+            // intent; racing a running step while doing it is not.) Best-effort and ordered before the
+            // teardown, not awaited: a disposed CTS throws here and must not stop the cleanup.
+            if (_inflight.TryGetValue(runId, out var entry))
+            {
+                try { entry.Cts.Cancel(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to cancel run {RunId} before workspace teardown", runId); }
+            }
+
             // Teardown may now spawn git (worktree remove/prune), which must not run inline on a SYNCHRONOUS
             // event handler. A failed delete self-heals: the run row is gone by FK cascade, so the next
-            // startup sweep sees `run is null` and removes the workspace unconditionally. The other half of
-            // B13 — cancelling a still-live dispatch BEFORE deleting the only copy of its work (plan R4) —
-            // belongs to the group that lands promotion, and is deliberately not done here.
+            // startup sweep sees `run is null` and removes the workspace unconditionally.
             TearDownWorkspaceAsync(runId, CancellationToken.None).SafeFireAndForget(_logger);
         }
     }

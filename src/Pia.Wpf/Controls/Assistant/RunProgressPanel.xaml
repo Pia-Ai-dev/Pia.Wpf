@@ -33,6 +33,13 @@
           <ui:Button Content="{loc:Str Run_Action_Continue}" Command="{Binding ContinueCommand}"
                      Appearance="Primary" Padding="10,3" Margin="0,0,8,0" FontSize="12"
                      Visibility="{Binding CanContinue, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <!-- Batch 06 / plan D3: a failed or cancelled run's work is still in its workspace, so the panel
+               offers to publish it rather than promoting behind the user's back. A clean run never shows
+               this — it promoted before it was marked complete. Same visibility/CanExecute shape as
+               Continue: CanPublish hides it, and it disables itself while a publish is in flight. -->
+          <ui:Button Content="{loc:Str Run_Action_Publish}" Command="{Binding PublishCommand}"
+                     Appearance="Secondary" Padding="10,3" Margin="0,0,8,0" FontSize="12"
+                     Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                      VerticalAlignment="Center" Text="{Binding LedgerSummary}" />
         </StackPanel>
@@ -44,6 +51,24 @@
                  TextTrimming="CharacterEllipsis" FontSize="12" FontStyle="Italic"
                  Foreground="{DynamicResource TextSubtleBrush}"
                  Visibility="{Binding HasCurrentActivity, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+      <!-- Batch 06: three muted note lines, all mutually quiet on an ordinary run.
+           (1) the standing offer, while a settled run's files are still in its workspace;
+           (2) the result of a publish the user asked for;
+           (3) plan D5b — in worktree mode NOTHING is copied and the branch IS the deliverable, so the panel
+               must say where the output is or the honest user question is "where is my file?". -->
+      <TextBlock Text="{loc:Str Run_Publish_Pending}" Margin="0,0,0,6"
+                 TextWrapping="Wrap" FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}" />
+      <TextBlock Text="{Binding PublishNote}" Margin="0,0,0,6"
+                 TextWrapping="Wrap" FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Visibility="{Binding PublishNote, Converter={StaticResource NullToVisibilityConverter}}" />
+      <TextBlock Text="{Binding OutputBranchNote}" Margin="0,0,0,6"
+                 TextWrapping="Wrap" FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Visibility="{Binding HasOutputBranch, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
       <!-- Step list -->
       <ItemsControl ItemsSource="{Binding Steps}">

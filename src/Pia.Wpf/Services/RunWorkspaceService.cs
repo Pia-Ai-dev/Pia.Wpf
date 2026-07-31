@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -176,14 +177,197 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     }
 
     /// <summary>
-    /// Promotion lands in Batch 06 G4 (B7's mtime promote set, B9's destination rule, B10's worktree
-    /// no-op). Until then this returns <c>null</c>, which is the SAME restrictive degrade an unreadable
-    /// metadata document takes: nothing is promoted and the workspace — with the run's work in it — is kept
-    /// exactly where it is, so the deliverables are recoverable and the later real path can still promote
-    /// them. §0.6 says so out loud: a tree that stops at G3 is not shippable.
+    /// Promote what the run wrote (Batch 06 B7/B9/B10). <c>null</c> means "nothing was promoted and the
+    /// workspace is intact", which is the restrictive degrade every unreasonable input takes: no readable
+    /// metadata, no workspace directory, a mode this build does not know, or a recorded destination that no
+    /// longer resolves inside the CURRENT assistant files folder. Keeping the files where they are is
+    /// recoverable — the publish affordance still offers them; writing a workspace we cannot reason about
+    /// over the user's folder is not.
+    /// <para>
+    /// Promotion is TERMINAL-ONLY and happens ONCE per workspace. That invariant is what lets the single
+    /// <c>provisionedAtUtc</c> decide the promote set even across a park → resume: nothing has been promoted
+    /// yet, so "everything either segment wrote" is the correct set. A second promotion of the same workspace
+    /// (a child run promoting before its parent, Batch 07) would re-copy the first one's output over whatever
+    /// the destination has accumulated since — do not add one.
+    /// </para>
     /// </summary>
-    public Task<RunPromotionResult?> PromoteAsync(Guid runId, CancellationToken ct)
-        => Task.FromResult<RunPromotionResult?>(null);
+    public async Task<RunPromotionResult?> PromoteAsync(Guid runId, CancellationToken ct)
+    {
+        try
+        {
+            var meta = ReadMetadata(runId);
+            if (meta is null)
+            {
+                // ReadMetadata already logged WHY (absent / unparseable / foreign version). Nothing is
+                // promoted and nothing is deleted: B5's restrictive degrade.
+                _logger.LogWarning("Run {RunId} was not promoted: its workspace metadata is not usable", runId);
+                return null;
+            }
+
+            var runRoot = RootFor(runId);
+            if (!Directory.Exists(runRoot))
+                return null;
+
+            if (meta.ParsedMode == RunWorkspaceMode.Worktree)
+            {
+                // B10 / plan D5b: THE BRANCH IS THE DELIVERABLE. No file is copied and there is deliberately
+                // no merge, so no unattended path ever has to handle a conflict. The panel says where the
+                // output is (B15's Run_Output_Branch line) — without that line the honest user question is
+                // "where is my file?".
+                _logger.LogInformation(
+                    "Run {RunId} promoted no files: its output is on its run branch (worktree mode)", runId);
+                return new RunPromotionResult(RunWorkspaceMode.Worktree, Promoted: 0, Skipped: 0, Conflicts: 0, meta.Branch);
+            }
+
+            if (meta.ParsedMode != RunWorkspaceMode.Copy)
+                return null;
+
+            // B9: the destination is the source root RECORDED AT PROVISIONING, so runRoot\rel →
+            // sourceRoot\rel is the pure inverse of the copy-in. It must still exist AND still resolve
+            // inside the current assistant files folder — the user may have relocated the folder or edited
+            // the setting mid-run, and re-anchoring a promotion onto a folder the run never saw is not a
+            // repair.
+            var destination = meta.SourceRoot!;
+            var (_, settingsFolder) = await ResolveSourceRootAsync(null).ConfigureAwait(false);
+            if (settingsFolder is null || !Directory.Exists(destination) || !IsInsideOrEqual(destination, settingsFolder))
+            {
+                _logger.LogWarning(
+                    "Run {RunId} was not promoted: its recorded destination no longer resolves inside the assistant files folder",
+                    runId);
+                return null;
+            }
+
+            return await Task.Run(() => CopyOut(runId, runRoot, destination, meta.ProvisionedAtUtc, ct), ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Bookkeeping must never fail a run (guardrail 1): the work stays in the workspace and the
+            // publish affordance can still offer it.
+            _logger.LogWarning(ex, "Run {RunId} promotion failed; its work stays in its workspace", runId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Copy mode's promote set (B7), decided by mtime against <paramref name="provisionedAtUtc"/>:
+    /// <c>File.Copy</c> preserves the source's <c>LastWriteTime</c>, so a copied-in file is OLDER than that
+    /// one durable timestamp and a file the agent wrote is NEWER. No manifest, no hash index, and it survives
+    /// a resume in a different process.
+    /// <para>
+    /// DELETIONS ARE NEVER PROPAGATED. A run cannot delete a user file by promoting — that is the difference
+    /// between "promote" and "sync", and write arbitration belongs to a later batch.
+    /// </para>
+    /// </summary>
+    private RunPromotionResult? CopyOut(
+        Guid runId, string runRoot, string destination, DateTime provisionedAtUtc, CancellationToken ct)
+    {
+        var (rels, overCap) = CollectPromotableFiles(runRoot, destination, ct);
+        if (overCap)
+        {
+            // The same reasoning as B6's provisioning cap, in the other direction: half a promotion is worse
+            // than none, and the files remain publishable by hand.
+            _logger.LogInformation(
+                "Run {RunId} was not promoted: its workspace exceeds the isolation cap ({FileCount} files)",
+                runId, rels.Count);
+            return null;
+        }
+
+        // An unusable timestamp (a document written by something that omitted it) cannot tell "the agent
+        // wrote this" from "we copied this in", so degrade to the one action that is safe either way:
+        // create files that do not exist at the destination, and touch nothing that does.
+        var stampUsable = provisionedAtUtc > DateTime.MinValue;
+
+        int promoted = 0, skipped = 0, conflicts = 0;
+        foreach (var rel in rels)
+        {
+            ct.ThrowIfCancellationRequested();
+            var src = Path.Combine(runRoot, rel);
+            var dest = Path.Combine(destination, rel);
+            try
+            {
+                if (stampUsable && File.GetLastWriteTimeUtc(src) <= provisionedAtUtc)
+                    continue; // the run did not touch it
+
+                if (!File.Exists(dest))
+                {
+                    var destDir = Path.GetDirectoryName(dest);
+                    if (!string.IsNullOrEmpty(destDir))
+                        Directory.CreateDirectory(destDir);
+                    File.Copy(src, dest, overwrite: false);
+                    promoted++;
+                    continue;
+                }
+
+                if (!stampUsable)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                if (IsByteIdentical(src, dest))
+                {
+                    skipped++; // already correct — copying would only churn its mtime
+                    continue;
+                }
+
+                if (File.GetLastWriteTimeUtc(dest) > provisionedAtUtc)
+                {
+                    // The user (or another writer) changed this file WHILE the run was working. An
+                    // unattended run must not overwrite that.
+                    conflicts++;
+                    _logger.SensitiveWarning("Run {RunId} promotion conflict on {Path}", runId, rel);
+                    continue;
+                }
+
+                File.Copy(src, dest, overwrite: true);
+                promoted++;
+            }
+            catch (Exception ex)
+            {
+                // One unreadable or locked file must not abandon the rest of the deliverable. Counted as
+                // skipped: nothing was written, and the file is still in the workspace.
+                skipped++;
+                _logger.LogWarning(ex, "Run {RunId} could not promote one file", runId);
+            }
+        }
+
+        // Counts, ids and enum values only: this line lands in a support-attachable release log and there is
+        // no SensitiveError helper, so a path never appears above Debug/Warning-sensitive severity.
+        _logger.LogInformation(
+            "Run {RunId} promoted {PromotedCount} file(s), skipped {SkippedCount}, {ConflictCount} conflict(s)",
+            runId, promoted, skipped, conflicts);
+        return new RunPromotionResult(RunWorkspaceMode.Copy, promoted, skipped, conflicts, BranchName: null);
+    }
+
+    /// <summary>Size first, then SHA256 — the same identity test <c>SafeDirectoryMove</c> uses.</summary>
+    private static bool IsByteIdentical(string a, string b)
+    {
+        if (new FileInfo(a).Length != new FileInfo(b).Length)
+            return false;
+
+        using var sa = File.OpenRead(a);
+        using var sb = File.OpenRead(b);
+        return SHA256.HashData(sa).AsSpan().SequenceEqual(SHA256.HashData(sb));
+    }
+
+    /// <summary>
+    /// The files inside a run workspace that promotion may consider: the same ignore-pruned, vault-excluded,
+    /// capped walk provisioning used on the way in (B6/B7), so <c>.git</c> — including one the model created
+    /// itself in copy mode — never travels back out.
+    /// </summary>
+    private static (List<string> Rels, bool OverCap) CollectPromotableFiles(
+        string runRoot, string destination, CancellationToken ct)
+    {
+        var ignore = SandboxIgnore.ForRoot(runRoot);
+        var vaultRoots = new[]
+        {
+            AssistantWorkspace.VaultRootFor(runRoot),
+            AssistantWorkspace.VaultRootFor(destination),
+        };
+        var (rels, _, overCap) = CollectSourceFiles(runRoot, vaultRoots, ignore, ct);
+        return (rels, overCap);
+    }
 
     public Task<RunWorkspaceOutcome?> DescribeAsync(Guid runId, CancellationToken ct)
         => Task.Run(() =>
@@ -204,7 +388,7 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 // "newer than provisionedAtUtc" test the promote set uses (B7), asked as a yes/no.
                 var unpublished = meta.ParsedMode == RunWorkspaceMode.Copy
                     && meta.ProvisionedAtUtc > DateTime.MinValue
-                    && HasFileNewerThan(root, meta.ProvisionedAtUtc);
+                    && HasPromotableFileNewerThan(root, meta.SourceRoot!, meta.ProvisionedAtUtc, ct);
 
                 return new RunWorkspaceOutcome(meta.ParsedMode, meta.Branch, unpublished);
             }
@@ -654,13 +838,26 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             || full.StartsWith(SafeFolderPath.WithTrailingSeparator(fullRoot), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool HasFileNewerThan(string root, DateTime provisionedAtUtc)
+    /// <summary>
+    /// "Would a promotion have anything to carry out of here?" — asked over exactly the set
+    /// <see cref="CopyOut"/> walks (<see cref="CollectPromotableFiles"/>), not over every file on disk. The
+    /// two must agree or the panel offers to publish a workspace whose only new files are ones promotion
+    /// prunes (a <c>.git</c> the model created in copy mode is the realistic case) and the user gets an offer
+    /// that publishes nothing.
+    /// </summary>
+    private static bool HasPromotableFileNewerThan(
+        string root, string destination, DateTime provisionedAtUtc, CancellationToken ct)
     {
-        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        var (rels, overCap) = CollectPromotableFiles(root, destination, ct);
+        // Over the cap the walk short-circuits, so the list is a prefix rather than the whole set: there ARE
+        // files, which is all this question asks.
+        if (overCap) return true;
+
+        foreach (var rel in rels)
         {
             try
             {
-                if (File.GetLastWriteTimeUtc(file) > provisionedAtUtc) return true;
+                if (File.GetLastWriteTimeUtc(Path.Combine(root, rel)) > provisionedAtUtc) return true;
             }
             catch { /* a vanished or locked file is not evidence either way */ }
         }
