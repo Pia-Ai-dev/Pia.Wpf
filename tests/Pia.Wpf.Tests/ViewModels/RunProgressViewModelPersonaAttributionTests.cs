@@ -167,14 +167,30 @@ public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
         Assert.False(row.HasPersona);
     }
 
+    /// <summary>
+    /// T-VM-4, <b>REGRESSION</b> (rewritten by the Phase 3 fix pass — the version G7 shipped stubbed
+    /// <c>GetPersonasAsync</c> with an already-completed task, so pass 1 already resolved the avatar and the
+    /// assertion held whether or not the existing-row re-application had run at all).
+    /// <para>
+    /// The property under test is the ONE production path that needs
+    /// <c>ApplyPersonaAttribution(existing)</c>: within a single <c>RefreshAsync</c> the map load is awaited
+    /// BEFORE the projection, so a new row always has the map in hand. The correction only matters when the
+    /// FIRST map read FAULTS — the SQLite-busy case the try/catch exists for — leaving rows minted persona-less,
+    /// and a later <c>RunChanged</c> re-reads it successfully. Rows are replaced only when step IDS change, so
+    /// without the re-application those rows would never be corrected and a genuinely delegated step would show
+    /// no avatar for the rest of the run's life.
+    /// </para>
+    /// <para>
+    /// It also pins the deliberate "<c>_personas</c> stays null so the NEXT event RETRIES rather than latching an
+    /// empty map" decision recorded at the field: latch an empty map in the catch and pass 2 no longer corrects.
+    /// <c>Assert.Same</c> is the load-bearing assertion — it is what makes this about the SAME row instance being
+    /// mutated rather than about a replacement row that happens to be right. Neutralization: delete
+    /// <c>ApplyPersonaAttribution(existing)</c> from <c>SyncSteps</c>' else-branch → red.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task FirstProjectionBeforePersonaMapLoads_IsCorrectedOnTheNextRefresh()
+    public async Task AFaultedFirstPersonaLoad_IsRetried_AndTheSameRowIsCorrectedInPlace()
     {
-        // R21/R22: RefreshAsync runs from the constructor, so the very first projection can, in
-        // principle, race the persona map load. This VM's own RefreshAsync is awaited synchronously
-        // here (InlineSyncContext), so we assert the settled state after two explicit refreshes rather
-        // than the ctor's fire-and-forget one — the load-bearing property under test is that PersonaId
-        // is SETTABLE and gets corrected on a later pass, not a particular race outcome.
         var run = await NewPlannedRunAsync();
         var persona = new Persona { Id = Guid.NewGuid(), Name = "Reviewer", SystemPrompt = "prompt" };
         var step = new AgentStep
@@ -185,15 +201,61 @@ public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
         await _runs.ReplaceStepsAsync(run.Id, [step], TestContext.Current.CancellationToken);
 
         var personaService = Substitute.For<IPersonaService>();
-        personaService.GetPersonasAsync().Returns(Task.FromResult<IReadOnlyList<Persona>>([persona]));
+        // Call 1 faults (a faulted task, not a synchronous throw — that is what a busy SQLite read looks like
+        // from an async method); every later call succeeds.
+        personaService.GetPersonasAsync().Returns(
+            _ => Task.FromException<IReadOnlyList<Persona>>(new InvalidOperationException("the persona store is busy")),
+            _ => Task.FromResult<IReadOnlyList<Persona>>([persona]));
 
+        // The ctor's own RefreshAsync consumes call 1 and, under InlineSyncContext, completes before the ctor
+        // returns — so this Single() is also the check that the first projection really happened.
         var vm = CreateVm(run.Id, personaService);
-        await vm.RefreshAsync(); // first explicit pass: loads the persona map and applies it
-        await vm.RefreshAsync(); // second pass: same row, must still resolve (not a load-once latch)
-
         var row = Assert.Single(vm.Steps);
+        Assert.False(row.HasPersona);          // minted persona-less: the map was never loaded
+        Assert.Equal(Guid.Empty, row.PersonaId);
+
+        await vm.RefreshAsync();               // the retry succeeds
+
+        Assert.Same(row, Assert.Single(vm.Steps));   // the SAME instance, corrected in place
         Assert.True(row.HasPersona);
         Assert.Equal(persona.Id, row.PersonaId);
+    }
+
+    /// <summary>
+    /// T-VM-5, <b>REGRESSION</b> (not built by G7; added by the Phase 3 fix pass). A persona-store fault must not
+    /// break the panel. <see cref="RunProgressViewModel.RefreshAsync"/> is invoked from the CONSTRUCTOR and from
+    /// the off-thread <c>RunChanged</c> handler, so an unguarded fault is either an unobserved task fault on the
+    /// event path or a panel that never projects the run at all on the ctor path — for a run whose only defect is
+    /// that a persona read was momentarily unavailable.
+    /// <para>
+    /// Neutralization: remove the try/catch around the map load → this fact reds (the fault escapes
+    /// <c>RefreshAsync</c>). The step assertions are the non-vacuity half: the panel is not merely
+    /// exception-free, it still shows the run.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APersonaLookupFault_DoesNotBreakThePanel()
+    {
+        var run = await NewPlannedRunAsync();
+        var assigned = Guid.NewGuid();
+        var steps = new List<AgentStep>
+        {
+            new() { Id = Guid.NewGuid(), Ordinal = 0, Title = "One", Status = AgentStepStatus.Done, AssignedPersonaId = assigned },
+            new() { Id = Guid.NewGuid(), Ordinal = 1, Title = "Two", Status = AgentStepStatus.Pending },
+        };
+        await _runs.ReplaceStepsAsync(run.Id, steps, TestContext.Current.CancellationToken);
+
+        var personaService = Substitute.For<IPersonaService>();
+        personaService.GetPersonasAsync().Returns(
+            _ => Task.FromException<IReadOnlyList<Persona>>(new InvalidOperationException("the persona store is busy")));
+
+        var vm = CreateVm(run.Id, personaService);
+        await vm.RefreshAsync();   // must not throw
+
+        Assert.Equal(2, vm.Steps.Count);
+        Assert.Equal(AgentStepStatus.Done, vm.Steps[0].Status);
+        Assert.Equal(AgentStepStatus.Pending, vm.Steps[1].Status);
+        Assert.All(vm.Steps, r => Assert.False(r.HasPersona));
     }
 
     public void Dispose()
