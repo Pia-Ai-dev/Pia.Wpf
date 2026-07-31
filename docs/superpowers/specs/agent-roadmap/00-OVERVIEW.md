@@ -50,12 +50,14 @@ arithmetic, not as a measurement**: all four were read off the commits that clai
 0/0 rebuilds and the `CoreCompile` counts were measured on this tree by the pass that wrote this line. Saying so is
 not pedantry here; it is the one discipline this file has had to repair the most often. **Phase 3 is
 complete in the only sense the code can be: every group is in the tree and gated. What it has NOT had is the manual
-Windows smoke round — which is still Rank 1, which Phase 3 lengthened by **eleven** items (the nine its own plan
-enumerated, plus two the fix pass added that the plan could not have anticipated) and shortened by none, and
+Windows smoke round — which is still Rank 1, which Phase 3 lengthened by **fourteen** items (the nine its own plan
+enumerated, plus two the fix pass added and three the consolidation pass added, none of which the plan could have
+anticipated) and shortened by none, and
 which no green suite substitutes for.** Batch 06's review filed 14 findings whose adjudication is tracked in
 [`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md); read that file for the status rather
-than a number from here, because its own tally needed a correction (8 distinct defects confirmed, 7 fixed, 1 fixed
-in part, 3 findings refuted with evidence). See "Opened by Phase 3" below for what is known and open._
+than a number from here, because its own tally needed a correction (8 distinct defects confirmed, 3 findings
+refuted with evidence) and then an update — the one that was "fixed in part" was finished on 2026-08-01, so all
+**8** are fixed. See "Opened by Phase 3" below for what is known and open._
 
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
@@ -193,6 +195,13 @@ written, and **false at HEAD**. A review pass whose scope was G1–G10 ran after
 coverage, G10's fan-out notification and G10's pause-reason surface. So Batch 07 has had **one** review pass and one
 fix pass. What has had **neither** is the fix pass's own output — `3b66603` in particular, which introduced two of
 the live items in "Opened by Phase 3" while closing four findings.
+
+**Amended 2026-08-01.** Those live items are now closed by the consolidation pass (`1bd63d5`, `165486e`), which
+also re-read `3b66603` closely enough to overturn one of its stated reasons (the "an offer the user has just
+answered" argument for leaving `Publish()` alone) and to find a second, unfiled arm of the same empty-branch claim.
+So `3b66603` has now been examined, if not formally reviewed. **What has had neither review nor fix pass is
+`165486e` itself** — one pass, self-reviewed, gated. Its own two opened items are listed at the end of
+"Opened by Phase 3".
 
 **Git position, re-measured 2026-07-31 at the end of Phase 3 — and the 2026-07-30 paragraph below is right that
 this must never be a hardcoded count.** So, described rather than counted: local-only is now everything the
@@ -1335,10 +1344,11 @@ a decision about what happens when that goes wrong. Four sources feed it — wha
 round, which planned risks were **accepted** instead of closed, what the fix pass **declined** and why, and what a
 builder deliberately did not do.
 
-**What Phase 3 adds to the Rank-1 manual Windows smoke round — eleven items, and none of them automatable: the nine
-below, then the two after them.** The nine are `phase3-workflow-plan.md` §8; the extra two are the fix pass's, and
-they are listed separately rather than folded in because §8 was an authored list and they were a discovery. The list
-is `phase3-workflow-plan.md` §8; every item on it is now real, because all ten groups are in.
+**What Phase 3 adds to the Rank-1 manual Windows smoke round — fourteen items, and none of them automatable: the
+nine below, then the two after them, then the three the consolidation pass added.** The nine are
+`phase3-workflow-plan.md` §8; the extras are listed separately rather than folded in because §8 was an authored list
+and the others were discoveries, each by a different pass. The list is `phase3-workflow-plan.md` §8; every item on it
+is now real, because all ten groups are in. **Deferred by owner decision, NOT retired: this round is still Rank 1.**
 
 1. **A real headless run writing into an isolated workspace and promoting on success.** The whole point of 06 and
    the one item no unit test substitutes for: the suite proves promotion copies, retains and tears down correctly
@@ -1373,6 +1383,23 @@ the avatars fill their 28×28. (ii) **The DE/FR round is longer than §8 item 9 
 three locales for the new pause reasons, and the German chip for `WaitingForChildren` changed from "Delegiert" to
 "Verteilt Arbeit" — a participle sitting morphologically with the *settled* states next to a lit spinner was exactly
 the "this run is finished" misreading that converter's explicit arm exists to prevent.
+
+**Three more the CONSOLIDATION pass added (2026-08-01), all in the run panel and all unreachable from any test
+because there is no View test (R11).** Each is a UI state that did not exist before `165486e`.
+
+(iii) **A copy-mode conflict, published manually.** Click Publish on a run whose promotion hit a conflict and read
+the panel as a whole: the result note ("N published, M left alone…") and the STILL-STANDING offer line ("this run's
+files are still in its workspace") now render together, deliberately, and the question is whether they read as one
+coherent statement rather than as a contradiction. Confirm the workspace really is still on disk afterwards, and that
+the DE and FR forms of both lines fit without clipping.
+(iv) **A worktree run whose run-branch commit failed.** The panel must name NO branch and show the Publish button;
+clicking it retries the commit, and on success the branch line appears where the offer was. Also worth seeing in the
+same round: a FAILED worktree run now offers Publish where it used to name an empty branch. The button says
+"Publish files" while what it does here is commit to a branch — judge whether that reads acceptably in all three
+locales before deciding it needs its own string.
+(v) **The automatic conflict note.** A background copy-mode run that hits a conflict must show the conflict count on
+completion with NO click, and an ordinary run must still show none of the three note lines at all. The second half is
+the one worth checking: quiet-on-an-ordinary-run is the property that makes the notes worth reading.
 
 **Risks the plan named that were ACCEPTED rather than closed.** Each of these was mitigated and then explicitly
 left; the reason is the point.
@@ -1409,9 +1436,12 @@ left; the reason is the point.
   `.gitignore` applies to files the agent writes, which is why promotion runs a second
   `status --porcelain --untracked-files=all --ignored` after committing rather than trusting the commit's success.
 
-**What the fix pass DECLINED, with its reason.** These are live items, recorded in
+**What the fix pass DECLINED, with its reason — ALL FOUR CLOSED by the consolidation pass of 2026-08-01
+(`1bd63d5`, `165486e`).** They were live items, recorded in
 [`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md) rather than silently carried, and the first
-two are the **price of `3b66603`** — they did not exist before the commit that closed the data-loss findings.
+two were the **price of `3b66603`** — they did not exist before the commit that closed the data-loss findings. Two
+of the four were **owner design rulings**, put as questions before any code was written; the other two were fixes.
+The declined text stands with its outcome under it, because "declined, then built" is the record worth keeping.
 
 - **A worktree run whose run-branch commit FAILED still gets the "output is on branch X" line.** On that arm
   promotion returns `RetainWorkspace: true`, so teardown never runs, so the metadata document is intact and
@@ -1420,18 +1450,34 @@ two are the **price of `3b66603`** — they did not exist before the commit that
   so the UI shows no recovery path at all. The files really are in `%LOCALAPPDATA%\Pia\runs\<runId>` for seven days.
   **Declined because the honest fix is a redesign**: suppressing the line means `DescribeAsync` learning whether the
   branch actually carries a commit, which is a new question for that method to answer, not a one-line guard.
+  → **CLOSED. Owner picked "record it, and use it for both": `branchCommittedAtUtc` is stamped at promotion (an
+  additive `v:1` member, the `tornDownAtUtc` precedent) and both describe arms key on it, so no stamp means no
+  branch name *and* a publish offer — which makes publishing a RETRY of the commit. `DescribeAsync` stays off the
+  process boundary, which the "ask git" shape would have broken for a method the panel calls on every terminal
+  `RunChanged`. The same lie turned out to be reachable on a second arm nobody had filed: a failed/cancelled
+  worktree run never promotes, so its branch is empty too.**
 - **The automatic promotion path still does not RENDER a conflict count** (Lens A 5 / Lens B 3, fixed *in part*).
   The workspace is now retained on a conflict, so the offer stands and clicking Publish re-runs the promotion, which
   re-counts the same conflict and renders the existing localized string — so the number reaches the user **on the
   path where it is actionable**. What it still does not do is announce itself on completion. Declined because there
   is no orchestrator→ViewModel channel (promotion sets no VM state; the panel learns everything through
   `RunChanged`) and persisting a count would mean overloading the truncation envelope.
+  → **CLOSED. Owner picked "build the channel". The count rides on `RunWorkspaceOutcome`, recorded on the workspace
+  metadata document and read by the describe the panel already makes for every terminal run — not the run row, so
+  the truncation envelope is untouched. Mechanism deviation from the option's own wording ("an event or a
+  process-local map"), stated in the commit and in the findings file: the document survives a restart, and a panel
+  opened from history long after the run is the ordinary case an event would miss.**
 - **`Publish()` still ignores `RetainWorkspace`.** The manual path tears the workspace down unconditionally on a
   non-null result, so publishing a conflicted workspace deletes the run's version of the conflicted file — the exact
   loss the finding was filed against on the *automatic* path, now surviving on the manual one. Left alone **on
   purpose**: the path is user-initiated and the note it renders carries the conflict count, and retaining there
   would leave an offer standing that the user has just answered. Named so the asymmetry is a decision rather than an
   oversight.
+  → **CLOSED, and the reason it was left alone did not survive reading the panel: the offer line and the result
+  note are separate stacked `TextBlock`s, so a retaining publish shows both at once and both are true — N
+  published, M left alone, and the M are still in the workspace. The standing offer is actionable, not stale: a
+  user who moves their own copy aside turns the conflict into "destination missing". The two paths are now
+  symmetric on purpose.**
 - **Lens A 4's other half is untouched.** `TearDownWithoutMetadataAsync` returns no success signal, and
   `OnChatsChanged` still starts a teardown without awaiting the cancelled dispatch's unwind — which is precisely
   when a `worktree remove` and a recursive delete both fail. `3b66603` *moved* the finding: the torn-down stub now
@@ -1439,6 +1485,30 @@ two are the **price of `3b66603`** — they did not exist before the commit that
   longer applies to worktree mode. Its verdict (REFUTED, see the correction above) killed the *permanent* leak, not
   the shape — the unconditional `git worktree prune` on a failed removal is what carries it, so that call is
   load-bearing and a later simplification must not fold it into the success arm.
+  → **CLOSED, cause and symptom. Teardown reports whether the directory is really gone (re-checked on the
+  filesystem — a recursive delete can fail part-way through), and a worktree whose directory survived keeps its
+  document un-stamped so a later sweep retries through it; copy mode keeps the unconditional delete deliberately.
+  `CancelThenTearDownWorkspaceAsync` awaits the dispatch task `_inflight` always held beside the CTS, bounded at
+  5s. THE UNCONDITIONAL PRUNE IS UNCHANGED and is now asserted by a fact, so folding it into a success arm goes
+  red — the warning above is still the rule, it just has a test behind it.**
+
+**What the consolidation pass opened — two small items, both consequences of the fix.** (i) A worktree metadata
+document written before `165486e` has no `branchCommittedAtUtc` and therefore reads as "not committed", so a
+pre-existing stub loses its branch line and a pre-existing live worktree workspace gains a retry offer. Accepted
+rather than migrated: the branch is unpushed and worktree mode has never had its manual round, so the population is
+the owner's machine at most, and the degrade withholds a claim rather than making one. (ii) The 5-second unwind
+bound is uncovered by tests — the constant is private and driving it would mean holding a real dispatch for its
+whole duration; on a timeout the behaviour is exactly the pre-pass behaviour.
+
+**One pre-existing flake was identified and fixed on the way, which is worth recording because it was hunted.** The
+single unnamed failure Phase 3's fix pass logged and could never reproduce is almost certainly
+`ChatTitleChipFlyoutGroupingTests.Flyout_WithinDateBucket_SortsByUpdatedAtDesc`: it built its two chats as `UtcNow`
+and `UtcNow.AddHours(-2)` and asserted ONE date group, while the SUT buckets on `ToLocalTime().Date` against
+`DateTime.Today` — both local. In the first two local hours of any day the older chat lands in yesterday's bucket
+and the assertion sees 2 groups. Green 22 hours out of 24 and identical in both configurations, which is why eight
+re-runs never showed it. Caught by running the gate at 00:44 local, fixed in the test by anchoring both chats to
+local noon (`1bd63d5`). **It is not on the known-intermittents list and should not be added: it was deterministic
+all along, on a clock nobody was reading.**
 - **CORRECTED: three findings were REFUTED, not left without a verdict** — Lens A 4 above, Lens C 5 (a commit
   message recording an incomplete gate; the next commit's own gate report closes the hazard one commit later) and
   Lens C 6 (an architecture-rule message said to state a different threshold than its assertion — it states the

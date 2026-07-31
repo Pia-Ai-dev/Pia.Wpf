@@ -585,6 +585,21 @@ is "where is my file?".
 > received nothing, and worktree mode offers no publish button, so there is no recovery path in the UI. The
 > files are in `%LOCALAPPDATA%\Pia\runs\<runId>` for seven days. See the live-items note in the Batch 06
 > review findings file.
+>
+> **CLOSED by the consolidation pass of 2026-08-01 (`165486e`), and the redesign turned out to be a recorded
+> fact rather than a new question.** `CommitToRunBranchAsync` stamps `branchCommittedAtUtc` on the metadata
+> document on the two arms where the branch really carries the run's work — the commit succeeded, or
+> `status --porcelain` found nothing to commit (a branch trivially carries a run that wrote nothing) — and
+> BOTH of `DescribeAsync`'s worktree arms key on it. No stamp means no branch name **and**
+> `HasUnpublishedFiles: true`, so the offer appears where the false claim used to be and publishing RETRIES this
+> method. Additive `v:1` member, same shape as `tornDownAtUtc`; no git process is spawned in `DescribeAsync`,
+> which matters because the panel calls it off-thread on every terminal `RunChanged`.
+>
+> **A second arm of the same lie, which no finding named**: a FAILED or CANCELLED worktree run never promotes at
+> all (plan D3), so its branch is empty too — and the pre-fix describe named it just as confidently. Lens A 2
+> read that arm as the *intended* one ("the branch line therefore only ever appears for a FAILED worktree run").
+> It is the same empty branch, and it now gets the same answer: no name, and an offer that commits what the
+> failed run did produce.
 
 ### B11 — Provisioning: worktree when the source root is a repo we may touch, else copy
 
@@ -803,6 +818,22 @@ public bool CanPublish => _hasUnpublishedFiles && !IsPublishing;
   > conflicted file. That is the inverse of the loss Lens A 5 / Lens B 3 filed against the AUTOMATIC path,
   > and it was left alone deliberately rather than overlooked: retaining here would leave an offer standing
   > that the user has just answered. Recorded as a live item in the review findings file.
+  >
+  > **NO LONGER TRUE — reversed by the consolidation pass of 2026-08-01 (`165486e`).** `Publish()` obeys
+  > `RetainWorkspace`, so the manual and automatic paths are symmetric on purpose. The "offer standing that the
+  > user has just answered" objection does not survive reading the XAML: the offer line (bound to `CanPublish`)
+  > and `PublishNote` are SEPARATE stacked `TextBlock`s, so a retaining publish shows both at once and both are
+  > true — N published, M left alone, and the M really are still in the workspace. The standing offer is also
+  > actionable rather than stale: a user who moves their own copy aside turns the conflict into "destination
+  > missing" and the next click carries the run's version out. Being user-initiated does not make a deleted file
+  > recoverable, which is what the objection assumed.
+  >
+  > Two further changes in the same commit. `Run_Publish_Failed` now also covers the arm where a promotion
+  > retained the workspace and moved nothing at all (a worktree whose run-branch commit is still failing) —
+  > "Published 0 file(s)" would read as success there. And **"worktree mode never reaches `Publish()`" is no
+  > longer absolute**: a worktree run whose branch never received a commit describes with
+  > `HasUnpublishedFiles: true`, so the button appears for it and publishing retries the commit. That is the one
+  > case, and it exists because the alternative was a panel with no recovery path at all (see B10's note).
   >
   > `HasUnpublishedFiles` is also no longer "a FAILED or CANCELLED run" only: a clean COPY-mode run whose
   > promotion hit a conflict now keeps its workspace, so a Completed run can legitimately raise the offer.

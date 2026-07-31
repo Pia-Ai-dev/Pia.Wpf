@@ -30,13 +30,13 @@ outcomes and this file must not blur them.
 | Filed by | Finding | Severity as filed | Verdict |
 |---|---|---|---|
 | Lens A | 1 — worktree teardown destroys the run's output | must-fix | **CONFIRMED** by the 2026-07-31 pass — **FIXED** in `3b66603` |
-| Lens A | 2 — the "output is on branch X" line cannot render on success | should-fix | **CONFIRMED** (same defect as Lens B 1) — **FIXED** in `3b66603` |
+| Lens A | 2 — the "output is on branch X" line cannot render on success | should-fix | **CONFIRMED** (same defect as Lens B 1) — **FIXED** in `3b66603`, and completed in `165486e`: the line no longer renders for a branch that received NOTHING either (a failed run-branch commit, or a failed/cancelled run that never promoted) |
 | Lens A | 3 — `StepPersonaResolver`'s persona lookup is unguarded | should-fix | **CONFIRMED** — **FIXED** (persona taken from the roster list already in hand) |
-| Lens A | 4 — metadata deleted even when directory removal failed | should-fix | **REFUTED**, high confidence — premise true, inferred harm false: `TearDownWithoutMetadataAsync` already runs `git worktree prune` unconditionally when `remove --force` fails, and prune reclaims a registration from live git state once the worktree's `.git` pointer file is gone. Two experiments in the verdict. `3b66603` narrowed the worktree half further (see the note under the table) |
-| Lens A | 5 — automatic promotion with conflicts tears the workspace down | should-fix | **CONFIRMED** — **FIXED IN PART** in `3b66603` (the workspace is retained; the count still reaches the user only through the publish note — reasons in that commit) |
-| Lens B | 1 — the branch line cannot render for a successful worktree run | must-fix | **CONFIRMED** — **FIXED** in `3b66603` (torn-down worktree metadata stub) |
+| Lens A | 4 — metadata deleted even when directory removal failed | should-fix | **REFUTED**, high confidence — premise true, inferred harm false: `TearDownWithoutMetadataAsync` already runs `git worktree prune` unconditionally when `remove --force` fails, and prune reclaims a registration from live git state once the worktree's `.git` pointer file is gone. Two experiments in the verdict. `3b66603` narrowed the worktree half further (see the note under the table); the **shape** — no success signal, and a teardown started without awaiting the cancelled dispatch — is closed in `165486e`, with the unconditional prune unchanged and now asserted by a fact |
+| Lens A | 5 — automatic promotion with conflicts tears the workspace down | should-fix | **CONFIRMED** — **FIXED IN PART** in `3b66603` (the workspace is retained), **fully in `165486e`**: the conflict count is recorded on the workspace metadata document and the panel renders it on completion, with no click |
+| Lens B | 1 — the branch line cannot render for a successful worktree run | must-fix | **CONFIRMED** — **FIXED** in `3b66603` (torn-down worktree metadata stub), completed in `165486e` as Lens A 2 |
 | Lens B | 2 — nothing commits the work, so worktree mode deletes the deliverable | must-fix | **CONFIRMED** — **FIXED** in `3b66603` (app-side commit onto the run branch) |
-| Lens B | 3 — an automatic promotion's conflicts are logged but never shown | should-fix | **CONFIRMED** — **FIXED IN PART** in `3b66603`, as Lens A 5 |
+| Lens B | 3 — an automatic promotion's conflicts are logged but never shown | should-fix | **CONFIRMED** — **FIXED IN PART** in `3b66603`, fully in `165486e`, as Lens A 5 |
 | Lens C | 1 — French `Run_Output_Branch` says "branch", not "branche" | should-fix | **CONFIRMED** (refuted: false, high confidence) — **FIXED** in `914730d` |
 | Lens C | 2 — git-parity test compares a raw `GetTempPath` expectation | nit | **CONFIRMED** — **FIXED** (`_runRoot` canonicalized in the fixture ctor) |
 | Lens C | 3 — G1's guard facts carry no REGRESSION/GUARD label | nit | **CONFIRMED** — **FIXED** (both labels added at the facts) |
@@ -58,6 +58,13 @@ figure: **8 distinct defects confirmed — 7 fully fixed, 1 (the conflict path) 
 refuted with evidence, none left unadjudicated.** The eight, so the arithmetic is checkable rather than asserted:
 A1=B2, A2=B1, A3, A5=B3 (the partial), C1, C2, C3, C4.
 
+**Updated by the consolidation pass of 2026-08-01 (`1bd63d5`, `165486e`): the partial is no longer partial, so the
+one figure is now `8 distinct defects confirmed, all 8 fully fixed, 3 refuted with evidence`.** The count of
+distinct defects did not change and neither did the refutations — what changed is A5=B3's row. Left as an
+amendment rather than an edit of the sentence above, for the same reason the four counts were: the earlier figure
+was true when it was written, and a document that silently restates its own history is exactly what the correction
+at the top of this file exists to prevent.
+
 Lens A finding 2 and Lens B finding 1 are the **same defect** found twice, independently, by two lenses. Lens A
 finding 1 and Lens B finding 2 likewise overlap. That is worth knowing before verifying them: two lenses
 converging is evidence, but it is not a verdict either. Both pairs turned out to be real.
@@ -67,14 +74,19 @@ STUB behind for worktree mode instead of deleting the document, and the stub kee
 Lens A 4 describes — the directory survives a failed removal while the document is deleted, so no later pass can
 ever prune the registration — therefore no longer applies to the worktree case at all: the document that knows
 which repository holds the registration is still there, and the metadata sweep prunes through it when the stub
-ages out. What remains unaddressed is the finding's other half (`TearDownWithoutMetadataAsync` still reports no
-success signal, and the `OnChatsChanged` teardown still does not await the cancelled dispatch's unwind). That is
-a live item, not a closed one.
+ages out. What remained unaddressed was the finding's other half (`TearDownWithoutMetadataAsync` reported no
+success signal, and the `OnChatsChanged` teardown did not await the cancelled dispatch's unwind) — **closed in
+`165486e`; see item 4 of the live-items section below.**
 
-## Live items the fix pass OPENED or deliberately left, 2026-07-31
+## Live items the fix pass OPENED or deliberately left, 2026-07-31 — ALL FOUR CLOSED 2026-08-01
 
 Recorded rather than built, because each fix is a redesign and the fix pass's brief is to fix the defect and
 stay inside the finding's scope. None of these existed before `3b66603`; the first two are the price of it.
+
+**They were then built by the consolidation pass of 2026-08-01 (`1bd63d5`, `165486e`), which is what a "live
+item" is for.** Items 1 and 3 below were put to the owner as design questions before any code was written,
+because both needed a decision rather than a guard; items 2 and 4 were fixes and were done without asking. The
+original text of each stands, with the outcome under it.
 
 1. **A worktree run whose run-branch commit FAILED still gets the branch line.** On that arm `PromoteAsync`
    returns `RetainWorkspace: true`, so teardown never runs, so the metadata document is intact and
@@ -85,6 +97,17 @@ stay inside the finding's scope. None of these existed before `3b66603`; the fir
    files are really in `%LOCALAPPDATA%\Pia\runs\<runId>` for seven days. Suppressing the line properly means
    `DescribeAsync` learning whether the branch actually carries a commit, which is a new question for that
    method to answer — a design item, not a one-line guard.
+   > **CLOSED in `165486e`. Owner ruling of three shapes offered: RECORD the commit outcome, and use it for
+   > both halves.** `CommitToRunBranchAsync` stamps `branchCommittedAtUtc` on the metadata document on the two
+   > arms where the branch really carries the run's work (the commit succeeded, or the status probe found
+   > nothing to commit), and BOTH describe arms key on it: no stamp → no branch name **and**
+   > `HasUnpublishedFiles: true`, so the publish offer appears in the branch line's place and publishing is a
+   > RETRY of the commit. Additive member of `v:1`, exactly the `tornDownAtUtc` precedent, so the
+   > exact-equality version check is untouched — and `DescribeAsync` stays off the process boundary, which the
+   > rejected shape (ask git) would have broken for a method the panel calls on every terminal `RunChanged`.
+   > **The same lie was reachable on a second arm nobody had filed**: a failed/cancelled worktree run never
+   > promotes (D3), so its branch is empty too, and the pre-fix describe named it just as confidently. Lens A 2
+   > read that arm as the *intended* one. It now gets the same answer.
 2. **`Publish()` still ignores `RetainWorkspace`.** The manual path tears the workspace down unconditionally
    on a non-null result and clears `HasUnpublishedFiles`, so publishing a conflicted workspace deletes the
    run's version of the conflicted file — the exact loss Lens A 5 / Lens B 3 filed against the AUTOMATIC path,
@@ -92,11 +115,60 @@ stay inside the finding's scope. None of these existed before `3b66603`; the fir
    renders carries the conflict count), and left alone on purpose: retaining there would leave an offer
    standing that the user has just answered. Named here so the asymmetry is a decision rather than an
    oversight.
-3. **Lens A 4's other half is untouched** (see the note above the table): `TearDownWithoutMetadataAsync` still
+   > **CLOSED in `165486e` — and the reason it was left alone does not survive reading the panel.**
+   > `RunProgressPanel.xaml` renders the offer line (bound to `CanPublish`) and `PublishNote` as SEPARATE
+   > stacked `TextBlock`s, so a retaining publish shows the result note *and* the standing offer together, both
+   > true at once: N published, M left alone, and the M really are still in the workspace. The offer is also
+   > actionable rather than stale — a user who moves their own copy aside turns the conflict into "destination
+   > missing", and the next click carries the run's version out. The two paths are now symmetric on purpose.
+   > One further arm got a better line while in there: `RetainWorkspace` with nothing moved and nothing left
+   > alone (a worktree whose commit is still failing) renders `Run_Publish_Failed` instead of
+   > "Published 0 file(s)", which would read as success.
+3. **The automatic promotion path still does not RENDER a conflict count** — recorded in `00-OVERVIEW.md`
+   rather than as a numbered item here, and closed by the same pass, so it is written down here too.
+   `SafePromote` sets no ViewModel state, the panel learns everything through `RunChanged`, and
+   `Run_Publish_Conflicts` was produced only inside `Publish()`.
+   > **CLOSED in `165486e`. Owner ruling: build the promotion→panel channel** (rather than accept the
+   > click-to-see-it behaviour). The count rides on `RunWorkspaceOutcome`, recorded on the workspace metadata
+   > document by `PromoteAsync`'s copy arm and read by the describe the panel already makes for every terminal
+   > run. **Mechanism deviation, stated rather than slipped in:** the option as worded named "an event or a
+   > small process-local map beside `RunWorkspaceRedirects`", and this is neither. The document survives a
+   > restart (an event raised at completion is gone by the time a panel is opened from history, which is the
+   > ordinary way this panel is reached), needs no eviction cap and no test-collection discipline (the C 4
+   > hazard), and it already gained a member in the same commit for item 1. Written only when the count is
+   > non-zero, so an ordinary promotion pays no extra write. Reversible to the map if the owner prefers it.
+4. **Lens A 4's other half is untouched** (see the note above the table): `TearDownWithoutMetadataAsync` still
    returns no success signal, and `OnChatsChanged` still starts a teardown without awaiting the cancelled
    dispatch's unwind. Its verdict refuted the *permanent* leak, not the shape — the unconditional
    `git worktree prune` on a failed removal is what carries it, so that call is load-bearing and a future
    simplification pass must not fold it into the success arm.
+   > **CLOSED in `165486e`, and the load-bearing prune is now defended by a fact rather than by a comment.**
+   > `TearDownWithoutMetadataAsync` returns whether the directory is really gone — re-checked on the
+   > filesystem, because a recursive delete can fail PART-WAY through — and a worktree whose directory survived
+   > keeps its document *un-stamped*: the document is the only record of which repository holds the
+   > registration, and stamping it would claim the directory is gone. Copy mode keeps the unconditional delete
+   > deliberately (no registration to reclaim; keeping the document there would let the panel offer to publish
+   > an already-promoted workspace). The **cause** is fixed too: `CancelThenTearDownWorkspaceAsync` awaits the
+   > dispatch task `_inflight` has always held beside the CTS and nothing ever read, bounded at 5s and tearing
+   > down anyway on a timeout. **`git worktree prune` still runs on git's own exit code and on nothing else**,
+   > and `ATeardownWhoseDirectorySurvives_KeepsTheMetadata_AndStillPrunes` asserts the call, so folding it into
+   > a success arm now goes red.
+
+## Live items the CONSOLIDATION pass opened, 2026-08-01
+
+Two, both small, both consequences of the fix rather than of the finding.
+
+1. **A worktree metadata document written before `165486e` reads back as "not committed".** The member is
+   additive and absent there, and absence is deliberately read as the restrictive answer — so a pre-existing
+   torn-down stub loses its branch line, and a pre-existing live worktree workspace gains a publish offer that
+   retries the commit. Accepted rather than migrated: the branch is unpushed, worktree mode has never had its
+   Rank-1 manual smoke round, so the population of such documents is the owner's machine at most. The degrade
+   direction is the safe one — it withholds a claim about where the output is instead of making an
+   unsubstantiated one, and it offers a retry that is idempotent.
+2. **The 5-second unwind bound is uncovered.** The timeout is a private constant and driving it would mean
+   holding a real dispatch for its whole duration; the fact next to it drives the *await*, not the bound. On a
+   timeout the teardown proceeds exactly as it did before this pass and a failed removal self-heals through the
+   startup sweep, so the uncovered arm is the pre-existing behaviour.
 
 ## History defects in the Phase 3 commit record
 
