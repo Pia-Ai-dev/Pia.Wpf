@@ -20,12 +20,7 @@ public class BootstrapperGraphValidationTests
     [Fact]
     public void ProductionServiceGraph_ResolvesAndRespectsScopes()
     {
-        var configure = typeof(Bootstrapper).GetMethod(
-            "ConfigureServices", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(configure);
-
-        var services = new ServiceCollection();
-        configure!.Invoke(null, [services]);
+        var services = BuildConfiguredServices();
 
         // Throws AggregateException listing every unconstructable descriptor / captive dependency.
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
@@ -33,6 +28,18 @@ public class BootstrapperGraphValidationTests
             ValidateOnBuild = true,
             ValidateScopes = true
         });
+    }
+
+    /// <summary>The production DI registrations, built by invoking <c>Bootstrapper.ConfigureServices</c> directly.</summary>
+    private static ServiceCollection BuildConfiguredServices()
+    {
+        var configure = typeof(Bootstrapper).GetMethod(
+            "ConfigureServices", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(configure);
+
+        var services = new ServiceCollection();
+        configure!.Invoke(null, [services]);
+        return services;
     }
 
     /// <summary>
@@ -50,11 +57,7 @@ public class BootstrapperGraphValidationTests
     [Fact]
     public void TheStepPersonaResolverFactory_IsRootSafe()
     {
-        var configure = typeof(Bootstrapper).GetMethod(
-            "ConfigureServices", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(configure);
-        var services = new ServiceCollection();
-        configure!.Invoke(null, [services]);
+        var services = BuildConfiguredServices();
 
         var factory = Assert.Single(services, d => d.ServiceType == typeof(Func<StepPersonaResolver>));
         Assert.Equal(ServiceLifetime.Singleton, factory.Lifetime);
