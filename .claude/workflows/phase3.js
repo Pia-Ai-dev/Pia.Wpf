@@ -326,7 +326,15 @@ new setting, matching how AppSettingsAgentPlanningTests covers the Batch 05 flag
     model: 'opus',
     title: 'A run state for a parent awaiting children',
     behaviourChange: true,
-    content: `THE HIGHEST-RISK GROUP IN PHASE 3. Owner decision D7 chose a separate child slot pool, which means a
+    content: `** DEPENDENCY INVERSION TO KNOW ABOUT: G9 and G10 SHIPPED BEFORE YOU. G9 is committed (b2f46a2e) and
+G10 is partially committed (9c32999), both because your builder died on a session limit while they went ahead.
+So you are not laying groundwork for work that comes later — you are supplying a state that code ALREADY IN THE
+TREE is waiting for. Find the seam: G10 left a comment naming \`WaitingForChildren\` and \`BeginChildWaitAsync\`
+at the exact place they belong. Read 9c32999's message and the fan-out code in AgentRunOrchestrator first, and
+design the state to fit what that code needs rather than in the abstract. Today a restart while a parent is
+mid-fan-out LOSES the wait; that is the live defect your group closes. **
+
+THE HIGHEST-RISK GROUP IN PHASE 3. Owner decision D7 chose a separate child slot pool, which means a
 parent AWAITS its children — and no existing run state can represent that.
 
 WHY NOTHING EXISTING WORKS — verify each yourself before designing:
@@ -377,7 +385,18 @@ DO:
     model: 'opus',
     title: 'Child slot pool + roll-up',
     behaviourChange: true,
-    content: `OWNER DECISION D7: a SEPARATE child slot pool so siblings run in parallel while the parent awaits.
+    content: `** STATE ON ARRIVAL — THIS GROUP IS ALREADY PARTIALLY COMMITTED. Read commit 9c32999 ("Agent runs: fan
+a parent out to child runs on their own slot pool") IN FULL before you touch anything; its message is an honest
+inventory of what landed and what did not. You are FINISHING it, not starting it. Do not re-implement what is
+there, and do not assume anything it claims is missing has since appeared — verify against the tree.
+What that commit says is still owed: (1) the parent does not park durably, because G8 was never built when G10
+ran — wire it to G8's appended state and BeginChildWaitAsync at the seam its comment marks, so a restart
+mid-fan-out no longer loses the wait; (2) the ledger roll-up owes a stated answer to WHICH of the two budgets
+nests; (3) nothing here has been simplified, reviewed or verified. A restart mid-fan-out currently loses the
+wait because FailInterruptedRunsAsync sweeps everything below WaitingForInput to Cancelled — that is the defect
+to close. **
+
+OWNER DECISION D7: a SEPARATE child slot pool so siblings run in parallel while the parent awaits.
 
 WHY A SEPARATE POOL IS MANDATORY: _slots = new SemaphoreSlim(2, 2) on the singleton launcher
 (HeadlessRunLauncher.cs:26) is waited inside the dispatch Task.Run BEFORE the orchestrator is built (:199 launch,
@@ -442,9 +461,13 @@ const alreadyBuilt = Array.isArray(A.alreadyBuilt) ? A.alreadyBuilt.map(String) 
 // implement phase already happened (possibly across several interrupted invocations) but was never reviewed.
 const skipImplement = !!A.skipImplement
 if (skipImplement && alreadyBuilt.length === 0) throw new Error('skipImplement with an empty alreadyBuilt would review nothing')
+// Individual groups to step over inside the start..stop range — for a group already committed by an earlier
+// interrupted invocation that sits BETWEEN two groups that still need building. List them in alreadyBuilt too,
+// so they stay in review scope rather than dropping out of it.
+const skipGroups = Array.isArray(A.skipGroups) ? A.skipGroups.map(String) : []
 
 // Reject an args object whose keys we do not recognise — a typo'd option must not read as "no option given".
-const KNOWN_ARGS = ['startAtGroup', 'stopAfterGroup', 'skipPlanning', 'alreadyBuilt', 'skipImplement']
+const KNOWN_ARGS = ['startAtGroup', 'stopAfterGroup', 'skipPlanning', 'alreadyBuilt', 'skipImplement', 'skipGroups']
 const unknownArgs = Object.keys(A).filter(k => KNOWN_ARGS.indexOf(k) === -1)
 if (unknownArgs.length > 0) throw new Error(`unrecognised args key(s): ${unknownArgs.join(', ')}`)
 if (startAt && GROUPS.findIndex(g => g.id === startAt) < 0) throw new Error(`startAtGroup "${startAt}" is not a group id`)
@@ -682,6 +705,11 @@ for (let i = 0; skipImplement ? false : i < GROUPS.length; i++) {
   if (!started) {
     if (g.id === startAt) started = true
     else continue
+  }
+
+  if (skipGroups.indexOf(g.id) !== -1) {
+    log(`${g.id} SKIPPED by args.skipGroups — already committed by an earlier invocation; still in review scope`)
+    continue
   }
 
   const note = notesByGroup[g.id]
