@@ -401,7 +401,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
         _runProgress = runId is { } id
             ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService, _runWorkspaces)
+                _agentTimelineService, _runWorkspaces, _personaService)
             : null;
         ActiveRunProgress = _runProgress;
     }

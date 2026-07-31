@@ -18,6 +18,13 @@ public partial class PiaPersonaAvatar : UserControl
     public static readonly DependencyProperty EmojiProperty = DependencyProperty.Register(
         nameof(Emoji), typeof(string), typeof(PiaPersonaAvatar), new PropertyMetadata(string.Empty));
 
+    /// <summary>Batch 07 §0.8/§4.5: a #RRGGBB hex accent, straight into the already-registered
+    /// <c>HexToBrushConverter</c> (returns Transparent for null/blank/unparseable — an unset accent
+    /// renders exactly as before this DP existed). Additive, null default: every other consumer of this
+    /// control (live chat, history inspector) is unaffected.</summary>
+    public static readonly DependencyProperty AccentColorProperty = DependencyProperty.Register(
+        nameof(AccentColor), typeof(string), typeof(PiaPersonaAvatar), new PropertyMetadata(null));
+
     public Guid PersonaId
     {
         get => (Guid)GetValue(PersonaIdProperty);
@@ -28,5 +35,11 @@ public partial class PiaPersonaAvatar : UserControl
     {
         get => (string)GetValue(EmojiProperty);
         set => SetValue(EmojiProperty, value);
+    }
+
+    public string? AccentColor
+    {
+        get => (string?)GetValue(AccentColorProperty);
+        set => SetValue(AccentColorProperty, value);
     }
 }

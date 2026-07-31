@@ -64,7 +64,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService);
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, personaService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService);

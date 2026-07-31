@@ -115,6 +115,9 @@
   <data name="Settings_Agent_Autonomy_Section_Header" xml:space="preserve"><value>Autonomie</value></data>
   <data name="Settings_Agent_AutoApproveBuiltInWrites" xml:space="preserve"><value>Pias eigene Schreibwerkzeuge während einer Ausführung und im Sprachmodus automatisch freigeben</value></data>
   <data name="Settings_Agent_AutoApproveBuiltInWrites_Description" xml:space="preserve"><value>Erlaubt Pia während einer Agenten-Ausführung und im Sprachmodus, Dateien, Notizen, Aufgaben, Erinnerungen und geplante Aufträge anzulegen und zu ändern, ohne jedes Mal zu fragen. Löschvorgänge, Git-Befehle und externe (MCP-)Werkzeuge sind von dieser Freigabe nie erfasst. Standardmäßig aus: eine Ausführung mit dieser Freigabe kann Dateien in deinem Assistenzordner unbeaufsichtigt überschreiben.</value></data>
+  <data name="Settings_Agent_Roster_Section_Header" xml:space="preserve"><value>Schritt-Spezialisten</value></data>
+  <data name="Settings_Agent_Roster_Description" xml:space="preserve"><value>Wähle bis zu sechs Personas, die der Planer einzelnen Schritten einer Agenten-Ausführung zuweisen darf. Jeder zugewiesene Schritt läuft mit dem Prompt und dem Anbieter dieser Persona. Leer lassen, damit alle Schritte auf deinem Standard-Assistenten laufen.</value></data>
+  <data name="Settings_Agent_Roster_Empty" xml:space="preserve"><value>Keine Spezialisten ausgewählt – alle Schritte laufen auf deinem Standard-Assistenten.</value></data>
   <data name="Settings_Scheduled_Section_Header" xml:space="preserve"><value>Hintergrund- &amp; geplante Ausführungen</value></data>
   <data name="Settings_Scheduled_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine unbeaufsichtigte Ausführung stoppt – ein „Im Hintergrund ausführen“ oder ein geplanter Agent-Auftrag. Großzügiger als interaktive Ausführungen, da niemand zusieht.</value></data>
   <data name="Settings_Scheduled_MaxSteps_Label" xml:space="preserve"><value>Maximale Schritte</value></data>

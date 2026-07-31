@@ -46,8 +46,17 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly IAgentRunResumeService _resumeService;
     private readonly IAgentTimelineService? _timelineService;
     private readonly IRunWorkspaceService? _workspaces;
+    private readonly IPersonaService? _personaService;
     private readonly ILogger _logger;
     private bool _disposed;
+
+    /// <summary>
+    /// Batch 07 §4.4: lazily loaded, once per VM, and left NULL (not an empty dictionary) on a faulted
+    /// read — a transient fault must not permanently blank every step's persona attribution for the run's
+    /// whole life; the next <see cref="IAgentRunService.RunChanged"/> retries. A null persona service ⇒ this
+    /// stays null forever ⇒ <see cref="ApplyPersonaAttribution"/> always renders "no persona", i.e. today's panel.
+    /// </summary>
+    private Dictionary<Guid, Persona>? _personas;
 
     public Guid RunId => _runId;
 
@@ -240,10 +249,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         IAgentTimelineService? timelineService = null,
         // Batch 06 G4, same discipline for the same reason — LAST, and defaulted. Null ⇒ no publish
         // affordance and no branch line, i.e. the panel is byte-identical to the pre-Batch-06 one.
-        IRunWorkspaceService? workspaces = null)
+        IRunWorkspaceService? workspaces = null,
+        // Batch 07 G7, same discipline again — now LAST (06 took the 7th slot first). Null ⇒ _personas
+        // never loads ⇒ every step row's HasPersona is false ⇒ the panel renders exactly as before this batch.
+        IPersonaService? personaService = null)
     {
         _timelineService = timelineService;
         _workspaces = workspaces;
+        _personaService = personaService;
         _runService = runService;
         _runId = runId;
         _localization = localization;
@@ -283,6 +296,22 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Run {RunId} child runs could not be read", _runId);
+        }
+
+        // Batch 07 §4.4: load the persona map ONCE per VM, before Project (which SyncSteps reads it from).
+        // Off the projection's UI hop like the children read above — it is a full persona list, not an
+        // indexed run query, and RunChanged fires far too often to pay for it more than once.
+        if (_personas is null && _personaService is not null)
+        {
+            try
+            {
+                _personas = (await _personaService.GetPersonasAsync()).ToDictionary(p => p.Id);
+            }
+            catch (Exception ex)
+            {
+                // _personas stays null so the NEXT RunChanged retries rather than latching an empty map.
+                _logger.LogWarning(ex, "Run {RunId} persona map could not be read", _runId);
+            }
         }
 
         _uiContext.Post(_ => Project(run, children), null); // marshal the mutation to the UI thread (G3)
@@ -627,15 +656,41 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             var existing = Steps.FirstOrDefault(r => r.StepId == step.Id);
             if (existing is null)
             {
+                var row = StepRowViewModel.From(step);
+                ApplyPersonaAttribution(row);
                 if (ordinal <= Steps.Count)
-                    Steps.Insert(ordinal, StepRowViewModel.From(step));
+                    Steps.Insert(ordinal, row);
                 else
-                    Steps.Add(StepRowViewModel.From(step));
+                    Steps.Add(row);
             }
             else
             {
                 existing.Status = step.Status; // move the highlight / update the glyph
+                ApplyPersonaAttribution(existing); // re-applied every pass — see the field's own doc comment
             }
+        }
+    }
+
+    /// <summary>
+    /// Resolves a step row's avatar fields from <see cref="_personas"/> (Batch 07 §0.7/§4.3). SETTABLE on
+    /// <see cref="StepRowViewModel"/>, not init-only: <see cref="RefreshAsync"/> is invoked from the
+    /// CONSTRUCTOR (R21/R22), so the first projection can land before the persona map has loaded — an
+    /// init-only row minted on that pass would never be corrected, because rows are replaced only when
+    /// step IDS change (R23), never re-minted for a data change alone.
+    /// </summary>
+    private void ApplyPersonaAttribution(StepRowViewModel row)
+    {
+        if (row.AssignedPersonaId is { } id && _personas is not null && _personas.TryGetValue(id, out var persona))
+        {
+            row.PersonaId = persona.Id;
+            row.PersonaEmoji = persona.Emoji;
+            row.PersonaAccent = persona.AccentColor;
+        }
+        else
+        {
+            row.PersonaId = Guid.Empty;
+            row.PersonaEmoji = null;
+            row.PersonaAccent = null;
         }
     }
 
@@ -880,8 +935,31 @@ public sealed partial class StepRowViewModel : ObservableObject
 
     public string Title { get; init; } = string.Empty;
 
-    /// <summary>Null in Phase 1 (single persona) → the avatar falls back to the run persona / Pia glyph.</summary>
+    /// <summary>The persona the PLANNER assigned, or null. Kept as the raw fact; <see cref="PersonaId"/> and
+    /// the other render values below are the resolved projection (Batch 07 §4.3).</summary>
     public Guid? AssignedPersonaId { get; init; }
+
+    // SETTABLE, not init-only: RunProgressViewModel.ApplyPersonaAttribution must be able to (re)resolve
+    // these once the persona map loads, or after the map is corrected on a later RunChanged (07 §4.3/§4.4).
+    [ObservableProperty]
+    private Guid _personaId; // Guid.Empty ⇒ no avatar (HasPersona false)
+
+    [ObservableProperty]
+    private string? _personaEmoji;
+
+    [ObservableProperty]
+    private string? _personaAccent; // #RRGGBB straight into HexToBrushConverter; null ⇒ no accent ring
+
+    /// <summary>
+    /// True only when this step was genuinely delegated to a resolvable persona. Deliberately NOT a
+    /// fallback to "the run persona": <c>AgentRun</c> has no persona column, so that value is not
+    /// resolvable from the run row, and resolving "whatever persona is active right now" would be a guess
+    /// that goes stale. An avatar that appears only when a step was actually assigned is a more honest
+    /// signal than the always-empty box this replaces (§0.7).
+    /// </summary>
+    public bool HasPersona => PersonaId != Guid.Empty;
+
+    partial void OnPersonaIdChanged(Guid value) => OnPropertyChanged(nameof(HasPersona));
 
     [ObservableProperty]
     private AgentStepStatus _status;

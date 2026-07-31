@@ -954,6 +954,9 @@
   <data name="Settings_Agent_Autonomy_Section_Header" xml:space="preserve"><value>Autonomy</value></data>
   <data name="Settings_Agent_AutoApproveBuiltInWrites" xml:space="preserve"><value>Auto-approve Pia's own write tools during agent runs and in voice mode</value></data>
   <data name="Settings_Agent_AutoApproveBuiltInWrites_Description" xml:space="preserve"><value>During an agent run and in voice mode, let Pia create and change files, notes, tasks, reminders and scheduled jobs without asking each time. Deleting anything, Git commands and external (MCP) tools are never covered by this permission. Off by default: a run with this permission can overwrite files in your assistant folder unattended.</value></data>
+  <data name="Settings_Agent_Roster_Section_Header" xml:space="preserve"><value>Step specialists</value></data>
+  <data name="Settings_Agent_Roster_Description" xml:space="preserve"><value>Choose up to six personas the planner may assign to individual steps of an agent run. Each assigned step runs on that persona's own prompt and provider. Leave this empty to keep every step on your default assistant.</value></data>
+  <data name="Settings_Agent_Roster_Empty" xml:space="preserve"><value>No specialists selected — every step runs on your default assistant.</value></data>
   <data name="Settings_Scheduled_Section_Header" xml:space="preserve"><value>Background &amp; scheduled runs</value></data>
   <data name="Settings_Scheduled_Section_Description" xml:space="preserve"><value>Limits an unattended run stops at — a "Run in background" detach or a scheduled agent job. More generous than interactive runs, because no one is watching.</value></data>
   <data name="Settings_Scheduled_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>

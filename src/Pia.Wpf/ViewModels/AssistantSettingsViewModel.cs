@@ -19,7 +19,17 @@ public partial class AssistantSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IAssistantFolderRelocationService _relocationService;
     private readonly IWorkingDirectoryService _workingDirectoryService;
+    private readonly IPersonaService? _personaService;
     private bool _isLoading;
+    // Guards the programmatic revert below from re-entering OnRosterOptionToggled and saving a state
+    // nobody chose (07 D-G7.2, the checkbox-cap re-entrancy hazard).
+    private bool _isSuppressingRosterToggle;
+    // True once LoadAgentRosterOptionsAsync has SETTLED — either with a null IPersonaService (nothing to
+    // load, by design) or a successful read. Left FALSE across a faulted GetPersonasAsync so that an
+    // unrelated save (a slider drag elsewhere on this tab) does not overwrite a previously configured
+    // roster with the empty AgentRosterOptions a failed load leaves behind. `_personaService is not null`
+    // alone is NOT this guard: that is true in exactly the faulted-read case this exists to protect against.
+    private bool _rosterLoaded;
 
     public ProvidersSettingsViewModel ProvidersVm { get; }
     public PersonaSettingsViewModel PersonasVm { get; }
@@ -41,7 +51,12 @@ public partial class AssistantSettingsViewModel : ObservableObject
         IDialogService dialogService,
         ILocalizationService localizationService,
         IAssistantFolderRelocationService relocationService,
-        IWorkingDirectoryService workingDirectoryService)
+        IWorkingDirectoryService workingDirectoryService,
+        // Batch 07: trailing and defaulted — this VM already owns PersonasVm but had no IPersonaService of
+        // its own (R27), and going through PersonasVm.Personas would couple the roster surface to another
+        // VM's load ordering. Null ⇒ the roster surface renders empty and no toggle can be made — the
+        // "roster is the opt-in" property (D1) still holds with nothing configured.
+        IPersonaService? personaService = null)
     {
         ProvidersVm = providersVm;
         PersonasVm = personasVm;
@@ -54,6 +69,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _relocationService = relocationService;
         _workingDirectoryService = workingDirectoryService;
+        _personaService = personaService;
         _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(RetentionDaysDisplay));
     }
 
@@ -320,6 +336,78 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // Batch 07 D1/D7 — "step specialists": one row per known persona, checked against the roster
+    // configured for the current UserOperatingMode. THE ROSTER IS THE OPT-IN (D1): with nothing checked
+    // here the plan prompt stays byte-identical to the pre-07 one. No mode picker in this surface —
+    // it edits `settings.UserOperatingMode ?? Personal`, the same expression every resolution site uses (R25).
+    public ObservableCollection<AgentRosterOptionViewModel> AgentRosterOptions { get; } = [];
+
+    /// <summary>Drives <c>Settings_Agent_Roster_Empty</c>: true when no row is currently checked (not when
+    /// the roster of KNOWN personas is empty — those are different questions).</summary>
+    [ObservableProperty]
+    private bool _hasSelectedRoster;
+
+    private async Task LoadAgentRosterOptionsAsync(AppSettings settings)
+    {
+        AgentRosterOptions.Clear();
+        if (_personaService is null)
+        {
+            HasSelectedRoster = false;
+            _rosterLoaded = true; // intentional decision, nothing to protect — safe to gate saves on
+            return;
+        }
+
+        var mode = settings.UserOperatingMode ?? UserOperatingMode.Personal;
+        var roster = settings.GetAgentPersonaRoster(mode).ToHashSet();
+
+        IReadOnlyList<Persona> personas;
+        try
+        {
+            personas = await _personaService.GetPersonasAsync();
+        }
+        catch (Exception ex)
+        {
+            // An attribution/roster read must never break settings load — leave the surface empty AND
+            // leave _rosterLoaded false, so a later unrelated save does not persist this empty surface
+            // over a roster that is still configured in AppSettings.
+            _logger.LogWarning(ex, "Could not load personas for the agent roster surface");
+            HasSelectedRoster = false;
+            return;
+        }
+
+        foreach (var persona in personas)
+        {
+            AgentRosterOptions.Add(new AgentRosterOptionViewModel(
+                persona.Id, persona.Name, persona.Emoji, persona.AccentColor,
+                roster.Contains(persona.Id), OnRosterOptionToggled));
+        }
+
+        HasSelectedRoster = AgentRosterOptions.Any(o => o.IsSelected);
+        _rosterLoaded = true;
+    }
+
+    /// <summary>
+    /// The parent enforces the roster cap here rather than in the row: <see cref="AppSettings.MaxAgentPersonaRoster"/>
+    /// is a cross-row invariant. A 7th selection is refused SILENTLY-BUT-VISIBLY — the checkbox does not
+    /// stick — mirroring <see cref="OnAgentMaxStepsChanged"/>'s clamp-and-return, not an error dialog.
+    /// </summary>
+    private void OnRosterOptionToggled(AgentRosterOptionViewModel option, bool isSelected)
+    {
+        if (_isLoading || _isSuppressingRosterToggle) return;
+
+        if (isSelected && AgentRosterOptions.Count(o => o.IsSelected) > AppSettings.MaxAgentPersonaRoster)
+        {
+            // Revert without saving. Suppressed so the revert itself does not re-enter this handler.
+            _isSuppressingRosterToggle = true;
+            option.IsSelected = false;
+            _isSuppressingRosterToggle = false;
+            return;
+        }
+
+        HasSelectedRoster = AgentRosterOptions.Any(o => o.IsSelected);
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     public async Task InitializeAsync()
     {
         _isLoading = true;
@@ -349,6 +437,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ScheduledWallClockMinutes = Math.Clamp(settings.ScheduledWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
 
         await MeetingVm.InitializeAsync();
+        await LoadAgentRosterOptionsAsync(settings);
 
         _isLoading = false;
 
@@ -495,6 +584,48 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.ScheduledMaxSteps = ScheduledMaxSteps;
         settings.ScheduledMaxReplans = ScheduledMaxReplans;
         settings.ScheduledWallClockMinutes = ScheduledWallClockMinutes;
+        // Batch 07: gated on _rosterLoaded, NOT "_personaService is not null" — the latter is true in the
+        // one case this guards against: LoadAgentRosterOptionsAsync's GetPersonasAsync fault arm leaves
+        // AgentRosterOptions empty but _personaService non-null, and a later unrelated save (e.g. a
+        // slider drag elsewhere on this tab) must not persist that empty surface over a roster that is
+        // still configured in AppSettings.
+        if (_rosterLoaded)
+        {
+            var mode = settings.UserOperatingMode ?? UserOperatingMode.Personal;
+            settings.SetAgentPersonaRoster(mode, AgentRosterOptions.Where(o => o.IsSelected).Select(o => o.Id).ToList());
+        }
         await _settingsService.SaveSettingsAsync(settings);
     }
+}
+
+/// <summary>
+/// One row of the Batch 07 "step specialists" roster surface (§4.2). <see cref="Id"/>/<see cref="Name"/>/
+/// <see cref="Emoji"/>/<see cref="AccentColor"/> mirror the persona; only <see cref="IsSelected"/> is
+/// interactive. The cap (<see cref="AppSettings.MaxAgentPersonaRoster"/>) is enforced by the PARENT, not
+/// here — it is a cross-row invariant a single row cannot see.
+/// </summary>
+public sealed partial class AgentRosterOptionViewModel : ObservableObject
+{
+    private readonly Action<AgentRosterOptionViewModel, bool> _onToggled;
+
+    public Guid Id { get; }
+    public string Name { get; }
+    public string? Emoji { get; }
+    public string? AccentColor { get; }
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    public AgentRosterOptionViewModel(Guid id, string name, string? emoji, string? accentColor,
+        bool isSelected, Action<AgentRosterOptionViewModel, bool> onToggled)
+    {
+        Id = id;
+        Name = name;
+        Emoji = emoji;
+        AccentColor = accentColor;
+        _isSelected = isSelected;
+        _onToggled = onToggled;
+    }
+
+    partial void OnIsSelectedChanged(bool value) => _onToggled(this, value);
 }

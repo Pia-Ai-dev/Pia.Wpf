@@ -5,8 +5,13 @@
              x:Name="Root"
              Width="28" Height="28"
              Focusable="False">
+  <!-- BorderThickness/BorderBrush add the Batch 07 accent ring (§0.8/§4.5): 1.5px straight into the
+       already-registered HexToBrushConverter, which returns Transparent for a null/blank/unparseable
+       accent — an unset AccentColor renders byte-identical to before this DP existed. -->
   <Border CornerRadius="6"
-          Background="{DynamicResource BgCanvasBrush}">
+          Background="{DynamicResource BgCanvasBrush}"
+          BorderThickness="1.5"
+          BorderBrush="{Binding AccentColor, ElementName=Root, Converter={StaticResource HexToBrushConverter}}">
     <Border.Effect>
       <DropShadowEffect Color="#0F1729" Opacity="0.18" BlurRadius="6" ShadowDepth="1" />
     </Border.Effect>

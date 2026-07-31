@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:Pia.Converters"
+             xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:local="clr-namespace:Pia.Views.SettingsViews"
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
@@ -434,6 +435,44 @@
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          TextWrapping="Wrap"
                          Margin="22,4,0,0"/>
+            </StackPanel>
+
+            <!-- Step specialists (Batch 07): global; the roster IS the opt-in for per-step personas (D1),
+                 so it is placed with the other global Agent knobs, before the Scheduled section, for the
+                 same reason the Autonomy block above is (R28). -->
+            <TextBlock Text="{loc:Str Settings_Agent_Roster_Section_Header}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,12,0,0"/>
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Agent_Roster_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,4,0,8"/>
+              <TextBlock Text="{loc:Str Settings_Agent_Roster_Empty}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         FontStyle="Italic"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"
+                         Visibility="{Binding HasSelectedRoster, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+              <ItemsControl ItemsSource="{Binding AgentRosterOptions}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                              Margin="0,4,0,0">
+                      <StackPanel Orientation="Horizontal">
+                        <controls:PersonaGlyph PersonaId="{Binding Id}"
+                                               Emoji="{Binding Emoji}"
+                                               GlyphSize="16"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding Name}"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextDefaultBrush}"/>
+                      </StackPanel>
+                    </CheckBox>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </StackPanel>
 
             <!-- Scheduled / background-run budget (§17.5): the separate envelope an unattended run stops at. -->

@@ -90,7 +90,10 @@
                                Foreground="{Binding Status, Converter={StaticResource StepStatusToBrushConverter}}" />
                 <chat:PiaPersonaAvatar Grid.Column="1" Width="20" Height="20" Margin="0,0,6,0"
                                        VerticalAlignment="Center"
-                                       PersonaId="{Binding AssignedPersonaId}" />
+                                       PersonaId="{Binding PersonaId}"
+                                       Emoji="{Binding PersonaEmoji}"
+                                       AccentColor="{Binding PersonaAccent}"
+                                       Visibility="{Binding HasPersona, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 <TextBlock Grid.Column="2" Text="{Binding Title}"
                            TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center"
