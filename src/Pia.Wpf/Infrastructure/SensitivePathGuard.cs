@@ -106,7 +106,13 @@ public static class SensitivePathGuard
     /// (Batch 06 B1). Canonicalized through <see cref="CanonicalizeAllowedIsland"/> instead (B2): unlike
     /// the workdir, this directory routinely does not exist yet when this array is built.</item>
     /// </list>
-    /// The vault gets no entry here — full file-tool access by design.
+    /// The vault gets no entry here — full file-tool access by design, and that is still exactly true of an
+    /// interactive turn. It is NO LONGER the whole story for an unattended one: Batch 06 B6 deliberately
+    /// leaves the vault OUT of the tree copied into a run's isolated workspace (<c>MemoryService</c>, the
+    /// vault watcher and the ingest indexer own that tree and write to it through their own paths), so inside
+    /// an isolated run <c>list_files</c> simply will not show <c>Vault\</c> and the run reaches memory through
+    /// the memory tools, which do not read <c>WorkspaceRoot</c> at all. That narrowing is a PROVISIONING
+    /// decision in <c>RunWorkspaceService</c>, not an entry here — this guard's denylist is unchanged.
     /// </summary>
     private static string[] BuildAllowedExceptions()
     {

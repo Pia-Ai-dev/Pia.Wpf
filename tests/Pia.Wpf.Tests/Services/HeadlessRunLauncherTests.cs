@@ -111,9 +111,15 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// a resume skips planning, so the verify pass is the only place the resumed run's
     /// <c>ctx.WorkspaceRoot</c> is observable. Pass a FakeVerifier the test holds to read it back; omit
     /// for the default accept-everything instance every other test wants.</param>
+    /// <param name="workspaces">Trailing and defaulted (Batch 06 G3). Omitted ⇒ the LEGACY shape — no
+    /// provisioner, so the launcher does its own <c>CreateDirectory</c> under the <c>try/catch → FailAsync</c>
+    /// guard — which is what every other test in this file exercises.</param>
+    /// <param name="runsBaseOverride">Trailing and defaulted (Batch 06 G3): lets one test point the runs base
+    /// at an UNWRITABLE path (a file) to prove the legacy settle path still fires.</param>
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
         Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null,
-        AppSettings? appSettings = null, FakeVerifier? verifier = null)
+        AppSettings? appSettings = null, FakeVerifier? verifier = null,
+        FakeRunWorkspaceService? workspaces = null, string? runsBaseOverride = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -177,7 +183,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var launcher = new HeadlessRunLauncher(
             sp.GetRequiredService<IServiceScopeFactory>(), _chats, _runs, settings, providers, personas,
-            _executing, NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase);
+            _executing, NullLogger<HeadlessRunLauncher>.Instance,
+            runsBaseDirOverride: runsBaseOverride ?? _runsBase, workspaces: workspaces);
         return (launcher, planner);
     }
 
@@ -347,6 +354,62 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Null(planner.PlanContext); // pins D1: a resume does not re-plan
 
         try { Directory.Delete(expected, true); } catch { }
+    }
+
+    /// <summary>
+    /// T-G3-14a, <b>REGRESSION</b>. Batch 06 B16's first half: a provisioner that cannot isolate the run
+    /// returns null — "no isolation", the pre-Batch-06 behaviour — and the run proceeds and settles
+    /// <c>Completed</c>. It must NOT be settled <c>Failed</c> with <c>"workspace setup failed"</c>: an
+    /// unattended run that fails because a scratch directory could not be prepared delivers nothing, while the
+    /// same run writing into the assistant folder delivers exactly what it delivered before this batch (plan
+    /// R16 — degrade rather than fail).
+    /// </summary>
+    [Fact]
+    public async Task ProvisioningFailure_DoesNotFailTheRun()
+    {
+        var workspaces = new FakeRunWorkspaceService(_runsBase) { ProvisionSucceeds = false };
+        var (launcher, planner) = BuildLauncher(workspaces: workspaces);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("do the thing", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var settled = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, settled!.State);
+
+        // Non-vacuity: the provisioner really was consulted (a launcher that ignored it would also pass the
+        // state assertion), and the degrade really was "no isolation" — the executor got a null root.
+        Assert.Equal([handle.RunId], workspaces.Provisioned);
+        Assert.NotNull(planner.PlanContext);
+        Assert.Null(planner.PlanContext!.WorkspaceRoot);
+    }
+
+    /// <summary>
+    /// T-G3-14b, <b>REGRESSION</b> and the non-vacuity control for the fact above: with no provisioner
+    /// injected the LEGACY create path is still in force, and a workspace it cannot create still settles the
+    /// run rather than leaving it dangling non-terminal (G-4). Deleting the legacy <c>try/catch → FailAsync</c>
+    /// as "unreachable" (B16 says it is unreachable only on the PROVISIONER path) turns this red, which is
+    /// what keeps T-G3-14a from passing on a launcher that simply stopped settling failed launches.
+    /// </summary>
+    [Fact]
+    public async Task WithNoProvisioner_AnUncreatableWorkspace_StillSettlesTheRun()
+    {
+        // A FILE where the runs base should be: Directory.CreateDirectory(<file>\<runId>) throws.
+        var blocked = Path.Combine(_dir, "runs-as-a-file");
+        await File.WriteAllTextAsync(blocked, "x", TestContext.Current.CancellationToken);
+        var (launcher, _) = BuildLauncher(runsBaseOverride: blocked);
+
+        await Assert.ThrowsAnyAsync<IOException>(() => launcher.LaunchAsync(
+            new HeadlessRunRequest("do the thing", AgentRunTrigger.User), TestContext.Current.CancellationToken));
+
+        // The launch threw before returning a handle, so the run is found the way a crash-recovery pass would:
+        // through its chat. Exactly one run exists, and it is settled — not left Planning.
+        var runs = new List<AgentRun>();
+        foreach (var chatId in await _chats.GetAllIdsAsync(TestContext.Current.CancellationToken))
+            runs.AddRange(await _runs.GetByChatAsync(chatId, TestContext.Current.CancellationToken));
+
+        var run = Assert.Single(runs);
+        Assert.Equal(AgentRunState.Failed, run.State);
     }
 
     [Fact]

@@ -1,0 +1,701 @@
+using System.IO;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Pia.Helpers;
+using Pia.Infrastructure;
+using Pia.Logging;
+using Pia.Services.Interfaces;
+
+namespace Pia.Services;
+
+/// <summary>
+/// Default <see cref="IRunWorkspaceService"/> (Batch 06 B4): provisions a run's isolated workspace as a
+/// <b>git worktree</b> when the source root is a repository the git tools may already touch, and as a
+/// <b>bounded copy</b> of the source tree otherwise (plan D5), and owns the symmetric teardown each mode
+/// needs. Both strategies live in ONE type on purpose — the failure this batch most needs to prevent is a
+/// worktree torn down with <c>rmdir</c>, which leaves a stale <c>.git/worktrees/&lt;id&gt;</c> registration
+/// in the user's repository forever (plan R5/R16).
+/// <para>
+/// NOTHING here throws. Every fault degrades in the restrictive direction: worktree → copy (the F1–F9 list
+/// below) → no isolation at all (<c>null</c>, i.e. the pre-Batch-06 behaviour of writing straight into the
+/// assistant files folder). A run must never fail because provisioning got clever.
+/// </para>
+/// <para>
+/// Two accepted behaviours, both release-note items rather than bugs: a worktree starts from a
+/// <b>commit</b>, so uncommitted and untracked files in the user's tree are invisible to the run; and
+/// worktree mode <b>mutates the user's repository</b> (a worktrees entry plus a branch ref) even though the
+/// working tree is untouched. Teardown is therefore exact, and it never deletes the branch.
+/// </para>
+/// </summary>
+public sealed class RunWorkspaceService : IRunWorkspaceService
+{
+    /// <summary>
+    /// Ceiling on the copy-mode source tree. Exceeding either bound provisions NOTHING (the run degrades to
+    /// no isolation) rather than half a tree: an agent that sees a truncated folder "recreates" the missing
+    /// files, and a later promotion writes those over the originals (B6).
+    /// </summary>
+    internal const int MaxProvisionedFiles = 2000;
+
+    /// <inheritdoc cref="MaxProvisionedFiles"/>
+    internal const long MaxProvisionedBytes = 256L * 1024 * 1024;
+
+    /// <summary>Metadata document shape this build writes and understands. Additive members only — a resume
+    /// runs in a different process, and the publish affordance can be clicked days later (B5).</summary>
+    private const int MetadataVersion = 1;
+
+    /// <summary>Suffix of the sibling metadata document: <c>&lt;runsBase&gt;\&lt;runId&gt;.workspace.json</c>.</summary>
+    private const string MetadataSuffix = ".workspace.json";
+
+    /// <summary>Run-branch prefix. <c>pia/run/&lt;runId&gt;</c> (hyphenated, matching the directory name)
+    /// passes <c>git check-ref-format</c> and cannot collide with a user branch.</summary>
+    private const string RunBranchPrefix = "pia/run/";
+
+    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+    };
+
+    private readonly IGitProcessRunner _runner;
+    private readonly ISettingsService _settingsService;
+    private readonly ILogger<RunWorkspaceService> _logger;
+
+    /// <summary>Base directory for every run workspace. The override mirrors
+    /// <c>HeadlessRunLauncher</c>'s parameter name so a test can point both at one temp directory.</summary>
+    private readonly string _runsBaseDir;
+
+    public RunWorkspaceService(
+        IGitProcessRunner runner,
+        ISettingsService settingsService,
+        ILogger<RunWorkspaceService> logger,
+        string? runsBaseDirOverride = null)
+    {
+        _runner = runner;
+        _settingsService = settingsService;
+        _logger = logger;
+        _runsBaseDir = runsBaseDirOverride ?? AssistantWorkspace.RunsRoot;
+    }
+
+    public string RootFor(Guid runId) => Path.Combine(_runsBaseDir, runId.ToString());
+
+    private string MetadataPathFor(Guid runId) => Path.Combine(_runsBaseDir, runId + MetadataSuffix);
+
+    public async Task<RunWorkspace?> ProvisionAsync(Guid runId, string? workingSubpath, CancellationToken ct)
+    {
+        try
+        {
+            // (2) Idempotent reuse FIRST (B11). A resume must land in the same workspace with the same
+            // provisionedAtUtc, because that one timestamp decides the promote set (B7) — re-provisioning
+            // would make it "everything". A readable document whose directory has since vanished is not a
+            // workspace: tear it down (which prunes a stale worktree registration) and provision afresh.
+            var existing = ReadMetadata(runId);
+            if (existing is not null)
+            {
+                var existingRoot = RootFor(runId);
+                if (Directory.Exists(existingRoot))
+                {
+                    _logger.LogInformation(
+                        "Run {RunId} re-entered its existing {Mode} workspace", runId, existing.ParsedMode);
+                    return new RunWorkspace(
+                        runId, TryCanonicalize(existingRoot), existing.ParsedMode, existing.SourceRoot!, existing.Branch);
+                }
+
+                await TearDownAsync(runId, ct).ConfigureAwait(false);
+            }
+
+            // (1) Create + canonicalize — the same three lines the launcher did before this batch.
+            var runRoot = RootFor(runId);
+            Directory.CreateDirectory(runRoot);
+            runRoot = SafeFolderPath.Canonicalize(runRoot);
+
+            // (3) The source root: what the run reads, and what copy mode promotes back to.
+            var (sourceRoot, settingsFolder) = await ResolveSourceRootAsync(workingSubpath).ConfigureAwait(false);
+            if (sourceRoot is null || settingsFolder is null)
+            {
+                _logger.LogInformation(
+                    "Run {RunId} workspace provisioning skipped: no usable assistant files folder", runId);
+                TryDeleteDirectory(runRoot);
+                return null;
+            }
+
+            // (4)/(5) Worktree when the source root is a repo we may touch, else (6) the bounded copy.
+            var worktree = await TryProvisionWorktreeAsync(runId, runRoot, sourceRoot, settingsFolder, ct)
+                .ConfigureAwait(false);
+
+            RunWorkspaceMode mode;
+            string? mainWorktree;
+            string? branch;
+            if (worktree is not null)
+            {
+                mode = RunWorkspaceMode.Worktree;
+                mainWorktree = worktree.MainWorktree;
+                branch = worktree.Branch;
+            }
+            else
+            {
+                mode = RunWorkspaceMode.Copy;
+                mainWorktree = null;
+                branch = null;
+                if (!await CopyInAsync(runId, runRoot, sourceRoot, settingsFolder, ct).ConfigureAwait(false))
+                {
+                    // F10: copy mode's OWN failure (a throw, or either cap) degrades one step further, to
+                    // no isolation. Nothing partial is left behind.
+                    TryDeleteDirectory(runRoot);
+                    return null;
+                }
+            }
+
+            // (7) The metadata document is what makes promotion and teardown possible after a restart, so a
+            // write failure is fatal to isolation: running isolated with no metadata means nothing can
+            // promote the work out or clean the worktree registration up.
+            var meta = new WorkspaceMetadataDto
+            {
+                V = MetadataVersion,
+                Mode = mode.ToString(),
+                SourceRoot = sourceRoot,
+                MainWorktree = mainWorktree,
+                Branch = branch,
+                ProvisionedAtUtc = DateTime.UtcNow,
+                Degraded = mode == RunWorkspaceMode.Copy && worktree is null && _runner.IsGitInstalled,
+            };
+            if (!TryWriteMetadata(runId, meta))
+            {
+                await TearDownWithoutMetadataAsync(runId, runRoot, mode, mainWorktree, ct).ConfigureAwait(false);
+                return null;
+            }
+
+            _logger.LogInformation("Run {RunId} workspace provisioned in {Mode} mode", runId, mode);
+            return new RunWorkspace(runId, runRoot, mode, sourceRoot, branch);
+        }
+        catch (Exception ex)
+        {
+            // Bookkeeping must never fail a run (guardrail 1): the caller reads null as "no isolation".
+            _logger.LogWarning(ex, "Run {RunId} workspace provisioning failed; the run will not be isolated", runId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Promotion lands in Batch 06 G4 (B7's mtime promote set, B9's destination rule, B10's worktree
+    /// no-op). Until then this returns <c>null</c>, which is the SAME restrictive degrade an unreadable
+    /// metadata document takes: nothing is promoted and the workspace — with the run's work in it — is kept
+    /// exactly where it is, so the deliverables are recoverable and the later real path can still promote
+    /// them. §0.6 says so out loud: a tree that stops at G3 is not shippable.
+    /// </summary>
+    public Task<RunPromotionResult?> PromoteAsync(Guid runId, CancellationToken ct)
+        => Task.FromResult<RunPromotionResult?>(null);
+
+    public Task<RunWorkspaceOutcome?> DescribeAsync(Guid runId, CancellationToken ct)
+        => Task.Run(() =>
+        {
+            try
+            {
+                var meta = ReadMetadata(runId);
+                if (meta is null || meta.ParsedMode == RunWorkspaceMode.None)
+                    return (RunWorkspaceOutcome?)null;
+
+                var root = RootFor(runId);
+                if (!Directory.Exists(root))
+                    return null;
+
+                // Worktree mode has nothing to publish as FILES — the branch is the deliverable (plan D5b),
+                // so the panel offers the branch line and no publish button. Copy mode has something to
+                // publish when the run wrote at least one file after provisioning; that is the same
+                // "newer than provisionedAtUtc" test the promote set uses (B7), asked as a yes/no.
+                var unpublished = meta.ParsedMode == RunWorkspaceMode.Copy
+                    && meta.ProvisionedAtUtc > DateTime.MinValue
+                    && HasFileNewerThan(root, meta.ProvisionedAtUtc);
+
+                return new RunWorkspaceOutcome(meta.ParsedMode, meta.Branch, unpublished);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Run {RunId} workspace could not be described", runId);
+                return null;
+            }
+        }, ct);
+
+    public async Task TearDownAsync(Guid runId, CancellationToken ct)
+    {
+        var root = RootFor(runId);
+        var meta = ReadMetadata(runId);
+
+        // Unreadable/absent/foreign-version metadata gets a plain recursive delete and NO prune: nothing
+        // says where the repository is, and guessing is worse than leaving one registration behind for the
+        // orphan sweep to find.
+        await TearDownWithoutMetadataAsync(
+            runId, root, meta?.ParsedMode ?? RunWorkspaceMode.None, meta?.MainWorktree, ct).ConfigureAwait(false);
+
+        // Last, so a crash between the two leaves a metadata document the orphan sweep can still act on.
+        TryDeleteFile(MetadataPathFor(runId));
+    }
+
+    public async Task SweepOrphanMetadataAsync(CancellationToken ct)
+    {
+        string[] files;
+        try
+        {
+            if (!Directory.Exists(_runsBaseDir)) return;
+            files = await Task.Run(() => Directory.GetFiles(_runsBaseDir, "*" + MetadataSuffix), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run-workspace metadata sweep: failed to enumerate the runs base directory");
+            return;
+        }
+
+        var removed = 0;
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var name = Path.GetFileName(file);
+            var idPart = name[..^MetadataSuffix.Length];
+            if (!Guid.TryParse(idPart, out var runId))
+                continue;
+
+            // A workspace that still exists is still live (or still awaiting a publish decision) — leaving
+            // it alone is what keeps this pass from being a "delete everything" sweep.
+            if (Directory.Exists(RootFor(runId)))
+                continue;
+
+            var meta = ReadMetadata(runId);
+            if (meta?.ParsedMode == RunWorkspaceMode.Worktree && !string.IsNullOrEmpty(meta.MainWorktree))
+                await PruneWorktreesAsync(meta.MainWorktree!, ct).ConfigureAwait(false);
+
+            TryDeleteFile(file);
+            removed++;
+        }
+
+        if (removed > 0)
+            _logger.LogInformation("Run-workspace metadata sweep removed {Count} orphaned document(s)", removed);
+    }
+
+    // ---- provisioning strategies ----
+
+    private sealed record WorktreeProvision(string MainWorktree, string Branch);
+
+    /// <summary>
+    /// The worktree gate. All four conditions must hold, else the caller takes copy mode; every fault below
+    /// degrades and none of them fails the run (plan R16):
+    /// <list type="bullet">
+    /// <item>F1 git is not installed;</item>
+    /// <item>F2 the source root is not a repository (<c>rev-parse --show-toplevel</c> exit ≠ 0 or empty
+    /// stdout — gate on the exit code, never on a literal <c>false</c>);</item>
+    /// <item>F3 git could not be launched at all (the runner's <c>-1</c> start-failure sentinel);</item>
+    /// <item>F4 git timed out;</item>
+    /// <item>F5 the toplevel cannot be canonicalized;</item>
+    /// <item>F6 the toplevel is outside the assistant files folder — the same absolute invariant
+    /// <c>GitToolHandler</c> enforces, so provisioning cannot open a side door to a repository the git
+    /// tools already refuse;</item>
+    /// <item>F7 the repository has no commits (unborn HEAD): a worktree starts from a COMMIT;</item>
+    /// <item>F8 <c>worktree add</c> failed for any reason (branch exists, locked index, target not empty);</item>
+    /// <item>F9 any exception on the git path.</item>
+    /// </list>
+    /// </summary>
+    private async Task<WorktreeProvision?> TryProvisionWorktreeAsync(
+        Guid runId, string runRoot, string sourceRoot, string settingsFolder, CancellationToken ct)
+    {
+        try
+        {
+            if (!_runner.IsGitInstalled)
+                return null; // F1
+
+            var toplevel = await RunGitAsync(sourceRoot, ["rev-parse", "--show-toplevel"], GitCommandKind.ReadOnly, ct)
+                .ConfigureAwait(false);
+            if (!toplevel.Succeeded || string.IsNullOrWhiteSpace(toplevel.StandardOutput))
+                return null; // F2/F3/F4
+
+            string canonicalTop;
+            try
+            {
+                // git prints a forward-slash absolute path; normalize then canonicalize (resolve reparse
+                // points) so the containment comparison below cannot be fooled by a junction.
+                canonicalTop = SafeFolderPath.Canonicalize(Path.GetFullPath(toplevel.StandardOutput.Trim()));
+            }
+            catch
+            {
+                return null; // F5
+            }
+
+            if (!IsInsideOrEqual(canonicalTop, settingsFolder))
+            {
+                _logger.LogInformation(
+                    "Run {RunId} worktree mode declined: the repository toplevel is outside the assistant files folder", runId);
+                return null; // F6
+            }
+
+            var head = await RunGitAsync(canonicalTop, ["rev-parse", "--verify", "HEAD"], GitCommandKind.ReadOnly, ct)
+                .ConfigureAwait(false);
+            if (!head.Succeeded)
+            {
+                _logger.LogInformation("Run {RunId} worktree mode declined: the repository has no commits", runId);
+                return null; // F7
+            }
+
+            // Measured against git 2.52: `worktree add` accepts an EXISTING EMPTY directory (exit 0) and
+            // refuses a non-empty one (exit 128), so the directory created above needs no delete-first
+            // dance — and a resume whose metadata was lost lands on F8 and degrades to copy.
+            var branch = RunBranchPrefix + runId;
+            var add = await RunGitAsync(
+                canonicalTop, ["worktree", "add", runRoot, "-b", branch], GitCommandKind.Mutating, ct)
+                .ConfigureAwait(false);
+            if (!add.Succeeded)
+            {
+                _logger.SensitiveWarning(
+                    "Run {RunId} worktree add failed ({Exit}): {Err}", runId, add.ExitCode, add.StandardError);
+                return null; // F8
+            }
+
+            return new WorktreeProvision(canonicalTop, branch);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} worktree provisioning faulted; falling back to copy mode", runId);
+            return null; // F9
+        }
+    }
+
+    /// <summary>
+    /// Copy mode: the source tree is copied IN, bounded and ignore-pruned. This is not optional (B6) — an
+    /// unattended run reads the user's existing files through the same tool set it writes with, so an empty
+    /// workspace silently breaks "summarise notes.md".
+    /// <para>
+    /// Two exclusions, each for a stated reason. The <b>memory vault</b> is owned by <c>MemoryService</c>,
+    /// the vault watcher and the ingest indexer, which write through their own paths and not through the
+    /// file tools — a copy-in/copy-back cycle would fight the indexer and the copy would be stale the
+    /// moment the vault is written; the run keeps full memory access through the memory tools, which do not
+    /// read <c>WorkspaceRoot</c> at all. Everything <see cref="SandboxIgnore"/> prunes (<c>.git</c>,
+    /// <c>bin</c>, <c>obj</c>, <c>node_modules</c> and any <c>.gitignore</c>/<c>.piaignore</c> entry) is
+    /// excluded too, so what the run can see in its workspace is exactly what <c>list_files</c> would have
+    /// listed in the real folder.
+    /// </para>
+    /// </summary>
+    private Task<bool> CopyInAsync(Guid runId, string runRoot, string sourceRoot, string settingsFolder, CancellationToken ct)
+        => Task.Run(() =>
+        {
+            try
+            {
+                var ignore = SandboxIgnore.ForRoot(sourceRoot);
+                var vaultRoots = new[]
+                {
+                    AssistantWorkspace.VaultRootFor(settingsFolder),
+                    AssistantWorkspace.VaultRootFor(sourceRoot),
+                };
+
+                // Enumerate FIRST and cap before copying a single byte, so an over-cap source leaves no
+                // partial tree behind at all.
+                var (rels, bytes, overCap) = CollectSourceFiles(sourceRoot, vaultRoots, ignore, ct);
+                if (overCap)
+                {
+                    _logger.LogInformation(
+                        "Run {RunId} workspace provisioning skipped: source exceeds the isolation cap ({FileCount} files, {ByteCount} bytes)",
+                        runId, rels.Count, bytes);
+                    return false;
+                }
+
+                foreach (var rel in rels)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var src = Path.Combine(sourceRoot, rel);
+                    var dest = Path.Combine(runRoot, rel);
+                    var destDir = Path.GetDirectoryName(dest);
+                    if (!string.IsNullOrEmpty(destDir))
+                        Directory.CreateDirectory(destDir);
+                    // File.Copy preserves the source's LastWriteTime, which is what makes a copied-in file
+                    // OLDER than provisionedAtUtc and therefore invisible to the promote set (B7).
+                    File.Copy(src, dest, overwrite: true);
+                }
+
+                _logger.LogInformation(
+                    "Run {RunId} workspace copied in {FileCount} file(s), {ByteCount} bytes", runId, rels.Count, bytes);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Run {RunId} workspace copy failed; the run will not be isolated", runId);
+                return false;
+            }
+        }, ct);
+
+    /// <summary>
+    /// Walks <paramref name="source"/> the way <c>list_files</c> does — pruning ignored directories before
+    /// descending, discarding anything that escapes the root after junction/symlink resolution, and skipping
+    /// protected system/app-data files — and returns the sandbox-relative paths plus their total size.
+    /// <c>OverCap</c> short-circuits the walk the moment either bound is exceeded.
+    /// </summary>
+    private static (List<string> Rels, long Bytes, bool OverCap) CollectSourceFiles(
+        string source, string[] vaultRoots, GitignoreMatcher ignore, CancellationToken ct)
+    {
+        var rels = new List<string>();
+        long bytes = 0;
+        var stack = new Stack<string>();
+        stack.Push(source);
+
+        while (stack.Count > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            var dir = stack.Pop();
+
+            foreach (var sub in Directory.EnumerateDirectories(dir))
+            {
+                var relDir = Path.GetRelativePath(source, sub).Replace('\\', '/');
+                if (ignore.IsIgnored(relDir, isDirectory: true)) continue;
+                if (vaultRoots.Any(v => IsInsideOrEqual(sub, v))) continue;
+                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(source, sub, out _)) continue;
+                stack.Push(sub);
+            }
+
+            foreach (var full in Directory.EnumerateFiles(dir))
+            {
+                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(source, full, out var canon)) continue;
+                if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
+
+                var rel = Path.GetRelativePath(source, full);
+                if (ignore.IsIgnored(rel.Replace('\\', '/'), isDirectory: false)) continue;
+
+                long length;
+                try { length = new FileInfo(full).Length; }
+                catch { continue; }
+
+                rels.Add(rel);
+                bytes += length;
+                if (rels.Count > MaxProvisionedFiles || bytes > MaxProvisionedBytes)
+                    return (rels, bytes, true);
+            }
+        }
+
+        return (rels, bytes, false);
+    }
+
+    // ---- teardown ----
+
+    /// <summary>
+    /// Mode-symmetric removal of the workspace directory, WITHOUT touching the metadata document — shared
+    /// by <see cref="TearDownAsync"/> and by provisioning's own rollback (where no document exists yet).
+    /// The run branch is never deleted: it is the deliverable (B10).
+    /// </summary>
+    private async Task TearDownWithoutMetadataAsync(
+        Guid runId, string root, RunWorkspaceMode mode, string? mainWorktree, CancellationToken ct)
+    {
+        if (mode == RunWorkspaceMode.Worktree && !string.IsNullOrEmpty(mainWorktree))
+        {
+            var removed = false;
+            try
+            {
+                var result = await RunGitAsync(
+                    mainWorktree!, ["worktree", "remove", "--force", root], GitCommandKind.Mutating, ct)
+                    .ConfigureAwait(false);
+                removed = result.Succeeded;
+                if (!removed)
+                    _logger.SensitiveWarning(
+                        "Run {RunId} worktree remove failed ({Exit}): {Err}", runId, result.ExitCode, result.StandardError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Run {RunId} worktree remove faulted", runId);
+            }
+
+            // The fallback is the half of plan R5 that actually leaks: delete the directory ourselves, then
+            // PRUNE, or the user's repository keeps a .git/worktrees/<id> registration forever.
+            await Task.Run(() => TryDeleteDirectory(root), ct).ConfigureAwait(false);
+            if (!removed)
+                await PruneWorktreesAsync(mainWorktree!, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await Task.Run(() => TryDeleteDirectory(root), ct).ConfigureAwait(false);
+    }
+
+    private async Task PruneWorktreesAsync(string mainWorktree, CancellationToken ct)
+    {
+        try
+        {
+            await RunGitAsync(mainWorktree, ["worktree", "prune"], GitCommandKind.Mutating, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Worktree prune faulted");
+        }
+    }
+
+    // ---- metadata ----
+
+    /// <summary>
+    /// Wire shape of <c>&lt;runsBase&gt;\&lt;runId&gt;.workspace.json</c>. It lives OUTSIDE the workspace on
+    /// purpose: the run's file tools are contained to the workspace root, so a document inside it would be
+    /// model-writable and the agent could steer its own promotion. <c>mode</c> is a NAME, so a member this
+    /// build does not know reads back as <see cref="RunWorkspaceMode.None"/> — "no workspace", the
+    /// restrictive direction.
+    /// </summary>
+    private sealed class WorkspaceMetadataDto
+    {
+        public int V { get; set; }
+        public string? Mode { get; set; }
+        public string? SourceRoot { get; set; }
+        public string? MainWorktree { get; set; }
+        public string? Branch { get; set; }
+        public DateTime ProvisionedAtUtc { get; set; }
+
+        /// <summary>True when git WAS available and worktree mode was nonetheless declined — usually because
+        /// the source root simply is not a repository, which is the ordinary case. Written for the record
+        /// only: surfacing "this run ran unisolated / in copy mode" to the user needs a panel line and a
+        /// sixth loc key, which §13.1 books as its own work.</summary>
+        public bool Degraded { get; set; }
+
+        /// <summary>The parsed <see cref="Mode"/>, or <see cref="RunWorkspaceMode.None"/> for a name this
+        /// build does not know.</summary>
+        public RunWorkspaceMode ParsedMode =>
+            Enum.TryParse<RunWorkspaceMode>(Mode, ignoreCase: false, out var parsed) ? parsed : RunWorkspaceMode.None;
+    }
+
+    /// <summary>Reads the metadata document, or null when it is absent, unparseable, of a version this build
+    /// does not understand, or carries no mode at all. Never throws.</summary>
+    private WorkspaceMetadataDto? ReadMetadata(Guid runId)
+    {
+        try
+        {
+            var path = MetadataPathFor(runId);
+            if (!File.Exists(path)) return null;
+
+            var meta = JsonSerializer.Deserialize<WorkspaceMetadataDto>(File.ReadAllText(path), MetadataJsonOptions);
+            // The version check is an EXACT equality, and a document must carry both the mode and the source
+            // root it was provisioned from: promotion and teardown are meaningless without them, and
+            // "no readable metadata" degrades restrictively everywhere it is consumed.
+            if (meta is null || meta.V != MetadataVersion
+                || string.IsNullOrEmpty(meta.Mode) || string.IsNullOrEmpty(meta.SourceRoot))
+            {
+                _logger.LogInformation("Run {RunId} workspace metadata is not readable by this build", runId);
+                return null;
+            }
+            return meta;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} workspace metadata could not be read", runId);
+            return null;
+        }
+    }
+
+    private bool TryWriteMetadata(Guid runId, WorkspaceMetadataDto meta)
+    {
+        try
+        {
+            File.WriteAllText(MetadataPathFor(runId), JsonSerializer.Serialize(meta, MetadataJsonOptions));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} workspace metadata could not be written; isolation is abandoned", runId);
+            return false;
+        }
+    }
+
+    // ---- helpers ----
+
+    /// <summary>
+    /// The root the workspace is provisioned FROM: the configured assistant files folder, narrowed by
+    /// <paramref name="workingSubpath"/> exactly as the file tools narrow it (resolve inside, must exist,
+    /// otherwise fall back to the base — never widen). Returns the canonicalized pair
+    /// (source root, settings folder), or nulls when no usable folder is configured.
+    /// </summary>
+    private async Task<(string? SourceRoot, string? SettingsFolder)> ResolveSourceRootAsync(string? workingSubpath)
+    {
+        var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+        var folder = settings.AssistantFilesFolder;
+        if (string.IsNullOrWhiteSpace(folder)) return (null, null);
+
+        string canonicalFolder;
+        try
+        {
+            var full = Path.GetFullPath(folder);
+            if (!Directory.Exists(full)) return (null, null);
+            canonicalFolder = SafeFolderPath.Canonicalize(full);
+        }
+        catch { return (null, null); }
+
+        if (!string.IsNullOrWhiteSpace(workingSubpath)
+            && SafeFolderPath.TryResolveInsideAllowingAbsolute(canonicalFolder, workingSubpath, out var narrowed)
+            && Directory.Exists(narrowed))
+        {
+            return (narrowed, canonicalFolder);
+        }
+
+        return (canonicalFolder, canonicalFolder);
+    }
+
+    private Task<GitProcessResult> RunGitAsync(
+        string workingDirectory, IReadOnlyList<string> args, GitCommandKind kind, CancellationToken ct)
+        // Ceiling = the parent of the working directory, mirroring GitToolHandler: upward .git discovery may
+        // reach the working directory itself but never cross above it, so provisioning can never bind a
+        // repository the user keeps further up their profile.
+        => _runner.RunAsync(new GitProcessRequest(workingDirectory, args, kind, TryParentOf(workingDirectory)), ct);
+
+    private static string? TryParentOf(string path)
+    {
+        try { return Directory.GetParent(path)?.FullName; }
+        catch { return null; }
+    }
+
+    /// <summary>Inclusive containment: <paramref name="candidate"/> equals <paramref name="root"/> or is
+    /// nested under it. Trailing-separator-aware, so a sibling sharing the prefix is not "inside".</summary>
+    private static bool IsInsideOrEqual(string candidate, string? root)
+    {
+        if (string.IsNullOrEmpty(root)) return false;
+        string full, fullRoot;
+        try
+        {
+            full = Path.GetFullPath(candidate);
+            fullRoot = Path.GetFullPath(root);
+        }
+        catch { return false; }
+
+        return full.Equals(fullRoot, StringComparison.OrdinalIgnoreCase)
+            || full.StartsWith(SafeFolderPath.WithTrailingSeparator(fullRoot), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasFileNewerThan(string root, DateTime provisionedAtUtc)
+    {
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                if (File.GetLastWriteTimeUtc(file) > provisionedAtUtc) return true;
+            }
+            catch { /* a vanished or locked file is not evidence either way */ }
+        }
+        return false;
+    }
+
+    private static string TryCanonicalize(string path)
+    {
+        try { return Directory.Exists(path) ? SafeFolderPath.Canonicalize(path) : path; }
+        catch { return path; }
+    }
+
+    private void TryDeleteDirectory(string dir)
+    {
+        try
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete a run workspace directory");
+        }
+    }
+
+    private void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete a run workspace metadata document");
+        }
+    }
+}

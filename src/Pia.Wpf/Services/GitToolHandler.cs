@@ -135,7 +135,11 @@ public class GitToolHandler : IGitToolHandler
         _logger.LogInformation("GitToolHandler dispatching: {ToolName}", toolCall.Name);
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        var baseRoot = _currentFolder;
+        // Batch 06: an isolated run supplies its own workspace root, so git resolves the repository THERE —
+        // or files and git disagree and the agent commits the interactive folder's stale tree. Same one-line
+        // shape as FilesToolHandler's dispatch point (:170-171), canonicalization included.
+        var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
+        var baseRoot = ambientRoot is not null ? NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
         if (baseRoot is null || !Directory.Exists(baseRoot))
         {
             return (
@@ -144,24 +148,53 @@ public class GitToolHandler : IGitToolHandler
         }
 
         // Narrow the sandbox to the active chat's working directory (if any). The deferred write closure
-        // captures this resolved root at prepare time, so it never reads the ambient after the approval await.
-        var root = ResolveEffectiveRoot(baseRoot, TaskAmbient.Current?.WorkingSubpath);
+        // captures this resolved scope at prepare time, so it never reads the ambient after the approval await.
+        var scope = new GitScope(
+            ResolveEffectiveRoot(baseRoot, TaskAmbient.Current?.WorkingSubpath),
+            ambientRoot is null ? null : baseRoot);
 
         return toolCall.Name switch
         {
-            "git_status" => (await HandleStatusAsync(root, cancellationToken), null),
-            "git_log" => (await HandleLogAsync(root, args, cancellationToken), null),
-            "git_diff" => (await HandleDiffAsync(root, args, cancellationToken), null),
-            "git_branch" => (await HandleBranchAsync(root, cancellationToken), null),
-            "git_show" => (await HandleShowAsync(root, args, cancellationToken), null),
-            "git_init" => PrepareInit(root),
-            "git_add" => await PrepareAddAsync(root, args, cancellationToken),
-            "git_commit" => await PrepareCommitAsync(root, args, cancellationToken),
-            "git_switch" => await PrepareSwitchAsync(root, args, cancellationToken),
-            "git_restore" => await PrepareRestoreAsync(root, args, cancellationToken),
-            "git_stash" => await HandleStashAsync(root, args, cancellationToken),
+            "git_status" => (await HandleStatusAsync(scope, cancellationToken), null),
+            "git_log" => (await HandleLogAsync(scope, args, cancellationToken), null),
+            "git_diff" => (await HandleDiffAsync(scope, args, cancellationToken), null),
+            "git_branch" => (await HandleBranchAsync(scope, cancellationToken), null),
+            "git_show" => (await HandleShowAsync(scope, args, cancellationToken), null),
+            "git_init" => PrepareInit(scope),
+            "git_add" => await PrepareAddAsync(scope, args, cancellationToken),
+            "git_commit" => await PrepareCommitAsync(scope, args, cancellationToken),
+            "git_switch" => await PrepareSwitchAsync(scope, args, cancellationToken),
+            "git_restore" => await PrepareRestoreAsync(scope, args, cancellationToken),
+            "git_stash" => await HandleStashAsync(scope, args, cancellationToken),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (GitToolCall?)null)
         };
+    }
+
+    /// <summary>
+    /// The sandbox one dispatch is contained to, resolved ONCE in <see cref="HandleToolCallAsync"/> and
+    /// captured into every deferred <c>GitToolCall.Execute</c> closure.
+    /// <para>
+    /// <paramref name="WorkspaceRoot"/> is the DISCRIMINATOR and it is non-null <b>only</b> when the ambient
+    /// supplied an isolated run workspace. Non-null ⇒ containment is frozen for the turn: the run cannot
+    /// escape its workspace even if the user re-points the assistant folder mid-run, and — the reason this
+    /// exists at all — a mutating tool that passed prepare cannot be refused after the approval await, where
+    /// ambient flow is not guaranteed (<c>FilesToolHandler:179-182</c> states that rule) and a null ambient
+    /// would fall back to <c>_currentFolder</c> and refuse a toplevel inside the workspace. Null ⇒ the
+    /// interactive case, where <c>_currentFolder</c> is RE-READ at execute time, which is the runtime-re-point
+    /// TOCTOU re-guard this handler has always had. Never set this to <c>_currentFolder</c>: that would
+    /// silently retire that guard with no failing test.
+    /// </para>
+    /// </summary>
+    /// <param name="WorkingDir">The effective working directory git runs in: the sandbox root narrowed by the
+    /// active chat's working subpath.</param>
+    private readonly record struct GitScope(string WorkingDir, string? WorkspaceRoot);
+
+    /// <summary>Canonicalizes an ambient-supplied workspace root the same way <c>UpdateFolder</c> canonicalizes
+    /// the configured folder, so the containment comparisons cannot false-refuse on a link/8.3 asymmetry.</summary>
+    private static string NormalizeWorkspaceRoot(string root)
+    {
+        var full = Path.GetFullPath(root);
+        return Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
     }
 
     public async Task<object?> ExecutePendingActionAsync(GitToolCall pendingAction)
@@ -182,12 +215,12 @@ public class GitToolHandler : IGitToolHandler
 
     // ---- read-only tools (inline) ----
 
-    private async Task<object> HandleStatusAsync(string root, CancellationToken ct)
+    private async Task<object> HandleStatusAsync(GitScope scope, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } shortCircuit) return shortCircuit;
 
-        var result = await RunGitAsync(root, ["status", "--short", "--branch"], GitCommandKind.ReadOnly, ct);
+        var result = await RunGitAsync(scope, ["status", "--short", "--branch"], GitCommandKind.ReadOnly, ct);
         LogExit("git_status", result);
         if (!result.Succeeded) return MapGitError(result, "status");
 
@@ -201,13 +234,13 @@ public class GitToolHandler : IGitToolHandler
         return hasChanges ? Cap(output) : Cap(output) + "\nWorking tree clean (no changes).";
     }
 
-    private async Task<object> HandleLogAsync(string root, IDictionary<string, object?> args, CancellationToken ct)
+    private async Task<object> HandleLogAsync(GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } shortCircuit) return shortCircuit;
 
         var count = Math.Clamp(GetOptionalIntArg(args, "count", DefaultLogCount), 1, MaxLogCount);
-        var result = await RunGitAsync(root,
+        var result = await RunGitAsync(scope,
             ["log", $"--max-count={count}", "--date=short", "--pretty=format:%h %ad %an %s"], GitCommandKind.ReadOnly, ct);
         LogExit("git_log", result);
         if (!result.Succeeded)
@@ -221,9 +254,9 @@ public class GitToolHandler : IGitToolHandler
         return string.IsNullOrWhiteSpace(output) ? "No commits yet." : Cap(output);
     }
 
-    private async Task<object> HandleDiffAsync(string root, IDictionary<string, object?> args, CancellationToken ct)
+    private async Task<object> HandleDiffAsync(GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } shortCircuit) return shortCircuit;
 
         var staged = GetOptionalBoolArg(args, "staged");
@@ -235,14 +268,14 @@ public class GitToolHandler : IGitToolHandler
         if (staged) cmd.Add("--staged");
         if (!string.IsNullOrWhiteSpace(pathArg))
         {
-            // Pathspec after `--` is cwd-relative (cwd == root), so resolve against root, not the toplevel.
-            if (!TryResolveRepoRelative(root, root, pathArg, out var rel, out var error))
+            // Pathspec after `--` is cwd-relative (cwd == the working dir), so resolve against the working dir, not the toplevel.
+            if (!TryResolveRepoRelative(scope.WorkingDir, scope.WorkingDir, pathArg, out var rel, out var error))
                 return error;
             cmd.Add("--");
             cmd.Add(rel);
         }
 
-        var result = await RunGitAsync(root, cmd, GitCommandKind.ReadOnly, ct);
+        var result = await RunGitAsync(scope, cmd, GitCommandKind.ReadOnly, ct);
         LogExit("git_diff", result);
         if (!result.Succeeded) return MapGitError(result, "diff");
 
@@ -250,12 +283,12 @@ public class GitToolHandler : IGitToolHandler
         return string.IsNullOrWhiteSpace(output) ? "No differences." : Cap(output);
     }
 
-    private async Task<object> HandleBranchAsync(string root, CancellationToken ct)
+    private async Task<object> HandleBranchAsync(GitScope scope, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } shortCircuit) return shortCircuit;
 
-        var result = await RunGitAsync(root, ["branch", "--list"], GitCommandKind.ReadOnly, ct);
+        var result = await RunGitAsync(scope, ["branch", "--list"], GitCommandKind.ReadOnly, ct);
         LogExit("git_branch", result);
         if (!result.Succeeded) return MapGitError(result, "branch");
 
@@ -263,9 +296,9 @@ public class GitToolHandler : IGitToolHandler
         return string.IsNullOrWhiteSpace(output) ? "No branches yet (the repository has no commits)." : Cap(output);
     }
 
-    private async Task<object> HandleShowAsync(string root, IDictionary<string, object?> args, CancellationToken ct)
+    private async Task<object> HandleShowAsync(GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } shortCircuit) return shortCircuit;
 
         var rev = GetOptionalStringArg(args, "rev") ?? "HEAD";
@@ -282,12 +315,12 @@ public class GitToolHandler : IGitToolHandler
         {
             // <rev>:<path> is an object spec, not a filesystem path: it must be a repo-toplevel-relative
             // forward-slash path (an absolute/backslash path yields 'fatal: invalid object name').
-            if (!TryResolveRepoRelative(root, repo.Toplevel!, pathArg, out var rel, out var error))
+            if (!TryResolveRepoRelative(scope.WorkingDir, repo.Toplevel!, pathArg, out var rel, out var error))
                 return error;
             cmd = ["show", "--no-textconv", "--no-ext-diff", $"{rev}:{rel}"];
         }
 
-        var result = await RunGitAsync(root, cmd, GitCommandKind.ReadOnly, ct);
+        var result = await RunGitAsync(scope, cmd, GitCommandKind.ReadOnly, ct);
         LogExit("git_show", result);
         if (!result.Succeeded) return MapGitError(result, "show");
 
@@ -297,32 +330,34 @@ public class GitToolHandler : IGitToolHandler
 
     // ---- mutating tools (confirmation card, then execute) ----
 
-    private (object? Result, GitToolCall? Pending) PrepareInit(string root)
+    private (object? Result, GitToolCall? Pending) PrepareInit(GitScope scope)
     {
         // git_init has no is-repo requirement (it CREATES the repo). It only needs the working dir to be
-        // inside the sandbox — true by construction here (root derives from the sandbox), re-checked defensively.
-        if (!IsInsideSandbox(root))
+        // inside the sandbox — true by construction here (it derives from the sandbox), re-checked defensively.
+        if (!IsInsideSandbox(scope.WorkingDir, scope))
             return ("Error: the working directory is outside the assistant files folder.", null);
 
-        var rel = SafeRelative(_currentFolder!, root);
+        var rel = SafeRelative(SandboxRootFor(scope) ?? string.Empty, scope.WorkingDir);
         var label = string.IsNullOrEmpty(rel) ? "the assistant files folder" : $"'{rel}'";
 
         return (null, new GitToolCall(
             ToolName: "git_init",
             Description: $"Initialize a git repository in {label}",
             Details: "Creates a new .git repository in the working directory.",
-            Execute: () => ExecuteInitAsync(root),
+            Execute: () => ExecuteInitAsync(scope),
             TargetPath: rel));
     }
 
-    private async Task<object?> ExecuteInitAsync(string root)
+    private async Task<object?> ExecuteInitAsync(GitScope scope)
     {
         // TOCTOU: the sandbox root can be re-pointed between prepare and confirmation, so re-validate the
-        // captured working dir against the CURRENT sandbox immediately before spawning git.
-        if (!IsInsideSandbox(root))
+        // captured working dir against the CURRENT sandbox immediately before spawning git. In an isolated
+        // run the captured workspace root IS the sandbox and cannot be re-pointed (see GitScope) — the run is
+        // confined to it either way, and a settings change must not refuse an already-approved action.
+        if (!IsInsideSandbox(scope.WorkingDir, scope))
             return "Error: the working directory is outside the assistant files folder.";
 
-        var result = await RunGitAsync(root, ["init"], GitCommandKind.Mutating, CancellationToken.None);
+        var result = await RunGitAsync(scope, ["init"], GitCommandKind.Mutating, CancellationToken.None);
         LogExit("git_init", result);
         if (!result.Succeeded) return MapGitError(result, "init");
 
@@ -331,9 +366,9 @@ public class GitToolHandler : IGitToolHandler
     }
 
     private async Task<(object? Result, GitToolCall? Pending)> PrepareAddAsync(
-        string root, IDictionary<string, object?> args, CancellationToken ct)
+        GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } sc) return (sc, null);
 
         var rawPaths = GetStringArrayArg(args, "paths");
@@ -351,8 +386,8 @@ public class GitToolHandler : IGitToolHandler
             var rels = new List<string>();
             foreach (var p in rawPaths)
             {
-                // Pathspec after `--` is cwd-relative (cwd == root).
-                if (!TryResolveRepoRelative(root, root, p, out var rel, out var error)) return (error, null);
+                // Pathspec after `--` is cwd-relative (cwd == the working dir).
+                if (!TryResolveRepoRelative(scope.WorkingDir, scope.WorkingDir, p, out var rel, out var error)) return (error, null);
                 rels.Add(rel);
             }
             gitArgs = ["add", "--", .. rels];
@@ -360,13 +395,13 @@ public class GitToolHandler : IGitToolHandler
         }
 
         return (null, new GitToolCall("git_add", desc, DetailsFor(gitArgs),
-            () => ExecuteMutatingAsync(root, gitArgs, "git_add", "Staged changes."), TargetPath: null));
+            () => ExecuteMutatingAsync(scope, gitArgs, "git_add", "Staged changes."), TargetPath: null));
     }
 
     private async Task<(object? Result, GitToolCall? Pending)> PrepareCommitAsync(
-        string root, IDictionary<string, object?> args, CancellationToken ct)
+        GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } sc) return (sc, null);
 
         var message = GetOptionalStringArg(args, "message");
@@ -377,13 +412,13 @@ public class GitToolHandler : IGitToolHandler
         // is passed as a single -m argument value, never concatenated into a command string.
         var gitArgs = new List<string> { "commit", "--no-verify", "-m", message };
         return (null, new GitToolCall("git_commit", $"Commit staged changes: \"{message}\"", DetailsFor(gitArgs),
-            () => ExecuteCommitAsync(root, gitArgs), TargetPath: null));
+            () => ExecuteCommitAsync(scope, gitArgs), TargetPath: null));
     }
 
     private async Task<(object? Result, GitToolCall? Pending)> PrepareSwitchAsync(
-        string root, IDictionary<string, object?> args, CancellationToken ct)
+        GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } sc) return (sc, null);
 
         var branch = GetOptionalStringArg(args, "branch");
@@ -396,13 +431,13 @@ public class GitToolHandler : IGitToolHandler
         var gitArgs = create ? new List<string> { "switch", "-c", branch } : ["switch", branch];
         var desc = create ? $"Create and switch to branch '{branch}'" : $"Switch to branch '{branch}'";
         return (null, new GitToolCall("git_switch", desc, DetailsFor(gitArgs),
-            () => ExecuteMutatingAsync(root, gitArgs, "git_switch", "Switched branch."), TargetPath: null));
+            () => ExecuteMutatingAsync(scope, gitArgs, "git_switch", "Switched branch."), TargetPath: null));
     }
 
     private async Task<(object? Result, GitToolCall? Pending)> PrepareRestoreAsync(
-        string root, IDictionary<string, object?> args, CancellationToken ct)
+        GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
-        var repo = await ResolveContainedRepoAsync(root, ct);
+        var repo = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repo) is { } sc) return (sc, null);
 
         var rawPaths = GetStringArrayArg(args, "paths");
@@ -425,8 +460,8 @@ public class GitToolHandler : IGitToolHandler
             var rels = new List<string>();
             foreach (var p in rawPaths)
             {
-                // Pathspec after `--` is cwd-relative (cwd == root).
-                if (!TryResolveRepoRelative(root, root, p, out var rel, out var error)) return (error, null);
+                // Pathspec after `--` is cwd-relative (cwd == the working dir).
+                if (!TryResolveRepoRelative(scope.WorkingDir, scope.WorkingDir, p, out var rel, out var error)) return (error, null);
                 rels.Add(rel);
             }
             gitArgs.AddRange(rels);
@@ -436,20 +471,20 @@ public class GitToolHandler : IGitToolHandler
         }
 
         return (null, new GitToolCall("git_restore", desc, DetailsFor(gitArgs),
-            () => ExecuteMutatingAsync(root, gitArgs, "git_restore", "Restored."), TargetPath: null));
+            () => ExecuteMutatingAsync(scope, gitArgs, "git_restore", "Restored."), TargetPath: null));
     }
 
     private async Task<(object? Result, GitToolCall? Pending)> HandleStashAsync(
-        string root, IDictionary<string, object?> args, CancellationToken ct)
+        GitScope scope, IDictionary<string, object?> args, CancellationToken ct)
     {
         var op = (GetOptionalStringArg(args, "operation") ?? "list").Trim().ToLowerInvariant();
 
         // `list` is read-only: run inline (no confirmation card), short-circuiting before the pending path.
         if (op == "list")
         {
-            var repo = await ResolveContainedRepoAsync(root, ct);
+            var repo = await ResolveContainedRepoAsync(scope, ct);
             if (RepoShortCircuit(repo) is { } sc) return (sc, null);
-            var result = await RunGitAsync(root, ["stash", "list"], GitCommandKind.ReadOnly, ct);
+            var result = await RunGitAsync(scope, ["stash", "list"], GitCommandKind.ReadOnly, ct);
             LogExit("git_stash", result);
             if (!result.Succeeded) return (MapGitError(result, "stash"), null);
             var output = result.StandardOutput.TrimEnd();
@@ -459,26 +494,26 @@ public class GitToolHandler : IGitToolHandler
         if (op is not ("push" or "pop"))
             return ($"Error: unknown stash operation '{op}'. Use 'list', 'push', or 'pop'.", null);
 
-        var repoCheck = await ResolveContainedRepoAsync(root, ct);
+        var repoCheck = await ResolveContainedRepoAsync(scope, ct);
         if (RepoShortCircuit(repoCheck) is { } sc2) return (sc2, null);
 
         var gitArgs = new List<string> { "stash", op };
         var desc = op == "push" ? "Stash (save) uncommitted changes" : "Pop the most recent stash onto the working tree";
         var success = op == "push" ? "Changes stashed." : "Stash popped.";
         return (null, new GitToolCall("git_stash", desc, DetailsFor(gitArgs),
-            () => ExecuteMutatingAsync(root, gitArgs, "git_stash", success), TargetPath: null));
+            () => ExecuteMutatingAsync(scope, gitArgs, "git_stash", success), TargetPath: null));
     }
 
     /// <summary>
     /// Shared execute path for mutating tools: re-runs the containment guard (TOCTOU) against the CURRENT
     /// sandbox before spawning git, then maps the result. On success returns the git output (or a fallback).
     /// </summary>
-    private async Task<object?> ExecuteMutatingAsync(string root, IReadOnlyList<string> gitArgs, string tool, string emptySuccessMessage)
+    private async Task<object?> ExecuteMutatingAsync(GitScope scope, IReadOnlyList<string> gitArgs, string tool, string emptySuccessMessage)
     {
-        var repo = await ResolveContainedRepoAsync(root, CancellationToken.None);
+        var repo = await ResolveContainedRepoAsync(scope, CancellationToken.None);
         if (RepoShortCircuit(repo) is { } sc) return sc;
 
-        var result = await RunGitAsync(root, gitArgs, GitCommandKind.Mutating, CancellationToken.None);
+        var result = await RunGitAsync(scope, gitArgs, GitCommandKind.Mutating, CancellationToken.None);
         LogExit(tool, result);
         if (!result.Succeeded) return MapGitError(result, ToolShort(tool));
 
@@ -486,12 +521,12 @@ public class GitToolHandler : IGitToolHandler
         return string.IsNullOrEmpty(output) ? emptySuccessMessage : Cap(output);
     }
 
-    private async Task<object?> ExecuteCommitAsync(string root, IReadOnlyList<string> gitArgs)
+    private async Task<object?> ExecuteCommitAsync(GitScope scope, IReadOnlyList<string> gitArgs)
     {
-        var repo = await ResolveContainedRepoAsync(root, CancellationToken.None);
+        var repo = await ResolveContainedRepoAsync(scope, CancellationToken.None);
         if (RepoShortCircuit(repo) is { } sc) return sc;
 
-        var result = await RunGitAsync(root, gitArgs, GitCommandKind.Mutating, CancellationToken.None);
+        var result = await RunGitAsync(scope, gitArgs, GitCommandKind.Mutating, CancellationToken.None);
         LogExit("git_commit", result);
         if (!result.Succeeded)
         {
@@ -519,17 +554,18 @@ public class GitToolHandler : IGitToolHandler
     }
 
     /// <summary>
-    /// Resolves the repository toplevel for <paramref name="root"/> via a single
+    /// Resolves the repository toplevel for the dispatch working directory via a single
     /// <c>git rev-parse --show-toplevel</c> spawn (this doubles as the is-repo check — gate on exit code,
     /// never on the literal <c>false</c> that <c>--is-inside-work-tree</c> only prints inside a bare repo),
-    /// then enforces the absolute containment invariant against the current sandbox.
+    /// then enforces the absolute containment invariant against the scope sandbox (the run workspace when
+    /// there is one, else the CURRENT configured folder).
     /// </summary>
-    private async Task<RepoResolution> ResolveContainedRepoAsync(string root, CancellationToken ct)
+    private async Task<RepoResolution> ResolveContainedRepoAsync(GitScope scope, CancellationToken ct)
     {
         GitProcessResult result;
         try
         {
-            result = await RunGitAsync(root, ["rev-parse", "--show-toplevel"], GitCommandKind.ReadOnly, ct);
+            result = await RunGitAsync(scope, ["rev-parse", "--show-toplevel"], GitCommandKind.ReadOnly, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -572,7 +608,7 @@ public class GitToolHandler : IGitToolHandler
             return RepoResolution.Outside();
         }
 
-        if (!IsInsideSandbox(canonical))
+        if (!IsInsideSandbox(canonical, scope))
         {
             _logger.SensitiveDebug("repo toplevel outside sandbox: {Top}", canonical);
             return RepoResolution.Outside();
@@ -590,14 +626,21 @@ public class GitToolHandler : IGitToolHandler
     };
 
     /// <summary>
-    /// Inclusive containment: true when <paramref name="canonicalPath"/> equals the (canonicalized)
-    /// sandbox root or is nested under it. Inclusive of the root so a repository whose toplevel IS the
-    /// configured folder is allowed. Reads the CURRENT <see cref="_currentFolder"/>, so it re-refuses after
-    /// a runtime re-point (the TOCTOU guard).
+    /// Inclusive containment: true when <paramref name="path"/> equals the (canonicalized) sandbox root of
+    /// <paramref name="scope"/> or is nested under it. Inclusive of the root so a repository whose toplevel
+    /// IS the sandbox is allowed — which is also what makes worktree mode work, where
+    /// <c>rev-parse --show-toplevel</c> returns the workspace root itself.
+    /// <para>
+    /// The sandbox is <see cref="GitScope.WorkspaceRoot"/> when an isolated run supplied one and the CURRENT
+    /// <see cref="_currentFolder"/> otherwise — so the interactive TOCTOU re-guard still re-refuses after a
+    /// runtime re-point, while an isolated run is judged against the workspace it was dispatched with. See
+    /// <see cref="GitScope"/> for why reading the ambient here instead would refuse an already-approved
+    /// mutating tool.
+    /// </para>
     /// </summary>
-    private bool IsInsideSandbox(string path)
+    private bool IsInsideSandbox(string path, GitScope scope)
     {
-        var sandbox = _currentFolder;
+        var sandbox = SandboxRootFor(scope);
         if (string.IsNullOrEmpty(sandbox)) return false;
 
         // Canonicalize BOTH sides so the comparison can't false-refuse on an 8.3/junction spelling
@@ -659,18 +702,31 @@ public class GitToolHandler : IGitToolHandler
         static bool Fail(out string e, string message) { e = message; return false; }
     }
 
-    private string? GetCeilingDirectory()
+    /// <summary>
+    /// The EFFECTIVE sandbox root of a dispatch: the isolated run's workspace when it supplied one, else the
+    /// current configured folder. The single place the two cases meet, so containment and the discovery
+    /// ceiling can never disagree about which root a call is confined to.
+    /// </summary>
+    private string? SandboxRootFor(GitScope scope) => scope.WorkspaceRoot ?? _currentFolder;
+
+    /// <summary>
+    /// <c>GIT_CEILING_DIRECTORIES</c>: the parent of the EFFECTIVE sandbox root, so upward <c>.git</c>
+    /// discovery can reach that root (a repo whose toplevel IS the sandbox is legal) but never cross above
+    /// it. It must follow the scope, not <see cref="_currentFolder"/>: with a cwd under
+    /// <c>%LOCALAPPDATA%\Pia\runs\&lt;id&gt;</c> a ceiling of the assistant folder's parent does not apply at
+    /// all, and discovery would walk runs → Pia → Local → AppData → %USERPROFILE% and could bind a
+    /// repository the user keeps in their profile.
+    /// </summary>
+    private string? GetCeilingDirectory(GitScope scope)
     {
-        var sandbox = _currentFolder;
+        var sandbox = SandboxRootFor(scope);
         if (string.IsNullOrEmpty(sandbox)) return null;
-        // Parent of the sandbox root: upward .git discovery can reach the sandbox root (a repo whose
-        // toplevel IS the folder is legal) but never cross above it.
         try { return Directory.GetParent(sandbox)?.FullName; }
         catch { return null; }
     }
 
-    private Task<GitProcessResult> RunGitAsync(string root, IReadOnlyList<string> args, GitCommandKind kind, CancellationToken ct)
-        => _runner.RunAsync(new GitProcessRequest(root, args, kind, GetCeilingDirectory()), ct);
+    private Task<GitProcessResult> RunGitAsync(GitScope scope, IReadOnlyList<string> args, GitCommandKind kind, CancellationToken ct)
+        => _runner.RunAsync(new GitProcessRequest(scope.WorkingDir, args, kind, GetCeilingDirectory(scope)), ct);
 
     private string ResolveEffectiveRoot(string baseRoot, string? workingSubpath)
     {

@@ -83,6 +83,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// SqliteContext). Injectable so tests never point the destructive startup sweep at the real user folder.</summary>
     private readonly string _runsBaseDir;
 
+    /// <summary>
+    /// Owns BOTH workspace provisioning modes and their symmetric teardown (Batch 06 G3/plan D5). Trailing
+    /// and defaulted: null is the pre-Batch-06 shape — a bare <c>CreateDirectory</c> at launch and a plain
+    /// recursive delete on cleanup — which is what the existing launcher suite exercises.
+    /// </summary>
+    private readonly IRunWorkspaceService? _workspaces;
+
     private bool _disposed;
 
     public HeadlessRunLauncher(
@@ -94,7 +101,8 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         IPersonaService personaService,
         IExecutingRunStore executingRuns,
         ILogger<HeadlessRunLauncher> logger,
-        string? runsBaseDirOverride = null)
+        string? runsBaseDirOverride = null,
+        IRunWorkspaceService? workspaces = null)
     {
         _scopeFactory = scopeFactory;
         _chatService = chatService;
@@ -107,6 +115,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // AssistantWorkspace.RunsRoot (not an inline Path.Combine) so the guard's carve-out
         // (SensitivePathGuard.BuildAllowedExceptions) and this default can never drift apart (Batch 06 B1).
         _runsBaseDir = runsBaseDirOverride ?? AssistantWorkspace.RunsRoot;
+        _workspaces = workspaces;
 
         // Decision c: delete a run's workspace when its chat (and, by FK cascade, its run) is deleted.
         _chatService.ChatsChanged += OnChatsChanged;
@@ -158,22 +167,38 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // AssistantWorkspace.RunsRoot (Batch 06 B1). Every file operation this run performs resolves against
         // this directory (see the Initialize call below), so it holds the run's work — not merely scratch —
         // until a later group promotes it out; it is still auto-cleaned on chat delete / startup sweep.
-        // Canonicalize so a link in the path is not a hole. The run row already exists (Planning), so a
-        // workspace-setup failure here must settle it — otherwise the run dangles non-terminal until the
-        // next startup sweep (G-4).
-        string runRoot;
-        try
+        //
+        // ONE contiguous block, deliberately: the decision is "which root does this dispatch get", and a
+        // later batch overrides exactly that (a child run inherits its parent's root and must not provision
+        // at its own run id). Sprinkling it through the dispatch would make that a rewrite.
+        string? runRoot;
+        if (_workspaces is not null)
         {
-            runRoot = Path.Combine(_runsBaseDir, run.Id.ToString());
-            Directory.CreateDirectory(runRoot);
-            runRoot = SafeFolderPath.Canonicalize(runRoot);
+            // Batch 06 G3: the provisioner owns both modes (worktree when the source root is a repo, else a
+            // bounded copy) and its symmetric teardown. It NEVER throws and returns null for "no isolation",
+            // so the FailAsync settle below is unreachable on this path — see B16 for why that is the
+            // intended outcome (degrade rather than fail an unattended run) and why the block stays anyway.
+            runRoot = (await _workspaces.ProvisionAsync(run.Id, workingSubpath: null, ct).ConfigureAwait(false))?.Root;
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex, "Headless run {RunId} workspace setup failed", run.Id);
-            try { await _agentRunService.FailAsync(run.Id, "workspace setup failed", cancelled: false, CancellationToken.None).ConfigureAwait(false); }
-            catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle headless run {RunId} after workspace-setup failure", run.Id); }
-            throw;
+            // Legacy path (no provisioner injected): the original create + canonicalize, so a link in the
+            // path is not a hole. The run row already exists (Planning), so a workspace-setup failure here
+            // must settle it — otherwise the run dangles non-terminal until the next startup sweep (G-4).
+            // A throw is still possible here, which is why this guard is kept rather than "restored" above.
+            try
+            {
+                runRoot = Path.Combine(_runsBaseDir, run.Id.ToString());
+                Directory.CreateDirectory(runRoot);
+                runRoot = SafeFolderPath.Canonicalize(runRoot);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Headless run {RunId} workspace setup failed", run.Id);
+                try { await _agentRunService.FailAsync(run.Id, "workspace setup failed", cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle headless run {RunId} after workspace-setup failure", run.Id); }
+                throw;
+            }
         }
 
         var budget = req.Budget ?? RunProfile.FromBudget(
@@ -208,9 +233,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 // Batch 06 G2: the run is confined to its own workspace. Every read/write/delete/list/search
                 // resolves against runRoot with full containment (no escape, no system paths) — the guard
                 // permits it because AssistantWorkspace.RunsRoot is an allowed island (B1), and the verifier
-                // probes the same root because BeginRunAsync publishes it onto the RunContext (B3). Passing
-                // null here instead is the NO-ISOLATION degrade: the run would write straight into the user's
-                // assistant files folder, which is what every build before this commit did.
+                // probes the same root because BeginRunAsync publishes it onto the RunContext (B3). A NULL
+                // runRoot is the NO-ISOLATION degrade the provisioner falls back to (G3 F10): the run writes
+                // straight into the user's assistant files folder, which is what every build before G2 did.
                 executor.Initialize(workspaceRoot: runRoot, grants, provider, policy);
                 started = true;
 
@@ -320,8 +345,22 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // hands this exact string to Initialize below, and recomputing it from Path.Combine there would
             // give the executor a different string than launch does for the same directory (a link or an
             // 8.3 component in the base dir), i.e. the two call sites would silently drift apart.
-            var runRoot = SafeFolderPath.Canonicalize(
-                Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
+            //
+            // Deliberately the SAME contiguous block shape as the launch path, so the rule a later batch has
+            // to add here — a resumed CHILD run must not provision at its own run id — is a local edit.
+            string? runRoot;
+            if (_workspaces is not null)
+            {
+                // Idempotent by construction (G3 B11 step 2): a readable metadata document returns the same
+                // root, the same mode and the same provisionedAtUtc, which is what keeps the promote set
+                // from becoming "everything the workspace contains" after a park → resume.
+                runRoot = (await _workspaces.ProvisionAsync(run.Id, workingSubpath: null, ct).ConfigureAwait(false))?.Root;
+            }
+            else
+            {
+                runRoot = SafeFolderPath.Canonicalize(
+                    Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
+            }
 
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
             lock (_runsByChatLock)
@@ -466,8 +505,15 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 catch { remove = false; }
 
                 if (remove)
-                    TryDeleteDirectory(dir);
+                    await TearDownWorkspaceAsync(runId, ct).ConfigureAwait(false);
             }
+
+            // Second pass (Batch 06 G3): the loop above enumerates DIRECTORIES only, so a metadata document
+            // whose workspace is already gone is invisible to it — and in worktree mode that document is the
+            // only thing that knows which repository still carries a stale .git/worktrees/<id> registration
+            // (plan R5).
+            if (_workspaces is not null)
+                await _workspaces.SweepOrphanMetadataAsync(ct).ConfigureAwait(false);
         }, ct);
     }
 
@@ -505,9 +551,31 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
         foreach (var runId in runIds)
         {
-            var dir = Path.Combine(_runsBaseDir, runId.ToString());
-            TryDeleteDirectory(dir);
+            // Teardown may now spawn git (worktree remove/prune), which must not run inline on a SYNCHRONOUS
+            // event handler. A failed delete self-heals: the run row is gone by FK cascade, so the next
+            // startup sweep sees `run is null` and removes the workspace unconditionally. The other half of
+            // B13 — cancelling a still-live dispatch BEFORE deleting the only copy of its work (plan R4) —
+            // belongs to the group that lands promotion, and is deliberately not done here.
+            TearDownWorkspaceAsync(runId, CancellationToken.None).SafeFireAndForget(_logger);
         }
+    }
+
+    /// <summary>
+    /// The ONE workspace-removal path. Worktree mode needs <c>git worktree remove</c>/<c>prune</c>, not a
+    /// recursive delete, or the user's repository keeps a stale registration forever (plan R5/R16) — so
+    /// every caller goes through the provisioner, which owns create and teardown symmetrically.
+    /// <see cref="TryDeleteDirectory"/> remains as the fallback for the no-provisioner shape, which is what
+    /// keeps the existing launcher suite passing unmodified.
+    /// </summary>
+    private async Task TearDownWorkspaceAsync(Guid runId, CancellationToken ct)
+    {
+        if (_workspaces is not null)
+        {
+            await _workspaces.TearDownAsync(runId, ct).ConfigureAwait(false);
+            return;
+        }
+
+        TryDeleteDirectory(Path.Combine(_runsBaseDir, runId.ToString()));
     }
 
     /// <summary>
@@ -524,6 +592,11 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             _inflight.TryRemove(new KeyValuePair<Guid, (CancellationTokenSource Cts, Task Task)>(runId, entry));
     }
 
+    /// <summary>
+    /// The no-provisioner fallback for <see cref="TearDownWorkspaceAsync"/> — and the ONLY
+    /// <c>Directory.Delete</c> in this type, deliberately: a worktree-mode workspace deleted this way would
+    /// leave a stale registration behind, so every other removal site routes through the provisioner.
+    /// </summary>
     private void TryDeleteDirectory(string dir)
     {
         try

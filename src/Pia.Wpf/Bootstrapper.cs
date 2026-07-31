@@ -494,6 +494,11 @@ public static class Bootstrapper
         // brackets (this launcher and BackgroundAssistantTurnRunner) and by every window's ChatSessionManager,
         // which reads it synchronously when a chat is activated. Holds no state that outlives a run.
         services.AddSingleton<IExecutingRunStore, ExecutingRunStore>();
+        // Batch 06 G3: owns both workspace provisioning modes (git worktree when the source root is a repo,
+        // else a bounded copy) and the symmetric teardown each needs. SINGLETON, like the launcher that
+        // consumes it: a scoped registration would give two dispatches of one run different metadata readers
+        // for the same workspace.
+        services.AddSingleton<IRunWorkspaceService, RunWorkspaceService>();
         services.AddSingleton<HeadlessRunLauncher>();
         services.AddSingleton<IHeadlessRunLauncher>(sp => sp.GetRequiredService<HeadlessRunLauncher>());
         services.AddSingleton<IAgentRunResumeService>(sp => sp.GetRequiredService<HeadlessRunLauncher>());
