@@ -44,10 +44,14 @@ is how an intermittent turns into an excuse: run 1 was **2697 total / 1 failed /
 single failure being `AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes`
 — the known-probabilistic one below, which then passed **13/13 isolated, three times running** — and run 2 was
 **2697 total / 0 failed / 2696 passed / 1 skipped**. Against the 2424 this file records at `df0841a` (read from
-here, **not** re-measured), Phase 3 added **273 cases**. The tail closes across measured stops rather than being
-inferred: 2670 at `3e12bcf`, 2671 at `1d6cc15`, 2679 at `3b66603`/`3278467`, 2697 at the fix pass. **Phase 3 is
+here, **not** re-measured), Phase 3 added **273 cases**. The tail closes across four intermediate stops — 2670 at
+`3e12bcf`, 2671 at `1d6cc15`, 2679 at `3b66603`/`3278467`, 2697 at the fix pass — but **read that chain for its
+arithmetic, not as a measurement**: all four were read off the commits that claim them. Only the 2697, the two
+0/0 rebuilds and the `CoreCompile` counts were measured on this tree by the pass that wrote this line. Saying so is
+not pedantry here; it is the one discipline this file has had to repair the most often. **Phase 3 is
 complete in the only sense the code can be: every group is in the tree and gated. What it has NOT had is the manual
-Windows smoke round — which is still Rank 1, which Phase 3 lengthened by nine items and shortened by none, and
+Windows smoke round — which is still Rank 1, which Phase 3 lengthened by **eleven** items (the nine its own plan
+enumerated, plus two the fix pass added that the plan could not have anticipated) and shortened by none, and
 which no green suite substitutes for.** Batch 06's review filed 14 findings whose adjudication is tracked in
 [`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md); read that file for the status rather
 than a number from here, because its own tally needed a correction (8 distinct defects confirmed, 7 fixed, 1 fixed
@@ -159,8 +163,9 @@ limit. The exact total is **not** recoverable from git and is not asserted here.
 0 errors under `-t:Rebuild` in Debug *and* Release with 4 genuine `CoreCompile` invocations each, and `failed: 0` on
 the suite (2697 / 0 / 1 skipped, measured twice on the finished tree — see the snapshot addendum for the run that
 cost the known intermittent). It does **not** mean smoked. **The manual Windows smoke round in the rank table below
-is what Phase 3 has not had**, it is still Rank 1, and Phase 3 lengthened it by nine items while shortening nothing
-— including the three that only a real git repository can exercise. A green unit suite is not a smoke test; that
+is what Phase 3 has not had**, it is still Rank 1, and Phase 3 lengthened it by **eleven** items while shortening
+nothing — nine from its own plan's §8 and two the fix pass added, including the three that only a real git
+repository can exercise. A green unit suite is not a smoke test; that
 sentence has been true on this branch since Batch 12 and Phase 3 does not retire it.
 
 **Batch 06's review filed 14 findings, and their adjudication is tracked in
@@ -526,7 +531,7 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by NINE items and shortened nothing** — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by ELEVEN items and shortened nothing** — nine from its own plan's §8 and two more its fix pass added — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
 | 2 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
 | 3 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
@@ -1322,7 +1327,9 @@ a decision about what happens when that goes wrong. Four sources feed it — wha
 round, which planned risks were **accepted** instead of closed, what the fix pass **declined** and why, and what a
 builder deliberately did not do.
 
-**What Phase 3 adds to the Rank-1 manual Windows smoke round — nine items, and none of them automatable.** The list
+**What Phase 3 adds to the Rank-1 manual Windows smoke round — eleven items, and none of them automatable: the nine
+below, then the two after them.** The nine are `phase3-workflow-plan.md` §8; the extra two are the fix pass's, and
+they are listed separately rather than folded in because §8 was an authored list and they were a discovery. The list
 is `phase3-workflow-plan.md` §8; every item on it is now real, because all ten groups are in.
 
 1. **A real headless run writing into an isolated workspace and promoting on success.** The whole point of 06 and
