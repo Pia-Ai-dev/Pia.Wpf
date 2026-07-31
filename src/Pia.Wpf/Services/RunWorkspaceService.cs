@@ -51,6 +51,14 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     /// passes <c>git check-ref-format</c> and cannot collide with a user branch.</summary>
     private const string RunBranchPrefix = "pia/run/";
 
+    /// <summary>
+    /// How long a TORN-DOWN worktree stub is kept so <see cref="DescribeAsync"/> can still name the run
+    /// branch. Deliberately the same seven days <c>HeadlessRunLauncher</c> gives a settled run's workspace —
+    /// the window in which the panel is realistically re-opened. The BRANCH itself is never deleted, so what
+    /// ages out here is the app's ability to name it, not the deliverable.
+    /// </summary>
+    private static readonly TimeSpan TornDownStubMaxAge = TimeSpan.FromDays(7);
+
     private static readonly JsonSerializerOptions MetadataJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -210,13 +218,12 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
 
             if (meta.ParsedMode == RunWorkspaceMode.Worktree)
             {
-                // B10 / plan D5b: THE BRANCH IS THE DELIVERABLE. No file is copied and there is deliberately
-                // no merge, so no unattended path ever has to handle a conflict. The panel says where the
-                // output is (B15's Run_Output_Branch line) — without that line the honest user question is
-                // "where is my file?".
-                _logger.LogInformation(
-                    "Run {RunId} promoted no files: its output is on its run branch (worktree mode)", runId);
-                return new RunPromotionResult(RunWorkspaceMode.Worktree, Promoted: 0, Skipped: 0, Conflicts: 0, meta.Branch);
+                // B10 / plan D5b: THE BRANCH IS THE DELIVERABLE. Nothing is copied anywhere and there is
+                // deliberately no merge, so no unattended path ever has to handle a conflict — but the branch
+                // only IS the deliverable once something has been committed onto it, which is what
+                // CommitToRunBranchAsync does. The panel says where the output is (B15's Run_Output_Branch
+                // line) — without that line the honest user question is "where is my file?".
+                return await CommitToRunBranchAsync(runId, runRoot, meta.Branch, ct).ConfigureAwait(false);
             }
 
             if (meta.ParsedMode != RunWorkspaceMode.Copy)
@@ -248,6 +255,103 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             return null;
         }
     }
+
+    /// <summary>
+    /// Worktree mode's promotion: commit the run's work onto its run branch, app-side.
+    /// <para>
+    /// This exists because "the branch is the deliverable" (plan D5b) was not true of a branch nobody ever
+    /// committed to. <b>Nothing else in the build can commit it.</b> An unattended run's grant set is
+    /// <c>{write_file}</c> and <c>RunAutonomyPolicy</c>'s presets exclude <c>ToolClass.Git</c> entirely, so the
+    /// model's own <c>git_commit</c> is refused as not-granted; and the caller tears this worktree down with
+    /// <c>git worktree remove --force</c> the moment a non-null result comes back. Before this, a clean
+    /// worktree run therefore deleted its own output and left the branch byte-identical to the base commit.
+    /// It stays app-side deliberately (plan R18): committing here adds no new agent capability.
+    /// </para>
+    /// <para>
+    /// Every arm that leaves work outside the commit sets <see cref="RunPromotionResult.RetainWorkspace"/>, so
+    /// the caller keeps the directory instead of deleting it: git could not be asked, the commit failed, or
+    /// <c>add -A</c> declined to take something (the user's own <c>.gitignore</c> applies inside their
+    /// worktree, and <c>status --porcelain</c> alone would not have shown it).
+    /// </para>
+    /// </summary>
+    private async Task<RunPromotionResult?> CommitToRunBranchAsync(
+        Guid runId, string runRoot, string? branch, CancellationToken ct)
+    {
+        // --untracked-files=all so the count is FILES, not collapsed directories: it is the number this
+        // promotion reports, and the panel's "N file(s)" line is read by a human.
+        var pending = await RunGitAsync(
+            runRoot, ["status", "--porcelain", "--untracked-files=all"], GitCommandKind.ReadOnly, ct)
+            .ConfigureAwait(false);
+        if (!pending.Succeeded)
+        {
+            _logger.LogWarning(
+                "Run {RunId} run-branch commit skipped: git status failed ({Exit}); its workspace is retained",
+                runId, pending.ExitCode);
+            return new RunPromotionResult(
+                RunWorkspaceMode.Worktree, Promoted: 0, Skipped: 0, Conflicts: 0, branch, RetainWorkspace: true);
+        }
+
+        var changed = CountPorcelainEntries(pending.StandardOutput);
+        if (changed > 0)
+        {
+            var add = await RunGitAsync(runRoot, ["add", "-A"], GitCommandKind.Mutating, ct).ConfigureAwait(false);
+            var commit = add.Succeeded
+                ? await RunGitAsync(runRoot, CommitArgsFor(runId), GitCommandKind.Mutating, ct).ConfigureAwait(false)
+                : add;
+            if (!commit.Succeeded)
+            {
+                // stderr can name paths, so it goes through the highest DEBUG-erased severity (plan R7);
+                // the release-visible line carries the exit code and counts only.
+                _logger.SensitiveWarning(
+                    "Run {RunId} run-branch commit failed: {Err}", runId, commit.StandardError);
+                _logger.LogWarning(
+                    "Run {RunId} run-branch commit failed ({Exit}); its workspace is retained with {Count} change(s)",
+                    runId, commit.ExitCode, changed);
+                return new RunPromotionResult(
+                    RunWorkspaceMode.Worktree, Promoted: 0, Skipped: changed, Conflicts: 0, branch, RetainWorkspace: true);
+            }
+        }
+
+        // Whatever is STILL there after the commit is work the branch does not carry — an ignored build
+        // artefact the run produced, most often. Removing the directory would destroy it, so keep it and let
+        // the terminal retention rule age it out.
+        var leftover = await RunGitAsync(
+            runRoot, ["status", "--porcelain", "--untracked-files=all", "--ignored"], GitCommandKind.ReadOnly, ct)
+            .ConfigureAwait(false);
+        var retain = !leftover.Succeeded || CountPorcelainEntries(leftover.StandardOutput) > 0;
+
+        _logger.LogInformation(
+            "Run {RunId} committed {Count} change(s) to its run branch (worktree mode); workspace retained: {Retained}",
+            runId, changed, retain);
+        return new RunPromotionResult(
+            RunWorkspaceMode.Worktree, Promoted: changed, Skipped: 0, Conflicts: 0, branch, RetainWorkspace: retain);
+    }
+
+    /// <summary>
+    /// The commit invocation. Three deliberate <c>-c</c> overrides, each because this runs UNATTENDED:
+    /// <list type="bullet">
+    /// <item><c>user.name</c>/<c>user.email</c> — git refuses to commit without an identity and the runner's
+    /// environment cannot prompt for one, so the app supplies its own rather than depending on whether the
+    /// user configured git. Attributing an agent-authored commit to the app is also the honest record.</item>
+    /// <item><c>commit.gpgsign=false</c> — a user with signing on globally would otherwise hit a passphrase
+    /// prompt that cannot be answered here, and the commit would fail with the deliverable still in the
+    /// worktree.</item>
+    /// </list>
+    /// <c>--no-verify</c> matches <c>GitToolHandler</c>'s locked decision: repo commit hooks are out-of-band
+    /// code execution.
+    /// </summary>
+    private static string[] CommitArgsFor(Guid runId) =>
+    [
+        "-c", "user.name=Pia",
+        "-c", "user.email=pia@pia.invalid",
+        "-c", "commit.gpgsign=false",
+        "commit", "--no-verify", "-m", "pia run " + runId,
+    ];
+
+    /// <summary>Non-empty lines of a <c>--porcelain</c> status, i.e. changed entries. Never a path: the count
+    /// is all that leaves this method.</summary>
+    private static int CountPorcelainEntries(string porcelain) =>
+        porcelain.Split('\n').Count(l => !string.IsNullOrWhiteSpace(l));
 
     /// <summary>
     /// Copy mode's promote set (B7), decided by mtime against <paramref name="provisionedAtUtc"/>:
@@ -344,7 +448,12 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         _logger.LogInformation(
             "Run {RunId} promoted {PromotedCount} file(s), skipped {SkippedCount}, {ConflictCount} conflict(s)",
             runId, promoted, skipped, conflicts);
-        return new RunPromotionResult(RunWorkspaceMode.Copy, promoted, skipped, conflicts, BranchName: null);
+        // A CONFLICT means the run's version of that file was deliberately not written and exists ONLY here.
+        // Telling the caller to keep the workspace is the difference between "we kept your edit" and "we
+        // silently threw the run's work away": the retained workspace is what the publish affordance can
+        // still offer, and re-running the promotion from there reports the same conflict count to the user.
+        return new RunPromotionResult(
+            RunWorkspaceMode.Copy, promoted, skipped, conflicts, BranchName: null, RetainWorkspace: conflicts > 0);
     }
 
     /// <summary>Size first, then SHA256 — the same identity test <c>SafeDirectoryMove</c> uses.</summary>
@@ -385,6 +494,17 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 if (meta is null || meta.ParsedMode == RunWorkspaceMode.None)
                     return (RunWorkspaceOutcome?)null;
 
+                // A TORN-DOWN WORKTREE answers from the document alone, and it has to: the panel reads this
+                // only for a TERMINAL run (RunProgressViewModel), and on the clean path promotion has already
+                // torn the directory down before the run is marked Completed (B8). Requiring the directory
+                // here meant D5b's "your output is on branch X" line could render for a FAILED worktree run
+                // and never for a successful one — the exact inverse of what it exists for. Nothing is
+                // publishable as files: the branch carries the work.
+                if (meta.TornDownAtUtc is not null)
+                    return meta.ParsedMode == RunWorkspaceMode.Worktree
+                        ? new RunWorkspaceOutcome(RunWorkspaceMode.Worktree, meta.Branch, HasUnpublishedFiles: false)
+                        : null;
+
                 var root = RootFor(runId);
                 if (!Directory.Exists(root))
                     return null;
@@ -418,6 +538,21 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             runId, root, meta?.ParsedMode ?? RunWorkspaceMode.None, meta?.MainWorktree, ct).ConfigureAwait(false);
 
         // Last, so a crash between the two leaves a metadata document the orphan sweep can still act on.
+        //
+        // A WORKTREE's document is not deleted but STAMPED as torn down and left behind. Two reasons, both
+        // load-bearing: D5b's branch line is the only place a successful worktree run's output is named, and
+        // the panel asks for it AFTER the terminal settle — i.e. after this method has run; and the stub keeps
+        // MainWorktree, so a `worktree remove` that failed above can still be pruned by the metadata sweep.
+        // It is a record, not an orphan, so the sweep ages it out instead of removing it on sight.
+        if (meta?.ParsedMode == RunWorkspaceMode.Worktree)
+        {
+            meta.TornDownAtUtc = DateTime.UtcNow;
+            if (TryWriteMetadata(runId, meta))
+                return;
+            // The stub could not be written: fall through and delete, so the sweep is not left reasoning
+            // about a document that still claims a live workspace.
+        }
+
         TryDeleteFile(MetadataPathFor(runId));
     }
 
@@ -451,6 +586,13 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 continue;
 
             var meta = ReadMetadata(runId);
+
+            // A torn-down worktree stub is a RECORD, not an orphan: its directory is gone by design and its
+            // registration was already removed or pruned at teardown. Keep it while the panel may still read
+            // D5b's branch line off it, on the same window a settled run's workspace gets.
+            if (meta?.TornDownAtUtc is { } tornDownAt && DateTime.UtcNow - tornDownAt < TornDownStubMaxAge)
+                continue;
+
             if (meta?.ParsedMode == RunWorkspaceMode.Worktree && !string.IsNullOrEmpty(meta.MainWorktree))
                 await PruneWorktreesAsync(meta.MainWorktree!, ct).ConfigureAwait(false);
 
@@ -733,6 +875,15 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         /// only: surfacing "this run ran unisolated / in copy mode" to the user needs a panel line and a
         /// sixth loc key, which §13.1 books as its own work.</summary>
         public bool Degraded { get; set; }
+
+        /// <summary>
+        /// Set when the workspace DIRECTORY is gone and this document is only a record of where the output
+        /// went — written by <see cref="TearDownAsync"/> for worktree mode so D5b's branch line survives the
+        /// teardown that precedes the terminal settle. An ADDITIVE member of <c>v:1</c>: a build that does not
+        /// know it reads the document as a live workspace whose directory has vanished, which every consumer
+        /// already handles restrictively.
+        /// </summary>
+        public DateTime? TornDownAtUtc { get; set; }
 
         /// <summary>The parsed <see cref="Mode"/>, or <see cref="RunWorkspaceMode.None"/> for a name this
         /// build does not know.</summary>

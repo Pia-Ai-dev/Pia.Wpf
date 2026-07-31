@@ -1052,10 +1052,24 @@ public sealed class AgentRunOrchestrator
             }
 
             // Counts, ids and enum values only — a path never reaches Information (there is no
-            // SensitiveError, so the service logs any path through SensitiveWarning instead).
+            // SensitiveError, so the service logs any path through SensitiveWarning instead). In worktree mode
+            // "promoted" is the number of changes COMMITTED to the run branch, not files copied anywhere.
             _logger.LogInformation(
                 "Run {RunId} promoted in {Mode} mode: {PromotedCount} file(s), {SkippedCount} skipped, {ConflictCount} conflict(s)",
                 run.Id, result.Mode, result.Promoted, result.Skipped, result.Conflicts);
+
+            if (result.RetainWorkspace)
+            {
+                // The workspace still holds work this promotion did not move — a copy-mode conflict whose
+                // resolution kept the USER's newer file, or a worktree the run-branch commit could not fully
+                // take. Tearing it down here would delete the only remaining copy, silently and irreversibly,
+                // on a run that reports success. Retained instead: the publish affordance can still offer it
+                // and the launcher's terminal retention rule ages it out.
+                _logger.LogInformation(
+                    "Run {RunId} workspace retained after promotion: it still holds work the promotion did not move", run.Id);
+                return;
+            }
+
             await _workspaces.TearDownAsync(run.Id, ct).ConfigureAwait(false);
         }
         catch (Exception ex)

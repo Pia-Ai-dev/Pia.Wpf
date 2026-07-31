@@ -1100,6 +1100,45 @@ public sealed class AgentRunOrchestratorTests
     }
 
     /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 fix pass, Batch 06 Lens A finding 5 / Lens B finding 3). A promotion that
+    /// could not move everything reports <c>RetainWorkspace</c>, and the terminal path must OBEY it: the
+    /// workspace holds the only copy of what was left behind — a copy-mode conflict whose resolution kept the
+    /// user's newer file, or a worktree the run-branch commit could not fully take. Tearing it down there is
+    /// silent, irreversible loss on a run that reports success.
+    /// <para>
+    /// The non-vacuity control is <see cref="CleanRun_Promotes_AfterVerify_AndBeforeCompleteAsync"/> above: the
+    /// identical arm with <c>RetainWorkspace</c> unset DOES tear down, so this is about the flag and not about
+    /// a teardown that never happens. Neutralization: drop the <c>RetainWorkspace</c> early return from
+    /// <c>SafePromote</c> → red.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ACleanRunWhosePromotionLeftWorkBehind_KeepsItsWorkspace()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var order = new List<string>();
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var runs = new FaultyRunService(h.Runs) { Order = order };
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase)
+        {
+            Order = order,
+            PromoteResult = new RunPromotionResult(
+                RunWorkspaceMode.Copy, Promoted: 0, Skipped: 0, Conflicts: 1, BranchName: null, RetainWorkspace: true),
+        };
+        var exec = new RecordingExecutor(_ => Ok()) { WorkspaceRoot = h.RunsBase };
+
+        await h.BuildOrchestrator(planner, verifier: null, workspaces, runs)
+            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "promote", "complete" }, order); // promoted, completed — and NOT torn down
+        Assert.Empty(workspaces.TornDown);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State); // non-vacuity: this is the CLEAN terminal path
+    }
+
+    /// <summary>
     /// T-G4-10, <b>REGRESSION</b>. Plan D3's "Completed auto, ELSE OFFER": a cancelled or failed run is never
     /// promoted automatically and its workspace is never torn down, so the panel still has something to offer.
     /// </summary>

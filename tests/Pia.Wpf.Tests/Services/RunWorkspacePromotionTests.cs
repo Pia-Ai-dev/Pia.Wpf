@@ -177,6 +177,14 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.Equal(1, result!.Conflicts);
         Assert.Equal(0, result.Promoted);
         Assert.Equal("the user's newer edit", File.ReadAllText(Path.Combine(_dest, "notes.md")));
+
+        // <b>REGRESSION</b> (Phase 3 fix pass, Batch 06 Lens A finding 5 / Lens B finding 3). Keeping the
+        // user's edit is only half the decision: the RUN's version of notes.md was deliberately not written and
+        // now exists ONLY in the workspace, which the caller tears down the moment a non-null result comes
+        // back. Telling the caller to keep it is the difference between "we kept your edit" and "we silently
+        // threw the run's work away". Neutralization: RetainWorkspace: false → red.
+        Assert.True(result.RetainWorkspace);
+        Assert.Equal("the run's version", File.ReadAllText(Path.Combine(RunRoot(runId), "notes.md")));
     }
 
     /// <summary>

@@ -157,9 +157,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _hasTimelineReadError;
 
     /// <summary>
-    /// Batch 06 G4 / plan D3: a settled run whose isolated workspace still holds files nobody promoted — i.e.
-    /// a FAILED or CANCELLED run, because a clean one promotes automatically before it is marked Completed.
-    /// Drives the offer line and the Publish button.
+    /// Batch 06 G4 / plan D3: a settled run whose isolated workspace still holds files nobody promoted —
+    /// usually a FAILED or CANCELLED run, because a clean one promotes automatically before it is marked
+    /// Completed. <b>Not only those</b>: a clean copy-mode run whose promotion hit a CONFLICT keeps its
+    /// workspace too (the run's version of that file was deliberately not written and exists nowhere else), so
+    /// a Completed run can legitimately raise this offer. Drives the offer line and the Publish button.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPublish))]

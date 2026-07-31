@@ -370,7 +370,13 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.Equal(new[] { "worktree", "remove", "--force", ws!.Root }, remove.Arguments);
         Assert.Equal(SafeFolderPath.Canonicalize(_source), remove.WorkingDirectory);
         Assert.DoesNotContain(_runner.Calls, c => c.Arguments.Count > 0 && c.Arguments[0] == "branch");
-        Assert.False(File.Exists(MetadataPath(runId)));
+
+        // The document is not deleted in worktree mode but STAMPED as torn down: D5b's branch line is read
+        // after the terminal settle, i.e. after this teardown, and the stub is the only thing that still knows
+        // the branch name. It no longer claims a live workspace, which is what every other consumer keys on.
+        Assert.True(File.Exists(MetadataPath(runId)));
+        Assert.True(ReadMetadata(runId).TryGetProperty("tornDownAtUtc", out var stamp));
+        Assert.NotEqual(JsonValueKind.Null, stamp.ValueKind);
     }
 
     /// <summary>
@@ -399,7 +405,10 @@ public sealed class RunWorkspaceServiceTests : IDisposable
 
         Assert.False(Directory.Exists(ws.Root));
         Assert.Contains(_runner.Calls, c => IsWorktree(c, "prune"));
-        Assert.False(File.Exists(MetadataPath(runId)));
+        // Stamped, not deleted (see T-G3-8) — and keeping mainWorktree in the stub is what lets the metadata
+        // sweep prune again later if this prune did not take.
+        Assert.True(File.Exists(MetadataPath(runId)));
+        Assert.NotEqual(JsonValueKind.Null, ReadMetadata(runId).GetProperty("tornDownAtUtc").ValueKind);
     }
 
     /// <summary>

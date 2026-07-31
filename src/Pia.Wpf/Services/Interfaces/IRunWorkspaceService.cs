@@ -23,8 +23,18 @@ public enum RunWorkspaceMode
 /// was provisioned FROM and, in copy mode, the destination a promotion writes back to (B9).</summary>
 public sealed record RunWorkspace(Guid RunId, string Root, RunWorkspaceMode Mode, string SourceRoot, string? BranchName);
 
-/// <summary>Outcome of a promotion. Counts only — never a path (privacy-first logging, plan R7).</summary>
-public sealed record RunPromotionResult(RunWorkspaceMode Mode, int Promoted, int Skipped, int Conflicts, string? BranchName);
+/// <summary>
+/// Outcome of a promotion. Counts only — never a path (privacy-first logging, plan R7).
+/// <para>
+/// <paramref name="RetainWorkspace"/> is the one member the CALLER must obey: it means the workspace still
+/// holds work this promotion did not move, so tearing it down would destroy the only copy. Set for a copy-mode
+/// conflict (B7 keeps the user's newer file and skips the run's version) and for a worktree the run-branch
+/// commit could not fully take. Trailing and defaulted so every existing construction keeps meaning
+/// "everything moved; the workspace is finished with".
+/// </para>
+/// </summary>
+public sealed record RunPromotionResult(
+    RunWorkspaceMode Mode, int Promoted, int Skipped, int Conflicts, string? BranchName, bool RetainWorkspace = false);
 
 /// <summary>What the panel needs to tell the user where a settled run's output is (plan D5b / Batch 06 B15).</summary>
 public sealed record RunWorkspaceOutcome(RunWorkspaceMode Mode, string? BranchName, bool HasUnpublishedFiles);
@@ -68,19 +78,24 @@ public interface IRunWorkspaceService
 
     /// <summary>
     /// Promote what the run wrote out of its workspace: in copy mode back to the source root it was
-    /// provisioned from, in worktree mode nothing at all because the branch IS the deliverable (plan D5b).
-    /// <c>null</c> means nothing was promoted and the workspace is intact.
+    /// provisioned from, in worktree mode by COMMITTING it onto the run branch, because the branch IS the
+    /// deliverable (plan D5b) and an unattended run cannot commit for itself. <c>null</c> means nothing was
+    /// promoted and the workspace is intact; a non-null result whose
+    /// <see cref="RunPromotionResult.RetainWorkspace"/> is set means the workspace must be kept anyway.
     /// </summary>
     Task<RunPromotionResult?> PromoteAsync(Guid runId, CancellationToken ct);
 
     /// <summary>The mode, branch and "are there still files in there" flag for a settled run's workspace,
-    /// or <c>null</c> when the run has none (it never had one, or it was already promoted and torn down).</summary>
+    /// or <c>null</c> when the run has none (it never had one, or its copy-mode workspace was already promoted
+    /// and torn down). A torn-down WORKTREE still describes: its branch is the deliverable and the panel has
+    /// to be able to name it after the terminal settle (D5b), so teardown leaves a metadata stub behind.</summary>
     Task<RunWorkspaceOutcome?> DescribeAsync(Guid runId, CancellationToken ct);
 
     /// <summary>
     /// Remove the workspace the way its mode requires — <c>git worktree remove</c> (falling back to
     /// <c>rmdir</c> + <c>git worktree prune</c>) for a worktree, a recursive delete for a copy — and drop
-    /// the metadata document last. NEVER deletes the run branch: it is the deliverable.
+    /// the metadata document last. NEVER deletes the run branch: it is the deliverable, which is also why a
+    /// worktree's document is REPLACED BY A STUB rather than deleted (see <see cref="DescribeAsync"/>).
     /// </summary>
     Task TearDownAsync(Guid runId, CancellationToken ct);
 
@@ -88,7 +103,8 @@ public interface IRunWorkspaceService
     /// Delete metadata documents whose workspace directory is already gone, pruning the stale worktree
     /// registration first. The startup sweep enumerates DIRECTORIES only, so without this pass the
     /// documents — and, in worktree mode, the <c>.git/worktrees/&lt;id&gt;</c> entry they know how to prune —
-    /// would accumulate in the user's repository forever (plan R5).
+    /// would accumulate in the user's repository forever (plan R5). A torn-down worktree STUB is not an
+    /// orphan while the panel may still read it, so it is aged out rather than removed on sight.
     /// </summary>
     Task SweepOrphanMetadataAsync(CancellationToken ct);
 }

@@ -46,7 +46,9 @@ internal sealed class FakeRunWorkspaceService : IRunWorkspaceService
     public RunWorkspaceOutcome? Outcome { get; set; }
 
     /// <summary>When set, <see cref="DescribeAsync"/> returns null — "this run has no workspace", which is what
-    /// a cleanly promoted run looks like (it was torn down at promotion).</summary>
+    /// a cleanly promoted COPY-mode run looks like (it was torn down at promotion). A cleanly promoted
+    /// WORKTREE run still describes: teardown leaves a stub behind so D5b's branch line can render, which
+    /// <c>RunWorkspaceServiceWorktreeOutcomeTests</c> drives against the real service.</summary>
     public bool DescribeReturnsNothing { get; set; }
 
     /// <summary>How many times the outcome was described. The panel must ask only about a SETTLED run, so a
