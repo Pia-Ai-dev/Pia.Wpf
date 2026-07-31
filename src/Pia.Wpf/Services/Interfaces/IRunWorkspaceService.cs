@@ -36,8 +36,24 @@ public sealed record RunWorkspace(Guid RunId, string Root, RunWorkspaceMode Mode
 public sealed record RunPromotionResult(
     RunWorkspaceMode Mode, int Promoted, int Skipped, int Conflicts, string? BranchName, bool RetainWorkspace = false);
 
-/// <summary>What the panel needs to tell the user where a settled run's output is (plan D5b / Batch 06 B15).</summary>
-public sealed record RunWorkspaceOutcome(RunWorkspaceMode Mode, string? BranchName, bool HasUnpublishedFiles);
+/// <summary>
+/// What the panel needs to tell the user where a settled run's output is (plan D5b / Batch 06 B15).
+/// <para>
+/// <paramref name="BranchName"/> is null in worktree mode until the run branch actually RECEIVED the run's
+/// work: naming a branch that got nothing is the same "where is my file?" failure D5b exists to prevent,
+/// pointed the other way, and it was reachable on two arms (a run-branch commit that failed, and a
+/// failed/cancelled run that never promoted at all). Withholding the name is paired with
+/// <paramref name="HasUnpublishedFiles"/> on those arms, so the panel offers the recovery instead of a claim.
+/// </para>
+/// <para>
+/// <paramref name="Conflicts"/> is how many files the last promotion deliberately left alone because the user
+/// changed them while the run was working (B7). Trailing and defaulted: it carries the count from an AUTOMATIC
+/// promotion to the panel, which had no channel for it and could only render the number once the user clicked
+/// Publish and it was re-counted (Lens A 5 / Lens B 3's remaining half).
+/// </para>
+/// </summary>
+public sealed record RunWorkspaceOutcome(
+    RunWorkspaceMode Mode, string? BranchName, bool HasUnpublishedFiles, int Conflicts = 0);
 
 /// <summary>
 /// Owns the lifecycle of a run's isolated workspace: provisioning it in one of two modes — a git worktree
@@ -85,10 +101,13 @@ public interface IRunWorkspaceService
     /// </summary>
     Task<RunPromotionResult?> PromoteAsync(Guid runId, CancellationToken ct);
 
-    /// <summary>The mode, branch and "are there still files in there" flag for a settled run's workspace,
-    /// or <c>null</c> when the run has none (it never had one, or its copy-mode workspace was already promoted
-    /// and torn down). A torn-down WORKTREE still describes: its branch is the deliverable and the panel has
-    /// to be able to name it after the terminal settle (D5b), so teardown leaves a metadata stub behind.</summary>
+    /// <summary>The mode, branch, "are there still files in there" flag and last conflict count for a settled
+    /// run's workspace, or <c>null</c> when the run has none (it never had one, or its copy-mode workspace was
+    /// already promoted and torn down). A torn-down WORKTREE still describes: its branch is the deliverable and
+    /// the panel has to be able to name it after the terminal settle (D5b), so teardown leaves a metadata stub
+    /// behind. Every answer comes from the metadata document and the disk — <b>no git process is spawned
+    /// here</b>, which is why "did the branch receive the commit?" is a RECORDED fact rather than a question
+    /// asked at describe time: this runs off the dispatcher on every terminal <c>RunChanged</c>.</summary>
     Task<RunWorkspaceOutcome?> DescribeAsync(Guid runId, CancellationToken ct);
 
     /// <summary>
@@ -96,6 +115,11 @@ public interface IRunWorkspaceService
     /// <c>rmdir</c> + <c>git worktree prune</c>) for a worktree, a recursive delete for a copy — and drop
     /// the metadata document last. NEVER deletes the run branch: it is the deliverable, which is also why a
     /// worktree's document is REPLACED BY A STUB rather than deleted (see <see cref="DescribeAsync"/>).
+    /// <para>
+    /// A worktree whose directory SURVIVED the removal (something still holds a handle) keeps its document
+    /// un-stamped instead: that document is the only record of which repository holds the worktree registration,
+    /// and a later sweep re-enters this method through it to retry. Idempotent, therefore, and safe to call again.
+    /// </para>
     /// </summary>
     Task TearDownAsync(Guid runId, CancellationToken ct);
 

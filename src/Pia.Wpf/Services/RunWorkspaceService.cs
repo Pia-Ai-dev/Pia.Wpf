@@ -169,7 +169,10 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             };
             if (!TryWriteMetadata(runId, meta))
             {
-                await TearDownWithoutMetadataAsync(runId, runRoot, mode, mainWorktree, ct).ConfigureAwait(false);
+                // The rollback discards the "is it gone?" answer on purpose: there is no document to keep or
+                // delete on this path — failing to write one is why we are here — and provisioning returns null
+                // either way, so the run proceeds unisolated (B16) and the orphan sweep collects the remains.
+                _ = await TearDownWithoutMetadataAsync(runId, runRoot, mode, mainWorktree, ct).ConfigureAwait(false);
                 return null;
             }
 
@@ -223,7 +226,7 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 // only IS the deliverable once something has been committed onto it, which is what
                 // CommitToRunBranchAsync does. The panel says where the output is (B15's Run_Output_Branch
                 // line) — without that line the honest user question is "where is my file?".
-                return await CommitToRunBranchAsync(runId, runRoot, meta.Branch, ct).ConfigureAwait(false);
+                return await CommitToRunBranchAsync(runId, runRoot, meta, ct).ConfigureAwait(false);
             }
 
             if (meta.ParsedMode != RunWorkspaceMode.Copy)
@@ -244,8 +247,23 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 return null;
             }
 
-            return await Task.Run(() => CopyOut(runId, runRoot, destination, meta.ProvisionedAtUtc, ct), ct)
+            var copied = await Task.Run(() => CopyOut(runId, runRoot, destination, meta.ProvisionedAtUtc, ct), ct)
                 .ConfigureAwait(false);
+
+            // Lens A 5 / Lens B 3's remaining half: the count is RECORDED, so the panel can render it after an
+            // AUTOMATIC promotion instead of only after the user clicks Publish and it is re-counted. Written
+            // only when there is something to say — this is also the arm that retains the workspace (B7 kept the
+            // user's newer file and the run's version exists nowhere else), so the document survives to be read.
+            if (copied is { Conflicts: > 0 })
+            {
+                meta.PromotionConflicts = copied.Conflicts;
+                if (!TryWriteMetadata(runId, meta))
+                    _logger.LogWarning(
+                        "Run {RunId} promoted with {ConflictCount} conflict(s) that could not be recorded for the panel",
+                        runId, copied.Conflicts);
+            }
+
+            return copied;
         }
         catch (Exception ex)
         {
@@ -273,10 +291,19 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     /// <c>add -A</c> declined to take something (the user's own <c>.gitignore</c> applies inside their
     /// worktree, and <c>status --porcelain</c> alone would not have shown it).
     /// </para>
+    /// <para>
+    /// The two arms where the branch really DOES carry the run's work stamp
+    /// <c>BranchCommittedAtUtc</c> on the metadata document before returning. That stamp is the only reason
+    /// <see cref="DescribeAsync"/> can withhold D5b's branch line from a branch that received nothing without
+    /// spawning a git process to find out — and it is what makes the publish offer on that arm a RETRY of this
+    /// method rather than a dead end.
+    /// </para>
     /// </summary>
     private async Task<RunPromotionResult?> CommitToRunBranchAsync(
-        Guid runId, string runRoot, string? branch, CancellationToken ct)
+        Guid runId, string runRoot, WorkspaceMetadataDto meta, CancellationToken ct)
     {
+        var branch = meta.Branch;
+
         // --untracked-files=all so the count is FILES, not collapsed directories: it is the number this
         // promotion reports, and the panel's "N file(s)" line is read by a human.
         var pending = await RunGitAsync(
@@ -311,6 +338,11 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                     RunWorkspaceMode.Worktree, Promoted: 0, Skipped: changed, Conflicts: 0, branch, RetainWorkspace: true);
             }
         }
+
+        // The branch now carries the run's work — either the commit took it, or the status probe found nothing
+        // to commit, and a branch trivially carries a run that produced nothing. Recorded BEFORE the leftover
+        // probe: a leftover only means the workspace is retained too, not that the commit did not land.
+        StampBranchCommitted(runId, meta);
 
         // Whatever is STILL there after the commit is work the branch does not carry — an ignored build
         // artefact the run produced, most often. Removing the directory would destroy it, so keep it and let
@@ -347,6 +379,20 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         "-c", "commit.gpgsign=false",
         "commit", "--no-verify", "-m", "pia run " + runId,
     ];
+
+    /// <summary>
+    /// Records that the run branch received the run's work. A write failure is logged and swallowed like every
+    /// other piece of bookkeeping here (guardrail 1) — the cost is that the panel withholds the branch line and
+    /// offers a publish instead, which retries this whole path: the restrictive direction, and self-correcting.
+    /// </summary>
+    private void StampBranchCommitted(Guid runId, WorkspaceMetadataDto meta)
+    {
+        meta.BranchCommittedAtUtc = DateTime.UtcNow;
+        if (!TryWriteMetadata(runId, meta))
+            _logger.LogWarning(
+                "Run {RunId} committed to its run branch, but the record of it could not be written; the panel will offer a retry instead of naming the branch",
+                runId);
+    }
 
     /// <summary>Non-empty lines of a <c>--porcelain</c> status, i.e. changed entries. Never a path: the count
     /// is all that leaves this method.</summary>
@@ -494,30 +540,49 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 if (meta is null || meta.ParsedMode == RunWorkspaceMode.None)
                     return (RunWorkspaceOutcome?)null;
 
+                // THE BRANCH IS ONLY NAMEABLE ONCE IT HAS THE WORK. Recorded at promotion, never asked of git
+                // here — the panel calls this off the dispatcher on every terminal RunChanged, and a process
+                // launch does not belong on that path. Both arms below key on it, so neither can name a branch
+                // that received nothing.
+                var committed = meta.BranchCommittedAtUtc is not null;
+
                 // A TORN-DOWN WORKTREE answers from the document alone, and it has to: the panel reads this
                 // only for a TERMINAL run (RunProgressViewModel), and on the clean path promotion has already
                 // torn the directory down before the run is marked Completed (B8). Requiring the directory
                 // here meant D5b's "your output is on branch X" line could render for a FAILED worktree run
                 // and never for a successful one — the exact inverse of what it exists for. Nothing is
-                // publishable as files: the branch carries the work.
+                // publishable as files either way: the directory is gone, so an offer here would only produce
+                // a failed promotion.
                 if (meta.TornDownAtUtc is not null)
                     return meta.ParsedMode == RunWorkspaceMode.Worktree
-                        ? new RunWorkspaceOutcome(RunWorkspaceMode.Worktree, meta.Branch, HasUnpublishedFiles: false)
+                        ? new RunWorkspaceOutcome(
+                            RunWorkspaceMode.Worktree, committed ? meta.Branch : null, HasUnpublishedFiles: false)
                         : null;
 
                 var root = RootFor(runId);
                 if (!Directory.Exists(root))
                     return null;
 
-                // Worktree mode has nothing to publish as FILES — the branch is the deliverable (plan D5b),
-                // so the panel offers the branch line and no publish button. Copy mode has something to
-                // publish when the run wrote at least one file after provisioning; that is the same
-                // "newer than provisionedAtUtc" test the promote set uses (B7), asked as a yes/no.
-                var unpublished = meta.ParsedMode == RunWorkspaceMode.Copy
-                    && meta.ProvisionedAtUtc > DateTime.MinValue
+                // WORKTREE, directory still there. Two arms reach here and both used to answer "your output is
+                // on branch X, nothing to publish": a run whose run-branch commit FAILED (promotion retained the
+                // workspace, so the document is intact and un-stamped) and a FAILED/CANCELLED run, which never
+                // promoted at all. In both, the branch is byte-identical to the base commit while the files sit
+                // in the workspace for the retention window — the panel named a branch that got nothing and
+                // offered no way back. With the commit recorded it can do the opposite: withhold the branch and
+                // OFFER the publish, which re-runs CommitToRunBranchAsync and is a real retry.
+                if (meta.ParsedMode == RunWorkspaceMode.Worktree)
+                    return new RunWorkspaceOutcome(
+                        RunWorkspaceMode.Worktree, committed ? meta.Branch : null, HasUnpublishedFiles: !committed);
+
+                // Copy mode has something to publish when the run wrote at least one file after provisioning;
+                // that is the same "newer than provisionedAtUtc" test the promote set uses (B7), asked as a
+                // yes/no. The conflict count rides along so the panel can say why a file was left alone even
+                // when the promotion that left it was automatic.
+                var unpublished = meta.ProvisionedAtUtc > DateTime.MinValue
                     && HasPromotableFileNewerThan(root, meta.SourceRoot!, meta.ProvisionedAtUtc, ct);
 
-                return new RunWorkspaceOutcome(meta.ParsedMode, meta.Branch, unpublished);
+                return new RunWorkspaceOutcome(
+                    RunWorkspaceMode.Copy, meta.Branch, unpublished, meta.PromotionConflicts ?? 0);
             }
             catch (Exception ex)
             {
@@ -534,8 +599,31 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         // Unreadable/absent/foreign-version metadata gets a plain recursive delete and NO prune: nothing
         // says where the repository is, and guessing is worse than leaving one registration behind for the
         // orphan sweep to find.
-        await TearDownWithoutMetadataAsync(
+        var gone = await TearDownWithoutMetadataAsync(
             runId, root, meta?.ParsedMode ?? RunWorkspaceMode.None, meta?.MainWorktree, ct).ConfigureAwait(false);
+
+        // THE DIRECTORY SURVIVED, in worktree mode (Lens A finding 4's other half). Something still holds a
+        // handle — a step that has not finished unwinding is the reachable cause — so the document is neither
+        // stamped nor deleted: stamping would claim the directory is gone, which is that member's whole meaning,
+        // and deleting it would leave the `.git/worktrees/<id>` registration with no record of which repository
+        // to prune it from. Keeping it means the next startup sweep re-enters THIS method through the same
+        // document and retries the remove and the prune. Counts, ids and booleans only (R30).
+        if (!gone && meta?.ParsedMode == RunWorkspaceMode.Worktree)
+        {
+            _logger.LogWarning(
+                "Run {RunId} workspace directory survived teardown in {Mode} mode; its metadata is kept so a later sweep can retry the removal",
+                runId, meta.ParsedMode);
+            return;
+        }
+
+        // Copy mode and the no-metadata shape get the unconditional delete even when the directory survived, and
+        // that asymmetry is deliberate: there is no registration to reclaim, so nothing needs the document — the
+        // launcher's own directory sweep removes the leftover on a later pass — while KEEPING it would make the
+        // panel offer to publish a workspace that was already promoted. Promotion is once per workspace (B7).
+        if (!gone)
+            _logger.LogWarning(
+                "Run {RunId} workspace directory survived teardown in {Mode} mode; the next startup sweep removes it",
+                runId, meta?.ParsedMode ?? RunWorkspaceMode.None);
 
         // Last, so a crash between the two leaves a metadata document the orphan sweep can still act on.
         //
@@ -808,7 +896,14 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     /// by <see cref="TearDownAsync"/> and by provisioning's own rollback (where no document exists yet).
     /// The run branch is never deleted: it is the deliverable (B10).
     /// </summary>
-    private async Task TearDownWithoutMetadataAsync(
+    /// <returns>
+    /// Whether the directory is actually GONE afterwards. Both removal steps swallow their faults (this is
+    /// bookkeeping and must never fail a run), so without this answer the caller could only assume they worked —
+    /// and it then deleted the metadata document, which is the only record of which repository holds the worktree
+    /// registration (Batch 06 Lens A finding 4). Answered from the filesystem rather than from git's exit code:
+    /// what the caller needs to know is whether anything is still there, not which step failed.
+    /// </returns>
+    private async Task<bool> TearDownWithoutMetadataAsync(
         Guid runId, string root, RunWorkspaceMode mode, string? mainWorktree, CancellationToken ct)
     {
         if (mode == RunWorkspaceMode.Worktree && !string.IsNullOrEmpty(mainWorktree))
@@ -831,13 +926,19 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
 
             // The fallback is the half of plan R5 that actually leaks: delete the directory ourselves, then
             // PRUNE, or the user's repository keeps a .git/worktrees/<id> registration forever.
-            await Task.Run(() => TryDeleteDirectory(root), ct).ConfigureAwait(false);
+            //
+            // THE PRUNE IS KEYED ON `removed` — git's own exit code — AND ON NOTHING ELSE. It is what carries
+            // Lens A finding 4's refutation: prune reclaims a registration from live git state once the
+            // worktree's `.git` pointer file is gone, so it must run on EVERY failed remove, including the ones
+            // where our own delete then failed too. Do not fold it into a success arm and do not key it on the
+            // returned "is the directory gone" answer below — that is a different question.
+            var gone = await Task.Run(() => TryDeleteDirectoryAndReport(root), ct).ConfigureAwait(false);
             if (!removed)
                 await PruneWorktreesAsync(mainWorktree!, ct).ConfigureAwait(false);
-            return;
+            return gone;
         }
 
-        await Task.Run(() => TryDeleteDirectory(root), ct).ConfigureAwait(false);
+        return await Task.Run(() => TryDeleteDirectoryAndReport(root), ct).ConfigureAwait(false);
     }
 
     private async Task PruneWorktreesAsync(string mainWorktree, CancellationToken ct)
@@ -884,6 +985,30 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         /// already handles restrictively.
         /// </summary>
         public DateTime? TornDownAtUtc { get; set; }
+
+        /// <summary>
+        /// Set once the RUN BRANCH carries what the run produced — either the app-side commit succeeded, or the
+        /// status probe found nothing to commit (a branch trivially carries a run that wrote nothing). NOT set
+        /// when the commit failed or git could not be asked, which is the whole point: without a recorded
+        /// answer, <see cref="DescribeAsync"/> either has to name a branch that received nothing or spawn a git
+        /// process of its own. An ADDITIVE member of <c>v:1</c>, exactly like <see cref="TornDownAtUtc"/>.
+        /// <para>
+        /// A document from a build that never wrote this member reads back null, i.e. "not committed" — the
+        /// RESTRICTIVE direction, and deliberately so: it withholds a claim about where the output is instead of
+        /// making an unsubstantiated one, and pairs that with the publish offer, so the recovery path is
+        /// reachable rather than merely honest.
+        /// </para>
+        /// </summary>
+        public DateTime? BranchCommittedAtUtc { get; set; }
+
+        /// <summary>
+        /// How many files the last promotion left alone because the user changed them while the run was working
+        /// (B7's conflict rule). Written ONLY when it is non-zero — a clean promotion pays no extra document
+        /// write, and its document is about to be deleted at teardown anyway. The panel reads it through
+        /// <see cref="DescribeAsync"/>, which is what lets an AUTOMATIC promotion's conflict count reach the
+        /// user without them clicking Publish first. Additive member of <c>v:1</c>.
+        /// </summary>
+        public int? PromotionConflicts { get; set; }
 
         /// <summary>The parsed <see cref="Mode"/>, or <see cref="RunWorkspaceMode.None"/> for a name this
         /// build does not know.</summary>
@@ -1039,6 +1164,19 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         {
             _logger.LogWarning(ex, "Failed to delete a run workspace directory");
         }
+    }
+
+    /// <summary>
+    /// <see cref="TryDeleteDirectory"/> plus the answer its caller needs: is the directory gone? Re-checked on
+    /// the filesystem rather than inferred from "no exception was thrown", because a recursive delete can throw
+    /// PART-WAY THROUGH — a locked file inside it leaves a partial tree behind, and that is the shape that
+    /// matters here (a teardown racing a live writer).
+    /// </summary>
+    private bool TryDeleteDirectoryAndReport(string dir)
+    {
+        TryDeleteDirectory(dir);
+        try { return !Directory.Exists(dir); }
+        catch { return false; }
     }
 
     private void TryDeleteFile(string path)

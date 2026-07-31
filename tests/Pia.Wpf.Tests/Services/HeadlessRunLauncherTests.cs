@@ -1240,4 +1240,62 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         await launcher.StopAsync(CancellationToken.None);
     }
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 consolidation pass — Batch 06 Lens A finding 4's other half). Plan R4 asks for
+    /// "cancel first rather than deleting under a live writer", and CANCELLING IS ONLY HALF OF THAT:
+    /// <c>Cancel()</c> returns immediately while the step is still inside a <c>write_file</c>, which is exactly
+    /// when <c>git worktree remove</c> and the recursive delete both fail — the reachable trigger the finding
+    /// named. The teardown now awaits the dispatch task <c>_inflight</c> has always held beside the CTS and
+    /// nothing read.
+    /// <para>
+    /// Deterministic in both directions, and that rests on one measured fact: <c>AssistantChatService</c> raises
+    /// <c>ChatsChanged</c> SYNCHRONOUSLY inside <c>DeleteAsync</c>, and the fake's <c>TearDownAsync</c> records
+    /// its call before its first await — so in the unfixed build <c>TornDown</c> is already non-empty by the time
+    /// <c>DeleteAsync</c> returns. Neutralization: put the <c>Cancel()</c>/fire-and-forget teardown pair back in
+    /// <c>OnChatsChanged</c> and drop the await → the first assertion goes red.
+    /// </para>
+    /// <para>
+    /// The bound itself (tear down anyway after a few seconds, because a wedged dispatch must not defer the
+    /// cleanup forever) is NOT covered here: the timeout is a private constant and driving it would mean holding
+    /// a real dispatch for its whole duration. Reasoned, stated, and left to the same startup sweep that already
+    /// collects a teardown that failed.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ChatDeleted_AwaitsTheCancelledDispatchsUnwind_BeforeTearingDownItsWorkspace()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var planEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var planCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // The test's grip on the dispatch: the step has observed its cancellation but has NOT unwound yet, which
+        // is the window a workspace removal must not run in.
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var workspaces = new FakeRunWorkspaceService(_runsBase);
+
+        var (launcher, planner) = BuildLauncher(workspaces: workspaces);
+        planner.OnPlanWithToken = async ct2 =>
+        {
+            planEntered.TrySetResult();
+            using var registration = ct2.Register(() => planCancelled.TrySetResult());
+            await planCancelled.Task;
+            await release.Task;
+        };
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await planEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        await _chats.DeleteAsync(handle.ChatId, ct);
+        await planCancelled.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        // The cancel has landed and the dispatch is still in the step: nothing may have been removed yet.
+        Assert.Empty(workspaces.TornDown);
+
+        release.TrySetResult();
+
+        await workspaces.TornDownOnce.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Contains(handle.RunId, workspaces.TornDown);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
 }

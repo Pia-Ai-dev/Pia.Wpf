@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Helpers;
+using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -38,6 +39,10 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
 
     private int _commitExit;
 
+    /// <summary>Exit code for <c>git worktree remove --force</c> — non-zero drives the fallback half of plan R5
+    /// (delete the directory ourselves, then PRUNE the registration).</summary>
+    private int _removeExit;
+
     public RunWorkspaceWorktreeDeliverableTests()
     {
         _dir = Path.Combine(Path.GetTempPath(), "PiaRunWt_" + Guid.NewGuid().ToString("N"));
@@ -55,6 +60,8 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
                 return new GitProcessResult(0, req.Arguments.Contains("--ignored") ? _leftover : _pending, string.Empty, false);
             if (req.Arguments.Contains("commit"))
                 return new GitProcessResult(_commitExit, string.Empty, _commitExit == 0 ? string.Empty : "fatal", false);
+            if (IsWorktreeRemove(req))
+                return new GitProcessResult(_removeExit, string.Empty, _removeExit == 0 ? string.Empty : "fatal", false);
             return new GitProcessResult(0, string.Empty, string.Empty, false);
         };
     }
@@ -68,6 +75,11 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
         => r.Arguments.Count >= 2 && r.Arguments[0] == "rev-parse" && r.Arguments[1] == "--show-toplevel";
 
     private static bool IsStatus(GitProcessRequest r) => r.Arguments.Count > 0 && r.Arguments[0] == "status";
+
+    private static bool IsWorktree(GitProcessRequest r, string verb)
+        => r.Arguments.Count > 1 && r.Arguments[0] == "worktree" && r.Arguments[1] == verb;
+
+    private static bool IsWorktreeRemove(GitProcessRequest r) => IsWorktree(r, "remove");
 
     private RunWorkspaceService Build()
     {
@@ -219,6 +231,113 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
         // The branch is the deliverable, so there are no FILES to offer — a publish button here would promise
         // something worktree mode never has (plan D5b).
         Assert.False(outcome.HasUnpublishedFiles);
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 consolidation pass, the first of the two items `3b66603` opened). A run-branch
+    /// commit that FAILED retains the workspace, so the metadata document is intact and un-stamped — and the
+    /// describe used to fall through to the directory-exists arm and answer
+    /// <c>(Worktree, meta.Branch, HasUnpublishedFiles: false)</c>. The panel then named a branch that received
+    /// nothing, worktree mode offered no publish button, and the UI showed no recovery path at all while the
+    /// files really were in the workspace for the retention window. With the commit RECORDED at promotion, the
+    /// describe does the opposite on that arm: it withholds the branch and OFFERS the files, and publishing them
+    /// re-runs <c>CommitToRunBranchAsync</c> — a real retry, not a dead end.
+    /// <para>
+    /// Neutralization: drop the <c>committed</c> test from the worktree arm of <c>DescribeAsync</c> → the branch
+    /// is named again and the offer disappears → red. The non-vacuity control is
+    /// <see cref="ASuccessfulWorktreeRunStillNamesItsBranchAfterTeardown"/>: the identical describe on a run
+    /// whose commit DID land still names the branch, so this is about the recorded outcome and not about a
+    /// branch line that stopped rendering.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AWorktreeRunWhoseCommitFailed_NamesNoBranch_AndOffersTheFilesInstead()
+    {
+        _pending = "?? report.md\n";
+        _commitExit = 128;
+        var (svc, runId, ws) = await ProvisionWorktreeAsync();
+
+        var promotion = await svc.PromoteAsync(runId, TestContext.Current.CancellationToken);
+        Assert.True(promotion!.RetainWorkspace);
+        Assert.True(Directory.Exists(ws.Root));   // the premise: the workspace is still the only copy
+
+        var outcome = await svc.DescribeAsync(runId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(outcome);
+        Assert.Equal(RunWorkspaceMode.Worktree, outcome!.Mode);
+        Assert.Null(outcome.BranchName);
+        Assert.True(outcome.HasUnpublishedFiles);
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b>, the same lie on the other reachable arm. A FAILED or CANCELLED worktree run never
+    /// promotes at all (plan D3: only a cleanly drained run promotes automatically), so its document has no
+    /// commit stamp either — and the pre-fix describe named its branch just as confidently. This arm was never
+    /// filed as a finding because Lens A 2 read the branch line as *intended* for a failed run; it is the same
+    /// empty branch.
+    /// </summary>
+    [Fact]
+    public async Task AWorktreeRunThatNeverPromoted_NamesNoBranch_AndOffersTheFilesInstead()
+    {
+        var (svc, runId, ws) = await ProvisionWorktreeAsync();
+        File.WriteAllText(Path.Combine(ws.Root, "report.md"), "the run's only output");
+
+        var outcome = await svc.DescribeAsync(runId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(outcome);
+        Assert.Null(outcome!.BranchName);
+        Assert.True(outcome.HasUnpublishedFiles);
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 consolidation pass — Batch 06 Lens A finding 4's other half). Teardown now
+    /// reports whether the directory is actually GONE, and a worktree whose directory SURVIVED keeps its metadata
+    /// document: that document is the only record of which repository holds the
+    /// <c>.git/worktrees/&lt;id&gt;</c> registration, and it must not be stamped as torn down either — the stamp
+    /// means "the directory is gone", and the sweep reads it that way. Keeping it is what lets the next startup
+    /// sweep re-enter <c>TearDownAsync</c> through the same document and retry.
+    /// <para>
+    /// Both removal steps are made to fail the way the finding describes: <c>git worktree remove --force</c>
+    /// exits non-zero and an open file handle inside the workspace defeats the recursive delete — precisely the
+    /// state a teardown racing a live writer produces.
+    /// </para>
+    /// <para>
+    /// <b>The prune assertion is LOAD-BEARING.</b> Lens A 4's refutation rests on <c>git worktree prune</c>
+    /// running UNCONDITIONALLY when the remove failed, whether or not our own delete then worked — prune reclaims
+    /// the registration from live git state once the worktree's <c>.git</c> pointer file is gone. A later
+    /// simplification that folds that call into a success arm re-opens the permanent leak, and this assertion is
+    /// what catches it. Neutralization of the fact itself: delete the surviving-directory early return from
+    /// <c>TearDownAsync</c> → the document is stamped and the retry has nothing to read → red.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ATeardownWhoseDirectorySurvives_KeepsTheMetadata_AndStillPrunes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _removeExit = 1;
+        var (svc, runId, ws) = await ProvisionWorktreeAsync();
+
+        // A live writer, in the only shape a test can hold one: an exclusive handle on a file inside the
+        // workspace, which is what makes Directory.Delete(recursive) throw part-way through.
+        var locked = Path.Combine(ws.Root, "held-open.md");
+        using (var handle = new FileStream(locked, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            await handle.WriteAsync(new byte[] { 1, 2, 3 }, ct);
+            await handle.FlushAsync(ct);
+
+            await svc.TearDownAsync(runId, ct);
+
+            Assert.True(Directory.Exists(ws.Root));           // the premise: the removal really did fail
+            Assert.True(File.Exists(MetadataPath(runId)));    // so the record of the registration is kept
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(MetadataPath(runId)));
+            Assert.False(doc.RootElement.TryGetProperty("tornDownAtUtc", out var stamp) && stamp.ValueKind != JsonValueKind.Null);
+            Assert.Equal(
+                SafeFolderPath.Canonicalize(_source),
+                SafeFolderPath.Canonicalize(doc.RootElement.GetProperty("mainWorktree").GetString()!));
+
+            Assert.Contains(_runner.Calls, c => IsWorktree(c, "prune"));
+        }
     }
 
     /// <summary>

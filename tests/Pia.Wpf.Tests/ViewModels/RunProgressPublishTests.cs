@@ -156,6 +156,11 @@ public sealed class RunProgressPublishTests : IDisposable
     /// T-G4-17, <b>REGRESSION</b>. Publishing promotes and THEN tears the workspace down — in that order, so a
     /// teardown never destroys files a promotion has not carried out yet — and the offer is cleared afterwards
     /// so the user cannot publish the same workspace twice.
+    /// <para>
+    /// Also the NON-VACUITY CONTROL for the retain arm next door: this result leaves nothing behind
+    /// (<c>RetainWorkspace</c> unset), and it still tears down. So "the workspace is kept" there is about the
+    /// flag and not about a teardown that stopped happening.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task Publish_PromotesThenTearsDown_AndClearsTheOffer()
@@ -179,16 +184,28 @@ public sealed class RunProgressPublishTests : IDisposable
     }
 
     /// <summary>
-    /// <b>REGRESSION</b>. Conflicts ARE surfaced, because "3 published" alone would read as "everything landed"
-    /// when a file the user changed during the run was deliberately left alone.
+    /// <b>REGRESSION</b>, and the Phase 3 consolidation pass's data-loss fix. Two facts about one result,
+    /// because the real service only ever produces them together — <c>CopyOut</c> sets
+    /// <c>RetainWorkspace = conflicts &gt; 0</c>, so a conflict result with the flag unset is a state no
+    /// promotion can return (the T-G4-19 mistake, pointed the other way).
+    /// <para>
+    /// (1) Conflicts ARE surfaced, because "1 published" alone would read as "everything landed" when a file the
+    /// user changed during the run was deliberately left alone. (2) <b>The manual path OBEYS
+    /// <c>RetainWorkspace</c></b> exactly as the automatic one does: the run's version of the conflicted file
+    /// exists ONLY in that workspace, so publishing must not delete it, and the offer stays standing because the
+    /// files it points at are still there. Neutralization: restore the unconditional
+    /// <c>TearDownAsync</c>/<c>HasUnpublishedFiles = false</c> pair in <c>Publish()</c> and both the
+    /// <c>TornDown</c> and the <c>CanPublish</c> assertion go red.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task Publish_WithConflicts_SaysSo()
+    public async Task Publish_WithConflicts_SaysSo_AndKeepsTheWorkspaceItCouldNotEmpty()
     {
         var run = await NewRunAsync(AgentRunState.Failed);
         var workspaces = Workspaces();
         workspaces.Outcome = new RunWorkspaceOutcome(RunWorkspaceMode.Copy, null, HasUnpublishedFiles: true);
-        workspaces.PromoteResult = new RunPromotionResult(RunWorkspaceMode.Copy, Promoted: 1, Skipped: 0, Conflicts: 2, BranchName: null);
+        workspaces.PromoteResult = new RunPromotionResult(
+            RunWorkspaceMode.Copy, Promoted: 1, Skipped: 0, Conflicts: 2, BranchName: null, RetainWorkspace: true);
 
         var vm = CreateVm(run.Id, workspaces);
         await vm.RefreshAsync();
@@ -196,6 +213,8 @@ public sealed class RunProgressPublishTests : IDisposable
 
         Assert.Contains("Run_Publish_Done:1", vm.PublishNote);
         Assert.Contains("Run_Publish_Conflicts:2", vm.PublishNote);
+        Assert.Empty(workspaces.TornDown);
+        Assert.True(vm.CanPublish);
     }
 
     /// <summary>
@@ -261,6 +280,70 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.True(vm.HasOutputBranch);
         Assert.Equal("Run_Output_Branch:" + branch, vm.OutputBranchNote);
         Assert.False(vm.CanPublish); // the branch is the deliverable — there is nothing to publish as files
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 consolidation pass — Lens A 5 / Lens B 3's remaining half). An AUTOMATIC
+    /// promotion's conflict count now reaches the panel on completion, with no click: the count rides on the
+    /// workspace outcome the panel already reads for every terminal run. Before this, <c>Run_Publish_Conflicts</c>
+    /// was produced ONLY inside <c>Publish()</c>, so the one number that says "the run's work on that file was
+    /// discarded in favour of your edit" was invisible until the user happened to press a button.
+    /// <para>
+    /// Neutralization: drop the <c>outcome.Conflicts</c> arm from <c>ApplyWorkspaceOutcomeAsync</c> → the note is
+    /// null → red. The control is the ordinary run in <see cref="ACompletedRun_OffersNothing"/>, which describes
+    /// with no conflicts and must stay silent — three muted note lines that all shout on an ordinary run would be
+    /// worse than none.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AnAutomaticPromotionsConflicts_AreAnnouncedWithoutAPublishClick()
+    {
+        var run = await NewRunAsync(AgentRunState.Completed);
+        var workspaces = Workspaces();
+        // What the real service answers for a clean COPY-mode run whose promotion hit a conflict: the workspace
+        // was retained (the run's version of that file exists nowhere else) and the count came back with it.
+        workspaces.Outcome = new RunWorkspaceOutcome(
+            RunWorkspaceMode.Copy, null, HasUnpublishedFiles: true, Conflicts: 2);
+
+        var vm = CreateVm(run.Id, workspaces);
+        await vm.RefreshAsync();
+
+        Assert.Equal("Run_Publish_Conflicts:2", vm.PublishNote);
+        Assert.True(vm.CanPublish);          // and the offer beside it is the actionable half
+        Assert.Empty(workspaces.Promoted);   // nothing was promoted BY THE PANEL — this is a read, not an act
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b>. A worktree run whose run-branch commit failed describes with no branch name and with
+    /// files to offer, and the panel must render exactly that: no "output is on branch X" claim, and a publish
+    /// button that retries the commit. This is the UI half of the first item `3b66603` opened — the arm where the
+    /// panel previously named an empty branch and offered nothing.
+    /// </summary>
+    [Fact]
+    public async Task AWorktreeRunWithNoCommittedBranch_OffersTheRetry_AndClaimsNoBranch()
+    {
+        var run = await NewRunAsync(AgentRunState.Completed);
+        var workspaces = Workspaces();
+        workspaces.Outcome = new RunWorkspaceOutcome(
+            RunWorkspaceMode.Worktree, BranchName: null, HasUnpublishedFiles: true);
+        // The retry's own promotion still cannot commit, so it reports "kept, nothing moved" — the one result
+        // where "Published 0 file(s)" would read as success and Run_Publish_Failed is the honest line.
+        workspaces.PromoteResult = new RunPromotionResult(
+            RunWorkspaceMode.Worktree, Promoted: 0, Skipped: 1, Conflicts: 0,
+            BranchName: "pia/run/" + run.Id, RetainWorkspace: true);
+
+        var vm = CreateVm(run.Id, workspaces);
+        await vm.RefreshAsync();
+
+        Assert.False(vm.HasOutputBranch);
+        Assert.Null(vm.OutputBranchNote);
+        Assert.True(vm.CanPublish);
+
+        await vm.PublishCommand.ExecuteAsync(null);
+
+        Assert.Equal("Run_Publish_Failed", vm.PublishNote);
+        Assert.Empty(workspaces.TornDown);   // the workspace is still the only copy
+        Assert.True(vm.CanPublish);          // so the retry stays available
     }
 
     /// <summary>

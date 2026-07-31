@@ -196,6 +196,53 @@ public sealed class RunWorkspacePromotionTests : IDisposable
     }
 
     /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 consolidation pass — Lens A finding 5 / Lens B finding 3's remaining half).
+    /// The conflict count is RECORDED on the workspace metadata document, so the panel can render it after an
+    /// AUTOMATIC promotion instead of only after the user clicks Publish and it is re-counted. The promotion
+    /// itself has no channel to the ViewModel and will not grow one: it runs in a DI scope the panel knows
+    /// nothing about, and the panel is routinely opened from history long after the run settled, when an event
+    /// raised at completion would be gone. The document is readable for exactly as long as the retained
+    /// workspace the count is about.
+    /// <para>
+    /// Neutralization: drop the <c>meta.PromotionConflicts</c> write from <c>PromoteAsync</c>'s copy arm → the
+    /// describe answers 0 → red. The non-vacuity control is the second half: a promotion with NO conflict
+    /// records nothing, so a stale non-zero count cannot be what makes this pass.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Promote_RecordsItsConflictCount_SoTheDescribeCanAnnounceItWithoutAPublishClick()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var conflicted = Guid.NewGuid();
+        WriteMetadata(conflicted, RunWorkspaceMode.Copy, Stamp);
+        Write(_dest, "notes.md", "the user's newer edit", AfterProvision);
+        Write(RunRoot(conflicted), "notes.md", "the run's version", AfterProvision);
+
+        var svc = Build();
+        var result = await svc.PromoteAsync(conflicted, ct);
+        Assert.Equal(1, result!.Conflicts);
+
+        var outcome = await svc.DescribeAsync(conflicted, ct);
+
+        Assert.NotNull(outcome);
+        Assert.Equal(1, outcome!.Conflicts);
+        // And the offer stands beside it, because the workspace was retained: the count is only worth
+        // announcing while the run's version of that file is still recoverable.
+        Assert.True(outcome.HasUnpublishedFiles);
+
+        // The control: an ordinary promotion with nothing left alone records no count, so an ordinary run's
+        // panel stays quiet. (A clean copy-mode workspace is torn down at promotion, so this is asserted before
+        // any teardown — the describe below is the same call the panel makes.)
+        var clean = Guid.NewGuid();
+        WriteMetadata(clean, RunWorkspaceMode.Copy, Stamp);
+        Write(RunRoot(clean), "new.md", "written", AfterProvision);
+        await svc.PromoteAsync(clean, ct);
+
+        var cleanOutcome = await svc.DescribeAsync(clean, ct);
+        Assert.Equal(0, cleanOutcome?.Conflicts ?? 0);
+    }
+
+    /// <summary>
     /// T-G4-4, <b>GUARD</b>. Promote is not sync: a deletion inside the workspace is never propagated, so a
     /// background run cannot delete a user's file by finishing. Write arbitration belongs to a later batch.
     /// </summary>

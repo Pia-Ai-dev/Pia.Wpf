@@ -771,22 +771,63 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
         foreach (var runId in runIds)
         {
-            // Plan R4: this directory is now the only copy of a non-promoted run's work, so it is never
-            // deleted under a LIVE writer — cancel the dispatch first and let it unwind. (Deleting the chat
-            // is an explicit user act that cascades the run row away, so the files going with it is the
-            // intent; racing a running step while doing it is not.) Best-effort and ordered before the
-            // teardown, not awaited: a disposed CTS throws here and must not stop the cleanup.
-            if (_inflight.TryGetValue(runId, out var entry))
-            {
-                try { entry.Cts.Cancel(); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Failed to cancel run {RunId} before workspace teardown", runId); }
-            }
-
-            // Teardown may now spawn git (worktree remove/prune), which must not run inline on a SYNCHRONOUS
-            // event handler. A failed delete self-heals: the run row is gone by FK cascade, so the next
-            // startup sweep sees `run is null` and removes the workspace unconditionally.
-            TearDownWorkspaceAsync(runId, CancellationToken.None).SafeFireAndForget(_logger);
+            // Cancel AND UNWIND, then tear down — off this synchronous handler, because the teardown may spawn
+            // git (worktree remove/prune) and the unwind takes as long as the run's current step does.
+            CancelThenTearDownWorkspaceAsync(runId).SafeFireAndForget(_logger);
         }
+    }
+
+    /// <summary>
+    /// How long a chat deletion waits for the run it just cancelled to actually unwind before removing the
+    /// workspace. A judgement call, not a measurement: long enough for a step to observe its token and drop the
+    /// file handles it is holding, short enough that a wedged dispatch cannot defer the cleanup indefinitely.
+    /// </summary>
+    private static readonly TimeSpan _unwindBeforeTeardown = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Plan R4, both halves. This directory is the only copy of a non-promoted run's work, so it is never
+    /// deleted under a LIVE writer: cancel the dispatch first AND WAIT FOR IT TO UNWIND. (Deleting the chat is
+    /// an explicit user act that cascades the run row away, so the files going with it is the intent; racing a
+    /// running step while doing it is not.)
+    /// <para>
+    /// Cancelling alone was not enough, and the gap was the whole of Batch 06 Lens A finding 4's reachable
+    /// trigger: <c>Cancel()</c> returns immediately while the step is still inside a <c>write_file</c>, which is
+    /// exactly when <c>git worktree remove</c> and a recursive delete BOTH fail. The task awaited here is the one
+    /// <see cref="_inflight"/> has always held beside the CTS and nothing read.
+    /// </para>
+    /// <para>
+    /// BOUNDED, and it tears down anyway on a timeout — that is the pre-existing behaviour, and a failed delete
+    /// self-heals: the run row is gone by FK cascade, so the next startup sweep sees <c>run is null</c> and
+    /// removes the workspace unconditionally. The dispatch task never faults (every path inside it is caught), so
+    /// the catch-all is for a future refactor rather than for today.
+    /// </para>
+    /// </summary>
+    private async Task CancelThenTearDownWorkspaceAsync(Guid runId)
+    {
+        if (_inflight.TryGetValue(runId, out var entry))
+        {
+            // Best-effort: a disposed CTS throws here and must not stop the cleanup.
+            try { entry.Cts.Cancel(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to cancel run {RunId} before workspace teardown", runId); }
+
+            try
+            {
+                // No linked shutdown token deliberately: this races _shutdownCts's own disposal, and StopAsync
+                // already awaits every _inflight task, so a shutdown cannot be left waiting on this one.
+                await entry.Task.WaitAsync(_unwindBeforeTeardown).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning(
+                    "Run {RunId} did not unwind within the teardown wait; removing its workspace anyway", runId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Run {RunId} faulted while unwinding before its workspace teardown", runId);
+            }
+        }
+
+        await TearDownWorkspaceAsync(runId, CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <summary>

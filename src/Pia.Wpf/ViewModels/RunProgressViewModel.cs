@@ -374,7 +374,22 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 // HasUnpublishedFiles and tears the workspace down, and the next RunChanged would otherwise
                 // read a describe that raced the teardown.
                 if (!IsPublishing)
+                {
                     HasUnpublishedFiles = outcome?.HasUnpublishedFiles ?? false;
+
+                    // The AUTOMATIC promotion's conflict count, announced on completion (Lens A 5 / Lens B 3's
+                    // remaining half). The promotion itself sets no ViewModel state and never will — it runs in
+                    // a DI scope this panel knows nothing about, and the panel is routinely opened from history
+                    // LONG after the run settled, when an event raised at completion would be gone. So the
+                    // count travels the channel the panel already reads: the workspace metadata document, which
+                    // exists exactly as long as the retained workspace the count is about.
+                    //
+                    // Only when there is something to say, and never over a note the user's own publish just
+                    // produced — that one is more recent and it is theirs.
+                    if (PublishNote is null && outcome is { Conflicts: > 0 })
+                        PublishNote = _localization.Format("Run_Publish_Conflicts", outcome.Conflicts);
+                }
+
                 OutputBranchName = outcome?.BranchName;
             }
             finally
@@ -389,8 +404,24 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Publish what a settled run left in its workspace (plan D3, the "else offer to publish" half). Declining
     /// is doing nothing: the workspace is retained and then swept by the launcher's terminal retention rule,
-    /// so an unanswered offer cannot pin a workspace forever. Worktree mode never reaches here — its output is
-    /// a branch, and <see cref="HasUnpublishedFiles"/> is false for it (plan D5b).
+    /// so an unanswered offer cannot pin a workspace forever.
+    /// <para>
+    /// <b>RETAINWORKSPACE IS OBEYED HERE, exactly as the automatic path obeys it</b> (Phase 3 consolidation).
+    /// The two paths are symmetric on purpose: a promotion that reports "the workspace still holds work I could
+    /// not move" — a copy-mode CONFLICT whose resolution kept the user's newer file (B7), or a worktree whose
+    /// run-branch commit did not take — is the case where the workspace holds the ONLY copy of the run's
+    /// version of a file, and tearing it down destroys it. Being user-initiated does not make that recoverable.
+    /// The offer therefore STAYS STANDING on a retaining publish, and that is not a stale offer: the note above
+    /// it says how many files were left alone, the workspace really does still hold them, and the offer is
+    /// actionable — a user who moves their own copy aside turns the conflict into "destination missing" and the
+    /// next click copies the run's version out.
+    /// </para>
+    /// <para>
+    /// Worktree mode CAN reach here since the consolidation pass: a run whose branch never received a commit
+    /// describes with <see cref="HasUnpublishedFiles"/> set, so the button appears and publishing RETRIES the
+    /// commit (B15's "worktree mode offers no publish button" is no longer absolute — that was the arm with no
+    /// recovery path at all).
+    /// </para>
     /// <para>
     /// <see cref="RunPromotionResult.Skipped"/> is deliberately NOT surfaced: it is the byte-identical no-op
     /// case, and there is nothing to tell the user about a file that was already correct.
@@ -413,8 +444,29 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            await _workspaces.TearDownAsync(_runId, CancellationToken.None);
-            HasUnpublishedFiles = false;
+            if (result.RetainWorkspace)
+            {
+                // The workspace keeps the work this promotion could not move, and the offer above it keeps
+                // pointing at it. Run id only — a promotion's paths are user content.
+                _logger.LogInformation(
+                    "Run {RunId} publish retained the workspace: it still holds work the promotion did not move",
+                    _runId);
+            }
+            else
+            {
+                await _workspaces.TearDownAsync(_runId, CancellationToken.None);
+                HasUnpublishedFiles = false;
+            }
+
+            // Nothing moved and nothing was deliberately left alone, on a promotion that nonetheless asked for
+            // the workspace to be kept: the promotion could not do anything at all — a worktree whose
+            // run-branch commit is still failing is the case this arm exists for. "Published 0 file(s)" would
+            // read as success; Run_Publish_Failed is the line that says the files are still in the workspace.
+            if (result is { RetainWorkspace: true, Promoted: 0, Conflicts: 0 })
+            {
+                PublishNote = _localization["Run_Publish_Failed"];
+                return;
+            }
 
             var note = _localization.Format("Run_Publish_Done", result.Promoted);
             if (result.Conflicts > 0)
