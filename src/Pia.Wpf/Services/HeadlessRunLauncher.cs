@@ -154,11 +154,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             PolicyJson: TrySerializeGrantEnvelope(grants, req.Trigger, policy)), ct)
             .ConfigureAwait(false);
 
-        // Per-run scratch/temp workspace under runs\<runId> (§17.2). Real deliverables go to the assistant
-        // files folder (see the Initialize call below), so this directory holds only ephemeral run temp and is
-        // auto-cleaned on chat delete / startup sweep. Canonicalize so a link in the path is not a hole. The run
-        // row already exists (Planning), so a workspace-setup failure here must settle it — otherwise the run
-        // dangles non-terminal until the next startup sweep (G-4).
+        // The run's ISOLATED workspace under runs\<runId> (§17.2), carved out of SensitivePathGuard by
+        // AssistantWorkspace.RunsRoot (Batch 06 B1). Every file operation this run performs resolves against
+        // this directory (see the Initialize call below), so it holds the run's work — not merely scratch —
+        // until a later group promotes it out; it is still auto-cleaned on chat delete / startup sweep.
+        // Canonicalize so a link in the path is not a hole. The run row already exists (Planning), so a
+        // workspace-setup failure here must settle it — otherwise the run dangles non-terminal until the
+        // next startup sweep (G-4).
         string runRoot;
         try
         {
@@ -203,11 +205,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 using var scope = _scopeFactory.CreateScope();
                 var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
                 var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-                // workspaceRoot: null → real deliverables write to the assistant files folder with full
-                // read/write/delete, contained, like an interactive chat (only MCP is withheld). runRoot stays
-                // the run's ephemeral scratch area. Passing runRoot here instead would confine the run to it
-                // (the reserved opt-in-sandbox seam).
-                executor.Initialize(workspaceRoot: null, grants, provider, policy);
+                // Batch 06 G2: the run is confined to its own workspace. Every read/write/delete/list/search
+                // resolves against runRoot with full containment (no escape, no system paths) — the guard
+                // permits it because AssistantWorkspace.RunsRoot is an allowed island (B1), and the verifier
+                // probes the same root because BeginRunAsync publishes it onto the RunContext (B3). Passing
+                // null here instead is the NO-ISOLATION degrade: the run would write straight into the user's
+                // assistant files folder, which is what every build before this commit did.
+                executor.Initialize(workspaceRoot: runRoot, grants, provider, policy);
                 started = true;
 
                 // A2: open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
@@ -311,8 +315,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             var budget = RunProfile.FromBudget(
                 settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
 
-            // Idempotent: the run's ephemeral workspace already exists from the original launch (or is recreated).
-            _ = SafeFolderPath.Canonicalize(
+            // Idempotent: the run's isolated workspace already exists from the original launch (or is
+            // recreated). CAPTURE the canonicalized path rather than discarding it — the resumed dispatch
+            // hands this exact string to Initialize below, and recomputing it from Path.Combine there would
+            // give the executor a different string than launch does for the same directory (a link or an
+            // 8.3 component in the base dir), i.e. the two call sites would silently drift apart.
+            var runRoot = SafeFolderPath.Canonicalize(
                 Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
 
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
@@ -337,7 +345,11 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     using var scope = _scopeFactory.CreateScope();
                     var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
                     var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-                    executor.Initialize(workspaceRoot: null, grants, provider, policy);
+                    // Batch 06 G2, symmetric with the launch path: a resumed run re-enters the SAME isolated
+                    // workspace it was parked in, so the Pending remainder sees the work the pre-pause steps
+                    // left behind. A separate literal from the launch call on purpose — the two have drifted
+                    // before, so each has its own regression fact.
+                    executor.Initialize(workspaceRoot: runRoot, grants, provider, policy);
                     started = true;
                     // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
                     // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,

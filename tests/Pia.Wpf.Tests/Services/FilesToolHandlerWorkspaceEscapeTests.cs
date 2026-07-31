@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -15,6 +16,16 @@ namespace Pia.Tests.Services;
 /// (symlink) escapes — must reject against the PER-RUN root, never the interactive folder. A rejected
 /// write/delete never touches the filesystem outside the run workspace; a rejected read returns no
 /// outside content. Mirrors the SafeFolderPath containment contract, re-anchored to runs\&lt;runId&gt;.
+/// <para>
+/// The run root is deliberately at the REAL shape — a Guid-named directory under
+/// <see cref="AssistantWorkspace.RunsRoot"/> — because <c>SensitivePathGuard.BuildBlockedRoots</c> reads
+/// the real <c>LOCALAPPDATA</c>, so a <c>Path.GetTempPath()</c> fixture sits outside every blocked root
+/// and this suite structurally could not see the guard that now applies to a run's every file operation
+/// (plan §4 R1). Batch 06 G2 made that the production shape, so the escape matrix now runs where the
+/// guard actually applies. All of these are <b>GUARD</b> facts: they cannot go red on a revert of G2 —
+/// containment is unchanged by it. <see cref="Write_InsideTheRunRoot_Succeeds"/> can, and is the control
+/// that stops the whole matrix passing vacuously against an un-writable root.
+/// </para>
 /// </summary>
 public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
 {
@@ -26,7 +37,13 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
     public FilesToolHandlerWorkspaceEscapeTests()
     {
         _interactiveRoot = NewDir("pia-escape-interactive-");
-        _runRoot = NewDir("pia-escape-runroot-");
+        // The run root, and ONLY the run root, moves under the real runs dir: _interactiveRoot and _outside
+        // stay under GetTempPath() so "outside" really is outside the carve-out. The name is a bare Guid
+        // (R11) — RunStartupSweepAsync `continue`s on any directory name that is not a parseable Guid, so a
+        // prefixed fixture that leaked would live in the developer's real runs folder forever, while a
+        // Guid-named one is swept as `run is null` on the next app start.
+        _runRoot = Path.Combine(AssistantWorkspace.RunsRoot, Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_runRoot);
         _outside = NewDir("pia-escape-outside-");
         File.WriteAllText(Path.Combine(_outside, "secret.txt"), "TOP SECRET");
 
@@ -56,6 +73,32 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
         TaskAmbient.Current = null;
         foreach (var d in new[] { _interactiveRoot, _runRoot, _outside })
             try { Directory.Delete(d, recursive: true); } catch { /* best effort */ }
+    }
+
+    /// <summary>
+    /// The positive control for this whole class, and the one fact here that is not a GUARD: every escape
+    /// assertion below would pass vacuously against a run root the handler cannot write to at all (a
+    /// broken guard carve-out looks exactly like a rejected escape from the outside). Proves the fixture
+    /// root is genuinely usable at the real shape before anything claims a rejection means something.
+    /// </summary>
+    [Fact]
+    public async Task Write_InsideTheRunRoot_Succeeds()
+    {
+        var call = new FunctionCallContent("ok", "write_file",
+            new Dictionary<string, object?> { ["path"] = "deliverable.md", ["content"] = "real work" });
+        var (result, pending) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        Assert.NotNull(pending);
+        var executed = await pending!.Execute();
+        Assert.True(Prop<bool>(executed!, "success"));
+
+        var full = Path.Combine(_runRoot, "deliverable.md");
+        Assert.True(File.Exists(full));
+        Assert.Contains("real work", File.ReadAllText(full));
+
+        // …and it landed in the RUN root, not the interactive folder.
+        Assert.False(File.Exists(Path.Combine(_interactiveRoot, "deliverable.md")));
     }
 
     [Theory]

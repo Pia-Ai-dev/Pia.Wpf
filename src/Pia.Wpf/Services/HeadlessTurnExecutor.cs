@@ -87,15 +87,24 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     /// <summary>
     /// Seed the granted write tools, an optional provider override (the launcher's resolved provider, kept
-    /// in lock-step with the orchestrator's planner so the two never diverge), and an optional per-run
+    /// in lock-step with the orchestrator's planner so the two never diverge), and the run's isolated
     /// workspace root. Called from the launcher's fresh DI scope BEFORE <c>orchestrator.RunAsync</c>.
     /// <para>
-    /// <paramref name="workspaceRoot"/> is <c>null</c> for a normal unattended run: real deliverables are
-    /// written to the user's assistant files folder with full read/write/delete, contained (no escape, no
-    /// system paths) exactly like an interactive chat — only MCP is withheld. A non-null value instead
-    /// confines every file operation to that folder; it is the reserved seam for a future opt-in per-run
-    /// sandbox. The run's <c>%LOCALAPPDATA%\Pia\runs\&lt;runId&gt;</c> directory remains the ephemeral
-    /// scratch/temp area (auto-cleaned), separate from where real deliverables land.
+    /// <paramref name="workspaceRoot"/> is the run's isolated base root and is <b>non-null for an isolated
+    /// run</b> — the normal case since Batch 06 G2, where the launcher passes
+    /// <c>%LOCALAPPDATA%\Pia\runs\&lt;runId&gt;</c>. A non-null value confines every file operation (read,
+    /// write, delete, list, search) to that directory with full containment — no traversal, no absolute
+    /// escape, no system paths — and <see cref="BeginRunAsync"/> republishes it onto
+    /// <c>RunContext.WorkspaceRoot</c> so the verifier's artifact probe, which runs outside any step's
+    /// ambient, resolves declared artifacts against the same root (B3).
+    /// </para>
+    /// <para>
+    /// <c>null</c> means <b>no isolation</b>: the run writes straight into the user's assistant files
+    /// folder, contained exactly like an interactive chat (only MCP is withheld). That is the degrade
+    /// path — the behaviour of every build before G2, and where provisioning falls back to when an
+    /// isolated workspace cannot be created. It is not the intended value for a healthy run. Callers
+    /// must therefore assume neither value: a run may also be handed a root it did not provision itself
+    /// (a child run inherits its parent's), which is why this parameter is a plain root and not a run id.
     /// </para>
     /// </summary>
     /// <param name="policy">The run's autonomy policy (Batch 04), or null for "today's behaviour": no tool
@@ -129,8 +138,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         ctx.WorkingSubpath = null;
         // Batch 06 B3: publish the run's workspace root onto the context so the verifier (which runs on
         // the orchestrator thread, outside any step's ambient) can resolve declared artifacts against the
-        // root the steps actually wrote into instead of falling back to the settings folder. Still null
-        // today — _workspaceRoot is only ever set by Initialize's reserved (currently unused) parameter.
+        // root the steps actually wrote into instead of falling back to the settings folder. Non-null for
+        // an isolated run since G2 (the launcher passes runs\<runId> at both dispatch sites); null only on
+        // the no-isolation degrade, which resolves the settings folder exactly as before.
         ctx.WorkspaceRoot = _workspaceRoot;
 
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);

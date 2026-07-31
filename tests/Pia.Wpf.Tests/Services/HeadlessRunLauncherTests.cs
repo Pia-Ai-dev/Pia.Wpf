@@ -38,10 +38,20 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         public int MaxConcurrent;
         private readonly object _lock = new();
 
+        /// <summary>
+        /// The <see cref="RunContext"/> the orchestrator handed the planner, captured so a test can read
+        /// <c>ctx.WorkspaceRoot</c> — the value the executor published in BeginRunAsync (Batch 06 B3) and
+        /// therefore the value the launcher passed to <c>Initialize</c>. PlanAsync runs AFTER
+        /// BeginRunAsync (AgentRunOrchestrator.cs:73 then :91), so the root is already assigned here.
+        /// Null when the planner was never called (a resume skips planning) — check before reading it.
+        /// </summary>
+        public RunContext? PlanContext { get; private set; }
+
         public FakePlanner(Func<Task>? onPlan = null) => _onPlan = onPlan;
 
         public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
         {
+            PlanContext = ctx;
             lock (_lock) { Concurrent++; MaxConcurrent = Math.Max(MaxConcurrent, Concurrent); }
             try
             {
@@ -97,9 +107,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
     /// <param name="appSettings">Trailing and defaulted (Batch 04): the autonomy tests need a launcher whose
     /// settings have <c>AgentRunAutoApproveBuiltInWrites</c> on, and every existing call site keeps compiling.</param>
+    /// <param name="verifier">Trailing and defaulted (Batch 06 G2), same precedent as <paramref name="appSettings"/>:
+    /// a resume skips planning, so the verify pass is the only place the resumed run's
+    /// <c>ctx.WorkspaceRoot</c> is observable. Pass a FakeVerifier the test holds to read it back; omit
+    /// for the default accept-everything instance every other test wants.</param>
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
         Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null,
-        AppSettings? appSettings = null)
+        AppSettings? appSettings = null, FakeVerifier? verifier = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -150,7 +164,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         services.AddSingleton<IAssistantChatService>(_chats);
         services.AddSingleton<IAgentPlanner>(planner);
         // The orchestrator's terminal critic pass; the default (empty queue) FakeVerifier accepts.
-        services.AddSingleton<IAgentVerifier>(new FakeVerifier());
+        services.AddSingleton<IAgentVerifier>(verifier ?? new FakeVerifier());
         services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
         // A2: the same index the launcher below is given, because the per-run scope resolves
         // HeadlessTurnExecutor -> concrete BackgroundAssistantTurnRunner, which now requires it. Omit this
@@ -269,6 +283,70 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(AgentRunState.Completed, settled!.State);
 
         try { Directory.Delete(runRoot, true); } catch { }
+    }
+
+    /// <summary>
+    /// T-G2-1, <b>REGRESSION</b>. Batch 06 G2's launch half: the launch dispatch hands the executor the
+    /// run's workspace root instead of <c>null</c>, so every file operation the run performs resolves
+    /// inside <c>runs\&lt;runId&gt;</c>. Asserted at the seam that changed rather than by driving a real
+    /// <c>write_file</c> through the launcher (§9.2's scoping note): at G2 the workspace is empty and this
+    /// harness has no provider that emits a tool call, so the observable value is the one G1 published —
+    /// <c>ctx.WorkspaceRoot</c>, read here off the RunContext the orchestrator handed the planner.
+    /// <para>
+    /// Reverting the launch call site to <c>workspaceRoot: null</c> turns this red while
+    /// <see cref="Resume_InitializesTheExecutorWithTheSameRunWorkspaceRoot"/> stays green — the crossed
+    /// pattern is the evidence the two call sites are covered by one fact each.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Launch_InitializesTheExecutorWithTheRunWorkspaceRoot()
+    {
+        var (launcher, planner) = BuildLauncher();
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("do the thing", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        // Canonicalized, exactly as the launcher canonicalizes it — GetTempPath can carry an 8.3 or a link
+        // component, so a raw Path.Combine expectation would compare two spellings of the same directory.
+        // Computed while the workspace still exists (Canonicalize needs a real handle).
+        var expected = SafeFolderPath.Canonicalize(Path.Combine(_runsBase, handle.RunId.ToString()));
+
+        // Non-vacuity control: a planner that was never called leaves PlanContext null, and the claim below
+        // would be about nothing at all.
+        Assert.NotNull(planner.PlanContext);
+        Assert.Equal(expected, planner.PlanContext!.WorkspaceRoot);
+
+        try { Directory.Delete(expected, true); } catch { }
+    }
+
+    /// <summary>
+    /// T-G2-2, <b>REGRESSION</b>. Batch 06 G2's resume half — a SEPARATE literal from the launch call site,
+    /// which has drifted from it before, hence its own fact: a resumed run re-enters the SAME isolated
+    /// workspace it was parked in. A resume deliberately does not re-plan (D1), so the planner never sees
+    /// the context; the terminal verify pass is the only place <c>ctx.WorkspaceRoot</c> is still observable
+    /// (the per-step ambient that also carries it is restored in each step's <c>finally</c>).
+    /// </summary>
+    [Fact]
+    public async Task Resume_InitializesTheExecutorWithTheSameRunWorkspaceRoot()
+    {
+        var verifier = new FakeVerifier();
+        var (launcher, planner) = BuildLauncher(verifier: verifier);
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        var expected = SafeFolderPath.Canonicalize(Path.Combine(_runsBase, parked.Id.ToString()));
+
+        // The resumed dispatch drained its Pending remainder and reached the critic — without this the
+        // assertion below would be indexing an empty list, i.e. the fact would pass on a resume that never
+        // executed anything. Assert.Single is the non-vacuity control.
+        Assert.Single(verifier.SeenWorkspaceRoots);
+        Assert.Equal(expected, verifier.SeenWorkspaceRoots[0]);
+        Assert.Null(planner.PlanContext); // pins D1: a resume does not re-plan
+
+        try { Directory.Delete(expected, true); } catch { }
     }
 
     [Fact]

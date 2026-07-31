@@ -20,6 +20,15 @@ internal sealed class FakeVerifier : IAgentVerifier
     /// </summary>
     public List<IReadOnlyList<CompletedStepSummary>> SeenCompletedSteps { get; } = new();
 
+    /// <summary>
+    /// Snapshot of <c>ctx.WorkspaceRoot</c> per verify call — the isolated run workspace the executor
+    /// published in BeginRunAsync (Batch 06 B3). Verify runs on the ORCHESTRATOR thread, outside any
+    /// step's ambient, so this is the only place the root is observable after a step's finally has
+    /// restored the ambient; the resume half of G2 reads its call site through it. Recorded even when
+    /// null, so a test can tell "no isolation" apart from "verify never ran".
+    /// </summary>
+    public List<string?> SeenWorkspaceRoots { get; } = new();
+
     /// <summary>When set, the verify turn cancels this source (as ChatSession.Cancel() would) and then
     /// honors the linked run token — so the orchestrator's SafeVerify observes a genuine run cancel.</summary>
     public CancellationTokenSource? CancelSessionOnVerify { get; set; }
@@ -28,6 +37,7 @@ internal sealed class FakeVerifier : IAgentVerifier
     {
         VerifyCalls++;
         SeenCompletedSteps.Add(ctx.CompletedSteps.ToList());
+        SeenWorkspaceRoots.Add(ctx.WorkspaceRoot);
         if (CancelSessionOnVerify is { } src)
         {
             src.Cancel();               // user cancel fires during the in-flight verify turn
