@@ -25,6 +25,24 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     private readonly IAgentTimelineService? _timeline;
     private readonly string? _workspaceRoot;
 
+    /// <summary>
+    /// Per-step persona/provider/prompt resolution (Batch 07 G6); null ⇒ every step runs on the run default,
+    /// i.e. the pre-Batch-07 behaviour even for a step that carries an <c>AssignedPersonaId</c>.
+    /// </summary>
+    private readonly StepPersonaResolver? _stepPersonas;
+
+    /// <summary>
+    /// The run-level triple the resolver falls back to, or null when this executor was built without a run
+    /// persona (then no step ever resolves and <see cref="BuildSpec"/> reads the fields as before).
+    /// <para>
+    /// It exists because <see cref="_persona"/> is a <see cref="PersonaAttribution"/> — a projection, not the
+    /// <see cref="Persona"/> — and the resolver's fallback contract is "hand back the very triple you were
+    /// given". The manager passes the same persona object it projected the attribution from, so the two cannot
+    /// disagree.
+    /// </para>
+    /// </summary>
+    private readonly StepPersonaSetup? _runDefault;
+
     /// <param name="policy">The run's autonomy policy (Batch 04); null ⇒ no per-run policy, today's
     /// behaviour. Trailing and defaulted on purpose: this type is hand-constructed with a POSITIONAL argument
     /// list, so a required parameter would force edits into every existing call site and test.</param>
@@ -35,6 +53,12 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     /// exactly as they did before Batch 06 (the degrade every provisioning fault takes). Non-null confines
     /// every read, write, delete, list and search this run performs to that directory and is the normal case.
     /// Trailing and defaulted for the same reason as <paramref name="policy"/>.</param>
+    /// <param name="stepPersonas">Per-step persona resolution (Batch 07 G6); null ⇒ every step runs on the run
+    /// persona, today's behaviour. Trailing and defaulted for the same reason as <paramref name="policy"/>.</param>
+    /// <param name="runPersona">The run persona as a whole <see cref="Persona"/>, which
+    /// <paramref name="persona"/> is only a projection of. Required for per-step resolution and for nothing
+    /// else: null ⇒ no step is ever resolved, whatever <paramref name="stepPersonas"/> says. Pass the same
+    /// object <paramref name="persona"/> was projected from.</param>
     public LiveTurnExecutor(
         ChatSession session,
         Func<ChatSession, bool> isActive,
@@ -44,7 +68,9 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         bool tokenizationEnabled,
         RunAutonomyPolicy? policy = null,
         IAgentTimelineService? timeline = null,
-        string? workspaceRoot = null)
+        string? workspaceRoot = null,
+        StepPersonaResolver? stepPersonas = null,
+        Persona? runPersona = null)
     {
         _session = session;
         _ui = SynchronizationContext.Current
@@ -57,6 +83,8 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         _policy = policy;
         _timeline = timeline;
         _workspaceRoot = workspaceRoot;
+        _stepPersonas = stepPersonas;
+        _runDefault = runPersona is null ? null : new StepPersonaSetup(runPersona, provider, turnSetup);
     }
 
     public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
@@ -87,11 +115,21 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             return Task.CompletedTask;
         });
 
-    public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct) =>
-        PostAsync(async () =>
+    public async Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
+    {
+        // Batch 07 G6, and the placement is the point: resolve BEFORE the Post, not inside it. ResolveAsync
+        // awaits IPersonaService/IProviderService/ISettingsService I/O, and PostAsync marshals onto the captured
+        // UI SynchronizationContext — resolving inside would put a settings read and two store reads on the
+        // dispatcher for every step. This method is called from the orchestrator's loop, already off the UI
+        // thread, so the await here costs nothing the UI can feel.
+        var setup = _stepPersonas is null || _runDefault is null
+            ? null
+            : await _stepPersonas.ResolveAsync(step.AssignedPersonaId, _runDefault, _tokenizationEnabled, ct);
+
+        return await PostAsync(async () =>
         {
             var result = await _session.RunStepTurnAsync(BuildSpec(run, step.Ordinal, step.Intent ?? string.Empty,
-                step.ExpectedArtifact, useGoalVerbatim: false, stepId: step.Id), ctx, ct);
+                step.ExpectedArtifact, useGoalVerbatim: false, stepId: step.Id, setup), ctx, ct);
 
             // E2 (parity with HeadlessTurnExecutor's per-step write): make this step's assistant message
             // DURABLE now. The interactive path otherwise persists only via TurnCompleted → the manager's
@@ -104,6 +142,7 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             _session.RequestPersist();
             return result;
         });
+    }
 
     // No interim persist here (same call as HeadlessTurnExecutor's fallback): the R10 degrade path runs
     // EndRunAsync immediately on every branch, and that raises TurnCompleted → the manager persists.
@@ -149,19 +188,24 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             return Task.CompletedTask;
         });
 
+    /// <param name="stepPersona">This step's resolved triple (Batch 07 G6), or null for the run's. The six
+    /// persona-derived members below are the ONLY thing it changes — which is why
+    /// <c>ChatSession.RunStepTurnAsync</c> needed no change at all: it already reads <c>spec.Persona</c> for
+    /// attribution and <c>spec.Provider</c> for the exchange.</param>
     private StepTurnSpec BuildSpec(
-        AgentRun run, int ordinal, string intent, string? expectedArtifact, bool useGoalVerbatim, Guid? stepId) =>
+        AgentRun run, int ordinal, string intent, string? expectedArtifact, bool useGoalVerbatim, Guid? stepId,
+        StepPersonaSetup? stepPersona = null) =>
         new(
             RunId: run.Id,
             Ordinal: ordinal,
             Intent: intent,
             ExpectedArtifact: expectedArtifact,
-            SystemPrompt: _turnSetup.SystemPrompt,
-            Persona: _persona,
-            Provider: _provider,
-            Tools: _turnSetup.Tools,
-            SupportsTools: _turnSetup.SupportsTools,
-            WebSearchActive: _turnSetup.WebSearchActive,
+            SystemPrompt: stepPersona?.TurnSetup.SystemPrompt ?? _turnSetup.SystemPrompt,
+            Persona: stepPersona is null ? _persona : PersonaAttribution.From(stepPersona.Persona),
+            Provider: stepPersona?.Provider ?? _provider,
+            Tools: stepPersona is null ? _turnSetup.Tools : stepPersona.TurnSetup.Tools,
+            SupportsTools: stepPersona?.TurnSetup.SupportsTools ?? _turnSetup.SupportsTools,
+            WebSearchActive: stepPersona?.TurnSetup.WebSearchActive ?? _turnSetup.WebSearchActive,
             TokenizationEnabled: _tokenizationEnabled,
             UseGoalVerbatim: useGoalVerbatim,
             Policy: _policy,

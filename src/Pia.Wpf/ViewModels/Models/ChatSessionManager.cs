@@ -48,6 +48,17 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IExecutingRunStore _executingRuns;
     private readonly IAgentTimelineService? _agentTimelineService;
     private readonly IRunWorkspaceService? _runWorkspaces;
+
+    /// <summary>
+    /// Batch 07 G6: per-step persona resolution; null ⇒ every step uses the run persona.
+    /// <para>
+    /// A FACTORY because this manager is <c>Scoped</c>, i.e. one instance per WINDOW, while a resolver's memo
+    /// (roster + composed prompt per persona + degraded ids) is meant to last exactly one RUN. Holding one
+    /// would freeze the roster and every persona's system prompt for as long as the window is open — the
+    /// staleness the transient registration exists to avoid. Invoked once per dispatched run below.
+    /// </para>
+    /// </summary>
+    private readonly Func<StepPersonaResolver>? _stepPersonas;
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -124,7 +135,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Batch 06 D4: provisions the isolated workspace an interactive Planned run writes into. Trailing and
         // defaulted for the same reason as agentTimelineService — null means "no isolation", which is the
         // pre-Batch-06 behaviour, not a broken manager.
-        IRunWorkspaceService? workspaces = null)
+        IRunWorkspaceService? workspaces = null,
+        // Batch 07 G6: per-step persona resolution for an interactive Planned run, as a factory so each run
+        // gets its own resolver (see the field). Trailing and defaulted for the same reason as the two above —
+        // null means "every step runs on the run persona", i.e. today.
+        Func<StepPersonaResolver>? stepPersonas = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -151,6 +166,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _executingRuns = executingRuns;
         _agentTimelineService = agentTimelineService;
         _runWorkspaces = workspaces;
+        _stepPersonas = stepPersonas;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
 
@@ -824,9 +840,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // per step (R13). The orchestrator links the run CTS from session.Cts.Token below, so
             // ChatSession.Cancel() propagates to the run + in-flight step. Constructed on the UI thread
             // so the LiveTurnExecutor captures the UI SynchronizationContext.
+            // Batch 07 G6: `persona` is handed over TWICE on purpose — once projected as the attribution the
+            // transcript stamps, and once whole as runPersona, which is what the per-step resolver falls back
+            // to. Passing the same object to both is what makes them incapable of disagreeing. The resolver is
+            // built HERE, per run, rather than held as a field — its memo is per-run state.
             var live = new LiveTurnExecutor(session, IsSessionActive,
                 PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled,
-                policy, _agentTimelineService, workspaceRoot);
+                policy, _agentTimelineService, workspaceRoot, _stepPersonas?.Invoke(), persona);
 
             // Budget envelope from user settings (clamped in FromBudget); defaults match RunProfile.Interactive.
             var profile = RunProfile.FromBudget(settings.AgentMaxSteps, settings.AgentMaxReplans, settings.AgentWallClockMinutes);

@@ -33,6 +33,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <summary>The audit-timeline store (Batch 03); null ⇒ this run records nothing.</summary>
     private readonly IAgentTimelineService? _timelineService;
 
+    /// <summary>
+    /// Per-step persona/provider/prompt resolution (Batch 07 G6); null ⇒ every step runs on the run default,
+    /// i.e. exactly the pre-Batch-07 behaviour even for a step that carries an <c>AssignedPersonaId</c>.
+    /// </summary>
+    private readonly StepPersonaResolver? _stepPersonas;
+
     // Per-run accumulating state.
     private readonly List<ChatMessage> _messages = new();
     private readonly List<SyncAssistantChatMessage> _persisted = new();
@@ -40,6 +46,18 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private AssistantTurnSetup _setup = default!;
     private Persona _persona = default!;
     private AiProvider _provider = default!;
+
+    /// <summary>
+    /// The run-level triple, i.e. the three fields above bundled for <see cref="StepPersonaResolver"/>.
+    /// <para>
+    /// Batch 07 kept the run-level resolution rather than replacing it, and three things need it: the
+    /// orchestrator's plan/replan/verify turns are run-level by decision (one decomposition, one critic
+    /// verdict); <see cref="RunSingleTurnFallbackAsync"/> belongs to the run and passes no step persona; and
+    /// <see cref="BuildChatSnapshot"/>'s <c>ProviderId</c> is the CHAT ROW's provider, not a step's. It is also
+    /// what every fallback arm of the resolver returns.
+    /// </para>
+    /// </summary>
+    private StepPersonaSetup _runDefault = default!;
     private ITokenMapService? _tokenMap;
     private bool _tokenizationEnabled;
     private Guid _chatId;
@@ -71,7 +89,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         ILogger<HeadlessTurnExecutor> logger,
         // Trailing and defaulted so the existing positional construction in tests keeps compiling; the
         // container resolves it because it is registered.
-        IAgentTimelineService? timelineService = null)
+        IAgentTimelineService? timelineService = null,
+        // Batch 07 G6, trailing and defaulted for the same reason.
+        StepPersonaResolver? stepPersonas = null)
     {
         _engine = engine;
         _chatService = chatService;
@@ -83,6 +103,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _tokenMapFactory = tokenMapFactory;
         _logger = logger;
         _timelineService = timelineService;
+        _stepPersonas = stepPersonas;
     }
 
     /// <summary>
@@ -172,6 +193,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled,
             suggestAgentModeEligible: false);
 
+        // Batch 07 G6: the resolution above is now the run DEFAULT rather than the only answer. Deliberately
+        // still done here and still cached — see _runDefault's own comment for the three consumers that need a
+        // run-level triple. A step that names a roster persona resolves its own on top of this.
+        _runDefault = new StepPersonaSetup(_persona, _provider, _setup);
+
         // MCP is offered to unattended runs like any other tool now that the Phase-2 gate is in place: an
         // MCP call returns a deferred PluginToolCall and is denied inline unless its tool name is in the
         // run's write-grant set (default-deny — the launcher's default is
@@ -244,13 +270,26 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _ => ChatRole.User,
     };
 
-    public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct) =>
-        RunExchangeStepAsync(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact),
-            persistInterim: true, ct, TimelineScope(step.Id));
+    public async Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
+    {
+        // Batch 07 G6: resolve THIS step's persona before the exchange. Never throws — every arm of the ladder
+        // ends at _runDefault, because a per-step persona is an enhancement and must not be able to fail a run.
+        var setup = _stepPersonas is null
+            ? _runDefault
+            : await _stepPersonas.ResolveAsync(step.AssignedPersonaId, _runDefault, _tokenizationEnabled, ct)
+                .ConfigureAwait(false);
+
+        return await RunExchangeStepAsync(
+                BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact),
+                persistInterim: true, ct, TimelineScope(step.Id), setup)
+            .ConfigureAwait(false);
+    }
 
     // persistInterim: false — the fallback turn is followed IMMEDIATELY by the terminal EndRunAsync on
     // every branch of the R10 degrade path, so an interim write here would only double the chat rewrite.
     // stepId: null — the degrade turn belongs to the run but to no step.
+    // No step persona either, for the same reason: the R10 degrade turn belongs to the RUN, so it runs on the
+    // run persona's prompt and provider (the trailing argument is left at its default).
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
         RunExchangeStepAsync(ctx.Goal, persistInterim: false, ct, TimelineScope(stepId: null));
 
@@ -258,15 +297,28 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private AgentTimelineScope? TimelineScope(Guid? stepId) =>
         _timelineService is null ? null : new AgentTimelineScope(_timelineService, _runId, stepId);
 
+    /// <param name="persona">The step's resolved triple (Batch 07 G6), or null for the RUN's — which is what
+    /// the R10 degrade turn passes and what an executor built without a resolver always uses.</param>
     private async Task<StepTurnResult> RunExchangeStepAsync(
-        string instruction, bool persistInterim, CancellationToken ct, AgentTimelineScope? timeline = null)
+        string instruction, bool persistInterim, CancellationToken ct, AgentTimelineScope? timeline = null,
+        StepPersonaSetup? persona = null)
     {
+        var p = persona ?? _runDefault;
+
         // Append the EPHEMERAL step instruction to a COPY — the accumulating _messages keeps the
         // clean transcript (system + goal + one assistant reply per step) — §13.7.
-        var exchangeMessages = new List<ChatMessage>(_messages)
+        //
+        // Batch 07 G6, and this is the line that makes a per-step persona real rather than cosmetic: element 0
+        // of the copy is THIS STEP's system prompt, not the run's. _messages[0] is left alone on purpose — it
+        // stays the RUN persona's prompt, so the accumulating transcript keeps one well-defined system message
+        // and the next step (whatever persona it resolves to) starts from the same place. Mutating _messages[0]
+        // instead would leak step N's persona into step N+1 and into a resume's re-seed.
+        var exchangeMessages = new List<ChatMessage>(_messages.Count + 1)
         {
-            new(ChatRole.User, instruction),
+            new(ChatRole.System, p.TurnSetup.SystemPrompt),
         };
+        exchangeMessages.AddRange(_messages.Skip(1));
+        exchangeMessages.Add(new ChatMessage(ChatRole.User, instruction));
 
         // ONE compaction seam covers all three Headless entry points: ExecuteStepAsync, the R10
         // degrade turn (RunSingleTurnFallbackAsync) — both funnel through here — and the RESUME path.
@@ -280,7 +332,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // executor state to the DB is BuildChatSnapshot's `Messages = [.. _persisted]`, which serves
         // both the interim per-step write and the terminal one. A pass over a ChatMessage list is
         // therefore type-incapable of shrinking the transcript, so a resume still replays it in full.
-        var contextBudget = AgentContextBudget.From(_provider);
+        var contextBudget = AgentContextBudget.From(p.Provider);
         var request = await AgentContextCompactor
             .CompactAsync(exchangeMessages, contextBudget, _logger, ct)
             .ConfigureAwait(false);
@@ -311,7 +363,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // The same budget goes down into the exchange so the IN-step tool loop is bounded too: the
             // request compacted above can still grow past the window inside AiClientService as tool
             // calls and tool results accumulate over up to 10 rounds.
-            exchange = await _engine.RunExchangeAsync(request, _provider, _setup, _grantedWrites, ct,
+            exchange = await _engine.RunExchangeAsync(request, p.Provider, p.TurnSetup, _grantedWrites, ct,
                     onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline)
                 .ConfigureAwait(false);
         }
@@ -344,7 +396,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Timestamp = DateTime.UtcNow,
             Tokens = exchange.Tokens,
             ModelName = exchange.Model,
-            Persona = new SyncMessagePersona { Id = _persona.Id, Name = _persona.Name, Emoji = _persona.Emoji },
+            Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
         });
 
         // E2: this step's reply becomes DURABLE now. Until per-step persistence, EndRunAsync was the ONLY
@@ -454,6 +506,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             UpdatedAt = now,
             LastAccessedAt = now,
             WindowMode = WindowMode.Assistant.ToString(),
+            // The RUN's provider on purpose, never a step's (Batch 07 G6): this is the chat ROW's provider —
+            // what a later interactive turn on this chat would resume on — and a chat has one, whereas a
+            // multi-persona run may have used several.
             ProviderId = _provider.Id,
             WorkingDirectory = _existingWorkingDirectory,
             Messages = [.. _persisted],

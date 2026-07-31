@@ -23,7 +23,13 @@ public sealed class AgentStep
 
     public string? ExpectedArtifact { get; set; }
 
-    /// <summary>Reserved for Phase 3 sub-agents; null in Phase 1 (single persona).</summary>
+    /// <summary>
+    /// The roster persona this step runs as (Batch 07 G6), or null for the run persona — which is the common
+    /// case and the only case until a roster is configured. Written by <c>AgentPlanner</c> from the plan's
+    /// <c>personaKey</c> and consumed by both executors through <c>StepPersonaResolver</c>. An id here is a
+    /// REQUEST, not a guarantee: it is honoured only while it is still on the roster and still resolves, and it
+    /// degrades to the run persona rather than failing the step.
+    /// </summary>
     public Guid? AssignedPersonaId { get; set; }
 
     /// <summary>Reserved for a DAG; Phase 1 is linear.</summary>
@@ -41,5 +47,12 @@ public sealed class AgentStep
 
     public DateTime UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Free-form per-step JSON. Since Batch 07 G6 the planner writes <c>{"parallelGroup":N}</c> here when the
+    /// plan declares steps independent of one another. Nothing in this build ACTS on it — a plan can record the
+    /// intent and the panel and the loop still run every step sequentially. Deliberately not
+    /// <see cref="DependsOnJson"/>: that stays reserved for a real dependency graph, and a group marker is not
+    /// one. Any reader must treat a parse failure as "absent", i.e. sequential.
+    /// </summary>
     public string? ExtraJson { get; set; }
 }

@@ -507,6 +507,20 @@ public sealed class HeadlessTurnExecutorTests
         /// <summary>The executor's log, so a fixture can assert on the compaction diff LINE (D-A').</summary>
         public readonly CapturingLogger<HeadlessTurnExecutor> ExecutorLog = new();
 
+        // Hoisted out of NewExecutor so a fixture can seed them and so a resume shares them with the launch —
+        // which is what the container does anyway. Batch 07's per-step persona facts need all four.
+        public readonly IAssistantPromptComposer Composer = Substitute.For<IAssistantPromptComposer>();
+        public readonly IPersonaService Personas = Substitute.For<IPersonaService>();
+        public readonly IProviderService Providers = Substitute.For<IProviderService>();
+        public readonly ISettingsService SettingsService = Substitute.For<ISettingsService>();
+        public readonly AppSettings Settings = new();
+
+        /// <summary>
+        /// Batch 07 G6: the per-step resolver handed to every executor this harness builds, or null for the
+        /// pre-batch behaviour (every step on the run persona). Set it before the first NewExecutor call.
+        /// </summary>
+        public StepPersonaResolver? StepPersonas;
+
         public int Turns;
 
         /// <summary>
@@ -523,6 +537,17 @@ public sealed class HeadlessTurnExecutorTests
             Runs = new AgentRunService(Ctx, NullLogger<AgentRunService>.Instance);
             Chats = new CountingChatService(new AssistantChatService(Ctx, Runs));
 
+            // A prompt that NAMES the persona it was composed from, so a fixture can tell whose system message
+            // a given step actually sent. Every pre-Batch-07 fixture in this file only ever sees one persona,
+            // so its prompt is a constant string exactly as before.
+            Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+                    Arg.Any<bool>(), Arg.Any<bool>())
+                .Returns(ci => new AssistantTurnSetup(
+                    "system for " + ci.ArgAt<Persona>(0).Name, null, SupportsTools: false, WebSearchActive: false));
+            Personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(Persona);
+            Providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider);
+            SettingsService.GetSettingsAsync().Returns(_ => Task.FromResult(Settings));
+
             // One distinct reply per step turn, so the persisted transcript is order-verifiable.
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
@@ -536,29 +561,25 @@ public sealed class HeadlessTurnExecutorTests
                 });
         }
 
-        /// <summary>A fresh executor — models the launcher's per-run (and per-resume) DI scope.</summary>
+        /// <summary>
+        /// A fresh executor — models the launcher's per-run (and per-resume) DI scope. The four persona-side
+        /// substitutes are the HARNESS's, not locals: a resume must meet the same persona store and the same
+        /// composer the launch did, which is what the container gives it, and Batch 07's per-step facts need to
+        /// seed them from the fixture.
+        /// </summary>
         public HeadlessTurnExecutor NewExecutor()
         {
             var plugins = Substitute.For<IPluginService>();
-            var composer = Substitute.For<IAssistantPromptComposer>();
-            composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
-                .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
-            var personas = Substitute.For<IPersonaService>();
-            personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(Persona);
-            var providers = Substitute.For<IProviderService>();
-            providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider);
             var titles = Substitute.For<IChatTitleService>();
             titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
-            var settings = Substitute.For<ISettingsService>();
-            settings.GetSettingsAsync().Returns(new AppSettings());
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
             var engine = new BackgroundAssistantTurnRunner(
-                Ai, plugins, composer, personas, Chats, titles, settings, TokenMapFactory, Runs,
+                Ai, plugins, Composer, Personas, Chats, titles, SettingsService, TokenMapFactory, Runs,
                 new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
             return new HeadlessTurnExecutor(
-                engine, Chats, settings, personas, providers, composer, titles, TokenMapFactory,
-                ExecutorLog);
+                engine, Chats, SettingsService, Personas, Providers, Composer, titles, TokenMapFactory,
+                ExecutorLog, timelineService: null, StepPersonas);
         }
 
         public async Task<AgentRun> NewRunAsync(string goal)
@@ -1077,5 +1098,189 @@ public sealed class HeadlessTurnExecutorTests
 
         Assert.Equal(baseline.Count, compacted.Count);
         Assert.Equal(baseline, compacted);
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Batch 07 G6 — per-step persona, provider and PROMPT on the headless executor.
+    //
+    // The prompt is the half that is easy to ship broken: the executor's accumulating transcript already
+    // holds the RUN persona's system message at element 0, so an implementation that resolves a per-step
+    // persona and then reuses that element sends the right label, the right provider and the WRONG
+    // instructions — a feature that looks correct in the panel and is inert in the model.
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>A planner that degrades immediately, so the run takes the R10 single-turn fallback path.</summary>
+    private sealed class FallbackPlanner : IAgentPlanner
+    {
+        public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(PlanResult.Fallback);
+        public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(PlanResult.Fallback);
+    }
+
+    /// <summary>
+    /// Puts <paramref name="roster"/> on the harness's configured roster and gives the harness a real
+    /// <see cref="StepPersonaResolver"/> over its own substitutes. Roster membership is checked on the
+    /// EXECUTOR side too, so a fixture that only stubs the persona store would see every assignment ignored.
+    /// </summary>
+    private static void WithRoster(DurabilityHarness h, params Persona[] roster)
+    {
+        h.Settings.SetAgentPersonaRoster(UserOperatingMode.Personal, roster.Select(p => p.Id).ToList());
+        h.Personas.GetPersonasAsync().Returns(roster.ToList());
+        foreach (var p in roster)
+            h.Personas.GetPersonaAsync(p.Id).Returns(p);
+        h.StepPersonas = new StepPersonaResolver(
+            h.Personas, h.Providers, h.Composer, h.SettingsService, NullLogger<StepPersonaResolver>.Instance);
+    }
+
+    /// <summary>Records the (messages, provider) pair each turn was actually sent, in order.</summary>
+    private static List<(List<ChatMessage> Messages, AiProvider Provider)> CaptureTurns(DurabilityHarness h)
+    {
+        var captured = new List<(List<ChatMessage>, AiProvider)>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
+                Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                captured.Add(([.. (IList<ChatMessage>)ci[0]], (AiProvider)ci[1]));
+                return DriveText("reply " + ++h.Turns);
+            });
+        return captured;
+    }
+
+    private static Persona RosterPersona(string name, Guid? preferredProviderId = null) =>
+        new() { Id = Guid.NewGuid(), Name = name, SystemPrompt = "you are " + name, PreferredProviderId = preferredProviderId };
+
+    /// <summary>
+    /// A three-step plan whose first two steps are assigned to two DIFFERENT roster personas and whose third
+    /// is unassigned — the shape that catches both "the prompt never changes" and "the prompt changes and then
+    /// never changes back".
+    /// </summary>
+    private static List<AgentStep> MixedSteps(Persona first, Persona second)
+    {
+        var steps = Steps(3);
+        steps[0].AssignedPersonaId = first.Id;
+        steps[1].AssignedPersonaId = second.Id;
+        return steps;   // steps[2].AssignedPersonaId stays null ⇒ the run persona
+    }
+
+    [Fact]
+    public async Task AnAssignedStep_SendsThatPersonasSystemPrompt_AndTheRunPersonaSurvivesForTheNextStep()
+    {
+        // REGRESSION for the §0.1 headline: the system message is per STEP, and the accumulating transcript's
+        // element 0 stays the RUN persona's, so an unassigned step later in the same run is unaffected.
+        using var h = new DurabilityHarness();
+        var analyst = RosterPersona("Analyst");
+        var critic = RosterPersona("Critic");
+        WithRoster(h, analyst, critic);
+        var captured = CaptureTurns(h);
+        var run = await h.NewRunAsync("the goal");
+
+        await h.Orchestrator(new FakePlanner(MixedSteps(analyst, critic)))
+            .RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, RunProfile.Interactive,
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, captured.Count);
+        Assert.All(captured, c => Assert.Equal(ChatRole.System, c.Messages[0].Role));
+        Assert.Equal("system for Analyst", captured[0].Messages[0].Text);
+        Assert.Equal("system for Critic", captured[1].Messages[0].Text);
+        // The one that would go red if step 1 had mutated the shared transcript instead of its own copy.
+        Assert.Equal("system for Pia", captured[2].Messages[0].Text);
+
+        // The goal is still message 1 of every request: only element 0 was swapped.
+        Assert.All(captured, c => Assert.Equal("the goal", c.Messages[1].Text));
+    }
+
+    [Fact]
+    public async Task AnAssignedStep_RunsOnThatPersonasProvider()
+    {
+        // REGRESSION: D5 — a roster persona was chosen BECAUSE of its provider, so its PreferredProviderId
+        // wins for its own step while every other step stays on the run's.
+        using var h = new DurabilityHarness();
+        var fast = new AiProvider { Id = Guid.NewGuid(), Name = "fast", Endpoint = "https://y", ProviderType = AiProviderType.OpenAI };
+        var analyst = RosterPersona("Analyst", preferredProviderId: fast.Id);
+        var critic = RosterPersona("Critic");
+        WithRoster(h, analyst, critic);
+        h.Providers.GetProviderAsync(fast.Id).Returns(fast);
+        var captured = CaptureTurns(h);
+        var run = await h.NewRunAsync("the goal");
+
+        await h.Orchestrator(new FakePlanner(MixedSteps(analyst, critic)))
+            .RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, RunProfile.Interactive,
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(fast.Id, captured[0].Provider.Id);       // the assigned persona's own provider
+        Assert.Equal(h.Provider.Id, captured[1].Provider.Id); // no preference ⇒ the Assistant-mode default
+        Assert.Equal(h.Provider.Id, captured[2].Provider.Id); // unassigned ⇒ the run's
+    }
+
+    [Fact]
+    public async Task AnAssignedStep_StampsThatPersonaOnItsPersistedMessage()
+    {
+        // REGRESSION: the attribution the panel and the transcript read. Row 0 is the goal, then one row per
+        // step in order.
+        using var h = new DurabilityHarness();
+        var analyst = RosterPersona("Analyst");
+        var critic = RosterPersona("Critic");
+        WithRoster(h, analyst, critic);
+        var run = await h.NewRunAsync("the goal");
+
+        await h.Orchestrator(new FakePlanner(MixedSteps(analyst, critic)))
+            .RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, RunProfile.Interactive,
+                TestContext.Current.CancellationToken);
+
+        var chat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.Equal(4, chat!.Messages.Count);
+        Assert.Equal(analyst.Id, chat.Messages[1].Persona!.Id);
+        Assert.Equal("Analyst", chat.Messages[1].Persona!.Name);
+        Assert.Equal(critic.Id, chat.Messages[2].Persona!.Id);
+        Assert.Equal(h.Persona.Id, chat.Messages[3].Persona!.Id);
+
+        // The CHAT ROW's provider stays the run's even though two steps ran elsewhere: a chat has one
+        // provider, and it is what a later interactive turn on this chat would resume on.
+        Assert.Equal(h.Provider.Id, chat.ProviderId);
+    }
+
+    [Fact]
+    public async Task NoResolver_LeavesAnAssignedStepOnTheRunPersona()
+    {
+        // GUARD for the batch's off switch at this seam: the executor the container builds without a resolver
+        // (and, equivalently, any run whose roster is empty) behaves exactly as it did before Batch 07 even
+        // for a step that already carries an AssignedPersonaId — a persisted plan from a roster since cleared.
+        using var h = new DurabilityHarness();
+        var analyst = RosterPersona("Analyst");
+        h.Personas.GetPersonaAsync(analyst.Id).Returns(analyst);
+        h.StepPersonas = null;
+        var captured = CaptureTurns(h);
+        var run = await h.NewRunAsync("the goal");
+
+        await h.Orchestrator(new FakePlanner(MixedSteps(analyst, analyst)))
+            .RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, RunProfile.Interactive,
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, captured.Count);
+        Assert.All(captured, c => Assert.Equal("system for Pia", c.Messages[0].Text));
+        Assert.All(captured, c => Assert.Equal(h.Provider.Id, c.Provider.Id));
+        await h.Personas.DidNotReceive().GetPersonaAsync(Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task TheDegradeTurnUsesTheRunPersona()
+    {
+        // GUARD: the R10 single-turn fallback belongs to the RUN and to no step, so it must not pick up a
+        // persona at all — there is no step to read an assignment from, and the run persona is the answer.
+        using var h = new DurabilityHarness();
+        WithRoster(h, RosterPersona("Analyst"));
+        var captured = CaptureTurns(h);
+        var run = await h.NewRunAsync("the goal");
+
+        await h.Orchestrator(new FallbackPlanner())
+            .RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, RunProfile.Interactive,
+                TestContext.Current.CancellationToken);
+
+        Assert.Single(captured);
+        Assert.Equal("system for Pia", captured[0].Messages[0].Text);
+        Assert.Equal(h.Provider.Id, captured[0].Provider.Id);
     }
 }

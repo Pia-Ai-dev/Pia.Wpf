@@ -1,6 +1,8 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Pia;
+using Pia.Services;
 using Xunit;
 
 namespace Pia.Wpf.Tests.Unit;
@@ -31,5 +33,46 @@ public class BootstrapperGraphValidationTests
             ValidateOnBuild = true,
             ValidateScopes = true
         });
+    }
+
+    /// <summary>
+    /// The one thing <c>ValidateOnBuild</c> above cannot see: a factory descriptor's LAMBDA BODY.
+    /// <c>Func&lt;StepPersonaResolver&gt;</c> (Batch 07 G6) is a singleton that calls
+    /// <c>GetRequiredService</c> on the provider that resolved it — the ROOT — so if the resolver ever gained a
+    /// <c>Scoped</c> dependency, every interactive agent run would throw at its first step with
+    /// <c>ValidateScopes</c> on, and nothing would fail until then. Checked statically here, without resolving
+    /// anything: real construction of these services touches settings files and SQLite.
+    /// <para>
+    /// The factory exists because the resolver's memo must last exactly one RUN while both of its non-headless
+    /// consumers outlive one (a <c>Scoped</c> <c>ChatSessionManager</c> and the planner inside it).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheStepPersonaResolverFactory_IsRootSafe()
+    {
+        var configure = typeof(Bootstrapper).GetMethod(
+            "ConfigureServices", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(configure);
+        var services = new ServiceCollection();
+        configure!.Invoke(null, [services]);
+
+        var factory = Assert.Single(services, d => d.ServiceType == typeof(Func<StepPersonaResolver>));
+        Assert.Equal(ServiceLifetime.Singleton, factory.Lifetime);
+
+        var resolver = Assert.Single(services, d => d.ServiceType == typeof(StepPersonaResolver));
+        // Transient, so each invocation of the factory really does hand back a fresh memo (07 D6).
+        Assert.Equal(ServiceLifetime.Transient, resolver.Lifetime);
+
+        var parameters = typeof(StepPersonaResolver).GetConstructors().Single().GetParameters();
+        Assert.NotEmpty(parameters);   // non-vacuity: an empty ctor would make the loop below assert nothing
+        foreach (var p in parameters)
+        {
+            // ILogger<T> is provided by the logging builder rather than a plain descriptor; everything else
+            // must be registered and must not be Scoped.
+            if (p.ParameterType.IsGenericType && p.ParameterType.GetGenericTypeDefinition() == typeof(ILogger<>))
+                continue;
+            var dependency = Assert.Single(services, d => d.ServiceType == p.ParameterType);
+            Assert.NotEqual(ServiceLifetime.Scoped, dependency.Lifetime);
+        }
     }
 }

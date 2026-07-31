@@ -487,6 +487,23 @@ public static class Bootstrapper
         services.AddTransient<IAgentVerifier, AgentVerifier>();
         services.AddTransient<AgentRunOrchestrator>();
         services.AddTransient<HeadlessTurnExecutor>();
+        // Batch 07 G6: per-step persona/provider/prompt resolution and the assignable-persona roster.
+        // TRANSIENT and concrete. Transient because it memoizes the composed system prompt per persona id
+        // for the life of ONE run — a singleton would pin a stale prompt across a persona edit or a roster
+        // change until the app restarted, silently. Concrete because an interface here would buy nothing:
+        // every consumer wants the real memoizing behaviour, and the executor tests construct it directly.
+        services.AddTransient<StepPersonaResolver>();
+        // ...and a FACTORY, because "transient" is only per-RUN where something resolves per run.
+        // HeadlessTurnExecutor does (the launcher builds a fresh scope per run and per resume) and takes the
+        // resolver directly. Its two other consumers do NOT: ChatSessionManager is Scoped, i.e. one instance
+        // per WINDOW, and the AgentPlanner it reaches through its AgentRunOrchestrator is resolved once into
+        // that same scope. Injecting the resolver into either would pin ONE memo cache — and therefore one
+        // roster snapshot, one composed prompt per persona, and one degraded-id set — for as long as the
+        // window is open, which is the exact staleness the transient registration above exists to avoid: a
+        // user who configures the roster in Settings would see no specialists until the app restarted.
+        // Both invoke this per run instead. All five dependencies are singletons (or transients over
+        // singletons), so resolving from the root provider is safe with ValidateScopes on.
+        services.AddSingleton<Func<StepPersonaResolver>>(sp => sp.GetRequiredService<StepPersonaResolver>);
         // Headless "Run in background" / scheduled-AgentTask launcher (§17.1/17.5). Singleton: owns the
         // shared concurrency cap, shutdown token, and per-run workspace cleanup map. One instance also
         // serves IAgentRunResumeService (budget-pause resume re-launches through this same machinery).

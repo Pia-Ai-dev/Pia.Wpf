@@ -197,6 +197,56 @@ public class AppSettings
     // watching. Global, like every other Agent*/Scheduled* knob, and local-only (absent from SyncSettings).
     public bool AgentRunAutoApproveBuiltInWrites { get; set; } = false;
 
+    /// <summary>
+    /// Batch 07 D1/D7 — the "step specialists" roster: the personas a plan may assign individual steps to,
+    /// per <see cref="UserOperatingMode"/>. <b>This dictionary IS the opt-in for per-step personas.</b> Empty
+    /// (the default) means the planner is told about no personas, emits no persona key, and every step runs
+    /// on the run persona — today's behaviour, prompt text included. There is deliberately no separate
+    /// feature toggle: a second switch could disagree with this one.
+    /// <para>
+    /// Keyed by <see cref="UserOperatingMode"/> rather than <see cref="WindowMode"/> because every agent-run
+    /// persona resolution already keys on the CONSTANT <c>WindowMode.Assistant</c>, so a WindowMode-keyed
+    /// roster would have exactly one live key forever, whereas Personal vs. Business is a distinction users
+    /// actually make (a work roster and a home roster). Shape and helper pair mirror
+    /// <see cref="ModePersonaDefaults"/> / <see cref="GetPersonaForMode"/> / <see cref="SetPersonaForMode"/>.
+    /// </para>
+    /// <para>
+    /// Local-only: absent from <c>SyncSettings</c>, like every other <c>Agent*</c> knob.
+    /// </para>
+    /// </summary>
+    public Dictionary<UserOperatingMode, List<Guid>> AgentPersonaRoster { get; set; } = new();
+
+    /// <summary>
+    /// Hard cap on roster size, enforced on READ as well as on write. Read-side clamping is the point: a
+    /// hand-edited (or one day synced) settings file must not be able to put forty persona lines into every
+    /// plan prompt.
+    /// </summary>
+    public const int MaxAgentPersonaRoster = 6;
+
+    /// <summary>
+    /// The configured roster for <paramref name="mode"/>: never null, deduped, order preserved, clamped to
+    /// <see cref="MaxAgentPersonaRoster"/>. Ids that no longer resolve to a persona are NOT filtered here —
+    /// that needs <c>IPersonaService</c> and happens in <c>StepPersonaResolver.GetRosterAsync</c>.
+    /// </summary>
+    public IReadOnlyList<Guid> GetAgentPersonaRoster(UserOperatingMode mode) =>
+        AgentPersonaRoster.TryGetValue(mode, out var ids) && ids is { Count: > 0 }
+            ? ids.Distinct().Take(MaxAgentPersonaRoster).ToList()
+            : [];
+
+    /// <summary>
+    /// Replaces the roster for <paramref name="mode"/>. An empty list REMOVES the key rather than storing an
+    /// empty one, so a user who clears the roster leaves no residue — exactly what
+    /// <see cref="SetPersonaForMode"/> does with a null id.
+    /// </summary>
+    public void SetAgentPersonaRoster(UserOperatingMode mode, IReadOnlyList<Guid> ids)
+    {
+        var clamped = ids.Distinct().Take(MaxAgentPersonaRoster).ToList();
+        if (clamped.Count > 0)
+            AgentPersonaRoster[mode] = clamped;
+        else
+            AgentPersonaRoster.Remove(mode);
+    }
+
     // Scheduled/headless-run budget envelope (§17.5) — the caps an unattended run (a "Run in background"
     // detach or a scheduled AgentTask job) stops at. Separate from the interactive Agent* knobs because
     // an unattended run has no user watching and gets a longer envelope. Defaults match RunProfile.Scheduled.

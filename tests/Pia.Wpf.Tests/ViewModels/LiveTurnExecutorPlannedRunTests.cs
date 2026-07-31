@@ -149,26 +149,37 @@ public sealed class LiveTurnExecutorPlannedRunTests
 #pragma warning restore CS0162
     }
 
-    /// <summary>Sets a plain UI SynchronizationContext, constructs the live executor bound to the session, restores.</summary>
+    /// <summary>Sets a UI SynchronizationContext, constructs the live executor bound to the session, restores.</summary>
     /// <param name="workspaceRoot">Batch 06 D4's isolated workspace root; null (the default) keeps every
     /// pre-existing fact in this file on the un-isolated path it was written for.</param>
+    /// <param name="stepPersonas">Batch 07 G6's per-step resolver; null (the default) keeps every pre-existing
+    /// fact on the one-persona-per-run path it was written for.</param>
+    /// <param name="runPersona">The run persona as a whole object, which the attribution is only a projection
+    /// of. Null ⇒ no step is ever resolved, whatever <paramref name="stepPersonas"/> says.</param>
+    /// <param name="ui">The UI context to capture. A plain one by default (its <c>Post</c> queues to the
+    /// thread pool); a fixture that needs to observe which side of the <c>Post</c> something ran on supplies
+    /// its own.</param>
     private LiveTurnExecutor BuildLiveExecutor(
         ChatSession session, Func<ChatSession, bool> isActive, RunAutonomyPolicy? policy = null,
-        bool supportsTools = false, string? workspaceRoot = null)
+        bool supportsTools = false, string? workspaceRoot = null,
+        StepPersonaResolver? stepPersonas = null, Persona? runPersona = null,
+        SynchronizationContext? ui = null)
     {
         var prev = SynchronizationContext.Current;
-        SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
+        SynchronizationContext.SetSynchronizationContext(ui ?? new SynchronizationContext());
         try
         {
             return new LiveTurnExecutor(
                 session, isActive,
-                new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"),
+                new PersonaAttribution(runPersona?.Id ?? Guid.NewGuid(), runPersona?.Name ?? "Pia", "🤖"),
                 Provider(),
                 new AssistantTurnSetup("system", null, supportsTools, false),
                 tokenizationEnabled: false,
                 policy,
                 timeline: null,
-                workspaceRoot: workspaceRoot);
+                workspaceRoot: workspaceRoot,
+                stepPersonas: stepPersonas,
+                runPersona: runPersona);
         }
         finally
         {
@@ -713,5 +724,166 @@ public sealed class LiveTurnExecutorPlannedRunTests
         var chip = Assert.Single(session.Messages.Last(m => !m.IsUser).FileRefs);
         Assert.Equal(Path.Combine(workspace.Root, "a.md"), chip.AbsolutePath, ignoreCase: true);
         Assert.Equal(promoted, RunWorkspaceRedirects.Resolve(chip.AbsolutePath), ignoreCase: true);
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Batch 07 G6 — per-step persona on the INTERACTIVE executor (executor parity).
+    //
+    // Batch 04's post-review correction records this exact parity gap being missed on the Live side once
+    // already, which is why the headless facts are not enough: LiveTurnExecutor carries the persona through
+    // StepTurnSpec, and every member it sets is trailing and defaulted, so dropping one COMPILES.
+    // ---------------------------------------------------------------------------------------------------
+
+    private readonly IPersonaService _personaService = Substitute.For<IPersonaService>();
+    private readonly IProviderService _providerService = Substitute.For<IProviderService>();
+    private readonly IAssistantPromptComposer _composer = Substitute.For<IAssistantPromptComposer>();
+    private readonly ISettingsService _settingsService = Substitute.For<ISettingsService>();
+    private readonly AppSettings _appSettings = new();
+
+    private static Persona RosterPersona(string name) =>
+        new() { Id = Guid.NewGuid(), Name = name, SystemPrompt = "you are " + name };
+
+    /// <summary>
+    /// A real resolver over this fixture's substitutes, with <paramref name="roster"/> configured. Roster
+    /// membership is checked on the executor side too, so stubbing only the persona store would leave every
+    /// assignment ignored and the tests below green for the wrong reason.
+    /// </summary>
+    private StepPersonaResolver ResolverWith(params Persona[] roster)
+    {
+        _appSettings.SetAgentPersonaRoster(UserOperatingMode.Personal, roster.Select(p => p.Id).ToList());
+        _settingsService.GetSettingsAsync().Returns(_ => Task.FromResult(_appSettings));
+        _personaService.GetPersonasAsync().Returns(roster.ToList());
+        foreach (var p in roster)
+            _personaService.GetPersonaAsync(p.Id).Returns(p);
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+                Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(ci => new AssistantTurnSetup("system for " + ci.ArgAt<Persona>(0).Name, null, false, false));
+        _providerService.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider());
+        return new StepPersonaResolver(
+            _personaService, _providerService, _composer, _settingsService,
+            NullLogger<StepPersonaResolver>.Instance);
+    }
+
+    /// <summary>Records the system message of every exchange, plus the context it ran under.</summary>
+    private List<(string System, SynchronizationContext? Context)> CaptureSystemPrompts()
+    {
+        var captured = new List<(string, SynchronizationContext?)>();
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var messages = ci.ArgAt<IList<ChatMessage>>(0);
+                captured.Add((messages[0].Text ?? string.Empty, SynchronizationContext.Current));
+                return Stream(new TextDelta("reply"), new Finished(null, "m"));
+            });
+        return captured;
+    }
+
+    [Fact]
+    public async Task PlannedRun_CarriesThePerStepPersonaIntoTheStepSpec()
+    {
+        // REGRESSION for BuildSpec's Persona:/SystemPrompt: change. A real orchestrator, a real
+        // LiveTurnExecutor and a real ChatSession: the assigned step's assistant message is attributed to the
+        // assigned persona and its exchange carries that persona's system prompt, while the unassigned step
+        // stays on the run persona's — within ONE run.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var analyst = RosterPersona("Analyst");
+        var resolver = ResolverWith(analyst);
+
+        var steps = MakeSteps("s1", "s2");
+        steps[0].AssignedPersonaId = analyst.Id;   // steps[1] stays unassigned ⇒ the run persona
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(steps, false));
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        var captured = CaptureSystemPrompts();
+
+        var runPersona = Persona();
+        var live = BuildLiveExecutor(session, _ => false, stepPersonas: resolver, runPersona: runPersona);
+        var orchestrator = new AgentRunOrchestrator(
+            h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+
+        await DrainAsync(
+            orchestrator.RunAsync(run, live, runPersona, Provider(), RunProfile.Interactive, session.Cts!.Token),
+            "the run never settled");
+
+        // Attribution: what the transcript and the panel read off the step's own message.
+        var replies = session.Messages.Where(m => !m.IsUser).ToList();
+        Assert.Equal(2, replies.Count);
+        Assert.Equal(analyst.Id, replies[0].Persona!.Id);
+        Assert.Equal("Analyst", replies[0].Persona!.Name);
+        Assert.Equal(runPersona.Id, replies[1].Persona!.Id);
+
+        // Substance: the system prompt the model actually received per step. Without this half the feature is
+        // a relabelled glyph (§0.1).
+        Assert.Equal(2, captured.Count);
+        Assert.Equal("system for Analyst", captured[0].System);
+        Assert.Equal("system", captured[1].System);   // the run's turn setup, untouched
+    }
+
+    /// <summary>
+    /// A UI context that installs ITSELF as <c>Current</c> for the duration of a posted callback, the way a
+    /// real dispatcher does. That is what makes "did this run inside the Post?" observable: everything the
+    /// executor does before <c>PostAsync</c> sees a different (null) context.
+    /// </summary>
+    private sealed class MarkingSyncContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) =>
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                SetSynchronizationContext(this);
+                d(state);
+            });
+    }
+
+    [Fact]
+    public async Task PerStepResolutionHappensOutsideTheUiPost()
+    {
+        // GUARD. ResolveAsync awaits a settings read and two store reads; doing that inside PostAsync would put
+        // them on the dispatcher for every step of every interactive run. ExecuteStepAsync is called from the
+        // orchestrator's loop, already off the UI thread, so resolving before the Post costs the UI nothing.
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var analyst = RosterPersona("Analyst");
+        var resolver = ResolverWith(analyst);
+
+        SynchronizationContext? contextAtResolve = null;
+        var resolveSeen = 0;
+        _personaService.GetPersonaAsync(analyst.Id).Returns(_ =>
+        {
+            contextAtResolve = SynchronizationContext.Current;
+            resolveSeen++;
+            return Task.FromResult<Persona?>(analyst);
+        });
+
+        var steps = MakeSteps("s1");
+        steps[0].AssignedPersonaId = analyst.Id;
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(steps, false));
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        var captured = CaptureSystemPrompts();
+
+        var ui = new MarkingSyncContext();
+        var runPersona = Persona();
+        var live = BuildLiveExecutor(session, _ => false, stepPersonas: resolver, runPersona: runPersona, ui: ui);
+        var orchestrator = new AgentRunOrchestrator(
+            h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+
+        await DrainAsync(
+            orchestrator.RunAsync(run, live, runPersona, Provider(), RunProfile.Interactive, session.Cts!.Token),
+            "the run never settled");
+
+        // Positive control FIRST: the step turn itself really did run inside the Post, so this context is
+        // observable and the assertion below is not vacuous.
+        Assert.Single(captured);
+        Assert.Same(ui, captured[0].Context);
+
+        Assert.Equal(1, resolveSeen);
+        Assert.NotSame(ui, contextAtResolve);
     }
 }

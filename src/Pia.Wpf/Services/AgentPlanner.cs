@@ -35,6 +35,21 @@ public sealed class AgentPlanner : IAgentPlanner
     private readonly AiProviderHandlerResolver _handlers;
     private readonly ISettingsService _settings;
     private readonly ILogger<AgentPlanner> _logger;
+
+    /// <summary>
+    /// The assignable-persona roster source (Batch 07 D1/D2); null ⇒ no roster is ever listed and no step is
+    /// ever assigned, i.e. the pre-Phase-3 plan prompt byte for byte.
+    /// <para>
+    /// A FACTORY, not an instance, and the reason is lifetime: <see cref="StepPersonaResolver"/> memoizes the
+    /// roster for the life of the instance, but this planner is resolved ONCE into a window-lifetime
+    /// <c>ChatSessionManager</c> scope on the interactive path. Holding one resolver would freeze the roster at
+    /// the first plan of the session, so a user who configures the roster in Settings would see no specialists
+    /// until the app restarted. A fresh resolver per plan is the correct grain: within one plan the roster is
+    /// resolved once, which is what "the model can only be held to the list it was shown" needs.
+    /// </para>
+    /// </summary>
+    private readonly Func<StepPersonaResolver>? _personas;
+
     private static readonly JsonSerializerOptions PlanJson = new(JsonSerializerDefaults.Web);
 
     /// <summary>
@@ -49,16 +64,23 @@ public sealed class AgentPlanner : IAgentPlanner
         EmitPlanSchema, "emit_plan",
         "Emit the ordered plan of steps to accomplish the goal.");
 
+    /// <param name="personas">The Batch 07 roster source, as a factory invoked once per plan (see
+    /// <see cref="_personas"/> for why a factory); null ⇒ the roster is empty, the plan prompt carries no
+    /// specialist block and every step is emitted unassigned. Trailing and defaulted on purpose: this type is
+    /// constructed POSITIONALLY in its own tests, so a required parameter would force an edit into every one
+    /// of them.</param>
     public AgentPlanner(
         IAiClientService ai,
         AiProviderHandlerResolver handlers,
         ISettingsService settings,
-        ILogger<AgentPlanner> logger)
+        ILogger<AgentPlanner> logger,
+        Func<StepPersonaResolver>? personas = null)
     {
         _ai = ai;
         _handlers = handlers;
         _settings = settings;
         _logger = logger;
+        _personas = personas;
     }
 
     [Description("Emit the ordered plan of steps to accomplish the goal.")]
@@ -66,11 +88,24 @@ public sealed class AgentPlanner : IAgentPlanner
         [Description("The ordered steps, each with a short title, an intent, and an optional expected artifact.")]
         PlanStepArg[] steps) => "";
 
-    /// <summary>One step in an <c>emit_plan</c> call. Title + Intent are required (§13.3).</summary>
+    /// <summary>
+    /// One step in an <c>emit_plan</c> call. Title + Intent are required (§13.3); the two trailing members are
+    /// Batch 07's and are optional in the schema as well as in C# — <c>AIFunctionFactory</c> generates the tool
+    /// schema from this record, so a required member would make every plan turn carry them.
+    /// </summary>
     public sealed record PlanStepArg(
         [property: Description("Short imperative title")] string Title,
         [property: Description("What this step should accomplish")] string Intent,
-        [property: Description("The concrete artifact/result this step should produce")] string? ExpectedArtifact = null);
+        [property: Description("The concrete artifact/result this step should produce")] string? ExpectedArtifact = null,
+        // Matched by NAME against the roster the system message listed (07 D2). A name, not a Guid: models do
+        // not reproduce GUIDs reliably and one mistyped nibble is an unresolvable id for a step the model DID
+        // mean to assign. Not an index either: an off-by-one silently assigns the WRONG persona, whereas a
+        // name mismatch fails closed to null, which is the run persona, which is today.
+        [property: Description("Optional: the exact name of one of the listed specialists to run this step")] string? PersonaKey = null,
+        // Steps sharing the same non-null value are declared independent of each other. Persisted for a later
+        // batch to act on (AgentStep.ExtraJson); nothing in this build fans out, so the only effect today is
+        // that a plan can RECORD the intent.
+        [property: Description("Optional: steps that can run at the same time, independently, share one number")] int? ParallelGroup = null);
 
     private sealed record EmitPlanArgs(PlanStepArg[]? Steps);
 
@@ -83,14 +118,18 @@ public sealed class AgentPlanner : IAgentPlanner
         // plan's cost, so they are summed in on every path below (I1).
         var (analysis, usage) = await TryReasonAsync(goal, persona, provider, ct).ConfigureAwait(false);
 
-        var (steps, planUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: false, analysis), provider, ct).ConfigureAwait(false);
+        // Resolved ONCE per plan, before the turns, and reused for the prompt AND the name→id mapping — the
+        // model can only be held to the list it was actually shown.
+        var roster = await TryGetRosterAsync(ct).ConfigureAwait(false);
+
+        var (steps, planUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: false, analysis, roster), provider, ct).ConfigureAwait(false);
         usage = AgentTurnUsage.Sum(usage, planUsage);
 
         if (steps is null)
         {
             // The firm retry REUSES the one analysis: the retry exists because the model wrote prose
             // instead of calling emit_plan, which a second reasoning turn would not fix and would pay for.
-            var (retried, retryUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: true, analysis), provider, ct).ConfigureAwait(false); // R10 retry once
+            var (retried, retryUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: true, analysis, roster), provider, ct).ConfigureAwait(false); // R10 retry once
             steps = retried;
             usage = AgentTurnUsage.Sum(usage, retryUsage); // I1: the retry's rounds were paid for too
         }
@@ -100,7 +139,7 @@ public sealed class AgentPlanner : IAgentPlanner
             _logger.LogInformation("Planner degrade → SingleTurn fallback (no valid emit_plan).");
             return PlanResult.Fallback with { Usage = usage }; // still accrue the tokens spent
         }
-        return new PlanResult(BuildSteps(steps), false, usage);
+        return new PlanResult(BuildSteps(steps, roster), false, usage);
     }
 
     public async Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
@@ -110,10 +149,15 @@ public sealed class AgentPlanner : IAgentPlanner
         // a fresh reasoning turn would have to reconstruct; and it can run up to MaxReplans times per run, so
         // doubling ITS cost multiplies over the run instead of being paid once. Deliberate asymmetry, not an
         // oversight — revisit only with evidence that replans specifically plan worse.
-        var (steps, usage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: false), provider, ct).ConfigureAwait(false);
+        // The roster is threaded through the REPLAN too, and that is not symmetry for its own sake: a replan
+        // REPLACES the remaining plan, so listing the specialists only on the first plan would make the first
+        // failure silently strip every persona assignment for the rest of the run.
+        var roster = await TryGetRosterAsync(ct).ConfigureAwait(false);
+
+        var (steps, usage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: false, roster), provider, ct).ConfigureAwait(false);
         if (steps is null)
         {
-            var (retried, retryUsage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: true), provider, ct).ConfigureAwait(false);
+            var (retried, retryUsage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: true, roster), provider, ct).ConfigureAwait(false);
             steps = retried;
             usage = AgentTurnUsage.Sum(usage, retryUsage);
         }
@@ -123,7 +167,43 @@ public sealed class AgentPlanner : IAgentPlanner
             _logger.LogInformation("Replan degrade → fallback (no valid emit_plan).");
             return PlanResult.Fallback with { Usage = usage }; // still accrue the tokens spent
         }
-        return new PlanResult(BuildSteps(steps), false, usage);
+        return new PlanResult(BuildSteps(steps, roster), false, usage);
+    }
+
+    /// <summary>
+    /// The assignable roster, or EMPTY on any problem. Wrapped like <see cref="ShouldReasonFirstAsync"/>: this
+    /// is the gate of an optional feature and must never be able to fail planning, so a settings-read fault or
+    /// a persona-store fault degrades to today's plan (no specialist block, no assignments) rather than to no
+    /// plan at all.
+    /// <para>
+    /// Stated honestly: <c>GetRosterAsync</c> already swallows its own faults and answers <c>[]</c>, so the
+    /// catch below is currently UNREACHABLE by any fault this build can produce. It is kept as defence in
+    /// depth around a public method of another type — it is what makes "the roster cannot fail a plan" true at
+    /// THIS layer whatever the resolver later grows into — and the test that drives a settings fault therefore
+    /// proves the outcome, not this arm. The warning carries the exception TYPE only: a persona store's message
+    /// can embed a persona name, which is user-named content.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<Persona>> TryGetRosterAsync(CancellationToken ct)
+    {
+        if (_personas is null)
+            return [];
+        try
+        {
+            // A fresh resolver per plan (see the field's comment): its memo is per-instance by design, and this
+            // planner can outlive many plans.
+            return await _personas().GetRosterAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Plan persona roster could not be resolved ({Error}); planning without specialists.",
+                ex.GetType().Name);
+            return [];
+        }
     }
 
     /// <summary>
@@ -278,12 +358,14 @@ public sealed class AgentPlanner : IAgentPlanner
         return true;
     }
 
-    private static IReadOnlyList<AgentStep> BuildSteps(IReadOnlyList<PlanStepArg> steps)
+    private IReadOnlyList<AgentStep> BuildSteps(IReadOnlyList<PlanStepArg> steps, IReadOnlyList<Persona> roster)
     {
         var result = new List<AgentStep>(steps.Count);
+        var dropped = 0;
         for (var i = 0; i < steps.Count; i++)
         {
             var s = steps[i];
+            var assigned = MatchRoster(s.PersonaKey, roster, ref dropped);
             result.Add(new AgentStep
             {
                 Id = Guid.Empty, // ReplaceStepsAsync assigns a fresh Id
@@ -292,11 +374,59 @@ public sealed class AgentPlanner : IAgentPlanner
                 Intent = s.Intent.Trim(),
                 ExpectedArtifact = string.IsNullOrWhiteSpace(s.ExpectedArtifact) ? null : s.ExpectedArtifact!.Trim(),
                 Status = AgentStepStatus.Pending,
-                AssignedPersonaId = null,
+                AssignedPersonaId = assigned,
+                // Gated on the roster, like the assignment above, and for the D1 reason rather than tidiness:
+                // AppendRoster is what tells the model about parallelGroup at all, so with no roster
+                // configured a value here was never asked for. Recording it anyway would make a step row
+                // differ from the pre-batch one on a build the user never opted into.
+                ExtraJson = roster.Count == 0 ? null : SerializeExtras(s.ParallelGroup),
             });
+        }
+        if (dropped > 0)
+        {
+            // COUNT only. The key ECHOES a persona name, which is user-named content, so the key itself must
+            // never reach the log (07 D2) — same shape as the launcher's dropped-policy-class count.
+            _logger.LogInformation(
+                "Plan assigned {DroppedCount} step(s) to an unknown persona; those steps use the run persona", dropped);
         }
         return result;
     }
+
+    /// <summary>
+    /// Maps a model-emitted persona key to a roster id, <c>OrdinalIgnoreCase</c> on the trimmed
+    /// <see cref="Persona.Name"/>. A blank key is simply "unassigned" and is not counted as a miss; a non-blank
+    /// key that matches nothing is counted, so the log can say HOW OFTEN without saying WHAT.
+    /// <para>
+    /// An unmatched key is deliberately NOT a plan defect — <see cref="ValidatePlan"/> does not see these
+    /// members at all. Validating them would turn a cosmetic model slip into a SingleTurn degrade, i.e. throw
+    /// away a perfectly good plan because one label was wrong.
+    /// </para>
+    /// </summary>
+    private static Guid? MatchRoster(string? personaKey, IReadOnlyList<Persona> roster, ref int dropped)
+    {
+        if (string.IsNullOrWhiteSpace(personaKey) || roster.Count == 0)
+            return null;
+
+        var key = personaKey.Trim();
+        foreach (var p in roster)
+        {
+            if (string.Equals(p.Name.Trim(), key, StringComparison.OrdinalIgnoreCase))
+                return p.Id;
+        }
+        dropped++;
+        return null;
+    }
+
+    /// <summary>
+    /// The step's <c>ExtraJson</c> payload, or null when there is nothing to record. Serialized with
+    /// <see cref="JsonSerializer"/> rather than interpolated: the value is model-authored, and building JSON by
+    /// string concatenation is how a hostile value breaks the document.
+    /// </summary>
+    private static string? SerializeExtras(int? parallelGroup) =>
+        parallelGroup is { } g ? JsonSerializer.Serialize(new StepExtras(g), PlanJson) : null;
+
+    /// <summary>The <c>AgentStep.ExtraJson</c> document shape. One member so far.</summary>
+    private sealed record StepExtras(int ParallelGroup);
 
     /// <summary>
     /// The reasoning turn's prompt. Deliberately says NOTHING about <c>emit_plan</c> or any output format:
@@ -319,7 +449,38 @@ public sealed class AgentPlanner : IAgentPlanner
         };
     }
 
-    private static List<ChatMessage> BuildPlanMessages(string goal, Persona persona, bool firm, string? analysis = null)
+    /// <summary>
+    /// Appends the assignable-specialist block, and appends NOTHING when the roster is empty — which is the
+    /// whole opt-in (07 D1): with no roster configured, this method leaves the plan prompt byte-identical to
+    /// the pre-Phase-3 one, so a user who has not opted in cannot get a different plan.
+    /// <para>
+    /// It goes on the SYSTEM message, never the user one. <c>TokenizingAiClientService</c> rewrites only
+    /// <see cref="ChatRole.User"/> text to PII placeholders, and a roster is app-owned configuration rather
+    /// than user turn text — the same reasoning that puts the reasoning analysis on the user message puts this
+    /// one on the system message.
+    /// </para>
+    /// </summary>
+    private static void AppendRoster(StringBuilder sb, IReadOnlyList<Persona> roster)
+    {
+        if (roster.Count == 0)
+            return;
+
+        sb.AppendLine("You may assign each step to one of these specialists by setting personaKey to its exact name.");
+        sb.AppendLine("Leave personaKey out to use the default assistant.");
+        sb.AppendLine("Available:");
+        foreach (var p in roster)
+            sb.AppendLine($"  {p.Name} — {Describe(p)}");
+        sb.AppendLine("Steps that can run at the same time, independently of each other, may share the same parallelGroup number. Leave parallelGroup out unless the steps are genuinely independent.");
+    }
+
+    /// <summary>One roster line's descriptor: the tagline, else the first three expertise tags, else nothing.</summary>
+    private static string Describe(Persona p) =>
+        !string.IsNullOrWhiteSpace(p.Tagline) ? p.Tagline!.Trim()
+        : p.Expertise.Count > 0 ? string.Join(", ", p.Expertise.Take(3))
+        : "general assistant";
+
+    private static List<ChatMessage> BuildPlanMessages(
+        string goal, Persona persona, bool firm, string? analysis, IReadOnlyList<Persona> roster)
     {
         var sb = new StringBuilder();
         sb.AppendLine(persona.SystemPrompt);
@@ -327,6 +488,7 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine("You are decomposing the user's goal into an ordered, minimal plan of concrete steps.");
         sb.AppendLine("Call the emit_plan tool exactly once with the ordered steps. Each step needs a short title and an intent (what it accomplishes); include an expectedArtifact when there is a concrete deliverable.");
         sb.AppendLine("Keep the plan tight — only the steps genuinely needed to accomplish the goal.");
+        AppendRoster(sb, roster);
         if (firm)
             sb.AppendLine("You did not call emit_plan. You MUST respond by calling the emit_plan tool now — do not write prose.");
 
@@ -347,7 +509,8 @@ public sealed class AgentPlanner : IAgentPlanner
         };
     }
 
-    private static List<ChatMessage> BuildReplanMessages(RunContext ctx, string? failure, Persona persona, bool firm)
+    private static List<ChatMessage> BuildReplanMessages(
+        RunContext ctx, string? failure, Persona persona, bool firm, IReadOnlyList<Persona> roster)
     {
         var sb = new StringBuilder();
         sb.AppendLine(persona.SystemPrompt);
@@ -366,6 +529,7 @@ public sealed class AgentPlanner : IAgentPlanner
         if (!string.IsNullOrWhiteSpace(failure))
             sb.AppendLine($"Failure detail: {failure}");
         sb.AppendLine("Call emit_plan with the revised ordered steps (only the steps still needed).");
+        AppendRoster(sb, roster);
         if (firm)
             sb.AppendLine("You MUST call the emit_plan tool now — do not write prose.");
 
