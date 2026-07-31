@@ -13,8 +13,9 @@ namespace Pia.Tests.Services;
 /// impossible, and these are their facts.
 /// <para>
 /// Pure static-helper coverage: no launcher instance, no <c>runsBaseDirOverride</c> harness, no disk. The
-/// launcher-driving child facts (T-CHILD-1..4) belong to the group that adds <c>LaunchChildAsync</c>; nothing
-/// spawns a child yet.
+/// launcher-driving child facts (T-CHILD-1..6 — the separate child pool, the shared workspace, the resumed
+/// child, <c>CancelAsync</c> and the chat→runs non-registration) live in <c>HeadlessRunLauncherTests</c>
+/// instead, which already owns the <c>BuildLauncher</c> harness they need.
 /// </para>
 /// </summary>
 public class HeadlessRunLauncherChildRunTests

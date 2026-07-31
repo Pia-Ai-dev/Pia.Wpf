@@ -313,6 +313,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         public Task<int> FailInterruptedRunsAsync(CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<AgentRun?> GetAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<IReadOnlyList<AgentRun>> GetByChatAsync(Guid chatId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
+        public Task<IReadOnlyList<AgentRun>> GetChildRunsAsync(Guid parentRunId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> ChatHasPlannedRunAsync(Guid chatId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");

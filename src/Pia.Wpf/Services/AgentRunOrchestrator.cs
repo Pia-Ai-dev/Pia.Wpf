@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -20,22 +22,50 @@ public sealed class AgentRunOrchestrator
     private readonly IAgentVerifier _verifier;
     private readonly ILogger<AgentRunOrchestrator> _logger;
     private readonly IRunWorkspaceService? _workspaces;
+    private readonly IHeadlessRunLauncher? _childLauncher;
+    private readonly IAssistantChatService? _chats;
+
+    /// <summary>
+    /// Cap on a delegated run's answer text as it is folded into the parent's context. Same number as
+    /// <c>AgentPlanner</c>'s own analysis cap, for the same reason: this text lands in the replan and verify
+    /// prompts, and one verbose child must not crowd out its siblings.
+    /// </summary>
+    private const int MaxChildAnswerChars = 4000;
+
+    /// <summary>What a settled child's step reports when its answer could not be read. Says the work ran
+    /// elsewhere rather than implying the step produced nothing (the failure mode
+    /// <c>CompletedStepSummary.FromEarlierSegment</c> exists for).</summary>
+    private const string DelegatedAnswerUnavailable = "(this step ran as a delegated run; its result text is not available here)";
+
+    private static readonly JsonSerializerOptions LedgerJsonOptions =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     /// <param name="workspaces">Batch 06 G4. TRAILING and DEFAULTED, like every dependency this batch adds:
     /// this type is hand-constructed positionally in a dozen test sites, and a required parameter would break
     /// all of them at once. Null ⇒ no promotion, which is the pre-Batch-06 loop exactly.</param>
+    /// <param name="childLauncher">Batch 07 G10, trailing and defaulted for the same reason. Null ⇒ <b>no
+    /// delegation, ever</b>: a plan's parallel groups are recorded and ignored, and every step runs in-process
+    /// exactly as before. No DI cycle — the launcher is a singleton that resolves this type lazily from a
+    /// per-run scope, so nothing is constructed twice.</param>
+    /// <param name="chats">Batch 07 G10, trailing and defaulted. Only used to read a settled child's answer back
+    /// into the parent's context; null ⇒ the fan-out still works and the parent's replan/verify prompts see
+    /// <see cref="DelegatedAnswerUnavailable"/> instead of the child's text.</param>
     public AgentRunOrchestrator(
         IAgentRunService runService,
         IAgentPlanner planner,
         IAgentVerifier verifier,
         ILogger<AgentRunOrchestrator> logger,
-        IRunWorkspaceService? workspaces = null)
+        IRunWorkspaceService? workspaces = null,
+        IHeadlessRunLauncher? childLauncher = null,
+        IAssistantChatService? chats = null)
     {
         _runService = runService;
         _planner = planner;
         _verifier = verifier;
         _logger = logger;
         _workspaces = workspaces;
+        _childLauncher = childLauncher;
+        _chats = chats;
     }
 
     public async Task RunAsync(
@@ -140,6 +170,35 @@ public sealed class AgentRunOrchestrator
             var replans = 0;
             var unverifiedTruncated = false;
 
+            // The step-failure replan branch, extracted so the in-process path and the fan-out path share ONE
+            // copy of the replan budget, the KeepDone re-ordinaling and the two terminal fails. Returns true
+            // when the caller should `continue` the drain loop (revised steps were written), false when the run
+            // is over — `failed` is already set and the terminal Fail already written in that case.
+            async Task<bool> TryReplanAfterFailureAsync(string? error)
+            {
+                if (replans++ < profile.MaxReplans)
+                {
+                    var revised = await _planner.ReplanAsync(ctx, error, persona, provider, cts.Token).ConfigureAwait(false);
+                    await SafeAddUsage(run.Id, revised.Usage, cts.Token).ConfigureAwait(false); // I1
+                    if (!revised.FallBackToSingleTurn)
+                    {
+                        // Keep the Done steps (immutable, original Ids preserved), append the revised
+                        // steps continuing the ordinal sequence; ReplaceSteps writes ordinals verbatim.
+                        var doneSteps = await KeepDoneAsync(run.Id, cts.Token).ConfigureAwait(false);
+                        var offset = doneSteps.Count;
+                        var revisedSteps = revised.Steps.Select((s, i) => { s.Ordinal = offset + i; return s; });
+                        await SafeReplaceSteps(run.Id, doneSteps.Concat(revisedSteps).ToList(), cts.Token).ConfigureAwait(false);
+                        return true; // re-query picks up the revised steps (R2)
+                    }
+                    // replan itself degraded to Fallback → the same terminal fail as an exhausted budget
+                }
+
+                failed = true;
+                await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                await SafeFail(run.Id, error, cancelled: false).ConfigureAwait(false);
+                return false;
+            }
+
             // Outer verify → replan → re-drain loop. Verify feeds the SAME `replans`/profile.MaxReplans
             // budget as step-failure replan (guardrail 3: no replan storm — a run that keeps failing
             // verify terminates as Completed+truncated "unverified", never loops forever).
@@ -166,6 +225,44 @@ public sealed class AgentRunOrchestrator
                         return;
                     }
 
+                    // Batch 07 D7/D11: a step the plan put in a PARALLEL GROUP is not executed in-process —
+                    // the whole group is dispatched as sibling CHILD runs and awaited here. Null covers every
+                    // ordinary step, which is every step of every plan a build with no persona roster produces
+                    // (the planner only ever writes a parallelGroup when a roster is configured).
+                    var fanOut = await TryFanOutAsync(run, step, ctx, profile, cts).ConfigureAwait(false);
+                    if (fanOut is { } children)
+                    {
+                        if (children.Cancelled)
+                        {
+                            cancelled = true;
+                            await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                            await SafeFail(run.Id, children.Error, cancelled: true).ConfigureAwait(false);
+                            break;
+                        }
+
+                        if (children.AnyParked)
+                        {
+                            // D13: a PARKED child is not a finished child. Its work is durable and resumable,
+                            // so failing the parent would throw it away and burn a replan. Re-park the parent
+                            // through the existing budget-pause shape — its fan-out steps are still Pending, so
+                            // one Continue on the parent re-dispatches the group (and cancels this generation
+                            // first). Deliberately NO SafeEndRun and no promotion: a park is not terminal.
+                            await PinRange().ConfigureAwait(false);
+                            await SafePause(run.Id, cts.Token, reason: "children-parked").ConfigureAwait(false);
+                            await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                            return;
+                        }
+
+                        if (children.AnyFailed)
+                        {
+                            if (await TryReplanAfterFailureAsync(children.Error).ConfigureAwait(false))
+                                continue;
+                            break;
+                        }
+
+                        continue; // every sibling settled Done — re-query for the next pending step (R2)
+                    }
+
                     await SafeSetState(run.Id, AgentRunState.Running, cts.Token).ConfigureAwait(false);
                     await SafeSetStepStatus(step.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
 
@@ -187,29 +284,8 @@ public sealed class AgentRunOrchestrator
 
                     if (!r.Succeeded)
                     {
-                        if (replans++ < profile.MaxReplans)
-                        {
-                            var revised = await _planner.ReplanAsync(ctx, r.Error, persona, provider, cts.Token).ConfigureAwait(false);
-                            await SafeAddUsage(run.Id, revised.Usage, cts.Token).ConfigureAwait(false); // I1
-                            if (revised.FallBackToSingleTurn)
-                            {
-                                failed = true;
-                                await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                                await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
-                                break;
-                            }
-                            // Keep the Done steps (immutable, original Ids preserved), append the revised
-                            // steps continuing the ordinal sequence; ReplaceSteps writes ordinals verbatim.
-                            var doneSteps = await KeepDoneAsync(run.Id, cts.Token).ConfigureAwait(false);
-                            var offset = doneSteps.Count;
-                            var revisedSteps = revised.Steps.Select((s, i) => { s.Ordinal = offset + i; return s; });
-                            await SafeReplaceSteps(run.Id, doneSteps.Concat(revisedSteps).ToList(), cts.Token).ConfigureAwait(false);
-                            continue; // re-query picks up the revised steps (R2)
-                        }
-
-                        failed = true;
-                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                        await SafeFail(run.Id, r.Error, cancelled: false).ConfigureAwait(false);
+                        if (await TryReplanAfterFailureAsync(r.Error).ConfigureAwait(false))
+                            continue;
                         break;
                     }
                 }
@@ -377,6 +453,426 @@ public sealed class AgentRunOrchestrator
         return reason; // fed into ReplanAsync's prompt — never logged (sensitive)
     }
 
+    // ---- Batch 07 D7: the fan-out (delegate a step group to sibling child runs and await them) ----
+
+    /// <summary>How a fan-out settled, as the drain loop needs to see it. Never both parked and cancelled —
+    /// the caller checks <paramref name="Cancelled"/> first, because a cascade cancel outranks a park.</summary>
+    private sealed record FanOutResult(bool AnyParked, bool AnyFailed, bool Cancelled, string? Error);
+
+    /// <summary>
+    /// Dispatch <paramref name="step"/>'s whole parallel group as sibling CHILD runs, await every one of them,
+    /// and settle each sibling step from the child's persisted row. Returns <c>null</c> when this step is NOT a
+    /// fan-out, which is the overwhelmingly common case and means "run it in-process, exactly as before".
+    /// <para>
+    /// Four independent reasons to decline, each one a degrade rather than a failure: no launcher was injected
+    /// (⇒ delegation is off for the whole build), the step declares no <c>parallelGroup</c> (D11 — absence means
+    /// sequential), this run is ITSELF a child (§7.5's depth guard), or the group has fewer than two pending
+    /// members (D11 — a group of one is not a fan-out; running it as a child would cost all of delegation and
+    /// buy none of the parallelism).
+    /// </para>
+    /// <para>
+    /// Every child interaction is failure-isolated. A launcher fault while dispatching sibling 3 of 4 marks
+    /// sibling 3 failed and still awaits siblings 1–2: a dispatched child is never left unawaited, because that
+    /// is precisely the orphan D16 exists to rule out.
+    /// </para>
+    /// </summary>
+    private async Task<FanOutResult?> TryFanOutAsync(
+        AgentRun run, AgentStep step, RunContext ctx, RunProfile profile, CancellationTokenSource cts)
+    {
+        if (_childLauncher is null)
+            return null;
+
+        if (ParallelGroupOf(step) is not { } group)
+            return null;
+
+        // Depth guard (§7.5), one line and structural: a run that is itself a child NEVER delegates. It bounds
+        // the wall clock, the child-pool pressure and the scheduled-job _runLock hold to a single level — a
+        // plan shaped like a tree would otherwise multiply R15 by its depth.
+        if (run.ParentRunId is not null)
+            return null;
+
+        var siblings = await SafeSiblingGroupAsync(run.Id, group, cts.Token).ConfigureAwait(false);
+        if (siblings.Count < 2)
+            return null;
+
+        // D13's park leaves a child at WaitingForInput with its step still Pending, so a RESUMED parent arrives
+        // here again with the same pending group. Nothing links a child to a STEP (only ParentRunId → parent),
+        // so the parent cannot tell this group already has a parked generation behind it — and a parked run is
+        // never swept, so it would sit there forever owning a visible stub chat. Cancel the old generation first.
+        await SafeCancelStaleChildrenAsync(_childLauncher, run.Id, cts.Token).ConfigureAwait(false);
+
+        var childProfile = ChildProfile(profile);
+        var dispatched = new List<(AgentStep Step, HeadlessRunHandle Handle)>();
+        var anyFailed = false;
+        var anyParked = false;
+        string? error = null;
+
+        _logger.LogInformation(
+            "Run {RunId} delegating parallel group {Group} to {ChildCount} child run(s)", run.Id, group, siblings.Count);
+
+        foreach (var sibling in siblings)
+        {
+            try
+            {
+                var handle = await _childLauncher.LaunchChildAsync(
+                    new HeadlessRunRequest(
+                        BuildChildGoal(sibling),
+                        run.TriggerKind,
+                        // A child is not a scheduled job of its own: TriggerRef stays null so nothing treats it
+                        // as a second run of the parent's job. GrantedWrites likewise — the child's grants come
+                        // from the parent's envelope, narrowed, and a request-level set would widen them.
+                        TriggerRef: null,
+                        OwnerDeviceId: run.OwnerDeviceId,
+                        ProviderId: null,
+                        GrantedWrites: null,
+                        Budget: childProfile),
+                    parentRunId: run.Id,
+                    parentPolicyJson: run.PolicyJson,
+                    // 06 G1's RunContext member: the child runs INSIDE the parent's workspace and provisions
+                    // nothing (§7.6). Null ⇒ the parent runs unisolated and so does the child.
+                    parentWorkspaceRoot: ctx.WorkspaceRoot,
+                    cts.Token).ConfigureAwait(false);
+
+                dispatched.Add((sibling, handle));
+                await SafeSetStepStatus(sibling.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Not the critical path: one sibling that could not be dispatched is a failed step, and the
+                // siblings that WERE dispatched must still be awaited below.
+                _logger.LogWarning(ex, "Fan-out: dispatching a child run of {RunId} failed", run.Id);
+                anyFailed = true;
+                error ??= "a delegated run could not be started";
+                await SettleSiblingAsync(sibling, ctx, FanOutStepResult(false, error), cts.Token).ConfigureAwait(false);
+            }
+        }
+
+        var registration = default(CancellationTokenRegistration);
+        try
+        {
+            // D16, the no-orphans guarantee. Cancellation is delivered TO the children and the parent then keeps
+            // waiting for their dispatch tasks to unwind. Deliberately NO `.WaitAsync(cts.Token)` on the
+            // WhenAll: that returns to the caller while the children keep running, so a settled parent would
+            // have live children still writing its workspace — after 06, a concurrent writer into the run root.
+            registration = cts.Token.Register(() =>
+            {
+                foreach (var d in dispatched)
+                    _childLauncher.CancelAsync(d.Handle.RunId).SafeFireAndForget(_logger);
+            });
+
+            await Task.WhenAll(dispatched.Select(d => d.Handle.Completion)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Defence in depth: every dispatch task self-catches and settles its own run, so a faulted
+            // completion must not skip the per-child settle below — which reads the persisted ROWS, not tasks.
+            _logger.LogWarning(ex, "Fan-out: awaiting the child runs of {RunId} faulted", run.Id);
+        }
+        finally
+        {
+            registration.Dispose();
+        }
+
+        foreach (var (sibling, handle) in dispatched)
+        {
+            var child = await SafeGetRunAsync(handle.RunId, cts.Token).ConfigureAwait(false);
+            switch (child?.State)
+            {
+                case AgentRunState.Completed:
+                    await SettleSiblingAsync(sibling, ctx,
+                        FanOutStepResult(true, await SafeChildAnswerAsync(handle.ChatId, cts.Token).ConfigureAwait(false)),
+                        cts.Token).ConfigureAwait(false);
+                    await RollUpChildUsageAsync(run.Id, child, cts.Token).ConfigureAwait(false);
+                    break;
+
+                case AgentRunState.Failed:
+                case AgentRunState.Cancelled:
+                    anyFailed = true;
+                    error ??= child.State == AgentRunState.Cancelled
+                        ? "a delegated run was cancelled"
+                        : "a delegated run failed";
+                    await SettleSiblingAsync(sibling, ctx, FanOutStepResult(false, error), cts.Token).ConfigureAwait(false);
+                    await RollUpChildUsageAsync(run.Id, child, cts.Token).ConfigureAwait(false);
+                    break;
+
+                case AgentRunState.WaitingForInput:
+                    // §0.9/D13: HeadlessRunHandle.Completion settles on a budget PAUSE too, which is not
+                    // terminality. Roll up NOTHING — the child will resume and its tokens are pushed once, from
+                    // a terminal branch, which is what stops a resumed child being billed to its parent twice.
+                    //
+                    // And put the step back to PENDING. It was set Running at dispatch (the panel highlights the
+                    // delegated steps while their children work), and the resume drain is
+                    // NextPendingStepAsync — a step left Running is invisible to it, so this generation's work
+                    // would be silently dropped from the resumed run with the plan still showing it as active.
+                    await SafeSetStepStatus(sibling.Id, AgentStepStatus.Pending, cts.Token).ConfigureAwait(false);
+                    anyParked = true;
+                    break;
+
+                default:
+                    anyFailed = true;
+                    error ??= "child run did not settle";
+                    await SettleSiblingAsync(sibling, ctx, FanOutStepResult(false, error), cts.Token).ConfigureAwait(false);
+                    break;
+            }
+        }
+
+        // BATCH 08 SEAM (07 D9/G8, not on this tree): the parent stays `Running` for the whole wait. When the
+        // `WaitingForChildren` state lands, `BeginChildWaitAsync(run.Id, dispatched.Count)` goes immediately
+        // before the WhenAll above and `TryEndChildWaitAsync(run.Id)` immediately after this loop — the CAS
+        // returning false meaning "someone else owns this run's terminal state now, return without settling".
+        //
+        // Until then this check IS that CAS's job: if the parent's own token fired while it waited (a chat
+        // delete, app shutdown, or ChatSession.Cancel()), the drain loop's next blind SetStateAsync(Running)
+        // would RESURRECT a run something else has already settled (R11). Take the cancelled arm instead,
+        // exactly like an in-process step that came back Cancelled.
+        if (cts.IsCancellationRequested)
+            return new FanOutResult(AnyParked: false, AnyFailed: false, Cancelled: true, "cancelled while awaiting delegated runs");
+
+        return new FanOutResult(anyParked, anyFailed, Cancelled: false, error);
+    }
+
+    /// <summary>
+    /// The step result a settled sibling contributes. The message ids are deliberately <see cref="Guid.Empty"/>:
+    /// a child's transcript lives in the child's OWN chat, so folding its ids into the parent's run-level
+    /// message range would pin a slice of a transcript the parent never wrote.
+    /// </summary>
+    private static StepTurnResult FanOutStepResult(bool succeeded, string text) =>
+        new(succeeded, Cancelled: false, succeeded ? null : text, succeeded ? text : string.Empty,
+            Usage: null, Guid.Empty, Guid.Empty);
+
+    /// <summary>
+    /// Persist a settled sibling's outcome and fold it into the run context. <c>ctx.RecordStep</c> is what makes
+    /// the sibling visible to a later replan and to the critic — skip it and a replan re-plans work that already
+    /// ran. It also increments <c>StepsExecuted</c> once per sibling, which is correct: they ARE the run's steps.
+    /// The children's own internal steps count against their OWN budgets (D15); nesting the enforced budget
+    /// would make a fan-out unpredictably fatal to the parent.
+    /// </summary>
+    private async Task SettleSiblingAsync(AgentStep sibling, RunContext ctx, StepTurnResult result, CancellationToken ct)
+    {
+        await SafeRecordStep(sibling.Id, result, ct).ConfigureAwait(false);
+        ctx.RecordStep(sibling, result);
+    }
+
+    /// <summary>
+    /// A child run's GOAL, from the sibling step the parent is delegating. Mirrors
+    /// <c>HeadlessTurnExecutor.BuildInstruction</c>'s shape minus its "Execute step N" framing — the child is
+    /// planning its own decomposition of this work, not executing one step of the parent's plan.
+    /// SENSITIVE (user/model content): it is never logged, only handed to the launcher.
+    /// </summary>
+    private static string BuildChildGoal(AgentStep step)
+    {
+        var goal = string.IsNullOrWhiteSpace(step.Intent) ? step.Title : step.Intent!;
+        return string.IsNullOrEmpty(step.ExpectedArtifact) ? goal : $"{goal} Expected: {step.ExpectedArtifact}";
+    }
+
+    /// <summary>
+    /// A child's budget envelope: the parent's own, with the WALL CLOCK HALVED (clamped at
+    /// <see cref="RunProfile.MinWallClockMinutes"/>). Phase 3 R15 is the reason —
+    /// <c>ScheduledJobBackgroundService</c> holds its <c>_runLock</c> from before the launch across
+    /// <c>await handle.Completion</c>, so while a fan-out runs NO scheduled job of either kind can dispatch, for
+    /// the parent's wall clock PLUS every descendant's. Halving keeps a fan-out roughly inside the envelope one
+    /// scheduled job already occupies.
+    /// <para>
+    /// Derived from the PARENT's profile rather than re-read from settings (which §7.5 suggested): the parent's
+    /// profile already IS <c>RunProfile.FromBudget(settings.Scheduled*)</c> on the launch path, so this yields
+    /// the same numbers without giving the orchestrator a settings dependency — and it also honours an explicit
+    /// per-request budget, which a settings read would silently discard.
+    /// </para>
+    /// </summary>
+    private static RunProfile ChildProfile(RunProfile parent) => parent with
+    {
+        WallClock = TimeSpan.FromMinutes(
+            Math.Max(RunProfile.MinWallClockMinutes, parent.WallClock.TotalMinutes / 2)),
+    };
+
+    /// <summary>
+    /// The <c>{"parallelGroup":N}</c> marker the planner writes into <c>AgentStep.ExtraJson</c> when a plan
+    /// declares steps independent AND a persona roster is configured (D11). Swallowing by design: ANY parse
+    /// failure, a missing member or a non-integer value means <c>null</c> ⇒ sequential, i.e. today's behaviour.
+    /// Precedent: <c>RunProgressViewModel.ReadTruncation</c>. <c>internal</c> so the reader's degrade rows can
+    /// be pinned directly rather than only through a whole run.
+    /// </summary>
+    internal static int? ParallelGroupOf(AgentStep step)
+    {
+        if (string.IsNullOrWhiteSpace(step.ExtraJson))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(step.ExtraJson);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                   && doc.RootElement.TryGetProperty("parallelGroup", out var value)
+                   && value.TryGetInt32(out var group)
+                ? group
+                : null;
+        }
+        catch (Exception)
+        {
+            return null; // an unreadable marker is not a fan-out, and never an error
+        }
+    }
+
+    /// <summary>
+    /// The PENDING steps of this run that share <paramref name="group"/>, in ordinal order — re-read from the
+    /// persisted plan rather than taken from the in-memory run, because a replan may have rewritten it. A read
+    /// fault yields an empty list, which the caller reads as "fewer than two members" ⇒ run the step in-process.
+    /// </summary>
+    private async Task<List<AgentStep>> SafeSiblingGroupAsync(Guid runId, int group, CancellationToken ct)
+    {
+        try
+        {
+            var persisted = await _runService.GetAsync(runId, ct).ConfigureAwait(false);
+            return persisted?.Plan
+                       .Where(s => s.Status == AgentStepStatus.Pending && ParallelGroupOf(s) == group)
+                       .OrderBy(s => s.Ordinal)
+                       .ToList()
+                   ?? [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Fan-out: reading the sibling group of run {RunId} failed", runId);
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Cancel every non-terminal child of a previous generation of this fan-out.
+    /// <see cref="IHeadlessRunLauncher.CancelAsync"/> only reaches a run THIS PROCESS is dispatching, so a child
+    /// parked in a previous process is settled directly instead — without that fallback the leak survives
+    /// exactly the restart path it exists to handle. Failure-isolated: a stale generation that cannot be
+    /// cancelled must not stop the new one from dispatching.
+    /// </summary>
+    private async Task SafeCancelStaleChildrenAsync(IHeadlessRunLauncher launcher, Guid parentRunId, CancellationToken ct)
+    {
+        try
+        {
+            var children = await _runService.GetChildRunsAsync(parentRunId, ct).ConfigureAwait(false);
+            var superseded = 0;
+            foreach (var old in children)
+            {
+                if (old.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
+                    continue;
+
+                await launcher.CancelAsync(old.Id).ConfigureAwait(false);
+
+                // A parked child is the one shape the cancel above cannot reach across a restart: states at or
+                // above WaitingForInput are never swept, on purpose (a parked run must survive a restart), so
+                // this settle is the only thing that stops it lingering with its own stub chat forever.
+                if (old.State is AgentRunState.WaitingForInput)
+                    await _runService.FailAsync(old.Id, "superseded by a re-dispatched fan-out", cancelled: true,
+                        CancellationToken.None).ConfigureAwait(false);
+
+                superseded++;
+            }
+
+            if (superseded > 0)
+                _logger.LogInformation(
+                    "Fan-out: superseded {Count} child run(s) of a previous generation of run {RunId}", superseded, parentRunId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Fan-out: cancelling the previous child generation of run {RunId} failed", parentRunId);
+        }
+    }
+
+    /// <summary>
+    /// The child's answer, as the parent's replan and verify prompts need to see it: the LAST non-empty
+    /// assistant message of the child's own chat, capped. Without it a completed sibling carries empty visible
+    /// text and the critic judges the goal on nothing. Failure-isolated, and the text is NEVER logged — it is
+    /// model output about user content.
+    /// </summary>
+    private async Task<string> SafeChildAnswerAsync(Guid chatId, CancellationToken ct)
+    {
+        if (_chats is null)
+            return DelegatedAnswerUnavailable;
+
+        try
+        {
+            var chat = await _chats.GetAsync(chatId, ct).ConfigureAwait(false);
+            var answer = chat?.Messages
+                .LastOrDefault(m => string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase)
+                                    && !string.IsNullOrWhiteSpace(m.Content))
+                ?.Content;
+
+            if (string.IsNullOrWhiteSpace(answer))
+                return DelegatedAnswerUnavailable;
+
+            return answer!.Length > MaxChildAnswerChars
+                ? answer[..MaxChildAnswerChars] + "\n… (truncated)"
+                : answer;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Fan-out: reading a delegated run's answer failed");
+            return DelegatedAnswerUnavailable;
+        }
+    }
+
+    /// <summary>
+    /// D15 — the roll-up. The PERSISTED ledger nests: a settled child's token totals are pushed into its
+    /// parent's ledger ONCE, through the existing run-level accrual seam (<c>stepId: null</c>, the same one the
+    /// plan/replan/verify turns use), from a terminal branch only. Deliberately NOT a fourth
+    /// <c>IAgentRunService</c> member: <c>AddUsageAsync</c> already refreshes the clock and raises
+    /// <c>RunChanged</c>, and one more method on a 17-member interface would buy no new capability.
+    /// <para>
+    /// TOKENS ONLY, never time. The parent's <c>WallClockMs</c> stays its own worked time and the children's is
+    /// visible on the children, in the drill-down. And <c>stepId</c> stays null rather than the sibling's id
+    /// because the parent ran NO turn for that step — a per-step entry would claim it spent tokens it never did.
+    /// </para>
+    /// <para>
+    /// Idempotence is the CALLER's: a parent awaits each child exactly once and pushes only from a terminal
+    /// branch. Stated loss: a crash between a child's settle and this push loses that roll-up. The child's own
+    /// ledger still holds the truth — the parent's number is an aggregate convenience, not an accounting record.
+    /// </para>
+    /// </summary>
+    private async Task RollUpChildUsageAsync(Guid parentRunId, AgentRun child, CancellationToken ct)
+    {
+        UsageDetails? usage = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(child.LedgerJson)
+                && JsonSerializer.Deserialize<ChildLedger>(child.LedgerJson, LedgerJsonOptions) is { } ledger
+                && (ledger.InputTokens > 0 || ledger.OutputTokens > 0))
+            {
+                usage = new UsageDetails
+                {
+                    InputTokenCount = ledger.InputTokens,
+                    OutputTokenCount = ledger.OutputTokens,
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Fan-out: reading the ledger of child run {RunId} failed", child.Id);
+        }
+
+        if (usage is null)
+            return;
+
+        await SafeAddUsage(parentRunId, usage, ct).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Run {RunId} rolled up child run {ChildRunId} (in={In}, out={Out})",
+            parentRunId, child.Id, usage.InputTokenCount ?? 0, usage.OutputTokenCount ?? 0);
+    }
+
+    /// <summary>
+    /// Mirrors <c>AgentRunService</c>'s PRIVATE <c>Ledger</c> DTO (camelCase JSON), tokens only — the same
+    /// mirror <c>RunProgressViewModel</c> already carries, for the same reason: the DTO is private to the
+    /// service and the interface exposes no reader. Two mirrors is the accepted cost; do not add a third.
+    /// </summary>
+    private sealed class ChildLedger
+    {
+        public long InputTokens { get; set; }
+
+        public long OutputTokens { get; set; }
+    }
+
+    private async Task<AgentRun?> SafeGetRunAsync(Guid runId, CancellationToken ct)
+    {
+        try { return await _runService.GetAsync(runId, ct).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Fan-out: reading child run {RunId} failed", runId); return null; }
+    }
+
     // ---- Failure-isolated bookkeeping (§12.5/§13.10): never fail the run ----
 
     private async Task SafeSetState(Guid runId, AgentRunState state, CancellationToken ct)
@@ -450,6 +946,21 @@ public sealed class AgentRunOrchestrator
     private async Task SafePromote(AgentRun run, RunContext ctx, CancellationToken ct)
     {
         if (_workspaces is null || string.IsNullOrEmpty(ctx.WorkspaceRoot))
+            return;
+
+        // 06 B7/§13.4: promotion is TERMINAL-ONLY and ONCE PER WORKSPACE, decided by one provisionedAtUtc in the
+        // workspace metadata. A child run SHARES its parent's workspace and must never consume that promotion —
+        // the parent's own terminal settle promotes everything the whole fan-out wrote. Worse than a double
+        // promotion: SafePromote TEARS THE WORKSPACE DOWN after a successful promote, so the FIRST sibling to
+        // finish would delete the directory its still-running siblings are writing into (in worktree mode, a
+        // `git worktree remove`). Explicit, not left to the metadata lookup missing at the child's run id: that
+        // would work by accident and log a warning per child.
+        //
+        // Deliberately ONE early return INSIDE this method rather than a guard at each of the two call sites:
+        // this is the single funnel for both PromoteAsync and TearDownAsync, and the second call site (the
+        // PlanResult.Fallback degrade arm) returns early and settles in the opposite order, so a two-site wrap
+        // could be — and every launcher-harness test drives exactly that arm.
+        if (run.ParentRunId is not null)
             return;
 
         try

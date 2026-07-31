@@ -422,6 +422,26 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         }
     }
 
+    public Task<IReadOnlyList<AgentRun>> GetChildRunsAsync(Guid parentRunId, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult<IReadOnlyList<AgentRun>>(Array.Empty<AgentRun>());
+
+            var runs = new List<AgentRun>();
+            using var cmd = Connection().CreateCommand();
+            // Indexed by IX_AgentRuns_ParentRunId (Batch 07 G9). No LoadSteps pass, unlike GetByChatAsync
+            // above: both callers read state + ledger, and a 4-child roll-up does not need 4 plans.
+            cmd.CommandText = $"SELECT {RunColumns} FROM AgentRuns WHERE ParentRunId=@Parent ORDER BY CreatedAt ASC";
+            cmd.Parameters.AddWithValue("@Parent", parentRunId.ToString());
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                runs.Add(MapRun(reader));
+
+            return Task.FromResult<IReadOnlyList<AgentRun>>(runs);
+        }
+    }
+
     public Task<bool> ChatHasPlannedRunAsync(Guid chatId, CancellationToken ct = default)
     {
         lock (_gate)

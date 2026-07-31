@@ -108,6 +108,20 @@ public interface IAgentRunService
 
     Task<IReadOnlyList<AgentRun>> GetByChatAsync(Guid chatId, CancellationToken ct = default);
 
+    /// <summary>
+    /// The CHILD runs of a parent, ordered by <c>CreatedAt</c> — the delegated runs a fan-out step spawned
+    /// (Batch 07 D9). Empty for an ordinary childless run, which is every run a build without a persona
+    /// roster produces. Backed by <c>IX_AgentRuns_ParentRunId</c>.
+    /// <para>
+    /// The <see cref="AgentRun.Plan"/> is deliberately NOT loaded: <see cref="GetAsync"/> pays a second
+    /// query per run for that, and both callers here want state and ledger — the parent rolling up a
+    /// settled child's tokens, and the panel's children list — never the child's own steps. The child ROWS
+    /// are also how a parent counts what it is still waiting on, which is why nothing writes a
+    /// "waiting on N children" counter anywhere (07 §0.4).
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<AgentRun>> GetChildRunsAsync(Guid parentRunId, CancellationToken ct = default);
+
     /// <summary>True if the chat has any <see cref="RunShape.Planned"/> run (eviction policy, wired in 1.2).</summary>
     Task<bool> ChatHasPlannedRunAsync(Guid chatId, CancellationToken ct = default);
 

@@ -25,6 +25,25 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// <summary>Concurrency cap shared by both producers (decision d). A 3rd run queues on the slot.</summary>
     private readonly SemaphoreSlim _slots = new(2, 2);
 
+    /// <summary>
+    /// Concurrency cap for CHILD runs (Batch 07 D7) — deliberately a SECOND semaphore, and never
+    /// <see cref="_slots"/>. A nested acquire on the shared pool DEADLOCKS, permanently: <see cref="_slots"/>
+    /// is waited INSIDE the dispatch task and released only in the <c>finally</c> AFTER
+    /// <c>orchestrator.RunAsync</c> RETURNS, so two parents holding the two permits while each awaits a child
+    /// that needs a permit from the same pool can never release one. It takes exactly TWO concurrent parents —
+    /// i.e. the configured cap — and nothing in the process can break it: <see cref="StopAsync"/>'s bounded
+    /// 5-second wait times out and both runs dangle <c>Running</c> until the next startup sweep. Never merge
+    /// these two pools "for simplicity" (07 §7.1).
+    /// <para>
+    /// Consequence, stated rather than hidden: effective provider concurrency doubles to 2+2. That is why the
+    /// persona roster is the opt-in (07 D1) and why a delegating run's budget must still fit the envelope one
+    /// scheduled job may occupy — <c>ScheduledJobBackgroundService</c> holds its <c>_runLock</c> across
+    /// <c>await handle.Completion</c>, so a fan-out blocks every scheduled job for the parent's wall clock
+    /// PLUS every descendant's (Phase 3 R15, and the halved child wall clock in the orchestrator's fan-out).
+    /// </para>
+    /// </summary>
+    private readonly SemaphoreSlim _childSlots = new(2, 2);
+
     /// <summary>Cancelled once at shutdown; every run CTS is linked to it (G-4).</summary>
     private readonly CancellationTokenSource _shutdownCts = new();
 
@@ -131,7 +150,62 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         _chatService.ChatsChanged += OnChatsChanged;
     }
 
-    public async Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct)
+    public Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct)
+        => LaunchCoreAsync(req, parentRunId: null, _slots, childPolicyJson: null,
+               workspaceRootOverride: null, ct);
+
+    /// <inheritdoc />
+    public Task<HeadlessRunHandle> LaunchChildAsync(
+        HeadlessRunRequest req, Guid parentRunId, string? parentPolicyJson, string? parentWorkspaceRoot,
+        CancellationToken ct = default)
+        => LaunchCoreAsync(req, parentRunId, _childSlots,
+               // NEVER the launch default and never the resume floor: a child's grants are a strict subset of
+               // its parent's, with every delete-like name stripped (G9's NarrowForChild, Phase 3 R13).
+               TrySerializeChildEnvelope(parentPolicyJson, req.Trigger, _logger),
+               workspaceRootOverride: parentWorkspaceRoot, ct);
+
+    /// <inheritdoc />
+    public Task CancelAsync(Guid runId)
+    {
+        // Best-effort by design: only a run THIS PROCESS is dispatching is in _inflight, so a child parked in
+        // a previous process is simply not here and the caller falls back to settling its row. RemoveInflight
+        // guarantees a finishing dispatch cannot have evicted a live one, so the entry found here is the live
+        // dispatch's own CTS. Never throws — a disposed source must not break a cascade.
+        try
+        {
+            if (_inflight.TryGetValue(runId, out var entry))
+            {
+                entry.Cts.Cancel();
+                _logger.LogInformation("Cancelled in-flight run {RunId}", runId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to cancel in-flight run {RunId}", runId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The ONE dispatch path both <see cref="LaunchAsync"/> and <see cref="LaunchChildAsync"/> go through —
+    /// extracted rather than forked, because the workspace decision, the bracket, the slot discipline and the
+    /// four settle paths must never diverge between a parent and a child dispatch.
+    /// </summary>
+    /// <param name="parentRunId">Non-null ⇒ this is a CHILD run of that parent, recorded on the run row so
+    /// the depth guard and the promotion guard can both read it (G9/G10).</param>
+    /// <param name="slots">Which concurrency pool this dispatch queues on. A child MUST get
+    /// <see cref="_childSlots"/> — see its remarks for why the shared pool deadlocks.</param>
+    /// <param name="childPolicyJson">A child's pre-narrowed grant envelope, which REPLACES the resolve-from-
+    /// request path entirely. Null ⇒ the ordinary launch resolution.</param>
+    /// <param name="workspaceRootOverride">Non-null ⇒ SKIP <c>_workspaces.ProvisionAsync</c> entirely and pass
+    /// this value straight to <c>executor.Initialize(workspaceRoot: …)</c>. A child run SHARES its parent's
+    /// workspace: Batch 06 B7 allows exactly ONE promotion per workspace, decided by a single
+    /// <c>provisionedAtUtc</c>, and in worktree mode a per-child workspace would mean N <c>git worktree add</c>
+    /// calls and N branches per fan-out (06 §13.4 / 07 §7.6).</param>
+    private async Task<HeadlessRunHandle> LaunchCoreAsync(
+        HeadlessRunRequest req, Guid? parentRunId, SemaphoreSlim slots, string? childPolicyJson,
+        string? workspaceRootOverride, CancellationToken ct)
     {
         var chatId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -161,16 +235,30 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // Resolve the write grants BEFORE the run row exists so the resolved set can be persisted with it
         // (D1). A null GrantedWrites takes the narrow default; an explicitly EMPTY collection still means
         // "no write grants at all" and is preserved as such (never re-widened to the default).
-        var grants = req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites;
+        // A CHILD's envelope arrives ALREADY NARROWED from its parent's (G9) and must not be re-resolved from
+        // the request or from settings: both would widen it. Read it back through the same reader a resume uses
+        // so the executor gets exactly what was persisted, i.e. one source of truth per dispatch.
+        var policyJson = childPolicyJson ?? TrySerializeGrantEnvelope(
+            req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites,
+            req.Trigger,
+            // The autonomy policy is resolved from SETTINGS at launch — the launch never reads the envelope
+            // back, so there is nothing else to resolve it from (04 D9/D10). Off ⇒ null ⇒ the member is
+            // omitted and the persisted document stays byte-identical to a pre-Batch-04 one.
+            RunAutonomyPolicy.FromSettings(settings));
 
-        // The autonomy policy is resolved from SETTINGS at launch — the launch never reads the envelope back,
-        // so there is nothing else to resolve it from (04 D9/D10). Off ⇒ null ⇒ the member is omitted and the
-        // persisted document stays byte-identical to a pre-Batch-04 one.
-        var policy = RunAutonomyPolicy.FromSettings(settings);
+        var grants = childPolicyJson is null
+            ? req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites
+            // Not `?? ResumeFloorGrants`: the floor is WIDER than a child that inherited nothing, and
+            // TrySerializeChildEnvelope guarantees a readable document, so null here would be a bug, not a
+            // legacy shape. The empty set is the only narrowing-safe fallback.
+            : TryRestoreGrantEnvelope(childPolicyJson) ?? [];
+        var policy = childPolicyJson is null
+            ? RunAutonomyPolicy.FromSettings(settings)
+            : TryRestorePolicy(childPolicyJson, _logger);
 
         var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
             chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal,
-            PolicyJson: TrySerializeGrantEnvelope(grants, req.Trigger, policy)), ct)
+            PolicyJson: policyJson, ParentRunId: parentRunId), ct)
             .ConfigureAwait(false);
 
         // The run's ISOLATED workspace under runs\<runId> (§17.2), carved out of SensitivePathGuard by
@@ -182,7 +270,19 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // later batch overrides exactly that (a child run inherits its parent's root and must not provision
         // at its own run id). Sprinkling it through the dispatch would make that a rewrite.
         string? runRoot;
-        if (_workspaces is not null)
+        if (parentRunId is not null)
+        {
+            // Batch 07 §7.6 change 1: a CHILD never provisions. It shares the parent's root verbatim — the
+            // parent's own terminal settle promotes everything the whole fan-out wrote, exactly once.
+            //
+            // The branch is on "is this a child", NOT on "is the override non-null" as §7.2's signature prose
+            // reads: a null override on a CHILD dispatch means the PARENT ran unisolated (06's no-isolation
+            // degrade), and provisioning at the child's own id there would isolate a child whose parent is
+            // writing the assistant folder — the two would then not even share a directory. Null propagates,
+            // so parent and child are always in the same isolation regime.
+            runRoot = workspaceRootOverride;
+        }
+        else if (_workspaces is not null)
         {
             // Batch 06 G3: the provisioner owns both modes (worktree when the source root is a repo, else a
             // bounded copy) and its symmetric teardown. It NEVER throws and returns null for "no isolation",
@@ -218,14 +318,26 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // command returning). Shutdown cancels every run; per-run cancel disposes this source.
         var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
 
-        lock (_runsByChatLock)
+        // Batch 07 §7.6: teardown is keyed on WORKSPACE OWNERSHIP, not on run id. This index exists so
+        // OnChatsChanged can tear down the workspaces a chat's runs own — and a CHILD owns none: it writes its
+        // parent's directory. Registering it would make deleting the child's stub chat call
+        // TearDownWorkspaceAsync(childId), which in worktree mode is a `git worktree remove` and in either mode
+        // resolves through the provisioner, i.e. a real removal attempt against a directory that belongs to the
+        // parent and its still-running siblings. Not registering is the rule; the parent's own registration is
+        // what cleans the shared workspace up. Mirrored in ResumeAsync — a parked child owns a stub chat, so
+        // Continue reaches that path too.
+        if (parentRunId is null)
         {
-            if (!_runsByChat.TryGetValue(chatId, out var set))
-                _runsByChat[chatId] = set = new HashSet<Guid>();
-            set.Add(run.Id);
+            lock (_runsByChatLock)
+            {
+                if (!_runsByChat.TryGetValue(chatId, out var set))
+                    _runsByChat[chatId] = set = new HashSet<Guid>();
+                set.Add(run.Id);
+            }
         }
 
-        _logger.LogInformation("Headless run {RunId} launched (chat {ChatId}, trigger {Trigger})", run.Id, chatId, req.Trigger);
+        _logger.LogInformation("Headless run {RunId} launched (chat {ChatId}, trigger {Trigger}, parent={HasParent})",
+            run.Id, chatId, req.Trigger, parentRunId is not null);
         _logger.SensitiveDebug("Headless run {RunId} goal: {Goal}", run.Id, req.Goal);
 
         var completion = Task.Run(async () =>
@@ -234,7 +346,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             var started = false;
             try
             {
-                await _slots.WaitAsync(runCts.Token).ConfigureAwait(false);
+                await slots.WaitAsync(runCts.Token).ConfigureAwait(false);
                 acquired = true;
 
                 using var scope = _scopeFactory.CreateScope();
@@ -282,7 +394,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             }
             finally
             {
-                if (acquired) _slots.Release();
+                if (acquired) slots.Release();
 
                 // A2: close the composer bracket on EVERY exit, including the never-started paths (a no-op
                 // there). Deliberately AFTER the slot release: this is bookkeeping, and it must never be able
@@ -359,7 +471,18 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // Deliberately the SAME contiguous block shape as the launch path, so the rule a later batch has
             // to add here — a resumed CHILD run must not provision at its own run id — is a local edit.
             string? runRoot;
-            if (_workspaces is not null)
+            if (run.ParentRunId is { } parentId)
+            {
+                // Batch 07 §7.6 change 3, and the reason it is not optional: this method provisions at its OWN
+                // run id, and every child owns a stub chat — so a user opening a parked child's chat and
+                // pressing Continue would otherwise create a SECOND workspace at the child's id, diverging from
+                // the parent's and outliving it until the sweep. Resolve the PARENT's root instead, and only if
+                // it still exists: a parent that ran unisolated, or whose workspace is already gone, leaves the
+                // child writing the assistant folder — the same coherent degrade as a fresh child dispatch.
+                var parentRoot = _workspaces?.RootFor(parentId) ?? Path.Combine(_runsBaseDir, parentId.ToString());
+                runRoot = Directory.Exists(parentRoot) ? SafeFolderPath.Canonicalize(parentRoot) : null;
+            }
+            else if (_workspaces is not null)
             {
                 // Idempotent by construction (G3 B11 step 2): a readable metadata document returns the same
                 // root, the same mode and the same provisionedAtUtc, which is what keeps the promote set
@@ -373,14 +496,22 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             }
 
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
-            lock (_runsByChatLock)
+
+            // The same non-registration rule as the launch path, for the same reason: teardown is keyed on
+            // WORKSPACE OWNERSHIP, not on run id, and a resumed child still owns no directory of its own
+            // (the branch above is what keeps that true). See LaunchCoreAsync's registration for the argument.
+            if (run.ParentRunId is null)
             {
-                if (!_runsByChat.TryGetValue(run.ChatId, out var set))
-                    _runsByChat[run.ChatId] = set = new HashSet<Guid>();
-                set.Add(run.Id);
+                lock (_runsByChatLock)
+                {
+                    if (!_runsByChat.TryGetValue(run.ChatId, out var set))
+                        _runsByChat[run.ChatId] = set = new HashSet<Guid>();
+                    set.Add(run.Id);
+                }
             }
 
-            _logger.LogInformation("Resuming run {RunId} (chat {ChatId})", run.Id, run.ChatId);
+            _logger.LogInformation("Resuming run {RunId} (chat {ChatId}, parent={HasParent})",
+                run.Id, run.ChatId, run.ParentRunId is not null);
 
             var completion = Task.Run(async () =>
             {
@@ -388,6 +519,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 var started = false;
                 try
                 {
+                    // Deliberately the PARENT pool even for a resumed child (Batch 07 §7.1): a resume is a USER
+                    // act, so nothing is awaiting this dispatch from inside another run's RunAsync, and the
+                    // nested-acquire deadlock _childSlots exists to prevent cannot arise here.
                     await _slots.WaitAsync(runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
                     acquired = true;
 

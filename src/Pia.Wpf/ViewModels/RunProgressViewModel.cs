@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -182,6 +183,36 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     public bool CanPublish => HasUnpublishedFiles && !IsPublishing;
 
     /// <summary>
+    /// The run's delegated CHILD runs (Batch 07 D17), one row each, refreshed in place on every projection.
+    /// Empty for every ordinary run — a build with no persona roster never produces one.
+    /// <para>
+    /// <b>NO MERGED TIMELINE, and this is not an omission.</b> Each row expands to load THAT run's own trace.
+    /// The events cannot be interleaved: <c>Seq</c> is monotonic only WITHIN a run id, each child gets its own
+    /// fresh <c>Seq</c> space and its own 500-event cap, and <c>CreatedAt</c> is explicitly rejected as an
+    /// ordering source by the store's own schema comment. A single merged view needs a new cross-run ordering
+    /// key, designed as its own work — do not "finish" this by sorting two runs' rows together.
+    /// </para>
+    /// </summary>
+    public ObservableCollection<ChildRunRowViewModel> Children { get; } = [];
+
+    [ObservableProperty]
+    private bool _hasChildren;
+
+    /// <summary>The "N of M finished" line, or null when this run delegated nothing.</summary>
+    [ObservableProperty]
+    private string? _childrenNote;
+
+    /// <summary>
+    /// The child run ids, as an IMMUTABLE snapshot REPLACED (never mutated) inside <see cref="Project"/> on the
+    /// UI thread. <see cref="OnRunChanged"/> reads it from a POOL thread — <c>RunChanged</c> fires off-thread,
+    /// which is this VM's whole premise — so a mutable <c>HashSet</c> here would be the exact data race
+    /// <c>ChatSessionManager</c> documents for its own <c>_ownRunIds</c>. Reference assignment is atomic, so an
+    /// off-thread reader always sees one consistent generation. The <c>e.RunId != _runId</c> term needs no such
+    /// care: <c>_runId</c> is readonly.
+    /// </summary>
+    private ImmutableHashSet<Guid> _childRunIds = ImmutableHashSet<Guid>.Empty;
+
+    /// <summary>
     /// The in-flight (or last) load, exposed so a fact can await the fire-and-forget the expand kicks off.
     /// The read itself is off-thread now, so a test that set <see cref="IsTimelineExpanded"/> and asserted
     /// immediately would race it.
@@ -226,7 +257,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
-        if (e.RunId != _runId) return;              // filter to our run id
+        // Batch 07 D17: a CHILD run's state changes are ours too, or the children list never live-updates —
+        // every child event would be dropped and the rows would freeze at whatever the first projection saw.
+        // _childRunIds is an immutable snapshot for a reason; see its declaration.
+        if (e.RunId != _runId && !_childRunIds.Contains(e.RunId)) return;
         RefreshAsync().SafeFireAndForget(_logger);   // the read may run off-thread; Project marshals (G3)
     }
 
@@ -235,7 +269,23 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         var run = await _runService.GetAsync(_runId);
         if (run is null) return;
-        _uiContext.Post(_ => Project(run), null); // marshal the mutation to the UI thread (G3)
+
+        // Batch 07 D17: read the children OFF the projection's UI hop, in their own guarded block, and hand the
+        // list to Project so the whole projection is one UI-thread mutation. One indexed query
+        // (IX_AgentRuns_ParentRunId) per RunChanged — cheaper than the workspace describe below, and unlike it
+        // the answer changes while the run is live, so it cannot be deferred to a terminal state. A read fault
+        // leaves the rows exactly as they were.
+        IReadOnlyList<AgentRun>? children = null;
+        try
+        {
+            children = await _runService.GetChildRunsAsync(_runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} child runs could not be read", _runId);
+        }
+
+        _uiContext.Post(_ => Project(run, children), null); // marshal the mutation to the UI thread (G3)
 
         // Batch 06 G4: the workspace outcome is read in its OWN terminal-only branch, deliberately not folded
         // into Project above. DescribeAsync does a file read plus a directory enumeration, and RunChanged
@@ -346,13 +396,15 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void Project(AgentRun run)
+    private void Project(AgentRun run, IReadOnlyList<AgentRun>? children = null)
     {
         var truncation = ReadTruncation(run);
         (State, IsTruncated) = MapState(run, truncation.Truncated);
         TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;
         SyncSteps(run.Plan);
         CurrentActivity = ComputeActivity(run);
+        if (children is not null)
+            SyncChildren(children);
 
         var ledger = TryParseLedger(run.LedgerJson);
         if (ledger is not null)
@@ -587,6 +639,122 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Diff the child rows by run id, exactly as <see cref="SyncSteps"/> diffs steps and for the same reason: a
+    /// rebuild on every <c>RunChanged</c> would collapse an expanded row and throw away its loaded trace under
+    /// the user's cursor. Always on the UI thread (called from <see cref="Project"/>).
+    /// </summary>
+    private void SyncChildren(IReadOnlyList<AgentRun> children)
+    {
+        for (var i = Children.Count - 1; i >= 0; i--)
+        {
+            if (!children.Any(c => c.Id == Children[i].RunId))
+                Children.RemoveAt(i);
+        }
+
+        for (var index = 0; index < children.Count; index++)
+        {
+            var child = children[index];
+            var existing = Children.FirstOrDefault(r => r.RunId == child.Id);
+            if (existing is null)
+            {
+                var row = new ChildRunRowViewModel(child.Id, child.Goal ?? string.Empty, RequestChildTimeline);
+                Apply(row, child);
+                if (index <= Children.Count)
+                    Children.Insert(index, row);
+                else
+                    Children.Add(row);
+            }
+            else
+            {
+                Apply(existing, child);
+            }
+        }
+
+        // Written from the ROWS the projection just built, not from the argument, so the snapshot and what the
+        // panel shows can never disagree. One assignment — never a mutation (see _childRunIds).
+        _childRunIds = Children.Select(r => r.RunId).ToImmutableHashSet();
+        HasChildren = Children.Count > 0;
+        ChildrenNote = HasChildren
+            ? _localization.Format("Run_Children_Count", Children.Count(r => r.IsFinished), Children.Count)
+            : null;
+
+        static void Apply(ChildRunRowViewModel row, AgentRun child)
+        {
+            row.State = MapState(child, ReadTruncation(child).Truncated).Item1;
+            var ledger = TryParseLedger(child.LedgerJson);
+            row.InputTokens = ledger?.InputTokens ?? 0;
+            row.OutputTokens = ledger?.OutputTokens ?? 0;
+        }
+    }
+
+    /// <summary>Start a child row's trace load, owning the fire-and-forget (and the logger) the way the parent's
+    /// own expander does.</summary>
+    private void RequestChildTimeline(ChildRunRowViewModel row)
+    {
+        var load = LoadChildTimelineAsync(row);
+        row.TimelineLoadTask = load;
+        load.SafeFireAndForget(_logger);
+    }
+
+    /// <summary>
+    /// Load ONE child run's own trace, through the same store call and the same off-thread hop the parent's
+    /// timeline uses. Two per-run views side by side — never one interleaved list (see <see cref="Children"/>).
+    /// Failure-isolated: a fault leaves that row's trace empty and says so, and never breaks the panel.
+    /// </summary>
+    private async Task LoadChildTimelineAsync(ChildRunRowViewModel row)
+    {
+        if (_timelineService is null)
+        {
+            await ApplyChildTimelineAsync(row, rows: null, readFailed: false);
+            return;
+        }
+
+        IReadOnlyList<AgentTimelineEvent> rows;
+        try
+        {
+            rows = await Task.Run(() => _timelineService.GetForRunAsync(row.RunId));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Child run {RunId} timeline could not be read", row.RunId);
+            await ApplyChildTimelineAsync(row, rows: null, readFailed: true);
+            return;
+        }
+
+        await ApplyChildTimelineAsync(row, rows, readFailed: false);
+    }
+
+    /// <summary>The ONE place a child row's trace state is mutated, always on the UI thread (G3).</summary>
+    private Task ApplyChildTimelineAsync(ChildRunRowViewModel row, IReadOnlyList<AgentTimelineEvent>? rows, bool readFailed)
+    {
+        var done = new TaskCompletionSource();
+        _uiContext.Post(_ =>
+        {
+            try
+            {
+                row.Timeline.Clear();
+                row.HasTimelineReadError = readFailed;
+
+                foreach (var e in rows ?? [])
+                {
+                    if (e.Kind == AgentTimelineEventKind.TraceTruncated)
+                        continue; // the note belongs to the parent's own expander; a child row stays one list
+
+                    row.Timeline.Add(Project(e));
+                }
+
+                row.HasNoTimeline = !readFailed && row.Timeline.Count == 0;
+            }
+            finally
+            {
+                done.TrySetResult();
+            }
+        }, null);
+
+        return done.Task;
+    }
+
     private void ApplyPerStepLedger(Ledger ledger)
     {
         foreach (var entry in ledger.PerStep)
@@ -635,6 +803,73 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         public string StepId { get; set; } = string.Empty;
         public long InputTokens { get; set; }
         public long OutputTokens { get; set; }
+    }
+}
+
+/// <summary>
+/// Read-only row for one delegated CHILD run (Batch 07 D17) — the drill-down target. <see cref="Title"/> is the
+/// child's goal and is SENSITIVE: bound to UI only, never logged, exactly like <c>StepRowViewModel.Title</c>.
+/// <para>
+/// Expanding a row loads THAT run's own trace, per run and never merged into the parent's — see
+/// <c>RunProgressViewModel.Children</c> for why interleaving is not implementable.
+/// </para>
+/// </summary>
+public sealed partial class ChildRunRowViewModel : ObservableObject
+{
+    private readonly Action<ChildRunRowViewModel> _requestTimeline;
+
+    /// <param name="requestTimeline">Starts this row's trace load. An <c>Action</c> and not a
+    /// <c>Func&lt;Task&gt;</c> on purpose: the fire-and-forget belongs to the owner, which has the logger — a row
+    /// that swallowed its own faults would need a logger of its own for no other reason.</param>
+    public ChildRunRowViewModel(Guid runId, string title, Action<ChildRunRowViewModel> requestTimeline)
+    {
+        RunId = runId;
+        Title = title;
+        _requestTimeline = requestTimeline;
+    }
+
+    public Guid RunId { get; }
+
+    /// <summary>The child's goal. SENSITIVE user/model content — bound, never logged.</summary>
+    public string Title { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFinished))]
+    private RunProgressState _state;
+
+    [ObservableProperty]
+    private long _inputTokens;
+
+    [ObservableProperty]
+    private long _outputTokens;
+
+    /// <summary>Whether this child will still change. Drives the parent's "N of M finished" count only.</summary>
+    public bool IsFinished => State is RunProgressState.Completed or RunProgressState.TruncatedCompleted
+        or RunProgressState.Failed;
+
+    [ObservableProperty]
+    private bool _isExpanded;
+
+    /// <summary>This child run's own tool-decision trace. Loaded on each expand, like the parent's.</summary>
+    public ObservableCollection<TimelineRowViewModel> Timeline { get; } = [];
+
+    [ObservableProperty]
+    private bool _hasNoTimeline = true;
+
+    [ObservableProperty]
+    private bool _hasTimelineReadError;
+
+    /// <summary>The in-flight (or last) trace load, exposed so a fact can await the fire-and-forget the expand
+    /// starts rather than racing it — the same affordance the parent's <c>TimelineLoadTask</c> is.</summary>
+    internal Task? TimelineLoadTask { get; set; }
+
+    partial void OnIsExpandedChanged(bool value)
+    {
+        if (!value) return;
+
+        // Re-read on EVERY expand, for the reason the parent's own expander records: a trace read while the
+        // child was still working would otherwise keep claiming "nothing recorded" for the rest of the session.
+        _requestTimeline(this);
     }
 }
 

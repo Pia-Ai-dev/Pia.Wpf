@@ -945,6 +945,9 @@
   <data name="Run_Output_Branch" xml:space="preserve"><value>Das Ergebnis liegt auf Branch {0}</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Werkzeug-Aktivität</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Für diese Ausführung wurden keine Werkzeug-Entscheidungen aufgezeichnet.</value></data>
+  <data name="Run_Children_Header" xml:space="preserve"><value>Unteragenten</value></data>
+  <data name="Run_Children_Count" xml:space="preserve"><value>{0} von {1} abgeschlossen</value></data>
+  <data name="Run_Children_Timeline_Empty" xml:space="preserve"><value>Für diesen Unteragenten wurden keine Werkzeug-Entscheidungen aufgezeichnet.</value></data>
   <data name="Run_Timeline_ReadFailed" xml:space="preserve"><value>Die Werkzeug-Aktivität dieser Ausführung konnte nicht gelesen werden.</value></data>
   <data name="Run_Timeline_Truncated" xml:space="preserve"><value>Protokoll gekürzt – nur die ersten {0} Entscheidungen dieser Ausführung wurden aufgezeichnet.</value></data>
   <data name="Run_Timeline_Step" xml:space="preserve"><value>Schritt {0}</value></data>

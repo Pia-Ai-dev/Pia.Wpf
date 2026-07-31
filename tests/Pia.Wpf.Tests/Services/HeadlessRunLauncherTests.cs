@@ -215,7 +215,9 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     }
 
     /// <summary>Persist a stub chat + a parked (WaitingForInput) Planned run carrying one Pending step.</summary>
-    private async Task<AgentRun> ParkRunWithPendingStepAsync(string? policyJson)
+    /// <param name="parentRunId">Batch 07: makes the parked run a CHILD, which is the shape §7.6 change 3 is
+    /// about — every child owns a stub chat, so a user can press Continue on one.</param>
+    private async Task<AgentRun> ParkRunWithPendingStepAsync(string? policyJson, Guid? parentRunId = null)
     {
         var ct = TestContext.Current.CancellationToken;
         var chatId = Guid.NewGuid();
@@ -234,7 +236,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var run = await _runs.CreateAsync(
             new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.Schedule, Goal: "g",
-                PolicyJson: policyJson), ct);
+                PolicyJson: policyJson, ParentRunId: parentRunId), ct);
         await _runs.ReplaceStepsAsync(run.Id, [new AgentStep
         {
             Id = Guid.NewGuid(),
@@ -848,6 +850,213 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Null(_executing.GetChatId(handle.RunId));
 
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// T-CHILD-1, <b>REGRESSION</b>. What a child dispatch is: its own stub chat, a run row carrying
+    /// <c>ParentRunId</c>, the grant envelope NARROWED from the parent's (never the launch default), and — the
+    /// load-bearing half — <b>no workspace of its own</b>. It writes the parent's directory, because Batch 06
+    /// allows exactly one promotion per workspace and a per-child worktree would mean N branches per fan-out.
+    /// </summary>
+    [Fact]
+    public async Task LaunchChild_CreatesAChildRunInTheParentsWorkspace_WithANarrowedEnvelope()
+    {
+        var (launcher, planner) = BuildLauncher();
+        var parentRunId = Guid.NewGuid();
+        var parentRoot = Path.Combine(_dir, "parent-workspace");
+        Directory.CreateDirectory(parentRoot);
+        // The parent held delete_file; a child is a delegate and does not get to destroy anything.
+        var parentEnvelope = HeadlessRunLauncher.SerializeGrantEnvelope(
+            ["write_file", "delete_file"], AgentRunTrigger.Schedule);
+
+        var handle = await launcher.LaunchChildAsync(
+            new HeadlessRunRequest("do the sub-thing", AgentRunTrigger.Schedule), parentRunId, parentEnvelope,
+            parentRoot, TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var child = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        Assert.Equal<Guid?>(parentRunId, child!.ParentRunId);
+        Assert.Equal(new[] { "write_file" }, HeadlessRunLauncher.TryRestoreGrantEnvelope(child.PolicyJson));
+
+        // No directory at the CHILD's run id, and the executor was initialized with the PARENT's root — read
+        // off the RunContext the orchestrator handed the planner, the same seam T-G2-1 uses.
+        Assert.False(Directory.Exists(Path.Combine(_runsBase, handle.RunId.ToString())));
+        Assert.NotNull(planner.PlanContext);
+        Assert.Equal(parentRoot, planner.PlanContext!.WorkspaceRoot);
+    }
+
+    /// <summary>
+    /// T-CHILD-2, <b>REGRESSION</b>, and the reason D7 exists. The child pool is a SECOND semaphore. With both
+    /// permits of the shared pool held by parents that are blocked inside their own runs, a child dispatched on
+    /// the shared pool could never start — and neither permit could ever be released, because a permit is
+    /// released only after <c>RunAsync</c> RETURNS. That is a permanent deadlock reachable with exactly two
+    /// concurrent parents, i.e. the configured cap.
+    /// <para>
+    /// Change <c>_childSlots</c> back to <c>_slots</c> and this fact does not fail an assertion — it TIMES OUT
+    /// on the child's completion, which is what the deadlock actually looks like.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task LaunchChild_UsesASeparatePool_SoAChildRunsWhileBothParentSlotsAreHeld()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher(onPlan: () => release.Task);
+
+        var p1 = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        var p2 = await launcher.LaunchAsync(new HeadlessRunRequest("b", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+
+        // Both permits are provably held: two runs are inside the planner, blocked on the gate.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (planner.Concurrent < 2 && DateTime.UtcNow < deadline)
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        Assert.Equal(2, planner.Concurrent);
+
+        // A child now dispatched must still run. Its own planner call blocks on the same gate, so "it ran" is
+        // observable as the concurrency count reaching THREE — which the shared 2-permit pool cannot produce.
+        var parentRoot = Path.Combine(_dir, "child-pool-workspace");
+        Directory.CreateDirectory(parentRoot);
+        var child = await launcher.LaunchChildAsync(
+            new HeadlessRunRequest("c", AgentRunTrigger.User), Guid.NewGuid(), null, parentRoot,
+            TestContext.Current.CancellationToken);
+
+        deadline = DateTime.UtcNow.AddSeconds(10);
+        while (planner.Concurrent < 3 && DateTime.UtcNow < deadline)
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        Assert.Equal(3, planner.Concurrent);
+
+        release.SetResult();
+        await Task.WhenAll(p1.Completion, p2.Completion, child.Completion)
+            .WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        foreach (var h in new[] { p1, p2 })
+            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// T-CHILD-3, <b>REGRESSION</b>. <c>CancelAsync</c> is the cascade's mechanism: it cancels ONE in-flight
+    /// dispatch by id and is a silent no-op for a run this process is not running (a child parked in a previous
+    /// process), which is exactly why the orchestrator also settles such a row directly.
+    /// </summary>
+    [Fact]
+    public async Task CancelAsync_CancelsOneInFlightRun_AndIsANoOpForAnUnknownId()
+    {
+        var planEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var planCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher();
+        planner.OnPlanWithToken = async ct =>
+        {
+            planEntered.TrySetResult();
+            using var registration = ct.Register(() => planCancelled.TrySetResult());
+            await planCancelled.Task;
+        };
+
+        // Never throws, records nothing, and above all does not fault the caller.
+        await launcher.CancelAsync(Guid.NewGuid());
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await planEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        await launcher.CancelAsync(handle.RunId);
+
+        // The run's OWN token fired — the only in-process evidence that the dispatch was cancelled.
+        await planCancelled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var run = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Cancelled, run!.State);
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// T-CHILD-4, <b>REGRESSION</b>. Teardown is keyed on WORKSPACE OWNERSHIP, not on run id, so a child's run
+    /// id is never entered in the chat→runs index. Deleting a child's stub chat mid-fan-out would otherwise call
+    /// <c>TearDownWorkspaceAsync(childId)</c> — which routes through the provisioner and in worktree mode is a
+    /// <c>git worktree remove</c> — against a directory the PARENT and its still-running siblings own.
+    /// <para>
+    /// The second half is the non-vacuity control: a PARENT's chat deletion does still tear its workspace down,
+    /// so this cannot pass on a launcher whose teardown simply stopped working.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AChildsChatDeletion_DoesNotTearDownAWorkspace_ButAParentsStillDoes()
+    {
+        var workspaces = new FakeRunWorkspaceService(_runsBase);
+        var (launcher, _) = BuildLauncher(workspaces: workspaces);
+
+        var parent = await launcher.LaunchAsync(new HeadlessRunRequest("p", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await parent.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var child = await launcher.LaunchChildAsync(
+            new HeadlessRunRequest("c", AgentRunTrigger.User), parent.RunId, null,
+            workspaces.RootFor(parent.RunId), TestContext.Current.CancellationToken);
+        await child.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        await _chats.DeleteAsync(child.ChatId, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(child.RunId, workspaces.TornDown);
+
+        await _chats.DeleteAsync(parent.ChatId, TestContext.Current.CancellationToken);
+        await workspaces.TornDownOnce.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        Assert.Contains(parent.RunId, workspaces.TornDown);
+    }
+
+    /// <summary>
+    /// T-CHILD-5, <b>REGRESSION</b> (§7.6 change 3). The hole the rest of §7.6 would leave open:
+    /// <c>ResumeAsync</c> is a separate dispatch method that provisions at its OWN run id, and every child owns a
+    /// stub chat — so a user opening a parked child's chat and pressing <b>Continue</b> would create a SECOND
+    /// workspace at the child's id, diverging from the parent's and outliving it until the sweep. A resumed child
+    /// re-enters the PARENT's directory and provisions nothing.
+    /// </summary>
+    [Fact]
+    public async Task ResumedChild_ReEntersTheParentsWorkspace_AndNeverProvisionsAtItsOwnId()
+    {
+        var workspaces = new FakeRunWorkspaceService(_runsBase);
+        var verifier = new FakeVerifier();
+        var (launcher, _) = BuildLauncher(verifier: verifier, workspaces: workspaces);
+
+        var parent = await launcher.LaunchAsync(new HeadlessRunRequest("p", AgentRunTrigger.User), TestContext.Current.CancellationToken);
+        await parent.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        var parentRoot = workspaces.RootFor(parent.RunId);
+        Directory.CreateDirectory(parentRoot); // the parent's workspace, still standing while its children work
+
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null, parentRunId: parent.RunId);
+        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        // The provisioner was never asked about the child's id (it was asked about the parent's, at launch).
+        Assert.DoesNotContain(parked.Id, workspaces.Provisioned);
+        Assert.False(Directory.Exists(Path.Combine(_runsBase, parked.Id.ToString())));
+
+        // And the resumed child really did run, inside the parent's root. Assert.Single is the non-vacuity
+        // control: a resume that dispatched nothing would satisfy both assertions above for free.
+        // The parent's own launch DID plan (PlanContext is its context, not the child's), so the
+        // resume-does-not-replan claim is T-G2-2's; the fact here is which ROOT the resumed child re-entered.
+        Assert.Single(verifier.SeenWorkspaceRoots);
+        Assert.Equal(SafeFolderPath.Canonicalize(parentRoot), verifier.SeenWorkspaceRoots[0]);
+    }
+
+    /// <summary>
+    /// T-CHILD-6, <b>GUARD</b>. The degrade half of §7.6: a child whose parent ran UNISOLATED (or whose parent's
+    /// workspace is already gone) gets a null root and writes the assistant folder, exactly as its parent does.
+    /// Parent and child are always in the same isolation regime — the child must never provision one of its own
+    /// to "fix" a parent that has none.
+    /// </summary>
+    [Fact]
+    public async Task AChildOfAnUnisolatedParentIsAlsoUnisolated_AndProvisionsNothing()
+    {
+        var workspaces = new FakeRunWorkspaceService(_runsBase);
+        var (launcher, planner) = BuildLauncher(workspaces: workspaces);
+
+        var handle = await launcher.LaunchChildAsync(
+            new HeadlessRunRequest("c", AgentRunTrigger.User), Guid.NewGuid(), null, parentWorkspaceRoot: null,
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.Empty(workspaces.Provisioned);
+        Assert.False(Directory.Exists(Path.Combine(_runsBase, handle.RunId.ToString())));
+        Assert.NotNull(planner.PlanContext);
+        Assert.Null(planner.PlanContext!.WorkspaceRoot);
+        Assert.Equal(AgentRunState.Completed, (await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken))!.State);
     }
 
     /// <summary>

@@ -57,6 +57,37 @@ public interface IHeadlessRunLauncher
     /// </summary>
     Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct = default);
 
+    /// <summary>
+    /// Dispatch a CHILD run of <paramref name="parentRunId"/> (Batch 07 D7): the same path
+    /// <see cref="LaunchAsync"/> takes, on a SEPARATE concurrency pool so siblings run in parallel while the
+    /// parent awaits them — a nested acquire on the shared pool deadlocks permanently (07 §7.1).
+    /// <para>
+    /// Three things differ from a plain launch, all of them narrowing. The child's grant envelope is derived
+    /// from <paramref name="parentPolicyJson"/> and is a strict subset of it, never the launch default and
+    /// never the resume floor (Phase 3 R13). The child runs INSIDE the parent's workspace
+    /// (<paramref name="parentWorkspaceRoot"/> — the orchestrator's <c>ctx.WorkspaceRoot</c>) and provisions
+    /// nothing of its own, because promotion is once per workspace (Batch 06 B7): <c>null</c> means the parent
+    /// runs unisolated and the child then does too, so the two are always in the same regime. And the child's
+    /// run row carries <c>ParentRunId</c>, which is what stops it delegating further and stops it promoting.
+    /// </para>
+    /// <para>
+    /// <see cref="HeadlessRunHandle.Completion"/> carries the same caveat as on <see cref="LaunchAsync"/>: it
+    /// settles on a budget PAUSE as well as on a terminal state, so a caller must re-read the run row before
+    /// treating the child as finished.
+    /// </para>
+    /// </summary>
+    Task<HeadlessRunHandle> LaunchChildAsync(
+        HeadlessRunRequest req, Guid parentRunId, string? parentPolicyJson, string? parentWorkspaceRoot,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Cancel ONE in-flight run by id — the mechanism a parent's cascade uses when its own token fires
+    /// (07 D16). A no-op for a run this process is not currently dispatching (a run parked in a previous
+    /// process is not in the in-flight map), so a caller that needs the row settled must do that itself.
+    /// Never throws.
+    /// </summary>
+    Task CancelAsync(Guid runId);
+
     /// <summary>Cancel every in-flight run and bounded-await their settle (app shutdown, G-4).</summary>
     Task StopAsync(CancellationToken ct);
 
