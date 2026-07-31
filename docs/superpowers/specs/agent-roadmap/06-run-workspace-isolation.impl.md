@@ -317,6 +317,7 @@ src/Pia.Wpf/Services/RunWorkspaceService.cs               (the one implementatio
 public enum RunWorkspaceMode { None = 0, Copy = 1, Worktree = 2 }
 
 public sealed record RunWorkspace(Guid RunId, string Root, RunWorkspaceMode Mode, string SourceRoot, string? BranchName);
+// Phase 3 fix pass: gained a trailing, defaulted `bool RetainWorkspace = false`. See the annotation on B8.
 public sealed record RunPromotionResult(RunWorkspaceMode Mode, int Promoted, int Skipped, int Conflicts, string? BranchName);
 public sealed record RunWorkspaceOutcome(RunWorkspaceMode Mode, string? BranchName, bool HasUnpublishedFiles);
 
@@ -524,6 +525,14 @@ It calls `PromoteAsync` and, **only on a non-null result**, `TearDownAsync`. Cou
 
 Cancelled/failed runs are not promoted and their workspaces are **not** torn down here.
 
+> **SUPERSEDED by the Phase 3 fix pass (`3b66603`), and this sentence was a data-loss path as written.**
+> "Only on a non-null result" is no longer sufficient: `RunPromotionResult` gained a trailing, defaulted
+> `RetainWorkspace`, and `SafePromote` tears down only when it is **false**. A non-null result can mean
+> "promoted, and the workspace still holds work this promotion could not move" — a copy-mode CONFLICT whose
+> resolution kept the user's newer file (B7), or a worktree whose run-branch commit did not take everything.
+> Deleting the workspace on those results destroyed the only remaining copy, silently, on a run reporting
+> success. See the Batch 06 review findings file (Lens A 5 / Lens B 3, and Lens A 1 / Lens B 2).
+
 ### B9 — Copy mode's promotion destination is the **source root** recorded at provisioning
 
 Not "the assistant files folder" as a constant: the metadata's `sourceRoot` is the narrowed root the tree was
@@ -546,6 +555,36 @@ does it through `git worktree remove` (B12).
 Because the output is somewhere the user would not look, the panel must **say so** (B15): a run whose
 outcome is `Worktree` renders *"Output is on branch pia/run/…"*. Without that line the honest user question
 is "where is my file?".
+
+> **CORRECTED by the Phase 3 fix pass (`3b66603`). Two halves of this section were wrong as built.**
+>
+> **(a) "Copies no file" was true and destroyed the deliverable.** Nothing in Batch 06 or 07 ever committed
+> to the run branch, and an unattended run cannot: `DefaultGrantedWrites` is `{write_file}` and
+> `RunAutonomyPolicy`'s presets exclude `ToolClass.Git`, so the model's own `git_commit` is refused as
+> not-granted. Meanwhile teardown ran `git worktree remove --force`. So a clean worktree run reported
+> success with a passing verdict, the branch stayed byte-identical to the base commit, and the file existed
+> nowhere. `PromoteAsync`'s worktree arm now COMMITS the run's work app-side through the injected
+> `IGitProcessRunner` (`status --porcelain --untracked-files=all` → `add -A` → `commit --no-verify` under
+> explicit `-c user.name`/`user.email`/`commit.gpgsign=false`), reports the committed entry count as
+> `Promoted`, and sets `RetainWorkspace` on any arm that leaves work outside the commit — a failed commit,
+> or work the user's own `.gitignore` kept `add -A` from taking (caught by a post-commit
+> `status --porcelain --untracked-files=all --ignored`). Still app-side, so plan R18 holds: no new agent
+> capability.
+>
+> **(b) B15's branch line could only render for a FAILED worktree run.** The panel reads `DescribeAsync` in a
+> TERMINAL-only branch, and promotion tears the workspace down BEFORE `CompleteAsync` (B8) — deleting the
+> metadata document `DescribeAsync` reads. `TearDownAsync` now leaves a torn-down STUB for worktree mode
+> (additive `tornDownAtUtc` on the same `v:1` document; `mainWorktree` retained so a failed
+> `worktree remove` can still be pruned later) and `DescribeAsync` answers from it. The metadata sweep ages
+> the stub out on the same seven-day window a settled run's workspace gets.
+>
+> **KNOWN, NOT CLOSED, and recorded rather than built** (the fix would need `DescribeAsync` to learn whether
+> the branch actually received a commit, which is a redesign): on the commit-FAILURE arm the workspace is
+> retained, so the document is intact and un-stamped, so `DescribeAsync` still answers
+> `RunWorkspaceOutcome(Worktree, meta.Branch, HasUnpublishedFiles: false)` — the panel names a branch that
+> received nothing, and worktree mode offers no publish button, so there is no recovery path in the UI. The
+> files are in `%LOCALAPPDATA%\Pia\runs\<runId>` for seven days. See the live-items note in the Batch 06
+> review findings file.
 
 ### B11 — Provisioning: worktree when the source root is a repo we may touch, else copy
 
@@ -758,6 +797,17 @@ public bool CanPublish => _hasUnpublishedFiles && !IsPublishing;
   the byte-identical no-op case — there is nothing to tell the user about a file that was already correct).
   A fault logs a warning (run id only) and sets the failed note. Declining is doing nothing: the workspace is
   retained and then swept by B12's 7-day terminal rule.
+  > **STILL TRUE, and now an asymmetry worth naming (Phase 3 fix pass).** `Publish()` ignores
+  > `RetainWorkspace` on purpose — this path is user-initiated and INFORMED (the note it renders carries the
+  > conflict count) — so a manual publish still tears the workspace down and deletes the run's version of a
+  > conflicted file. That is the inverse of the loss Lens A 5 / Lens B 3 filed against the AUTOMATIC path,
+  > and it was left alone deliberately rather than overlooked: retaining here would leave an offer standing
+  > that the user has just answered. Recorded as a live item in the review findings file.
+  >
+  > `HasUnpublishedFiles` is also no longer "a FAILED or CANCELLED run" only: a clean COPY-mode run whose
+  > promotion hit a conflict now keeps its workspace, so a Completed run can legitimately raise the offer.
+  > T-G4-16 (`ACompletedRun_OffersNothing`) is still correct — it drives a run whose promotion moved
+  > everything — but its title reads wider than what it asserts.
 
 **Six** new loc keys in **all three** resx files, inserted after `Run_Action_Continue`
 (en `:914`, de `:939`, fr `:939` — anchor on the **key name**, not the line: G4 already moved these files).

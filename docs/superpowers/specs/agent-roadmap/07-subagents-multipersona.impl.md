@@ -430,6 +430,15 @@ as human-readable lines and the model echoes the **name**; `AgentPlanner` maps n
 2. non-null but `IPersonaService.GetPersonaAsync(id)` returns `null` (persona deleted between plan and
    execute) ⇒ the run persona, logged with the **id** at Information (a persona id is not user content;
    its name is).
+   > **CORRECTED by the Phase 3 fix pass** (Batch 06 review, Lens A finding 3). This arm no longer calls
+   > `GetPersonaAsync` at all, and the per-id round-trip was the one arm of this ladder that could THROW:
+   > `PersonaService.GetPersonaAsync` runs raw SQLite I/O, resolution happens BEFORE each executor's exchange
+   > try/catch, so a busy connection escaped `ExecuteStepAsync` and failed the WHOLE RUN — contradicting this
+   > section's own "never throwing". `GetRosterAsync` has already fetched the full `Persona` objects through
+   > `GetPersonasAsync` (same column list, same `MapPersona`) and already dropped every configured id that no
+   > longer resolves, logging that count, so the roster entry IS the persona and arms 2 and 4 collapse into
+   > one "off-roster" answer. T-SPR-5 now models the deletion where it really happens — at
+   > `GetPersonasAsync`, not at a per-id lookup, which is a state the roster loader cannot produce.
 3. resolved persona but **no provider resolvable** ⇒ **keep the assigned persona and its turn setup; borrow
    the RUN's provider**, logged. Not the whole run default: discarding the persona would throw away its
    **system prompt**, which §0.1 establishes is the *substance* of multi-persona. A persona running on a
@@ -1148,6 +1157,15 @@ public sealed partial class StepRowViewModel : ObservableObject
   new resource lookup (the file's own comment at `:82-87` explains why that matters).
 - The live chat's and history inspector's uses of `PiaPersonaAvatar` are untouched — the new DP is additive
   with a null default.
+  > **This was NOT true as built, and is true now (Phase 3 fix pass, `31bfa03`).** The DP was additive, but the
+  > ring was implemented as a STATIC `BorderThickness="1.5"` on the control's shared `Border` with only the
+  > BRUSH bound. `Border` reserves `BorderThickness` in `MeasureOverride` and clips `Background` to the inner
+  > rect independently of whether `BorderBrush` is `Transparent`, so on a control with fixed
+  > `Width`/`Height`=28 the visible plate shrank to 25x25 and the inner glyph lost 3px — for
+  > `AssistantView.xaml`'s live chat and `PiaAssistantChatInspector.xaml`'s history view too, neither of which
+  > can ever set `AccentColor`. D19 (no new View test) means nothing automated could see it, and §8 item 7's
+  > manual smoke only asks about the run panel. The ring is now an OVERLAID sibling `Border` inside a `Grid`,
+  > so the plate's layout and `Background` rect are untouched and an unset accent draws nothing at all.
 
 ---
 
@@ -1706,6 +1724,8 @@ for each sibling:
     goal      = sibling.Intent (+ " Expected: " + ExpectedArtifact)   // BuildInstruction's own shape
     handle    = await childLauncher.LaunchChildAsync(
                     new HeadlessRunRequest(goal, run.TriggerKind, TriggerRef: null,
+                        // SUPERSEDED — see the annotation under this sketch. The built shape is a hard
+                        // ProviderId: null plus a `personaId:` argument on LaunchChildAsync.
                         OwnerDeviceId: run.OwnerDeviceId, ProviderId: <the sibling's persona provider, or null>,
                         GrantedWrites: null, Budget: <a child profile, §7.5>),
                     parentRunId: run.Id, parentPolicyJson: run.PolicyJson,
@@ -1732,6 +1752,24 @@ if (!await _runService.TryEndChildWaitAsync(run.Id, cts.Token)):  return   // pa
 if (anyFailed):  fall into the EXISTING step-failure branch (replan budget, :176-202)
 else:            continue the drain loop
 ```
+
+> **DIVERGENCE 9 from §7.3, filed by the Phase 3 review of 2026-07-31 and fixed in `cc7d62f`.** As built, the
+> dispatch passed a hard `ProviderId: null` and carried `sibling.AssignedPersonaId` NOWHERE, so
+> `LaunchCoreAsync` resolved each child's run persona from the GLOBAL per-mode setting and its provider from
+> that persona. Both halves of the roster assignment were therefore dropped for exactly the steps the plan
+> GROUPED — the specialist's system prompt (§0.1/D3.3's "substance of multi-persona") and its provider plus
+> `ReasoningEffort` (D5) — while G7's panel still drew that specialist's avatar and accent ring on the step.
+> Reachable on the ordinary path, not a corner: `parallelGroup` is only written when a roster is configured,
+> so a fan-out step almost always also carries a `personaKey` from the same plan turn.
+>
+> The fix goes further than the sketch's literal text, because a provider id alone would still leave the
+> system prompt unused: `LaunchChildAsync` gained a trailing, defaulted `Guid? personaId`, the dispatch passes
+> `sibling.AssignedPersonaId`, and `LaunchCoreAsync` PREFERS it over `ResolveActiveAsync`. The provider follows
+> for free — `ResolveProviderAsync` already reads `PreferredProviderId` and clones for `ReasoningEffort`. Two
+> narrowings mirror `StepPersonaResolver` so the two seams agree: the id must still be on the CURRENT roster
+> for the current operating mode (via `AppSettings.GetAgentPersonaRoster`, the shared helper), and it must
+> still resolve; every arm ends at the per-mode resolution, so the ladder still cannot throw. T-FAN-11 gained
+> the null counterpart and a new fact pins the positive case with two DIFFERENT sibling ids.
 
 Notes that are not optional:
 
@@ -2081,6 +2119,17 @@ Mirrors `AppSettingsAgentPlanningTests`.
 | T-VM-4 | `AStepRowMintedBeforeThePersonaMapLoads_IsCorrectedOnTheNextProjection` | REGRESSION | project once with a *slow* `GetPersonasAsync`, then again: the **same row instance** (assert `ReferenceEquals`) now has its persona. **The R21/R22/R23 first-projection race.** | make the three members `init`-only again, or skip them in the existing-row branch → red |
 | T-VM-5 | `APersonaLookupFault_DoesNotBreakThePanel` | REGRESSION | `GetPersonasAsync` throws ⇒ steps still project, one Warning | remove the try/catch → red |
 
+> **BUILT LATE, by the Phase 3 fix pass (`4faa90a`), and the file shipped as
+> `RunProgressViewModelPersonaAttributionTests.cs`.** T-VM-4 was shipped as
+> `FirstProjectionBeforePersonaMapLoads_IsCorrectedOnTheNextRefresh`, which stubbed `GetPersonasAsync` with an
+> already-completed task — so pass 1 already resolved the avatar and pass 2's assertion held whether or not
+> the existing-row re-application had run. Neither the *slow* load nor the `ReferenceEquals` this row specifies
+> was present, so `StepRowViewModel`'s settable-vs-init-only decision (§4.3, "load-bearing") had no fact behind
+> it. **T-VM-5 was not built at all** — none of the five shipped facts made `GetPersonasAsync` throw. Both now
+> exist as specified: the map read returns a FAULTED task on call 1 and succeeds afterwards, the row is
+> asserted minted persona-less, and `Assert.Same` pins the same instance being corrected — which also pins the
+> deliberate "`_personas` stays null so the next event RETRIES rather than latching an empty map" decision.
+
 ### 9.6 `tests/Pia.Wpf.Tests/Services/AgentRunServiceChildWaitTests.cs` — NEW (CRLF)
 
 Real `SqliteContext` in a temp dir, the `Harness` shape `AgentRunOrchestratorTests` already uses (`:200-215`).
@@ -2138,6 +2187,20 @@ bug hangs, and a hung suite is worse than a red one.
 | T-FAN-14 | `AChildInheritsTheParentsWorkspaceRoot_AndNeverProvisions` | REGRESSION | the parent's `ctx.WorkspaceRoot` is what reaches the child's `executor.Initialize(workspaceRoot:)`, and the fake `IRunWorkspaceService.ProvisionAsync` was called **once** (for the parent), not once per run | let `LaunchCoreAsync` provision for a child ⇒ the call count reds |
 | T-FAN-15 | `AReDispatchedFanOut_CancelsTheParkedGenerationFirst` | REGRESSION | park a child (`WaitingForInput`) ⇒ parent re-parks ⇒ resume the parent ⇒ the **old** child ends `Cancelled` and exactly two children exist for the parent (`GetChildRunsAsync` count == 2, one `Cancelled` + one live). Second row: the old child is **not** in `_inflight` (simulate a restart by disposing the launcher's tracking) ⇒ it still ends `Cancelled` via the `FailAsync` fallback. **§7.3's generation leak.** | drop the cancel loop → the count reaches 3 and a `WaitingForInput` child survives |
 
+> **T-FAN-13's "both arms" was BUILT LATE (Phase 3 fix pass, `31bfa03`).** The fact G10 shipped
+> (`AChildRunNeverPromotesAndNeverTearsDownTheSharedWorkspace`) drives ONLY the `PlanResult.Fallback` degrade
+> arm — its own doc says so, and it forces that arm by leaving `FakePlanner.Plans` empty; the non-vacuity
+> control sits on the same arm. The MAIN terminal arm (`SafeEndRun` → `SafePromote` → `SafeComplete`), the path
+> a real completed child takes, was never exercised for a child. A second fact
+> (`AChildRunNeverPromotes_OnTheMainTerminalArmEither`) now drives it, with its own parentless control, and is
+> labelled **GUARD** rather than REGRESSION on purpose: the guard is one early return inside `SafePromote` and
+> both call sites funnel through it, so it cannot red on today's tree. It exists for the change that MOVES the
+> guard to the two call sites and gets one of them wrong.
+>
+> A second annotation for this table: `RunPromotionResult` gained `RetainWorkspace` (06 B8's annotation), so
+> `AChildRunPromotesNothing…`'s `PromoteResult` is now a five-of-six positional construction. No assertion
+> changed.
+
 ### 9.9 `tests/Pia.Wpf.Tests/ViewModels/RunProgressViewModelChildrenTests.cs` — NEW (CRLF)
 
 | # | Test | Kind | Asserts | Neutralize |
@@ -2148,6 +2211,22 @@ bug hangs, and a hung suite is worse than a red one.
 | T-CHILD-VM-4 | `TheChildRowCarriesNoPayload` | GUARD | reflect `ChildRunRowViewModel`: no member whose name suggests a path/args/result — mirroring `RunProgressViewModelTimelineTests`' existing assert. Non-vacuity: assert the expected member count | — |
 | T-CHILD-VM-6 | `TheChildIdSnapshotIsImmutable_SoTheOffThreadFilterCannotRace` | GUARD | reflect the `_childRunIds` field: its type implements `System.Collections.Immutable.IImmutableSet<Guid>`. A structural pin, because the race it prevents is not reproducible on demand — the behavioural half is T-CHILD-VM-3, and this is the half that stops a "simplification" back to `HashSet` (`ChatSessionManager.cs:210`, R38) | — |
 | T-CHILD-VM-5 | `WaitingForChildren_ProjectsItsOwnStateAndDoesNotOfferContinue` | REGRESSION | state 8 ⇒ `RunProgressState.WaitingForChildren`, `CanContinue` **false**, `CurrentActivity` is the new key | map 8 through the default arm → red |
+
+> **T-CHILD-VM-4 was RENUMBERED AWAY and not built; added by the Phase 3 fix pass (`31bfa03`).** The shipped
+> file put T-CHILD-VM-4 on `RowsAreDiffedByRunId_SoAnExpandedRowSurvivesAProjection` and contains no reflection
+> guard over `ChildRunRowViewModel` at all — the only reflection fact was T-CHILD-VM-6's field-type pin. The
+> named precedent (`RunProgressViewModelTimelineTests.TimelineRowsCarryNoPathAndNoPayload`) exists and passes,
+> but covers `TimelineRowViewModel`, i.e. the trace rows NESTED inside a child row rather than the child row's
+> own members. Built as an EXACT member list rather than a name blacklist, which is its own non-vacuity control
+> and fails on ADDITION instead of only on the four names someone thought of.
+>
+> Also for this section: **`AgentRunNotificationSurface` now suppresses a DELEGATED run entirely** (early return
+> on `run.ParentRunId`), which §5.4's "no change to the notification surface" did not anticipate. Every child
+> otherwise published its own durable Flow item and toast — four for a clean 3-way fan-out — and a child parked
+> at its own halved budget published an ActionRequired card carrying a `ContinueRunAction` on the CHILD run id,
+> a transition nothing here supports. And the two new park REASONS ("children-parked" from D13,
+> "children-interrupted" from D14) are now read by both display paths through `RunPauseEnvelope`; before that
+> both announced the park as "Stopped at budget", for a parent whose budgets were never reached.
 
 ### 9.10 Converters + architecture
 

@@ -47,6 +47,31 @@ ages out. What remains unaddressed is the finding's other half (`TearDownWithout
 success signal, and the `OnChatsChanged` teardown still does not await the cancelled dispatch's unwind). That is
 a live item, not a closed one.
 
+## Live items the fix pass OPENED or deliberately left, 2026-07-31
+
+Recorded rather than built, because each fix is a redesign and the fix pass's brief is to fix the defect and
+stay inside the finding's scope. None of these existed before `3b66603`; the first two are the price of it.
+
+1. **A worktree run whose run-branch commit FAILED still gets the branch line.** On that arm `PromoteAsync`
+   returns `RetainWorkspace: true`, so teardown never runs, so the metadata document is intact and
+   *un-stamped* — and `DescribeAsync`'s stub arm keys on `tornDownAtUtc`, which is null there. It therefore
+   falls through to the directory-exists path and answers
+   `RunWorkspaceOutcome(Worktree, meta.Branch, HasUnpublishedFiles: false)`: the panel names a branch that
+   received nothing, and worktree mode offers no publish button, so the UI shows no recovery path at all. The
+   files are really in `%LOCALAPPDATA%\Pia\runs\<runId>` for seven days. Suppressing the line properly means
+   `DescribeAsync` learning whether the branch actually carries a commit, which is a new question for that
+   method to answer — a design item, not a one-line guard.
+2. **`Publish()` still ignores `RetainWorkspace`.** The manual path tears the workspace down unconditionally
+   on a non-null result and clears `HasUnpublishedFiles`, so publishing a conflicted workspace deletes the
+   run's version of the conflicted file — the exact loss Lens A 5 / Lens B 3 filed against the AUTOMATIC path,
+   now surviving on the manual one. Defensible as it stands (the path is user-initiated and the note it
+   renders carries the conflict count), and left alone on purpose: retaining there would leave an offer
+   standing that the user has just answered. Named here so the asymmetry is a decision rather than an
+   oversight.
+3. **Lens A 4's other half is untouched** (see the note above the table): `TearDownWithoutMetadataAsync` still
+   returns no success signal, and `OnChatsChanged` still starts a teardown without awaiting the cancelled
+   dispatch's unwind.
+
 ## History defects in the Phase 3 commit record
 
 Two, both recorded here rather than in two places, and neither is a defect at HEAD:
