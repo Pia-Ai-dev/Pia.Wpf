@@ -852,11 +852,15 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         SynchronizationContext? contextAtResolve = null;
         var resolveSeen = 0;
-        _personaService.GetPersonaAsync(analyst.Id).Returns(_ =>
+        // Observed at the ROSTER read, not at a per-id GetPersonaAsync: since the Phase 3 fix pass the resolver
+        // takes the persona straight out of the roster list it already fetched (the per-id round-trip was the one
+        // arm of the ladder that could throw, and it failed the whole run). GetRosterAsync is still called from
+        // inside ResolveAsync, so this is the same observation point — one step, so it is reached once.
+        _personaService.GetPersonasAsync().Returns(_ =>
         {
             contextAtResolve = SynchronizationContext.Current;
             resolveSeen++;
-            return Task.FromResult<Persona?>(analyst);
+            return Task.FromResult<IReadOnlyList<Persona>>([analyst]);
         });
 
         var steps = MakeSteps("s1");

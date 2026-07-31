@@ -163,17 +163,17 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
     public Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct)
         => LaunchCoreAsync(req, parentRunId: null, _slots, childPolicyJson: null,
-               workspaceRootOverride: null, ct);
+               workspaceRootOverride: null, personaIdOverride: null, ct);
 
     /// <inheritdoc />
     public Task<HeadlessRunHandle> LaunchChildAsync(
         HeadlessRunRequest req, Guid parentRunId, string? parentPolicyJson, string? parentWorkspaceRoot,
-        CancellationToken ct = default)
+        Guid? personaId = null, CancellationToken ct = default)
         => LaunchCoreAsync(req, parentRunId, _childSlots,
                // NEVER the launch default and never the resume floor: a child's grants are a strict subset of
                // its parent's, with every delete-like name stripped (G9's NarrowForChild, Phase 3 R13).
                TrySerializeChildEnvelope(parentPolicyJson, req.Trigger, _logger),
-               workspaceRootOverride: parentWorkspaceRoot, ct);
+               workspaceRootOverride: parentWorkspaceRoot, personaIdOverride: personaId, ct);
 
     /// <inheritdoc />
     public Task CancelAsync(Guid runId)
@@ -214,16 +214,21 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// workspace: Batch 06 B7 allows exactly ONE promotion per workspace, decided by a single
     /// <c>provisionedAtUtc</c>, and in worktree mode a per-child workspace would mean N <c>git worktree add</c>
     /// calls and N branches per fan-out (06 §13.4 / 07 §7.6).</param>
+    /// <param name="personaIdOverride">A delegated step's assigned roster persona (07 D3/D5), which becomes the
+    /// CHILD's run persona instead of the global per-mode one. Null ⇒ the ordinary resolution.</param>
     private async Task<HeadlessRunHandle> LaunchCoreAsync(
         HeadlessRunRequest req, Guid? parentRunId, SemaphoreSlim slots, string? childPolicyJson,
-        string? workspaceRootOverride, CancellationToken ct)
+        string? workspaceRootOverride, Guid? personaIdOverride, CancellationToken ct)
     {
         var chatId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-        var persona = await _personaService.ResolveActiveAsync(
-            WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
+        var persona = await ResolveRunPersonaAsync(personaIdOverride, settings).ConfigureAwait(false);
+        // The provider ladder reads the persona: req.ProviderId (null for a child), then the persona's
+        // PreferredProviderId, then the mode default, and it clones to apply ReasoningEffort. So handing it the
+        // ASSIGNED persona is what gives a delegated step its specialist's provider and effort too — D5's
+        // "each persona running on its own provider" — with no second ladder to keep in step.
         var provider = await ResolveProviderAsync(req.ProviderId, persona).ConfigureAwait(false)
             ?? throw new InvalidOperationException("No provider configured for a headless agent run.");
 
@@ -679,6 +684,57 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             if (_workspaces is not null)
                 await _workspaces.SweepOrphanMetadataAsync(ct).ConfigureAwait(false);
         }, ct);
+    }
+
+    /// <summary>
+    /// The run persona for one dispatch: the delegated step's ASSIGNED roster persona when there is one, else
+    /// the global per-mode resolution every ordinary launch takes.
+    /// <para>
+    /// Two narrowings, both mirroring <c>StepPersonaResolver</c> so the two seams agree. The id must still be on
+    /// the CURRENT roster for the current operating mode — a plan outlives the setting that produced it (a
+    /// replan, a resume, a roster the user has since edited), and an id the user has withdrawn is not this
+    /// run's business even if it resolves. And it must still resolve to a persona: one deleted between plan and
+    /// dispatch must not reach a prompt as a blank system message.
+    /// </para>
+    /// <para>
+    /// NEVER throws for the override's sake (guardrail 1): every arm ends at the per-mode resolution, which is
+    /// exactly the pre-fix behaviour. Ids and counts only in the logs — a persona NAME is user-named content.
+    /// </para>
+    /// </summary>
+    private async Task<Persona> ResolveRunPersonaAsync(Guid? personaIdOverride, AppSettings settings)
+    {
+        var mode = settings.UserOperatingMode ?? UserOperatingMode.Personal;
+        if (personaIdOverride is { } id && id != Guid.Empty)
+        {
+            try
+            {
+                if (!settings.GetAgentPersonaRoster(mode).Contains(id))
+                {
+                    _logger.LogInformation(
+                        "Delegated run persona {PersonaId} is not on the current roster; using the mode persona ({Reason})",
+                        id, "off-roster");
+                }
+                else if (await _personaService.GetPersonaAsync(id).ConfigureAwait(false) is { } assigned)
+                {
+                    return assigned;
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Delegated run persona {PersonaId} could not be resolved; using the mode persona ({Reason})",
+                        id, "unresolvable-persona");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Exception TYPE only: a persona store's message can embed a persona name.
+                _logger.LogWarning(
+                    "Delegated run persona {PersonaId} could not be read ({Error}); using the mode persona",
+                    id, ex.GetType().Name);
+            }
+        }
+
+        return await _personaService.ResolveActiveAsync(WindowMode.Assistant, mode).ConfigureAwait(false);
     }
 
     private async Task<AiProvider?> ResolveProviderAsync(Guid? explicitProviderId, Persona persona)

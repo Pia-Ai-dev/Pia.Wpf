@@ -76,9 +76,16 @@ public interface IHeadlessRunLauncher
     /// treating the child as finished.
     /// </para>
     /// </summary>
+    /// <param name="personaId">The roster persona the DELEGATED STEP was assigned (its
+    /// <c>AssignedPersonaId</c>), or null. Non-null makes it the child's RUN persona — its system prompt, its
+    /// preferred provider and its reasoning effort — which is the whole substance of multi-persona: without it
+    /// the child resolves the global per-mode persona and the specialist the plan chose never runs anywhere,
+    /// while the panel still draws that specialist's avatar on the step. A REQUEST, never a guarantee: the
+    /// launcher honours it only while it is still on the roster and still resolves, and otherwise takes the
+    /// ordinary per-mode resolution rather than failing the dispatch.</param>
     Task<HeadlessRunHandle> LaunchChildAsync(
         HeadlessRunRequest req, Guid parentRunId, string? parentPolicyJson, string? parentWorkspaceRoot,
-        CancellationToken ct = default);
+        Guid? personaId = null, CancellationToken ct = default);
 
     /// <summary>
     /// Cancel ONE in-flight run by id — the mechanism a parent's cascade uses when its own token fires

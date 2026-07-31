@@ -97,25 +97,28 @@ public sealed class StepPersonaResolver
         if (_degraded.Contains(id))
             return runDefault;
 
-        // Roster containment BEFORE the persona lookup: an id off the roster is not this run's business even
-        // if it resolves. An empty roster (the D1 default) therefore assigns nothing, which is the property
-        // that makes the whole batch off-by-default at this seam too, not only at the planner's.
+        // Roster containment IS the persona lookup: an id off the roster is not this run's business even if it
+        // resolves, and GetRosterAsync has already fetched the full Persona objects (same column list, same
+        // MapPersona) and dropped every configured id that no longer resolves — logging that count itself. So
+        // the roster entry is the persona, and a second `GetPersonaAsync(id)` round-trip would only re-read
+        // what is already in hand.
+        //
+        // It would also be the ONE ARM OF THIS LADDER THAT CAN THROW, which this type's contract forbids:
+        // PersonaService.GetPersonaAsync executes raw SQLite I/O, and step-persona resolution happens BEFORE
+        // each executor's exchange try/catch — so a momentarily busy connection (the sync or vault writer
+        // holding the DB) escaped all the way to the orchestrator's outer catch and FAILED THE WHOLE RUN,
+        // losing the completed steps' progress on a run that would have finished with no assignment at all.
+        //
+        // An empty roster (the D1 default) therefore assigns nothing, which is the property that makes the
+        // whole batch off-by-default at this seam too, not only at the planner's.
         var roster = await GetRosterAsync(ct).ConfigureAwait(false);
-        if (!roster.Any(p => p.Id == id))
+        var persona = roster.FirstOrDefault(p => p.Id == id);
+        if (persona is null)
         {
             // Ids, counts and reason tokens only — a persona NAME is user-named content (CLAUDE.md).
             _logger.LogInformation(
                 "Step persona {PersonaId} is not on the current roster ({RosterCount} persona(s)); using the run persona ({Reason})",
                 id, roster.Count, "off-roster");
-            _degraded.Add(id);
-            return runDefault;
-        }
-
-        var persona = await _personas.GetPersonaAsync(id).ConfigureAwait(false);
-        if (persona is null)
-        {
-            _logger.LogInformation(
-                "Step persona {PersonaId} could not be resolved; using the run persona ({Reason})", id, "unresolvable-persona");
             _degraded.Add(id);
             return runDefault;
         }

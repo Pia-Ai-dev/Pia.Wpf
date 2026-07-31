@@ -125,7 +125,7 @@ public sealed class AgentRunOrchestratorFanOutTests
     /// <summary>What one <c>LaunchChildAsync</c> call was asked for, plus the row it created.</summary>
     private sealed record Dispatch(
         HeadlessRunRequest Request, Guid ParentRunId, string? ParentPolicyJson, string? ParentWorkspaceRoot,
-        Guid ChildRunId, Guid ChatId, Task Completion);
+        Guid? PersonaId, Guid ChildRunId, Guid ChatId, Task Completion);
 
     /// <summary>
     /// Launcher double that behaves like the real one in the two ways these facts depend on: it creates a REAL
@@ -182,7 +182,7 @@ public sealed class AgentRunOrchestratorFanOutTests
 
         public async Task<HeadlessRunHandle> LaunchChildAsync(
             HeadlessRunRequest req, Guid parentRunId, string? parentPolicyJson, string? parentWorkspaceRoot,
-            CancellationToken ct = default)
+            Guid? personaId = null, CancellationToken ct = default)
         {
             if (ThrowForIndex == _calls++)
                 throw new InvalidOperationException("launcher boom");
@@ -216,7 +216,7 @@ public sealed class AgentRunOrchestratorFanOutTests
             _cancels[child.Id] = cancelled;
 
             var completion = SettleAsync(child.Id, outcome, cancelled);
-            Dispatches.Add(new Dispatch(req, parentRunId, parentPolicyJson, parentWorkspaceRoot, child.Id, chatId, completion));
+            Dispatches.Add(new Dispatch(req, parentRunId, parentPolicyJson, parentWorkspaceRoot, personaId, child.Id, chatId, completion));
             return new HeadlessRunHandle(child.Id, chatId, completion);
         }
 
@@ -783,6 +783,49 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(profile.MaxSteps, first.Request.Budget.MaxSteps);
         // The goal is the step's own intent, not the parent's goal.
         Assert.Equal("a", first.Request.Goal);
+        // No roster assignment on these steps ⇒ nothing to hand over, and the child takes the per-mode
+        // persona. The positive half is
+        // ADelegatedStepsAssignedPersonaReachesItsChildRun_NotJustThePanel.
+        Assert.Null(first.PersonaId);
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 fix pass). A delegated step's ASSIGNED roster persona has to reach its child
+    /// run, or the roster is decorative for exactly the steps the plan grouped. The dispatch passed a hard
+    /// <c>ProviderId: null</c> and carried <c>AssignedPersonaId</c> nowhere, so each child resolved the GLOBAL
+    /// per-mode persona and that persona's provider: neither the specialist's system prompt (07 §0.1 calls it
+    /// "the substance of multi-persona") nor its provider and reasoning effort (D5) was ever used, while G7's
+    /// panel drew that specialist's avatar and accent ring on the step. The user's only visible evidence that
+    /// the roster did anything was a lie.
+    /// <para>
+    /// The child's own planner re-assigning personas does not cover this: the run-level persona is the fallback
+    /// for every one of the child's steps and is used verbatim for its plan, replan and verify turns, so the
+    /// chosen specialist otherwise runs nowhere at all. Neutralization: restore <c>personaId: null</c> at the
+    /// dispatch → red. Non-vacuity: the second sibling carries a DIFFERENT id, so a dispatch that passed one
+    /// constant would fail.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ADelegatedStepsAssignedPersonaReachesItsChildRun_NotJustThePanel()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var researcher = Guid.NewGuid();
+        var writer = Guid.NewGuid();
+        var steps = MakeSteps(("a", 1), ("b", 1));
+        steps[0].AssignedPersonaId = researcher;
+        steps[1].AssignedPersonaId = writer;
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats);
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(steps, false));
+
+        await h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, new RecordingExecutor(), Persona(), Provider(), RunProfile.Interactive,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, launcher.Dispatches.Count);
+        Assert.Equal(researcher, launcher.Dispatches[0].PersonaId);
+        Assert.Equal(writer, launcher.Dispatches[1].PersonaId);
     }
 
     /// <summary>

@@ -561,7 +561,13 @@ public sealed class AgentRunOrchestrator
                     // 06 G1's RunContext member: the child runs INSIDE the parent's workspace and provisions
                     // nothing (§7.6). Null ⇒ the parent runs unisolated and so does the child.
                     parentWorkspaceRoot: ctx.WorkspaceRoot,
-                    ct: cts.Token).ConfigureAwait(false);
+                    // 07 D3/D5: the specialist the PLAN chose for this step becomes the child's run persona —
+                    // its system prompt, its provider and its reasoning effort. Dropping it here (a hard
+                    // ProviderId: null and nothing else) made a fan-out behave exactly as if no roster were
+                    // configured, while G7's panel still drew that specialist's avatar and accent ring on the
+                    // step. The launcher treats it as a request and degrades to the per-mode persona.
+                    personaId: sibling.AssignedPersonaId,
+                    cts.Token).ConfigureAwait(false);
 
                 dispatched.Add((sibling, handle));
                 await SafeSetStepStatus(sibling.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);

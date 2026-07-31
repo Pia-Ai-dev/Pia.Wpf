@@ -109,6 +109,14 @@ public sealed class StepPersonaResolverTests
         Assert.True(resolved.TurnSetup.SupportsTools);  // the tool list comes from the persona's setup too
         _composer.Received(1).PrepareTurn(analyst, Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
             Arg.Any<bool>(), Arg.Any<bool>());
+
+        // <b>REGRESSION</b> (Phase 3 fix pass, Batch 06 Lens A finding 3). The persona comes from the roster
+        // list already in hand — GetRosterAsync fetched the full objects and dropped the ids that no longer
+        // resolve — and NOT from a second per-id store round-trip. That round-trip was the one arm of this
+        // ladder that could throw: PersonaService.GetPersonaAsync does raw SQLite I/O, resolution happens
+        // before each executor's exchange try/catch, so a busy connection failed the whole RUN. Neutralization:
+        // restore the `await _personas.GetPersonaAsync(id)` lookup → red.
+        await _personas.DidNotReceive().GetPersonaAsync(Arg.Any<Guid>());
     }
 
     [Fact]
@@ -150,11 +158,15 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task UnresolvablePersona_FallsBackToTheRunDefault()
     {
-        // The persona was deleted between plan and execute. Its id is still on the roster (the roster is the
-        // configured id list) but the store no longer has it.
+        // The persona was deleted between plan and execute: its id is still in the CONFIGURED roster setting,
+        // but the store no longer returns it — so GetRosterAsync drops it (logging the dropped count) and the
+        // assignment has nothing to resolve against. Modelled at GetPersonasAsync rather than at
+        // GetPersonaAsync, because the per-id lookup no longer exists: the roster list IS the persona source,
+        // and a roster containing an id GetPersonasAsync does not know is a state the loader cannot produce.
         var ghost = Persona("Ghost");
-        Roster(ghost);
-        _personas.GetPersonaAsync(ghost.Id).Returns((Persona?)null);
+        var survivor = Persona("Survivor");
+        _settings.SetAgentPersonaRoster(UserOperatingMode.Personal, [ghost.Id, survivor.Id]);
+        _personas.GetPersonasAsync().Returns([survivor]);
         var runDefault = RunDefault();
 
         var resolved = await Build().ResolveAsync(ghost.Id, runDefault, tokenizationEnabled: false, Ct);
@@ -172,7 +184,9 @@ public sealed class StepPersonaResolverTests
         var onRoster = Persona("Analyst");
         var offRoster = Persona("Gandalf");
         Roster(onRoster);
-        _personas.GetPersonaAsync(offRoster.Id).Returns(offRoster);
+        // Both personas exist in the STORE — that is what makes this a containment check rather than a
+        // resolution failure. Only one of them is on the configured roster.
+        _personas.GetPersonasAsync().Returns([onRoster, offRoster]);
         ComposerEchoesThePersona();
         var runDefault = RunDefault();
 

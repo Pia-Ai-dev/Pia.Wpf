@@ -125,10 +125,17 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// guard — which is what every other test in this file exercises.</param>
     /// <param name="runsBaseOverride">Trailing and defaulted (Batch 06 G3): lets one test point the runs base
     /// at an UNWRITABLE path (a file) to prove the legacy settle path still fires.</param>
+    /// <param name="rosterPersona">Trailing and defaulted (Phase 3 fix pass): a roster persona the store can
+    /// resolve, so a fact can see whether <c>LaunchChildAsync</c>'s <c>personaId</c> really reaches the run's
+    /// persona-and-provider ladder. Omitted ⇒ the store resolves no persona by id, i.e. every other test.</param>
+    /// <param name="rosterProvider">The provider <paramref name="rosterPersona"/> prefers, registered with the
+    /// provider store. The child's stub CHAT records the resolved provider id, which is how the ladder's answer
+    /// is observable at all from outside.</param>
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
         Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null,
         AppSettings? appSettings = null, FakeVerifier? verifier = null,
-        FakeRunWorkspaceService? workspaces = null, string? runsBaseOverride = null)
+        FakeRunWorkspaceService? workspaces = null, string? runsBaseOverride = null,
+        Persona? rosterPersona = null, AiProvider? rosterProvider = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -159,8 +166,12 @@ public sealed class HeadlessRunLauncherTests : IDisposable
                 SupportsTools: probe is not null, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        if (rosterPersona is not null)
+            personas.GetPersonaAsync(rosterPersona.Id).Returns(rosterPersona);
         var providers = Substitute.For<IProviderService>();
         providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(nullDefaultProvider ? (AiProvider?)null : provider);
+        if (rosterProvider is not null)
+            providers.GetProviderAsync(rosterProvider.Id).Returns(rosterProvider);
         var titles = Substitute.For<IChatTitleService>();
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
         var settings = Substitute.For<ISettingsService>();
@@ -871,7 +882,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var handle = await launcher.LaunchChildAsync(
             new HeadlessRunRequest("do the sub-thing", AgentRunTrigger.Schedule), parentRunId, parentEnvelope,
-            parentRoot, TestContext.Current.CancellationToken);
+            parentRoot, ct: TestContext.Current.CancellationToken);
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         var child = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
@@ -883,6 +894,56 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_runsBase, handle.RunId.ToString())));
         Assert.NotNull(planner.PlanContext);
         Assert.Equal(parentRoot, planner.PlanContext!.WorkspaceRoot);
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 fix pass). The other end of a delegated step's persona assignment: the child's
+    /// RUN persona is the specialist the plan chose, and therefore so is its provider and reasoning effort
+    /// (07 D5, "each persona running on its own provider"). Before this the dispatch resolved the GLOBAL
+    /// per-mode persona and that persona's provider, so a fan-out ran exactly as if no roster were configured.
+    /// <para>
+    /// The resolved provider is observable through the child's stub CHAT, which records it — that value can only
+    /// be the roster provider if the assigned persona reached <c>ResolveProviderAsync</c>. The second leg is the
+    /// containment control and the non-vacuity control in one: the SAME persona, still resolvable, but no longer
+    /// on the configured roster, falls back to the mode default. Neutralization: ignore
+    /// <c>personaIdOverride</c> in <c>ResolveRunPersonaAsync</c> → the first leg reds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AChildsAssignedPersonaDecidesItsRunPersonaAndProvider_WhileItIsStillOnTheRoster()
+    {
+        var preferred = new AiProvider
+        {
+            Id = Guid.NewGuid(), Name = "specialist", Endpoint = "https://s", ProviderType = AiProviderType.OpenAI,
+        };
+        var researcher = new Persona
+        {
+            Id = Guid.NewGuid(), Name = "Researcher", SystemPrompt = "research", PreferredProviderId = preferred.Id,
+        };
+
+        var onRoster = new AppSettings();
+        onRoster.SetAgentPersonaRoster(UserOperatingMode.Personal, [researcher.Id]);
+        var (launcher, _) = BuildLauncher(
+            appSettings: onRoster, rosterPersona: researcher, rosterProvider: preferred);
+
+        var honoured = await launcher.LaunchChildAsync(
+            new HeadlessRunRequest("sub-thing", AgentRunTrigger.Schedule), Guid.NewGuid(), null,
+            parentWorkspaceRoot: null, personaId: researcher.Id, TestContext.Current.CancellationToken);
+        await honoured.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var honouredChat = await _chats.GetAsync(honoured.ChatId, TestContext.Current.CancellationToken);
+        Assert.Equal(preferred.Id, honouredChat!.ProviderId);
+
+        // A plan outlives the setting that produced it: the same persona, off the roster the user now has.
+        var (offRosterLauncher, _) = BuildLauncher(
+            appSettings: new AppSettings(), rosterPersona: researcher, rosterProvider: preferred);
+        var declined = await offRosterLauncher.LaunchChildAsync(
+            new HeadlessRunRequest("sub-thing", AgentRunTrigger.Schedule), Guid.NewGuid(), null,
+            parentWorkspaceRoot: null, personaId: researcher.Id, TestContext.Current.CancellationToken);
+        await declined.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var declinedChat = await _chats.GetAsync(declined.ChatId, TestContext.Current.CancellationToken);
+        Assert.NotEqual(preferred.Id, declinedChat!.ProviderId);
     }
 
     /// <summary>
@@ -917,7 +978,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Directory.CreateDirectory(parentRoot);
         var child = await launcher.LaunchChildAsync(
             new HeadlessRunRequest("c", AgentRunTrigger.User), Guid.NewGuid(), null, parentRoot,
-            TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken);
 
         deadline = DateTime.UtcNow.AddSeconds(10);
         while (planner.Concurrent < 3 && DateTime.UtcNow < deadline)
@@ -989,7 +1050,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var child = await launcher.LaunchChildAsync(
             new HeadlessRunRequest("c", AgentRunTrigger.User), parent.RunId, null,
-            workspaces.RootFor(parent.RunId), TestContext.Current.CancellationToken);
+            workspaces.RootFor(parent.RunId), ct: TestContext.Current.CancellationToken);
         await child.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         await _chats.DeleteAsync(child.ChatId, TestContext.Current.CancellationToken);
@@ -1049,7 +1110,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var handle = await launcher.LaunchChildAsync(
             new HeadlessRunRequest("c", AgentRunTrigger.User), Guid.NewGuid(), null, parentWorkspaceRoot: null,
-            TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken);
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.Empty(workspaces.Provisioned);
