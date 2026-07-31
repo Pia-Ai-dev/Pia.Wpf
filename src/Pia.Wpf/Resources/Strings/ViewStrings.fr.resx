@@ -942,9 +942,12 @@
   <data name="Run_Publish_Done" xml:space="preserve"><value>{0} fichier(s) publié(s).</value></data>
   <data name="Run_Publish_Conflicts" xml:space="preserve"><value>{0} fichier(s) ont été laissés tels quels car ils ont changé pendant l'exécution.</value></data>
   <data name="Run_Publish_Failed" xml:space="preserve"><value>Rien n'a pu être publié — les fichiers restent dans l'espace de travail de l'exécution.</value></data>
-  <data name="Run_Output_Branch" xml:space="preserve"><value>Le résultat est sur la branch {0}</value></data>
+  <data name="Run_Output_Branch" xml:space="preserve"><value>Le résultat est sur la branche {0}</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Activité des outils</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Aucune décision d'outil n'a été enregistrée pour cette exécution.</value></data>
+  <data name="Run_Children_Header" xml:space="preserve"><value>Sous-agents</value></data>
+  <data name="Run_Children_Count" xml:space="preserve"><value>{0} sur {1} terminés</value></data>
+  <data name="Run_Children_Timeline_Empty" xml:space="preserve"><value>Aucune décision d'outil n'a été enregistrée pour ce sous-agent.</value></data>
   <data name="Run_Timeline_ReadFailed" xml:space="preserve"><value>L'activité des outils de cette exécution n'a pas pu être lue.</value></data>
   <data name="Run_Timeline_Truncated" xml:space="preserve"><value>Trace raccourcie — seules les {0} premières décisions de cette exécution ont été enregistrées.</value></data>
   <data name="Run_Timeline_Step" xml:space="preserve"><value>Étape {0}</value></data>
