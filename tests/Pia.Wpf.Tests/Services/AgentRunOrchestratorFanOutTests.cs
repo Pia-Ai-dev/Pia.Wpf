@@ -18,9 +18,12 @@ namespace Pia.Tests.Services;
 /// real SQLite <see cref="AgentRunService"/>, with a launcher double that creates real child run ROWS — because
 /// every decision the loop makes after the wait is read off those rows and not off the handle.
 /// <para>
-/// The parent stays <c>Running</c> for the whole wait on this tree: the persisted <c>WaitingForChildren</c>
-/// state and its two CAS members are a separate group that has not landed. The cancellation check after the
-/// wait stands in for that CAS and has its own fact below.
+/// Batch 07 G8 has since landed, so the parent PARKS in the persisted <see cref="AgentRunState.WaitingForChildren"/>
+/// state for the span of the wait and leaves it through a CAS. The two facts for that are
+/// <see cref="TwoSiblingsLaunchInParallel_AndTheParentParksInWaitingForChildren"/> and
+/// <see cref="WhenTheParentIsNoLongerWaiting_TheLoopStopsInsteadOfResurrectingIt"/>; the cancellation check
+/// after the wait still has its own fact, because it runs BEFORE the CAS and owns a different case (this loop
+/// still owns the run and must settle it Cancelled itself).
 /// </para>
 /// </summary>
 public sealed class AgentRunOrchestratorFanOutTests
@@ -571,6 +574,103 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.All(
             await h.Runs.GetChildRunsAsync(run.Id, TestContext.Current.CancellationToken),
             c => Assert.Equal(AgentRunState.Cancelled, c.State));
+    }
+
+    /// <summary>
+    /// T-FAN-4 (Batch 07 G8), <b>REGRESSION</b>. Siblings launch in PARALLEL and the parent parks in the
+    /// persisted <see cref="AgentRunState.WaitingForChildren"/> state for the span of the wait, with its ledger
+    /// work segment CLOSED — it is not working, its children are, and each bills its own time.
+    /// <para>
+    /// Both halves are asserted from inside the wait, while the launcher gate holds both children. The
+    /// parallelism claim is that neither completion has resolved at the moment the second child was dispatched
+    /// (awaiting each child before launching the next would make that impossible); the park claim is the
+    /// persisted row, which is the only thing a restart can see.
+    /// </para>
+    /// Neutralize: drop the <c>SafeBeginChildWait</c> call — the row reads <c>Planning</c>/<c>Running</c> inside
+    /// the wait and the segment stays open, so a restart would sweep it to Cancelled (which is the defect this
+    /// group closes).
+    /// </summary>
+    [Fact]
+    public async Task TwoSiblingsLaunchInParallel_AndTheParentParksInWaitingForChildren()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats)
+        {
+            Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            ExpectedChildren = 2,
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1)), false));
+
+        var loop = h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, new RecordingExecutor(), Persona(), Provider(), RunProfile.Interactive,
+            TestContext.Current.CancellationToken);
+
+        await launcher.AllDispatched.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        // Both were dispatched before either settled ⇒ they are genuinely concurrent, not sequential.
+        Assert.Equal(2, launcher.Dispatches.Count);
+        Assert.All(launcher.Dispatches, d => Assert.False(d.Completion.IsCompleted));
+
+        var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForChildren, parked!.State);
+        Assert.Null(parked.CompletedAt);
+        Assert.All(parked.Plan, s => Assert.Equal(AgentStepStatus.Running, s.Status));
+        // Parked ⇒ the work segment is closed; the CAS below re-opens a fresh one.
+        Assert.False(JsonDocument.Parse(parked.LedgerJson!).RootElement
+            .TryGetProperty("segmentStartedAt", out var seg) && seg.ValueKind != JsonValueKind.Null);
+
+        launcher.Gate!.SetResult();
+        await loop.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+    }
+
+    /// <summary>
+    /// T-FAN-10 (Batch 07 G8), <b>REGRESSION</b>. The un-park is a CAS, and losing it stops the loop instead of
+    /// resurrecting the run. Here another writer settles the parent <c>Cancelled</c> while its children work —
+    /// a chat delete, a cascade cancel from a sibling window, or another process's startup reconcile.
+    /// <para>
+    /// The trailing sequential step is the discriminator: if the loop carried on it would execute <c>"c"</c> and
+    /// write <c>Completed</c> over a <c>Cancelled</c> row (R11's resurrection). The external token is NEVER
+    /// cancelled here on purpose, so the pre-existing cancellation check cannot cover this case — only the CAS
+    /// can. The executor still gets its non-terminal release, because for a Live run nothing else clears the
+    /// session's <c>IsStreaming</c>.
+    /// </para>
+    /// Neutralize: ignore <c>SafeTryEndChildWait</c>'s result (or make it a blind write) — <c>"c"</c> runs and
+    /// the run ends <c>Completed</c>.
+    /// </summary>
+    [Fact]
+    public async Task WhenTheParentIsNoLongerWaiting_TheLoopStopsInsteadOfResurrectingIt()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats)
+        {
+            Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            ExpectedChildren = 2,
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1), ("c", null)), false));
+        var exec = new RecordingExecutor();
+
+        var loop = h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        await launcher.AllDispatched.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        // A DIFFERENT writer takes the run while it is parked. The parent's own token stays live.
+        await h.Runs.FailAsync(run.Id, "taken elsewhere", cancelled: true, TestContext.Current.CancellationToken);
+        launcher.Gate!.SetResult();
+        await loop.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);   // never Running, never Completed
+        Assert.Empty(exec.Executed);                           // "c" was never reached
+        Assert.True(exec.PausedCalled);                        // the executor was still released
     }
 
     /// <summary>

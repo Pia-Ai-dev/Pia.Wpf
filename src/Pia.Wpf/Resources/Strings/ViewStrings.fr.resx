@@ -935,10 +935,12 @@
   <data name="Run_State_Failed" xml:space="preserve"><value>Échouée</value></data>
   <data name="Run_State_WaitingForInput" xml:space="preserve"><value>Vous attend</value></data>
   <data name="Run_State_Paused" xml:space="preserve"><value>En pause</value></data>
+  <data name="Run_State_WaitingForChildren" xml:space="preserve"><value>Délégation</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Élaboration d'un plan…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Travail en cours…</value></data>
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Vérification du travail…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Arrêtée au budget — continuer ?</value></data>
+  <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>En attente des sous-agents…</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Publier les fichiers</value></data>
   <data name="Run_Publish_Pending" xml:space="preserve"><value>Les fichiers de cette exécution sont encore dans son espace de travail.</value></data>

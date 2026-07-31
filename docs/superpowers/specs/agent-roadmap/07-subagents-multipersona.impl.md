@@ -1156,6 +1156,48 @@ public sealed partial class StepRowViewModel : ObservableObject
 **Depends on:** G7. **Model tier:** opus. **Highest-risk group in Phase 3.** **06-DEPENDENT:** no, but see
 §5.5 on the promotion ordering — and the builder note, which names a second "terminal" predicate 06 added.
 
+> **BUILT 2026-07-31, LAST of Batch 07 (G9 and G10 shipped ahead of it). Six divergences, annotated by the
+> builder.**
+>
+> 1. **D9 adds TWO members, not three.** `GetChildRunsAsync` was already on the tree: G10 needed it for
+>    `SafeCancelStaleChildrenAsync` and the panel's children list, so it landed in `9c32999` with the exact
+>    signature, SQL and no-`LoadSteps` comment §5.2 specifies. Only `BeginChildWaitAsync` and
+>    `TryEndChildWaitAsync` are new here, and the two hand-written fakes were migrated 17→19 in this commit as
+>    §0.3/D9 said they would have to be.
+> 2. **`SafeBeginChildWait` reports its own failure; the park uses `dispatched.Count`, not
+>    `siblings.Count`.** §7.3's pseudo-code parks on `siblings.Count`, but a sibling whose `LaunchChildAsync`
+>    threw was never dispatched and is not being waited on — and with **zero** dispatched there is nothing to
+>    wait for at all, so parking would leave a state the CAS below could not clear. The park is therefore gated
+>    on `dispatched.Count > 0`, and the wrapper returns `bool` (unlike every other `Safe*`) so a **swallowed
+>    park fault** cannot make the CAS read as "another writer owns this run" and abandon a healthy run.
+> 3. **The un-park CAS runs BEFORE the parked/failed branches, not after the parked one.** §7.3 orders it
+>    `if (anyParked) … return;` *then* the CAS. But the parked branch calls `PauseAsync`, which is a blind write
+>    — so on that path a cascade-cancelled parent would be resurrected to `WaitingForInput`, which is the exact
+>    R11 failure the CAS exists to stop. Every arm the caller can take writes this row, so the CAS is the single
+>    gate in front of all of them. The pre-existing `cts.IsCancellationRequested` check still runs FIRST and
+>    still owns its own case (this loop does own the run and must settle it `Cancelled` itself).
+> 4. **The lost-CAS arm calls `SafeOnPaused`, which §7.3's "return without settling" does not mention.** A bare
+>    `return` is wrong for a **Live** parent: only a release hook clears the session's `IsStreaming`, so the
+>    foreground chat would sit wedged `Running` with a disabled Send forever. `SafeOnPaused` touches the session
+>    and never the run, so the minimal-write premise of the arm survives. No `SafeFail`, no `PinRange`, no
+>    promotion. Carried on a new `FanOutResult.Abandoned` member.
+> 5. **`AgentRunNotificationSurface`'s filter was EXTRACTED, against §5.4's "no change".** §5.4 asks for a GUARD
+>    test over the `is … or …` set at `:69`, but that set is inline in an event handler whose only other path is
+>    a dispatcher marshal, so no non-racy test can reach it. It is now
+>    `internal static bool IsPublishableState(AgentRunState)` with a row-per-state theory. The extraction earned
+>    itself: `HandleRunStateAsync`'s last arm is the **terminal publish**, so any state that gets past that
+>    filter without an arm of its own publishes a "run finished" Flow card for a run that is still working.
+> 6. **T-CONV-1's assertion as written is arithmetically impossible.** "The key count matches the member count"
+>    is false by exactly one: `Completed` and `TruncatedCompleted` deliberately share `Run_State_Completed`. The
+>    test asserts N members ⇒ N−1 distinct keys, plus that those two are the *only* members reaching that key.
+>
+> Also, for the next reader: **T-ST-2 and T-LED-1 need a BACK-DATED open segment** or they are vacuous. A
+> freshly created run's segment is microseconds old (`CreateAsync` opens one at `SegmentStartedAt = now`), so
+> "the clock froze" and "the clock kept running" are the same number and the close/terminal-set neutralizations
+> both pass. Both tests move the persisted timestamp 3 s back first, reusing `AgentRunServiceTests`'
+> `BackdateOpenSegment` shape. **T-LED-1 is driven behaviourally** (does this state freeze the clock?) rather
+> than by reflecting the private `ApplyLedgerClock`.
+
 > **BUILDER NOTE (G8) — from the reconciler.**
 > **There are now TWO predicates in this repo that mean "terminal", in two different files, and only one of
 > them is yours to change.**

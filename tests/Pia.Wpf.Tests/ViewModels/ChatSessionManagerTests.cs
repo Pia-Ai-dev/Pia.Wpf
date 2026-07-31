@@ -324,6 +324,11 @@ public class ChatSessionManagerTests
     [InlineData(AgentRunState.Planning)]
     [InlineData(AgentRunState.Running)]
     [InlineData(AgentRunState.Verifying)]
+    // Batch 07 G8: a parent parked awaiting its children IS live — its children are writing its workspace and
+    // it will write this chat again the moment they settle — unlike the parked WaitingForInput/Paused rows in
+    // the theory below, whose "continue in chat" path must stay open. It also has to be re-attachable at all:
+    // without it in the re-attach scan the panel would not find the run.
+    [InlineData(AgentRunState.WaitingForChildren)]
     public async Task RestoreActiveRunAsync_ExecutingRun_MarksTheSessionsRunForeign(AgentRunState state)
     {
         // A hydrated session never executes its own run — this manager did not launch it. So a re-attached run
@@ -438,6 +443,45 @@ public class ChatSessionManagerTests
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Verifying));
         await Task.Delay(50, TestContext.Current.CancellationToken);
 
+        Assert.False(session.ForeignRunActive);
+    }
+
+    /// <summary>
+    /// Batch 07 G8, <b>REGRESSION</b>. A parent that parks at <c>WaitingForChildren</c> must keep its ownership
+    /// exemption. Read as non-executing, the state retires this manager's <c>_ownRunIds</c> entry the instant the
+    /// run delegates — and then the very next executing event (the un-park CAS's <c>RunChanged(Running)</c>, or
+    /// any per-step one after it) treats the run as a FOREIGN full-chat writer on its own session: composer
+    /// blocked, Send disabled, and no later event to correct it, because ownership is never re-granted.
+    /// <para>
+    /// The two events must be raised in this order and both asserted; the park event alone flags nothing, so a
+    /// test that stopped there would pass on the broken build.
+    /// </para>
+    /// Neutralize: drop <c>WaitingForChildren</c> from the <c>executing</c> set in <c>OnAgentRunChanged</c>.
+    /// </summary>
+    [Fact]
+    public async Task RunChanged_OwnRunAwaitingChildren_KeepsItsOwnershipExemption()
+    {
+        var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = RunShape.Planned, State = AgentRunState.Planning });
+
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        await sut.StartPlannedTurnAsync(session, "plan my week");
+
+        // The parent delegates (parks), then the un-park CAS brings it back. Neither may flag its own session.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForChildren));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.False(session.ForeignRunActive);
+
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.False(session.ForeignRunActive);
     }
 

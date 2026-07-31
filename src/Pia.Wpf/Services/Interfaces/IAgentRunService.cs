@@ -94,13 +94,51 @@ public interface IAgentRunService
     Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default);
 
     /// <summary>
+    /// Park a PARENT while its child runs execute (Batch 07 D9): State →
+    /// <see cref="AgentRunState.WaitingForChildren"/>, and the ledger work segment is CLOSED — the parent is
+    /// not working, its children are, and each bills its own time. Raises
+    /// RunChanged(WaitingForChildren).
+    /// <para>
+    /// A BLIND update, deliberately, exactly like <see cref="SetStateAsync"/>: at this instant the parent's
+    /// own drain loop is the only writer, having just dispatched the children itself. The unpark
+    /// (<see cref="TryEndChildWaitAsync"/>) is the CAS, because by then a second writer can exist.
+    /// </para>
+    /// <para>
+    /// <paramref name="childCount"/> is LOGGED as a count and is NOT persisted — the child rows are the
+    /// marker (<see cref="GetChildRunsAsync"/>, 07 §0.4), so there is no counter to decrement and no
+    /// lost-update race with a settling child.
+    /// </para>
+    /// </summary>
+    Task BeginChildWaitAsync(Guid runId, int childCount, CancellationToken ct = default);
+
+    /// <summary>
+    /// End a parent's child wait: CAS <see cref="AgentRunState.WaitingForChildren"/> →
+    /// <see cref="AgentRunState.Running"/>, re-opening a fresh ledger work segment on the win (Batch 07 D9).
+    /// Returns <c>false</c> when the parent is no longer waiting — cascade-cancelled, or re-parked as
+    /// <see cref="AgentRunState.WaitingForInput"/> by <see cref="FailInterruptedRunsAsync"/> in another
+    /// process — in which case the caller must NOT continue the run: whoever moved it owns its terminal
+    /// state, and a blind write here would RESURRECT a Cancelled parent.
+    /// <para>
+    /// Unlike <see cref="TryBeginResumeAsync"/> this does NOT clear <c>ExtraJson</c>: it is not a user
+    /// "continue" and there is no pause marker to retire.
+    /// </para>
+    /// </summary>
+    Task<bool> TryEndChildWaitAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>
     /// Settle every crash-recoverable run (Planning/Running/Verifying — a crash / forced-exit leftover) to
     /// <see cref="AgentRunState.Cancelled"/> so none dangles <see cref="AgentRunState.Running"/> across app
     /// sessions (§17.5/G-4). <see cref="AgentRunState.WaitingForInput"/>/<see cref="AgentRunState.Paused"/>
     /// are a DELIBERATE parked state (budget pause) and are EXCLUDED — a parked run survives restart
     /// resumable. Bulk, silent (raises no <see cref="RunChanged"/> — these are historical leftovers, not
-    /// live transitions, so the Flow surface must not re-publish for them at startup). Returns the number
-    /// of runs settled.
+    /// live transitions, so the Flow surface must not re-publish for them at startup).
+    /// <para>
+    /// Batch 07 D14 adds a SECOND statement in the same call: a parent left
+    /// <see cref="AgentRunState.WaitingForChildren"/> is RE-PARKED as
+    /// <see cref="AgentRunState.WaitingForInput"/> with the same <c>{paused:true,reason}</c> marker
+    /// <see cref="PauseAsync"/> writes, because statement 1 has just cancelled the very children that were
+    /// going to wake it. Returns the SUM of both statements.
+    /// </para>
     /// </summary>
     Task<int> FailInterruptedRunsAsync(CancellationToken ct = default);
 

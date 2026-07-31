@@ -252,6 +252,35 @@ public sealed class RunProgressViewModelChildrenTests
         Assert.Empty(row.Timeline);
     }
 
+    /// <summary>
+    /// T-CHILD-VM-5 (Batch 07 G8), <b>REGRESSION</b>. A parent parked at
+    /// <see cref="AgentRunState.WaitingForChildren"/> projects its OWN state and offers no Continue.
+    /// <para>
+    /// Both halves matter. Without the explicit <c>MapState</c> arm the state falls through the default to
+    /// <see cref="RunProgressState.Running"/>, hiding that the work moved to the children — and the header would
+    /// read from the label converter's fall-through, i.e. "Completed", on a run that is still going. And
+    /// <c>CanContinue</c> must stay false: this park is not a user affordance, and the resume CAS only ever
+    /// claims <see cref="AgentRunState.WaitingForInput"/>, so a Continue here would silently no-op.
+    /// </para>
+    /// Neutralize: delete the <c>AgentRunState.WaitingForChildren</c> arm from <c>MapState</c> — the state and
+    /// the activity line both red.
+    /// </summary>
+    [Fact]
+    public async Task WaitingForChildren_ProjectsItsOwnStateAndDoesNotOfferContinue()
+    {
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = _runId, State = AgentRunState.WaitingForChildren });
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.WaitingForChildren, vm.State);
+        Assert.False(vm.CanContinue);
+        Assert.False(vm.IsTruncated);
+        // The stubbed localization echoes the key, so this pins the key and not merely "some text".
+        Assert.Equal("Run_Activity_WaitingForChildren", vm.CurrentActivity);
+    }
+
     private RunProgressViewModel CreateVm()
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());

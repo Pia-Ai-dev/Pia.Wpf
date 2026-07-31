@@ -3,7 +3,9 @@ using System.Globalization;
 using System.IO;
 using System.Resources;
 using System.Text.RegularExpressions;
+using Pia.Converters;
 using Pia.Resources.Strings;
+using Pia.ViewModels;
 using Xunit;
 
 namespace Pia.Tests.Architecture;
@@ -150,6 +152,39 @@ public class LocalizationTests
 
         Assert.True(orphanedTranslations.Count == 0,
             $"translation files should not contain keys absent from the base file: {string.Join(", ", orphanedTranslations)}");
+    }
+
+    /// <summary>
+    /// T-CONV-3 (Batch 07 G8), <b>GUARD</b>. Every key <c>RunStateToLabelConverter.LabelKey</c> can return
+    /// must resolve in en, de AND fr. The other two scans in this file cannot see these: they match
+    /// <c>LocalizationSource.Instance["Literal"]</c> at the call site, and this mapping was extracted to a
+    /// helper so a theory could pin it — which moved the literals out of reach of the regex.
+    /// <para>
+    /// The run-state chip is the one string on the run panel a user always sees, and an unresolved key renders
+    /// as the key text itself. Non-vacuity: the key set must be non-empty and cover ≥ 7 keys.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void EveryRunStateLabelKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<RunProgressState>()
+            .Select(RunStateToLabelConverter.LabelKey)
+            .Distinct()
+            .ToList();
+
+        Assert.NotEmpty(keys);
+        Assert.True(keys.Count >= 7, $"non-vacuity: expected at least 7 distinct run-state keys, found {keys.Count}");
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every run-state label key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
     [Fact]

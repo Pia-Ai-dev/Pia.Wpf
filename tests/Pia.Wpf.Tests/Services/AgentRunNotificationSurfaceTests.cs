@@ -268,4 +268,31 @@ public sealed class AgentRunNotificationSurfaceTests
 
         _flow.DidNotReceive().Retract(Arg.Any<string>());
     }
+
+    /// <summary>
+    /// Batch 07 G8, <b>GUARD</b>. A delegating parent (<c>WaitingForChildren</c>) is not user-actionable, so it
+    /// must fall OUT of the publish filter entirely. Pinned deliberately rather than left to the
+    /// <c>is … or …</c> set's shape, because widening that set is not harmless: the last arm of
+    /// <c>HandleRunStateAsync</c> is the TERMINAL publish, so a state that passes the filter without an arm of
+    /// its own would publish a "run finished" card for a run whose children are still working.
+    /// <para>
+    /// A row per state, plus a member-count pin so an appended state cannot slip through unasserted. Not a
+    /// regression test: nothing was changed here, and that is the claim.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(AgentRunState.Planning, false)]
+    [InlineData(AgentRunState.Running, true)]
+    [InlineData(AgentRunState.Verifying, false)]
+    [InlineData(AgentRunState.WaitingForInput, true)]
+    [InlineData(AgentRunState.Paused, false)]
+    [InlineData(AgentRunState.Completed, true)]
+    [InlineData(AgentRunState.Failed, true)]
+    [InlineData(AgentRunState.Cancelled, true)]
+    [InlineData(AgentRunState.WaitingForChildren, false)]
+    public void OnlyActionableStatesReachTheFlowSurface(AgentRunState state, bool publishable)
+    {
+        Assert.Equal(publishable, AgentRunNotificationSurface.IsPublishableState(state));
+        Assert.Equal(9, Enum.GetValues<AgentRunState>().Length); // a 10th member needs a row above
+    }
 }

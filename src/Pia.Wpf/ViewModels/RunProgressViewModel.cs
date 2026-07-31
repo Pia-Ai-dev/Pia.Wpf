@@ -24,6 +24,12 @@ public enum RunProgressState
     Failed,
     WaitingForInput, // budget-paused, awaiting the user's Continue
     Paused,          // reserved: user-initiated pause (Phase 4) — rendered, never driven this round
+
+    /// <summary>Batch 07: the parent of a fan-out, parked while its child runs work. Appended — this enum is
+    /// a view-facing projection and is NEVER persisted, so appending costs nothing. Renders as its own chip
+    /// with the spinner LIT (children are working) and offers no Continue: the run is not parked for the
+    /// user, and <c>TryBeginResumeAsync</c> would not accept it anyway.</summary>
+    WaitingForChildren,
 }
 
 /// <summary>
@@ -458,6 +464,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunState.Cancelled => (RunProgressState.Failed, false),
         AgentRunState.WaitingForInput => (RunProgressState.WaitingForInput, false), // budget pause — offer Continue
         AgentRunState.Paused => (RunProgressState.Paused, false),                   // reserved user pause (Phase 4)
+        // 07 G8: an EXPLICIT arm, not the default. Falling through would render a delegating parent as the
+        // plain Running chip and hide the fact that the work moved to its children. CanContinue stays false
+        // (it is `State == WaitingForInput`), which is correct: this park is not a user affordance.
+        AgentRunState.WaitingForChildren => (RunProgressState.WaitingForChildren, false),
         AgentRunState.Completed => truncated
             ? (RunProgressState.TruncatedCompleted, true)
             : (RunProgressState.Completed, false),
@@ -485,6 +495,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             ?? _localization["Run_Activity_Working"],
         AgentRunState.Verifying => _localization["Run_Activity_Verifying"],
         AgentRunState.WaitingForInput => _localization["Run_Activity_WaitingAtBudget"], // "Stopped at budget — continue?"
+        AgentRunState.WaitingForChildren => _localization["Run_Activity_WaitingForChildren"], // 07 G8
         _ => null, // Paused / terminal — the state chip already carries it
     };
 

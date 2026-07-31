@@ -202,7 +202,15 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// </summary>
     private void OnAgentRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
-        var executing = e.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying;
+        // WaitingForChildren (07 G8) belongs here, and its absence would be a REGRESSION rather than a gap:
+        // a parent parks the instant it delegates, and every child roll-up re-raises RunChanged with that
+        // same state (AddUsageAsync re-reads the row), so this handler sees it repeatedly. Read as
+        // non-executing it would retire the parent's own _ownRunIds entry below and treat the run as a
+        // FOREIGN full-chat writer on its own session for the rest of the process — composer blocked, Send
+        // disabled, and no later event to correct it. It also keeps the _executingRuns bracket held, which
+        // is correct: the parent WILL write this chat again once its children settle.
+        var executing = e.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying
+            or AgentRunState.WaitingForChildren;
         _syncContext.Post(_ =>
         {
             try
@@ -575,8 +583,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         var resumable = runs?
             .Where(r => r.RunShape == RunShape.Planned
+                        // WaitingForChildren (07 G8) is genuinely LIVE: a parent that survived a restart
+                        // mid-fan-out is re-parked WaitingForInput by the startup reconcile, so a row still
+                        // reading 8 here means the loop is running in THIS process. Without it the panel
+                        // would not re-attach to it at all.
                         && r.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying
-                            or AgentRunState.WaitingForInput or AgentRunState.Paused)
+                            or AgentRunState.WaitingForInput or AgentRunState.Paused
+                            or AgentRunState.WaitingForChildren)
             .OrderBy(r => r.CreatedAt)
             .LastOrDefault();
         if (resumable is null || _disposed || session.ActiveRunId is not null)
@@ -593,7 +606,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // RunShape.SingleTurn bracket on a chat that also happens to carry a parked Planned run.
         session.SetForeignRunActive(
             _executingRuns.IsExecuting(chatId)
-            || resumable.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying);
+            // WaitingForChildren counts as executing (07 G8): a re-attached parent awaiting children IS a
+            // live second full-chat writer — its children write into its workspace and it will write this
+            // chat again — so Send must stay blocked, unlike the parked WaitingForInput/Paused cases above.
+            || resumable.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying
+                or AgentRunState.WaitingForChildren);
 
         // Ids + enum only — a run Goal is user content (CLAUDE.md privacy logging).
         _logger.LogInformation("Re-attached run {RunId} ({State}) to activated chat {ChatId}",

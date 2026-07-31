@@ -935,10 +935,12 @@
   <data name="Run_State_Failed" xml:space="preserve"><value>Fehlgeschlagen</value></data>
   <data name="Run_State_WaitingForInput" xml:space="preserve"><value>Wartet auf dich</value></data>
   <data name="Run_State_Paused" xml:space="preserve"><value>Pausiert</value></data>
+  <data name="Run_State_WaitingForChildren" xml:space="preserve"><value>Delegiert</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Plan wird erstellt…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Arbeitet…</value></data>
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Ergebnis wird geprüft…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Bei Budget gestoppt – fortsetzen?</value></data>
+  <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>Warten auf die Unteragenten…</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Dateien veröffentlichen</value></data>
   <data name="Run_Publish_Pending" xml:space="preserve"><value>Die Dateien dieser Ausführung liegen noch in ihrem Arbeitsbereich.</value></data>

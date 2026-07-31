@@ -62,12 +62,26 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         _chatService.ChatsChanged += OnChatsChanged; // R17: retract durable OpenRun items on chat deletion
     }
 
+    /// <summary>
+    /// Which run states this surface reacts to at all: terminal (publish), <c>WaitingForInput</c> (publish a
+    /// "continue?" card), <c>Running</c>/<c>Cancelled</c> (retract a prior card — a resumed or cancelled parked
+    /// run). Everything else is ignored, and that includes Batch 07's
+    /// <see cref="AgentRunState.WaitingForChildren"/>: a delegating parent is not user-actionable, so it must
+    /// raise no toast and no Flow card.
+    /// <para>
+    /// Extracted rather than left inline so it can be pinned by a test, because widening it is not a harmless
+    /// mistake: <see cref="HandleRunStateAsync"/>'s final arm is the TERMINAL publish, so any state that gets
+    /// past this filter without an arm of its own publishes a "run finished" item for a run that is still
+    /// working.
+    /// </para>
+    /// </summary>
+    internal static bool IsPublishableState(AgentRunState state) =>
+        state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled
+            or AgentRunState.WaitingForInput or AgentRunState.Running;
+
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
-        // Terminal (publish), WaitingForInput (publish a "continue?" card), Running/Cancelled (retract a
-        // prior card — a resumed or cancelled parked run). Everything else is ignored.
-        if (e.State is not (AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled
-            or AgentRunState.WaitingForInput or AgentRunState.Running))
+        if (!IsPublishableState(e.State))
             return;
 
         // Marshal to the UI thread (G3) before touching window-foreground state / Flow.

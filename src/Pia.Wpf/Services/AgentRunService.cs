@@ -35,6 +35,14 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    /// <summary>
+    /// The pause <c>reason</c> written when the startup reconcile re-parks a parent that was awaiting
+    /// children (07 D14). An app-owned token from the same fixed vocabulary as <c>"step-cap"</c> /
+    /// <c>"wall-clock"</c> / <c>"children-parked"</c> — never user content, and read by
+    /// <c>RunProgressViewModel.DescribeTruncation</c>-style mappings, which is why it is a named constant.
+    /// </summary>
+    internal const string ChildrenInterruptedReason = "children-interrupted";
+
     private readonly string _connectionString;
     private readonly ILogger<AgentRunService> _logger;
     private readonly object _gate = new();
@@ -350,30 +358,133 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.FromResult(affected > 0);
     }
 
+    public Task BeginChildWaitAsync(Guid runId, int childCount, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return Task.CompletedTask;
+
+            // Close the work segment before parking (mirrors PauseAsync): the parent is not working while
+            // its children are, and each child bills its own wall clock into its own ledger. The unpark CAS
+            // re-opens a fresh segment, so a repeated fan-out accumulates worked time correctly (07 D15).
+            MoveLedgerClock(runId, LedgerClock.CloseSegment);
+
+            // BLIND, like SetStateAsync and for the same reason: the caller is the parent's own drain loop,
+            // which has just dispatched these children itself and is the only writer at this instant. No
+            // CompletedAt — this is not a completion; no ExtraJson — the child ROWS are the marker (§0.4).
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@State, UpdatedAt=@Now WHERE Id=@Id";
+            cmd.Parameters.AddWithValue("@State", (int)AgentRunState.WaitingForChildren);
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.ExecuteNonQuery();
+        }
+
+        // A COUNT, never a goal or a step title — those are user content (CLAUDE.md privacy logging).
+        _logger.LogInformation("Run {RunId} → WaitingForChildren ({ChildCount} child run(s))", runId, childCount);
+        RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForChildren));
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> TryEndChildWaitAsync(Guid runId, CancellationToken ct = default)
+    {
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            // A CAS for the same reason TryBeginResumeAsync is one: by now a SECOND writer can want this
+            // run — the cascade-cancel path (ChatSession.Cancel / chat delete / shutdown) and, across a
+            // process death, FailInterruptedRunsAsync's re-park. SetStateAsync would happily flip a
+            // Cancelled parent back to Running (R11). Deliberately NOT `ExtraJson=NULL`, unlike the resume
+            // claim: this is not a user "continue" and there is no pause marker to retire.
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now WHERE Id=@Id AND State=@Expected";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Running);
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@Expected", (int)AgentRunState.WaitingForChildren);
+            affected = cmd.ExecuteNonQuery();
+
+            // Re-open the work segment ONLY for the winner, inside the same _gate hold (mirrors
+            // TryBeginResumeAsync): the loser must never re-open a clock on a run it does not own.
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.OpenSegment);
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} child wait ended → Running", runId);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        }
+        return Task.FromResult(affected > 0);
+    }
+
     public Task<int> FailInterruptedRunsAsync(CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
-        int affected;
+        int cancelled;
+        int reparked;
         lock (_gate)
         {
             if (_disposed) return Task.FromResult(0);
 
-            using var cmd = Connection().CreateCommand();
-            // States 0..2 (Planning/Running/Verifying) are crash-recoverable — settle to Cancelled.
-            // 3/4 (WaitingForInput/Paused) are a DELIBERATE parked state (budget pause) and MUST survive
-            // restart resumable — never swept. 5-7 (Completed/Failed/Cancelled) are terminal.
-            // No per-row RunChanged: these are not live transitions (the Flow surface would otherwise
-            // re-publish stale items at startup).
-            cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now WHERE State < @Terminal";
-            cmd.Parameters.AddWithValue("@State", (int)AgentRunState.Cancelled);
-            cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
-            cmd.Parameters.AddWithValue("@Terminal", (int)AgentRunState.WaitingForInput);
-            affected = cmd.ExecuteNonQuery();
+            var connection = Connection();
+
+            // Statement 1. States 0..2 (Planning/Running/Verifying) are crash-recoverable — settle to
+            // Cancelled. 3/4 (WaitingForInput/Paused) are a DELIBERATE parked state (budget pause) and MUST
+            // survive restart resumable — never swept. 5-7 (Completed/Failed/Cancelled) are terminal.
+            // 8 (WaitingForChildren) is NOT swept either: `8 < 3` is false, which is exactly why Batch 07
+            // appended it ABOVE the terminal band rather than beside Running — a parent must not be
+            // cancelled out from under its children's completed work. Statement 2 reconciles it instead.
+            // No per-row RunChanged for either statement: these are not live transitions (the Flow surface
+            // would otherwise re-publish stale items at startup).
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now WHERE State < @Terminal";
+                cmd.Parameters.AddWithValue("@State", (int)AgentRunState.Cancelled);
+                cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
+                cmd.Parameters.AddWithValue("@Terminal", (int)AgentRunState.WaitingForInput);
+                cancelled = cmd.ExecuteNonQuery();
+            }
+
+            // Statement 2 (07 D14). A parent that was awaiting children when the process died: statement 1
+            // has just Cancelled those children, so no completing child can ever wake it and it would sit
+            // WaitingForChildren forever. Re-park it as WaitingForInput — the ONE state
+            // TryBeginResumeAsync can claim — carrying the SAME {paused:true,reason} envelope PauseAsync
+            // writes, so the panel's existing WaitingForInput projection and its Continue button bring it
+            // back with no new resume vocabulary. Its post-fan-out steps are still Pending, so the resume
+            // drains them (D1), and the fan-out group re-dispatches a fresh generation.
+            //
+            // NOT Cancelled: its earlier steps are Done and its children's finished work is durable, so
+            // presenting that as a cancelled run throws away recoverable work. And NO CompletedAt, unlike
+            // statement 1 — a re-parked run is not finished, and a non-null CompletedAt would say it was.
+            //
+            // ORDER MATTERS: statement 1 must run first. Re-parking first would leave the parent at
+            // WaitingForInput, which statement 1 does not touch — harmless, but the children would then be
+            // cancelled after the parent had already been declared resumable. Written in this order on
+            // purpose.
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE AgentRuns SET State=@State, UpdatedAt=@Now, ExtraJson=@Extra WHERE State=@Waiting";
+                cmd.Parameters.AddWithValue("@State", (int)AgentRunState.WaitingForInput);
+                cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
+                // Serialized through the same shape + options PauseAsync uses, never hand-written JSON: a
+                // naming-policy change must move both together or the WaitingForInput projection breaks.
+                cmd.Parameters.AddWithValue("@Extra",
+                    JsonSerializer.Serialize(new { paused = true, reason = ChildrenInterruptedReason }, JsonOptions));
+                cmd.Parameters.AddWithValue("@Waiting", (int)AgentRunState.WaitingForChildren);
+                reparked = cmd.ExecuteNonQuery();
+            }
         }
 
-        if (affected > 0)
-            _logger.LogInformation("Settled {Count} interrupted agent run(s) to Cancelled at startup", affected);
-        return Task.FromResult(affected);
+        // Two lines, not one: a support log must distinguish "cancelled" from "re-parked and resumable".
+        // Counts only.
+        if (cancelled > 0)
+            _logger.LogInformation("Settled {Count} interrupted agent run(s) to Cancelled at startup", cancelled);
+        if (reparked > 0)
+            _logger.LogInformation("Re-parked {Count} interrupted parent run(s) awaiting children at startup", reparked);
+        return Task.FromResult(cancelled + reparked);
     }
 
     public Task<AgentRun?> GetAsync(Guid runId, CancellationToken ct = default)
@@ -740,7 +851,11 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     private static void ApplyLedgerClock(Ledger ledger, DateTime? startedAt, AgentRunState state, LedgerClock action)
     {
         var now = DateTime.UtcNow;
-        var terminal = state >= AgentRunState.Completed;
+        // Explicit, NOT `state >= Completed` (07 D8c): WaitingForChildren(8) is appended ABOVE the terminal
+        // band — the startup sweep's `State < WaitingForInput` requires it — so an ordinal range would call
+        // a parked parent terminal, freeze its ledger and drop its open segment. "Terminal" here means
+        // "can never work again", which is a set, not a threshold.
+        var terminal = state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled;
 
         // Legacy ledger: written before active-time tracking, so it has NEITHER field. Seed the
         // accumulator once from its last reported total (falling back to StartedAt when it never

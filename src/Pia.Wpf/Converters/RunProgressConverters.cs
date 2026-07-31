@@ -48,19 +48,29 @@ public sealed class StepStatusToBrushConverter : IValueConverter
 /// <summary>Maps a <see cref="RunProgressState"/> to a localized label (truncated-Completed reads "Completed").</summary>
 public sealed class RunStateToLabelConverter : IValueConverter
 {
+    /// <summary>
+    /// The state → resx-key mapping, extracted so a theory can pin every member (precedent:
+    /// <c>RunProgressViewModel.DecisionLabelKey</c>). Worth extracting because the fall-through arm here is
+    /// the most expensive default in the panel: a member with no arm renders a run that is still working as
+    /// <b>"Completed"</b>. Every non-terminal state therefore gets an EXPLICIT arm, and the default is
+    /// reached only by <see cref="RunProgressState.Completed"/> and
+    /// <see cref="RunProgressState.TruncatedCompleted"/>, which share the key deliberately.
+    /// </summary>
+    internal static string LabelKey(RunProgressState state) => state switch
+    {
+        RunProgressState.Planning => "Run_State_Planning",
+        RunProgressState.Running => "Run_State_Running",
+        RunProgressState.Failed => "Run_State_Failed",
+        RunProgressState.WaitingForInput => "Run_State_WaitingForInput",
+        RunProgressState.Paused => "Run_State_Paused",
+        RunProgressState.WaitingForChildren => "Run_State_WaitingForChildren", // 07 G8 — never "Completed"
+        _ => "Run_State_Completed", // Completed + TruncatedCompleted both read "Completed"
+    };
+
     public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value is not RunProgressState state) return string.Empty;
-        var key = state switch
-        {
-            RunProgressState.Planning => "Run_State_Planning",
-            RunProgressState.Running => "Run_State_Running",
-            RunProgressState.Failed => "Run_State_Failed",
-            RunProgressState.WaitingForInput => "Run_State_WaitingForInput",
-            RunProgressState.Paused => "Run_State_Paused",
-            _ => "Run_State_Completed", // Completed + TruncatedCompleted both read "Completed"
-        };
-        return LocalizationSource.Instance[key];
+        return LocalizationSource.Instance[LabelKey(state)];
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -80,6 +90,9 @@ public sealed class RunStateToBrushConverter : IValueConverter
             RunProgressState.Failed => "PiaDangerBrush",
             RunProgressState.WaitingForInput => "PiaAccentBrush", // action-needed accent — invites the Continue
             RunProgressState.Paused => "TextMutedBrush",
+            // 07 G8: TextDefaultBrush is also what the default arm gives it — made EXPLICIT so the next
+            // appended member is a decision rather than an accident.
+            RunProgressState.WaitingForChildren => "TextDefaultBrush",
             _ => "TextDefaultBrush", // Planning / Running
         };
         return Application.Current?.TryFindResource(key) as Brush ?? DependencyProperty.UnsetValue;
@@ -89,11 +102,12 @@ public sealed class RunStateToBrushConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-/// <summary>Visible only while the run is Planning or Running (drives the header spinner).</summary>
+/// <summary>Visible whenever work is happening: Planning, Running, or — 07 G8 — WaitingForChildren, where the
+/// parent is parked but its child runs are working, so a still spinner would read as a stalled run.</summary>
 public sealed class RunStateToSpinnerVisibilityConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)
-        => value is RunProgressState.Planning or RunProgressState.Running
+        => value is RunProgressState.Planning or RunProgressState.Running or RunProgressState.WaitingForChildren
             ? Visibility.Visible
             : Visibility.Collapsed;
 

@@ -232,6 +232,23 @@ public sealed class AgentRunOrchestrator
                     var fanOut = await TryFanOutAsync(run, step, ctx, profile, cts).ConfigureAwait(false);
                     if (fanOut is { } children)
                     {
+                        if (children.Abandoned)
+                        {
+                            // 07 G8: the un-park CAS lost — this run's row now belongs to another writer
+                            // (cascade-cancelled, or re-parked by a startup reconcile in another process).
+                            // Deliberately MINIMAL: no SafeFail, no PinRange, no promotion, no EndRun — every
+                            // one of those writes a row whose terminal state we no longer own, which is the
+                            // whole reason the CAS exists. The one thing that is still ours is the EXECUTOR:
+                            // for a Live run only a release hook clears the session's IsStreaming, so without
+                            // SafeOnPaused the foreground chat would sit wedged Running forever with a
+                            // disabled Send. That is the same non-terminal release the budget pause uses, and
+                            // it touches the session, never the run.
+                            _logger.LogInformation(
+                                "Run {RunId} is no longer awaiting its children — another writer owns it; releasing", run.Id);
+                            await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                            return;
+                        }
+
                         if (children.Cancelled)
                         {
                             cancelled = true;
@@ -456,8 +473,12 @@ public sealed class AgentRunOrchestrator
     // ---- Batch 07 D7: the fan-out (delegate a step group to sibling child runs and await them) ----
 
     /// <summary>How a fan-out settled, as the drain loop needs to see it. Never both parked and cancelled —
-    /// the caller checks <paramref name="Cancelled"/> first, because a cascade cancel outranks a park.</summary>
-    private sealed record FanOutResult(bool AnyParked, bool AnyFailed, bool Cancelled, string? Error);
+    /// the caller checks <paramref name="Cancelled"/> first, because a cascade cancel outranks a park.
+    /// <para>
+    /// <paramref name="Abandoned"/> outranks everything: it means <c>TryEndChildWaitAsync</c> lost its CAS, so
+    /// this run's row is owned by another writer and this loop must stop WITHOUT writing to it (07 G8/D9).
+    /// </para></summary>
+    private sealed record FanOutResult(bool AnyParked, bool AnyFailed, bool Cancelled, string? Error, bool Abandoned = false);
 
     /// <summary>
     /// Dispatch <paramref name="step"/>'s whole parallel group as sibling CHILD runs, await every one of them,
@@ -547,6 +568,19 @@ public sealed class AgentRunOrchestrator
             }
         }
 
+        // 07 G8/D9. Park the parent in the PERSISTED WaitingForChildren state for the whole wait, which is what
+        // makes a restart mid-fan-out recoverable: the state sits ABOVE the startup sweep's `State < 3`
+        // threshold, so FailInterruptedRunsAsync cancels the children and RE-PARKS the parent as
+        // WaitingForInput instead of cancelling it out from under their finished work. Parking also closes the
+        // ledger work segment — the parent is not working, its children are, and each bills its own time.
+        //
+        // Only when something was actually dispatched: with dispatched.Count == 0 every sibling failed to
+        // launch, there is nothing to wait for, and parking would leave a state no CAS below could clear.
+        // `parked` (not `dispatched.Count > 0`) gates the un-park, so a swallowed park fault cannot make the
+        // CAS below read as "someone else took this run".
+        var parked = dispatched.Count > 0
+            && await SafeBeginChildWait(run.Id, dispatched.Count, cts.Token).ConfigureAwait(false);
+
         var registration = default(CancellationTokenRegistration);
         try
         {
@@ -616,17 +650,20 @@ public sealed class AgentRunOrchestrator
             }
         }
 
-        // BATCH 08 SEAM (07 D9/G8, not on this tree): the parent stays `Running` for the whole wait. When the
-        // `WaitingForChildren` state lands, `BeginChildWaitAsync(run.Id, dispatched.Count)` goes immediately
-        // before the WhenAll above and `TryEndChildWaitAsync(run.Id)` immediately after this loop — the CAS
-        // returning false meaning "someone else owns this run's terminal state now, return without settling".
-        //
-        // Until then this check IS that CAS's job: if the parent's own token fired while it waited (a chat
-        // delete, app shutdown, or ChatSession.Cancel()), the drain loop's next blind SetStateAsync(Running)
-        // would RESURRECT a run something else has already settled (R11). Take the cancelled arm instead,
-        // exactly like an in-process step that came back Cancelled.
+        // Checked BEFORE the un-park CAS: if the parent's own token fired while it waited (a chat delete, app
+        // shutdown, or ChatSession.Cancel()), this loop still owns the run and must settle it Cancelled
+        // itself — exactly like an in-process step that came back Cancelled. Ending the wait first would
+        // briefly advertise the run as Running on its way to Cancelled for no gain.
         if (cts.IsCancellationRequested)
             return new FanOutResult(AnyParked: false, AnyFailed: false, Cancelled: true, "cancelled while awaiting delegated runs");
+
+        // 07 G8/D9. Leave WaitingForChildren through a CAS, not a blind write. Every arm the caller can take
+        // from here writes this run's row — the parked arm calls PauseAsync, the failed arm may Fail it, the
+        // clean arm sets Running per step — so this is the single place to establish that the row is still
+        // OURS. A false means it is not: cascade-cancelled to Cancelled, or re-parked WaitingForInput by
+        // another process's startup reconcile. Continuing would resurrect a run somebody else settled (R11).
+        if (parked && !await SafeTryEndChildWait(run.Id, cts.Token).ConfigureAwait(false))
+            return new FanOutResult(AnyParked: false, AnyFailed: false, Cancelled: false, null, Abandoned: true);
 
         return new FanOutResult(anyParked, anyFailed, Cancelled: false, error);
     }
@@ -922,6 +959,44 @@ public sealed class AgentRunOrchestrator
     {
         try { await _runService.PauseAsync(runId, reason, ct).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (pause) failed for {RunId}", runId); }
+    }
+
+    /// <summary>
+    /// Park the parent at <see cref="AgentRunState.WaitingForChildren"/> for the span of a fan-out (07 D9).
+    /// Returns whether the park actually happened: unlike the other <c>Safe*</c> wrappers this one reports its
+    /// own failure, because the un-park CAS is only meaningful if the park landed — a swallowed fault here
+    /// followed by a CAS would read as "another writer owns this run" and abandon a perfectly healthy run.
+    /// </summary>
+    private async Task<bool> SafeBeginChildWait(Guid runId, int childCount, CancellationToken ct)
+    {
+        try
+        {
+            await _runService.BeginChildWaitAsync(runId, childCount, ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Degrade, never fail: the wait still happens in-process on the awaits below, exactly as it did
+            // before this state existed. Only the RESTART guarantee is lost for this one run.
+            _logger.LogWarning(ex, "Run bookkeeping (child-wait park) failed for {RunId}", runId);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// End the child wait via the CAS (07 D9). A fault is reported as <c>true</c> — "assume the run is still
+    /// ours" — deliberately: the caller's false arm ABANDONS the run without settling it, and doing that on a
+    /// transient read error would leave a live run permanently un-terminated with no loop and no user
+    /// affordance. A genuine lost CAS returns false through the normal path, not through this catch.
+    /// </summary>
+    private async Task<bool> SafeTryEndChildWait(Guid runId, CancellationToken ct)
+    {
+        try { return await _runService.TryEndChildWaitAsync(runId, ct).ConfigureAwait(false); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run bookkeeping (child-wait CAS) failed for {RunId}", runId);
+            return true;
+        }
     }
 
     private async Task SafeFail(Guid runId, string? error, bool cancelled)
