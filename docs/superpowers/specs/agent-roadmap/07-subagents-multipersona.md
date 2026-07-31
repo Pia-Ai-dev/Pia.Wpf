@@ -2,6 +2,17 @@
 
 **Phase 3 · Size L · Work on `feature/agent-run-spine`** (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
+> **✅ SHIPPED 2026-07-31 as work groups G6–G10, `08e20ab` → `1d6cc15`** — and **read that range with the
+> chronicle open, because the groups did not land in group order**: G6 (`08e20ab`), then G9 (`b2f46a2`), then
+> G10's fan-out (`9c32999`), then G7 (`d09c71f`), then G8 (`3e12bcf`), then the rest of G10's own recorded debt
+> (`1d6cc15`). Six commits inside that span belong to no batch or to Batch 06. The joint fix pass that follows
+> (`29b6e3f` → `37a0410`) closes this batch's review findings and Batch 06's together. The **executable** spec is
+> [`07-subagents-multipersona.impl.md`](07-subagents-multipersona.impl.md), which carries a BUILDER RECORD with
+> **nine** recorded divergences plus in-place spec corrections from G8 and the fix pass; the measured seam map is
+> in [`phase3-workflow-plan.md`](phase3-workflow-plan.md) §2, and §3.6/§3.8 are why this file's "attribution is
+> already seamed" and "sweep tweak" framing understate the work. The prose below is the original scoping and is
+> *not* the as-built record.
+
 The spine reserved `AgentRun.ParentRunId` and `AgentStep.AssignedPersonaId` for sub-agents/multi-persona
 (plan §2 line 82/112, §9 line 356-357). Today `ResolveActiveAsync` is single-persona-per-mode. This is the
 "Council-for-work" batch: a run can spawn child runs / assign steps to distinct personas, each honoring its own

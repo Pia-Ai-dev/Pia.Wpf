@@ -1,6 +1,27 @@
 # Phase 3 — Implementation Plan & Workflow Design
 
-**Status: PLANNED, not started.** Authored 2026-07-30 against `53cd552` on `feature/agent-run-spine`
+> **Status: EXECUTED — all ten groups G1–G10 are in the tree, `70400aa` → `1d6cc15`, 2026-07-31**, followed by a
+> joint fix pass over both batches, `29b6e3f` → `37a0410`. Batch 06 is G1–G5 (`70400aa` → `695e123`); Batch 07 is
+> G6–G10 (`08e20ab` → `1d6cc15`), and inside that second span six commits belong to no batch or to 06 — see the
+> chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md), rows 17 and 18, for the commit-by-commit ownership.
+>
+> **It took more than one invocation of the workflow, and the exact number is not recoverable from git.** §6 below
+> plans "**One** `Workflow` invocation, five phases" — that is the one structural prediction in this file that the
+> execution falsified, and the reason is worth keeping: two of the runs died mid-flight on limits, not on the
+> code. **At least three** invocation boundaries are readable in the log, and each is corroborated by a commit's
+> own testimony rather than inferred from the gap alone: 06's run stopped after G5 by design (the harness takes
+> `stopAfterGroup`, so 06 could be proven before 07 started); a 07 run got G6, G9 and G10's fan-out in before its
+> builder died on a session limit (`3e12bcf`'s message says so in as many words, which is why G8 shipped **after**
+> the code that was waiting for it); and `fb21dec` — committed at the end of a run — is a harness change written
+> to brief *the next* invocation, which then built G7, G8 and G10's remainder. A separate Batch 06 review pass also
+> ran and lost 11 of its 13 verifiers to a usage limit; its recovered findings are in
+> [`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md). Timestamp gaps corroborate (13:34 →
+> 18:56 and 19:02 → 19:14), but they are the weaker evidence and are quoted second on purpose.
+>
+> **What "executed" does not mean:** the manual Windows smoke round in §8 is entirely undone. Phase 3 lengthened
+> that list and shortened nothing on it.
+
+**Status as authored: PLANNED, not started.** Authored 2026-07-30 against `53cd552` on `feature/agent-run-spine`
 (49 commits ahead of `origin`, unpushed by owner decision). Phase 3 = **[Batch 06](06-run-workspace-isolation.md)**
 (run workspace isolation) + **[Batch 07](07-subagents-multipersona.md)** (sub-agents / multi-persona).
 Roadmap context: [`00-OVERVIEW.md`](00-OVERVIEW.md). Authoritative design:
@@ -186,6 +207,11 @@ file is right and §3 says why.
   serialized. Nested child work extends that hold by every descendant's wall clock.
 - `ExecutingRunStore` is a reverse map runId → chatId (`:6-11`), so multiple concurrent runs on **one** chat
   already work with zero change — a child sharing the parent's `chatId` needs no store change.
+  **CODE RIGHT, SPEC WRONG (2026-07-31, measured at G10):** the *conclusion* holds and the *premise* does not. A
+  child shares no `chatId` at all — `LaunchCoreAsync` mints `chatId = Guid.NewGuid()` per dispatch, so every child
+  owns its own stub chat and the store never holds two runs for one chat on this path. So no store change was
+  needed for a **stronger** reason than the one given here. Kept rather than rewritten because R9 reasons from this
+  same sentence; `1d6cc15` annotated the impl spec's copy of it and this is the original.
 - `AgentRunOrchestrator.RunAsync` already creates a linked CTS from the caller's token (`:46`).
 
 ### 07 — ledger, timeline, roll-up
@@ -295,7 +321,7 @@ Ordered by how quietly each one fails. Every builder prompt carries the risks to
 | R2 | The verifier silently probes the wrong root once steps write into the workspace → every run ends `Completed + unverified` and burns the replan budget first. | `AgentVerifier.cs:210` | Add `RunContext.WorkspaceRoot`, assign it in `BeginRunAsync`, have `TryBuildArtifactFactsAsync` prefer ctx over the ambient. **Land before the flip**, with a test asserting a workspace-written artifact is found. |
 | R3 | `AgentVerifier`'s doc comment asserts "`WorkspaceRoot` is null in production and the settings folder IS the root the step writes landed in". 06 falsifies it. | `AgentVerifier.cs:262` | Update the comment in the same commit that carries the root. These ownership comments are load-bearing in this repo. |
 | R4 | `OnChatsChanged` deletes a run's workspace synchronously on chat deletion. Today that directory is empty; after 06 it is the **only copy** of un-promoted work. | `HeadlessRunLauncher.cs:480` | Promote before `CompleteAsync` so a completed run has nothing left; for a non-terminal run, cancel first rather than deleting under a live writer. |
-| R5 | The sweep has no state and no promotion awareness, so a crashed run's workspace lingers up to 30 days — and in worktree mode leaves a **stale worktree registration**, not just a directory. | `HeadlessRunLauncher.cs:451` | Teardown goes through the provisioner (`git worktree remove`/`prune` in worktree mode); either accept the 30-day retention explicitly or add a state-aware predicate. |
+| R5 | The sweep has no state and no promotion awareness, so a crashed run's workspace lingers up to 30 days — and in worktree mode leaves a **stale worktree registration**, not just a directory. | `HeadlessRunLauncher.cs:451` | Teardown goes through the provisioner (`git worktree remove`/`prune` in worktree mode); either accept the 30-day retention explicitly or add a state-aware predicate. **AS SHIPPED (measured 2026-07-31): both halves of the mitigation were taken, and the "30 days" figure is now only half the answer.** The predicate became state-aware — `_terminalWorkspaceMaxAge` = **7** days for a run at `Completed`/`Failed`/`Cancelled`, `_workspaceMaxAge` = **30** days for everything non-terminal *and for a state this build does not know*, deliberately, because deleting a resumable run's only copy of its work is the one mistake the sweep must not make. That is also why `WaitingForChildren(8)` was **not** added to the terminal set. A **crashed** run is swept to `Cancelled` at startup, so it now falls under the 7-day window, not the 30-day one. The 30-day floor itself is **accepted, not closed** — see "Opened by Phase 3". |
 | R6 | Naming the promotion type `RunWorkspacePromoter` fails an architecture test. | `NamingConventionTests.cs:32` | Use an allowlisted suffix. |
 | R7 | **There is no DEBUG-erased Error-severity log helper.** `SafeLog` exposes `SensitiveTrace/Debug/Information/Warning` only. An author reaching for `LogError` with a path leaks user-named content into a support-attachable release log — and 06 logs a *lot* of paths. | `src/Pia.Wpf/Logging/SafeLog.cs` | Route path/filename interpolation through `SensitiveWarning` (the highest DEBUG-erased severity) or a scoped `#if DEBUG`. Keep `Information`-and-above to counts, booleans and ids: `"promoted {Count} files"`, never `"{Path}"`. `SafeUrl` does not apply — it is scheme+host shaped. |
 | R8 | Adding `ParentRunId` to `AgentRunCreateRequest` breaks two hand-written full-surface fakes — a **compile failure** in the test project, not a soft skip. | `AgentRunOrchestratorTests.cs:142` | Budget the fake migration into the same commit; prefer an optional trailing parameter so unrelated call sites are untouched. |
@@ -337,6 +363,11 @@ interface change).
 ---
 
 ## §6 The workflow
+
+**Falsified by the execution — see the status block at the head of this file. It took at least three invocations,
+and both extra boundaries were limit deaths rather than design.** The five *phases* below all happened and in this
+order; what did not survive is the "one invocation" framing, and the resumability paragraph at the end of this
+section is the part that made the difference. Kept unedited because the phase design is still the right one.
 
 One `Workflow` invocation, five phases, after the grounding pass that produced §2–§4. Grounding is **outside**
 the five steps because its output had to reach the owner as questions first — `AskUserQuestion` cannot fire from
@@ -404,7 +435,9 @@ each builder must leave the tree green or say plainly that it did not.
   `Pia.Wpf_<hash>_wpftmp` XAML pass, `Pia.Wpf.Tests`). Phase 3 is test-heavy, which is exactly the trap: 186 of
   the historical 194 warnings were xUnit analyzer warnings in the test project. New tests must add **zero**.
 - **Test gate:** `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`.
-  The bar is `failed: 0` (2424 total at `df0841a`). **Two known intermittents** — re-run the class isolated
+  The bar is `failed: 0` (2424 total at `df0841a`; **2697 total / 0 failed / 2696 passed / 1 skipped** at
+  `37a0410`, i.e. Phase 3 as a whole added **273** cases — measured by the roadmap pass on the finished tree, with
+  the 2424 read out of `00-OVERVIEW.md` rather than re-measured). **Two known intermittents** — re-run the class isolated
   before calling either a regression: `TaskExtensionsTests.SafeFireAndForget_SlowTask_DoesNotBlock` (wall-clock
   assumptions, low single-digit %, bursty) and
   `AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes`
@@ -455,3 +488,13 @@ the promotion type's exact name (any allowlisted suffix), whether the provisione
 strategies or two types behind one interface, where the roster is stored in `AppSettings`, the branch naming
 scheme beyond the `pia/run/<runId>` sketch, and whether G10's roll-up pushes on each child write or aggregates
 on read (the index in G9 makes either viable).
+
+**How they were decided, recorded here so the answers are as findable as the questions were** (measured at
+`1d6cc15`): the promotion type is `RunWorkspaceService` — one type owning **both** provisioning modes rather than
+two behind an interface, which also answers the second item; the roster lives in `AppSettings` behind
+`GetAgentPersonaRoster(UserOperatingMode)` with a dedupe, a clamp and a `MaxAgentPersonaRoster` cap, read through
+that one shared helper by both the settings surface and the two resolution seams so they cannot drift; the branch
+scheme stayed literally `pia/run/<runId>`; and the roll-up **pushes** — once per settled child, run-level
+(`stepId` null, because the parent ran no turn), from a terminal branch only, tokens and never time. That last one
+is now pinned by test rather than by prose, together with the answer to the question §2 said any nesting design
+must state: the **persisted ledger** nests and the **ephemeral per-dispatch `RunContext`** does not.

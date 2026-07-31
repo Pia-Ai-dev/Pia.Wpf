@@ -32,6 +32,27 @@ of what the Agent System has shipped and what is left to build. Authoritative de
 (referenced below as “the plan §N”). The open items in the last section come from
 [`hermes-comparison.md`](hermes-comparison.md) — the external review that drove the hardening batch.
 
+_**Snapshot addendum: 2026-07-31 — as-built at `37a0410`, which is the end of Phase 3.** Everything in the
+paragraph above still describes the tree it measured; nothing in it is retracted. What it does not know is that
+**Batch 06 (run workspace isolation) and Batch 07 (sub-agents / multi-persona) have both shipped**, as ten work
+groups G1–G10 across `70400aa` → `1d6cc15`, plus a joint fix pass `29b6e3f` → `37a0410`. **Batches 10, 11, 05, 12,
+04, 03, 02, 06 and 07 have shipped.** Measured by this roadmap pass on the finished tree, not copied from another
+agent's report: `dotnet build -t:Rebuild -v:n` → **0 Warning(s) / 0 Error(s)**, and again with `-c Release` →
+**0 Warning(s) / 0 Error(s)**, with **4 `CoreCompile` invocations in each log** so both rebuilds were genuine rather
+than incremental skips. The suite was run **twice** and both numbers are quoted, because quoting only the clean one
+is how an intermittent turns into an excuse: run 1 was **2697 total / 1 failed / 2695 passed / 1 skipped**, the
+single failure being `AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes`
+— the known-probabilistic one below, which then passed **13/13 isolated, three times running** — and run 2 was
+**2697 total / 0 failed / 2696 passed / 1 skipped**. Against the 2424 this file records at `df0841a` (read from
+here, **not** re-measured), Phase 3 added **273 cases**. The tail closes across measured stops rather than being
+inferred: 2670 at `3e12bcf`, 2671 at `1d6cc15`, 2679 at `3b66603`/`3278467`, 2697 at the fix pass. **Phase 3 is
+complete in the only sense the code can be: every group is in the tree and gated. What it has NOT had is the manual
+Windows smoke round — which is still Rank 1, which Phase 3 lengthened by nine items and shortened by none, and
+which no green suite substitutes for.** Batch 06's review filed 14 findings whose adjudication is tracked in
+[`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md); read that file for the status rather
+than a number from here, because its own tally needed a correction (8 distinct defects confirmed, 7 fixed, 1 fixed
+in part, 3 findings still unadjudicated). See "Opened by Phase 3" below for what is known and open._
+
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
 
@@ -63,6 +84,8 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 14 | `9a8a639` → `cd13c1a` | **[Batch 04](04-autonomy-policy.md)** — one `ToolClassifier` + one `ToolAutonomy.Resolve` for both run gates, a per-run `RunAutonomyPolicy` in the existing `PolicyJson` v1 envelope, an `AppSettings` default for built-in writes, and voice-mode writes routed through the gate. Includes its own review fix pass | ✅ done |
 | 15 | `50d2054` → `c92dfdd` | **[Batch 03](03-audit-timeline.md)** — the per-run audit timeline: an append-only metadata-only `AgentTimelineEvents` store (per-run `Seq`, a 500-row cap + one truncation marker, retention prune), a per-step `AgentTimelineScope` carried to BOTH run gates, and a read-only "Tool activity" trace on the run panel. Includes its own 10-commit review fix pass — see “Opened by Batch 03” below | ✅ done |
 | 16 | `df0841a` | **[Batch 02](02-cost-ledger.md)** — the `CostUsd` removal (pricing withdrawn by decision, so the batch is a deletion): the ledger DTO field, the VM's mirror + backing field + TODO assignment, and the `$` segment in `FormatLedger`. **No review fix pass, and the one-commit span is the honest size** — six seams, two facts, no new behaviour. Two prose seams the spec's own acceptance grep could not match were live and are also gone; the grep is amended to the pattern that found them | ✅ done |
+| 17 | `70400aa` → `695e123` | **[Batch 06](06-run-workspace-isolation.md)** — run workspace isolation, as work groups **G1–G5**: the runs dir carved out of `SensitivePathGuard` + a `RunContext.WorkspaceRoot` the verifier prefers over the ambient (G1), both `Initialize` call sites flipped so an unattended run's file tools really land in `%LOCALAPPDATA%\Pia\runs\<runId>` (G2), a provisioner with two modes — **git worktree** when the root is a repo, else a bounded **copy** — with symmetric teardown and degrade-to-copy on any fault (G3), promotion after verify and before `CompleteAsync` plus a publish offer for a run that failed (G4), and the same isolation for an interactive `Planned` run with chip resolution past promotion (G5). **Its own polish is deliberately outside this range** — see the note below | ✅ done |
+| 18 | `08e20ab` → `1d6cc15` | **[Batch 07](07-subagents-multipersona.md)** — sub-agents / multi-persona, as work groups **G6–G10** *in a different order than that*: per-step persona + provider + prompt resolution on both executors (G6, `08e20ab`), `ParentRunId` on the create request + `IX_AgentRuns_ParentRunId` + a narrow-for-child grant envelope (G9, `b2f46a2`), the fan-out itself on a **separate** child slot pool (G10 part 1, `9c32999`), the roster settings surface + the panel attribution that fixes two pre-existing avatar defects (G7, `d09c71f`), the appended `WaitingForChildren(8)` run state that survives the startup sweep (G8, `3e12bcf`), and G10's remaining recorded debt (`1d6cc15`). **Six commits inside this span belong to no batch or to Batch 06** — see the note below | ✅ done |
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -94,6 +117,82 @@ subject line, not the position.
 files then two, no `.cs` touched. The batch is row 16's single `df0841a`, which lands after `c92dfdd`. So the
 number 02 appears at two disjoint places in the log for two different reasons, and the earlier one is the
 decision, not the delivery.
+
+**Rows 17 and 18 ARE a sequence, but they are the first pair in this table whose ranges INTERLEAVE — neither of the
+two precedents above covers it alone.** Rows 12/13 were siblings (independent bases, met in a merge); rows 14/15
+were a sequence with foreign commits inside one range. Phase 3 is both at once, in one linear history:
+
+- **Row 17's range does not contain Batch 06's own polish, and that is deliberate.** 06 was built to a stop-clean
+  boundary (`stopAfterGroup: G5`) so it could be *proven* before 07 started, which means its simplify commit
+  (`676f629` — one canonicalizer pulled out of three byte-identical private copies its own G3 and G5 had added),
+  its review fix (`914730d`), and its share of the joint fix pass (`3b66603`) all land **after row 18 begins**. A
+  `git log 70400aa..695e123` is therefore the batch's *build* and not the batch's *history*.
+- **Six commits inside row 18's span belong to no batch or to Batch 06**: `676f629` (06's simplify), `286ea09`
+  (07's G6 quality pass, per its own body), `914730d` (06's review fix), `17bff5d` (the Phase 3 plan, both impl
+  specs and the harness — its own message says it "belongs to no batch"), `fb21dec` (a harness change teaching the
+  next invocation that G9 and G10 had already shipped) and `d519af0` (recovering Batch 06's 14 findings into a
+  file). Same treatment as `30ebb52` and the Batch 02 re-scope above: they do not break the range they interrupt.
+- **Row 18's log does not read as the group list.** The order on disk is G6 → G9 → G10(part) → G7 → G8 →
+  G10(rest). `3e12bcf`'s own message explains why: G10's builder died on a session limit, so G9 and G10 went ahead
+  of G8, and G8 therefore "is not groundwork — it supplies a state that code already in the tree is waiting for, at
+  a seam G10's own comment marks by name." Read the subject lines, not the positions.
+- **G10 is the one group this table would misreport if it were listed flat.** `9c32999` shipped the fan-out and the
+  separate child slot pool; it did **not** close its own recorded debt, and its message said so. `1d6cc15` is what
+  closed it — which of the two budgets nests (persisted ledger yes, ephemeral per-dispatch `RunContext` no) pinned
+  by a test rather than by prose, `_childSlots`' *size* argued and not merely its separateness, and four spec
+  annotations. Neither commit alone is G10.
+- **The joint fix pass gets prose, not a row, for the same reason the Batch 12 merge did not get one**: it is not a
+  batch. `29b6e3f` → `37a0410`, eight commits, and it spans **both** batches — `3b66603` closes six of Batch 06's
+  review findings (three distinct defects), while `cc7d62f` and `4faa90a` close Batch 07's. Two of its commits
+  (`29b6e3f`, `37a0410`) touch no runtime path at all.
+
+**All ten work groups G1–G10 are in the tree, and they were delivered across SEVERAL invocations of one workflow
+rather than one.** That is worth saying plainly because the plan that drove them predicted a single invocation
+(`phase3-workflow-plan.md` §6) and the status block now at the head of that file records the correction. At least
+three invocation boundaries are readable, each corroborated by a commit's own testimony and not merely by a
+timestamp gap: 06 stopped after G5 **by design**, so it could be proven before 07 started; a 07 run reached G6, G9
+and G10's fan-out before its builder died on a session limit; and `fb21dec` is a harness change committed at the end
+of a run to brief *the next* one. A separate Batch 06 review pass also ran and lost 11 of its 13 verifiers to a usage
+limit. The exact total is **not** recoverable from git and is not asserted here.
+
+**What "complete" does and does not mean for Phase 3.** It means the code is in and **gated**: 0 warnings and
+0 errors under `-t:Rebuild` in Debug *and* Release with 4 genuine `CoreCompile` invocations each, and `failed: 0` on
+the suite (2697 / 0 / 1 skipped, measured twice on the finished tree — see the snapshot addendum for the run that
+cost the known intermittent). It does **not** mean smoked. **The manual Windows smoke round in the rank table below
+is what Phase 3 has not had**, it is still Rank 1, and Phase 3 lengthened it by nine items while shortening nothing
+— including the three that only a real git repository can exercise. A green unit suite is not a smoke test; that
+sentence has been true on this branch since Batch 12 and Phase 3 does not retire it.
+
+**Batch 06's review filed 14 findings, and their adjudication is tracked in
+[`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md), not here.** Read the status off that file
+rather than a number from this one — its own tally needed correcting, which is exactly the failure mode this
+document warns about everywhere else. As that file now stands: **11 rows CONFIRMED and 3 with NO VERDICT**; of the
+11, 9 read FIXED and 2 read FIXED IN PART; and by **distinct defect** the number is **8**, because three pairs are
+one defect filed twice by two independent lenses. So: 8 distinct defects confirmed, 7 fully fixed, 1 (the conflict
+path) fixed in part, 3 findings still unadjudicated. The three unadjudicated are not dismissed — 11 of the original
+13 verifiers died on a usage limit and 2 were never sent, and a verifier that dies returns nothing, which is not a
+refutation.
+
+**One claim about review coverage went stale inside Phase 3 itself, and it is worth pinning because two commit
+messages assert it.** `3e12bcf` and `1d6cc15` both say "Batch 07 has had no review of any kind" — true when each was
+written, and **false at HEAD**. A review pass whose scope was G1–G10 ran afterwards on 2026-07-31: `967d761`,
+`cc7d62f`, `4faa90a` and `31bfa03` each open by naming it, and they close findings filed specifically against G7's
+coverage, G10's fan-out notification and G10's pause-reason surface. So Batch 07 has had **one** review pass and one
+fix pass. What has had **neither** is the fix pass's own output — `3b66603` in particular, which introduced two of
+the live items in "Opened by Phase 3" while closing four findings.
+
+**Git position, re-measured 2026-07-31 at the end of Phase 3 — and the 2026-07-30 paragraph below is right that
+this must never be a hardcoded count.** So, described rather than counted: local-only is now everything the
+paragraph below describes **plus** all of Phase 3 — Batch 06's five build groups, Batch 07's five, the two simplify
+commits, the Phase 3 plan and both impl specs, two harness commits, the recovered findings file, and the eight-commit
+joint fix pass. `origin/feature/agent-run-spine` did **not** move during Phase 3, and this pass did not push, merge
+or rebase — it was instructed not to and did not. Read the position from git, always: `git rev-list --count
+origin/feature/agent-run-spine..HEAD` for the number and `git log --oneline origin/feature/agent-run-spine..HEAD`
+for *which*, and the second is still the half that decides whether a push is safe. Worth restating in Phase 3's
+terms, because the stakes moved: **the isolation change in row 17 relocates where every unattended run's files
+land**, so a reader who fetches `origin` and builds gets a tree whose runs write to the assistant folder while this
+one writes to `%LOCALAPPDATA%\Pia\runs\<runId>` and promotes. That is a user-visible behavioural difference between
+the two refs, not just a warning count.
 
 **Git position, re-measured 2026-07-30 at the end of the 04/03 run — and this paragraph's own warning caught
 it:** `origin/feature/agent-run-spine` is at **`5e1d793`** ("add new icon templates"), *not* the `b32ca14` this
@@ -232,6 +331,13 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
   writes into**: by owner decision (`d1bf62d`, plan §17.2 amendment) unattended runs write their real
   deliverables to the **shared assistant files folder**, and both launch and resume pass
   `HeadlessTurnExecutor.Initialize(workspaceRoot: null, …)`. Isolation + promotion is still Batch 06.
+  **CODE RIGHT, SPEC WRONG as of 2026-07-31 — every clause of the previous three lines is now false, and the whole
+  bullet is superseded by "A run's files are its own" below.** Kept because the *reasoning* it records is still the
+  reasoning: `d1bf62d`'s owner decision was real, the scratch dir really was created-and-swept-and-never-written-to
+  for the whole of Milestone B, and the "opt-in-sandbox seam" really was reserved rather than used. Batch 06 took
+  the opt-in. Concretely: both launch and resume now pass the run root, not null; unattended runs write **into**
+  the per-run directory; and promotion is a real step that runs after verify and before `CompleteAsync`. Do not
+  read "nothing currently writes into it" as current.
 - **Unattended writes are narrow by default** — `HeadlessRunRequest.DefaultGrantedWrites` is `{write_file}`
   (no `delete_file`); a resume restores the launch's own grant list from the envelope persisted in
   `AgentRuns.PolicyJson`, so parking cannot widen what the launch granted. **Both** producers write one: the
@@ -349,6 +455,48 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
   expander on the run panel that re-reads on every expand and distinguishes *"nothing was recorded"* from
   *"this could not be read"* — it never renders a failed read as a positive claim of emptiness, and never
   renders an errored call as a success. **Per-device and gates-only** — see “Opened by Batch 03”.
+- **A run's files are its own, and something durable holds them before the workspace goes** (Batch 06) — every
+  run, unattended *and* interactive, now gets a provisioned workspace under `%LOCALAPPDATA%\Pia\runs\<runId>` and
+  its file tools resolve their base root there. That took **two** things the batch spec never listed, either of
+  which alone would have shipped a broken feature: `SensitivePathGuard` blocks `%LOCALAPPDATA%\Pia` **wholesale**,
+  so the runs dir had to be carved out behind a shared constant *before* the root moved — otherwise every read and
+  write inside the workspace passes containment and is then refused as protected app data — and the verifier's
+  artifact probe reads a `TaskAmbient` that is **null during verify**, so without `RunContext.WorkspaceRoot` every
+  run would have ended `Completed` + `"unverified"` after burning the replan budget. Provisioning has two modes: a
+  **git worktree** on `pia/run/<runId>` when the root is a repo and git is installed, else a bounded **copy**, with
+  any fault degrading to copy rather than failing the run, and `GitToolHandler` reading the same ambient root so
+  git and the file tools cannot disagree about which tree they are in. Promotion is ordered **drain → verify (against
+  the run root) → promote → `CompleteAsync`**, which is also what dissolves the "completed but not yet promoted"
+  crash window without a promotion-aware sweep. In worktree mode **the branch is the deliverable** (no merge, so no
+  conflict handling in an unattended path) — and that is literally true only because promotion **commits app-side**
+  through the injected git runner: the model cannot commit for itself, since `DefaultGrantedWrites` is `{write_file}`
+  and every autonomy preset excludes `ToolClass.Git`, so before that commit existed a clean worktree run reported
+  success against a branch byte-identical to its base while the file was deleted with the directory. A destination
+  the user edited during the run is a **conflict**: their file wins, and the workspace is now **retained** rather
+  than torn down, so the publish offer can still surface the run's version. Chips survive: a file chip whose
+  absolute path is gone falls back to the same relative path under the assistant folder, so no persisted chat
+  content is rewritten.
+- **A run can delegate — to another persona, to another provider, and to child runs that execute in parallel**
+  (Batch 07) — the planner assigns each step a persona from a per-mode **roster** the user configures in settings,
+  and the orchestrator resolves `(Persona, AiProvider, prompt)` **per step** instead of closing over one run-level
+  pair, reusing the existing clone-to-apply-`ReasoningEffort` logic verbatim and falling back to the run persona
+  whenever a step's id is null, off the current roster, or unresolvable. A plan may also **group** steps, and a
+  group is dispatched as sibling **child runs** — real `AgentRuns` rows with `ParentRunId` set, an index to find
+  them by, their own stub chats, and a grant envelope that is a **subset** of the parent's rather than a fall-through
+  to the default floor. They run on a **separate** `SemaphoreSlim(2,2)`, which is not a preference: a nested acquire
+  on the shared launcher pool deadlocks permanently at exactly two concurrent parents. While it waits the parent
+  parks in an **appended** run state, `WaitingForChildren = 8`, placed deliberately *above* the terminal band so
+  that `State < WaitingForInput` — the bulk startup sweep — cannot cancel it out from under its children's finished
+  work; `Paused(4)` stayed reserved for Batch 08. Park is a blind write (the parent's own drain loop is the only
+  writer at that instant), un-park is a **CAS** (by then it is not), and "waiting on N children" is persisted
+  nowhere at all — the child rows *are* the marker, so the count is always current and no settling child has a
+  counter to decrement. Parking closes the ledger's work segment, so a parent bills none of the wait. Which budget
+  nests is now pinned by test rather than by prose: the **persisted ledger** does (once per settled child,
+  run-level, tokens and never time) and the **ephemeral per-dispatch `RunContext`** — the one that actually gates
+  pausing — does **not**, so a fan-out costs the parent one step per sibling step and no more. The panel draws each
+  step's persona avatar and accent, which also fixed a defect that predated the batch: a `Guid?`/`Guid` DP mismatch
+  plus an unbound `Emoji` meant **every** step row had always drawn an empty 20×20 box. **There is no merged
+  parent+child timeline, by decision** — see "Opened by Phase 3".
 
 ---
 
@@ -378,11 +526,9 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. What a unit suite cannot cover remains: a real provider round, a real MCP server, and the DE/FR render — see the callout above and both “Opened by” sections | — | S | a Windows runner + a live provider |
-| 2 | 06 | [Run workspace isolation](06-run-workspace-isolation.md) — run-aware file-tool base root + promotion | 3 | M | Milestone B |
-| 3 | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) — `ParentRunId`/`AssignedPersonaId` + attribution | 3 | L | Batch 11 ✅ shipped |
-| 4 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
-| 5 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, sub-agents (07) |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by NINE items and shortened nothing** — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
+| 2 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
+| 3 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
@@ -391,6 +537,8 @@ each other by number. Read the **Rank** column for priority.
 | — | 04 | [Autonomy policy](04-autonomy-policy.md) | 2 | M–L | ✅ **shipped** `9a8a639`→`cd13c1a` — spec'd in `c45f792`, see “Opened by Batch 04” |
 | — | 03 | [Audit timeline](03-audit-timeline.md) | 2 | M–L | ✅ **shipped** `50d2054`→`c92dfdd` — **device-local**, see “Opened by Batch 03” |
 | — | 02 | [Remove `CostUsd`](02-cost-ledger.md) | 2 | XS | ✅ **shipped** `df0841a` — a deletion, not a feature; **adds nothing to the smoke list** |
+| — | 06 | [Run workspace isolation](06-run-workspace-isolation.md) | 3 | M | ✅ **shipped** `70400aa`→`695e123` (G1–G5) — polish outside that range; see “Opened by Phase 3” |
+| — | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) | 3 | L | ✅ **shipped** `08e20ab`→`1d6cc15` (G6–G10, **not in that order**) — see “Opened by Phase 3” |
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -440,6 +588,31 @@ Phase-3 ones. That is not a typo — per the note above the table, `#` is a file
 column**, so a cleared dependency can move a later-phase batch ahead of an earlier-phase one. It is the first
 time on this branch that it has, which is why it is called out rather than left to be read as an error.
 
+**Two more rank moves, 2026-07-31, and again neither is a reprioritisation — both are just 06 and 07 leaving the
+list.** Rank 2 is now **09** and Rank 3 is **08**, so the phase-crossing noted above has *resolved itself*: with the
+two Phase-3 batches shipped, the ranked remainder is Phase 4 all the way down and 09 no longer sits between two
+Phase-3 rows. Note also that the sentence in the long paragraph above — "**Batch 02 has since shipped too, so
+'behind 02' above is history and Rank 2 is now 06**" — is itself now history for the same reason it retired the
+sentence before it; it is left in place because the *pattern* it records (each shipped batch retires the sentence
+that promoted it) is the useful part. **08's blocker has cleared and this is the more interesting half.** Its
+dependency column read "sub-agents (07)", and 07 has shipped — but read *what* shipped before planning 08, because
+Phase 3 both cleared its path and constrained it: G8 needed a persisted state for a parent awaiting children and
+**appended `WaitingForChildren = 8` rather than taking `Paused(4)`**, precisely because
+[`08-live-steering.md`](08-live-steering.md) reserves ordinal 4. So **08's reservation survived Phase 3 intact**,
+which was not free — placing 8 above the terminal band was the only shape that survives the bulk startup sweep by
+construction, and the price is that every ordinal *range* over `AgentRunState` now lies. Exactly two existed and
+both were re-measured and fixed at G8; a third written by 08 would be a new one. 08 also inherits a live steering
+question Phase 3 created rather than answered: a **parent** at `WaitingForChildren` is a run the user can see
+working and cannot pause, and its children are runs the user can see at all only through the parent's drill-down.
+
+**A note for whoever plans 09, since 07 just added a third obligation to it.** Beyond W3's unknown-status handling
+and the re-arm surface, and beyond 04's per-job policy hazard: a scheduled job that delegates extends a
+**process-wide** head-of-line block. `ScheduledJobBackgroundService` holds `_runLock` from before `LaunchAsync`
+across `await handle.Completion`, so no scheduled job of either kind can dispatch for the parent's wall clock
+**plus every descendant's**. Phase 3 accepted that rather than closing it (see "Opened by Phase 3"), on the basis
+that a delegating run must fit inside the envelope one scheduled job may occupy. If 09 ever lets a user *author* a
+delegating job from the UI, it is 09 that has to make that envelope visible.
+
 ~~`PolicyJson` is no longer NULL — it carries the launch grant envelope — so Batch 04 must *extend* that
 document, not claim the column.~~ **Done, and the instruction was right about the constraint but the batch
 found it stricter than stated.** Batch 04 added `policy` as an **additive member of the existing `v:1`
@@ -477,10 +650,14 @@ Each of these was seen and left; the reason is the point.
   nowhere — the seam for a real `emit_step_result{succeeded, artifactRef}` already exists. The H1 artifact
   probe narrows the blast radius (a missing declared artifact now reaches the critic) but does **not** make a
   step's own verdict structured. hermes-comparison §5/rec #9.
-- **Read-through workspace isolation + promotion (Batch 06).** Unattended runs still write real deliverables
+- ~~**Read-through workspace isolation + promotion (Batch 06).** Unattended runs still write real deliverables
   into the shared assistant folder; the per-run dir stays scratch. A1 narrowed the default grant to
   `{write_file}` and B2 blocks destructive external tools, which lowers the risk but does not isolate.
-  hermes-comparison §4(b)(3)/rec #6.
+  hermes-comparison §4(b)(3)/rec #6.~~ **CLOSED 2026-07-31 by Batch 06** (`70400aa` → `695e123`, plus `3b66603`).
+  Kept struck rather than deleted because the hermes recommendation it answers is numbered and still cited: rec #6
+  is now implemented, and the two mitigations named here (the narrow default grant, the destructive-external block)
+  turned out to be load-bearing in a way this bullet did not anticipate — they are exactly why worktree mode could
+  not rely on the model committing its own work, and why promotion had to commit app-side.
 
 ### Residual-hazard pass (2026-07-29) — `045edea` → `87fa403`
 
@@ -1133,6 +1310,160 @@ these carries its full reasoning and its escape hatch.
   exactly once with the toggle ON and not at all with it OFF; and **whether reason-then-emit actually produces
   better plans**, which nothing here proves — the suite proves the boosted round happens, degrades safely and is
   paid for. Full list: `05-planner-reason-then-emit.impl.md` §9.
+
+---
+
+### Opened by Phase 3 (2026-07-31) — known, reasoned, not closed
+
+Phase 3 is Batches 06 and 07 together, ten work groups across several invocations of one workflow. This section is
+longer than its predecessors for a reason worth stating rather than apologising for: 06 is the first batch on this
+branch that **moves user files**, and 07 is the first that lets one run **spawn another**, so most of what follows is
+a decision about what happens when that goes wrong. Four sources feed it — what Phase 3 hands to the Rank-1 manual
+round, which planned risks were **accepted** instead of closed, what the fix pass **declined** and why, and what a
+builder deliberately did not do.
+
+**What Phase 3 adds to the Rank-1 manual Windows smoke round — nine items, and none of them automatable.** The list
+is `phase3-workflow-plan.md` §8; every item on it is now real, because all ten groups are in.
+
+1. **A real headless run writing into an isolated workspace and promoting on success.** The whole point of 06 and
+   the one item no unit test substitutes for: the suite proves promotion copies, retains and tears down correctly
+   against a fixture root, not that a user's deliverable appears where they expect it.
+2. **Worktree mode against a real repo** — the run branch exists, the agent's work is **on it** (this is now an
+   app-side commit, so check the commit's author and that `--no-verify` did not surprise a repo with hooks), the
+   working tree is untouched, and `git worktree list` after the run shows no stale registration.
+3. **Copy mode against a non-repo folder** — the ordinary case — plus the degrade path when git is absent.
+4. **A failed run's publish offer**: decline it and confirm the workspace is retained and later swept; accept it and
+   confirm the files land. Also worth smoking on the path the fix pass created: a **copy-mode conflict**, where the
+   workspace is now retained on a *successful* run and Publish re-counts the conflict to render it.
+5. **An interactive run's file chips** — clicked *during* the run and again *after* promotion, i.e. both phases of
+   the resolve-on-open fallback.
+6. **The persona roster** — the settings surface persists across a restart, and a plan really does assign different
+   personas to different steps with the right provider on each.
+7. **Per-step avatars render** — the always-empty box actually shows something, in a deferred row template no test
+   can reach.
+8. **A parent with parallel children** — cancellation cascades, no orphans, the ledger rolls up, and the parent
+   survives an app restart in its new waiting state.
+9. **DE/FR without clipping** for every new string: the publish offer, the roster surface, and the panel's "output
+   is on branch X" line.
+
+**Two more smoke items the fix pass added that §8 could not have anticipated**, both from `31bfa03`/`967d761` and
+both outside the run panel §8 was scoped to. (i) **Every message avatar in an ordinary chat.** G7 implemented the
+persona accent ring as a static `BorderThickness="1.5"` on `PiaPersonaAvatar`'s shared `Border` with only the brush
+bound — and `Border` reserves thickness in `MeasureOverride` and paints `Background` only inside the border rect,
+*independently* of whether the brush is transparent, so on a control with fixed 28×28 the visible plate shrank to
+25×25 for the live chat and the history inspector too, neither of which G7 was asked to touch and neither of which
+can ever set an accent. Re-implemented as an overlaid sibling `Border` in a `Grid`, so an unset accent draws
+literally nothing — but nothing automated can see it (there is no View test), so: open an ordinary chat and confirm
+the avatars fill their 28×28. (ii) **The DE/FR round is longer than §8 item 9 says.** Four *more* keys landed in all
+three locales for the new pause reasons, and the German chip for `WaitingForChildren` changed from "Delegiert" to
+"Verteilt Arbeit" — a participle sitting morphologically with the *settled* states next to a lit spinner was exactly
+the "this run is finished" misreading that converter's explicit arm exists to prevent.
+
+**Risks the plan named that were ACCEPTED rather than closed.** Each of these was mitigated and then explicitly
+left; the reason is the point.
+
+- **R5 — a crashed run's workspace lingers, and the 30-day floor is deliberate.** The sweep predicate became
+  state-aware, which is half the mitigation: a settled run (`Completed`/`Failed`/`Cancelled`) keeps its workspace
+  **7** days — long enough to answer a publish offer, short enough that an unanswered one cannot pin it forever —
+  while everything non-terminal **and every state this build does not recognise** keeps the original **30**. That
+  second clause is the accepted part and it is a choice, not an oversight: deleting a resumable run's only copy of
+  its work is the one mistake this sweep must not make, which is also why `WaitingForChildren(8)` was **not** added
+  to the terminal set. The comment at the constant says "a judgement call, not a measurement: if seven days turns
+  out to be short, it is one constant."
+- **R11 — no new `View` test, so 07's UI is manual-smoke debt by decision.** `WpfStaHost` holds 7 frame-pushing
+  facts and the 8th previously took the gate from 0/3 to 2/3 failing; the documented fix belongs to Batch 12 and is
+  not implemented. So the roster surface, the avatar row and the branch line are all covered at ViewModel level and
+  their XAML is booked as debt — the same call Batch 03 made when it withdrew its row-render fact. This is the
+  single largest hole in Phase 3's coverage and it is a *known* hole.
+- **R14 — there is no merged parent+child timeline, and there cannot be one cheaply.** `Seq` is monotonic only
+  within a `RunId`, `CreatedAt` is explicitly rejected as an ordering source (~1 ms resolution against sub-ms tool
+  calls), and each child gets its own fresh 500-event cap. G10 shipped per-run views with a parent→child
+  drill-down, as scoped. A merged view needs a new cross-run ordering key designed as its own work — **do not
+  promise one** on the strength of the drill-down existing.
+- **R15 — a delegating run extends a process-wide head-of-line block, and nothing in Phase 3 shortened it.**
+  `ScheduledJobBackgroundService` holds `_runLock` from before `LaunchAsync` across `await handle.Completion`, so
+  no scheduled job of either kind can dispatch for the parent's wall clock *plus every descendant's*. Accepted on
+  the basis that budget defaults must fit the envelope one scheduled job may occupy. **Do not add nested delegation
+  to scheduled jobs without revisiting that lock** — and see the note to Batch 09 above.
+- **R16 — worktree mode mutates the user's repository, and the run cannot see uncommitted work.** A worktree adds
+  `.git/worktrees/<id>` and a branch ref even though the working tree is untouched, and it starts from a **commit**,
+  so the user's uncommitted and untracked files are invisible to the run. Gated on `IsGitInstalled` and on
+  `rev-parse --show-toplevel` succeeding, degrading to copy mode on any fault — but the invisible-work behaviour is
+  **a release-note item, not a bug**, and it is still owed as a release note. There is a matching hole in the other
+  direction that only appeared during the fix pass: the run root is a checkout of the *user's* repo, so their own
+  `.gitignore` applies to files the agent writes, which is why promotion runs a second
+  `status --porcelain --untracked-files=all --ignored` after committing rather than trusting the commit's success.
+
+**What the fix pass DECLINED, with its reason.** These are live items, recorded in
+[`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md) rather than silently carried, and the first
+two are the **price of `3b66603`** — they did not exist before the commit that closed the data-loss findings.
+
+- **A worktree run whose run-branch commit FAILED still gets the "output is on branch X" line.** On that arm
+  promotion returns `RetainWorkspace: true`, so teardown never runs, so the metadata document is intact and
+  *un-stamped* — and the describe path's stub arm keys on `tornDownAtUtc`, which is null there. It falls through to
+  the directory-exists arm and names a branch that received nothing, while worktree mode offers no publish button,
+  so the UI shows no recovery path at all. The files really are in `%LOCALAPPDATA%\Pia\runs\<runId>` for seven days.
+  **Declined because the honest fix is a redesign**: suppressing the line means `DescribeAsync` learning whether the
+  branch actually carries a commit, which is a new question for that method to answer, not a one-line guard.
+- **The automatic promotion path still does not RENDER a conflict count** (Lens A 5 / Lens B 3, fixed *in part*).
+  The workspace is now retained on a conflict, so the offer stands and clicking Publish re-runs the promotion, which
+  re-counts the same conflict and renders the existing localized string — so the number reaches the user **on the
+  path where it is actionable**. What it still does not do is announce itself on completion. Declined because there
+  is no orchestrator→ViewModel channel (promotion sets no VM state; the panel learns everything through
+  `RunChanged`) and persisting a count would mean overloading the truncation envelope.
+- **`Publish()` still ignores `RetainWorkspace`.** The manual path tears the workspace down unconditionally on a
+  non-null result, so publishing a conflicted workspace deletes the run's version of the conflicted file — the exact
+  loss the finding was filed against on the *automatic* path, now surviving on the manual one. Left alone **on
+  purpose**: the path is user-initiated and the note it renders carries the conflict count, and retaining there
+  would leave an offer standing that the user has just answered. Named so the asymmetry is a decision rather than an
+  oversight.
+- **Lens A 4's other half is untouched.** `TearDownWithoutMetadataAsync` returns no success signal, and
+  `OnChatsChanged` still starts a teardown without awaiting the cancelled dispatch's unwind — which is precisely
+  when a `worktree remove` and a recursive delete both fail. `3b66603` *moved* the finding without adjudicating it:
+  the torn-down stub now retains the document that knows which repository holds the registration, so the
+  prune-can-never-happen half no longer applies to worktree mode.
+- **Two findings were left with NO VERDICT because they were outside the in-scope group list of the pass that did
+  the work** — Lens A 4 above and Lens C 6 (an architecture-rule failure message stating a different threshold than
+  its assertion). "No verdict" here means exactly that, and is not a dismissal; that distinction is the entire
+  reason the findings file exists, since 11 of the original 13 verifiers died on a usage limit and **nothing is not
+  a refutation**.
+
+**What a builder deliberately did not do, flagged at the time.**
+
+- **G8's stated boundaries, both named by its own commit so a reviewer does not file them as defects.** (i) The
+  un-park CAS puts the parent at `Running` before its caller re-parks or settles it, so a process death *in that
+  window* is still swept to `Cancelled`: a restart no longer loses the wait, which is **not** the same as no window
+  at all. (ii) The startup reconcile re-parks a parent whose children had already finished just the same, so the
+  resume dispatches a fresh generation and **redoes that work** — the finished children survive as rows because the
+  cascade-cancel skips terminal ones, while their output is produced again. That follows from G10's recorded
+  property that nothing links a child to a *step*, only `ParentRunId` to the parent.
+- **"Waiting on N children" is persisted nowhere, by design.** The child rows *are* the marker, so the count cannot
+  go stale and no settling child has a counter to decrement. The alternative was a number in `ExtraJson`, which
+  `WaitingForInput`'s claim CAS nulls unconditionally.
+- **`_childSlots` is fixed at 2 and a wider group runs in waves.** It mirrors the launcher's own pool so a
+  delegating build's worst case on the provider is a fixed 2+2 that does not grow when a planner emits a six-way
+  group; every sibling is still dispatched and awaited, so a narrow pool costs elapsed time inside the parent's own
+  halved wall clock and nothing else. What bounds the total is the **depth guard** — a child never delegates — not
+  this cap.
+- **G7's avatar column now shifts left when a step has no resolvable persona**, where it used to be reserved
+  unconditionally. Strictly better than the always-empty box it replaced, and stated because it is a layout change
+  no test can see.
+- **A test-number collision was left in place on purpose.** G8 re-used two of G10's fact numbers (a second T-FAN-4
+  and T-FAN-10); renumbering would leave an immutable commit message pointing at nothing, so the class doc records
+  which group's numbering each fact carries instead.
+- **One `Information` log line's format changed for every run** (`parent={HasParent}` on "Created run"), and every
+  existing database gains `IX_AgentRuns_ParentRunId` at its next open — the `CREATE INDEX` sits inside the schema
+  command that runs on every open, so there is no migration block. Both are behaviour changes with no caller, worth
+  knowing before reading a support log from a mixed-version pair.
+
+**Two defects in Phase 3's own commit record, neither present at HEAD**, recorded in the findings file rather than
+here so they live in one place: `695e123` (G5) states a gate with no warning count and no Release configuration
+where every other commit states both — re-measured 0/0 in both since — and `914730d`, titled as a value-only French
+translation fix, asserts "nothing was red before this and nothing goes green after it" while its own diff adds three
+brand-new keys to `fr.resx` **only**, leaving the localization parity fact red at that boundary until the next
+commit supplied the base and DE values. The lesson kept is the cause and not the redness: G10's resx trio was split
+across two commits, one of which does not mention resx at all, so a bisect lands on a commit whose message asserts
+the opposite of what its diff did.
 
 ---
 

@@ -2,6 +2,15 @@
 
 **Phase 3 · Size M · Work on `feature/agent-run-spine`** (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
+> **✅ SHIPPED 2026-07-31 as work groups G1–G5, `70400aa` → `695e123`.** Its polish is deliberately **outside**
+> that range and lands later: the simplify commit `676f629`, the review fix `914730d`, and its share of the joint
+> fix pass (`3b66603`, which closes six of this batch's review findings as three defects). The **executable** spec
+> is [`06-run-workspace-isolation.impl.md`](06-run-workspace-isolation.impl.md), whose B8/B10/B15 sections carry
+> in-place annotations where the fix pass falsified them; the measured seam map and the nine places **this** file
+> was wrong are in [`phase3-workflow-plan.md`](phase3-workflow-plan.md) §2–§3. **Read those two before this one** —
+> in particular §3.2, which is why the batch is five groups rather than the two this file describes. The prose
+> below is kept as the original scoping and is *not* the as-built record.
+
 Milestone B built the per-run scratch dir (`%LOCALAPPDATA%\Pia\runs\<runId>\`), but headless runs currently write
 **real deliverables straight to the assistant files folder**: the method is
 `HeadlessTurnExecutor.Initialize(string? workspaceRoot, …)` (`HeadlessTurnExecutor.cs:91`) — the "reserved

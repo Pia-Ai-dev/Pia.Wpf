@@ -34,6 +34,19 @@ it was outside the in-scope group list of the pass that did the work, so "no ver
 | Lens C | 5 — the G5 commit records an incomplete gate | nit | **NO VERDICT** on the record defect itself; the tree was re-measured green (see the history note below) |
 | Lens C | 6 — architecture-rule message states a different threshold | nit | **NO VERDICT** (out of the fix pass's in-scope list) |
 
+**The word "Ten" above does not reconcile with the table under it, counted by the roadmap pass of 2026-07-31.**
+Row by row the table carries **11 CONFIRMED** and **3 NO VERDICT** (Lens A 4, Lens C 5, Lens C 6) — and of the 11,
+**9 read FIXED and 2 read FIXED IN PART** (Lens A 5 / Lens B 3, which are one defect). "Ten" is reachable by
+exactly one reading and it is probably the intended one: **Lens C 1 already had its verdict** from the first
+review's single surviving skeptic and was fixed in `914730d`, *before* the pass this sentence is about, so
+11 − 1 = 10 rows were re-verified by the 2026-07-31 pass. Two of those ten are still only partly fixed, so
+"and then **fixed**" overstates them. And by **distinct defect** the number is **8**, not 10 or 11, because three
+pairs are one defect filed twice (A1=B2, A2=B1, A5=B3). Recorded rather than corrected in place because all four
+counts are defensible answers to four different questions; what is not defensible is a bare number. If you need one
+figure: **8 distinct defects confirmed — 7 fully fixed, 1 (the conflict path) fixed in part — and 3 findings still
+unadjudicated.** The eight, so the arithmetic is checkable rather than asserted: A1=B2, A2=B1, A3, A5=B3 (the
+partial), C1, C2, C3, C4.
+
 Lens A finding 2 and Lens B finding 1 are the **same defect** found twice, independently, by two lenses. Lens A
 finding 1 and Lens B finding 2 likewise overlap. That is worth knowing before verifying them: two lenses
 converging is evidence, but it is not a verdict either. Both pairs turned out to be real.
