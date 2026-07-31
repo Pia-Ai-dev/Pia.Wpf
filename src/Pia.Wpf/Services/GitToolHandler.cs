@@ -136,10 +136,10 @@ public class GitToolHandler : IGitToolHandler
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
         // Batch 06: an isolated run supplies its own workspace root, so git resolves the repository THERE —
-        // or files and git disagree and the agent commits the interactive folder's stale tree. Same one-line
-        // shape as FilesToolHandler's dispatch point (:170-171), canonicalization included.
+        // or files and git disagree and the agent commits the interactive folder's stale tree. Same shape as
+        // FilesToolHandler's dispatch point (both now share SafeFolderPath.NormalizeWorkspaceRoot).
         var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
-        var baseRoot = ambientRoot is not null ? NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
+        var baseRoot = ambientRoot is not null ? SafeFolderPath.NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
         if (baseRoot is null || !Directory.Exists(baseRoot))
         {
             return (
@@ -178,7 +178,8 @@ public class GitToolHandler : IGitToolHandler
     /// supplied an isolated run workspace. Non-null ⇒ containment is frozen for the turn: the run cannot
     /// escape its workspace even if the user re-points the assistant folder mid-run, and — the reason this
     /// exists at all — a mutating tool that passed prepare cannot be refused after the approval await, where
-    /// ambient flow is not guaranteed (<c>FilesToolHandler:179-182</c> states that rule) and a null ambient
+    /// ambient flow is not guaranteed (<c>FilesToolHandler.HandleToolCallAsync</c>'s deferred-write-closure
+    /// comment states that rule) and a null ambient
     /// would fall back to <c>_currentFolder</c> and refuse a toplevel inside the workspace. Null ⇒ the
     /// interactive case, where <c>_currentFolder</c> is RE-READ at execute time, which is the runtime-re-point
     /// TOCTOU re-guard this handler has always had. Never set this to <c>_currentFolder</c>: that would
@@ -188,14 +189,6 @@ public class GitToolHandler : IGitToolHandler
     /// <param name="WorkingDir">The effective working directory git runs in: the sandbox root narrowed by the
     /// active chat's working subpath.</param>
     private readonly record struct GitScope(string WorkingDir, string? WorkspaceRoot);
-
-    /// <summary>Canonicalizes an ambient-supplied workspace root the same way <c>UpdateFolder</c> canonicalizes
-    /// the configured folder, so the containment comparisons cannot false-refuse on a link/8.3 asymmetry.</summary>
-    private static string NormalizeWorkspaceRoot(string root)
-    {
-        var full = Path.GetFullPath(root);
-        return Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
-    }
 
     public async Task<object?> ExecutePendingActionAsync(GitToolCall pendingAction)
     {

@@ -56,14 +56,14 @@ public static class RunWorkspaceRedirects
             if (string.IsNullOrWhiteSpace(workspaceRoot) || string.IsNullOrWhiteSpace(destinationRoot))
                 return;
 
-            // Canonicalized the SAME way FilesToolHandler.NormalizeWorkspaceRoot canonicalizes the ambient
-            // workspace root (GetFullPath, then a real-path resolve while the directory exists). The chip
-            // carries an absolute path built from THAT spelling, so a key in any other spelling — e.g. the
-            // uncanonicalized RootFor(runId) the caller holds — would miss the prefix match in Resolve and
-            // silently dead-end every post-promotion chip with nothing failing. Recording happens inside the
-            // promotion walk, i.e. BEFORE the caller's teardown, which is what makes the directory still
-            // exist here and the real-path resolve possible.
-            var root = Normalize(workspaceRoot);
+            // Canonicalized through the SAME SafeFolderPath.NormalizeWorkspaceRoot FilesToolHandler and
+            // GitToolHandler resolve the ambient workspace root with (GetFullPath, then a real-path resolve
+            // while the directory exists). The chip carries an absolute path built from THAT spelling, so a
+            // key in any other spelling — e.g. the uncanonicalized RootFor(runId) the caller holds — would
+            // miss the prefix match in Resolve and silently dead-end every post-promotion chip with nothing
+            // failing. Recording happens inside the promotion walk, i.e. BEFORE the caller's teardown, which
+            // is what makes the directory still exist here and the real-path resolve possible.
+            var root = SafeFolderPath.NormalizeWorkspaceRoot(workspaceRoot);
 
             // The containment gate. Canonicalized through the same missing-tail helper the guard's allowed
             // islands use, because the runs root may not exist yet and a lexical comparison against a
@@ -127,13 +127,6 @@ public static class RunWorkspaceRedirects
         {
             return recordedPath;
         }
-    }
-
-    /// <summary>The same normalization <c>FilesToolHandler</c> applies to the ambient workspace root.</summary>
-    private static string Normalize(string root)
-    {
-        var full = Path.GetFullPath(root);
-        return Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
     }
 
     /// <summary>Drops the oldest entries until the cap holds. Bounds process-local state that nothing else

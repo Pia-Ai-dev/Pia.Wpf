@@ -219,6 +219,22 @@ public static class SafeFolderPath
         uint dwFlags);
 
     /// <summary>
+    /// Canonicalizes an ambient sandbox root (an unattended run's workspace, or one an isolated run supplied
+    /// through <c>TaskAmbient</c>) the same way a directly-configured folder is normalized on set:
+    /// <see cref="Canonicalize"/> requires an existing handle, so a not-yet-created root falls back to the
+    /// plain full path, which the caller's own <c>Directory.Exists</c> guard then rejects. Resolving a
+    /// junction/symlink in the root path itself this way is what keeps it from being a containment hole.
+    /// Shared by every consumer that resolves against such an ambient root — <c>FilesToolHandler</c>,
+    /// <c>GitToolHandler</c> and <c>RunWorkspaceRedirects</c> each carried their own byte-identical copy
+    /// before Batch 06 pulled them together.
+    /// </summary>
+    public static string NormalizeWorkspaceRoot(string root)
+    {
+        var full = Path.GetFullPath(root);
+        return Directory.Exists(full) ? Canonicalize(full) : full;
+    }
+
+    /// <summary>
     /// Returns true if <paramref name="sandboxRoot"/> is a usable directory.
     /// </summary>
     public static bool IsConfiguredAndExists(string? sandboxRoot)

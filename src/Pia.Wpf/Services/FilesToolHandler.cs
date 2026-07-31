@@ -119,18 +119,6 @@ public class FilesToolHandler : IFilesToolHandler
         catch { _currentFolder = null; }
     }
 
-    /// <summary>
-    /// Canonicalizes a per-run workspace root the same way <see cref="UpdateFolder"/> normalizes the
-    /// interactive folder — so a junction/symlink in the run-root path itself is not a sandbox hole
-    /// (canonicalize requires an existing handle; fall back to the full path when it does not yet exist,
-    /// the per-call <c>Directory.Exists</c> guard then rejects it).
-    /// </summary>
-    private static string NormalizeWorkspaceRoot(string root)
-    {
-        var full = Path.GetFullPath(root);
-        return Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : full;
-    }
-
     public IList<AITool> GetTools()
     {
         if (!IsAvailable) return [];
@@ -168,7 +156,7 @@ public class FilesToolHandler : IFilesToolHandler
         // file operation against it instead of the interactive folder, so all containment rejections
         // re-anchor to runs\<runId>. Null (the interactive path) keeps the configured folder.
         var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
-        var baseRoot = ambientRoot is not null ? NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
+        var baseRoot = ambientRoot is not null ? SafeFolderPath.NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
         if (baseRoot is null || !Directory.Exists(baseRoot))
         {
             return (
