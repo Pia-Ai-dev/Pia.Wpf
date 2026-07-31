@@ -425,6 +425,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         var now = DateTime.UtcNow;
         int cancelled;
         int reparked;
+        int redispatchable;
         lock (_gate)
         {
             if (_disposed) return Task.FromResult(0);
@@ -448,13 +449,40 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 cancelled = cmd.ExecuteNonQuery();
             }
 
+            // Statement 1b. The crash path's half of the fan-out's Pending invariant. TryFanOutAsync sets every
+            // DISPATCHED sibling step to Running the moment it hands the child off, and the only writers that
+            // move a step off Running are the result recorder and the parked arm's explicit
+            // SetStepStatus(sibling, Pending) — in-process code that cannot run if the process dies. The resume
+            // drain is NextPendingStepAsync, whose predicate is `Status=Pending`, so a step left Running is
+            // INVISIBLE to it: without this statement a re-parked parent would skip its whole delegated group,
+            // execute the steps AFTER it out of order against inputs that were never produced, and settle
+            // Completed while the panel still rendered those steps as active — permanently and silently.
+            // Same invariant the in-process park establishes for itself, given to the path where no code runs.
+            //
+            // ORDER MATTERS twice over: after statement 1 (a cancelled CHILD's own Running steps are not ours
+            // to reset — its row is terminal), and BEFORE statement 2, which changes the very state this
+            // selects on.
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = """
+                    UPDATE AgentSteps SET Status=@Pending, UpdatedAt=@Now
+                    WHERE Status=@Running AND RunId IN (SELECT Id FROM AgentRuns WHERE State=@Waiting)
+                    """;
+                cmd.Parameters.AddWithValue("@Pending", (int)AgentStepStatus.Pending);
+                cmd.Parameters.AddWithValue("@Running", (int)AgentStepStatus.Running);
+                cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
+                cmd.Parameters.AddWithValue("@Waiting", (int)AgentRunState.WaitingForChildren);
+                redispatchable = cmd.ExecuteNonQuery();
+            }
+
             // Statement 2 (07 D14). A parent that was awaiting children when the process died: statement 1
             // has just Cancelled those children, so no completing child can ever wake it and it would sit
             // WaitingForChildren forever. Re-park it as WaitingForInput — the ONE state
             // TryBeginResumeAsync can claim — carrying the SAME {paused:true,reason} envelope PauseAsync
             // writes, so the panel's existing WaitingForInput projection and its Continue button bring it
-            // back with no new resume vocabulary. Its post-fan-out steps are still Pending, so the resume
-            // drains them (D1), and the fan-out group re-dispatches a fresh generation.
+            // back with no new resume vocabulary. Statement 1b has just put its delegated steps back to
+            // Pending along with the rest of the remainder, so the resume drains them in ordinal order (D1)
+            // and the fan-out group re-dispatches a fresh generation.
             //
             // NOT Cancelled: its earlier steps are Done and its children's finished work is durable, so
             // presenting that as a cancelled run throws away recoverable work. And NO CompletedAt, unlike
@@ -483,7 +511,9 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         if (cancelled > 0)
             _logger.LogInformation("Settled {Count} interrupted agent run(s) to Cancelled at startup", cancelled);
         if (reparked > 0)
-            _logger.LogInformation("Re-parked {Count} interrupted parent run(s) awaiting children at startup", reparked);
+            _logger.LogInformation(
+                "Re-parked {Count} interrupted parent run(s) awaiting children at startup, with {StepCount} delegated step(s) back to Pending",
+                reparked, redispatchable);
         return Task.FromResult(cancelled + reparked);
     }
 

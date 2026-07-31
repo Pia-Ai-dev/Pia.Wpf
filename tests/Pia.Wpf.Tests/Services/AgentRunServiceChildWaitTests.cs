@@ -143,6 +143,54 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
     }
 
     /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 fix pass). The crash path's half of the fan-out's Pending invariant, and the
+    /// other half of what "the parent survives a restart mid-fan-out" has to mean.
+    /// <para>
+    /// <c>TryFanOutAsync</c> sets every DISPATCHED sibling step to Running immediately, and the in-process
+    /// parked arm puts them back to Pending explicitly — because <c>NextPendingStepAsync</c> selects on
+    /// <c>Status=Pending</c> and a step left Running is invisible to the resume drain. No code runs on the
+    /// crash path, so statement 1b has to establish the same invariant. Without it a re-parked parent skips its
+    /// whole delegated group on Continue, runs the steps AFTER it out of order against inputs nothing produced,
+    /// and settles Completed while the panel still renders those steps as active.
+    /// </para>
+    /// The non-vacuity control is the DONE step: a statement that simply reset every step would also make the
+    /// Pending assertions pass. Neutralize: delete statement 1b → <c>NextPendingStepAsync</c> returns the
+    /// post-group step and the two delegated ones stay Running.
+    /// </summary>
+    [Fact]
+    public async Task AnInterruptedFanOutsDelegatedStepsGoBackToPending_SoTheResumeCanSeeThem()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var parent = await NewRunAsync(ct);
+        // Ids are minted HERE, not by ReplaceStepsAsync: it generates one for a Guid.Empty step and does not
+        // write it back, so an unset id would leave every SetStepStatusAsync below a silent no-op.
+        var done = new AgentStep { Id = Guid.NewGuid(), RunId = parent.Id, Ordinal = 0, Title = "done", Intent = "i0" };
+        var groupA = new AgentStep { Id = Guid.NewGuid(), RunId = parent.Id, Ordinal = 1, Title = "A", Intent = "i1" };
+        var groupB = new AgentStep { Id = Guid.NewGuid(), RunId = parent.Id, Ordinal = 2, Title = "B", Intent = "i2" };
+        var after = new AgentStep { Id = Guid.NewGuid(), RunId = parent.Id, Ordinal = 3, Title = "after", Intent = "i3" };
+        await _service.ReplaceStepsAsync(parent.Id, [done, groupA, groupB, after], ct);
+        await _service.SetStepStatusAsync(done.Id, AgentStepStatus.Done, ct);
+        // Exactly what the fan-out leaves behind when the machine dies mid-dispatch.
+        await _service.SetStepStatusAsync(groupA.Id, AgentStepStatus.Running, ct);
+        await _service.SetStepStatusAsync(groupB.Id, AgentStepStatus.Running, ct);
+        await _service.BeginChildWaitAsync(parent.Id, 2, ct);
+
+        await _service.FailInterruptedRunsAsync(ct);
+
+        var plan = (await _service.GetAsync(parent.Id, ct))!.Plan.OrderBy(s => s.Ordinal).ToList();
+        Assert.Equal(AgentStepStatus.Done, plan[0].Status);      // non-vacuity: a Done step is NOT rewound
+        Assert.Equal(AgentStepStatus.Pending, plan[1].Status);
+        Assert.Equal(AgentStepStatus.Pending, plan[2].Status);
+        Assert.Equal(AgentStepStatus.Pending, plan[3].Status);
+
+        // The behavioural half: the resume drain now reaches the delegated group FIRST, in ordinal order,
+        // instead of skipping straight past it to the step that depends on its output.
+        await _service.TryBeginResumeAsync(parent.Id, ct);
+        var next = await _service.NextPendingStepAsync(parent.Id, ct);
+        Assert.Equal(groupA.Id, next!.Id);
+    }
+
+    /// <summary>
     /// T-ST-4, <b>GUARD</b>. A row per state, so no threshold change can hide: 0–2 are swept to Cancelled,
     /// 3/4 are a deliberate park and are untouched, 5–7 are terminal and untouched, and 8 is reconciled to
     /// WaitingForInput rather than either swept or ignored. Runs are forced into each state through the blind
