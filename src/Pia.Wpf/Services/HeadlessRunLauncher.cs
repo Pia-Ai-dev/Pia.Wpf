@@ -532,7 +532,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 {
                     // Deliberately the PARENT pool even for a resumed child (Batch 07 §7.1): a resume is a USER
                     // act, so nothing is awaiting this dispatch from inside another run's RunAsync, and the
-                    // nested-acquire deadlock _childSlots exists to prevent cannot arise here.
+                    // nested-acquire deadlock that _childSlots exists to prevent cannot arise here.
                     await _slots.WaitAsync(runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
                     acquired = true;
 

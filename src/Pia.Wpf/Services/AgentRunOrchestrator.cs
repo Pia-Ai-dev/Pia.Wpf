@@ -1036,8 +1036,8 @@ public sealed class AgentRunOrchestrator
         //
         // Deliberately ONE early return INSIDE this method rather than a guard at each of the two call sites:
         // this is the single funnel for both PromoteAsync and TearDownAsync, and the second call site (the
-        // PlanResult.Fallback degrade arm) returns early and settles in the opposite order, so a two-site wrap
-        // could be — and every launcher-harness test drives exactly that arm.
+        // PlanResult.Fallback degrade arm) returns early and settles in the opposite order, so a two-site guard
+        // could be missed at one of them — and every launcher-harness test drives exactly that arm.
         if (run.ParentRunId is not null)
             return;
 
