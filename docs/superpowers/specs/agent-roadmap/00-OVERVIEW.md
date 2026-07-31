@@ -55,7 +55,7 @@ enumerated, plus two the fix pass added that the plan could not have anticipated
 which no green suite substitutes for.** Batch 06's review filed 14 findings whose adjudication is tracked in
 [`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md); read that file for the status rather
 than a number from here, because its own tally needed a correction (8 distinct defects confirmed, 7 fixed, 1 fixed
-in part, 3 findings still unadjudicated). See "Opened by Phase 3" below for what is known and open._
+in part, 3 findings refuted with evidence). See "Opened by Phase 3" below for what is known and open._
 
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
@@ -171,12 +171,20 @@ sentence has been true on this branch since Batch 12 and Phase 3 does not retire
 **Batch 06's review filed 14 findings, and their adjudication is tracked in
 [`phase3-batch06-review-findings.md`](phase3-batch06-review-findings.md), not here.** Read the status off that file
 rather than a number from this one — its own tally needed correcting, which is exactly the failure mode this
-document warns about everywhere else. As that file now stands: **11 rows CONFIRMED and 3 with NO VERDICT**; of the
+document warns about everywhere else. As that file now stands: **11 rows CONFIRMED and 3 REFUTED**; of the
 11, 9 read FIXED and 2 read FIXED IN PART; and by **distinct defect** the number is **8**, because three pairs are
 one defect filed twice by two independent lenses. So: 8 distinct defects confirmed, 7 fully fixed, 1 (the conflict
-path) fixed in part, 3 findings still unadjudicated. The three unadjudicated are not dismissed — 11 of the original
-13 verifiers died on a usage limit and 2 were never sent, and a verifier that dies returns nothing, which is not a
-refutation.
+path) fixed in part, 3 refuted with evidence.
+
+**CORRECTED, same day, and the correction is the instructive part.** This paragraph and three rows of that file
+first said those three had **NO VERDICT** and were "outside the in-scope group list". They were not: all 13
+inherited findings were sent to a skeptic and all 13 returned a verdict — 10 CONFIRMED, 3 REFUTED (Lens A 4,
+C 5, C 6), each refutation reasoned from the code and one of them from two throwaway experiments. The error's
+mechanism is worth keeping: the fix pass is handed only the CONFIRMED list, so from inside that pass a finding it
+never sees looks identical to one nobody checked, and it wrote its own silence down as "no verdict". The reason
+the original first review's gap mattered — 11 verifiers died on a usage limit and 2 were never sent, and a
+verifier that dies returns nothing, which is not a refutation — is exactly why the inverse error is not allowed
+to stand either.
 
 **One claim about review coverage went stale inside Phase 3 itself, and it is worth pinning because two commit
 messages assert it.** `3e12bcf` and `1d6cc15` both say "Batch 07 has had no review of any kind" — true when each was
@@ -1426,14 +1434,18 @@ two are the **price of `3b66603`** — they did not exist before the commit that
   oversight.
 - **Lens A 4's other half is untouched.** `TearDownWithoutMetadataAsync` returns no success signal, and
   `OnChatsChanged` still starts a teardown without awaiting the cancelled dispatch's unwind — which is precisely
-  when a `worktree remove` and a recursive delete both fail. `3b66603` *moved* the finding without adjudicating it:
-  the torn-down stub now retains the document that knows which repository holds the registration, so the
-  prune-can-never-happen half no longer applies to worktree mode.
-- **Two findings were left with NO VERDICT because they were outside the in-scope group list of the pass that did
-  the work** — Lens A 4 above and Lens C 6 (an architecture-rule failure message stating a different threshold than
-  its assertion). "No verdict" here means exactly that, and is not a dismissal; that distinction is the entire
-  reason the findings file exists, since 11 of the original 13 verifiers died on a usage limit and **nothing is not
-  a refutation**.
+  when a `worktree remove` and a recursive delete both fail. `3b66603` *moved* the finding: the torn-down stub now
+  retains the document that knows which repository holds the registration, so the prune-can-never-happen half no
+  longer applies to worktree mode. Its verdict (REFUTED, see the correction above) killed the *permanent* leak, not
+  the shape — the unconditional `git worktree prune` on a failed removal is what carries it, so that call is
+  load-bearing and a later simplification must not fold it into the success arm.
+- **CORRECTED: three findings were REFUTED, not left without a verdict** — Lens A 4 above, Lens C 5 (a commit
+  message recording an incomplete gate; the next commit's own gate report closes the hazard one commit later) and
+  Lens C 6 (an architecture-rule message said to state a different threshold than its assertion — it states the
+  same one, and the scenario cannot fire because the substring count is 4 at `286ea09` and 5 at HEAD, so dropping a
+  call site still passes `>= 3`). The bullet this replaces said they were out of scope and unexamined. Refuted with
+  evidence and never-checked are different outcomes, and this document blurring them would be the same failure the
+  findings file exists to prevent, pointed the other way.
 
 **What a builder deliberately did not do, flagged at the time.**
 

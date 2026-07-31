@@ -14,15 +14,25 @@ the moment the run's journal is forgotten. They are recorded here so they can be
 
 Ten of the fourteen were **re-verified independently by the Phase 3 review pass of 2026-07-31** (a second
 review whose scope was G1–G10, with these findings handed to it as inherited items) and then **fixed** by that
-pass. The `Verdict` column below records the outcome; a row still reading NO VERDICT was **not** re-examined —
-it was outside the in-scope group list of the pass that did the work, so "no verdict" still means exactly that.
+pass. The `Verdict` column below records the outcome.
+
+**Correction, 2026-07-31, read off that pass's own verdict record.** An earlier revision of this paragraph and of
+three rows below said Lens A 4, Lens C 5 and Lens C 6 had **NO VERDICT** and were "outside the in-scope group
+list". That is wrong on both counts. All thirteen unadjudicated findings were sent to a skeptic and **all thirteen
+returned a verdict**: ten CONFIRMED, three REFUTED — and the three refutations are Lens A 4, C 5 and C 6. The
+mistake has a mechanism worth knowing, because it will recur otherwise: the fix pass only ever receives the
+CONFIRMED list, so a finding it never sees is indistinguishable, from inside that pass, from one nobody checked.
+It inferred "no verdict" from its own silence. C 6's verifier states explicitly *"this is not a scope-based
+refutation"*; A 4's ran two throwaway experiments (a real git worktree, and a locked-file recursive delete) to
+establish that the harm cannot follow from the premise. Refuted-with-evidence and never-checked are different
+outcomes and this file must not blur them.
 
 | Filed by | Finding | Severity as filed | Verdict |
 |---|---|---|---|
 | Lens A | 1 — worktree teardown destroys the run's output | must-fix | **CONFIRMED** by the 2026-07-31 pass — **FIXED** in `3b66603` |
 | Lens A | 2 — the "output is on branch X" line cannot render on success | should-fix | **CONFIRMED** (same defect as Lens B 1) — **FIXED** in `3b66603` |
 | Lens A | 3 — `StepPersonaResolver`'s persona lookup is unguarded | should-fix | **CONFIRMED** — **FIXED** (persona taken from the roster list already in hand) |
-| Lens A | 4 — metadata deleted even when directory removal failed | should-fix | **NO VERDICT** (out of the fix pass's in-scope list; but see the note under the table — `3b66603` narrows it by accident) |
+| Lens A | 4 — metadata deleted even when directory removal failed | should-fix | **REFUTED**, high confidence — premise true, inferred harm false: `TearDownWithoutMetadataAsync` already runs `git worktree prune` unconditionally when `remove --force` fails, and prune reclaims a registration from live git state once the worktree's `.git` pointer file is gone. Two experiments in the verdict. `3b66603` narrowed the worktree half further (see the note under the table) |
 | Lens A | 5 — automatic promotion with conflicts tears the workspace down | should-fix | **CONFIRMED** — **FIXED IN PART** in `3b66603` (the workspace is retained; the count still reaches the user only through the publish note — reasons in that commit) |
 | Lens B | 1 — the branch line cannot render for a successful worktree run | must-fix | **CONFIRMED** — **FIXED** in `3b66603` (torn-down worktree metadata stub) |
 | Lens B | 2 — nothing commits the work, so worktree mode deletes the deliverable | must-fix | **CONFIRMED** — **FIXED** in `3b66603` (app-side commit onto the run branch) |
@@ -31,11 +41,12 @@ it was outside the in-scope group list of the pass that did the work, so "no ver
 | Lens C | 2 — git-parity test compares a raw `GetTempPath` expectation | nit | **CONFIRMED** — **FIXED** (`_runRoot` canonicalized in the fixture ctor) |
 | Lens C | 3 — G1's guard facts carry no REGRESSION/GUARD label | nit | **CONFIRMED** — **FIXED** (both labels added at the facts) |
 | Lens C | 4 — `RunWorkspaceRedirectsTests`' shared-collection premise is false | nit | **CONFIRMED** — **FIXED** (`RunWorkspacePromotionTests` joined the collection; the comment now names both co-members) |
-| Lens C | 5 — the G5 commit records an incomplete gate | nit | **NO VERDICT** on the record defect itself; the tree was re-measured green (see the history note below) |
-| Lens C | 6 — architecture-rule message states a different threshold | nit | **NO VERDICT** (out of the fix pass's in-scope list) |
+| Lens C | 5 — the G5 commit records an incomplete gate | nit | **REFUTED**, high confidence — the scenario needs the missing Release count never to be supplied, but `08e20ab6` is the very next commit and its gate report anchors back to G5's own test count (2505) with both configurations at 0/0. The record gap is real; the hazard closes one commit later |
+| Lens C | 6 — architecture-rule message states a different threshold | nit | **REFUTED**, high confidence — "declared and called at least twice" *is* 3, the same threshold the assertion enforces; and the failure scenario cannot fire (the substring count in that file is 4 at `286ea09` and 5 at HEAD, so dropping a call site still passes `>= 3`). Explicitly **not** a scope refutation |
 
 **The word "Ten" above does not reconcile with the table under it, counted by the roadmap pass of 2026-07-31.**
-Row by row the table carries **11 CONFIRMED** and **3 NO VERDICT** (Lens A 4, Lens C 5, Lens C 6) — and of the 11,
+Row by row the table carries **11 CONFIRMED** and **3 REFUTED** (Lens A 4, Lens C 5, Lens C 6 — recorded as
+NO VERDICT until the correction above) — and of the 11,
 **9 read FIXED and 2 read FIXED IN PART** (Lens A 5 / Lens B 3, which are one defect). "Ten" is reachable by
 exactly one reading and it is probably the intended one: **Lens C 1 already had its verdict** from the first
 review's single surviving skeptic and was fixed in `914730d`, *before* the pass this sentence is about, so
@@ -43,15 +54,15 @@ review's single surviving skeptic and was fixed in `914730d`, *before* the pass 
 "and then **fixed**" overstates them. And by **distinct defect** the number is **8**, not 10 or 11, because three
 pairs are one defect filed twice (A1=B2, A2=B1, A5=B3). Recorded rather than corrected in place because all four
 counts are defensible answers to four different questions; what is not defensible is a bare number. If you need one
-figure: **8 distinct defects confirmed — 7 fully fixed, 1 (the conflict path) fixed in part — and 3 findings still
-unadjudicated.** The eight, so the arithmetic is checkable rather than asserted: A1=B2, A2=B1, A3, A5=B3 (the
-partial), C1, C2, C3, C4.
+figure: **8 distinct defects confirmed — 7 fully fixed, 1 (the conflict path) fixed in part — and 3 findings
+refuted with evidence, none left unadjudicated.** The eight, so the arithmetic is checkable rather than asserted:
+A1=B2, A2=B1, A3, A5=B3 (the partial), C1, C2, C3, C4.
 
 Lens A finding 2 and Lens B finding 1 are the **same defect** found twice, independently, by two lenses. Lens A
 finding 1 and Lens B finding 2 likewise overlap. That is worth knowing before verifying them: two lenses
 converging is evidence, but it is not a verdict either. Both pairs turned out to be real.
 
-**Lens A 4 was not adjudicated, but `3b66603` moved it.** That commit makes `TearDownAsync` leave a torn-down
+**Lens A 4 was refuted on its harm, and `3b66603` moved it besides.** That commit makes `TearDownAsync` leave a torn-down
 STUB behind for worktree mode instead of deleting the document, and the stub keeps `MainWorktree`. The scenario
 Lens A 4 describes — the directory survives a failed removal while the document is deleted, so no later pass can
 ever prune the registration — therefore no longer applies to the worktree case at all: the document that knows
@@ -83,7 +94,9 @@ stay inside the finding's scope. None of these existed before `3b66603`; the fir
    oversight.
 3. **Lens A 4's other half is untouched** (see the note above the table): `TearDownWithoutMetadataAsync` still
    returns no success signal, and `OnChatsChanged` still starts a teardown without awaiting the cancelled
-   dispatch's unwind.
+   dispatch's unwind. Its verdict refuted the *permanent* leak, not the shape — the unconditional
+   `git worktree prune` on a failed removal is what carries it, so that call is load-bearing and a future
+   simplification pass must not fold it into the success arm.
 
 ## History defects in the Phase 3 commit record
 
