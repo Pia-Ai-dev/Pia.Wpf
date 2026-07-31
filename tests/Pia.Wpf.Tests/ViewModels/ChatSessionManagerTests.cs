@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -88,6 +89,37 @@ public class ChatSessionManagerTests
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
             () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
             _headlessLauncher, _windowManager, _executingRuns);
+    }
+
+    /// <summary>
+    /// The same manager, plus Batch 06 D4's two moving parts: the workspace provisioner it must call for an
+    /// interactive <c>Planned</c> run, and a planner that captures the <c>RunContext</c> the orchestrator
+    /// builds — the only place the root the manager provisioned becomes observable from out here.
+    /// <para>
+    /// Deliberately a SECOND builder rather than two defaulted parameters on <see cref="CreateSut"/>: that one
+    /// passes the ctor positionally and omits every trailing optional, and keeping it that way is what proves
+    /// the new ctor parameter is source-compatible with the hand-constructed production call sites.
+    /// </para>
+    /// </summary>
+    private ChatSessionManager CreateIsolatingSut(
+        Pia.Services.Interfaces.IRunWorkspaceService workspaces,
+        Pia.Services.Interfaces.IAgentPlanner planner)
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSynchronizationContext());
+
+        var orchestrator = new Pia.Services.AgentRunOrchestrator(
+            _runService, planner,
+            new Pia.Tests.Services.FakeVerifier(),
+            NullLogger<Pia.Services.AgentRunOrchestrator>.Instance);
+
+        return new ChatSessionManager(
+            NullLogger<ChatSessionManager>.Instance,
+            NullLoggerFactory.Instance,
+            _chatService, _settings, _personas, _providers, _composer,
+            _titleService, _cards, _plugins, _ai, _permissions, _loc,
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
+            _headlessLauncher, _windowManager, _executingRuns,
+            agentTimelineService: null, workspaces: workspaces);
     }
 
     [Fact]
@@ -1301,5 +1333,140 @@ public class ChatSessionManagerTests
         // ...and the launcher's later finally is a harmless no-op.
         _executingRuns.Release(runId);
         Assert.False(_executingRuns.IsExecuting(chatId));
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Batch 06 G5 / plan D4: the interactive Planned launch owns a workspace lifecycle now. Before this
+    // group the branch was a bare CreateAsync and no directory was created anywhere on this path.
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Captures the <see cref="Pia.Services.RunContext"/> the orchestrator builds, then PARKS. The fact is
+    /// what the manager handed the executor; letting the run drain would execute steps against a substituted
+    /// AI client for no added coverage. Released by cancelling the session at the end of each fact.
+    /// </summary>
+    private sealed class CapturingPlanner : Pia.Services.Interfaces.IAgentPlanner
+    {
+        public TaskCompletionSource<string?> WorkspaceRoot { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<Pia.Services.Interfaces.PlanResult> PlanAsync(
+            string goal, Pia.Services.RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+        {
+            WorkspaceRoot.TrySetResult(ctx.WorkspaceRoot);
+            await Task.Delay(Timeout.Infinite, ct);
+            return Pia.Services.Interfaces.PlanResult.Fallback;
+        }
+
+        public Task<Pia.Services.Interfaces.PlanResult> ReplanAsync(
+            Pia.Services.RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(Pia.Services.Interfaces.PlanResult.Fallback);
+    }
+
+    /// <summary>Drives a real interactive Planned launch with a working directory set, and hands back the
+    /// workspace root that reached the run context (null ⇒ the run is not isolated).</summary>
+    private async Task<(Guid RunId, string? CapturedRoot)> StartIsolatedPlannedTurnAsync(
+        Pia.Services.Interfaces.IRunWorkspaceService workspaces)
+    {
+        var planner = new CapturingPlanner();
+        var sut = CreateIsolatingSut(workspaces, planner);
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.SetWorkingDirectory("sub");
+
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>())
+            .Returns(new AiProvider { Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new AgentRun
+            {
+                Id = runId,
+                ChatId = ci.Arg<AgentRunCreateRequest>().ChatId,
+                RunShape = RunShape.Planned,
+                State = AgentRunState.Planning,
+            });
+
+        await sut.StartPlannedTurnAsync(session, "do the thing");
+
+        // The dispatch is fire-and-forget (posted onto the inline context), so bound the wait rather than
+        // assuming it already landed.
+        var captured = planner.WorkspaceRoot.Task;
+        var settled = await Task.WhenAny(captured, Task.Delay(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken)) == captured;
+        Assert.True(settled, "the run never reached the planner: the turn did not start");
+
+        session.Cancel(); // release the parked planner so no dispatch outlives the fact
+        return (runId, await captured);
+    }
+
+    /// <summary>
+    /// REGRESSION, and the seam nothing else can see: the manager PROVISIONS a workspace for an interactive
+    /// Planned run, asks for it with the CHAT's working subpath (B6 — the workspace stands in for
+    /// <c>&lt;folder&gt;\sub</c>, which is why the steps must not narrow again), and hands the resulting root
+    /// to the live executor. Drop the provisioning call and nothing is provisioned; drop the
+    /// <c>workspaceRoot</c> argument to <c>new LiveTurnExecutor(...)</c> — which compiles, it is trailing and
+    /// defaulted — and the run context comes back with a null root, i.e. every interactive step ships
+    /// un-isolated.
+    /// </summary>
+    [Fact]
+    public async Task StartPlannedTurn_ProvisionsAWorkspaceForTheChatSubpath_AndHandsItsRootToTheExecutor()
+    {
+        var runsBase = Path.Combine(Path.GetTempPath(), "PiaMgrWs_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(runsBase);
+        try
+        {
+            var workspaces = new Pia.Tests.Services.FakeRunWorkspaceService(runsBase);
+
+            var (runId, capturedRoot) = await StartIsolatedPlannedTurnAsync(workspaces);
+
+            Assert.Equal(runId, Assert.Single(workspaces.Provisioned));
+            Assert.Equal("sub", Assert.Single(workspaces.ProvisionedSubpaths));
+            Assert.Equal(workspaces.RootFor(runId), capturedRoot);
+        }
+        finally
+        {
+            try { Directory.Delete(runsBase, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// GUARD: provisioning is BOOKKEEPING with a user watching (guardrail 1). A provisioner that degrades to
+    /// "no isolation" (null) or that throws must leave the turn running on the pre-Batch-06 path — writing
+    /// straight into the assistant files folder — never refuse to start it.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartPlannedTurn_WhenProvisioningDegradesOrThrows_TheTurnStillStarts(bool provisionerThrows)
+    {
+        var runsBase = Path.Combine(Path.GetTempPath(), "PiaMgrWs_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(runsBase);
+        try
+        {
+            Pia.Services.Interfaces.IRunWorkspaceService workspaces;
+            if (provisionerThrows)
+            {
+                var throwing = Substitute.For<Pia.Services.Interfaces.IRunWorkspaceService>();
+                throwing.ProvisionAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                    .Returns<Task<Pia.Services.Interfaces.RunWorkspace?>>(_ => throw new IOException("disk full"));
+                workspaces = throwing;
+            }
+            else
+            {
+                workspaces = new Pia.Tests.Services.FakeRunWorkspaceService(runsBase) { ProvisionSucceeds = false };
+            }
+
+            var (_, capturedRoot) = await StartIsolatedPlannedTurnAsync(workspaces);
+
+            // Reaching the planner at all is the "the turn started" half; the null root is the "no isolation"
+            // half, i.e. exactly today's behaviour.
+            Assert.Null(capturedRoot);
+        }
+        finally
+        {
+            try { Directory.Delete(runsBase, recursive: true); } catch { /* best effort */ }
+        }
     }
 }

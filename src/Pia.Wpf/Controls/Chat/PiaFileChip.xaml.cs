@@ -79,9 +79,19 @@ public partial class PiaFileChip : UserControl
         VsCodeIcon = ShowVsCodeButton ? VsCodeLauncher.TryGetIcon() : null;
     }
 
-    private void OnOpenClick(object sender, RoutedEventArgs e) => ShellLauncher.OpenFile(AbsolutePath);
+    // All three open paths resolve the recorded path first (Batch 06 B14 / plan D8): a chip built during an
+    // isolated agent run points into runs\<runId>, and that directory is gone once the run's work is promoted
+    // back into the assistant files folder. Resolved AT CLICK TIME, because the answer genuinely changes
+    // between "during the run" (the workspace copy) and "after promotion" (the promoted copy) — a bound
+    // property could only ever hold one of them. Deliberately not inside ShellLauncher/VsCodeLauncher: the
+    // other callers open export paths that are never under the runs root, and those helpers keep their
+    // no-state-no-logging contract.
+    private void OnOpenClick(object sender, RoutedEventArgs e)
+        => ShellLauncher.OpenFile(RunWorkspaceRedirects.Resolve(AbsolutePath));
 
-    private void OnRevealClick(object sender, RoutedEventArgs e) => ShellLauncher.RevealInExplorer(AbsolutePath);
+    private void OnRevealClick(object sender, RoutedEventArgs e)
+        => ShellLauncher.RevealInExplorer(RunWorkspaceRedirects.Resolve(AbsolutePath));
 
-    private void OnOpenInVsCodeClick(object sender, RoutedEventArgs e) => VsCodeLauncher.Open(AbsolutePath);
+    private void OnOpenInVsCodeClick(object sender, RoutedEventArgs e)
+        => VsCodeLauncher.Open(RunWorkspaceRedirects.Resolve(AbsolutePath));
 }

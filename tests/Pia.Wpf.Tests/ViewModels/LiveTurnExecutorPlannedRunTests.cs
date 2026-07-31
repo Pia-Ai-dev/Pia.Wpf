@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
@@ -22,7 +23,13 @@ namespace Pia.Tests.ViewModels;
 /// removed at run start, <c>ChatSession.Cancel()</c> mid-step really stops the in-flight step via the
 /// linked CTS (R13), and <c>EndRunAsync</c> settles the terminal <see cref="ChatState"/> + raises
 /// <see cref="ChatSession.TurnCompleted"/> — including NOT settling a Failed run as Completed (§13.5.2).
+/// <para>
+/// Batch 06 G5 added the isolation facts at the bottom, which drive the process-global
+/// <see cref="RunWorkspaceRedirects"/> registry through a real promotion — hence the shared collection with
+/// <c>RunWorkspaceRedirectsTests</c>, whose cap fact deliberately overflows it.
+/// </para>
 /// </summary>
+[Collection("RunWorkspaceRedirectsStatic")]
 public sealed class LiveTurnExecutorPlannedRunTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -143,9 +150,11 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     /// <summary>Sets a plain UI SynchronizationContext, constructs the live executor bound to the session, restores.</summary>
+    /// <param name="workspaceRoot">Batch 06 D4's isolated workspace root; null (the default) keeps every
+    /// pre-existing fact in this file on the un-isolated path it was written for.</param>
     private LiveTurnExecutor BuildLiveExecutor(
         ChatSession session, Func<ChatSession, bool> isActive, RunAutonomyPolicy? policy = null,
-        bool supportsTools = false)
+        bool supportsTools = false, string? workspaceRoot = null)
     {
         var prev = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
@@ -157,7 +166,9 @@ public sealed class LiveTurnExecutorPlannedRunTests
                 Provider(),
                 new AssistantTurnSetup("system", null, supportsTools, false),
                 tokenizationEnabled: false,
-                policy);
+                policy,
+                timeline: null,
+                workspaceRoot: workspaceRoot);
         }
         finally
         {
@@ -490,5 +501,217 @@ public sealed class LiveTurnExecutorPlannedRunTests
         await live.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
 
         Assert.Equal(workingDirectory, ctx.WorkingSubpath);
+        // Un-isolated (no workspaceRoot argument), which is what keeps the assignment above unchanged.
+        Assert.Null(ctx.WorkspaceRoot);
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Batch 06 G5 / plan D4 + D8: interactive isolation end to end, through the REAL provisioner.
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A real <see cref="RunWorkspaceService"/> (copy mode — git reported absent) over a real
+    /// <see cref="FilesToolHandler"/>, provisioning from <c>&lt;filesFolder&gt;\sub</c> the way an interactive
+    /// chat with a working directory does. Rooted at the REAL <see cref="AssistantWorkspace.RunsRoot"/> rather
+    /// than a temp runs base on purpose: <c>RunWorkspaceRedirects.Record</c>'s containment gate refuses
+    /// anything else, so a temp-rooted fixture would prove the promotion and silently skip the chip half
+    /// (plan R1's failure mode). Every directory it creates is Guid-named and removed in
+    /// <see cref="Dispose"/>.
+    /// </summary>
+    private sealed class WorkspaceFixture : IDisposable
+    {
+        private readonly string _dir;
+        private readonly List<Guid> _runIds = [];
+
+        public string FilesFolder { get; }
+
+        /// <summary>The chat's working directory, i.e. the root the workspace is provisioned FROM and the
+        /// destination a promotion writes back to (B9).</summary>
+        public string WorkingSub { get; }
+
+        public RunWorkspaceService Workspaces { get; }
+
+        public FilesToolHandler Files { get; }
+
+        public WorkspaceFixture()
+        {
+            _dir = Path.Combine(Path.GetTempPath(), "PiaLiveWs_" + Guid.NewGuid().ToString("N"));
+            FilesFolder = Path.Combine(_dir, "files");
+            WorkingSub = Path.Combine(FilesFolder, "sub");
+            Directory.CreateDirectory(WorkingSub);
+
+            var settings = Substitute.For<ISettingsService>();
+            settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = FilesFolder });
+
+            // Git absent ⇒ copy mode, which is the only mode that promotes FILES and therefore the only one
+            // that records a chip redirect (worktree mode's deliverable is a branch, plan D5b).
+            Workspaces = new RunWorkspaceService(
+                new FakeGitProcessRunner { IsGitInstalled = false }, settings,
+                NullLogger<RunWorkspaceService>.Instance);
+            Files = new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
+        }
+
+        public async Task<RunWorkspace> ProvisionAsync(Guid runId, CancellationToken ct)
+        {
+            _runIds.Add(runId);
+            var workspace = await Workspaces.ProvisionAsync(runId, "sub", ct);
+            Assert.NotNull(workspace);
+            Assert.Equal(RunWorkspaceMode.Copy, workspace!.Mode);
+            return workspace;
+        }
+
+        /// <summary>
+        /// Moves the recorded provisioning instant back, so the promote set cannot depend on the clock. B7
+        /// decides the set by <c>mtime &gt; provisionedAtUtc</c>, and a file the run writes milliseconds after
+        /// provisioning can tie that timestamp — which would make the fact below flake rather than fail.
+        /// WHAT the rule promotes is <c>RunWorkspacePromotionTests</c>' subject, not this one's.
+        /// </summary>
+        public void BackdateProvisioning(Guid runId)
+        {
+            var path = Path.Combine(AssistantWorkspace.RunsRoot, runId + ".workspace.json");
+            var doc = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
+            doc["provisionedAtUtc"] = DateTime.UtcNow.AddMinutes(-5);
+            File.WriteAllText(path, doc.ToJsonString());
+        }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+            foreach (var runId in _runIds)
+            {
+                try { Directory.Delete(Path.Combine(AssistantWorkspace.RunsRoot, runId.ToString()), recursive: true); }
+                catch { /* best effort */ }
+                try { File.Delete(Path.Combine(AssistantWorkspace.RunsRoot, runId + ".workspace.json")); }
+                catch { /* best effort */ }
+            }
+        }
+    }
+
+    /// <summary>
+    /// One step that writes <c>a.md</c> through the REAL file tools, from inside the step's own logical async
+    /// flow — the only place the per-step ambient is set. Records the ambient it saw, because the
+    /// one-narrowing rule (B6) is otherwise invisible in the file's location:
+    /// <c>ResolveEffectiveRoot</c> falls back to the base root when a subpath does not resolve, so a wrongly
+    /// forwarded working subpath would still land the file in the workspace root.
+    /// </summary>
+    private static async IAsyncEnumerable<ChatStreamItem> WriteThenReply(
+        IFilesToolHandler files, List<TaskContext?> seen, [EnumeratorCancellation] CancellationToken ct)
+    {
+        seen.Add(TaskAmbient.Current);
+
+        var call = new FunctionCallContent("w1", "write_file",
+            new Dictionary<string, object?> { ["path"] = "a.md", ["content"] = "step output" });
+        var (_, pending) = await files.HandleToolCallAsync(call, ct);
+        if (pending is not null)
+            await pending.Execute();
+
+        yield return new TextDelta("wrote it");
+        yield return new Finished(null, "m");
+    }
+
+    /// <summary>Bounds an end-to-end run the way this file's policy-gate fact does: a regression that PROMPTS
+    /// would otherwise hang the suite instead of failing it.</summary>
+    private static async Task DrainAsync(Task runTask, string because)
+    {
+        var settled = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken)) == runTask;
+        Assert.True(settled, because);
+        await runTask;
+    }
+
+    /// <summary>
+    /// REGRESSION for <c>LiveTurnExecutor.BuildSpec</c>'s <c>WorkspaceRoot:</c> argument and for
+    /// <c>BeginRunAsync</c>'s <c>ctx.WorkspaceRoot</c> assignment — the two lines that turn a provisioned
+    /// directory into an actually-isolated interactive run. Drop either and the step's <c>write_file</c> lands
+    /// in the user's assistant files folder instead. No workspace service is handed to the orchestrator here,
+    /// so nothing promotes and the assertion is about where the bytes WENT.
+    /// </summary>
+    [Fact]
+    public async Task PlannedRun_WritesIntoItsWorkspace_NotTheAssistantFolder()
+    {
+        using var ws = new WorkspaceFixture();
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var workspace = await ws.ProvisionAsync(run.Id, TestContext.Current.CancellationToken);
+
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1"), false));
+
+        var session = CreateSession();
+        session.SetWorkingDirectory("sub");
+        SeedSessionForPlannedRun(session, "goal");
+
+        var seen = new List<TaskContext?>();
+        ReturnsStream(ct => WriteThenReply(ws.Files, seen, ct));
+
+        var live = BuildLiveExecutor(session, _ => false, workspaceRoot: workspace.Root);
+        var ctx = new RunContext("goal", RunProfile.Interactive);
+        await live.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
+        await DrainAsync(
+            orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token),
+            "the run never settled: a step blocked instead of writing into its workspace");
+
+        // The run context the verifier reads carries the root, and the chat's subpath is NOT re-applied on top
+        // of it (B6: the workspace root already IS <filesFolder>\sub).
+        Assert.Equal(workspace.Root, ctx.WorkspaceRoot);
+        Assert.Null(ctx.WorkingSubpath);
+
+        var ambient = Assert.Single(seen);
+        Assert.NotNull(ambient);
+        Assert.Equal(workspace.Root, ambient!.Value.WorkspaceRoot);
+        Assert.Null(ambient.Value.WorkingSubpath);
+
+        Assert.True(File.Exists(Path.Combine(workspace.Root, "a.md")));
+        Assert.False(File.Exists(Path.Combine(ws.WorkingSub, "a.md")));
+        Assert.False(File.Exists(Path.Combine(ws.FilesFolder, "a.md")));
+    }
+
+    /// <summary>
+    /// REGRESSION, and the EXECUTOR-PARITY fact (§11): promotion lives in the executor-agnostic orchestrator
+    /// and keys off <c>ctx.WorkspaceRoot</c>, so a clean interactive run promotes exactly like a headless one
+    /// (T-G4-8's live twin). It also closes plan D8's second phase at the real shape: the chip the step built
+    /// points into a workspace that no longer exists by the time a user could click it, and
+    /// <see cref="RunWorkspaceRedirects.Resolve"/> is what still opens the right file.
+    /// </summary>
+    [Fact]
+    public async Task PlannedRun_PromotesOnCleanCompletion_AndItsChipResolvesToThePromotedFile()
+    {
+        using var ws = new WorkspaceFixture();
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var workspace = await ws.ProvisionAsync(run.Id, TestContext.Current.CancellationToken);
+        ws.BackdateProvisioning(run.Id);
+
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1"), false));
+
+        var session = CreateSession();
+        session.SetWorkingDirectory("sub");
+        SeedSessionForPlannedRun(session, "goal");
+
+        var seen = new List<TaskContext?>();
+        ReturnsStream(ct => WriteThenReply(ws.Files, seen, ct));
+
+        var live = BuildLiveExecutor(session, _ => false, workspaceRoot: workspace.Root);
+        var orchestrator = new AgentRunOrchestrator(
+            h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance, ws.Workspaces);
+
+        await DrainAsync(
+            orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token),
+            "the run never settled: a step blocked instead of writing into its workspace");
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+
+        // Canonical spelling on both sides: the destination the metadata recorded is real-path resolved, and
+        // Path.GetTempPath() can hand back an 8.3 component.
+        var promoted = Path.Combine(SafeFolderPath.Canonicalize(ws.WorkingSub), "a.md");
+        Assert.True(File.Exists(promoted), "a clean interactive run's work was not promoted out of its workspace");
+        Assert.False(Directory.Exists(workspace.Root), "the workspace was not torn down after promotion");
+
+        var chip = Assert.Single(session.Messages.Last(m => !m.IsUser).FileRefs);
+        Assert.Equal(Path.Combine(workspace.Root, "a.md"), chip.AbsolutePath, ignoreCase: true);
+        Assert.Equal(promoted, RunWorkspaceRedirects.Resolve(chip.AbsolutePath), ignoreCase: true);
     }
 }

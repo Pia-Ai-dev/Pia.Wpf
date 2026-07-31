@@ -23,12 +23,18 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     private readonly bool _tokenizationEnabled;
     private readonly RunAutonomyPolicy? _policy;
     private readonly IAgentTimelineService? _timeline;
+    private readonly string? _workspaceRoot;
 
     /// <param name="policy">The run's autonomy policy (Batch 04); null ⇒ no per-run policy, today's
     /// behaviour. Trailing and defaulted on purpose: this type is hand-constructed with a POSITIONAL argument
     /// list, so a required parameter would force edits into every existing call site and test.</param>
     /// <param name="timeline">The audit-timeline store (Batch 03); null ⇒ this run records nothing. Trailing
     /// and defaulted for the same reason as <paramref name="policy"/>.</param>
+    /// <param name="workspaceRoot">The run's isolated workspace root (Batch 06 D4), as provisioned by
+    /// <c>ChatSessionManager</c>; null ⇒ no isolation, i.e. the steps write into the assistant files folder
+    /// exactly as they did before Batch 06 (the degrade every provisioning fault takes). Non-null confines
+    /// every read, write, delete, list and search this run performs to that directory and is the normal case.
+    /// Trailing and defaulted for the same reason as <paramref name="policy"/>.</param>
     public LiveTurnExecutor(
         ChatSession session,
         Func<ChatSession, bool> isActive,
@@ -37,7 +43,8 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         AssistantTurnSetup turnSetup,
         bool tokenizationEnabled,
         RunAutonomyPolicy? policy = null,
-        IAgentTimelineService? timeline = null)
+        IAgentTimelineService? timeline = null,
+        string? workspaceRoot = null)
     {
         _session = session;
         _ui = SynchronizationContext.Current
@@ -49,6 +56,7 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         _tokenizationEnabled = tokenizationEnabled;
         _policy = policy;
         _timeline = timeline;
+        _workspaceRoot = workspaceRoot;
     }
 
     public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
@@ -59,11 +67,21 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             var placeholder = _session.Messages.LastOrDefault(m => !m.IsUser && m.IsStreaming);
             if (placeholder is not null)
                 _session.Messages.Remove(placeholder);
+            // Batch 06 D4: an isolated interactive run's steps write here, not into the assistant files
+            // folder. This assignment is also what makes PROMOTION executor-agnostic — the orchestrator's
+            // SafePromote early-returns on an empty ctx.WorkspaceRoot, so without this line an interactive
+            // run would isolate and then never promote.
+            ctx.WorkspaceRoot = _workspaceRoot;
+
             // The chat's working subpath is what narrows this run's file sandbox (ChatSession passes it as
             // TaskContext.WorkingSubpath per step), but that ambient never reaches the orchestrator thread —
             // hand it to the context here so the verifier's artifact probe stats the root the steps really
             // wrote into. Read on the UI thread, where WorkingDirectory is owned.
-            ctx.WorkingSubpath = _session.WorkingDirectory;
+            // An isolated run's workspace root IS the already-narrowed source root (B6: it was provisioned
+            // FROM <folder>\<subpath>), so narrowing a SECOND time would probe <runRoot>\<subpath>, which
+            // does not exist. Stated as an explicit assignment rather than left to ResolveEffectiveRoot's
+            // fail-safe fallback — the same shape HeadlessTurnExecutor uses at its own BeginRunAsync.
+            ctx.WorkingSubpath = _workspaceRoot is null ? _session.WorkingDirectory : null;
             // The session is already Running (the manager flipped it before dispatch); stays Running
             // across all steps (§16 R12).
             return Task.CompletedTask;
@@ -151,7 +169,12 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             // reason about a null service. The SCOPE is the only carrier of the step id — a second
             // spec-level StepId field existed here and was read by nobody, so a later executor could have set
             // it, built a run-level scope, and got NULL step attribution with nothing failing.
-            Timeline: _timeline is null ? null : new AgentTimelineScope(_timeline, run.Id, stepId));
+            Timeline: _timeline is null ? null : new AgentTimelineScope(_timeline, run.Id, stepId),
+            // Batch 06 D4. This is the ONLY producer of StepTurnSpec.WorkspaceRoot, and it is what actually
+            // isolates an interactive step: ChatSession turns it into the ambient TaskContext the file tools
+            // read. Trailing and defaulted on the record, so deleting this line COMPILES and silently
+            // un-isolates every interactive run — keep it while rewriting the members around it.
+            WorkspaceRoot: _workspaceRoot);
 
     /// <summary>Marshals <paramref name="work"/> onto the captured UI context and bridges it back to an awaitable.</summary>
     private Task PostAsync(Func<Task> work) => PostAsync(async () => { await work(); return true; });

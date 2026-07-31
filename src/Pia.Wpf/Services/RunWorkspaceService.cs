@@ -332,6 +332,13 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             }
         }
 
+        // B14 / plan D8, and it belongs HERE rather than at the caller: the open-file chips an interactive
+        // run built point into the workspace, and the caller tears that workspace down the moment this
+        // returns. Recorded for the whole workspace, not per promoted file — a byte-identical SKIPPED file is
+        // also at the destination, and its chip has to keep opening too. Worktree mode never reaches this
+        // method, which is correct: there the file is on a branch, not at a path.
+        RunWorkspaceRedirects.Record(runRoot, destination);
+
         // Counts, ids and enum values only: this line lands in a support-attachable release log and there is
         // no SensitiveError helper, so a path never appears above Debug/Warning-sensitive severity.
         _logger.LogInformation(

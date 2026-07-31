@@ -47,6 +47,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly IWindowManagerService _windowManager;
     private readonly IExecutingRunStore _executingRuns;
     private readonly IAgentTimelineService? _agentTimelineService;
+    private readonly IRunWorkspaceService? _runWorkspaces;
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -119,7 +120,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Batch 03: handed to LiveTurnExecutor so an interactive Planned run records its tool decisions.
         // Trailing and defaulted so the one hand-constructed test site keeps compiling unchanged; the
         // container resolves it because it is registered.
-        IAgentTimelineService? agentTimelineService = null)
+        IAgentTimelineService? agentTimelineService = null,
+        // Batch 06 D4: provisions the isolated workspace an interactive Planned run writes into. Trailing and
+        // defaulted for the same reason as agentTimelineService — null means "no isolation", which is the
+        // pre-Batch-06 behaviour, not a broken manager.
+        IRunWorkspaceService? workspaces = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -145,6 +150,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _windowManager = windowManager;
         _executingRuns = executingRuns;
         _agentTimelineService = agentTimelineService;
+        _runWorkspaces = workspaces;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
 
@@ -781,13 +787,46 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // (§15.1). Raised on the UI thread (this branch runs on it), so the VM handler is safe.
             session.SetActiveRun(run.Id);
 
+            // Batch 06 D4: an interactive Planned run gets the same workspace lifecycle as an unattended one.
+            // Ordered AFTER SetActiveRun deliberately — copy mode copies the source tree in (bounded, but up
+            // to 2000 files), and doing that with the run panel already on screen is the difference between a
+            // visible "starting" state and a dead Send button. The one `settings` instance read above is the
+            // only settings read on this path (04 D11); ProvisionAsync resolves the folder itself.
+            //
+            // Null means "no isolation", i.e. exactly the pre-Batch-06 behaviour: the steps write straight
+            // into the assistant files folder. ProvisionAsync never throws by contract, and the try/catch is
+            // still here because this is BOOKKEEPING with a user watching (guardrail 1) — a workspace problem
+            // must never be the reason a turn refuses to start.
+            //
+            // Teardown is NOT wired here and does not need to be: a clean run is promoted and torn down by
+            // the orchestrator's terminal path, a failed/cancelled one keeps its workspace for the panel's
+            // publish offer, and the startup sweep keys purely on <runsBase>\<runId> plus the run row — it
+            // never consults the launcher's in-memory per-chat map, so an interactive run's leftovers are
+            // collected by the same predicate as a headless one's.
+            string? workspaceRoot = null;
+            if (_runWorkspaces is not null)
+            {
+                try
+                {
+                    // session.Cts is live (BeginTurn created it), so Stop during a long copy-in aborts it and
+                    // the run — which the orchestrator is about to cancel through the same token anyway.
+                    var workspace = await _runWorkspaces
+                        .ProvisionAsync(run.Id, session.WorkingDirectory, session.Cts?.Token ?? CancellationToken.None);
+                    workspaceRoot = workspace?.Root;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Interactive run {RunId} workspace provisioning failed; the run is not isolated", run.Id);
+                }
+            }
+
             // BeginTurn() above already created session.Cts; the Planned branch does NOT call BeginTurn
             // per step (R13). The orchestrator links the run CTS from session.Cts.Token below, so
             // ChatSession.Cancel() propagates to the run + in-flight step. Constructed on the UI thread
             // so the LiveTurnExecutor captures the UI SynchronizationContext.
             var live = new LiveTurnExecutor(session, IsSessionActive,
                 PersonaAttribution.From(persona), request.Provider, request.TurnSetup, request.TokenizationEnabled,
-                policy, _agentTimelineService);
+                policy, _agentTimelineService, workspaceRoot);
 
             // Budget envelope from user settings (clamped in FromBudget); defaults match RunProfile.Interactive.
             var profile = RunProfile.FromBudget(settings.AgentMaxSteps, settings.AgentMaxReplans, settings.AgentWallClockMinutes);

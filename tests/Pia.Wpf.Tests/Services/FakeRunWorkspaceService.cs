@@ -23,6 +23,11 @@ internal sealed class FakeRunWorkspaceService : IRunWorkspaceService
     public string? BranchName { get; set; }
 
     public List<Guid> Provisioned { get; } = [];
+
+    /// <summary>The working subpath each provisioning was asked for, in order. The interactive path passes the
+    /// chat's working directory (Batch 06 D4/B6) and an unattended one passes null, and nothing else in this
+    /// fake distinguishes those two callers.</summary>
+    public List<string?> ProvisionedSubpaths { get; } = [];
     public List<Guid> TornDown { get; } = [];
     public List<Guid> Promoted { get; } = [];
     public int OrphanSweeps { get; private set; }
@@ -63,6 +68,7 @@ internal sealed class FakeRunWorkspaceService : IRunWorkspaceService
     public Task<RunWorkspace?> ProvisionAsync(Guid runId, string? workingSubpath, CancellationToken ct)
     {
         Provisioned.Add(runId);
+        ProvisionedSubpaths.Add(workingSubpath);
         if (!ProvisionSucceeds)
             return Task.FromResult<RunWorkspace?>(null);
 

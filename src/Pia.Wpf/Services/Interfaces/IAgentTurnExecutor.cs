@@ -65,7 +65,26 @@ public sealed record StepTurnSpec(
     /// built a run-level scope would have persisted <c>StepId = NULL</c> for every row with nothing failing.
     /// </para>
     /// </summary>
-    AgentTimelineScope? Timeline = null);
+    AgentTimelineScope? Timeline = null,
+
+    /// <summary>
+    /// The run's isolated workspace root (Batch 06 D4), or null ⇒ no isolation, i.e. this step's file tools
+    /// resolve against the interactive assistant files folder exactly as they did before Batch 06.
+    /// <para>
+    /// WHAT IT IS FOR: <c>ChatSession.RunStepTurnAsync</c> hands this to <c>TaskContext.WorkspaceRoot</c>, and
+    /// that ambient is the ONLY thing that confines an interactive <see cref="RunShape.Planned"/> run's
+    /// reads and writes to <c>runs\&lt;runId&gt;</c>. <c>LiveTurnExecutor.BuildSpec</c> is its only producer:
+    /// this member is trailing and defaulted (the precedent <see cref="Policy"/> and <see cref="Timeline"/>
+    /// set, for the same reason — both construction sites use named arguments), so DROPPING it from
+    /// <c>BuildSpec</c> still compiles and silently un-isolates every interactive step. Whoever rewrites the
+    /// members around it must keep passing it.
+    /// </para>
+    /// <para>
+    /// When it is set, the step's ambient working subpath is null: the workspace root already IS the narrowed
+    /// root (B6), so narrowing a second time would probe <c>&lt;runRoot&gt;\&lt;subpath&gt;</c>.
+    /// </para>
+    /// </summary>
+    string? WorkspaceRoot = null);
 
 /// <summary>
 /// The outcome of one act step-turn. Exceptions inside a step become

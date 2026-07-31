@@ -659,13 +659,24 @@ public sealed class ChatSession : IDisposable
         var previousAmbient = TokenMapAmbient.Current;
         TokenMapAmbient.Current = TokenMap;
         var previousTask = TaskAmbient.Current;
-        TaskAmbient.Current = new TaskContext(spec.RunId, WorkingDirectory, touch =>
-            assistantMessage.AddOrUpgradeFileRef(new FileRef(touch.AbsolutePath, touch.Kind switch
-            {
-                FileTouchKind.Created => FileRefKind.Created,
-                FileTouchKind.Updated => FileRefKind.Updated,
-                _ => FileRefKind.Read,
-            })));
+        TaskAmbient.Current = new TaskContext(
+            spec.RunId,
+            // Same one-narrowing rule as the run context (Batch 06 B6): an isolated run's workspace root
+            // already IS the narrowed root, so passing the subpath too would probe <runRoot>\<subpath>. The
+            // ORDINARY interactive turn (RunTurnAsync) is a separate construction and keeps passing
+            // WorkingDirectory unconditionally — only a Planned run's steps isolate.
+            spec.WorkspaceRoot is null ? WorkingDirectory : null,
+            touch =>
+                assistantMessage.AddOrUpgradeFileRef(new FileRef(touch.AbsolutePath, touch.Kind switch
+                {
+                    FileTouchKind.Created => FileRefKind.Created,
+                    FileTouchKind.Updated => FileRefKind.Updated,
+                    _ => FileRefKind.Read,
+                })),
+            // Batch 06 D4: confines this step's file tools to the run's workspace. The chip built just above
+            // therefore carries a path inside runs\<runId>, which is why opening one resolves through
+            // RunWorkspaceRedirects once the run's work is promoted out (plan D8).
+            spec.WorkspaceRoot);
 
         var succeeded = false;
         var cancelled = false;
