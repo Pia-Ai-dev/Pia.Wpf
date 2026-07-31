@@ -165,8 +165,9 @@ limit. The exact total is **not** recoverable from git and is not asserted here.
 0 errors under `-t:Rebuild` in Debug *and* Release with 4 genuine `CoreCompile` invocations each, and `failed: 0` on
 the suite (2697 / 0 / 1 skipped, measured twice on the finished tree — see the snapshot addendum for the run that
 cost the known intermittent). It does **not** mean smoked. **The manual Windows smoke round in the rank table below
-is what Phase 3 has not had**, it is still Rank 1, and Phase 3 lengthened it by **eleven** items while shortening
-nothing — nine from its own plan's §8 and two the fix pass added, including the three that only a real git
+is what Phase 3 has not had**, it is still Rank 1, and Phase 3 lengthened it by **fourteen** items while shortening
+nothing — nine from its own plan's §8, two the fix pass added and three the consolidation pass of 2026-08-01 added,
+including the four that only a real git
 repository can exercise. A green unit suite is not a smoke test; that
 sentence has been true on this branch since Batch 12 and Phase 3 does not retire it.
 
@@ -548,7 +549,7 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by ELEVEN items and shortened nothing** — nine from its own plan's §8 and two more its fix pass added — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by FOURTEEN items and shortened nothing** — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
 | 2 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
 | 3 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
@@ -1492,13 +1493,19 @@ The declined text stands with its outcome under it, because "declined, then buil
   5s. THE UNCONDITIONAL PRUNE IS UNCHANGED and is now asserted by a fact, so folding it into a success arm goes
   red — the warning above is still the rule, it just has a test behind it.**
 
-**What the consolidation pass opened — two small items, both consequences of the fix.** (i) A worktree metadata
-document written before `165486e` has no `branchCommittedAtUtc` and therefore reads as "not committed", so a
-pre-existing stub loses its branch line and a pre-existing live worktree workspace gains a retry offer. Accepted
-rather than migrated: the branch is unpushed and worktree mode has never had its manual round, so the population is
-the owner's machine at most, and the degrade withholds a claim rather than making one. (ii) The 5-second unwind
-bound is uncovered by tests — the constant is private and driving it would mean holding a real dispatch for its
-whole duration; on a timeout the behaviour is exactly the pre-pass behaviour.
+**What the consolidation pass opened — three items, all consequences of the fix rather than of a finding.** (i) A
+worktree metadata document written before `165486e` has no `branchCommittedAtUtc` and therefore reads as "not
+committed", so a pre-existing stub loses its branch line and a pre-existing live worktree workspace gains a retry
+offer. Accepted rather than migrated: the branch is unpushed and worktree mode has never had its manual round, so the
+population is the owner's machine at most, and the degrade withholds a claim rather than making one. (ii) The
+5-second unwind bound is uncovered by tests — the constant is private and driving it would mean holding a real
+dispatch for its whole duration; on a timeout the behaviour is exactly the pre-pass behaviour. (iii) **The worktree
+LEFTOVER arm still has no UI path, and this pass's own principle points the other way**: a commit that succeeded
+while the `--ignored` probe found work outside it stamps the commit *and* retains the workspace, so the branch line
+renders (correctly) and no offer points at the ignored files, which age out in seven days. Deliberately not built —
+a publish there could only re-run a commit that already succeeded, and `add -A` cannot take a path the user's own
+`.gitignore` excludes, which is why the arm exists at all. A real fix means deciding what the app should DO with
+ignored run output, which is a design question. Recorded because the sibling arm just got the opposite answer.
 
 **One pre-existing flake was identified and fixed on the way, which is worth recording because it was hunted.** The
 single unnamed failure Phase 3's fix pass logged and could never reproduce is almost certainly

@@ -169,6 +169,20 @@ Two, both small, both consequences of the fix rather than of the finding.
    holding a real dispatch for its whole duration; the fact next to it drives the *await*, not the bound. On a
    timeout the teardown proceeds exactly as it did before this pass and a failed removal self-heals through the
    startup sweep, so the uncovered arm is the pre-existing behaviour.
+3. **The worktree LEFTOVER arm still has no UI path, and this pass's own principle points the other way.** When
+   the run-branch commit SUCCEEDS but the post-commit `status --porcelain --untracked-files=all --ignored` probe
+   finds work outside it — an ignored build artefact the run produced is the realistic case —
+   `CommitToRunBranchAsync` stamps `branchCommittedAtUtc` *and* returns `RetainWorkspace: true`. So the describe
+   sees `committed == true` and answers `HasUnpublishedFiles: !committed` = **false**: the branch line renders
+   (correctly — the branch really does carry the commit), the workspace is deliberately retained, and there is no
+   offer pointing at the ignored files, which then age out on the seven-day window. Not a regression (the
+   pre-pass behaviour was identical) and **deliberately not built**: the only thing a publish could do there is
+   re-run a commit that already succeeded, so it would produce `Run_Publish_Done: 0` or the new
+   `Run_Publish_Failed` line and no file would move — `add -A` cannot take a path the user's own `.gitignore`
+   excludes, which is exactly why the arm exists. A real fix means deciding what the app should DO with ignored
+   run output (offer to copy it out of the worktree? name the paths?), which is a design question and not a
+   guard. Recorded because item 1 just established the opposite answer for its sibling arm, and the asymmetry
+   should be a decision rather than an oversight.
 
 ## History defects in the Phase 3 commit record
 
