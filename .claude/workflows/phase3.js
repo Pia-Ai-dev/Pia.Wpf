@@ -15,6 +15,29 @@ const REPO = 'C:/projects/Pia.Wpf'
 const PLAN = 'docs/superpowers/specs/agent-roadmap/phase3-workflow-plan.md'
 const SPEC06 = 'docs/superpowers/specs/agent-roadmap/06-run-workspace-isolation.impl.md'
 const SPEC07 = 'docs/superpowers/specs/agent-roadmap/07-subagents-multipersona.impl.md'
+const FINDINGS06 = 'docs/superpowers/specs/agent-roadmap/phase3-batch06-review-findings.md'
+
+// The Batch 06 review filed 14 findings and got exactly ONE verdict back: 11 skeptics died on a usage limit and
+// 2 were never sent (the fan-out was capped at 12). A dead verifier returns nothing, and nothing is not a
+// refutation — so these 13 are UNKNOWN, not dismissed. They are recovered verbatim into FINDINGS06 and injected
+// into this run's verify fan-out AHEAD of the fresh findings, so the cap can never drop them again. The one that
+// did get a verdict (the French "branch"/"branche" string) was CONFIRMED and is already fixed in 914730d, so it
+// is deliberately absent from this list.
+const INHERITED = [
+  { key: 'A1', severity: 'must-fix', file: 'src/Pia.Wpf/Services/RunWorkspaceService.cs', line: 219, title: "Worktree mode destroys the run's output at teardown — nothing commits it" },
+  { key: 'B2', severity: 'must-fix', file: 'src/Pia.Wpf/Services/AgentRunOrchestrator.cs', line: 470, title: 'Nothing commits the run\'s work to the run branch, so worktree mode force-deletes the deliverable' },
+  { key: 'B1', severity: 'must-fix', file: 'src/Pia.Wpf/Services/RunWorkspaceService.cs', line: 390, title: "D5b's \"output is on branch X\" line can never render for a successful worktree run" },
+  { key: 'A2', severity: 'should-fix', file: 'src/Pia.Wpf/ViewModels/RunProgressViewModel.cs', line: 245, title: "D5b's branch line reads metadata that teardown deleted first" },
+  { key: 'A3', severity: 'should-fix', file: 'src/Pia.Wpf/Services/StepPersonaResolver.cs', line: 114, title: "StepPersonaResolver's persona lookup is unguarded, so a persona-store fault fails the whole run" },
+  { key: 'A4', severity: 'should-fix', file: 'src/Pia.Wpf/Services/RunWorkspaceService.cs', line: 417, title: 'TearDownAsync deletes the metadata document even when the directory removal failed' },
+  { key: 'A5', severity: 'should-fix', file: 'src/Pia.Wpf/Services/AgentRunOrchestrator.cs', line: 470, title: "Automatic promotion with conflicts tears the workspace down and the conflict string is never used" },
+  { key: 'B3', severity: 'should-fix', file: 'src/Pia.Wpf/Services/AgentRunOrchestrator.cs', line: 467, title: "An automatic promotion's conflicts are logged but never shown, and the copy is then deleted" },
+  { key: 'C2', severity: 'nit', file: 'tests/Pia.Wpf.Tests/Services/GitToolHandlerWorkspaceRootTests.cs', line: 85, title: 'Git-parity test compares a raw GetTempPath expectation against a canonicalized path' },
+  { key: 'C3', severity: 'nit', file: 'tests/Pia.Wpf.Tests/Services/FilesToolHandlerRunsDirGuardTests.cs', line: 57, title: "G1's runs-dir guard facts carry no REGRESSION/GUARD label" },
+  { key: 'C4', severity: 'nit', file: 'tests/Pia.Wpf.Tests/Helpers/RunWorkspaceRedirectsTests.cs', line: 20, title: "RunWorkspaceRedirectsTests' shared-collection premise is false" },
+  { key: 'C5', severity: 'nit', file: 'docs/superpowers/specs/agent-roadmap/phase3-workflow-plan.md', line: 399, title: 'The G5 commit records an incomplete gate: no warning count and no Release rebuild' },
+  { key: 'C6', severity: 'nit', file: 'tests/Pia.Wpf.Tests/Architecture/RunWorkspaceRuleTests.cs', line: 42, title: 'Architecture-rule failure message states a different threshold than the assertion' },
+]
 
 const GATE = `
 BUILD + TEST GATE (this repo's commit-ready bar — a group is not done until this passes):
@@ -786,9 +809,16 @@ SCOPE — read this before reporting anything as missing.
 
 IN SCOPE, and you must judge ALL of it: ${inScopeIds.join(', ') || '(none)'}.
 ${alreadyBuilt.length > 0 ? `Of those, ${alreadyBuilt.join(', ')} were committed by an EARLIER invocation of this workflow (it stopped on a\nconnection error and was restarted). They are just as in-scope as the rest — read their commits and judge them\nexactly as if this run had built them. Do NOT skip them and do NOT assume they were reviewed already; they were\nnot.\nBuilt in THIS invocation: ${builtIds.join(', ') || '(none)'}.\n` : ''}
-OUT OF SCOPE: every other group. Phase 3 is being delivered as TWO invocations — Batch 06 (G1-G5) first and
-Batch 07 (G6-G10) second — so that 06 can be proven before 07 starts. A decision or spec section belonging to a
+OUT OF SCOPE: every other group. Phase 3 was delivered across SEVERAL invocations — Batch 06 (G1-G5) first, then
+Batch 07 (G6-G10) — so that 06 could be proven before 07 started. A decision or spec section belonging to a
 group NOT in the in-scope list is OUT OF SCOPE and must NOT be reported as unimplemented, missing, or a defect.
+
+REVIEW HISTORY, so you spend your effort where it is actually needed: Batch 06 (G1-G5) has had ONE review pass.
+Its 14 findings are recorded verbatim in ${FINDINGS06} — 13 of them still have NO verdict (their skeptics died on
+a usage limit) and this run is verifying them separately, so you do NOT need to re-file them. READ THAT FILE, and
+if you independently find one of those defects, say which recorded finding it matches instead of restating it.
+Anything NOT in that file is new and wanted. Batch 07 (G6, G7, G8, G9, G10) has had NO review of any kind — that
+is where the unexamined code is.
 `
 
 phase('Simplify')
@@ -896,6 +926,16 @@ closed or merely mentioned. In particular:
     LogError/LogWarning carrying user content.)
   * The architecture rules: the exact-count gate theory, the bracket-ownership rule, the naming allowlist, the
     ViewModel System.Windows ratchet, DI registration.
+BATCH 07 HAS NEVER BEEN REVIEWED BY ANYONE, so work its risks with the same discipline:
+  * R9/R10: does the child path trip the bracket-ownership rule or add a second ToolAutonomy.Resolve to a gate
+    file? Are the exact-count theories still exact?
+  * R13: is a child's grant envelope provably never wider than its parent's, and can a child ever fall through to
+    the {write_file} default?
+  * R15: does nested child work extend the scheduled-job _runLock beyond what one job may occupy?
+  * The G8 state machine is the highest-risk thing in the phase: is the new ordinal APPENDED (Paused(4) untouched),
+    does a parent mid-fan-out survive the startup sweep, does the resume CAS lose the "waiting on N children"
+    marker, and can a parent be stranded forever if a child dies, is cancelled, or was swept away?
+  * Cascade cancellation and orphans: kill the parent — can any child survive it? Can a child outlive the process?
 Also check the standing guardrails independently of the register: failure-isolated bookkeeping, executor parity
 (does the Live path really get what Headless got?), off-thread RunChanged marshaling, append-only ordinals, and
 whether any new path can strand a run forever or lose a user's work.`,
@@ -939,6 +979,12 @@ Check the tree against the owner's decisions in ${PLAN} §1 that belong to BUILT
   * D5/D5b: worktree when the root is a repo and copy otherwise, degrading to copy on fault; is the branch
     genuinely the deliverable with NO automatic merge, and does the UI SAY the output is on a branch?
   * D8: do chips resolve in BOTH phases — during the run and after promotion?
+  * D6: does the PLANNER pick personas from a roster (not the panel, not a global setting), with a fallback that
+    never throws for a null, unresolvable or out-of-roster id? Is the roster genuinely the opt-in, so an empty
+    roster leaves the plan prompt byte-identical to before?
+  * D7: do children run on a SEPARATE slot pool, does the parent park in a state that survives a restart, and does
+    the ledger roll-up state WHICH of the two coexisting budgets nests? Is there really no merged parent+child
+    timeline ordering being promised (R14)?
 Then: what did the spec promise for a BUILT group that is missing, and what did the code add that no spec or
 decision asked for? Scope creep is a finding. So is a spec section quietly not implemented.
 Finally: is anything in the plan's §8 smoke list now actually automatable and left untested?`,
@@ -967,15 +1013,29 @@ for (const f of allFindings) {
   deduped.push(f)
 }
 
-const VERIFY_CAP = 12
+// Raised from 12. The cap is what silently dropped 2 of Batch 06's findings, and this invocation carries 13
+// inherited ones on top of whatever the three lenses file, so a 12-cap would guarantee a repeat.
+const VERIFY_CAP = 30
 const rankOf = s => (s === 'must-fix' ? 0 : s === 'should-fix' ? 1 : s === 'nit' ? 2 : 3)
 deduped.sort((a, b) => rankOf(a.severity) - rankOf(b.severity))
-const toVerify = deduped.slice(0, VERIFY_CAP)
+
+// Inherited findings go FIRST, so if the cap ever bites again it bites the fresh tail and not the backlog that
+// has already survived one lost verify pass.
+const inheritedAsFindings = INHERITED.map(f => ({
+  ...f,
+  lens: 'inherited-06',
+  inherited: true,
+  claim: `Recorded verbatim in ${FINDINGS06} under the heading that ends with "${f.title}". READ IT THERE — the full claim, failure scenario and proposed fix are in that file and are not repeated here.`,
+  failureScenario: `See the "Failure scenario" bullet of that finding in ${FINDINGS06}.`,
+  suggestedFix: `See the "Suggested fix as filed" bullet of that finding in ${FINDINGS06}.`,
+}))
+
+const toVerify = inheritedAsFindings.concat(deduped).slice(0, VERIFY_CAP)
 
 log(
-  `review: ${allFindings.length} raw -> ${deduped.length} deduped -> verifying ${toVerify.length}` +
-    (deduped.length > VERIFY_CAP
-      ? ` (CAPPED: ${deduped.length - VERIFY_CAP} lowest-severity finding(s) NOT verified and NOT fixed)`
+  `review: ${allFindings.length} raw -> ${deduped.length} deduped, plus ${inheritedAsFindings.length} INHERITED from the Batch 06 review that never got a verdict -> verifying ${toVerify.length}` +
+    (inheritedAsFindings.length + deduped.length > VERIFY_CAP
+      ? ` (CAPPED: ${inheritedAsFindings.length + deduped.length - VERIFY_CAP} lowest-severity finding(s) NOT verified and NOT fixed)`
       : '')
 )
 
@@ -1009,9 +1069,24 @@ Go to the code and try to break the claim. Read the file and everything around i
   * the scenario is unreachable in practice (no call path constructs that state);
   * the "wrong" behaviour is a deliberate, documented decision — check ${PLAN} §1 and the impl spec before calling
     something a defect, because several look wrong until you read the reason;
-  * the finding is about work DELIBERATELY out of scope for this invocation (Phase 3 runs as two passes; groups
-    G6-G10 are not built yet by design — if that is what the finding is about, it is refuted);
-  * an existing test would already be red if the claim were true (run it if that settles it).
+  * the finding is about work DELIBERATELY out of scope. IN SCOPE for this invocation: ${inScopeIds.join(', ')}.
+    A finding about any OTHER group is refuted. A finding about an in-scope group is NOT refuted on scope grounds;
+  * an existing test would already be red if the claim were true (run it if that settles it).${
+    f.inherited
+      ? `
+
+THIS IS AN INHERITED FINDING. It was filed by the Batch 06 review pass on 2026-07-31 against the tree at 286ea09,
+and its skeptic died on a usage limit before returning a verdict — so it has never been checked by anyone. FIRST
+read its full text in ${FINDINGS06} (claim, failure scenario, proposed fix); the summary above is only a pointer.
+Then:
+  * The tree has MOVED since it was filed — 914730d, 676f629c, b2f46a2e, 08e20ab6 and 9c32999 all landed after.
+    Line numbers will have drifted. Re-anchor by SYMBOL. "That line does not say that" is a drift question, not a
+    refutation.
+  * If a later commit already CLOSED the defect, that IS a refutation — name the commit and what it changed.
+  * Batch 07's groups (G6-G10) are now built and in scope, so a finding that would have been out of scope when it
+    was filed may be live now. Judge it against today's tree.`
+      : ''
+  }
 
 You may read anything and run read-only commands, and you may run a specific test. Do NOT edit or commit.
 
@@ -1051,7 +1126,7 @@ if (confirmed.length > 0) {
   const list = confirmed
     .map(
       (f, i) =>
-        `${i + 1}. [${f.severity}] ${f.title}\n   ${f.file}:${f.line}\n   claim:    ${f.claim}\n   scenario: ${f.failureScenario}\n   suggested: ${f.suggestedFix}`
+        `${i + 1}. [${f.severity}]${f.inherited ? ' (inherited)' : ''} ${f.title}\n   ${f.file}:${f.line}\n   claim:    ${f.claim}\n   scenario: ${f.failureScenario}\n   suggested: ${f.suggestedFix}`
     )
     .join('\n\n')
 
@@ -1063,6 +1138,12 @@ The findings below survived an adversarial verification pass whose default was t
 positively established against the code. Fix them.
 
 ${list}
+
+Any finding above marked (inherited) came from the Batch 06 review of 2026-07-31 and is recorded IN FULL in
+${FINDINGS06} — read its section there before you touch anything, because the pointer above is not the finding. It
+was filed against the tree at 286ea09, so re-anchor by symbol rather than by the line number it carries. When you
+fix one, note in the commit message which recorded finding it closes, and update that file's status table so the
+next reader is not told it still has no verdict.
 ${SCOPE_NOTE}
 HOW TO WORK:
   * Read ${PLAN} (§1 decisions, §4 risks, §7 constraints) and the relevant impl spec before changing anything.
@@ -1110,8 +1191,15 @@ WHAT TO WRITE:
      that was ACCEPTED rather than closed, everything the fix pass DECLINED with its reason, and anything a
      builder flagged as deliberately not done. The value of these sections here is that they record the REASON,
      not just the gap — write them that way.
-  5. State plainly that Phase 3 is being delivered in TWO invocations and which groups remain, so a reader does
-     not mistake a partial phase for a finished one.
+  5. ${
+    GROUPS.every(g => inScopeIds.indexOf(g.id) !== -1)
+      ? `All ten work groups G1-G10 are now in the tree, delivered across SEVERAL invocations of this workflow rather
+     than one. Say that plainly, and say what "complete" does and does not mean here: the code is in and gated, and
+     the manual Windows smoke round in item 2 is what it has NOT had. Also record that Batch 06's review found 14
+     items whose adjudication is tracked in ${FINDINGS06}, with whatever status that file now carries.`
+      : `State plainly that Phase 3 is being delivered across several invocations and which groups remain, so a reader
+     does not mistake a partial phase for a finished one.`
+  }
   6. Corrections in place wherever this run proved a document wrong — annotate with a "CODE RIGHT, SPEC WRONG"
      note rather than silently editing.
 
@@ -1123,8 +1211,12 @@ MEASURE, DO NOT ASSERT:
     hardcoding a count — that file's own warning is that every hardcoded count went stale.
   * Do NOT push, merge or rebase.
 
-ALSO: ${PLAN} was the input to this run. Mark its status as EXECUTED-IN-PART with the outcome and which groups
-remain, rather than leaving it reading as a plan that has not happened.
+ALSO: ${PLAN} was the input to this run. Its header still says "PLANNED, not started". Mark its real status —
+${
+  GROUPS.every(g => inScopeIds.indexOf(g.id) !== -1)
+    ? 'EXECUTED, all ten groups, with the commit range and the invocation count'
+    : 'EXECUTED-IN-PART, with the outcome and which groups remain'
+} — rather than leaving it reading as a plan that has not happened.
 
 ${GATE}
 ${COMMIT}
