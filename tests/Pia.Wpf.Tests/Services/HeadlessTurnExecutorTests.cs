@@ -764,6 +764,26 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Null(ctx.WorkingSubpath);
     }
 
+    // REGRESSION (T-G1-6, Batch 06 B3): the value Initialize was given must reach RunContext so the
+    // verifier — which runs on the orchestrator thread, outside any step's ambient — can resolve
+    // declared artifacts against the root the steps actually wrote into. Delete the assignment in
+    // BeginRunAsync to see this go red.
+    [Fact]
+    public async Task BeginRunAsync_PublishesTheWorkspaceRootOntoTheRunContext()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        var workspaceRoot = Path.Combine(Path.GetTempPath(), "PiaTests_workspace_" + Guid.NewGuid().ToString("N"));
+        executor.Initialize(workspaceRoot, ["write_file"], h.Provider);
+
+        await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
+        Assert.Equal(workspaceRoot, ctx.WorkspaceRoot);
+        Assert.Null(ctx.WorkingSubpath);
+    }
+
     // ---- W2b: the run's chat write merges the persisted rows INSIDE the store's gate hold ----
 
     [Fact]

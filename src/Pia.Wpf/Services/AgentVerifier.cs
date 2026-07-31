@@ -207,7 +207,10 @@ public sealed class AgentVerifier : IAgentVerifier
 
             // Only the settings read happens here (a local DB read, not a filesystem walk). Everything that
             // TOUCHES the filesystem — including resolving the root — runs inside the time-boxed task below.
-            var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
+            // ctx FIRST: verify runs on the orchestrator thread where the per-step ambient is already
+            // restored (Batch 06 B3). The ambient read is kept as the second choice for any caller that DOES
+            // verify inside a step flow; the settings folder stays the last resort.
+            var ambientRoot = ctx.WorkspaceRoot ?? TaskAmbient.Current?.WorkspaceRoot;
             var configured = ambientRoot ?? (await _settings.GetSettingsAsync().ConfigureAwait(false)).AssistantFilesFolder;
             if (string.IsNullOrWhiteSpace(configured))
             {
@@ -257,10 +260,13 @@ public sealed class AgentVerifier : IAgentVerifier
 
     /// <summary>
     /// The run's effective file root, resolved and canonicalized exactly like
-    /// <c>FilesToolHandler.HandleToolCallAsync</c> does: the base is an unattended run's workspace root
-    /// when one is ambient, otherwise the configured assistant files folder (owner decision d1bf62d:
-    /// unattended runs write there, so <c>WorkspaceRoot</c> is null in production and the settings folder
-    /// IS the root the step writes landed in), then <paramref name="workingSubpath"/> narrows it.
+    /// <c>FilesToolHandler.HandleToolCallAsync</c> does: the base is the caller-supplied
+    /// <paramref name="configured"/> value — the run's isolated workspace root
+    /// (<c>RunContext.WorkspaceRoot</c>, preferred) or ambient workspace root when one is set, otherwise the
+    /// configured assistant files folder — then <paramref name="workingSubpath"/> narrows it. This comment
+    /// used to assert that <c>WorkspaceRoot</c> is null in production and the settings folder IS the root
+    /// the step writes landed in; Batch 06 falsifies that once a run's steps write into an isolated
+    /// workspace, which is exactly why the caller now resolves <c>ctx.WorkspaceRoot</c> first (B3).
     /// Null when no usable folder exists. Canonicalizing here means a junction in the root path itself is
     /// not a hole in the containment check below. Blocking — call it inside the probe's time box.
     /// </summary>

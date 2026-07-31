@@ -57,6 +57,18 @@ public sealed class RunContext
     /// </summary>
     public string? WorkingSubpath { get; set; }
 
+    /// <summary>
+    /// The isolated per-run workspace root this run's file tools resolve against
+    /// (<c>TaskContext.WorkspaceRoot</c>), or null when the run writes at the configured assistant-files
+    /// folder. Set ONCE by the executor in <c>BeginRunAsync</c>, for the same reason
+    /// <see cref="WorkingSubpath"/> is: the per-step ambient that carries it is restored in the step's
+    /// <c>finally</c>, so by verify time — which runs on the ORCHESTRATOR thread, outside any step flow —
+    /// it is gone. Without this the artifact probe stats the settings folder for every declared artifact of
+    /// a run that wrote into its workspace, reports confident false NOT FOUNDs, burns the shared replan
+    /// budget and terminates the run Completed+"unverified" — on every run (Batch 06 B3).
+    /// </summary>
+    public string? WorkspaceRoot { get; set; }
+
     public StringBuilder Scratchpad { get; } = new();
 
     public IReadOnlyList<CompletedStepSummary> CompletedSteps => _completed;

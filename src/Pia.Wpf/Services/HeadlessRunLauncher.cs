@@ -104,8 +104,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         _personaService = personaService;
         _executingRuns = executingRuns;
         _logger = logger;
-        _runsBaseDir = runsBaseDirOverride ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "runs");
+        // AssistantWorkspace.RunsRoot (not an inline Path.Combine) so the guard's carve-out
+        // (SensitivePathGuard.BuildAllowedExceptions) and this default can never drift apart (Batch 06 B1).
+        _runsBaseDir = runsBaseDirOverride ?? AssistantWorkspace.RunsRoot;
 
         // Decision c: delete a run's workspace when its chat (and, by FK cascade, its run) is deleted.
         _chatService.ChatsChanged += OnChatsChanged;

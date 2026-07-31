@@ -127,6 +127,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // writes land at the base root even when the chat row carries a WorkingDirectory. Stated as an
         // explicit assignment rather than left to the default.
         ctx.WorkingSubpath = null;
+        // Batch 06 B3: publish the run's workspace root onto the context so the verifier (which runs on
+        // the orchestrator thread, outside any step's ambient) can resolve declared artifacts against the
+        // root the steps actually wrote into instead of falling back to the settings folder. Still null
+        // today — _workspaceRoot is only ever set by Initialize's reserved (currently unused) parameter.
+        ctx.WorkspaceRoot = _workspaceRoot;
 
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         _tokenizationEnabled = settings.Privacy.TokenizationEnabled;

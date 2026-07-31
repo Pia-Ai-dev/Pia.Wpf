@@ -9,11 +9,14 @@ namespace Pia.Infrastructure;
 /// in-base absolute paths. Kept deliberately tight to avoid false positives — this is a denylist
 /// of well-known dangerous roots, not a general allowlist.
 /// <para>
-/// One island is carved back out of the otherwise-blocked <c>%LOCALAPPDATA%\Pia</c>: the agent's
-/// default scratch workdir (<see cref="AssistantWorkspace.DefaultWorkdir"/>) lives there and IS
-/// the sandbox, so blocking it would dead-end every file tool out of the box. The carve-out is
-/// the exact workdir subtree only — Pia's DB/config/logs siblings stay blocked, and widening the
-/// sandbox to <c>%LOCALAPPDATA%\Pia</c> itself still can't reach them.
+/// TWO islands are carved back out of the otherwise-blocked <c>%LOCALAPPDATA%\Pia</c>: the agent's
+/// legacy default scratch workdir (<see cref="AssistantWorkspace.LegacyWorkdir"/>), kept for
+/// migrate-in-place users whose folder stays there and IS the sandbox, so blocking it would dead-end
+/// every file tool out of the box; and the per-run agent workspace root
+/// (<see cref="AssistantWorkspace.RunsRoot"/>, Batch 06 B1) — every unattended run's isolated workspace
+/// lives there, and it sits inside the same blocked root. Each carve-out is its exact subtree only —
+/// Pia's DB/config/logs siblings stay blocked, and widening the sandbox to <c>%LOCALAPPDATA%\Pia</c>
+/// itself still can't reach them.
 /// </para>
 /// </summary>
 public static class SensitivePathGuard
@@ -92,18 +95,63 @@ public static class SensitivePathGuard
     }
 
     /// <summary>
-    /// Islands carved out of an otherwise-blocked root. Canonicalized through the SAME
-    /// <see cref="SafeCanonical"/> path as <see cref="BuildBlockedRoots"/> so the prefix match in
-    /// <see cref="IsBlocked"/> (which compares against the resolver's already-canonicalized path)
-    /// lines up. The pre-relocation default workdir under <c>%LOCALAPPDATA%\Pia</c> — kept as a
-    /// back-compat carve-out for migrate-in-place users whose folder stays there. New installs use
+    /// Islands carved out of an otherwise-blocked root. Two of them:
+    /// <list type="bullet">
+    /// <item>The pre-relocation default workdir under <c>%LOCALAPPDATA%\Pia</c> — kept as a back-compat
+    /// carve-out for migrate-in-place users whose folder stays there. New installs use
     /// <see cref="AssistantWorkspace.DefaultRoot"/> (under Documents), which is outside every blocked
-    /// root and needs no exception. The vault gets no entry here — full file-tool access by design.
+    /// root and needs no exception. Canonicalized through the SAME <see cref="SafeCanonical"/> path as
+    /// <see cref="BuildBlockedRoots"/> so the prefix match in <see cref="IsBlocked"/> lines up.</item>
+    /// <item><see cref="AssistantWorkspace.RunsRoot"/> — every unattended run's isolated workspace
+    /// (Batch 06 B1). Canonicalized through <see cref="CanonicalizeAllowedIsland"/> instead (B2): unlike
+    /// the workdir, this directory routinely does not exist yet when this array is built.</item>
+    /// </list>
+    /// The vault gets no entry here — full file-tool access by design.
     /// </summary>
     private static string[] BuildAllowedExceptions()
     {
-        var canonical = SafeCanonical(AssistantWorkspace.LegacyWorkdir);
-        return canonical is null ? [] : [canonical];
+        var exceptions = new List<string>();
+
+        var workdir = SafeCanonical(AssistantWorkspace.LegacyWorkdir);
+        if (workdir is not null) exceptions.Add(workdir);
+
+        var runsRoot = CanonicalizeAllowedIsland(AssistantWorkspace.RunsRoot);
+        if (runsRoot is not null) exceptions.Add(runsRoot);
+
+        return exceptions.ToArray();
+    }
+
+    /// <summary>
+    /// Canonicalizes an allowed island even when it does not exist yet: walks up to the deepest EXISTING
+    /// ancestor, canonicalizes THAT, and re-appends the missing tail. Deliberately NOT shared with
+    /// <see cref="SafeCanonical"/>, because the two have opposite failure directions — a lexical BLOCKED root
+    /// fails open (nothing resolves through a missing directory, so there is nothing to block), while a lexical
+    /// ALLOWED island fails CLOSED: the prefix match against the resolver's canonical candidate misses and the
+    /// island stays blocked, dead-ending every file tool in a run whose workspace has not been created yet
+    /// (Batch 06 B2). <c>%LOCALAPPDATA%\Pia\runs</c> does not exist on a fresh install and this array is built
+    /// once per process, so the missing-tail case is the NORMAL case, not an edge one. Returns null only when
+    /// nothing on the path can be resolved (not even its root).
+    /// </summary>
+    internal static string? CanonicalizeAllowedIsland(string path)
+    {
+        string full;
+        try { full = Path.GetFullPath(path); }
+        catch { return null; }
+
+        var existing = full;
+        var tail = string.Empty;
+        while (!Directory.Exists(existing))
+        {
+            var parent = Path.GetDirectoryName(existing);
+            if (string.IsNullOrEmpty(parent) || parent == existing)
+                return null; // nothing on the path can be resolved
+            var name = Path.GetFileName(existing);
+            tail = tail.Length == 0 ? name : Path.Combine(name, tail);
+            existing = parent;
+        }
+
+        var canonicalExisting = SafeFolderPath.Canonicalize(existing);
+        return tail.Length == 0 ? canonicalExisting : Path.Combine(canonicalExisting, tail);
     }
 
     private static string SafeCombine(string a, string b)

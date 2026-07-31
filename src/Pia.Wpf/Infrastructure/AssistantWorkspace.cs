@@ -37,4 +37,14 @@ public static class AssistantWorkspace
     /// <summary>The vault root derived from an assistant files folder: <c>&lt;folder&gt;\Vault</c>.</summary>
     public static string VaultRootFor(string filesFolder) =>
         Path.Combine(filesFolder, VaultSubfolderName);
+
+    /// <summary>
+    /// Base directory for every per-run agent workspace: <c>%LOCALAPPDATA%\Pia\runs</c>. Lives here, beside
+    /// <see cref="LegacyWorkdir"/>, because it is the SECOND island <see cref="SensitivePathGuard"/> has to
+    /// carve out of the otherwise-blocked <c>%LOCALAPPDATA%\Pia</c> tree — the guard and the launcher must not
+    /// be able to disagree about where it is (Batch 06 B1). <c>HeadlessRunLauncher</c> uses this as its default
+    /// (an injected override keeps tests off the real user folder), and <c>RunWorkspaceService</c> uses it too.
+    /// </summary>
+    public static string RunsRoot { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "runs");
 }
