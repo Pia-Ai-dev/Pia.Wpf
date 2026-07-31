@@ -634,6 +634,83 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Null(Assert.Single(await _service.GetByChatAsync(chatId, ct)).PolicyJson);
     }
 
+    /// <summary>
+    /// T-ST-9, REGRESSION. The column and its round-trip predate the producer: the INSERT parameter and MapRun
+    /// were always correct, and only <c>CreateAsync</c>'s object initializer failed to copy the request member.
+    /// BOTH halves matter and this asserts both, because the IN-MEMORY run is the object a fresh launch hands to
+    /// <c>AgentRunOrchestrator.RunAsync</c> — the row is never re-read first, so a guard asking "am I a child?"
+    /// reads THIS object, not the database. Neutralizing the initializer line reds both asserts at once (the
+    /// INSERT sources <c>run.ParentRunId</c>, not <c>request.ParentRunId</c>), which is exactly why the omission
+    /// would otherwise be invisible.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_RoundTripsParentRunId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chatId = await MakeChatAsync();
+
+        var parent = await _service.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "parent goal"), ct);
+        var child = await _service.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "child goal", ParentRunId: parent.Id), ct);
+
+        // The in-memory object CreateAsync returns — the half no pre-existing test covered.
+        Assert.Equal(parent.Id, child.ParentRunId);
+        // …and the persisted row.
+        Assert.Equal(parent.Id, (await _service.GetAsync(child.Id, ct))!.ParentRunId);
+
+        // A top-level run stays null in both places: absence is the default and must not become Guid.Empty.
+        Assert.Null(parent.ParentRunId);
+        Assert.Null((await _service.GetAsync(parent.Id, ct))!.ParentRunId);
+    }
+
+    /// <summary>
+    /// T-ST-10, GUARD. The link is queried ("which children is this parent still waiting on"), so it needs an
+    /// index. Non-vacuity: the four pre-existing AgentRuns indexes are asserted alongside it, so a typo'd or
+    /// deleted CREATE INDEX cannot pass by making the lookup match nothing.
+    /// </summary>
+    [Fact]
+    public void TheParentRunIdIndexExists()
+    {
+        var conn = _ctx.GetConnection();
+
+        Assert.True(IndexExists(conn, "IX_AgentRuns_ParentRunId"));
+
+        Assert.True(IndexExists(conn, "IX_AgentRuns_ChatId"));
+        Assert.True(IndexExists(conn, "IX_AgentRuns_State"));
+        Assert.True(IndexExists(conn, "IX_AgentRuns_UpdatedAt"));
+        Assert.True(IndexExists(conn, "IX_AgentRuns_TriggerRef"));
+    }
+
+    /// <summary>
+    /// The UPGRADE direction for T-ST-10: an existing database has no <c>IX_AgentRuns_ParentRunId</c>, and the
+    /// DDL block lives inside <c>EnsureSchema</c>'s command string, which runs on EVERY open — so the index
+    /// arrives at next launch with no MigrateSchema entry. Simulated by dropping it, which leaves exactly the
+    /// pre-batch shape.
+    /// </summary>
+    [Fact]
+    public void TheParentRunIdIndexIsAddedToAPreBatchDatabase()
+    {
+        using (var drop = _ctx.GetConnection().CreateCommand())
+        {
+            drop.CommandText = "DROP INDEX IX_AgentRuns_ParentRunId";
+            drop.ExecuteNonQuery();
+        }
+
+        Assert.False(IndexExists(_ctx.GetConnection(), "IX_AgentRuns_ParentRunId"));
+
+        using var reopened = new SqliteContext(_dbPath);
+        Assert.True(IndexExists(reopened.GetConnection(), "IX_AgentRuns_ParentRunId"));
+    }
+
+    private static bool IndexExists(SqliteConnection conn, string index)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = @Name";
+        cmd.Parameters.AddWithValue("@Name", index);
+        return Convert.ToInt64(cmd.ExecuteScalar()) == 1;
+    }
+
     private async Task<Guid> MakeChatAsync()
     {
         var id = Guid.NewGuid();

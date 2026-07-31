@@ -288,6 +288,12 @@ public class SqliteContext : IDisposable
                 State               INTEGER NOT NULL,
                 TriggerKind         INTEGER NOT NULL,
                 TriggerRef          TEXT    NULL,
+                -- ParentRunId is deliberately NOT a self-referencing foreign key. The cascade that exists is
+                -- AssistantChats → AgentRuns per chat (below), and a child run lives in its OWN chat: an
+                -- ON DELETE CASCADE here would delete a child's whole run history the moment the PARENT's chat
+                -- was deleted, while a non-cascading FK would make that delete throw from inside a swallowing
+                -- Safe* wrapper. A dangling ParentRunId is the correct outcome — same reasoning, and same house
+                -- precedent, as AgentTimelineEvents.StepId below.
                 ParentRunId         TEXT    NULL,
                 OwnerDeviceId       TEXT    NULL,
                 Goal                TEXT    NULL,
@@ -307,6 +313,10 @@ public class SqliteContext : IDisposable
             CREATE INDEX IF NOT EXISTS IX_AgentRuns_State      ON AgentRuns(State);
             CREATE INDEX IF NOT EXISTS IX_AgentRuns_UpdatedAt  ON AgentRuns(UpdatedAt);
             CREATE INDEX IF NOT EXISTS IX_AgentRuns_TriggerRef ON AgentRuns(TriggerRef);
+            -- "Which children is this parent still waiting on" is a query, not a counter on the parent row:
+            -- the child ROWS are the marker, so they need an index on the link. This block re-runs on EVERY
+            -- open, so an existing database gets the index at next launch with no MigrateSchema entry.
+            CREATE INDEX IF NOT EXISTS IX_AgentRuns_ParentRunId ON AgentRuns(ParentRunId);
 
             CREATE TABLE IF NOT EXISTS AgentSteps (
                 Id                  TEXT PRIMARY KEY,

@@ -13,6 +13,17 @@ namespace Pia.Services.Interfaces;
 /// batch). It may name granted capabilities, so it is metadata: log its PRESENCE only, never its
 /// content (CLAUDE.md privacy-first logging).
 /// </param>
+/// <param name="ParentRunId">
+/// The parent run this run was delegated by, or null for a top-level run. Written ONCE at create; there is
+/// deliberately no re-parent API — a run's place in the delegation tree is decided by whoever spawned it and
+/// nothing later gets to move it. Indexed by <c>IX_AgentRuns_ParentRunId</c>.
+/// <para>
+/// TRAILING and defaulted on purpose: every one of this record's construction sites passes at most six
+/// arguments positionally and names <c>PolicyJson</c>, so appending here is invisible to all of them
+/// (07 D10). The column and its round-trip already existed before this member did — only the producer was
+/// missing.
+/// </para>
+/// </param>
 public sealed record AgentRunCreateRequest(
     Guid ChatId,
     RunShape Shape,
@@ -20,7 +31,8 @@ public sealed record AgentRunCreateRequest(
     Guid? TriggerRef = null,
     Guid? OwnerDeviceId = null,
     string? Goal = null,
-    string? PolicyJson = null);
+    string? PolicyJson = null,
+    Guid? ParentRunId = null);
 
 /// <summary>Raised after a state-changing run write. The 1.4 UI/Flow event source; no consumers in 1.1.</summary>
 public sealed class AgentRunChangedEventArgs : EventArgs

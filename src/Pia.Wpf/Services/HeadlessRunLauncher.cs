@@ -679,6 +679,75 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             GrantEnvelopeJsonOptions);
 
     /// <summary>
+    /// The grant set + policy a CHILD run inherits: a strict SUBSET of the parent's, never the default and
+    /// never the resume floor. A child is a delegate — it does the work the parent asked for and it does not
+    /// get to destroy anything, so every delete-like NAME is stripped even when the parent held it (the parent
+    /// can still delete, in its own steps).
+    /// <para>
+    /// An UNREADABLE parent envelope yields the EMPTY grant set, NOT
+    /// <c>HeadlessRunRequest.DefaultGrantedWrites</c> and NOT <see cref="ResumeFloorGrants"/>: falling through
+    /// to a default would let a child that inherits nothing readable end up WIDER than its parent, which is the
+    /// one thing this helper exists to make impossible (Phase 3 R13). "Readable" means exactly what it means at
+    /// resume, because this is the same reader — <see cref="TryRestoreGrantEnvelope"/>.
+    /// </para>
+    /// <para>
+    /// The policy passes through UNCHANGED. It is a tool-CLASS set that can never cover a delete-like tool
+    /// (04 D6 — the floor in <c>ToolAutonomy.Resolve</c> is evaluated before any policy branch), so narrowing it
+    /// further would only make a child unable to do the work it was delegated, and it is ⊆ the parent's by
+    /// construction. Pinned by <c>HeadlessRunLauncherChildRunTests</c>.
+    /// </para>
+    /// <para>
+    /// Name filtering is legitimate HERE: this file is not one of <c>ToolAutonomyRuleTests.GateFiles</c> — it
+    /// AUTHORS a grant list rather than gating a call, exactly like <c>ScheduledJobToolHandler.ParseGrantedTools</c>
+    /// does at create time. The execution gates are untouched and still the only boundary.
+    /// </para>
+    /// </summary>
+    internal static (IReadOnlyList<string> Grants, RunAutonomyPolicy? Policy) NarrowForChild(
+        string? parentPolicyJson, ILogger? logger = null)
+    {
+        var inherited = TryRestoreGrantEnvelope(parentPolicyJson) ?? [];
+        var grants = inherited.Where(g => !ToolPermissionService.IsDeleteLike(g)).ToList();
+
+        // COUNT only. A grant name can be an MCP-adjacent string, which is not ours to write to a support log —
+        // the same rule TryRestorePolicy's dropped-class count follows.
+        if (grants.Count != inherited.Count)
+            logger?.LogInformation("Child run grants dropped {DroppedCount} delete-like names the parent held", inherited.Count - grants.Count);
+
+        return (grants, TryRestorePolicy(parentPolicyJson, logger));
+    }
+
+    /// <summary>
+    /// The child's <c>PolicyJson</c>: <see cref="NarrowForChild"/>'s result through the EXISTING <c>v:1</c>
+    /// serializer. The envelope version is deliberately NOT bumped — additive members only, because
+    /// <see cref="GrantEnvelopeVersion"/> is compared with <c>!=</c> (see its remarks).
+    /// </summary>
+    /// <param name="trigger">The PARENT's trigger kind. Provenance only — "diagnostics only; never consulted to
+    /// widen a grant", as <see cref="GrantEnvelope.Trigger"/> says.</param>
+    /// <remarks>
+    /// Unlike <see cref="TrySerializeGrantEnvelope"/>, a serializer fault here falls back to
+    /// <see cref="InteractiveEmptyEnvelopeJson"/> and NOT to <c>null</c>: null would make the child's resume
+    /// apply <see cref="ResumeFloorGrants"/> (<c>{write_file}</c>), which can be WIDER than the parent — the
+    /// identical argument that constant already exists for. Its <c>"trigger":"User"</c> then misreports a
+    /// Schedule-parent's child, which is acceptable precisely because trigger never widens anything. That arm is
+    /// a GUARD, not a fixed defect: serializing a <c>List&lt;string&gt;</c> plus a class-name list cannot
+    /// realistically fault, so it is unreachable in practice and is not covered by a red-before-green demo.
+    /// </remarks>
+    internal static string TrySerializeChildEnvelope(
+        string? parentPolicyJson, AgentRunTrigger trigger, ILogger? logger = null)
+    {
+        var (grants, policy) = NarrowForChild(parentPolicyJson, logger);
+        try
+        {
+            return SerializeGrantEnvelope(grants, trigger, policy);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Failed to serialize a child run's grant envelope; granting the child nothing");
+            return InteractiveEmptyEnvelopeJson;
+        }
+    }
+
+    /// <summary>
     /// Read the run's autonomy policy back out of the envelope (04 D10). Returns <c>null</c> — meaning
     /// "TODAY'S BEHAVIOUR", NOT the grant floor — for an absent/unreadable envelope, an absent <c>policy</c>
     /// member, or a member whose class names this build does not recognise. Never throws.

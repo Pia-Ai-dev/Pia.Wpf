@@ -86,6 +86,12 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             State = request.Shape == RunShape.Planned ? AgentRunState.Planning : AgentRunState.Running,
             TriggerKind = request.Trigger,
             TriggerRef = request.TriggerRef,
+            // The delegation link (07 D10). This assignment is what makes the IN-MEMORY run correct, and the
+            // in-memory object is the one a fresh launch hands to AgentRunOrchestrator.RunAsync — the row is
+            // never re-read first. The INSERT below and MapRun have always carried the column; only this line
+            // was missing, and missing it fails SILENTLY: every child would read ParentRunId == null and so
+            // would every guard that asks "am I a child?".
+            ParentRunId = request.ParentRunId,
             OwnerDeviceId = request.OwnerDeviceId,
             Goal = request.Goal,
             // Opaque launch envelope — stored verbatim, never parsed here, never logged (D1).
@@ -136,8 +142,12 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         }
 
         // policy= is PRESENCE only: the envelope may name granted capabilities → never log its content.
-        _logger.LogInformation("Created run {RunId} shape={Shape} state={State} trigger={Trigger} policy={HasPolicy}",
-            run.Id, run.RunShape, run.State, run.TriggerKind, run.PolicyJson is not null);
+        // parent= is a BOOLEAN for the same reason the policy flag is: a run id would be safe to log, but this
+        // line answers "is this a delegated run?" and a stable format is worth more than the id, which every
+        // other run-scoped line already carries.
+        _logger.LogInformation(
+            "Created run {RunId} shape={Shape} state={State} trigger={Trigger} policy={HasPolicy} parent={HasParent}",
+            run.Id, run.RunShape, run.State, run.TriggerKind, run.PolicyJson is not null, run.ParentRunId is not null);
         _logger.SensitiveDebug("Run {RunId} goal: {Goal}", run.Id, run.Goal);
         RunChanged?.Invoke(this, new AgentRunChangedEventArgs(run.Id, run.State));
         return Task.FromResult(run);
