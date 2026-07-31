@@ -486,6 +486,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         _ => _localization["Run_EndedEarly"],
     };
 
+    // The pause vocabulary, like the truncation vocabulary above, is a fixed set of APP-OWNED tokens written by
+    // the run loop and the startup reconcile — never user content. An unknown or absent reason keeps the budget
+    // wording, because that is what every pause the loop itself writes actually is ("step-cap"/"wall-clock").
+    private string DescribePause(string? reason) => reason switch
+    {
+        AgentRunOrchestrator.ChildrenParkedReason => _localization["Run_Activity_ChildrenParked"],
+        AgentRunService.ChildrenInterruptedReason => _localization["Run_Activity_ChildrenInterrupted"],
+        _ => _localization["Run_Activity_WaitingAtBudget"],
+    };
+
     // Current-activity line (D1): the active step's title while Running (falls back to a generic
     // "working" note if no step is marked Running yet), a "building a plan" note while Planning, and
     // nothing on a terminal state (the header state chip already carries it).
@@ -496,7 +506,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             run.Plan.FirstOrDefault(s => s.Status == AgentStepStatus.Running)?.Title
             ?? _localization["Run_Activity_Working"],
         AgentRunState.Verifying => _localization["Run_Activity_Verifying"],
-        AgentRunState.WaitingForInput => _localization["Run_Activity_WaitingAtBudget"], // "Stopped at budget — continue?"
+        // WaitingForInput is now reached for THREE reasons and only one of them is a budget. Read the reason the
+        // pause envelope carries instead of asserting the budget: a parent parked because a CHILD hit its own
+        // halved budget, or because the app restarted mid-fan-out, was told "Stopped at budget — continue?" and
+        // would sensibly raise its own budgets in Settings to prevent a recurrence, changing nothing.
+        AgentRunState.WaitingForInput => DescribePause(RunPauseEnvelope.ReadReason(run)),
         AgentRunState.WaitingForChildren => _localization["Run_Activity_WaitingForChildren"], // 07 G8
         _ => null, // Paused / terminal — the state chip already carries it
     };

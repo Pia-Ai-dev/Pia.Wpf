@@ -32,6 +32,15 @@ public sealed class AgentRunOrchestrator
     /// </summary>
     private const int MaxChildAnswerChars = 4000;
 
+    /// <summary>
+    /// The pause <c>reason</c> written when a fan-out's CHILD parked at its own (halved) budget, so the parent
+    /// re-parks rather than failing (07 D13). An app-owned token from the same fixed vocabulary as
+    /// <c>"step-cap"</c> / <c>"wall-clock"</c> / <c>"children-interrupted"</c> — never user content, and read by
+    /// the panel and the Flow surface, which is why it is a named constant rather than a literal: neither of them
+    /// may announce this park as a budget stop, because none of the PARENT's budgets was reached.
+    /// </summary>
+    internal const string ChildrenParkedReason = "children-parked";
+
     /// <summary>What a settled child's step reports when its answer could not be read. Says the work ran
     /// elsewhere rather than implying the step produced nothing (the failure mode
     /// <c>CompletedStepSummary.FromEarlierSegment</c> exists for).</summary>
@@ -265,7 +274,7 @@ public sealed class AgentRunOrchestrator
                             // one Continue on the parent re-dispatches the group (and cancels this generation
                             // first). Deliberately NO SafeEndRun and no promotion: a park is not terminal.
                             await PinRange().ConfigureAwait(false);
-                            await SafePause(run.Id, cts.Token, reason: "children-parked").ConfigureAwait(false);
+                            await SafePause(run.Id, cts.Token, reason: ChildrenParkedReason).ConfigureAwait(false);
                             await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
                             return;
                         }
@@ -552,7 +561,7 @@ public sealed class AgentRunOrchestrator
                     // 06 G1's RunContext member: the child runs INSIDE the parent's workspace and provisions
                     // nothing (§7.6). Null ⇒ the parent runs unisolated and so does the child.
                     parentWorkspaceRoot: ctx.WorkspaceRoot,
-                    cts.Token).ConfigureAwait(false);
+                    ct: cts.Token).ConfigureAwait(false);
 
                 dispatched.Add((sibling, handle));
                 await SafeSetStepStatus(sibling.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);

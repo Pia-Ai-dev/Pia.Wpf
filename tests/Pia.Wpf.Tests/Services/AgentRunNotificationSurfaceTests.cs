@@ -30,12 +30,60 @@ public sealed class AgentRunNotificationSurfaceTests
     private AgentRunNotificationSurface Create() =>
         new(_runs, _flow, _windows, _chats, _loc, NullLogger<AgentRunNotificationSurface>.Instance);
 
-    private Guid SetupRun(Guid runId, RunShape shape, Guid? chatId = null)
+    private Guid SetupRun(Guid runId, RunShape shape, Guid? chatId = null, Guid? parentRunId = null)
     {
         var chat = chatId ?? Guid.NewGuid();
         _runs.GetAsync(runId, Arg.Any<CancellationToken>())
-            .Returns(new AgentRun { Id = runId, RunShape = shape, ChatId = chat });
+            .Returns(new AgentRun { Id = runId, RunShape = shape, ChatId = chat, ParentRunId = parentRunId });
         return chat;
+    }
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 fix pass). The Flow card's body must name WHY the run parked. Three reasons
+    /// reach WaitingForInput since Batch 07 and only one is a budget, so a parent parked because a CHILD hit its
+    /// own halved budget — or because the app restarted mid-fan-out — was told "Stopped at its budget".
+    /// <para>
+    /// The last three rows are the fallback pin and the non-vacuity control at once: an unknown or absent reason
+    /// keeps the budget wording, which is correct for every pause the run loop writes for itself. Asserted on the
+    /// key mapping rather than through a publish, because the reason lives in the run row's ExtraJson and the
+    /// mapping is the whole decision. Neutralization: go back to a constant key → the first two rows red.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("children-parked", "Flow_Run_ChildrenParked")]
+    [InlineData("children-interrupted", "Flow_Run_ChildrenInterrupted")]
+    [InlineData("step-cap", "Flow_Run_WaitingAtBudget")]
+    [InlineData("wall-clock", "Flow_Run_WaitingAtBudget")]
+    [InlineData(null, "Flow_Run_WaitingAtBudget")]
+    public void AParkedRunsFlowBodyNamesWhyItParked(string? reason, string expectedKey)
+        => Assert.Equal(expectedKey, AgentRunNotificationSurface.PausedBodyKey(reason));
+
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 fix pass). A DELEGATED run publishes nothing: the parent's own item already
+    /// represents the whole fan-out, and a child lives in a stub chat the user never opened. Every row of the
+    /// theory is a state a child really reaches — a clean 3-way fan-out used to produce four durable items and
+    /// four toasts for one run started once. The WaitingForInput row is the load-bearing one: a child parked at
+    /// its own halved budget published an ActionRequired card carrying a ContinueRunAction on the CHILD run id,
+    /// a transition nothing supports.
+    /// <para>
+    /// Non-vacuity: the same states on a PARENTLESS run do publish, which the facts above and below this one
+    /// assert directly. Neutralization: drop the <c>run.ParentRunId is not null</c> early return → red on every
+    /// row.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(AgentRunState.Completed)]
+    [InlineData(AgentRunState.Failed)]
+    [InlineData(AgentRunState.WaitingForInput)]
+    public async Task ADelegatedRun_PublishesNothing(AgentRunState state)
+    {
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned, parentRunId: Guid.NewGuid());
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+
+        await Create().HandleRunStateAsync(runId, state);
+
+        _flow.DidNotReceive().Publish(Arg.Any<FlowItemDraft>());
     }
 
     [Fact]

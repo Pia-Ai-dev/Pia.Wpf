@@ -79,6 +79,19 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled
             or AgentRunState.WaitingForInput or AgentRunState.Running;
 
+    /// <summary>
+    /// Which "continue?" body a parked run's Flow card carries. Extracted and internal for the same reason
+    /// <see cref="IsPublishableState"/> is: the publish itself sits inside a dispatcher-marshalled handler, and an
+    /// unknown reason must fall back to the BUDGET wording, which is what every pause the run loop writes for
+    /// itself really is.
+    /// </summary>
+    internal static string PausedBodyKey(string? reason) => reason switch
+    {
+        AgentRunOrchestrator.ChildrenParkedReason => "Flow_Run_ChildrenParked",
+        AgentRunService.ChildrenInterruptedReason => "Flow_Run_ChildrenInterrupted",
+        _ => "Flow_Run_WaitingAtBudget",
+    };
+
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
         if (!IsPublishableState(e.State))
@@ -107,6 +120,19 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         if (run is null || run.RunShape != RunShape.Planned)
             return; // Planned-only
 
+        // A DELEGATED run is not a run the user started (Batch 07 D7/D17): it lives in its own stub chat the
+        // user never opened, and the PARENT's item already represents the whole fan-out. Without this filter a
+        // clean 3-way fan-out published four durable Flow items and four toasts for one run started once, three
+        // of them pointing at chats that exist only as a delegation vehicle.
+        //
+        // The WaitingForInput arm below is the sharper reason it is a filter and not a preference: a child that
+        // parks at its own halved budget would publish an ActionRequired card carrying a ContinueRunAction on
+        // the CHILD run id — a transition nothing supports. A child is only ever re-dispatched by its parent's
+        // fan-out, and answering the child's card instead of the parent's resumes it on the child slot pool with
+        // nothing linking it back to the parent's step, so the parent then re-runs that same work in-process.
+        if (run.ParentRunId is not null)
+            return;
+
         // R18: suppress ONLY the chat the user is actively watching in the foreground — its embedded
         // run-progress panel already reflects the state (incl. the WaitingForInput Continue button). A
         // headless run's chat is never the active session, so it always publishes.
@@ -122,7 +148,11 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
                 Source = FlowSource.AgentRun,
                 // Generic title/body — the run Goal + pause reason are SENSITIVE, never in the Flow item.
                 Title = _localizationService["Flow_Run_Title"],
-                Body = _localizationService["Flow_Run_WaitingAtBudget"],
+                // Three reasons reach WaitingForInput and only one is a budget (07 D13/D14). The REASON token is
+                // app-owned and never user content — unlike the run Goal, which stays out of the Flow item
+                // entirely — so it is safe to key the body on it, and announcing a child's park or a restart as
+                // "stopped at its budget" sends the user to raise budgets that were never reached.
+                Body = _localizationService[PausedBodyKey(RunPauseEnvelope.ReadReason(run))],
                 DedupKey = runId.ToString(),
                 Lifetime = FlowLifetime.Persistent,
                 Action = new ContinueRunAction(runId, _localizationService["Flow_Action_ContinueRun"]),

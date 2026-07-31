@@ -321,6 +321,37 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
+    /// <summary>
+    /// <b>REGRESSION</b> (Phase 3 fix pass). WaitingForInput is reached for THREE reasons since Batch 07 and only
+    /// one of them is a budget: a fan-out's child can park at its own halved budget (the parent re-parks with
+    /// "children-parked"), and the startup reconcile re-parks a parent interrupted mid-fan-out
+    /// ("children-interrupted"). Announcing either as "Stopped at budget — continue?" sends the user to raise
+    /// budgets in Settings that were never reached, which changes nothing.
+    /// <para>
+    /// The <c>step-cap</c> row is the non-vacuity control AND the fallback pin: an unknown or absent reason must
+    /// keep the budget wording, because that is what every pause the run loop writes for itself really is.
+    /// Neutralization: go back to a constant <c>Run_Activity_WaitingAtBudget</c> → the first two rows red.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("children-parked", "Run_Activity_ChildrenParked")]
+    [InlineData("children-interrupted", "Run_Activity_ChildrenInterrupted")]
+    [InlineData("step-cap", "Run_Activity_WaitingAtBudget")]
+    [InlineData("wall-clock", "Run_Activity_WaitingAtBudget")]
+    [InlineData("something-a-later-build-invented", "Run_Activity_WaitingAtBudget")]
+    public async Task AParkedRunsActivityLineNamesWhyItParked(string reason, string expectedKey)
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.PauseAsync(run.Id, reason, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.WaitingForInput, vm.State);
+        Assert.Equal(expectedKey, vm.CurrentActivity); // the fake localization echoes the loc key
+        vm.Dispose();
+    }
+
     [Fact]
     public async Task Continue_InvokesResumeService()
     {

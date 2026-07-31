@@ -913,6 +913,8 @@
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Checking the work…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Stopped at budget — continue?</value></data>
   <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>Waiting for the sub-agents to finish…</value></data>
+  <data name="Run_Activity_ChildrenParked" xml:space="preserve"><value>A sub-agent stopped at its own budget — continue?</value></data>
+  <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while sub-agents were working — continue?</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
   <!-- Batch 06: promotion. A clean run's files are published automatically before it is marked complete; a
        failed or cancelled one keeps them in its workspace and offers them here. In worktree mode nothing is
@@ -973,6 +975,8 @@
   <data name="Flow_Run_Gone" xml:space="preserve"><value>That run is no longer available.</value></data>
   <data name="Flow_Action_OpenRun" xml:space="preserve"><value>Open run</value></data>
   <data name="Flow_Run_WaitingAtBudget" xml:space="preserve"><value>Stopped at its budget — continue?</value></data>
+  <data name="Flow_Run_ChildrenParked" xml:space="preserve"><value>One of its sub-agents stopped at its own budget — continue?</value></data>
+  <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while its sub-agents were working — continue?</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Continue run</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Shorter</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>More detailed</value></data>
