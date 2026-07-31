@@ -25,6 +25,12 @@ namespace Pia.Tests.Services;
 /// after the wait still has its own fact, because it runs BEFORE the CAS and owns a different case (this loop
 /// still owns the run and must settle it Cancelled itself).
 /// </para>
+/// <para>
+/// NUMBERING, so nobody "fixes" it: G8 numbered its two appended facts in ITS OWN sequence, so a second T-FAN-4
+/// (the park) and a second T-FAN-10 (the lost CAS) exist alongside G10's. They are deliberately NOT renumbered —
+/// G8's commit message names T-FAN-10 by number and a renumber would leave that message pointing at nothing.
+/// Every doc comment says which group's numbering it carries; G10's own sequence runs 1–16.
+/// </para>
 /// </summary>
 public sealed class AgentRunOrchestratorFanOutTests
 {
@@ -158,6 +164,12 @@ public sealed class AgentRunOrchestratorFanOutTests
         /// <summary>Tokens each child accrues into its OWN ledger before settling — the roll-up's input.</summary>
         public UsageDetails? ChildUsage { get; set; }
 
+        /// <summary>How many PER-STEP ledger entries each child writes before settling, i.e. how many steps the
+        /// child itself executed. Nothing the parent reads may depend on this — that is exactly the point of
+        /// <see cref="TheParentsEnforcedBudgetCountsItsOwnStepsOnly_NeverItsChildrens"/>. Zero by default, so
+        /// every other fact in this file is untouched.</summary>
+        public int ChildStepEntries { get; set; }
+
         /// <summary>The assistant answer written into each child's chat, or null to write none.</summary>
         public string? ChildAnswer { get; set; }
 
@@ -220,6 +232,14 @@ public sealed class AgentRunOrchestratorFanOutTests
 
             if (ChildUsage is not null)
                 await _runs.AddUsageAsync(childRunId, null, ChildUsage, CancellationToken.None);
+
+            // The child's own per-step ledger — what a run that executed N steps looks like from the outside.
+            for (var i = 0; i < ChildStepEntries; i++)
+            {
+                await _runs.AddUsageAsync(
+                    childRunId, Guid.NewGuid(), new UsageDetails { InputTokenCount = 1, OutputTokenCount = 1 },
+                    CancellationToken.None);
+            }
 
             if (cancelled.Task.IsCompleted)
             {
@@ -878,5 +898,65 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(2, judged.Count);
         Assert.All(judged, s => Assert.Contains("delegated run", s.VisibleText));
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
+    }
+
+    /// <summary>
+    /// T-FAN-16, <b>REGRESSION</b> (D15, the half T-FAN-5 does not cover). TWO budgets coexist and the batch owes
+    /// an answer to which one nests. T-FAN-5 pins the one that DOES: the persisted ledger, tokens only, run-level.
+    /// This pins the one that does NOT — the ephemeral per-dispatch <c>RunContext</c>, the budget that actually
+    /// gates pausing. A fan-out costs the parent exactly ONE step per sibling step, its own; the children's
+    /// internal steps count against their OWN caps.
+    /// <para>
+    /// Discriminating by the numbers rather than by wording: the parent's cap is 3 and it owns 3 steps (two
+    /// delegated + one sequential), while each of its two children reports 10 executed steps in its own ledger.
+    /// Nest the enforced budget in ANY form — all 20 child steps, or even one extra unit per child — and the
+    /// parent is over its cap the moment the group settles, so it parks at <c>step-cap</c> with "c" never
+    /// executed instead of completing. Red-before-green from the other direction too: delete
+    /// <c>SettleSiblingAsync</c>'s <c>ctx.RecordStep</c> and the sibling steps stop counting at all, which the
+    /// critic's step count catches.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task TheParentsEnforcedBudgetCountsItsOwnStepsOnly_NeverItsChildrens()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats)
+        {
+            ChildUsage = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 7 },
+            ChildStepEntries = 10, // each child really did execute 10 steps of its own
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1), ("c", null)), false));
+        var exec = new RecordingExecutor();
+        var verifier = new FakeVerifier();
+
+        await h.BuildOrchestrator(planner, verifier, childLauncher: launcher).RunAsync(
+            run, exec, Persona(), Provider(),
+            // Exactly the three steps this plan owns: one more unit of budget from anywhere and the run parks.
+            new RunProfile(MaxSteps: 3, MaxReplans: 2, TimeSpan.FromMinutes(20)),
+            TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, final!.State);   // NOT parked at step-cap
+        Assert.False(exec.PausedCalled);                       // and no non-terminal release fired
+        Assert.Equal(["c"], exec.Executed);                    // the sequential step still got its in-process turn
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+
+        // The parent's budget saw three steps — its own. Read off the slice the critic was handed rather than
+        // off the private counter, and asserted as a COUNT first so the Assert.All below cannot pass vacuously.
+        var judged = Assert.Single(verifier.SeenCompletedSteps);
+        Assert.Equal(3, judged.Count);
+
+        // Non-vacuity for the premise: the children really did persist the step counts a nesting implementation
+        // would have had to read. Without this leg the fact above holds trivially for children that ran nothing.
+        var children = await h.Runs.GetChildRunsAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(2, children.Count);
+        Assert.All(children, c => Assert.Equal(
+            10, JsonDocument.Parse(c.LedgerJson!).RootElement.GetProperty("perStep").GetArrayLength()));
+
+        // And the OTHER budget did nest, in the same run: tokens are on the parent (T-FAN-5 owns the detail).
+        var ledger = JsonDocument.Parse(final.LedgerJson!).RootElement;
+        Assert.True(ledger.GetProperty("inputTokens").GetInt64() >= 200);
     }
 }

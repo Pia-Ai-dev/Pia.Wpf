@@ -682,7 +682,10 @@ public sealed class AgentRunOrchestrator
     /// the sibling visible to a later replan and to the critic — skip it and a replan re-plans work that already
     /// ran. It also increments <c>StepsExecuted</c> once per sibling, which is correct: they ARE the run's steps.
     /// The children's own internal steps count against their OWN budgets (D15); nesting the enforced budget
-    /// would make a fan-out unpredictably fatal to the parent.
+    /// would make a fan-out unpredictably fatal to the parent. That is the half of D15 that does NOT nest — the
+    /// ephemeral per-dispatch budget, as against the persisted ledger, which does (see
+    /// <see cref="RollUpChildUsageAsync"/>) — and T-FAN-16 pins it from both sides: one extra unit per child
+    /// parks the parent at its cap, and dropping this call stops its own steps counting at all.
     /// </summary>
     private async Task SettleSiblingAsync(AgentStep sibling, RunContext ctx, StepTurnResult result, CancellationToken ct)
     {

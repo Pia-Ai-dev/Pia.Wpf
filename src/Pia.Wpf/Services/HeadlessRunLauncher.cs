@@ -41,6 +41,17 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// <c>await handle.Completion</c>, so a fan-out blocks every scheduled job for the parent's wall clock
     /// PLUS every descendant's (Phase 3 R15, and the halved child wall clock in the orchestrator's fan-out).
     /// </para>
+    /// <para>
+    /// WHY 2, and not wider: it MIRRORS <see cref="_slots"/> rather than the width of a fan-out, so the worst
+    /// case a delegating build can put on the provider is a fixed 2+2 — a number that does not grow when a
+    /// planner emits a 6-way group. A group wider than the pool is not starved, it runs in WAVES: every sibling
+    /// is dispatched and awaited (the parent never returns from the wait with a live child, D16), so the only
+    /// cost of a narrow pool is elapsed time inside the parent's own halved wall-clock budget. Raising it trades
+    /// exactly that for more concurrent provider load and a longer <see cref="StopAsync"/> drain, and it must
+    /// stay a SEPARATE number from <see cref="_slots"/> either way. It is deliberately not user-configurable:
+    /// no setting exists for it, and the depth guard (a child never delegates, 07 §7.5) is what bounds the
+    /// total rather than this cap.
+    /// </para>
     /// </summary>
     private readonly SemaphoreSlim _childSlots = new(2, 2);
 

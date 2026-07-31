@@ -1529,6 +1529,11 @@ explicitly with `Assert.Single`.
 > **BUILDER RECORD (G10) — written after the group landed. Where the tree diverges from §7 below, and why.**
 > **G7 and G8 never landed.** The build order was G6 → G9 → G10; `WaitingForChildren`, D9's two park members and
 > G7's roster surface do not exist on this tree. Eight divergences, all annotated at their line in code:
+>
+> **READ THIS FIRST — divergences 1 and 2 are SUPERSEDED.** G7 (`d09c71f`) and G8 (`3e12bcf`) both landed on
+> 2026-07-31, after this record was written. The tree now parks the parent at `WaitingForChildren` and leaves it
+> through a CAS, at the two call points this record says are only commented. The other six divergences are still
+> the tree; each says so at its own line.
 > 1. **Only ONE of D9's three members was added** — `GetChildRunsAsync`. The parent therefore stays `Running` for
 >    the whole wait instead of parking at `WaitingForChildren`. Absorbing the park would have dragged in the
 >    appended ordinal, the three `ChatSessionManager` sets (§5.4 — miss `:183` and an interactive parent is
@@ -1537,9 +1542,16 @@ explicitly with `Assert.Single`.
 >    calls the highest-risk in Phase 3, bolted onto the largest surface in the batch. An appended persisted
 >    ordinal with no consumers is also worse than none. `AgentEnums.cs` is untouched. **G8's seam is commented in
 >    place** in `TryFanOutAsync`, naming both call points.
+>    **SUPERSEDED by G8 (`3e12bcf`)**: all three D9 members now exist, `AgentEnums.cs` carries
+>    `WaitingForChildren = 8`, and `TryFanOutAsync` calls `SafeBeginChildWait` at the marked seam. A reader who
+>    stops at the sentence above will conclude the durable park is still missing — it is not.
 > 2. **The `cts.IsCancellationRequested` check after the `WhenAll` stands in for `TryEndChildWaitAsync`'s CAS.**
 >    Same defect either way (R11): without it the drain loop's next blind `SetStateAsync(Running)` resurrects a
 >    run something else already settled. Pinned by T-FAN-8.
+>    **SUPERSEDED by G8 (`3e12bcf`)**: both now exist and they are NOT interchangeable. The cancellation check
+>    runs first and owns the case where this loop *does* still own the run and must settle it `Cancelled` itself;
+>    the CAS runs after it and owns the case where the row belongs to someone else (`FanOutResult.Abandoned`).
+>    Deleting either one re-opens R11 on its own path — see G8's own record in §5.
 > 3. **§7.2's "non-null override ⇒ skip provisioning" is keyed on `parentRunId is not null` instead.** A child of
 >    an unisolated parent legitimately gets a NULL root, and the literal reading would then provision at the
 >    child's own id — isolating a child whose parent writes the assistant folder, so the two would not even share
@@ -1566,6 +1578,34 @@ explicitly with `Assert.Single`.
 > harness to honour a file name was the worse trade. And **the step-failure replan branch was extracted into one
 > local function** so the in-process and fan-out paths share one copy of the replan budget, the `KeepDone`
 > re-ordinaling and the two terminal fails.
+
+> **G10 FINISHING PASS — 2026-07-31, after G8. What the group still owed and what closed it.**
+> G10's own commit (`9c32999`) listed three debts. The first — *the parent does not park durably* — was closed by
+> **G8**, not here: verified by reading rather than re-built (`TryFanOutAsync`'s `SafeBeginChildWait` /
+> `SafeTryEndChildWait`, `AgentRunService.BeginChildWaitAsync` / `TryEndChildWaitAsync`, and the two facts G8
+> appended to `AgentRunOrchestratorFanOutTests`). Nothing in this pass re-implements it.
+>
+> 1. **D15's answer now has a PIN for both halves.** T-FAN-5 already pinned the half that nests (the persisted
+>    ledger, tokens only, run-level). The half that does **not** — the ephemeral per-dispatch `RunContext`
+>    budget — was stated in prose at `SettleSiblingAsync` and nowhere asserted, so nothing stopped a later
+>    change from feeding child step counts into the parent's cap. **T-FAN-16** pins it: a parent capped at 3
+>    steps owning 3 (two delegated + one sequential) completes even though each child reports 10 executed steps
+>    in its own ledger. Red-before-green by deleting `SettleSiblingAsync`'s `ctx.RecordStep`.
+> 2. **`_childSlots`' SIZE is now argued, not just its separateness.** The field's remarks explained at length
+>    why the pool must not be `_slots`; they never said why it holds **2**. It does now, including what a
+>    fan-out wider than 2 does (it runs in waves — bounded, not starved) and what raising it costs.
+> 3. **SPEC CORRECTION — R9/the `ExecutingRunStore` premise is MOOT, not merely satisfied.** §2 and the group
+>    brief both reason from "a child sharing the parent's `chatId` needs no store change". A child shares no
+>    `chatId`: `LaunchCoreAsync` mints `chatId = Guid.NewGuid()` per dispatch, so every child owns its own stub
+>    chat and `ExecutingRunStore` never holds two runs for one chat on this path. The conclusion (no store
+>    change) is right for a stronger reason than the one given.
+> 4. G8 re-used two of this file's fact numbers (a second `T-FAN-4` and `T-FAN-10`) for the two facts it
+>    appended. **Left alone deliberately** — G8's commit message names `T-FAN-10` by number, and renumbering
+>    would leave an immutable message pointing at nothing. The class doc now says which numbering each fact
+>    carries.
+>
+> Still owed after this pass, and NOT owed to G10: the simplify pass, the review pass and the human live-smoke
+> of a real fan-out (workflow phases 3–5). No Phase 3 group is unbuilt.
 
 ### 7.1 Why the shared `_slots` pool deadlocks (the argument, stated)
 
