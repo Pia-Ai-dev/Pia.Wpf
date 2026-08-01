@@ -146,14 +146,18 @@ public sealed class RunProgressViewModelSteeringTests
 
     /// <summary>
     /// D4's wiring, from the VM side: <see cref="RunProgressViewModel.NudgeText"/> rides the SAME resume call
-    /// the budget Continue already makes, and is cleared once the dispatch has been started — a nudge that
-    /// failed to reach this resume must not silently ride the next one.
+    /// the budget Continue already makes, and is cleared ONLY when <c>ResumeAsync</c> returns <c>true</c> —
+    /// this call actually started the dispatch (a CAS win). Stubbed <c>true</c> deliberately: an unconfigured
+    /// substitute returns <c>false</c> by default, which would make this fact pass whether or not the clear
+    /// were gated at all — see the sibling fact below for the <c>false</c> half, which is the one that
+    /// actually discriminates the gate.
     /// </summary>
     [Fact]
     public async Task Continue_CarriesTheNudgeTextAndClearsIt()
     {
         var run = new AgentRun { Id = _runId, State = AgentRunState.Paused };
         _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+        _resume.ResumeAsync(_runId, Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var vm = CreateVm();
         await vm.RefreshAsync();
@@ -163,6 +167,29 @@ public sealed class RunProgressViewModelSteeringTests
 
         await _resume.Received(1).ResumeAsync(_runId, "keep it under 200 words", Arg.Any<CancellationToken>());
         Assert.Null(vm.NudgeText);
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// The other half, and the one that actually proves the gate: <c>ResumeAsync</c> returning <c>false</c> —
+    /// a lost CAS, or a run someone else already claimed — is NOT an exception, so the <c>catch</c> never
+    /// fires, and a resume that never started must not destroy the note before the retry that follows.
+    /// </summary>
+    [Fact]
+    public async Task Continue_WhenResumeDidNotStart_LeavesTheNudgeTextIntact()
+    {
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Paused };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+        _resume.ResumeAsync(_runId, Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+        vm.NudgeText = "keep it under 200 words";
+
+        await vm.ContinueCommand.ExecuteAsync(null);
+
+        await _resume.Received(1).ResumeAsync(_runId, "keep it under 200 words", Arg.Any<CancellationToken>());
+        Assert.Equal("keep it under 200 words", vm.NudgeText);
         vm.Dispose();
     }
 
@@ -237,6 +264,7 @@ public sealed class RunProgressViewModelPlanMutationTests
             _runs.ClearReceivedCalls();
         }
 
+        vm.EditStepCommand.Execute(row1); // SaveStepEdit refuses a row whose editor was never opened
         row1.EditTitle = "edited";
         row1.EditIntent = null;
         await AssertCalledOnce(() => vm.SaveStepEditCommand.ExecuteAsync(row1));
@@ -273,6 +301,32 @@ public sealed class RunProgressViewModelPlanMutationTests
     }
 
     /// <summary>
+    /// A rejection note must not survive past the pause it was about — the <c>PublishNote</c> precedent
+    /// guards itself the same way. Once the run leaves <c>Paused</c> (resumed, here), the next projection
+    /// clears it, so a run that ran to completion does not keep showing a stale plan-mutation complaint.
+    /// </summary>
+    [Fact]
+    public async Task PlanMutationNote_ClearsOnceTheRunLeavesPaused()
+    {
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s1", Status = AgentStepStatus.Pending };
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Paused, Plan = [step] };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+        _runs.ApplyPlanMutationAsync(_runId, Arg.Any<IReadOnlyList<PlanStepEdit>>(), Arg.Any<CancellationToken>())
+            .Returns(new PlanMutationResult(PlanMutationOutcome.TitleRequired, 1));
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+        await vm.SkipStepCommand.ExecuteAsync(vm.Steps.Single());
+        Assert.NotNull(vm.PlanMutationNote); // non-vacuity: the rejection really set it
+
+        run.State = AgentRunState.Running; // the run resumed and moved on
+        await vm.RefreshAsync();
+
+        Assert.Null(vm.PlanMutationNote);
+        vm.Dispose();
+    }
+
+    /// <summary>
     /// W12, the RED-before-the-fix fact: an edit preserves the step's Id, and the row must repaint IN PLACE —
     /// never be re-minted — or the panel would lose whatever local UI state (this test doesn't set any, but
     /// <see cref="StepRowViewModel"/>'s own identity is otherwise meaningless to a caller holding a reference).
@@ -292,6 +346,7 @@ public sealed class RunProgressViewModelPlanMutationTests
         var vm = CreateVm();
         await vm.RefreshAsync();
         var rowBefore = vm.Steps.Single();
+        vm.EditStepCommand.Execute(rowBefore); // SaveStepEdit refuses a row whose editor was never opened
         rowBefore.EditTitle = "new title";
         rowBefore.EditIntent = null;
 

@@ -572,6 +572,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (State is not (RunProgressState.Running or RunProgressState.WaitingForChildren))
             IsPausing = false;
 
+        // A rejection note ("the plan can only be changed while paused") must not survive past the pause it
+        // was about — the PublishNote precedent guards itself the same way (`if (PublishNote is null && …)`
+        // in ApplyWorkspaceOutcomeAsync); here the guard is simpler because ONLY a successful mutation clears
+        // it otherwise, and a run that has since resumed and moved on has nothing left to say about a plan
+        // edit that happened, or didn't, in a state it no longer occupies.
+        if (State != RunProgressState.Paused)
+            PlanMutationNote = null;
+
         TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;
         SyncSteps(run.Plan);
         CurrentActivity = ComputeActivity(run);
@@ -669,9 +677,12 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// Resume a budget-paused OR user-paused run (§7.2 / Batch 08 D1 item 8's CanContinue widening). The
     /// resume service CAS-claims internally by the row's own state, so a double-click or a panel+Flow race is
     /// safe; a real resume flips State→Running via RunChanged, which clears CanContinue. Carries
-    /// <see cref="NudgeText"/> (null on an ordinary budget-continue) and clears it once the dispatch has been
-    /// started, whether it succeeded or not — a nudge that failed to reach this resume must not silently ride
-    /// the next one. Logs the run id only; <see cref="NudgeText"/> is user content and never appears in a log.
+    /// <see cref="NudgeText"/> (null on an ordinary budget-continue) and clears it ONLY when
+    /// <see cref="IAgentRunResumeService.ResumeAsync"/> returns <c>true</c> — that return means THIS call
+    /// actually started the dispatch (a CAS win), so a lost race or an already-claimed run (<c>false</c>, not
+    /// an exception — the <c>catch</c> below never sees it) leaves the box exactly as the user left it: a
+    /// resume that never started must not silently destroy the note before the retry that follows. Logs the
+    /// run id only; <see cref="NudgeText"/> is user content and never appears in a log.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanContinue))]
     private async Task Continue()
@@ -679,7 +690,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         IsResuming = true;
         try
         {
-            await _resumeService.ResumeAsync(_runId, NudgeText);
+            if (await _resumeService.ResumeAsync(_runId, NudgeText))
+                NudgeText = null;
         }
         catch (Exception ex)
         {
@@ -688,7 +700,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         finally
         {
             IsResuming = false;
-            NudgeText = null;
         }
     }
 
@@ -745,10 +756,20 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// every other currently-Pending row rides along verbatim (D3: the service takes the complete list, never
     /// a diff). Closes the editor unconditionally: on success the re-projection shows the saved text, on
     /// rejection it shows the UNCHANGED persisted text plus <see cref="PlanMutationNote"/> explaining why —
-    /// either way there is nothing left to edit.</summary>
+    /// either way there is nothing left to edit.
+    /// <para>
+    /// Refuses a row whose editor was never opened: <see cref="StepRowViewModel.EditTitle"/> defaults to
+    /// <c>""</c>, so a Save reachable with no prior <see cref="EditStep"/> would submit a blank title as a
+    /// genuine (rejected) mutation instead of doing nothing. Unreachable from the shipped markup — the Save
+    /// button lives only inside the <c>IsEditing</c>-gated editor — but stated as a guard rather than left to
+    /// that alone, since a command is a wider surface than the one button that happens to bind it today.
+    /// </para>
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanMutatePlan))]
     private async Task SaveStepEdit(StepRowViewModel row)
     {
+        if (!row.IsEditing) return;
+
         var edits = Steps.Where(r => r.Status == AgentStepStatus.Pending)
             .Select(r => r.StepId == row.StepId
                 ? new PlanStepEdit(r.StepId, row.EditTitle, row.EditIntent, r.ExpectedArtifact)
