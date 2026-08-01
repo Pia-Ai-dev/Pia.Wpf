@@ -259,7 +259,7 @@ public class AssistantViewParseTests
                 // one row to it: that is the TEMPLATE INSTANTIATION the builder's open item said no test
                 // could reach, and it pins every path in the template without a layout pass on a view whose
                 // Loaded handlers are a hazard.
-                var items = FindLogical<ItemsControl>(panel!)
+                var items = BindingPathWalker.FindLogical<ItemsControl>(panel!)
                     .Single(ic => ReferenceEquals(ic.ItemsSource, vm.Timeline));
                 row = (FrameworkElement)items.ItemTemplate.LoadContent();
                 row.DataContext = new TimelineRowViewModel
@@ -346,7 +346,7 @@ public class AssistantViewParseTests
 
             WpfStaHost.Run(() =>
             {
-                var items = FindLogical<ItemsControl>(panel!)
+                var items = BindingPathWalker.FindLogical<ItemsControl>(panel!)
                     .Single(ic => ReferenceEquals(ic.ItemsSource, vm!.Steps));
                 row = (FrameworkElement)items.ItemTemplate.LoadContent();
                 row.DataContext = new StepRowViewModel
@@ -363,7 +363,7 @@ public class AssistantViewParseTests
 
             (boundPersonaId, boundEmoji, boundAccent, boundVisibility, texts) = WpfStaHost.Run(() =>
             {
-                var avatar = FindLogical<PiaPersonaAvatar>(row!).Single();
+                var avatar = BindingPathWalker.FindLogical<PiaPersonaAvatar>(row!).Single();
                 return (avatar.PersonaId, avatar.Emoji, avatar.AccentColor, avatar.Visibility,
                     FindTextBlocks(row!).Select(tb => tb.Text).ToArray());
             });
@@ -395,17 +395,6 @@ public class AssistantViewParseTests
 
     /// <summary>ViewStrings.resx (neutral = EN), same reasoning as <see cref="HintText"/>.</summary>
     private const string TimelineEmptyText = "No tool decisions were recorded for this run.";
-
-    /// <summary>The <see cref="FindTextBlocks"/> walk, generalized — logical, for the same reason.</summary>
-    private static IEnumerable<T> FindLogical<T>(DependencyObject root) where T : DependencyObject
-    {
-        if (root is T hit)
-            yield return hit;
-
-        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
-            foreach (var descendant in FindLogical<T>(child))
-                yield return descendant;
-    }
 
     /// <summary>
     /// A store-less <see cref="RunProgressViewModel"/>: the trailing-optional <c>IAgentTimelineService</c> is
