@@ -289,6 +289,28 @@ public sealed class AgentRunOrchestrator
 
                         if (children.AnyParked)
                         {
+                            // Batch 08 D6: THE PARENT'S OWN TRANSITION. The cascade paused the children; this
+                            // is where the parent's row follows them. Consuming the request is what picks
+                            // between the two parks, and it is a consume rather than a peek for the same
+                            // reason the in-process branch's is: a request is honoured exactly once.
+                            //
+                            // By this point the row is already Running — the un-park CAS ran INSIDE
+                            // TryFanOutAsync, before this caller ever saw AnyParked — which is why
+                            // TryPauseUserAsync's source set contains Running. The ledger clocks line up:
+                            // TryEndChildWaitAsync opened a work segment and TryPauseUserAsync closes it.
+                            //
+                            // Order is D1 item 6's, and the sibling steps are already back at Pending (the
+                            // fan-out's parked arm did that per child): PinRange → the CAS → the non-terminal
+                            // executor release → return. A lost CAS still releases the executor and returns —
+                            // the row is not ours to correct, but the session is.
+                            if (_steering?.TryConsumePauseRequest(run.Id) == true)
+                            {
+                                await PinRange().ConfigureAwait(false);
+                                await SafePauseUser(run.Id).ConfigureAwait(false);
+                                await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                                return;
+                            }
+
                             // D13: a PARKED child is not a finished child. Its work is durable and resumable,
                             // so failing the parent would throw it away and burn a replan. Re-park the parent
                             // through the existing budget-pause shape — its fan-out steps are still Pending, so
@@ -737,7 +759,15 @@ public sealed class AgentRunOrchestrator
                     await RollUpChildUsageAsync(run.Id, child, cts.Token).ConfigureAwait(false);
                     break;
 
-                case AgentRunState.WaitingForInput:
+                // Batch 08 D6 widened this arm to an EXPLICIT two-member set, never a range (D7) and never a
+                // null-tolerant pattern: a null child (a SafeGetRunAsync fault) must stay in `default:`, where a
+                // run whose state cannot be read is charged as a failure rather than silently treated as parked.
+                // Paused(4) is a CASCADE-paused child — the parent's own pause reached it — and it is parked in
+                // exactly the sense this arm means. Without it every cascade-paused child is recorded a FAILED
+                // sibling (SafeRecordStep AND ctx.RecordStep, so the critic and any replan see failed work, with
+                // "child run did not settle" as the recorded outcome) and its tokens are dropped as well: the
+                // user presses Pause and the parent replans around durable, resumable work.
+                case AgentRunState.WaitingForInput or AgentRunState.Paused:
                     // §0.9/D13: HeadlessRunHandle.Completion settles on a budget PAUSE too, which is not
                     // terminality. Roll up NOTHING — the child will resume and its tokens are pushed once, from
                     // a terminal branch, which is what stops a resumed child being billed to its parent twice.
@@ -911,7 +941,14 @@ public sealed class AgentRunOrchestrator
                 // A parked child is the one shape the cancel above cannot reach across a restart: states at or
                 // above WaitingForInput are never swept, on purpose (a parked run must survive a restart), so
                 // this settle is the only thing that stops it lingering with its own stub chat forever.
-                if (old.State is AgentRunState.WaitingForInput)
+                //
+                // Batch 08 D6: Paused(4) joins the set, EXPLICITLY and never as a range. A cascade-paused child
+                // presents the identical shape — its dispatch has already returned, so it is not in _inflight
+                // and the CancelAsync above is a no-op against it — and it is reached the same way a restart
+                // reaches a budget-parked one. Without it every cascade-paused child of a re-dispatched fan-out
+                // leaks forever with its own visible stub chat, which is precisely what this settle exists to
+                // prevent.
+                if (old.State is AgentRunState.WaitingForInput or AgentRunState.Paused)
                     await _runService.FailAsync(old.Id, "superseded by a re-dispatched fan-out", cancelled: true,
                         CancellationToken.None).ConfigureAwait(false);
 

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -329,6 +330,92 @@ public sealed class D5PausePremiseTests : IDisposable
         Assert.Empty(jobs.Advanced);
     }
 
+    // ------------------------------------------ D1 item 6, as a scheduled job
+
+    /// <summary>
+    /// Batch 08 G5. <b>§1 D1 item 6 as a test, and the fact that catches a builder who reorders the pause
+    /// branch.</b> A USER pause of a scheduled agent run must leave the row reading <c>Paused</c> BEFORE the
+    /// dispatch task returns, because <c>ScheduledJobBackgroundService</c> reads the row immediately after
+    /// <c>await handle.Completion</c> and its park branch is an <c>else if</c>: a row that is not yet
+    /// <c>Paused</c>/<c>WaitingForInput</c> at that instant lands on <c>MarkRunFailedAsync</c> + a failure toast
+    /// + a strike against the 5-strike valve — and a <c>RecurrenceType.Once</c> job is retired on the first
+    /// strike.
+    /// <para>
+    /// <see cref="RunNotParkedWhenItsCompletionSettles_IsBookkeptAsAJobFailure"/> is the other half of this
+    /// pair: it drives the same scheduler with a row that is NOT parked when <c>Completion</c> settles and shows
+    /// all three failure symptoms. Here the real launcher, the real orchestrator, the real steering service and
+    /// the real scheduler produce none of them.
+    /// </para>
+    /// <para>
+    /// MEASURED neutralization, not a claim: deferring the pause branch's CAS so the dispatch returns first
+    /// (<c>_ = Task.Run(async () =&gt; { await Task.Delay(500); await SafePauseUser(run.Id); })</c>) reds this on
+    /// <c>jobs.Failed == [(job, "Running")]</c> — a real strike with a real failure toast, for a run that is
+    /// paused half a second later. The state legs below would still pass on a re-read taken late enough, which
+    /// is exactly why the bookkeeping is asserted first.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task PausedScheduledRun_AdvancesTheScheduleAndFailsNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new RunSteeringStore();
+        var steering = new AgentRunSteeringService(_runs, store, NullLogger<AgentRunSteeringService>.Instance);
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var (real, planner, settings) = BuildLauncher(
+            steering: store, stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.StepsFor = _ => 2; // a REAL plan, so the run reaches the drain loop and a step can be in flight
+
+        var recorder = new RecordingLauncher(real);
+        var jobs = new FakeJobService();
+        var job = NewAgentJob("job-1");
+        jobs.SeedDue(job);
+        var notifications = new FakeNotificationSurface();
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
+            recorder, settings, _runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        try
+        {
+            var tick = bg.ExecuteOnceAsync(ct);
+            await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+            // The recorder appends on the LAUNCHING thread while the dispatch runs on another, so the step can
+            // be in flight a hair before the handle is recorded. Wait for it rather than assuming an order.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (recorder.Launched.Count == 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(10, ct);
+            var runId = Assert.Single(recorder.Launched).Handle.RunId;
+
+            // Running with a step in flight — the only state a user pause is legal from, asserted so this fact
+            // cannot pass through the Planning hole where the CAS loses and writes nothing.
+            Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(runId, ct))!.State);
+            Assert.True(await steering.PauseAsync(runId, ct));
+
+            await tick.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+            // THE CLAIM, asserted first because it is what a reorder breaks: the job was not booked as a
+            // failure, no failure toast was raised, and the schedule still advanced. The Advanced leg is the
+            // positive one, so the two Empty legs cannot pass vacuously on a tick that did nothing.
+            Assert.Empty(jobs.Failed);
+            Assert.Equal(0, notifications.FailureCount);
+            Assert.Contains(job.Id, jobs.Advanced);
+            Assert.Empty(jobs.Completed); // nor was it booked as a success
+
+            // And the run really is user-paused and resumable, not merely "not failed".
+            var paused = await _runs.GetAsync(runId, ct);
+            Assert.Equal(AgentRunState.Paused, paused!.State);
+            Assert.Null(paused.CompletedAt);
+            Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused));
+            Assert.Equal(AgentStepStatus.Pending, paused.Plan[0].Status);
+        }
+        finally
+        {
+            await real.StopAsync(CancellationToken.None);
+        }
+    }
+
     // ------------------------------------------------- D5's new consequence
 
     /// <summary>
@@ -404,8 +491,16 @@ public sealed class D5PausePremiseTests : IDisposable
     /// planner returns a REAL multi-step plan instead of <c>PlanResult.Fallback</c>, and the settings substitute
     /// is handed back so the scheduler can share it.
     /// </summary>
+    /// <param name="steering">Batch 08 G5: the steering registry, registered with the per-run scope as well so
+    /// the run's own orchestrator reads the SAME instance the launcher writes its cancel sink into. Omitted ⇒ no
+    /// registry anywhere, i.e. the pre-Batch-08 launcher every other fact in this file exercises.</param>
+    /// <param name="stream">Batch 08 G5: replaces <see cref="Drive"/> so a fact can hold a run INSIDE a step —
+    /// the only state a user pause is legal from — instead of only inside the planner. Handed the step's own
+    /// token.</param>
     private (HeadlessRunLauncher Launcher, StepPlanner Planner, ISettingsService Settings) BuildLauncher(
-        AppSettings? appSettings = null)
+        AppSettings? appSettings = null,
+        IRunSteeringStore? steering = null,
+        Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -415,7 +510,7 @@ public sealed class D5PausePremiseTests : IDisposable
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Drive());
+            .Returns(ci => stream is not null ? stream(ci.ArgAt<CancellationToken>(5)) : Drive());
 
         var composer = Substitute.For<IAssistantPromptComposer>();
         composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -444,6 +539,10 @@ public sealed class D5PausePremiseTests : IDisposable
         services.AddSingleton<IAgentVerifier>(new FakeVerifier());
         services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
         services.AddSingleton<IExecutingRunStore>(_executing);
+        // Batch 08: the loop needs the SAME registry the launcher registers its sink with, or it can never
+        // consume the request the launcher's dispatch made possible — the orchestrator's parameter is
+        // trailing-optional, so an unregistered store is silently "no steering", i.e. the pre-Batch-08 loop.
+        if (steering is not null) services.AddSingleton(steering);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
         services.AddTransient<AgentRunOrchestrator>();
@@ -451,7 +550,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var launcher = new HeadlessRunLauncher(
             sp.GetRequiredService<IServiceScopeFactory>(), _chats, _runs, settings, providers, personas,
-            _executing, NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase);
+            _executing, NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase,
+            steering: steering);
         return (launcher, planner, settings);
     }
 
@@ -460,6 +560,18 @@ public sealed class D5PausePremiseTests : IDisposable
         await Task.Yield();
         yield return new TextDelta("reply");
         yield return new Finished(null, "test-model");
+    }
+
+    /// <summary>Signals that a step is in flight, then holds it there until its own token is cancelled — the
+    /// state a user pause is legal from, and the one <see cref="Drive"/> passes straight through.</summary>
+    private static async IAsyncEnumerable<ChatStreamItem> HoldInsideTheStep(
+        TaskCompletionSource entered, [EnumeratorCancellation] CancellationToken ct)
+    {
+        entered.TrySetResult();
+        await Task.Delay(Timeout.Infinite, ct);
+#pragma warning disable CS0162 // unreachable: the await above never returns normally, but the iterator needs an exit
+        yield break;
+#pragma warning restore CS0162
     }
 
     /// <summary>A planner that emits a real N-step plan (never the single-turn degrade), so a run can PARK.</summary>

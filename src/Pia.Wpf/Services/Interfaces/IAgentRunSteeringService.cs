@@ -16,9 +16,12 @@ public interface IAgentRunSteeringService
     /// The pausable set is EXPLICIT and never a range (D7). <c>Planning</c> is excluded on purpose: a resume
     /// runs <c>RunAsync(resume: true)</c>, which skips planning entirely, so a run paused mid-plan would come
     /// back with no plan, drain zero steps and settle <c>Completed</c> having done nothing.
-    /// <c>WaitingForChildren</c> — a delegating parent — is refused for now and becomes a CASCADE over the
-    /// children in D6/G5; it must never simply fire the parent's own token, which the fan-out reads as a
-    /// genuine cancel and settles the run terminally.
+    /// </para>
+    /// <para>
+    /// D6: a <c>WaitingForChildren</c> parent CASCADES — its own request is recorded and every non-terminal
+    /// child's cancel is fired, while the parent's own token is deliberately NEVER fired. The fan-out reads a
+    /// fired parent token as a genuine cancel and settles the run terminally, which is the one way a pause
+    /// turns into the thing it exists not to be.
     /// </para>
     /// </summary>
     Task<bool> PauseAsync(Guid runId, CancellationToken ct = default);
