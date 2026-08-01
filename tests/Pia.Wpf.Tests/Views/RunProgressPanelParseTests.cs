@@ -92,6 +92,14 @@ public class RunProgressPanelParseTests
         // remaining named surfaces; each is single-occurrence in the markup, per the impl spec's own anchor
         // discipline (`=State ` and `=CanPublish ` would also fit but are each bound twice or more, so an
         // anchor on either would survive removal of one occurrence).
+        // RED DEMO (one of the four, same shape/helper/format string as the other three): renamed
+        // RunProgressPanel.xaml:50's Binding CurrentActivity to CurrentActivityX (single-occurrence,
+        // grep-confirmed), full -t:Rebuild (still 0 Warning(s)/0 Error(s) -- a binding path is not a compile
+        // error), ran the class: with this anchor present, "Assert.Contains() Failure: Filter not matched in
+        // collection" here (:96); with this line ALSO temporarily commented out (test file only, never
+        // src/), the sweep at :108 failed independently naming
+        // "TextBlock.Text=CurrentActivityX [RunProgressViewModel] UNRESOLVED". Both the XAML typo and the
+        // comment-out reverted immediately; git diff --stat -- src/ came back empty.
         Assert.Contains(bindings, b => b.Contains("=TruncationNote "));   // the state chip's region (:24)
         Assert.Contains(bindings, b => b.Contains("=CurrentActivity "));  // the activity line (:50)
         Assert.Contains(bindings, b => b.Contains("=PublishCommand "));   // the publish offer (:40)
