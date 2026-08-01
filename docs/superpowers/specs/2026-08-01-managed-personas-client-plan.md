@@ -138,6 +138,7 @@ Step 0 (Pia.Shared DTOs reachable)
    │        PersonasView badge + IsReadOnly rebind
    │        3 VM guards + snackbars
    │        3 × .resx keys (en/de/fr)
+   │        + PiaLabelChipStyle & the picker chip (§4.1)
    │
    ├── C5  chat header  ◄── independent of C1–C4 entirely — can run first or parallel
    │        X-Pia-Persona through 8 handlers + IAiClientService + 3 callers
@@ -151,6 +152,68 @@ strictly sequential.
 
 **Not parallelizable:** anything touching `SyncClientService.PullPageAsync`, `PersonaService.cs`, or the
 three `.resx` files — single-writer each.
+
+---
+
+## 4.1 C4 extension — a "Managed" chip, reusing the app's existing chip design
+
+The handoff's C4 only badges managed personas in Settings. Extend it so the marker also appears in the
+**chat persona picker** (`Views/AssistantView.xaml:383`, the ComboBox bound to `AvailablePersonas`), where a
+user actually selects one. Additive, no ViewModel or data change — `IsManaged` is already on the item there
+via C2.
+
+### Reuse, don't invent
+
+The app has two chip families. The interactive ones (`Controls/Chat/PiaAgentModeChip.xaml`, a 34px-min
+button; `Controls/Chat/PiaSourceChip.xaml`, a pill with a 22px avatar) are far too heavy for a combo item.
+The one that fits is the small **static label chip**, `Controls/Memory/PiaTypeChip.xaml`:
+
+```
+Border  CornerRadius="4"  Padding="7,1"  VerticalAlignment="Center"
+  TextBlock  FontSize="10.5"  FontWeight="SemiBold"
+```
+
+**The control cannot be reused directly** — it is hardwired to `MemoryType` through three converters
+(`MemoryTypeToBrushBg`, `MemoryTypeToBrushFg`, `MemoryTypeToLabelConverter`). Reuse the *visual* instead:
+add a `PiaLabelChipStyle` (`TargetType="Border"`) to `Resources/Theme/PiaStyles.xaml` carrying exactly the
+geometry above, next to the existing `PiaIconChipStyle` (line 92). Then the chip is:
+
+```xml
+<Border Style="{StaticResource PiaLabelChipStyle}"
+        Background="{DynamicResource PiaAccentSoftBrush}"
+        Visibility="{Binding IsManaged, Converter={StaticResource BooleanToVisibilityConverter}}"
+        ToolTip="{loc:Str Personas_ManagedTooltip}">
+  <TextBlock Text="{loc:Str Personas_Managed}" FontSize="10.5" FontWeight="SemiBold"
+             Foreground="{DynamicResource PiaInkBrush}"/>
+</Border>
+```
+
+Both resource keys are ones C4 is already adding — no extra translation work.
+
+**Do not refactor `PiaTypeChip` onto the new style in this session.** It is the obvious follow-up and it is
+also how a contained UI addition turns into a memory-view regression. File it separately.
+
+### Where it goes
+
+1. **`Views/SettingsViews/PersonasView.xaml`** — on the card, beside the existing `Personas_BuiltIn` badge
+   (line 120). Plenty of room here; full "Managed" text.
+2. **`Views/AssistantView.xaml`** — a 4th column in the picker's `ItemTemplate` (lines 389-420), after the
+   accent swatch.
+
+### The one real consequence: picker width
+
+The ComboBox is `MinWidth="140" MaxWidth="200"` (lines 385-386) and the name already carries
+`TextTrimming="CharacterEllipsis"`. A ~55px chip will start truncating persona names — the thing users
+actually read — and a managed persona with an accent colour shows swatch *and* chip, which is busy.
+
+Mitigation, cheapest first:
+- Raise `MaxWidth` to `240`. Contained, one attribute, and the toolbar has room.
+- If that is judged too wide, fall back to an icon-only marker in the picker
+  (`<ui:SymbolIcon Symbol="Briefcase24" FontSize="12"/>` with the same tooltip, ~12px) and keep the text
+  chip on the settings cards only.
+
+Take the first option unless the toolbar visibly crowds at the app's minimum window width — check it,
+don't assume.
 
 ---
 
