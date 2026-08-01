@@ -101,6 +101,18 @@ the settings Assistant test reads `SettingsViewModel.AssistantVm` and asserts it
 future re-host then fails the test instead of quietly checking every path against the wrong ViewModel, which
 is the one way this whole technique can go green while proving nothing.
 
+**Corrected 2026-08-01 (post-review, D1).** The reasoning in the paragraph above is right and the trap it
+names is real — hardcoding the root *is* the way this technique goes green while proving nothing, and all six
+shipped facts avoid it. What the third sentence overstated is what the reflection *buys*: reading the root off
+`SettingsViewModel.<X>Vm` catches a **rename** (`nameof` stops compiling) and a **retype**
+(`Assert.Equal(typeof(...), root)`) — **not a re-host.** No parse test opens the host markup, so repointing
+`SettingsView.xaml:123` at `{Binding AccountVm}` kills all 40 of GeneralView's paths at runtime, renders the
+tab as empty controls, and leaves every Views fact green (measured 16/16, twice, at 0 warnings). **The
+re-host is guarded by a separate fact**, `ViewHostDataContextTests`, which constructs the real hosts, reads
+the `DataContext` binding path declared at each of the six `SettingsView.xaml` host sites plus
+`AssistantView.xaml:51`, and asserts it found all six — so a walk that reaches none of them cannot pass
+vacuously.
+
 **Per-view non-vacuity floor, not a shared one** (D2, decided): a shared floor lets a large view's path count
 cover for a small view whose walk died at a templated container.
 

@@ -37,10 +37,14 @@ public class RunProgressPanelParseTests
 
     /// <summary>
     /// Reflects the ViewModel type off <see cref="AssistantViewModel.ActiveRunProgress"/> rather than
-    /// hardcoding <see cref="RunProgressViewModel"/> (the one way this technique can go green while proving
-    /// nothing): <c>AssistantView.xaml:51</c> hosts the panel with
-    /// <c>DataContext="{Binding ActiveRunProgress}"</c>, so the walk below is only sound while that property
-    /// still has this type. <c>ActiveRunProgress</c> is source-generated from
+    /// hardcoding <see cref="RunProgressViewModel"/> — which pins the TYPE and nothing else. <c>nameof</c>
+    /// makes a RENAME of that property a compile error and the <c>Assert.Equal</c> catches a RETYPE, so the
+    /// walk below is only sound while the property still has this type. <b>It does not observe the host
+    /// SITE:</b> nothing here opens <c>AssistantView.xaml</c>, where <c>:51</c> hosts the panel with
+    /// <c>DataContext="{Binding ActiveRunProgress}"</c>, so a RE-HOST onto another property is caught by
+    /// <see cref="ViewHostDataContextTests"/> and by nothing in this file (Batch 14 review, D1 — repointing
+    /// <c>:51</c> at <c>VoiceMode</c> kills all 28 paths below and left 16/16 Views facts green). This walk
+    /// needs both. <c>ActiveRunProgress</c> is source-generated from
     /// <c>[ObservableProperty] private RunProgressViewModel? _activeRunProgress;</c>
     /// (<c>AssistantViewModel.cs:136</c>–<c>:137</c>) — the <c>?</c> is compile-time NRT metadata only, so
     /// <c>.PropertyType</c> is still <c>typeof(RunProgressViewModel)</c>.

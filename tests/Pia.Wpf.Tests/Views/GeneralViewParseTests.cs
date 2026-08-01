@@ -46,9 +46,11 @@ public class GeneralViewParseTests
     [Fact]
     public void EveryBindingPath_ResolvesOnTheViewModelThatMarkupRootsItAt()
     {
-        // The root DataContext is CHECKED, not assumed: SettingsView.xaml:123 hosts this view with
-        // DataContext="{Binding GeneralVm}", so the walk below is only sound while that property still has
-        // this type.
+        // The root TYPE is checked, not assumed — but ONLY the type: nameof makes a RENAME of
+        // SettingsViewModel.GeneralVm a compile error and the Assert.Equal below catches a RETYPE. Nothing
+        // here opens SettingsView.xaml, so the host SITE (:123, DataContext="{Binding GeneralVm}") is not
+        // observed by this fact; ViewHostDataContextTests is the guard that reads it (Batch 14 review, D1,
+        // where a re-host to AccountVm left 16/16 Views facts green). This walk needs both.
         var root = typeof(SettingsViewModel)
             .GetProperty(nameof(SettingsViewModel.GeneralVm), BindingFlags.Public | BindingFlags.Instance)!
             .PropertyType;

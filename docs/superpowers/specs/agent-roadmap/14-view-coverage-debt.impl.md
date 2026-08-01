@@ -721,8 +721,16 @@ Assert.True(unresolved.Length == 0, "...");
 3. Remove the dump. Run the red demo. Revert. Rebuild. Gate. Commit.
 
 **The `Assert.Equal(typeof(<VmType>), root)` line is worth keeping even though its right-hand side is
-hardcoded** — it is the precedent's shape (`SettingsAssistantViewParseTests.cs:67`) and it fails on a re-host
-instead of silently walking the wrong type. **It is only meaningful while the reflected type is unique**,
+hardcoded** — it is the precedent's shape (`SettingsAssistantViewParseTests.cs:67`) and it fails on a
+**retype** of the hosting property instead of silently walking the wrong type, while the `nameof` on the line
+above turns a **rename** into a compile error. **Corrected 2026-08-01 (post-review, D1):** this sentence
+originally read "it fails on a **re-host**", and that was false. The reflection never opens
+`SettingsView.xaml`, so a host site repointed at another property leaves every path in the file resolving
+against a type the markup no longer uses — measured: 16/16 Views facts passed with `:123` pointed at
+`{Binding AccountVm}`, at 0 warnings. The reason for keeping the line is unchanged; only the re-host claim
+was wrong. **The re-host is now guarded separately**, by `ViewHostDataContextTests`, which reads the six
+`SettingsView.xaml` host sites and `AssistantView.xaml:51` out of the parsed host markup and asserts it found
+all six. **It is only meaningful while the reflected type is unique**,
 which is the W11 trap seen from the other side: `PersonasView` is undetectable precisely because
 `SettingsViewModel.PersonasVm` and `AssistantSettingsViewModel.PersonasVm` (`:35`) are *both*
 `PersonaSettingsViewModel`. **Measured for the five, so the builder need not re-check:**

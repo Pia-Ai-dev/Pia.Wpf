@@ -55,10 +55,14 @@ public class SettingsAssistantViewParseTests
     [Fact]
     public void EveryBindingPath_ResolvesOnTheViewModelThatMarkupRootsItAt()
     {
-        // The root DataContext is CHECKED, not assumed: SettingsView.xaml:110 hosts this view with
-        // DataContext="{Binding AssistantVm}", so the walk below is only sound while that property still has
-        // this type. Reading it by reflection means a future re-host fails here instead of quietly making
-        // every path in this file resolve against the wrong type.
+        // The root TYPE is checked, not assumed — but ONLY the type: nameof makes a RENAME of
+        // SettingsViewModel.AssistantVm a compile error and the Assert.Equal below catches a RETYPE. Nothing
+        // here opens SettingsView.xaml, so the host SITE (:110, DataContext="{Binding AssistantVm}") is not
+        // observed by this fact; ViewHostDataContextTests is the guard that reads it. The claim this comment
+        // used to make — that reading the root by reflection makes a future RE-HOST fail here — was false,
+        // and the Batch 14 review disproved it by execution (D1): a re-host leaves every path in this file
+        // resolving against a type the markup no longer uses, at 0 warnings and 16/16 green. This walk needs
+        // both halves.
         var root = typeof(SettingsViewModel)
             .GetProperty(nameof(SettingsViewModel.AssistantVm), BindingFlags.Public | BindingFlags.Instance)!
             .PropertyType;
