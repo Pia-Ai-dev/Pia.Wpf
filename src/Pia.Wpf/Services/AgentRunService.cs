@@ -56,6 +56,15 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     /// </summary>
     internal const string UserPausedReason = "user";
 
+    /// <summary>
+    /// Write-time caps on user-authored step text (Batch 08 D3 item 9), applied by
+    /// <see cref="ApplyPlanMutationAsync"/>. The title cap is deliberately the same 200 as
+    /// <c>AgentVerifier</c>'s own <c>MaxDeclarationChars</c> (private there, so it cannot be referenced): a
+    /// title that arrives already within the verifier's bound is never truncated a second time with a second
+    /// ellipsis. Intent is capped nowhere else in the codebase at all, which is why it is capped here.
+    /// </summary>
+    internal const int MaxStepTitleChars = 200, MaxStepIntentChars = 400, MaxStepArtifactChars = 200;
+
     private readonly string _connectionString;
     private readonly ILogger<AgentRunService> _logger;
     private readonly object _gate = new();
@@ -728,39 +737,151 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
 
             var now = DateTime.UtcNow;
             foreach (var step in steps)
-            {
-                using var insert = connection.CreateCommand();
-                insert.Transaction = transaction;
-                insert.CommandText = """
-                    INSERT INTO AgentSteps
-                        (Id, RunId, Ordinal, Title, Intent, Status, ExpectedArtifact, AssignedPersonaId,
-                         DependsOnJson, ReRunnable, FirstMessageId, LastMessageId, CreatedAt, UpdatedAt, ExtraJson)
-                    VALUES
-                        (@Id, @RunId, @Ordinal, @Title, @Intent, @Status, @ExpectedArtifact, @AssignedPersonaId,
-                         @DependsOnJson, @ReRunnable, @FirstMessageId, @LastMessageId, @CreatedAt, @UpdatedAt, @ExtraJson)
-                    """;
-                insert.Parameters.AddWithValue("@Id", (step.Id == Guid.Empty ? Guid.NewGuid() : step.Id).ToString());
-                insert.Parameters.AddWithValue("@RunId", runId.ToString());
-                insert.Parameters.AddWithValue("@Ordinal", step.Ordinal);
-                insert.Parameters.AddWithValue("@Title", step.Title);
-                insert.Parameters.AddWithValue("@Intent", ToParam(step.Intent));
-                insert.Parameters.AddWithValue("@Status", (int)step.Status);
-                insert.Parameters.AddWithValue("@ExpectedArtifact", ToParam(step.ExpectedArtifact));
-                insert.Parameters.AddWithValue("@AssignedPersonaId", ToParam(step.AssignedPersonaId));
-                insert.Parameters.AddWithValue("@DependsOnJson", ToParam(step.DependsOnJson));
-                insert.Parameters.AddWithValue("@ReRunnable", step.ReRunnable ? 1 : 0);
-                insert.Parameters.AddWithValue("@FirstMessageId", ToParam(step.FirstMessageId));
-                insert.Parameters.AddWithValue("@LastMessageId", ToParam(step.LastMessageId));
-                insert.Parameters.AddWithValue("@CreatedAt", (step.CreatedAt == default ? now : step.CreatedAt).ToString("O"));
-                insert.Parameters.AddWithValue("@UpdatedAt", now.ToString("O"));
-                insert.Parameters.AddWithValue("@ExtraJson", ToParam(step.ExtraJson));
-                insert.ExecuteNonQuery();
-            }
+                InsertStepRow(connection, transaction, runId, step, step.Ordinal, now);
 
             transaction.Commit();
         }
 
         return Task.CompletedTask;
+    }
+
+    public Task<PlanMutationResult> ApplyPlanMutationAsync(
+        Guid runId, IReadOnlyList<PlanStepEdit> pendingSteps, CancellationToken ct = default)
+    {
+        int applied;
+        int inserted = 0, skipped = 0;
+        List<AgentStep> rows;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.WriteFailed, 0));
+
+            // The WHOLE operation is inside the _gate hold: NextPendingStepAsync is a method of this same
+            // class behind this same lock, so a drain can never observe a half-rewritten plan, and the
+            // Paused read below cannot go stale between the gate and the write.
+            var connection = Connection();
+
+            // THE GATE (D3): one state, never a set and never a range (D7). A missing run reads as NotPaused
+            // rather than a separate outcome — from the caller's side "there is nothing pausable to mutate"
+            // is the same answer.
+            AgentRunState state;
+            using (var read = connection.CreateCommand())
+            {
+                read.CommandText = "SELECT State FROM AgentRuns WHERE Id=@Id";
+                read.Parameters.AddWithValue("@Id", runId.ToString());
+                var raw = read.ExecuteScalar();
+                if (raw is null or DBNull)
+                    return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.NotPaused, 0));
+                state = (AgentRunState)Convert.ToInt32(raw);
+            }
+
+            var persisted = LoadSteps(connection, runId);
+            if (state != AgentRunState.Paused)
+                return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.NotPaused, persisted.Count));
+
+            // The immutable prefix: everything already settled — Done, Skipped AND Failed. Kept in persisted
+            // ordinal order with its ORIGINAL Ids, which is what keeps its per-step ledger entries (keyed by
+            // step id) and its timeline rows attached to something.
+            var prefix = persisted.Where(s => s.Status != AgentStepStatus.Pending).OrderBy(s => s.Ordinal).ToList();
+            var editable = persisted.Where(s => s.Status == AgentStepStatus.Pending).ToDictionary(s => s.Id);
+
+            var tail = new List<AgentStep>(pendingSteps.Count);
+            var claimed = new HashSet<Guid>();
+            foreach (var edit in pendingSteps)
+            {
+                AgentStep? original = null;
+                if (edit.StepId is { } id && (!editable.TryGetValue(id, out original) || !claimed.Add(id)))
+                    return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.UnknownStep, persisted.Count));
+
+                // Normalize BEFORE the blank check, so a title of only whitespace and newlines is
+                // TitleRequired rather than a persisted row with an empty Title.
+                var title = NormalizeStepText(edit.Title, MaxStepTitleChars);
+                if (title.Length == 0)
+                    return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.TitleRequired, persisted.Count));
+
+                if (original is null) inserted++;
+                if (edit.Skip) skipped++;
+
+                // Only Title/Intent/ExpectedArtifact/Status are the user's to change. Every other column of an
+                // EDITED step is carried from the persisted row — ExtraJson above all, because it is where the
+                // planner writes {"parallelGroup":N} and clobbering it quietly makes a fan-out plan sequential
+                // again; AssignedPersonaId for the same class of reason (the step would silently change
+                // persona). An INSERT gets the model's defaults, which is what a step nobody planned has.
+                tail.Add(new AgentStep
+                {
+                    Id = original?.Id ?? Guid.Empty,        // Guid.Empty ⇒ the insert mints one
+                    RunId = runId,
+                    Title = title,
+                    Intent = NullIfBlank(NormalizeStepText(edit.Intent, MaxStepIntentChars)),
+                    ExpectedArtifact = NullIfBlank(NormalizeStepText(edit.ExpectedArtifact, MaxStepArtifactChars)),
+                    Status = edit.Skip ? AgentStepStatus.Skipped : AgentStepStatus.Pending,
+                    AssignedPersonaId = original?.AssignedPersonaId,
+                    DependsOnJson = original?.DependsOnJson,
+                    ReRunnable = original?.ReRunnable ?? true,
+                    FirstMessageId = original?.FirstMessageId,
+                    LastMessageId = original?.LastMessageId,
+                    CreatedAt = original?.CreatedAt ?? default,
+                    ExtraJson = original?.ExtraJson,
+                });
+            }
+
+            rows = new List<AgentStep>(prefix.Count + tail.Count);
+            rows.AddRange(prefix);
+            rows.AddRange(tail);
+
+            if (rows.Count == 0)
+                return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.EmptyPlan, persisted.Count));
+            if (rows.Count > RunProfile.MaxStepsCap)
+                return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.TooLong, persisted.Count));
+
+            try
+            {
+                var now = DateTime.UtcNow;
+                using var transaction = connection.BeginTransaction();
+
+                using (var delete = connection.CreateCommand())
+                {
+                    delete.Transaction = transaction;
+                    delete.CommandText = "DELETE FROM AgentSteps WHERE RunId=@RunId";
+                    delete.Parameters.AddWithValue("@RunId", runId.ToString());
+                    delete.ExecuteNonQuery();
+                }
+
+                // Ordinals are assigned HERE, prefix first, contiguous from 0 — never taken from the caller.
+                // That is what makes a duplicate, negative, non-contiguous or across-the-settled-boundary
+                // ordinal unrepresentable instead of merely rejected.
+                for (var i = 0; i < rows.Count; i++)
+                {
+                    // A settled step keeps the UpdatedAt that says when it settled; the rewritten tail is
+                    // stamped now.
+                    var isPrefix = i < prefix.Count;
+                    InsertStepRow(connection, transaction, runId, rows[i], i, now,
+                        updatedAt: isPrefix ? rows[i].UpdatedAt : null);
+                }
+
+                transaction.Commit();
+            }
+            catch (Exception ex)
+            {
+                // `using var transaction` disposes without a commit, so SQLite rolls the whole rewrite back:
+                // the plan is exactly what it was, which is the property that lets a caller retry.
+                _logger.LogWarning(ex, "Plan mutation of run {RunId} faulted and was rolled back", runId);
+                return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.WriteFailed, persisted.Count));
+            }
+
+            applied = rows.Count;
+        }
+
+        // Counts only — titles and intents are user content and go to SensitiveDebug on their own line, never
+        // interpolated into a release-visible one.
+        _logger.LogInformation(
+            "Plan of run {RunId} mutated by the user: {Total} step(s), {Inserted} new, {Skipped} skipped",
+            runId, applied, inserted, skipped);
+        _logger.SensitiveDebug("Plan of run {RunId} mutated to: {Titles}", runId, string.Join(" | ", rows.Select(s => s.Title)));
+
+        // The panel refreshes from RunChanged and from nothing else (ReplaceStepsAsync raises none, which is
+        // why the replan path cannot repaint a row either). Step-less: the change is the plan, not a step.
+        RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Paused));
+        return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.Applied, applied));
     }
 
     public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default)
@@ -910,6 +1031,61 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         UpdatedAt = DateTime.Parse(r.GetString(13)).ToUniversalTime(),
         ExtraJson = r.IsDBNull(14) ? null : r.GetString(14),
     };
+
+    /// <summary>
+    /// One <c>AgentSteps</c> INSERT, shared by <see cref="ReplaceStepsAsync"/> (which supplies the step's own
+    /// ordinal) and <see cref="ApplyPlanMutationAsync"/> (which assigns them). Both paths DELETE the run's
+    /// rows first, so this is only ever an insert.
+    /// </summary>
+    /// <param name="updatedAt">Null ⇒ <paramref name="now"/>. A plan mutation passes the settled prefix's own
+    /// <c>UpdatedAt</c> so re-writing the plan around a Done step does not restamp when it finished.</param>
+    private static void InsertStepRow(
+        SqliteConnection connection, SqliteTransaction transaction, Guid runId, AgentStep step, int ordinal,
+        DateTime now, DateTime? updatedAt = null)
+    {
+        using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO AgentSteps
+                (Id, RunId, Ordinal, Title, Intent, Status, ExpectedArtifact, AssignedPersonaId,
+                 DependsOnJson, ReRunnable, FirstMessageId, LastMessageId, CreatedAt, UpdatedAt, ExtraJson)
+            VALUES
+                (@Id, @RunId, @Ordinal, @Title, @Intent, @Status, @ExpectedArtifact, @AssignedPersonaId,
+                 @DependsOnJson, @ReRunnable, @FirstMessageId, @LastMessageId, @CreatedAt, @UpdatedAt, @ExtraJson)
+            """;
+        insert.Parameters.AddWithValue("@Id", (step.Id == Guid.Empty ? Guid.NewGuid() : step.Id).ToString());
+        insert.Parameters.AddWithValue("@RunId", runId.ToString());
+        insert.Parameters.AddWithValue("@Ordinal", ordinal);
+        insert.Parameters.AddWithValue("@Title", step.Title);
+        insert.Parameters.AddWithValue("@Intent", ToParam(step.Intent));
+        insert.Parameters.AddWithValue("@Status", (int)step.Status);
+        insert.Parameters.AddWithValue("@ExpectedArtifact", ToParam(step.ExpectedArtifact));
+        insert.Parameters.AddWithValue("@AssignedPersonaId", ToParam(step.AssignedPersonaId));
+        insert.Parameters.AddWithValue("@DependsOnJson", ToParam(step.DependsOnJson));
+        insert.Parameters.AddWithValue("@ReRunnable", step.ReRunnable ? 1 : 0);
+        insert.Parameters.AddWithValue("@FirstMessageId", ToParam(step.FirstMessageId));
+        insert.Parameters.AddWithValue("@LastMessageId", ToParam(step.LastMessageId));
+        insert.Parameters.AddWithValue("@CreatedAt", (step.CreatedAt == default ? now : step.CreatedAt).ToString("O"));
+        insert.Parameters.AddWithValue("@UpdatedAt", (updatedAt ?? now).ToString("O"));
+        insert.Parameters.AddWithValue("@ExtraJson", ToParam(step.ExtraJson));
+        insert.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Flatten CR/LF/TAB to spaces, trim, then cap with a trailing ellipsis (Batch 08 D3 item 9). Applied at
+    /// WRITE time, to user-authored step text, which bounds every prompt that later interpolates it —
+    /// <c>AgentVerifier</c>'s fact lines, the replan's plan listing and both executors' step instruction — at
+    /// one seam instead of five. The flatten is the load-bearing half: a title containing a newline plus a
+    /// leading "- " can otherwise FORGE a fact line inside a prompt built by appending lines.
+    /// </summary>
+    private static string NormalizeStepText(string? text, int cap)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var flat = text.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
+        return flat.Length <= cap ? flat : flat[..cap] + "…";
+    }
+
+    private static string? NullIfBlank(string text) => text.Length == 0 ? null : text;
 
     private static IReadOnlyList<AgentStep> LoadSteps(SqliteConnection connection, Guid runId)
     {

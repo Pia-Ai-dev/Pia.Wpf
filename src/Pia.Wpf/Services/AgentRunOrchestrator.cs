@@ -501,9 +501,18 @@ public sealed class AgentRunOrchestrator
     }
 
     /// <summary>
-    /// The Done steps of the run, re-ordinaled 0..k-1 with their ORIGINAL Ids preserved so
+    /// The steps a replan must CARRY FORWARD, re-ordinaled 0..k-1 with their ORIGINAL Ids preserved so
     /// <see cref="IAgentRunService.ReplaceStepsAsync"/> re-inserts them (it writes ordinals verbatim
-    /// and does not itself preserve Done — §F/§13.2 <c>KeepDone</c>).
+    /// and does not itself preserve anything — §F/§13.2 <c>KeepDone</c>).
+    /// <para>
+    /// The filter is Done OR <see cref="AgentStepStatus.Skipped"/> (Batch 08 D3): a skip is the USER's
+    /// decision about their own plan, so a later replan must not quietly re-add work they removed — and
+    /// because this method's output is the whole surviving plan, a status left out here is DELETED from the
+    /// run. <b>Deliberately different from <see cref="SafeSeedResumeContext"/>'s filter, which stays
+    /// <c>== Done</c> and must not be "aligned" with this one:</b> that one builds the critic's list of
+    /// completed work, and a skipped step never ran, so it has no result to report and no
+    /// <c>ExpectedArtifact</c> worth probing.
+    /// </para>
     /// </summary>
     private async Task<List<AgentStep>> KeepDoneAsync(Guid runId, CancellationToken ct)
     {
@@ -511,7 +520,9 @@ public sealed class AgentRunOrchestrator
         try { run = await _runService.GetAsync(runId, ct).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "KeepDone: failed to read run {RunId}", runId); }
 
-        var done = run?.Plan.Where(s => s.Status == AgentStepStatus.Done).OrderBy(s => s.Ordinal).ToList()
+        var done = run?.Plan
+                       .Where(s => s.Status is AgentStepStatus.Done or AgentStepStatus.Skipped)
+                       .OrderBy(s => s.Ordinal).ToList()
                    ?? new List<AgentStep>();
         for (var i = 0; i < done.Count; i++)
             done[i].Ordinal = i;
@@ -545,6 +556,13 @@ public sealed class AgentRunOrchestrator
     /// text is NOT recoverable here (it lives in the chat transcript, not on the step row), so the prompts
     /// say so instead of implying those steps never ran. Failure-isolated (guardrail 1): a read fault
     /// leaves the run with the old partial picture rather than failing the resume.
+    /// <para>
+    /// The filter is <c>== Done</c> and is DELIBERATELY narrower than <see cref="KeepDoneAsync"/>'s
+    /// <c>Done or Skipped</c> (Batch 08 D3) — do not "align" the two. This list becomes
+    /// <c>ctx.CompletedSteps</c>, i.e. the work the critic judges and whose declared artifacts it probes on
+    /// disk; a user-skipped step never executed, so presenting it as completed would invite a verdict about
+    /// an artifact nothing was ever asked to produce.
+    /// </para>
     /// </summary>
     private async Task SafeSeedResumeContext(Guid runId, RunContext ctx, CancellationToken ct)
     {
