@@ -96,6 +96,23 @@ R11 to fully closed instead of mostly closed.
 `AccountView` · `E2EEOnboardingView` · `GeneralView` · `OptimizeView` · `PersonasView` · `PluginsView` ·
 `ProvidersView`. Table-driven over `(view type, root ViewModel type)` on G1's walker.
 
+**Corrected 2026-08-01 (as-built, D5). G4 shipped FIVE, not seven, and that NARROWED this section's stated
+scope** — the owner was told and said proceed. Written: `GeneralView` (`512a9a2`) · `AccountView` (`165e085`) ·
+`ProvidersView` (`53b1565`) · `OptimizeView` (`921efb9`) · `PluginsView` (`2e75d72`). Not written:
+`PersonasView` and `E2EEOnboardingView`, because `SettingsView.xaml` instantiates exactly **six** settings
+views (`ProvidersView:84`, `OptimizeView:97`, `AssistantView:110`, `GeneralView:123`, `AccountView:136`,
+`PluginsView:149`) and **neither of those two is among them** — so the recipe in the next paragraph, "read the
+root by REFLECTION off the property `SettingsView.xaml` hosts the view with", is *literally unexecutable* for
+them. For `PersonasView` it is worse than unexecutable: obeying it walks straight into the trap this section
+itself names, because `SettingsViewModel.PersonasVm` exists and type-matches the real host's type by
+coincidence while **no markup binds it**, so every path would pass and the fact would prove nothing. Both views
+are instead walked as logical children of parsed views (`PersonasView` inside the settings-`AssistantView`
+walk; `E2EEOnboardingView` inside `AccountView`'s), each with one added assertion that is strictly stronger
+than a standalone file: an `=AddPersonaCommand [PersonaSettingsViewModel]` anchor, and a duck-type fact pinning
+both `E2EEOnboardingView` hosts to the same concrete `OnboardingViewModel` type. Read `14-view-coverage-debt.impl.md`
+§1 D5 and W10/W11 for the full derivation. The **Goal** paragraph above says "seven settings views" for the
+same reason and is stale in the same way.
+
 **Each root type is read by REFLECTION off the property `SettingsView.xaml` hosts the view with**, the way
 the settings Assistant test reads `SettingsViewModel.AssistantVm` and asserts its type — never hardcoded. A
 future re-host then fails the test instead of quietly checking every path against the wrong ViewModel, which

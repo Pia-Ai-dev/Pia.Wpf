@@ -74,6 +74,64 @@ the 60 s `Pump()` signature this batch exists to kill never reappeared once afte
 matters more than the count: this batch SHORTENS the Rank-1 manual round by four items and CLOSES none of them**,
 because each is worded as a restart round trip and only its silent half is automatable._
 
+_**Snapshot addendum: 2026-08-01 — as-built at `fa331ec`, which is [Batch 14](14-view-coverage-debt.md).**
+Nothing above is retracted; every paragraph still describes the tree it measured. What none of them could know
+is that the View-coverage debt three batches booked and one made possible has landed, and that **Batch 14 is
+the first work on this branch to take Rank-1 items OFF the list rather than only shorten them**. It is also the
+first batch here to ship **zero production change** — measured, not asserted:
+`git diff --stat 0c5cb42..fa331ec -- src/` is **empty**. Twelve commits, every one under
+`tests/Pia.Wpf.Tests/Views/`, plus three spec documents. **Batches 10, 11, 05, 12, 04, 03, 02, 06, 07, 13, 09
+and 14 have shipped.**_
+
+_**The gate, measured by the orchestrator on the real trees rather than copied from a commit body.** Baseline
+on the clean tree at `2266bf7`: Debug and Release `-t:Rebuild -v:n` both **0 Warning(s) / 0 Error(s)** with
+**6** genuine `csc.exe` invocations each (4 code assemblies + 2 satellite de/fr resource compiles — count
+`Roslyn.bincore.csc.exe /noconfig`, **not** `CoreCompile:` headers, which parallel MSBuild reprints on every
+node resume), and the suite at **2723 total / 0 failed / 2722 passed / 1 skipped**. **This file's own number
+matched that baseline exactly, so the doc was accurate.** Final tree `fa331ec`: Debug **0/0**, Release **0/0**,
+6 `csc.exe` each; suite run 1 **2734 / 0 failed / 2733 passed / 1 skipped** and run 2 **IDENTICAL**. Clean
+twice, with neither known intermittent firing in either run._
+
+_**One intermediate tree DID cost the known intermittent, and it is recorded rather than skipped — quoting only
+the clean runs is how an intermittent turns into an excuse, and this file says so about itself twice already.**
+At `17357e0` (end of build + simplify, before the fix pass) run 1 was **2733 / 1 failed** at 171 ms, the
+failure being `AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes`
+— the known-probabilistic one below — which then passed **13/13 isolated, three times running**, and a second
+full run came back **2733 / 0 failed**. Consistent with the "low single-digit percent, bursty, load-dependent"
+statement below; it is not a new observation and it does not change that rate._
+
+_**The chain, measured at every stop, never inferred from a diff:** 2723 (baseline) → **2723** (G1 — a pure
+move, **+0**, and that invariance IS the proof the move was mechanical) → 2725 → 2727 → 2728 → 2730 → 2731 →
+2732 → **2733** (G4e) → **2733** (SIMPLIFY, unchanged as required — a simplify that moves the count has changed
+behaviour) → **2734** (the D1 fix, **+1**: the new host-`DataContext` guard) → 2734 → 2734. **NET +11.** Note
+that the batch's own review states **+10** and a chain ending at 2733: correct for the range it reviewed
+(`0c5cb42..17357e0`), wrong as the batch total, because the must-fix it filed added the eleventh case after it
+was written. Read **+11** here._
+
+_**The thing that matters most, and it is not the count.** Batch 14's own adversarial review found that its
+central mitigation **did not do what BOTH specs said it did**. Each of the six parse facts reflected a hosting
+ViewModel property's TYPE; nothing opened the host markup — so a `DataContext` **re-host**, the exact failure
+the recipe existed to catch, was invisible. Proven by attack, not by reading: repointing `SettingsView.xaml:123`
+from `{Binding GeneralVm}` to `{Binding AccountVm}` kills all 40 GeneralView paths at runtime and renders that
+tab as empty controls, **at 0 warnings, with 16/16 Views tests PASSED**; same for `AssistantView.xaml:51`.
+**Seven** shipped comments opened "The root DataContext is CHECKED, not assumed". Closed at `4f8b78d` by one
+new fact that reads each host site's declared `DataContext` binding path out of the parsed markup — see
+"Opened by Batch 14" for the full record, including the correction of the same false comment in a **Batch 13**
+file outside this batch's range. **And one scope call the owner should see in the summary and not only in the
+detail: G4 shipped FIVE settings views, not the SEVEN the batch spec names** (D5) — `SettingsView.xaml` hosts
+only six settings views and neither `PersonasView` nor `E2EEOnboardingView` is among them, so the spec's
+reflection recipe is literally unexecutable for those two. That **narrowed the batch spec's stated scope**; the
+owner was told and said proceed._
+
+_**Git position, described rather than counted — this file has been burnt by a hardcoded number four times and
+says so below.** Local-only is everything the 2026-07-31 paragraph describes **plus** Batch 13, Batch 09, all
+twelve of Batch 14's commits and three spec documents, and this docs commit. `origin/feature/agent-run-spine`
+did not move, and **this pass did not push, merge or rebase** — it was instructed not to and did not. Read the
+position from git, always: `git rev-list --count origin/feature/agent-run-spine..HEAD` for the number and
+`git log --oneline origin/feature/agent-run-spine..HEAD` for *which*, and the second is still the half that
+decides whether a push is safe. One thing Batch 14 does **not** change about that decision, unlike Batch 06:
+it moves no user-visible behaviour at all, so on this batch alone the two refs differ only in test coverage._
+
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
 
@@ -109,6 +167,26 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 18 | `08e20ab` → `1d6cc15` | **[Batch 07](07-subagents-multipersona.md)** — sub-agents / multi-persona, as work groups **G6–G10** *in a different order than that*: per-step persona + provider + prompt resolution on both executors (G6, `08e20ab`), `ParentRunId` on the create request + `IX_AgentRuns_ParentRunId` + a narrow-for-child grant envelope (G9, `b2f46a2`), the fan-out itself on a **separate** child slot pool (G10 part 1, `9c32999`), the roster settings surface + the panel attribution that fixes two pre-existing avatar defects (G7, `d09c71f`), the appended `WaitingForChildren(8)` run state that survives the startup sweep (G8, `3e12bcf`), and G10's remaining recorded debt (`1d6cc15`). **Six commits inside this span belong to no batch or to Batch 06** — see the note below | ✅ done |
 | 19 | `928e27e` → `09522be` | **[Batch 13](13-view-test-host.md)** — the shared WPF test host, and the View coverage three batches had booked as debt behind it: `Pump()` moved off the host thread so a nested frame can no longer lose the request that ends it (`11722ee`), Batch 03's **withdrawn** row-render fact re-landed verbatim, a **second** View parsed — the *settings* `AssistantView`, by reflected binding path rather than by rendered text (`62c974b`) — and the per-step persona avatar's deferred row template (`09522be`). **The first work on this branch that SHORTENS the Rank-1 round.** Gate `2707 / 0 failed / 1 skipped` | ✅ done |
 | 20 | `c7020fe` → `ea77c95` | **[Batch 09](09-scheduler-ui.md)** — the scheduler UI, as a section of the Assistant settings page: `UpdateAsync` gains `specificDate` + `kind` (and the UPDATE statement gains both columns, which it did not carry), making the **re-arm of a settled one-off reachable for the first time**; a narrow `IScheduledJobRunner` over the existing background-service singleton for an owner-checked manual fire; a `ScheduledJobsSettingsViewModel` with full CRUD, enable/disable, last-run outcome and unknown-status tolerance; and 45 new strings in all three locales. **Budget and policy stay global by decision (D1)** — see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) | ✅ done |
+| 21 | `86934c9` → `17357e0` | **[Batch 14](14-view-coverage-debt.md)** — the View-coverage debt three batches booked and one made possible, as work groups **G1–G4** plus a simplify: the binding-path walk lifted out of one test file into a shared `BindingPathWalker` (G1, a pure move — suite total unchanged, no assertion edited, `FindLogical<T>` de-duplicated from two copies to one), Batch 09's jobs row `DataTemplate` pinned at ten item-scoped paths **plus** the four `RelativeSource AncestorType=ItemsControl` command paths by command *identity* (G2), the run panel's whole non-templated surface walked — 28 tuples / 23 distinct paths, measured — and its branch line rendered in both states (G3), and **five** settings views parsed, one commit each (G4: General, Account, Providers, Optimize, Plugins). **Zero production change**, measured: `git diff --stat 0c5cb42..fa331ec -- src/` is **empty**. Gate `2734 / 0 failed / 1 skipped`, **+11**, Debug and Release both `0 Warning(s) / 0 Error(s)`. **Its docs/design commits sit BEFORE this range and its review + 3-commit fix pass AFTER it — a single range does not describe this batch; see the note below** | ✅ done |
+
+**Row 21 needs three qualifications, and none of them is new to this table — each has a precedent above.**
+Batch 14's own build is `86934c9` → `17357e0`, nine commits, all under `tests/Pia.Wpf.Tests/Views/`.
+
+- **Its docs and design commits sit BEFORE the range and belong to no batch**: `2266bf7` (which filed the
+  batch, resolved Batch 08's seven decisions and re-ranked) and `0c5cb42` (the impl spec). Exactly the
+  `c45f792`/`2c3e661` precedent — the Design step for Batches 04 and 03, two impl specs in one pair of commits
+  that neither range could claim — and the `30956c5` → `790defd` one. A `git log 86934c9..fa331ec` does not
+  list them; a reader looking for where the batch was decided has to look earlier.
+- **The review commit sits INSIDE any naive span from the build's start to HEAD.** `e36b701`
+  (`14-view-coverage-debt.review.md`, docs-only) lands between `17357e0` and the fix pass. Same treatment as
+  `30ebb52`, the Batch 02 re-scope and `17bff5d`: docs-only, belongs to no batch, does not break the range it
+  interrupts.
+- **The fix pass lands OUTSIDE the range, and it is three commits, not one** — `4f8b78d` (D1, the one
+  must-fix), `36795eb` (D2/D3 plus the nits) and `fa331ec` (a missing red demo, plus a correction of the
+  previous commit body's own claim). Same shape as row 17, where Batch 06's simplify, review fix and share of
+  the joint fix pass all land after row 18 begins: `git log 86934c9..17357e0` is the batch's *build*, not the
+  batch's *history*. **The docs commit that records all of this is later still and is folded into no range** —
+  the `aa5beb9` precedent.
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -537,6 +615,26 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
   step's persona avatar and accent, which also fixed a defect that predated the batch: a `Guid?`/`Guid` DP mismatch
   plus an unbound `Emoji` meant **every** step row had always drawn an empty 20×20 box. **There is no merged
   parent+child timeline, by decision** — see "Opened by Phase 3".
+- **A misspelled `Binding` path in ten of this app's surfaces can no longer fail silently at 0 warnings**
+  (Batch 14, plus Batch 13 which made it possible). A wrong binding path is the one class of defect that
+  survives a green build *and* a green suite: markup compilation catches malformed XAML and unknown types,
+  never a path that resolves to nothing. What is now covered: the settings **General**, **Account**,
+  **Providers**, **Optimize** and **Plugins** views, each walked against the ViewModel type the markup roots it
+  at; the **run panel's** entire non-templated region (28 tuples / 23 distinct paths) plus its branch line
+  rendered in both states; **Batch 09's jobs row template**, its four `RelativeSource AncestorType=ItemsControl`
+  commands included and asserted by *command identity*; and `PersonasView` and `E2EEOnboardingView` as
+  asserted logical children of the two views that host them. Three properties are worth more than the count.
+  **The walk is shared** — one `BindingPathWalker` instead of a private copy per file — so the next view is a
+  genuinely short file rather than a copy, and the format string three files anchor on lives in one place.
+  **The root is reflected, never hardcoded**, so a renamed hosting property is a compile error and a retyped
+  one is a red test. And **the host SITE is now guarded too**, which is the part the batch's own review had to
+  find by attack: reflecting the hosting property's *type* proves nothing about a `DataContext` **re-host**, and
+  repointing `SettingsView.xaml:123` at `{Binding AccountVm}` killed all 40 GeneralView paths at runtime with
+  16/16 Views tests still green, at 0 warnings. `ViewHostDataContextTests` reads the six settings host sites
+  and the panel's out of the parsed host markup and closes that. **Read the margin, not just the ten**: it
+  varies by nearly an order of magnitude — `AccountView` walks 42 distinct paths, `PluginsView` walks 4 of
+  which 2 are its own anchors. And nothing here sees a `DataTemplate`'s contents, a `Style.Trigger`, or a
+  `loc:Str` reached through `Content=`/`ToolTip=`/`Header=`.
 
 ---
 
@@ -566,9 +664,8 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by FOURTEEN items and shortened nothing** — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
-| 2 | 14 | [View-coverage debt](14-view-coverage-debt.md) — the jobs row, the branch line, the run panel's paths, the seven unparsed settings views | 3 cleanup | S–M | [Batch 13](13-view-test-host.md) ✅ shipped — every item in it is already **booked, not blocked** |
-| 3 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below. **Seven decisions RESOLVED 2026-08-01** — see its own file |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. ~~**Phase 3 lengthened it by FOURTEEN items and shortened nothing**~~ — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. **AMENDED 2026-08-01: that clause had never registered EITHER of the two batches that have since moved this list, and crediting one meant crediting both.** Phase 3 did lengthen it by fourteen; then **[Batch 13](13-view-test-host.md) SHORTENED four** (`2708 / 0 failed / 1 skipped at 09522be`) — none closed, each a round trip whose silent half became automated — and **[Batch 14](14-view-coverage-debt.md) moved three more: TWO OFF OUTRIGHT and ONE shortened** (`2734 / 0 failed / 1 skipped at fa331ec`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild`, measured by the orchestrator on the finished tree and confirmed by a second identical run). 14 adds **nothing** to this list — it ships no string, no control and no behaviour, `git diff --stat 0c5cb42..fa331ec -- src/` **empty**. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and every “Opened by” section that carries smoke debt, which is now **six**, named rather than counted: Batch 04, Batch 03, Phase 3, Batch 09, Batch 13 and Batch 14 (this row said “all three” until 2026-08-01, when three more sections had accumulated behind it) | — | S | a Windows runner + a live provider + a real git repo |
+| 2 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below. **Seven decisions RESOLVED 2026-08-01** — see its own file. Was Rank 3 behind 14 until 2026-08-01; 14 shipped, so this moved up by subtraction, not by reprioritisation |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
@@ -579,7 +676,8 @@ each other by number. Read the **Rank** column for priority.
 | — | 02 | [Remove `CostUsd`](02-cost-ledger.md) | 2 | XS | ✅ **shipped** `df0841a` — a deletion, not a feature; **adds nothing to the smoke list** |
 | — | 06 | [Run workspace isolation](06-run-workspace-isolation.md) | 3 | M | ✅ **shipped** `70400aa`→`695e123` (G1–G5) — polish outside that range; see “Opened by Phase 3” |
 | — | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) | 3 | L | ✅ **shipped** `08e20ab`→`1d6cc15` (G6–G10, **not in that order**) — see “Opened by Phase 3” |
-| — | 13 | [View test host](13-view-test-host.md) | 3 cleanup | S–M | ✅ **shipped** `928e27e`→`09522be` — the only batch so far that made Rank 1 **shorter**; see “Opened by Batch 13” |
+| — | 13 | [View test host](13-view-test-host.md) | 3 cleanup | S–M | ✅ **shipped** `928e27e`→`09522be` — the **first** batch to make Rank 1 **shorter** (it said "the only" until 2026-08-01, when Batch 14 became the second and the first to take items OFF); see “Opened by Batch 13” |
+| — | 14 | [View-coverage debt](14-view-coverage-debt.md) | 3 cleanup | S–M | ✅ **shipped** — build `86934c9`→`17357e0` (G1–G4 + SIMPLIFY, 9 commits), review `e36b701`, **fix pass `4f8b78d`→`fa331ec` outside that range**; `2266bf7`/`0c5cb42` (filing + impl spec) sit **before** it and belong to no batch. **Zero production change**, measured: `git diff --stat 0c5cb42..fa331ec -- src/` empty. Gate `2734 / 0 failed / 1 skipped`, **+11**. Took **two** items off Rank 1 and shortened a third; **G4 shipped 5 views, not 7 (D5)**; see “Opened by Batch 14” |
 | — | 09 | [Scheduler UI](09-scheduler-ui.md) | 4 | L (**not M**) | ✅ **shipped** `c7020fe`→`ea77c95` (**not** →HEAD, which this row said until 2026-08-01 — `aa5beb9` is a docs commit and the chronicle above already pinned the real end) — global-only budget/policy by decision; see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) and “Opened by Batch 09” |
 
 **A THIRD set of rank moves, 2026-08-01, and this one IS a reprioritisation — the first on this branch.**
@@ -595,6 +693,16 @@ this up again", and Batch 13 leaves the run panel's branch line "reachable by th
 written". Doing it now also lands while the `LoadContent()` and reflected-binding-path techniques are one
 batch old rather than several. **What this does NOT change: Rank 1.** 14 makes that list shorter; it does not
 make it shorter by enough to reorder anything, and no green suite substitutes for it.
+
+**And that insert has now RESOLVED ITSELF, 2026-08-01: Batch 14 shipped, so Rank 2 is now 08.** The paragraph
+above is left standing per this file's habit — each shipped batch retires the sentence that promoted it, and
+the *pattern* is the useful part — but read it as history: "14 enters at Rank 2 and pushes 08 to Rank 3" is
+spent. Its argument was checked rather than merely asserted, which is the part worth keeping. **14 did make
+Rank 1 shorter and added nothing to it**: three items moved, two off outright (Batch 09's jobs row
+`DataTemplate`, Batch 13's run panel branch line) and one shortened by name (the unparsed-views item), with no
+string, no control and no behaviour shipped in either direction — `git diff --stat 0c5cb42..fa331ec -- src/` is
+**empty**, measured. And the prediction that 08 "will lengthen it by at least six items" is untouched, so the
+gap between Rank 1 and Rank 2 is now wider than the paragraph above describes, not narrower.
 
 **Batch 08's seven decisions are resolved and its "Key seams" section has been re-measured** (2026-08-01, at
 `aa5beb9`, by inspection — no gate was run and none is claimed). Three of that section's four bullets needed
@@ -775,10 +883,24 @@ and a `Pump()` to `SystemIdle` before every bound read.
 
 **Three things stay true, and they are why this callout is only *half* closed:**
 
-1. **`AssistantView` is the first view parsed, not the last.** Every other `View` in the repo still carries the
-   full silent-misspelled-binding hazard, unchanged. What Batch 12 bought is that the *next* view test is a
-   ~20-line file reusing `WpfStaHost`, instead of a batch — so the remaining exposure is now a chore, not a
-   blocker.
+1. **`AssistantView` is the first view parsed, not the last.** ~~Every other `View` in the repo still carries
+   the full silent-misspelled-binding hazard, unchanged.~~ What Batch 12 bought is that the *next* view test is
+   a ~20-line file reusing `WpfStaHost`, instead of a batch — so the remaining exposure is now a chore, not a
+   blocker. **NARROWED 2026-08-01 by [Batch 13](13-view-test-host.md) and [Batch 14](14-view-coverage-debt.md)
+   G4 — narrowed, NOT closed, and now stated as a named set instead of "every other".** Of the **21** views
+   this claim was ever about (**13** top-level `Views/*.xaml` + **8** in `Views/SettingsViews/`; *not* the 47
+   XAML files under `Views/`, whose other 26 are `Dialogs/`, `Dialogs/Overlay/`, `WizardSteps/` and
+   `Views/Controls/`), **7 now have a parse test of their own** — `Views/AssistantView.xaml`,
+   `Views/SettingsViews/AssistantView.xaml`, `GeneralView`, `AccountView`, `ProvidersView`, `OptimizeView`,
+   `PluginsView` — and **9 are walked**, the extra two being `PersonasView` and `E2EEOnboardingView` as logical
+   children of parsed views. `Views/SettingsViews/` is complete at **8 of 8**. **The hazard is unchanged for
+   the other twelve**, and they are worth naming rather than leaving as a remainder: `AssistantHistoryView`,
+   `FirstRunWizardWindow`, `HistoryView`, `MeetingAttendeeOverlay`, `MemoryView`, `NavigationSidebarView`,
+   `OptimizeView` (the top-level one, *not* the settings view of the same name — both types exist and both
+   compile), `RemindersView`, `SettingsView`, `TodoPanelControl`, `TodoView`, `VoiceModeOverlay`. Two limits
+   that apply even inside the parsed 9, so this bullet is not read as more than it says: the walk skips
+   `RelativeSource` / `ElementName` / explicit `Source` **by design** (which is what keeps `loc:Str` out of
+   scope), and `Style.Triggers` / `DataTemplate` content are invisible to it entirely.
 2. **The sweep is narrower than it sounds.** It sees `TextBlock.Text` only: 4 of `AssistantView.xaml`'s 22
    `loc:Str` usages. `ToolTip=` (11), `Content=` (5), `PlaceholderText=` and `Value=` need template
    application, which the test deliberately never triggers.
@@ -789,8 +911,14 @@ and a `Pump()` to `SystemIdle` before every bound read.
    parsed" is now a claim about a green result, not just about the code** — which is what item 1 and item 2
    above are scoped against, and neither of them changed.
 
-**XAML changes outside `AssistantView` still need manual smoke.** The original entry follows, unedited — its
-last paragraph is the prediction this batch cashed:
+~~**XAML changes outside `AssistantView` still need manual smoke.**~~ **NARROWED 2026-08-01: XAML changes
+outside the NINE walked views still need manual smoke** — the twelve named in item 1 above, plus `Dialogs/`,
+`Dialogs/Overlay/`, `WizardSteps/` and `Views/Controls/`, none of which any batch has parsed. Inside the nine,
+`Style.Triggers`, `DataTemplate` content and `loc:Str` reached through `Content=`/`ToolTip=`/`Header=` still
+need it too. The original entry follows, unedited — its
+last paragraph is the prediction this batch cashed. **Note that its closing line, "Until then, XAML changes
+need manual smoke", is left standing on purpose**: it is quoted verbatim as history and is superseded by the
+sentence above, not by an edit inside the quotation.
 
 Worth knowing before anyone tries to close it. Every test works against ViewModels, so in `AssistantView.xaml`
 an unresolvable `StaticResource`, a missing `loc:Str` key, or a **misspelled `Binding` path** is invisible to a
@@ -1225,8 +1353,13 @@ these carries its full reasoning and its escape hatch.
   way the eleventh was. These are **append-only from `Unknown = 0`** and now mechanized by a golden name→ordinal
   map, not just a shape check.
 - **Manual smoke debt, none of it automatable — seven items.** (1) The settings CheckBox's `Binding` path:
-  nothing parses `Views/SettingsViews/AssistantView.xaml` and no test constructs `AssistantSettingsViewModel`,
-  so a typo renders a toggle that silently never persists — toggle it, restart, confirm it stuck. (2) A real
+  ~~nothing parses `Views/SettingsViews/AssistantView.xaml` and no test constructs `AssistantSettingsViewModel`,
+  so a typo renders a toggle that silently never persists~~ — toggle it, restart, confirm it stuck.
+  **CORRECTED 2026-08-01 (Batch 14) — a CORRECTION OF STALE PROSE, NOT a shortening.** Both struck clauses are
+  false: `SettingsAssistantViewParseTests` (Batch 13, `62c974b`) parses that file and pins this CheckBox's
+  `Binding` path, so the *typo* half was taken then. **Batch 14 takes nothing further from this item** —
+  neither of its two CheckBoxes is in a G4 view, and no parse or render fact reaches disk. The surviving half
+  is the whole of what is left: *toggle it, restart, confirm it stuck*. (2) A real
   interactive `Planned` run with the setting **on**: a covered write must show a **pre-resolved accepted** card
   (never *nothing* — silence would mean the card-before-execute ordering was dropped) while `delete_file` must
   still show a live Decline/Allow-once pair with **no** Always-allow. (3) The `scheduled-research` card: titled
@@ -1390,8 +1523,17 @@ these carries its full reasoning and its escape hatch.
   share a name and nothing else: Batch 12 parses `Pia.Views.AssistantView` (`Views/AssistantView.xaml`, the
   **chat** view), while this CheckBox lives in `Pia.Views.SettingsViews.AssistantView`
   (`Views/SettingsViews/AssistantView.xaml`, the **settings** view) — a different type in a different namespace,
-  never constructed by any test. Batch 12 did make closing this cheap rather than blocking: per its own callout
-  the next view test is a ~20-line file reusing `WpfStaHost`. Until someone writes that one, the debt stands.
+  ~~never constructed by any test~~. Batch 12 did make closing this cheap rather than blocking: per its own
+  callout the next view test is a ~20-line file reusing `WpfStaHost`. ~~Until someone writes that one, the debt
+  stands.~~ **CORRECTED 2026-08-01 (Batch 14) — a CORRECTION OF STALE PROSE, NOT a shortening, and the
+  distinction is the point.** Someone did write that one: `SettingsAssistantViewParseTests` (Batch 13,
+  `62c974b`) parses `Views/SettingsViews/AssistantView.xaml` and resolves every declared `Binding` path against
+  the ViewModel the markup roots it at, so the two struck clauses were already false at that commit, and
+  `:1642` below already named them as prose that could stop saying what it says. **Batch 13 took this item's
+  silent half; Batch 14 takes nothing further from it** — this CheckBox is not in a G4 view, and no technique
+  in Batch 14 reaches persistence. What survives is the whole of the manual item: *toggle it, restart, confirm
+  it stuck*. The rest of this bullet — the two clauses needing a real provider round — is untouched by either
+  batch.
   `LocalizationTests` *does* cover the three `loc:Str` keys and their en/de/fr parity, and
   `AppSettingsAgentPlanningTests`' camelCase JSON round-trip is the automated proof that the flag **can**
   persist — the untested part is the wiring between them, plus the relocation itself. There is also no
@@ -1455,7 +1597,20 @@ three locales for the new pause reasons, and the German chip for `WaitingForChil
 the "this run is finished" misreading that converter's explicit arm exists to prevent.
 
 **Three more the CONSOLIDATION pass added (2026-08-01), all in the run panel and all unreachable from any test
-because there is no View test (R11).** Each is a UI state that did not exist before `165486e`.
+that exists today.** Each is a UI state that did not exist before `165486e`.
+
+**CORRECTED 2026-08-01 (Batch 14), and read the correction as a correction only.** The sentence above read
+"…all unreachable from any test **because there is no View test (R11)**". That reason was already false when it
+was written — Batch 13 had parsed two views — and it is more false now: Batch 14 G3 walks every non-templated
+binding path on `RunProgressPanel.xaml` and renders its branch line in both states, and R11 itself is now
+CLOSED (see the accepted-risks list below). **The three items themselves have NOT moved and none of them is
+shortened**, which is why the reason had to be fixed without touching them. Item by item: **(iii)** asks
+whether two lines read as one coherent statement rather than as a contradiction — a judgement no assertion
+makes; **(iv)** is a worktree run whose run-branch commit FAILED and a Publish click *retrying* that commit,
+and G3 does none of that (it drives `HasOutputBranch = true` on a constructed ViewModel and touches neither
+promotion, the `branchCommittedAtUtc` stamp, nor the retry); **(v)** asks that an *ordinary* run show none of
+the three note lines, which is a ViewModel-state fact about which run produces which note, not a XAML fact.
+All three stay on the Rank-1 round in full.
 
 (iii) **A copy-mode conflict, published manually.** Click Publish on a run whose promotion hit a conflict and read
 the panel as a whole: the result note ("N published, M left alone…") and the STILL-STANDING offer line ("this run's
@@ -1491,12 +1646,17 @@ never a round trip — it was a render check standing in for a test that existed
 
 **And then Batch 09 lengthened it again the same day, which retires the "first work that shortens Rank 1"
 framing after exactly one batch.** Say it plainly rather than leave the earlier paragraph reading as a trend:
-09 adds a jobs list, an inline editor and a manual fire button, and its share of the round is (a) the row
-`DataTemplate`'s bindings, which a logical walk cannot reach — **though the `LoadContent()` technique now
-exists to close it, so this one is booked rather than blocked**; (b) the DE/FR render of a section whose German
-strings are long; and (c) a two-device owner-mismatch check, since `IsOwnedByThisDeviceAsync` returning false
-is faked everywhere it is tested. The net is still better than before 13: what 09 adds is a *shorter* list than
-it would have been, because its top-level binding paths are covered as they were written instead of booked.
+09 adds a jobs list, an inline editor and a manual fire button, and its share of the round is (b) the DE/FR
+render of a section whose German strings are long; and (c) a two-device owner-mismatch check, since
+`IsOwnedByThisDeviceAsync` returning false is faked everywhere it is tested. The net is still better than
+before 13: what 09 adds is a *shorter* list than it would have been, because its top-level binding paths are
+covered as they were written instead of booked. **Clause (a) — the row `DataTemplate`'s bindings, "though the
+`LoadContent()` technique now exists to close it, so this one is booked rather than blocked" — was DELETED here
+2026-08-01, cashed by [Batch 14](14-view-coverage-debt.md) G2** (`52f51a3`; the same defect's other write-up,
+at `:1851` below, is struck identically). **The letters (b) and (c) are deliberately NOT re-lettered**, so that
+references to "Batch 09 clause (b)" and "clause (c)" elsewhere still resolve — and both survive **verbatim**,
+which is the point: G2 renders the German-heavy section and proves nothing about clipping, and it forces
+`OwnedByThisDevice` false on one fixture row without being able to produce a second device.
 
 **Risks the plan named that were ACCEPTED rather than closed.** Each of these was mitigated and then explicitly
 left; the reason is the point.
@@ -1509,13 +1669,20 @@ left; the reason is the point.
   its work is the one mistake this sweep must not make, which is also why `WaitingForChildren(8)` was **not** added
   to the terminal set. The comment at the constant says "a judgement call, not a measurement: if seven days turns
   out to be short, it is one constant."
-- ~~**R11 — no new `View` test, so 07's UI is manual-smoke debt by decision.**~~ **MOSTLY CLOSED 2026-08-01 by
-  [Batch 13](13-view-test-host.md)**, which did implement the fix this bullet says "belongs to Batch 12 and is
-  not implemented". Two of the three surfaces it names now have XAML-level coverage: the **avatar row**
+- ~~**R11 — no new `View` test, so 07's UI is manual-smoke debt by decision.**~~ ~~**MOSTLY**~~ **CLOSED
+  2026-08-01 by [Batch 13](13-view-test-host.md) and [Batch 14](14-view-coverage-debt.md)**, which between them
+  implemented the fix this bullet says "belongs to Batch 12 and is not implemented". Batch 13 covered two of
+  the three surfaces it names: the **avatar row**
   (`RunProgressPanel_RendersAStepRow_WithItsPersonaAvatar`, driving the deferred `ItemTemplate` through
   `LoadContent()`) and the **roster surface** (its binding path, via the settings-view parse test). **The
-  branch line is the one that stays** — it lives in `RunProgressPanel.xaml`'s non-templated region and is
-  reachable, so this is a gap in what Batch 13 chose to write, not in what it made possible. The original
+  branch line was the one that stayed, and Batch 14 G3 (`7b18048`) took it** — a binding-path walk over the
+  panel's whole non-templated region (28 tuples / 23 distinct paths, measured, zero unresolved) plus a render
+  fact that observes the line `Collapsed` **and** `Visible`. So all three named surfaces are XAML-covered:
+  avatar row ✅ 13, roster ✅ 13, branch line ✅ 14. **This is a RISK in this accepted-risks list, not one of
+  Phase 3's fourteen enumerated smoke items** — Batch 14 moved three of those, and closing R11 is not a fourth;
+  see "Opened by Batch 14" below. **What this does NOT mean:** the templated regions of that panel (26
+  bindings across four `ItemTemplate`s), `Style.Triggers` anywhere, and `loc:Str` reached through `Header=` /
+  `Content=` / `ToolTip=` all remain invisible to every technique either batch used. The original
   reasoning follows, and its premise is the part that is now false. `WpfStaHost` holds 7 frame-pushing
   facts and the 8th previously took the gate from 0/3 to 2/3 failing; the documented fix belongs to Batch 12 and is
   not implemented. So the roster surface, the avatar row and the branch line are all covered at ViewModel level and
@@ -1681,7 +1848,34 @@ the opposite of what its diff did.
   bypassed on purpose: that lock is what bounds a delegating job (R15), and a manual path that skipped it
   would be the one way to get two agent runs dispatching at once. The consequence a user sees is a button that
   stays busy for the whole run.
-- **The jobs row template is manual-smoke debt, and it is the FIRST thing to write when someone picks this up
+- ~~**The jobs row template is manual-smoke debt, and it is the FIRST thing to write when someone picks this
+  up again.**~~ **CLOSED 2026-08-01 by [Batch 14](14-view-coverage-debt.md) G2 (`52f51a3`), and it comes OFF
+  the Rank-1 manual round OUTRIGHT** — on the Batch 03 withdrawn-row-render precedent at `:1644`: it was never
+  a round trip, it was a coverage gap standing in for a test nobody had written, so there is no surviving
+  manual half to name. This bullet pre-wrote its own shortening — *"**The technique now exists** … Booked
+  rather than written because this batch ran out of round, not because it is blocked"* — and that is now
+  cashed, in the two places it was booked (here, and clause (a) of the paragraph at `:1647`, deleted there).
+  `ScheduledJobsRowTemplateTests` drives the shipped `ItemTemplate` through `LoadContent()` across **two**
+  fixture rows that discriminate, and pins **eighteen** assertions: the **ten** item-scoped paths (this
+  bullet's list of three was short — see the correction below), **four** command identities and **four**
+  `CommandParameter` identities. **The four `RelativeSource` command paths this bullet recorded as an open
+  question ARE covered**, so 14 D1 resolved to option (a) and did *not* collapse into (c): a **throwaway**
+  `ItemsControl` carrying the parsed control's own `ItemTemplate` is the row's logical parent the moment
+  `Items.Add` runs, which is what `AncestorType=ItemsControl` resolves against — no parsed host, no
+  `ApplyTemplate`, no measure pass, no frame push. The assertion is **command IDENTITY**
+  (`ReferenceEquals(button.Command, vm.StartEditCommand)`), because a non-null check would pass on the wrong
+  command; with **no** parent, all four report `Command=<null>`, which is what proves the parenting does the
+  work. The one this bullet could not have known matters most: **`DeleteCommand` is the only one of the four
+  with zero C# references anywhere in the repo** — nothing but CommunityToolkit's `Async`-suffix-stripping
+  convention kept `AssistantView.xaml:596` alive, and renaming `DeleteAsync` broke the Delete button silently
+  at 0 warnings with every ViewModel test green. It now breaks the **build**, because the fact names
+  `vm.DeleteCommand`. Three red demos, all executed with a full `-t:Rebuild` and reverted
+  (`StartEditCommand`→`StartEditCommandX` at `:583`, `StatusIsKnown`→`StatusIsKnownX` at `:587`,
+  `Name`→`NameX` at `:553`), plus a fourth from the review's D2 fix: both `IsEnabled` paths were located by
+  their *command* path and read only by value, and both fixture rows co-varied on all four row booleans, so a
+  `:587`↔`:592` swap stayed green — closed by asserting the declared paths
+  (`PathOf(toggle, IsEnabledProperty) == "StatusIsKnown"`). The original text follows.
+  **The jobs row template is manual-smoke debt, and it is the FIRST thing to write when someone picks this up
   again.** The section's top-level binding paths are covered by `SettingsAssistantViewParseTests` — which is
   the whole reason [Batch 13](13-view-test-host.md) went first, and it caught nothing only because the paths
   were right — but the row `DataTemplate` (`ToggleLabel`, `CanRunNow`, `StatusLabel`, the four
@@ -1729,12 +1923,31 @@ the opposite of what its diff did.
   the **stale BAML** and the test kept failing against markup that no longer existed on disk. Same shape as the
   warning-count trap `CLAUDE.md` documents, one layer down, and more confusing because the symptom is a red test
   rather than a missing warning.
-- **The run panel's branch line is still unparsed, and that is a scope choice rather than a limitation.** R11
-  named three surfaces; Batch 13 covered two. The branch line sits in `RunProgressPanel.xaml`'s non-templated
-  region and is reachable by the same walk — it was simply not written, so it stays on the manual round with no
-  technical obstacle. **PICKED UP 2026-08-01 as [Batch 14](14-view-coverage-debt.md) G3, now Rank 2, and
-  widened on the way**: rather than one render fact for one line, 14 runs the binding-path walker over the
-  whole panel, which pins the branch line together with every other non-templated path on a surface three
+- ~~**The run panel's branch line is still unparsed, and that is a scope choice rather than a limitation.**~~
+  **CLOSED 2026-08-01 by [Batch 14](14-view-coverage-debt.md) G3 (`7b18048`), and it comes OFF the Rank-1
+  manual round OUTRIGHT rather than shortening** — this bullet's own words ("a scope choice rather than a
+  limitation … with no technical obstacle") are what make that the honest reading: there was never a manual
+  half here, only an unwritten test. G3 shipped **two** facts, not the one this bullet anticipated.
+  (i) `RunProgressPanelParseTests.EveryNonTemplatedBindingPath_ResolvesOnTheViewModelThatHostsThePanel` walks
+  the panel's whole non-templated surface — **28 tuples / 23 distinct paths, MEASURED, zero unresolved** — with
+  the root read by reflection off `AssistantViewModel.ActiveRunProgress` rather than hardcoded, a floor of 18,
+  and eight named single-occurrence anchors covering all six surfaces the batch spec listed (the four it
+  shipped with covered two; the review filed that as D3 and `36795eb` added `=TruncationNote `,
+  `=PublishCommand `, `=CurrentActivity ` and `=TimelineNote `). The floor was deliberately **not** raised with
+  them: a floor at the measured count is brittle, and an anchor is what closes a drift hole.
+  (ii) `RunProgressPanel_RendersTheOutputBranchLine_OnlyWhenTheRunHasABranch` observes **both** states, and the
+  **pre-mutation `Collapsed` is the half that bites** — `TextBlock.Visibility` defaults to `Visible`, so the
+  post-mutation `Visible` on its own would pass with the binding deleted. Demonstrated red by renaming
+  `RunProgressPanel.xaml:71` `HasOutputBranch` → `HasOutputBranchX`; the fact reports `Visible` where it
+  expects `Collapsed`. Two corrections this closes on the way: W7 — the panel *was* already parsed, twice, by
+  shipped Batch-13 facts, so the true claim is the narrower "no **binding-path walk** had ever run over it";
+  and the `=Children ` anchor's comment, which claimed reaching it proved tuples 19–28 were walked when the two
+  `Expander`s are **siblings**, not nested, so it proves only 25–28. The original text follows.
+  R11 named three surfaces; Batch 13 covered two. The branch line sits in `RunProgressPanel.xaml`'s
+  non-templated region and is reachable by the same walk — it was simply not written, so it stays on the manual
+  round with no technical obstacle. **PICKED UP 2026-08-01 as [Batch 14](14-view-coverage-debt.md) G3, now Rank
+  2, and widened on the way**: rather than one render fact for one line, 14 runs the binding-path walker over
+  the whole panel, which pins the branch line together with every other non-templated path on a surface three
   batches have added lines to and none has parsed.
 - **The two sweeps are narrower than they sound, in the same way and for the same reason.** Both loc-key sweeps
   see `TextBlock.Text` only, so on the settings view they cover the section headers and descriptions and **not**
@@ -1749,6 +1962,270 @@ the opposite of what its diff did.
   changed is the cost: the reflected-path technique needs no ViewModel instance, so the next one really is a
   short file — Batch 12's "~20-line" estimate was low for the *first* one (the single-DataContext assumption
   cost a rewrite) but is about right now that the walk handles re-rooting.
+  **SHORTER 2026-08-01 by [Batch 14](14-view-coverage-debt.md) G4 — shorter BY NAME, and NOT closed.** State
+  the denominator first, because it is the whole of the claim: `src/Pia.Wpf/Views/` holds **13** top-level view
+  XAMLs plus **8** in `SettingsViews/` = **21**. That is *not* all the view markup under `Views/`, which is
+  **47** (`find src/Pia.Wpf/Views -name "*.xaml"`) — the other 26 are `Dialogs/` (13), `Dialogs/Overlay/` (3),
+  `WizardSteps/` (7) and `Views/Controls/` (3), none of which this batch touched or counted. Parsed before
+  Batch 14: **2** of the 21 (`Views/AssistantView.xaml`, `Views/SettingsViews/AssistantView.xaml`;
+  `Controls/Assistant/RunProgressPanel.xaml` was parsed transitively and is not one of the 21). After G4:
+  **7 of the 21 have a parse test of their own** (those two plus `GeneralView`, `AccountView`, `ProvidersView`,
+  `OptimizeView`, `PluginsView`) and **9 of the 21 are walked** — the two extra being `PersonasView`, a logical
+  child of the settings `AssistantView`, and `E2EEOnboardingView`, a logical child of `AccountView`, both now
+  *asserted* rather than incidentally covered (D5 below). **`Views/SettingsViews/` is therefore complete at
+  8 of 8.** Do not let "9 of 21" read as 43 % of this repo's XAML — it is 9 of a hand-picked 21. One nuance
+  that moves neither number: `ViewHostDataContextTests` now constructs `Views/SettingsView.xaml` as well, but
+  only to read the six host-site `DataContext` bindings out of it; it neither walks that view nor gives it a
+  parse test. **The manual half that survives, by name:** the **twelve** non-settings views in `Views/` —
+  `AssistantHistoryView`, `FirstRunWizardWindow`, `HistoryView`, `MeetingAttendeeOverlay`, `MemoryView`,
+  `NavigationSidebarView`, `OptimizeView`, `RemindersView`, `SettingsView`, `TodoPanelControl`, `TodoView`,
+  `VoiceModeOverlay` — plus everything the 21 excludes. A misspelled `Binding` path in any of them is still
+  silent at 0 warnings and still needs a human to see it.
+
+### Opened by Batch 14 (2026-08-01) — known, reasoned, not closed
+
+[Batch 14](14-view-coverage-debt.md) is the second batch on this branch to move the Rank-1 round **down**, and
+the first to take anything off it outright. It ships **no production change at all** — measured, not asserted:
+`git diff --stat 0c5cb42..fa331ec -- src/` is **empty**. Twelve commits, every one of them under
+`tests/Pia.Wpf.Tests/Views/`, plus three spec documents. So it can only subtract from that list. Everything
+below is a subtraction, a correction of stale prose, or a gap it **measured** without closing.
+
+**THE BATCH'S OWN REVIEW FOUND THAT ITS CENTRAL MITIGATION DID NOT DO WHAT BOTH SPECS SAID IT DID — and it
+found it by ATTACK, not by reading.** Recorded first because it is the most important thing in this section,
+and stated flatly because softening it would repeat the failure this file has had to repair most often. Each of
+the six parse facts read a hosting ViewModel property's **TYPE**
+(`typeof(SettingsViewModel).GetProperty(nameof(SettingsViewModel.GeneralVm))!.PropertyType`) and asserted it.
+**Nothing opened the host markup.** So a `DataContext` **re-host** — the exact failure the recipe existed to
+catch, and the one the batch spec called "the one way this whole technique can go green while proving
+nothing" — was invisible. Proven twice on the real tree, both reverted: `SettingsView.xaml:123`
+`{Binding GeneralVm}` → `{Binding AccountVm}` kills all **40** of GeneralView's paths at runtime and renders
+that tab as empty controls, at **0 warnings**, with **16/16 Views tests PASSED**; `AssistantView.xaml:51`
+`{Binding ActiveRunProgress}` → `{Binding VoiceMode}` → **16/16 PASSED** with all **28** run-panel paths dead.
+**SEVEN shipped test comments opened *"The root DataContext is CHECKED, not assumed"*.** They were false for
+the half they named.
+
+**CLOSED at `4f8b78d` by one new fact** —
+`ViewHostDataContextTests.EveryParsedView_IsHostedWithTheDataContextPathItsParseTestReflectsItsRootOff` — which
+constructs the real host views and reads each host site's **declared `DataContext` binding path** out of the
+parsed markup, with a non-vacuity assertion that all **6** settings host sites were FOUND before any one of
+them is checked. Two things the fix had to measure rather than assume, and did: `new Pia.Views.SettingsView()`
+had never been constructed by any test and **does** parse on the host, and all six children **are** reachable
+by a *logical* walk (direct children of a `Grid`, switched by `Style`/`DataTrigger` `Visibility` — not
+`TabControl` items behind a `ContentTemplate`, which would have made `FindLogical<T>().Single()` throw). Its red
+demo is the good kind: with the re-host injected the run is **17 total / 1 failed**, so **only** the new fact
+bites while the other 16 stay green — which reproduces the review's own 16/16-green-on-broken result and
+thereby proves the six older facts are still blind **on their own**. What the reflection *does* buy is real and
+was kept: `nameof` makes a **rename** of the ViewModel property a compile error and `Assert.Equal(typeof(…),
+root)` catches a **retype**. Corrected in the same commit: the identical false comment at
+`SettingsAssistantViewParseTests.cs:58`, which is **Batch 13 and outside this batch's commit range** — leaving
+one false copy behind would have defeated the fix — and the two propagating spec sentences
+(`14-view-coverage-debt.impl.md:724`, `14-view-coverage-debt.md:99`–`:102`), corrected in place, marked and
+dated, before either could reach this file.
+
+**THREE Rank-1 items moved: TWO come OFF outright and ONE is SHORTENED.** The count has to be **split** rather
+than copied from Batch 13's block at `:1629`–`:1645` — its lead clause *"none of the four is closed"* must not
+be repeated here, because two of these three genuinely are closed. Neither was ever worded as a restart round
+trip, so neither has a surviving manual half. Read "shorter" strictly on the third, which does.
+
+- **OFF — Batch 09's jobs row `DataTemplate`** (its own bullet at `:1851` above, edited in place; and clause
+  (a) of the "Batch 09 lengthened it again" paragraph at `:1647`, deleted in place — two locations for one
+  defect, edited identically). That bullet had already booked its own shortening: *"the `LoadContent()`
+  technique now exists to close it, so this one is booked rather than blocked."* G2 (`52f51a3`) cashed it and
+  went past it — all **ten** item-scoped paths (the bullet named three) **plus** the four `RelativeSource
+  AncestorType=ItemsControl` command paths it left as an open question, the four pinned by **command identity**
+  (`ReferenceEquals(button.Command, vm.DeleteCommand)`) rather than by a non-null check. Off outright rather
+  than shortened, on the Batch 03 withdrawn-row-render precedent at `:1644`: it was never a round trip, it was
+  a coverage gap standing in for a test nobody had written. What does **not** come off, and must not be read as
+  coming off with it: Batch 09's clause (b), the DE/FR render of that section, and clause (c), the two-device
+  owner-mismatch check.
+- **OFF — Batch 13's run panel branch line** (its own bullet at `:1926` above, edited in place). That bullet's
+  own text called the gap "a scope choice rather than a limitation … with no technical obstacle in front of
+  it", which is what makes *closed* rather than *shorter* the honest reading. G3 (`7b18048`) walked the panel's
+  whole non-templated surface and rendered the line in **both** states. No surviving manual half.
+- **SHORTER, not closed — "every other view in the repo is still unparsed"** (`:1961` above, and its twin in
+  the Batch-12 callout at `:886`/`:914` — two locations, same edit). **The manual half that survives, by
+  name:** the **twelve** non-settings views in `src/Pia.Wpf/Views/` — `AssistantHistoryView`,
+  `FirstRunWizardWindow`, `HistoryView`, `MeetingAttendeeOverlay`, `MemoryView`, `NavigationSidebarView`,
+  `OptimizeView`, `RemindersView`, `SettingsView`, `TodoPanelControl`, `TodoView`, `VoiceModeOverlay` — plus
+  the 26 files the 21-view denominator excludes. A XAML change in any of them is still silent at 0 warnings.
+
+**R11 goes MOSTLY CLOSED → CLOSED (`:1672`) and that is NOT a fourth moved item.** It is a *risk* in the
+accepted-risks subsection, not one of Phase 3's fourteen enumerated smoke items. Counting it as a fourth
+shortened smoke item would be exactly the inflation this file's discipline exists to prevent. Recorded here so
+a later reader cannot recount it as one.
+
+**Three edits Batch 14 made that are CORRECTIONS OF STALE PROSE, not shortenings, and are labelled so on
+purpose.**
+
+- **`:1355` (Batch 04 smoke item 1) and `:1518`/`:1526` (Batch 05's toggle debt)** both still claimed that
+  nothing parses `Views/SettingsViews/AssistantView.xaml`, that no test constructs `AssistantSettingsViewModel`,
+  and that "until someone writes that one, the debt stands". False since Batch 13, and `:1642` already named
+  them as prose that could stop saying what it says. **Batch 13 took their silent halves; Batch 14 takes
+  nothing further.** Their surviving half is unchanged and out of reach of every technique in this batch —
+  *toggle it, restart, confirm it stuck*, i.e. persistence to disk. Neither CheckBox is in a G4 view.
+- **`:1599`** said the three consolidation-pass items are "all unreachable from any test because there is no
+  View test (R11)". The parenthetical was already false when it was written (Batch 13 had parsed two views) and
+  is more false after G3. Corrected in place — **and the three items themselves did not move**; the correction
+  states why for each, and the false-shortening list below repeats it, because (iv) is the one someone will get
+  wrong.
+
+**D5 — THE OWNER-VISIBLE SCOPE CALL: G4 shipped FIVE settings views, not the SEVEN the batch spec names, and
+that NARROWED the batch spec's stated scope.** Said plainly rather than buried: the batch file's Goal and its
+G4 heading both say seven (`AccountView` · `E2EEOnboardingView` · `GeneralView` · `OptimizeView` ·
+`PersonasView` · `PluginsView` · `ProvidersView`); five shipped — `GeneralView` (`512a9a2`), `AccountView`
+(`165e085`), `ProvidersView` (`53b1565`), `OptimizeView` (`921efb9`), `PluginsView` (`2e75d72`). **The owner
+was told, and the owner said proceed.** The reason is not a shortage of round. `SettingsView.xaml` (164 lines)
+instantiates exactly **six** settings views — `ProvidersView:84`, `OptimizeView:97`, `AssistantView:110`,
+`GeneralView:123`, `AccountView:136`, `PluginsView:149` — and **neither `PersonasView` nor
+`E2EEOnboardingView` is among them**, so the spec's own reflection recipe ("read the root by REFLECTION off the
+property `SettingsView.xaml` hosts the view with") is **literally unexecutable** for those two. Worse, obeying
+it for `PersonasView` walks **straight into the trap the spec itself names**: `SettingsViewModel.PersonasVm`
+does exist and *does* type-match the real host's type by coincidence (`AssistantSettingsViewModel.PersonasVm` is
+the same `PersonaSettingsViewModel`) while **no markup binds it** — the reflection succeeds, every path passes,
+and the fact proves nothing. Both views are instead **already walked as logical children of parsed views**
+(`PersonasView`'s 2 paths inside the settings-`AssistantView` walk, which re-roots at
+`Views/SettingsViews/AssistantView.xaml:163`; `E2EEOnboardingView`'s 15 inside `AccountView`'s, under the
+correct root), plus **two substitute assertions** that are strictly stronger than the two files would have
+been: an `=AddPersonaCommand [PersonaSettingsViewModel]` anchor added to `SettingsAssistantViewParseTests`,
+which turns PersonasView from incidentally covered into asserted and pairs with the existing `=PersonasVm `
+anchor as the two-halves shape; and a duck-type fact in `AccountViewParseTests` pinning that **both**
+`E2EEOnboardingView` hosts — `AccountSettingsViewModel.OnboardingViewModel` and
+`FirstRunWizardViewModel.OnboardingViewModel` — expose that member at the **same concrete type**. Nothing else
+enforces that: no interface, no base class, and all 15 of `E2EEOnboardingView`'s bindings are written against
+whatever host DataContext happens to expose a member of that name, so renaming the first breaks the settings
+page while the wizard keeps working, silently.
+
+**The review's own results, recorded as RESULTS — because this file has been burnt before by writing a pass's
+silence down as "no verdict" (see `:277`–`:285`) and will not repeat it.** The adversarial review
+([`14-view-coverage-debt.review.md`](14-view-coverage-debt.review.md), `e36b701`) ran five independent
+refutation lenses over `0c5cb42..17357e0` and filed **13 findings**, which are **8 distinct defects** — read
+the *defect* count, never the filing count: D1 was filed three times, D2 three times, D3 twice. **7 CONFIRMED**
+(D1 must-fix, D2/D3 should-fix, D4–D7 nits), all closed across `4f8b78d`, `36795eb` and `fa331ec` with two
+stated exceptions: D5, the `Pump()`-inside-a-`try`-whose-`finally`-marshals-another-`Run` shape, was **declined
+with its reason recorded at each of the three sites** (the honest fix is a `bodyFaulted` flag at every site,
+and a bare `catch` around the dispose would silently swallow a real disposal failure); and D6, a commit body
+citing `PluginsViewParseTests.cs:58`/`:64` where the shipped file has `:63`/`:69`, is unfixable without a
+rebase and is recorded rather than fixed. **1 REFUTED: D8** — "the `[ContextType]` half of each G4 anchor is
+undemonstrated" — refuted on the filer's own concession that *no input makes any test wrong*, re-checked
+against `BindingPathWalker.Walk`. A finding with no failure scenario is not a defect. **And TWELVE refutation
+attempts came back clean**, each one a *result* carrying the evidence that killed it rather than a silence: the
+hardcoded-root trap (zero hardcodes across six facts); a walk dying early at a templated container (an
+instrumented census measured **40 / 61 / 12 / 8 / 6 / 28** tuples against the six claimed counts — every one
+matching exactly, all `unresolved=0`); a DependencyProperty read at its default (every vacuous half is labelled
+vacuous in a comment, the biting direction is present in every case, and three were turned red on demand by
+editing `src/`); a vacuous `UNRESOLVED` sweep (reddened on the weakest surface by renaming a *non-anchor*
+path); G1 not being a pure move (97 lines byte-identical modulo `private`→`internal`, W2's known-false comment
+included); the per-view-floor decision violated (seven `MinimumBoundPaths` constants, each in its own calling
+class, none in the helper); identification by index or by `Content`/`Text`; G2's command fact being satisfiable
+without the ancestor technique; G1's "no assertion reads the `ok` literal" claim; raised flake risk in the
+frame-push mechanism the 2026-08-01 record measured (zero new frame pushes, zero layout passes, greppably);
+anything having moved outside `tests/`; and any gate statement or suite total being overclaimed.
+
+**Q1 — the walker's own doc comment claims something the code does not do, and it was carried VERBATIM on
+purpose.** The comment says *a null context makes descendants **unknown**, not **failed**, so one bad re-root
+is one finding rather than a cascade.* **That is FALSE as implemented.** Both `yield return`s set
+`Resolves = false` when the context type is null; the caller renders `Resolves ? "ok" : "UNRESOLVED"` and the
+assertion filters on `EndsWith("UNRESOLVED")`. "unknown" exists only as the `ContextType` **label string**
+(`contextType?.Name ?? "unknown"`), never in the boolean any assertion reads. So one bad re-root **does**
+cascade. Carried anyway, deliberately: making the comment true means a tri-state `Resolves`, which changes a
+format string that **three files** match their `Assert.Contains` anchors against, and would have destroyed
+G1's own proof — *the facts stay green with no assertion edited*. **Latent, not live**: no re-root currently
+fails. `GeneralView` is the concrete case waiting — a failing `PrivacyVm` re-root would report **7**
+`UNRESOLVED` lines for **1** defect. The first real failing re-root is the moment this becomes worth the churn.
+
+**Q2 — `Style.Triggers` are reachable by NO technique in this batch, and G4 measured how big the hole is.**
+They are not local values on the element, so `GetLocalValueEnumerator` never yields them and a logical walk
+sees none of them. Six `<DataTrigger Binding="{Binding OnboardingViewModel.State}">` blocks inside
+`StackPanel.Style` in `E2EEOnboardingView.xaml` (`:26`, `:80`, `:135`, `:189`, `:212`, `:247`) **are that
+view's entire state machine** — they decide which of six panels is visible. Add `GeneralView`'s 3 (`:399`,
+`:418`, `:431`), `AccountView`'s 4 `<Condition Binding="…">` elements inside `MultiDataTrigger`s (`:86`, `:87`,
+`:230`, `:231`) and `OptimizeView`'s 1 (`:56`). **A pre-existing gap now measured, explicitly NOT a new Rank-1
+item.** Named so the next batch does not rediscover it.
+
+**Q3 — `AccountSettingsViewModel.LoginPassword` is written by NO binding at all.** `AccountView.xaml:51` is
+`x:Name="LoginPasswordBox"` and `AccountView.xaml.cs`'s `LoginPasswordBox_PasswordChanged` pushes the value
+from code-behind, so that property is permanently invisible to *any* binding-path technique, not merely to this
+one. A **gap, not a hazard** — recorded, not chased, and also not a new Rank-1 item.
+
+**Q4 — nobody has measured the `WpfApplicationStatic` collection at its new size.** `tests/Pia.Wpf.Tests/Views/`
+held **6** facts at `2266bf7` and holds **17** now (the impl spec's Q4 predicted 16; the D1 fix added the
+seventeenth), and the collection also carries `UiDispatcherServiceTests`. The measured record
+(`WpfStaHost.cs:208`–`:213`, 2026-08-01 at `fcfa7d5`) is that an **eighth frame-pushing** fact failed 3-of-3
+before the `Pump()` rewrite. Every technique in this batch adds **zero** frame pushes and **zero** layout
+passes — which the review verified by grep, not by assertion — so the count *should* be irrelevant, and the two
+identical clean full runs at `fa331ec` are consistent with that. But nobody has measured it at 17. **If the
+gate ever turns intermittent, re-read that record before blaming anything else.**
+
+**Three surfaces this batch MEASURED and did not reach. All pre-existing; none is a new Rank-1 item.**
+
+- **Every `DataTemplate` everywhere, and the four templated `ItemsControl`s on `RunProgressPanel`**, stay
+  invisible to a logical walk: Steps (`:75`–`:107`, 9 bindings), Timeline (`:132`–`:165`, 5), Children
+  (`:185`–`:253`, 8) and a child-timeline `ItemsControl` at `:220` **nested inside** the children template (4,
+  doubly unreachable). That is 26 of the file's 54 `{Binding` sites, and the arithmetic closes exactly:
+  28 walkable + 26 templated = 54. G2's `LoadContent()` technique reaches *a* template when someone points it
+  at one; nothing reaches them wholesale.
+- **The FIFTH `AncestorType=ItemsControl` command binding is still uncovered.** `Walk`'s own doc comment says
+  "the ItemsControl-ancestor command binding **at :221**", singular; there are now **five** in that file —
+  `AssistantView.xaml:221`, `:583`, `:588`, `:593`, `:596`. G2 covered four. `:221` is the tool-permissions
+  grants row's `DataContext.RevokeCommand`, and no XAML test touches it.
+- **`loc:Str`, and everything reached through `Content=` / `ToolTip=` / `Header=`.** Unchanged by this batch
+  and unchanged **by design**: `loc:Str` is an explicit-`Source` markup extension and `TargetsDataContext`
+  skips explicit `Source` deliberately — widening that filter to reach four bindings would put every
+  localization extension back inside the path walker. Batch 03's caveat at `:1463`–`:1464` and Batch 13's
+  bullets at `:1952`–`:1960` survive Batch 14 **unchanged**, and all five G4 views inherit the same limit.
+
+**What the REVIEW itself did not cover, stated because a review's scope is as load-bearing as its findings.**
+**Four of its five lenses REASONED rather than measured; only lens 5 executed** — two re-host experiments,
+three red demos and one instrumented tuple census, all reverted. The adjudicator re-derived the lenses'
+arithmetic and re-read the code for D1/D2/D3/D5 but ran no test of its own, and deliberately did not re-run the
+D1 experiment. D4, D6 and D7 are record-keeping findings verified against files, not against a run. Beyond
+that: **coverage strength is very uneven and was not scored** — `AccountView` walks **42** distinct paths while
+`PluginsView` walks **4**, two of which are its own anchors, so its sweep contributes exactly **2** unanchored
+distinct paths. "Ten surfaces can no longer fail silently" is true with margins differing by nearly an order of
+magnitude, and the Plugins file self-discloses "the weakest floor in the batch" without ever stating
+`distinct=4`. Also uncovered and inherited rather than introduced: `ResolvePathType` does not check
+**settability**, so a `Mode=TwoWay` binding onto a get-only property resolves "ok" and still fails at runtime.
+No wall-clock measurement of the added suite cost was taken either; the ~1–3 s figure in the record is an
+estimate.
+
+**FALSE SHORTENINGS — claims to reject out loud. A false shortening is worse than a missed one, and this
+list's whole discipline is about that.** Ordered by how likely someone is to make them.
+
+- **Every DE/FR item. Batch 14 touches none.** Batch 04-6, Batch 03-5, Phase 3 §8-9, fix-pass item (ii),
+  consolidation (iii)'s and (iv)'s locale clauses, Batch 09 clause (b). Two independent reasons: the technique
+  runs against the **neutral (EN) resx by construction** — no test in `Views/` calls `SetCulture` — and
+  clipping is a **layout** property needing a measure pass, which every technique here deliberately avoids.
+  G2 renders the German-heavy scheduled-jobs section and still proves nothing whatever about it.
+- **Consolidation item (iv), the one a reviewer will push back on**, because G3's render fact reads like a
+  sub-clause of "on success the branch line appears where the offer was". Discriminator: **G3 drives
+  `HasOutputBranch = true` on a constructed ViewModel; (iv) is a worktree run whose run-branch commit FAILED
+  and a Publish click RETRYING that commit.** Nothing in G3 exercises promotion, the `branchCommittedAtUtc`
+  stamp, or the retry.
+- **Consolidation items (iii) and (v).** (iii) asks whether two lines read as one coherent statement rather
+  than as a contradiction — a judgement. (v) asks that an *ordinary* run show none of the three note lines — a
+  ViewModel-state fact about which run produces which note, not a XAML fact. Correcting `:1599`'s false
+  parenthetical moves neither.
+- **Batch 09 clause (c), the two-device owner-mismatch check** — the highest-risk one, because
+  `OwnedByThisDevice` **is** one of G2's ten pinned paths. G2 pins the path and renders the not-owned line with
+  the flag forced false; it cannot produce a second device. Same for `StatusIsKnown`/`StatusLabel`, and same
+  for Batch 09's unknown-status bullet at `:1892`, whose uncovered half is explicitly the cross-device sync
+  round trip and whose fact injects `(ScheduledJobStatus)7` directly.
+- **The `loc:Str` Expander header, and every `Content=`/`ToolTip=` loc key.** Someone will read "G3 pins
+  *every* non-templated path" and conclude the header is covered. It is not — see the third residual bullet
+  above.
+- **G1 shortens nothing.** A mechanical move of five private helpers, behaviour unchanged, suite total
+  unchanged at 2723. The easiest credit to take falsely, which is why it is refused explicitly.
+- **Batch 04 item 1 and Batch 05's toggle debt cannot be shortened *again*.** Batch 13 took their silent
+  halves. The corrections at `:1355` and `:1518`/`:1526` are corrections of stale prose and are labelled as
+  such above.
+- **Phase 3 §8 items 6 and 7** were already shortened by Batch 13. Their residues — *"persists across a
+  restart"* and *"whether the glyph is legible at 20×20 and the accent ring looks right"* — are untouchable
+  here.
+- **Batch 03's UI-thread-blocking item (`:1436`)**, which says in so many words "The manual smoke round owns
+  it." A `LoadContent()` render on a detached element is not a performance measurement.
+- **Everything needing a live provider, a live MCP server, a real repo or a restart** — Batch 04 items 2–5 and
+  7, Batch 03 items 1–4, Phase 3 §8 items 1–5 and 8, fix-pass item (i). Batch 14 adds nothing to any of them
+  and takes nothing off any of them either.
 
 ---
 
