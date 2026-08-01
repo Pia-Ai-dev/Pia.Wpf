@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Controls.Assistant;
+using Pia.Controls.Chat;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
@@ -300,6 +301,96 @@ public class AssistantViewParseTests
 
         // …and the HasNoTimeline path: the "nothing recorded" line is not shown over a row.
         Assert.Equal(Visibility.Collapsed, emptyLineVisibility);
+    }
+
+    /// <summary>
+    /// Batch 07 G7's per-step avatar, RENDERED — the one thing on the run panel with a shipped precedent for
+    /// failing exactly this way. Before G7 every step row drew an empty 20×20 box for two reasons a green
+    /// build and a green suite both missed: <c>PiaPersonaAvatar.PersonaId</c> is a <c>Guid</c> DP and the row
+    /// bound a <c>Guid?</c> to it, and <c>Emoji</c> was not bound at all. Both are DP-level facts invisible to
+    /// every ViewModel test — <c>RunProgressViewModelTimelineTests</c> can prove the row VM holds the right
+    /// values and say nothing about whether the template ever reads them.
+    /// <para>
+    /// Phase 3 booked this as manual-smoke item 7 under R11 ("the always-empty box actually shows something,
+    /// in a deferred row template no test can reach"). The template is still deferred; what changed is that
+    /// <c>LoadContent()</c> instantiates it the way WPF does, so the paths resolve for real without a layout
+    /// pass. The item is now SHORTER, not closed: this proves the four bindings transfer, not that the glyph
+    /// is legible at 20×20 or that the accent ring looks right.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void RunProgressPanel_RendersAStepRow_WithItsPersonaAvatar()
+    {
+        var personaId = Guid.NewGuid();
+        RunProgressViewModel? vm = null;
+        RunProgressPanel? panel = null;
+        FrameworkElement? row = null;
+
+        Guid boundPersonaId;
+        string? boundEmoji, boundAccent;
+        Visibility boundVisibility;
+        string[] texts;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateRunProgressViewModel();
+                panel = new RunProgressPanel { DataContext = vm };
+                return 0;
+            });
+
+            // Before this drain the panel's own ItemsSource bindings have not transferred, so the lookup
+            // below finds nothing — the identity match IS the check that the ItemsControl found is the steps
+            // one and not the trace's.
+            WpfStaHost.Pump();
+
+            WpfStaHost.Run(() =>
+            {
+                var items = FindLogical<ItemsControl>(panel!)
+                    .Single(ic => ReferenceEquals(ic.ItemsSource, vm!.Steps));
+                row = (FrameworkElement)items.ItemTemplate.LoadContent();
+                row.DataContext = new StepRowViewModel
+                {
+                    Title = "Draft the release summary",
+                    Status = AgentStepStatus.Running,
+                    PersonaId = personaId,
+                    PersonaEmoji = "🧭",
+                    PersonaAccent = "#2563EB",
+                };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (boundPersonaId, boundEmoji, boundAccent, boundVisibility, texts) = WpfStaHost.Run(() =>
+            {
+                var avatar = FindLogical<PiaPersonaAvatar>(row!).Single();
+                return (avatar.PersonaId, avatar.Emoji, avatar.AccentColor, avatar.Visibility,
+                    FindTextBlocks(row!).Select(tb => tb.Text).ToArray());
+            });
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        // The Guid?/Guid mismatch: a re-introduced one leaves the DP at its Guid.Empty default rather than
+        // failing, which is precisely why it shipped.
+        Assert.Equal(personaId, boundPersonaId);
+
+        // The binding that did not exist at all. An unbound DP reads as its default, so equality against the
+        // row's value is the only form of this assertion that can fail.
+        Assert.Equal("🧭", boundEmoji);
+        Assert.Equal("#2563EB", boundAccent);
+
+        // HasPersona → Visibility, i.e. the avatar is actually shown for an attributed step.
+        Assert.Equal(Visibility.Visible, boundVisibility);
+
+        // A non-vacuity anchor for the walk itself, and the row's own Title path while we are here.
+        Assert.Contains("Draft the release summary", texts);
     }
 
     /// <summary>ViewStrings.resx (neutral = EN), same reasoning as <see cref="HintText"/>.</summary>
