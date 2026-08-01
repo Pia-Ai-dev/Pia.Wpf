@@ -78,6 +78,16 @@ public class SettingsAssistantViewParseTests
         Assert.Contains(bindings, b => b.Contains("=AgentRunAutoApproveBuiltInWrites "));  // Batch 04
         Assert.Contains(bindings, b => b.Contains("=AgentRosterOptions "));                // Batch 07 G7 / R11
 
+        // Batch 14 D5: PersonasView (hosted at :163, re-rooted at PersonasVm) has no standalone parse test —
+        // SettingsViewModel.PersonasVm type-matches AssistantSettingsViewModel.PersonasVm by coincidence
+        // (both PersonaSettingsViewModel), so reflecting its root off SettingsViewModel proves nothing (W11).
+        // This walk already reaches it correctly, under the real host: the re-root itself shows up in the
+        // dump as "PersonasView.DataContext=PersonasVm [AssistantSettingsViewModel] ok", with no dedicated
+        // assertion of its own. The line below is the second half — a path that only resolves against
+        // PersonaSettingsViewModel if that re-root was understood — and it is what turns PersonasView's
+        // coverage from incidental into asserted.
+        Assert.Contains(bindings, b => b.Contains("=AddPersonaCommand [PersonaSettingsViewModel]"));
+
         // Batch 09's section, and BOTH halves matter. The first is the re-root itself; the second proves the
         // walk followed it, because a path only resolves against ScheduledJobsSettingsViewModel if the
         // DataContext binding above it was understood. Without the second, a section that silently stopped
