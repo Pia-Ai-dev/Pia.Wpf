@@ -72,8 +72,24 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         /// sibling's error text is carried in <c>ctx</c> and never persisted on the step row.</summary>
         public List<string?> ReplanFailures { get; } = new();
 
-        public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
-            => Task.FromResult(Plans.Count > 0 ? Plans.Dequeue() : PlanResult.Fallback);
+        /// <summary>Signalled as the plan turn is entered — at which point the row reads <c>Planning</c>,
+        /// because <c>RunAsync</c> sets that state immediately before calling here.</summary>
+        public TaskCompletionSource? PlanEntered { get; set; }
+
+        /// <summary>Holds the plan turn open until the fact releases it. Awaited WITH the dispatch's token, so
+        /// a fired cancel throws <see cref="OperationCanceledException"/> out of the plan turn exactly as a
+        /// real provider call would — which is the whole shape a cascade aimed at a <c>Planning</c> child
+        /// produces.</summary>
+        public Task? PlanGate { get; set; }
+
+        public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+        {
+            PlanEntered?.TrySetResult();
+            if (PlanGate is { } gate)
+                await gate.WaitAsync(ct);
+
+            return Plans.Count > 0 ? Plans.Dequeue() : PlanResult.Fallback;
+        }
 
         public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
         {
@@ -220,21 +236,70 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         /// <summary>Signalled once <see cref="ExpectedChildren"/> children are inside their step.</summary>
         public TaskCompletionSource AllChildrenInFlight { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        /// <summary>
+        /// Batch 08 F2. Which <c>LaunchChildAsync</c> call blocks — before it creates anything — so the parent's
+        /// loop is held INSIDE the fan-out dispatch prologue, the window in which the persisted row still reads
+        /// <c>Running</c>. <c>-1</c> ⇒ no gate. Deliberately takes NO cancellation token: the gate exists to keep
+        /// the loop in the window, and a cancel must not be able to release it early.
+        /// </summary>
+        public int GateBeforeLaunchIndex { get; set; } = -1;
+
+        /// <summary>Signalled when <see cref="GateBeforeLaunchIndex"/> is reached.</summary>
+        public TaskCompletionSource PrologueReached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completed by the fact to let the prologue continue.</summary>
+        public TaskCompletionSource ReleasePrologue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Which child is held inside its PLAN turn — a child sitting at <c>Planning</c>, which is the
+        /// state a cascade must leave alone. <c>-1</c> ⇒ none.</summary>
+        public int HoldPlanningChildIndex { get; set; } = -1;
+
+        /// <summary>Signalled when that child's plan turn is entered.</summary>
+        public TaskCompletionSource PlanningChildReached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completed by the fact to let that child plan and run.</summary>
+        public TaskCompletionSource ReleasePlanning { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Every child whose cancel SINK was invoked, in order — the direct observable of "the cascade
+        /// fired at this child". Snapshot, taken under the lock every append uses.</summary>
+        public List<Guid> SinkFired
+        {
+            get { lock (_liveLock) return _sinkFired.ToList(); }
+        }
+
+        private readonly List<Guid> _sinkFired = new();
+
         public async Task<HeadlessRunHandle> LaunchChildAsync(
             HeadlessRunRequest req, Guid parentRunId, string? parentPolicyJson, string? parentWorkspaceRoot,
             Guid? personaId = null, CancellationToken ct = default)
         {
             var index = _calls++;
+            if (index == GateBeforeLaunchIndex)
+            {
+                PrologueReached.TrySetResult();
+                await ReleasePrologue.Task;
+            }
+
             var child = await _h.NewRunAsync(req.Goal, parentRunId);
             var behavior = BehaviorFor(index);
 
             var childCts = new CancellationTokenSource();
-            Action sink = () => { try { childCts.Cancel(); } catch { /* already disposed */ } };
+            Action sink = () =>
+            {
+                lock (_liveLock) _sinkFired.Add(child.Id);
+                try { childCts.Cancel(); } catch { /* already disposed */ }
+            };
             _h.Store.RegisterDispatch(child.Id, sink);
             lock (_liveLock) _live[child.Id] = sink;
 
             var planner = new FakePlanner();
             planner.Plans.Enqueue(new PlanResult(MakeSteps((req.Goal, null)), false));
+            if (index == HoldPlanningChildIndex)
+            {
+                planner.PlanEntered = PlanningChildReached;
+                planner.PlanGate = ReleasePlanning.Task;
+            }
+
             var exec = new ChildExecutor(behavior, MarkEntered, runId => _h.Steering.PauseAsync(runId, CancellationToken.None));
             var orchestrator = _h.BuildOrchestrator(planner);
 
@@ -706,5 +771,291 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.Equal(AgentStepStatus.Done, Assert.Single(parent.Plan, s => s.Title == "a").Status);
         Assert.Equal(AgentStepStatus.Pending, Assert.Single(parent.Plan, s => s.Title == "b").Status);
         Assert.Equal(0, planner.ReplanCalls);
+    }
+
+    // ---- Batch 08 F2/F1: the two windows in which a pause used to settle the run TERMINALLY ----
+    //
+    // Stated once for the four facts below, because it is the reason the shipped suite missed both. EVERY
+    // cascade fact above waits for WaitingForChildren before it pauses. The row does not say that until the
+    // fan-out's dispatch prologue has finished — superseding the previous generation, then one
+    // LaunchChildAsync per sibling — so the whole prologue, where the row still reads Running, is
+    // STRUCTURALLY OUTSIDE those facts. These four pause INSIDE it, held there by a gate the fact controls
+    // rather than by a sleep.
+
+    /// <summary>
+    /// <b>THE BATCH'S CENTRAL CLAIM, in the window that broke it.</b> A pause landing inside the fan-out
+    /// DISPATCH PROLOGUE leaves a run <c>Paused</c> and resumable — not <c>Cancelled</c> with
+    /// <c>CompletedAt</c> stamped.
+    /// <para>
+    /// Red before the fix, and the review reproduced exactly this by execution:
+    /// <c>ROW-IN-PROLOGUE=Running ACCEPTED=True FINAL=Cancelled COMPLETEDAT=SET RESUMABLE=False</c> with
+    /// <c>STEPS=[s1:Done,g1:Done,g2:Done]</c> — i.e. both children finished their work and the run was thrown
+    /// away terminally anyway. D6's "never fire a fan-out parent's own token" was keyed on the persisted row
+    /// reading <c>WaitingForChildren</c>; in this window it reads <c>Running</c>, so the pause took the
+    /// FireCancel branch, the fan-out read its own cancelled token and reported the run cancelled, and the
+    /// caller called <c>SafeFail(cancelled: true)</c>.
+    /// </para>
+    /// <para>
+    /// The plan carries an ORDINARY step before the group on purpose. On the first step of a fresh launch the
+    /// row still reads <c>Planning</c> and the pause is refused outright, so a fact built on
+    /// <c>MakeSteps(("a",1),("b",1))</c> would pass without ever entering the window. The
+    /// <c>Running</c> assertion below is what keeps it honest.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APauseInsideTheFanOutDispatchPrologue_ParksTheRunResumable_NeverCancelled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new CascadingChildLauncher(h)
+        {
+            BehaviorFor = _ => ChildBehavior.Complete,
+            GateBeforeLaunchIndex = 0, // hold the loop before the FIRST child is even created
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("s1", null), ("g1", 1), ("g2", 1)), false));
+        var exec = new ParentExecutor();
+
+        using var dispatchCts = new CancellationTokenSource();
+        RegisterDispatch(h, run.Id, dispatchCts);
+
+        var loop = h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, dispatchCts.Token);
+
+        await launcher.PrologueReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        // THE WINDOW, asserted rather than assumed — this is the line that stops a later edit from drifting
+        // back outside it.
+        var inPrologue = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Running, inPrologue!.State);
+        Assert.NotEqual(AgentRunState.WaitingForChildren, inPrologue.State);
+        Assert.Empty(await h.Runs.GetChildRunsAsync(run.Id, ct)); // nothing dispatched yet: a pure prologue pause
+
+        Assert.True(await h.Steering.PauseAsync(run.Id, ct));  // accepted …
+        Assert.False(dispatchCts.IsCancellationRequested);     // … and the parent's own token was NOT fired
+
+        launcher.ReleasePrologue.TrySetResult();
+        await loop.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        // The whole shape the review's probe printed, inverted.
+        var parent = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Paused, parent!.State);
+        Assert.NotEqual(AgentRunState.Cancelled, parent.State);
+        Assert.Null(parent.CompletedAt);
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(parent));
+        Assert.True(exec.PausedCalled);
+        Assert.False(exec.EndCalled);
+        Assert.False(exec.EndCancelled);
+
+        // The children the prologue was in the middle of dispatching ran and their work was KEPT.
+        Assert.Equal(2, launcher.Dispatches.Count);
+        var children = await h.Runs.GetChildRunsAsync(run.Id, ct);
+        Assert.Equal(2, children.Count);
+        Assert.All(children, c => Assert.Equal(AgentRunState.Completed, c.State));
+        Assert.All(parent.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+        Assert.Equal(0, planner.ReplanCalls);
+
+        // RESUMABLE, exercised rather than inferred: the claim CAS actually takes the row.
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+    }
+
+    /// <summary>
+    /// The same window, HALF DISPATCHED — the shape a real fan-out spends most of its prologue in. One child is
+    /// already live when the pause lands and the loop is still inside the launch loop for the next one. The
+    /// cascade must reach the live child and the parent's own token must still never fire.
+    /// <para>
+    /// Red before the fix for the same reason as its sibling above (the row reads <c>Running</c>, so the pause
+    /// fired the parent), with the extra evidence that the already-dispatched child was revoked and cancelled by
+    /// the parent's own <c>cts.Token.Register</c> callback rather than paused.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APauseMidPrologue_CascadesToTheChildAlreadyDispatched_AndStillParksTheParent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new CascadingChildLauncher(h)
+        {
+            ExpectedChildren = 1,
+            BehaviorFor = i => i == 0 ? ChildBehavior.HoldUntilCancelled : ChildBehavior.Complete,
+            GateBeforeLaunchIndex = 1, // child 0 is live; hold before child 1
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("s1", null), ("g1", 1), ("g2", 1)), false));
+        var exec = new ParentExecutor();
+
+        using var dispatchCts = new CancellationTokenSource();
+        RegisterDispatch(h, run.Id, dispatchCts);
+
+        var loop = h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, dispatchCts.Token);
+
+        await launcher.AllChildrenInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await launcher.PrologueReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.Equal(AgentRunState.Running, (await h.Runs.GetAsync(run.Id, ct))!.State); // still the window
+        var liveChild = launcher.Dispatches[0].RunId;
+
+        Assert.True(await h.Steering.PauseAsync(run.Id, ct));
+        Assert.False(dispatchCts.IsCancellationRequested);        // the parent: never fired
+        Assert.Contains(liveChild, launcher.SinkFired);           // the live child: fired, which is the cascade
+
+        launcher.ReleasePrologue.TrySetResult();
+        await loop.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var parent = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Paused, parent!.State);
+        Assert.Null(parent.CompletedAt);
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(parent));
+        Assert.False(exec.EndCalled);
+
+        Assert.Equal(AgentRunState.Paused, (await h.Runs.GetAsync(liveChild, ct))!.State);
+        Assert.Null((await h.Runs.GetAsync(liveChild, ct))!.CompletedAt);
+        var lateChild = launcher.Dispatches[1].RunId;
+        Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(lateChild, ct))!.State);
+
+        // The paused child's sibling step is back in the plan; the finished one's is kept.
+        Assert.Equal(AgentStepStatus.Pending, Assert.Single(parent.Plan, s => s.Title == "g1").Status);
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(parent.Plan, s => s.Title == "g2").Status);
+        Assert.Equal(0, planner.ReplanCalls);
+        Assert.Empty(planner.ReplanFailures);
+
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+    }
+
+    /// <summary>
+    /// <b>F1.</b> A cascade must not fire at a child outside the PAUSABLE set. Here one child is live inside its
+    /// step and the other is still in its PLANNING turn — the longest single phase of a child's life, and the
+    /// state the review calls the most likely real-world timing in the whole batch.
+    /// <para>
+    /// Red before the fix, executed by the review's lens 6: the cascade filtered terminal-versus-not, so the
+    /// <c>Planning</c> child was cancelled, its own loop consumed the request, and <c>TryPauseUserAsync</c>'s CAS
+    /// then LOST because <c>Planning</c> is not one of its source states — leaving the child stranded
+    /// non-terminal with no dispatch behind it. The parent's settle loop charged that as
+    /// <c>"child run did not settle"</c>, recorded both sibling steps <c>Failed</c>, burnt a replan and settled
+    /// the parent terminally <c>Failed</c>.
+    /// </para>
+    /// <para>
+    /// The claim is asserted at the MECHANISM — the held child's cancel sink was never invoked — and then at the
+    /// consequence, because the downstream chain has four links and only the first is the edit.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ACascade_LeavesAChildStillPlanningAlone_AndTheParentStillParksPaused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new CascadingChildLauncher(h)
+        {
+            ExpectedChildren = 1, // only child 0 ever reaches a step; child 1 is held in its plan turn
+            BehaviorFor = i => i == 0 ? ChildBehavior.HoldUntilCancelled : ChildBehavior.Complete,
+            HoldPlanningChildIndex = 1,
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1)), false));
+        var exec = new ParentExecutor();
+
+        using var dispatchCts = new CancellationTokenSource();
+        RegisterDispatch(h, run.Id, dispatchCts);
+
+        var loop = h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, dispatchCts.Token);
+
+        await launcher.AllChildrenInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await launcher.PlanningChildReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await h.WaitForStateAsync(run.Id, AgentRunState.WaitingForChildren, ct);
+
+        var liveChild = launcher.Dispatches[0].RunId;
+        var planningChild = launcher.Dispatches[1].RunId;
+        Assert.Equal(AgentRunState.Planning, (await h.Runs.GetAsync(planningChild, ct))!.State); // the window
+
+        Assert.True(await h.Steering.PauseAsync(run.Id, ct));
+
+        // THE CLAIM, at the mechanism: pausable child fired at, non-pausable child left alone.
+        Assert.Contains(liveChild, launcher.SinkFired);
+        Assert.DoesNotContain(planningChild, launcher.SinkFired);
+
+        launcher.ReleasePlanning.TrySetResult(); // the untouched child plans and finishes on its own
+        await loop.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var parent = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Paused, parent!.State);
+        Assert.NotEqual(AgentRunState.Failed, parent.State);
+        Assert.Null(parent.CompletedAt);
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(parent));
+        Assert.False(dispatchCts.IsCancellationRequested);
+        Assert.False(exec.EndCalled);
+
+        // Neither child is destroyed: one parked through its own D1 abort, the other simply ran.
+        Assert.Equal(AgentRunState.Paused, (await h.Runs.GetAsync(liveChild, ct))!.State);
+        var held = await h.Runs.GetAsync(planningChild, ct);
+        Assert.Equal(AgentRunState.Completed, held!.State);
+        Assert.NotEqual(AgentRunState.Cancelled, held.State);
+        Assert.NotEqual(AgentRunState.Planning, held.State); // not stranded, which is the pre-fix ending
+
+        // No sibling step was charged as a failure, so no replan was burnt.
+        Assert.Equal(AgentStepStatus.Pending, Assert.Single(parent.Plan, s => s.Title == "a").Status);
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(parent.Plan, s => s.Title == "b").Status);
+        Assert.Equal(0, planner.ReplanCalls);
+        Assert.Empty(planner.ReplanFailures);
+
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+    }
+
+    /// <summary>
+    /// F1 at the edit itself, and the cheapest place it can be pinned: the cascade fires at exactly the members
+    /// of the PAUSABLE set and at nothing else. A table rather than a scenario, so the seventh state someone
+    /// adds to <see cref="AgentRunState"/> has to be classified here deliberately.
+    /// <para>
+    /// The two rows that matter are <c>Planning</c> — a child mid-plan, and also the shape of one still QUEUED
+    /// behind the child slot pool, which the real launcher settles <c>Cancelled(7)</c> when its token fires
+    /// before it starts — and the two parked states, which have already stopped and must not be re-fired at.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ACascade_FiresAtExactlyThePausableChildren_AndAtNoOthers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var parent = await h.NewRunAsync("goal");
+        await h.Runs.SetStateAsync(parent.Id, AgentRunState.WaitingForChildren, ct);
+        using var parentCts = new CancellationTokenSource();
+        RegisterDispatch(h, parent.Id, parentCts);
+
+        var fired = new List<AgentRunState>();
+        var byState = new Dictionary<AgentRunState, Guid>();
+        foreach (var state in new[]
+                 {
+                     AgentRunState.Planning, AgentRunState.Running, AgentRunState.Verifying,
+                     AgentRunState.WaitingForInput, AgentRunState.Paused, AgentRunState.Completed,
+                     AgentRunState.Failed, AgentRunState.Cancelled, AgentRunState.WaitingForChildren,
+                 })
+        {
+            var child = await h.NewRunAsync($"child {state}", parentRunId: parent.Id);
+            await h.Runs.SetStateAsync(child.Id, state, ct);
+            byState[state] = child.Id;
+            var captured = state;
+            h.Store.RegisterDispatch(child.Id, () => { lock (fired) fired.Add(captured); });
+        }
+
+        Assert.True(await h.Steering.PauseAsync(parent.Id, ct));
+
+        Assert.False(parentCts.IsCancellationRequested); // never the parent's own token, in any arm
+        List<AgentRunState> expected =
+            [AgentRunState.Running, AgentRunState.Verifying, AgentRunState.WaitingForChildren];
+        lock (fired) Assert.Equal(expected.OrderBy(s => s), fired.OrderBy(s => s));
+
+        // And the REQUEST follows the fire exactly: recorded for the pausable children, for nobody else. A
+        // request left standing against a child that was never interrupted would be honoured by whatever
+        // dispatch of it came next.
+        foreach (var (state, id) in byState)
+            Assert.Equal(expected.Contains(state), h.Store.TryConsumePauseRequest(id));
+
+        // Non-vacuity for the negative half: the parent's OWN request was recorded, so the run really was
+        // steered — the children above were skipped by the set test, not by a refused pause.
+        Assert.True(h.Store.TryConsumePauseRequest(parent.Id));
     }
 }

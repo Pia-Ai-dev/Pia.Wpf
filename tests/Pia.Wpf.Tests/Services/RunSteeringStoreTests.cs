@@ -127,4 +127,43 @@ public sealed class RunSteeringStoreTests
         Assert.True(store.RecordPauseRequest(runId));
         Assert.True(store.TryConsumePauseRequest(runId));
     }
+
+    /// <summary>
+    /// Batch 08 F2, the fan-out mark. It is a per-run flag that the DISPATCH sets and the PAUSE COMMAND reads,
+    /// and it must be independent of the two maps beside it — a run can be fanning out with no request standing,
+    /// and a request can stand against a run that is not fanning out.
+    /// <para>
+    /// The clear is the half worth pinning: a leaked mark would make every later pause of that run take the
+    /// cascade branch and never fire its cancel, i.e. a pause on an ordinary step that silently interrupts
+    /// nothing. It is unkeyed by dispatch on purpose — the fan-out's own <c>finally</c> owns it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void FanOutMark_IsPerRun_AndIsClearedIndependentlyOfTheRequest()
+    {
+        var store = new RunSteeringStore();
+        var fanning = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        store.RegisterDispatch(fanning, () => { });
+        store.RegisterDispatch(other, () => { });
+
+        Assert.False(store.IsFanningOut(fanning));  // nothing is fanning out until a fan-out says so
+        Assert.False(store.IsFanningOut(Guid.NewGuid())); // an unknown run is not, rather than a null-deref
+
+        store.BeginFanOut(fanning);
+        Assert.True(store.IsFanningOut(fanning));
+        Assert.False(store.IsFanningOut(other));    // per RUN, not a global flag
+
+        // Orthogonal to the request in both directions.
+        Assert.True(store.RecordPauseRequest(fanning));
+        Assert.True(store.IsFanningOut(fanning));
+        Assert.True(store.TryConsumePauseRequest(fanning));
+        Assert.True(store.IsFanningOut(fanning));   // consuming a request does not end a fan-out
+
+        store.EndFanOut(fanning);
+        Assert.False(store.IsFanningOut(fanning));
+        Assert.True(store.RecordPauseRequest(fanning)); // … and ending one does not disturb the registration
+
+        store.EndFanOut(Guid.NewGuid());            // clearing a mark that was never set is a no-op
+    }
 }

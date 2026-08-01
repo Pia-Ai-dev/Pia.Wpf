@@ -63,6 +63,39 @@ public interface IRunSteeringStore
     bool TryConsumePauseRequest(Guid runId);
 
     /// <summary>
+    /// Batch 08 F2: mark this run as INSIDE ITS FAN-OUT — from the moment the orchestrator commits to
+    /// dispatching a parallel group until that fan-out returns. That covers the dispatch PROLOGUE (supersede
+    /// the previous generation, then N × <c>LaunchChildAsync</c>: a stub chat row and workspace provisioning
+    /// each, hundreds of ms to seconds) as well as the child wait itself.
+    /// <para>
+    /// WHY IT EXISTS. D6's rule — never fire a fan-out parent's own token — was keyed on the PERSISTED ROW
+    /// reading <see cref="Pia.Models.AgentRunState.WaitingForChildren"/>, and the row does not say that until
+    /// AFTER the launch loop. For the whole prologue it reads <c>Running</c>, so a pause landing there took the
+    /// ordinary branch and fired the parent's CTS: the fan-out read the cancelled token, reported the run
+    /// cancelled, and the caller settled it TERMINALLY with <c>CompletedAt</c> stamped and no claim path back.
+    /// The dispatch knows where it is; the row does not. This flag is the dispatch telling the pause command.
+    /// </para>
+    /// <para>
+    /// ORDER IS THE GUARANTEE, and it is a two-flag handshake rather than a lock: the pause command RECORDS
+    /// its request and THEN reads this flag, while the fan-out SETS this flag and THEN reads the request. At
+    /// least one of the two always sees the other, so a pause can neither be outrun into a fired parent token
+    /// nor be started around. Implementations must therefore make both writes visible to the other thread —
+    /// which the <c>ConcurrentDictionary</c> pair already guarantees.
+    /// </para>
+    /// </summary>
+    void BeginFanOut(Guid runId);
+
+    /// <summary>
+    /// Clear the <see cref="BeginFanOut"/> mark. Must run on EVERY exit of the fan-out including a faulted
+    /// one, because a leaked mark would make every later pause of that run cascade instead of firing its
+    /// cancel — i.e. a pause on an ordinary step that never interrupts anything.
+    /// </summary>
+    void EndFanOut(Guid runId);
+
+    /// <summary>True while <paramref name="runId"/> is inside its fan-out — see <see cref="BeginFanOut"/>.</summary>
+    bool IsFanningOut(Guid runId);
+
+    /// <summary>
     /// Drop a request WITHOUT honouring it — the terminal-intent cancel paths (Stop, clear conversation, chat
     /// delete, a superseded fan-out generation, a parent's terminal cascade) and the loop's clear-on-entry.
     /// </summary>

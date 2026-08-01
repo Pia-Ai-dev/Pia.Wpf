@@ -72,6 +72,21 @@ public static class AgentRunStates
     /// stale-child settle and the Flow notification gate — before it was named here.
     /// </summary>
     public static bool IsParked(AgentRunState state) => state is AgentRunState.WaitingForInput or AgentRunState.Paused;
+
+    /// <summary>
+    /// True for a run a USER PAUSE can actually interrupt — the same three members
+    /// <c>AgentRunService.TryPauseUserAsync</c>'s CAS names in its <c>WHERE</c> clause, so the pre-check and
+    /// the write agree by construction.
+    /// <para>
+    /// <see cref="AgentRunState.Planning"/> is deliberately ABSENT: a resume skips planning, so a run paused
+    /// mid-plan would come back with no plan at all. That is why a cascade must skip a child caught at
+    /// <c>Planning</c> and LEAVE IT RUNNING rather than cancel it — firing at a state the CAS cannot accept
+    /// produces a child that is neither paused nor alive (see
+    /// <c>AgentRunSteeringService.CascadeToChildrenAsync</c>).
+    /// </para>
+    /// </summary>
+    public static bool IsPausable(AgentRunState state) =>
+        state is AgentRunState.Running or AgentRunState.Verifying or AgentRunState.WaitingForChildren;
 }
 
 /// <summary>

@@ -58,7 +58,7 @@ public sealed class AgentRunSteeringService : IAgentRunSteeringService
         // the pre-check exists so a refusal is a quiet log rather than a fired cancel whose request nobody
         // consumes. Planning is deliberately absent: a resume skips planning, so a run paused mid-plan would
         // come back with no plan at all.
-        if (run.State is not (AgentRunState.Running or AgentRunState.Verifying or AgentRunState.WaitingForChildren))
+        if (!AgentRunStates.IsPausable(run.State))
         {
             _logger.LogInformation(
                 "Pause: run {RunId} is not pausable in state {State}", runId, run.State);
@@ -74,9 +74,22 @@ public sealed class AgentRunSteeringService : IAgentRunSteeringService
             return false;
         }
 
-        if (run.State == AgentRunState.WaitingForChildren)
+        // D6's CASCADE, and the one branch that does NOT fire the run's own cancel.
+        //
+        // TWO tests, not one, and the second is the fix for the batch's named central risk. The persisted row
+        // says WaitingForChildren only from the END of the fan-out's dispatch prologue: everything before
+        // SafeBeginChildWait — superseding the previous generation, then N × LaunchChildAsync (a stub chat row
+        // and workspace provisioning each) — happens with the row still reading Running. A pause landing in
+        // that window used to take the FireCancel branch below; the fan-out then read its own cancelled token,
+        // reported the run cancelled, and the caller settled it TERMINALLY with CompletedAt stamped, throwing
+        // away every child's finished work with no claim path back. So ask the DISPATCH where it is
+        // (IsFanningOut) as well as the row.
+        //
+        // Ordering is the guarantee and it is deliberate: RecordPauseRequest above ran BEFORE this read, and
+        // the fan-out sets its flag BEFORE it reads the request — a two-flag handshake in which at least one
+        // side always sees the other, so this branch cannot be outrun.
+        if (run.State == AgentRunState.WaitingForChildren || _steering.IsFanningOut(runId))
         {
-            // D6's CASCADE, and the one branch that does NOT fire the run's own cancel.
             await CascadeToChildrenAsync(runId, ct).ConfigureAwait(false);
             _logger.LogInformation("Pause requested for delegating run {RunId} (cascaded to its children)", runId);
             return true;
@@ -127,7 +140,24 @@ public sealed class AgentRunSteeringService : IAgentRunSteeringService
         var cascaded = 0;
         foreach (var child in children)
         {
-            if (child.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
+            // The PAUSABLE set, not "anything non-terminal" — the same explicit set the parent's own pre-check
+            // uses, which is the point (D7 asks for named sets, and a second predicate over the same idea is
+            // how the two drifted apart in the first place).
+            //
+            // A child OUTSIDE the set cannot become Paused, and firing at it is strictly destructive. Two
+            // shapes, both reachable within a second of a fan-out dispatch: a child still Planning takes an
+            // OCE out of PlanAsync, its own loop consumes the request, and TryPauseUserAsync's CAS then LOSES
+            // because Planning is not a source state — leaving it stranded non-terminal at Planning with no
+            // dispatch behind it, which the parent's settle loop charges as "child run did not settle", i.e. a
+            // FAILED sibling step, a burnt replan and a terminally Failed parent. A child still queued behind
+            // the child slot pool never entered the orchestrator at all, so its launcher settles it
+            // Cancelled(7) — terminal, with CompletedAt stamped.
+            //
+            // Leaving such a child RUNNING is the safe direction and costs nothing durable: the parent parks
+            // on its own request at the fan-out boundary, and a resumed parent supersedes the whole generation
+            // and re-dispatches it (SafeCancelStaleChildrenAsync). The price is honesty — a pause that reaches
+            // no pausable child takes effect when the group finishes rather than immediately.
+            if (!AgentRunStates.IsPausable(child.State))
                 continue;
 
             if (!_steering.RecordPauseRequest(child.Id))

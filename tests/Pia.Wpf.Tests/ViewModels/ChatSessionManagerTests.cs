@@ -1567,6 +1567,12 @@ public class ChatSessionManagerTests
         public bool TryConsumePauseRequest(Guid runId) => _inner.TryConsumePauseRequest(runId);
 
         public void RevokePauseRequest(Guid runId) => _inner.RevokePauseRequest(runId);
+
+        public void BeginFanOut(Guid runId) => _inner.BeginFanOut(runId);
+
+        public void EndFanOut(Guid runId) => _inner.EndFanOut(runId);
+
+        public bool IsFanningOut(Guid runId) => _inner.IsFanningOut(runId);
     }
 
     /// <summary>

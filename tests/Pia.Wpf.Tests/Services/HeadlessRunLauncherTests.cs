@@ -1442,6 +1442,15 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             _inner.RevokePauseRequest(runId);
         }
 
+        // Deliberately NOT logged: the fan-out mark is dispatch bookkeeping, and these facts assert the ORDER
+        // of the record/fire/revoke/consume calls. Logging it would make every one of them assert a shape it
+        // is not about.
+        public void BeginFanOut(Guid runId) => _inner.BeginFanOut(runId);
+
+        public void EndFanOut(Guid runId) => _inner.EndFanOut(runId);
+
+        public bool IsFanningOut(Guid runId) => _inner.IsFanningOut(runId);
+
         /// <summary>
         /// Not part of the interface: the run token's own cancellation, appended to the SAME log so the two
         /// orderings are comparable at all. Called from a <c>CancellationToken.Register</c> callback, which runs

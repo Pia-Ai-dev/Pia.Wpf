@@ -294,30 +294,40 @@ public sealed class AgentRunOrchestrator
                             break;
                         }
 
+                        // Batch 08 D6: THE PARENT'S OWN TRANSITION. The cascade paused the children; this is
+                        // where the parent's row follows them. Consuming the request is what picks between the
+                        // two parks, and it is a consume rather than a peek for the same reason the in-process
+                        // branch's is: a request is honoured exactly once.
+                        //
+                        // UNCONDITIONAL, not nested inside the AnyParked arm (Batch 08 F2/F6). A request can
+                        // reach this boundary with NOTHING parked, and used to be dropped on the floor when it
+                        // did: the cascade never fires the parent's own token, so a fan-out whose children were
+                        // outside the pausable set, or had already settled, or were dispatched entirely inside
+                        // the prologue the pause landed in, comes back clean — and the loop then `continue`d,
+                        // ran the next step and settled the run Completed with the user's accepted pause never
+                        // honoured. The fan-out boundary is where a delegating parent's request has to land,
+                        // whatever its children did.
+                        //
+                        // By this point the row is already Running — the un-park CAS ran INSIDE TryFanOutAsync,
+                        // before this caller ever saw the result — which is why TryPauseUserAsync's source set
+                        // contains Running. The ledger clocks line up: TryEndChildWaitAsync opened a work
+                        // segment and TryPauseUserAsync closes it.
+                        //
+                        // Order is D1 item 6's, and the sibling steps are already back at Pending (the fan-out's
+                        // parked arm did that per child): PinRange → the CAS → the non-terminal executor
+                        // release → return. A lost CAS still releases the executor and returns — the row is not
+                        // ours to correct, but the session is. AFTER the Cancelled check above, always: terminal
+                        // intent outranks a pause (§5.3), and it must keep outranking it here.
+                        if (children.PauseRequested || _steering?.TryConsumePauseRequest(run.Id) == true)
+                        {
+                            await PinRange().ConfigureAwait(false);
+                            await SafePauseUser(run.Id).ConfigureAwait(false);
+                            await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                            return;
+                        }
+
                         if (children.AnyParked)
                         {
-                            // Batch 08 D6: THE PARENT'S OWN TRANSITION. The cascade paused the children; this
-                            // is where the parent's row follows them. Consuming the request is what picks
-                            // between the two parks, and it is a consume rather than a peek for the same
-                            // reason the in-process branch's is: a request is honoured exactly once.
-                            //
-                            // By this point the row is already Running — the un-park CAS ran INSIDE
-                            // TryFanOutAsync, before this caller ever saw AnyParked — which is why
-                            // TryPauseUserAsync's source set contains Running. The ledger clocks line up:
-                            // TryEndChildWaitAsync opened a work segment and TryPauseUserAsync closes it.
-                            //
-                            // Order is D1 item 6's, and the sibling steps are already back at Pending (the
-                            // fan-out's parked arm did that per child): PinRange → the CAS → the non-terminal
-                            // executor release → return. A lost CAS still releases the executor and returns —
-                            // the row is not ours to correct, but the session is.
-                            if (_steering?.TryConsumePauseRequest(run.Id) == true)
-                            {
-                                await PinRange().ConfigureAwait(false);
-                                await SafePauseUser(run.Id).ConfigureAwait(false);
-                                await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
-                                return;
-                            }
-
                             // D13: a PARKED child is not a finished child. Its work is durable and resumable,
                             // so failing the parent would throw it away and burn a replan. Re-park the parent
                             // through the existing budget-pause shape — its fan-out steps are still Pending, so
@@ -618,8 +628,15 @@ public sealed class AgentRunOrchestrator
     /// <para>
     /// <paramref name="Abandoned"/> outranks everything: it means <c>TryEndChildWaitAsync</c> lost its CAS, so
     /// this run's row is owned by another writer and this loop must stop WITHOUT writing to it (07 G8/D9).
+    /// </para>
+    /// <para>
+    /// <paramref name="PauseRequested"/> means the fan-out found a user pause standing at its ENTRY and
+    /// dispatched nothing — the request is ALREADY CONSUMED (honoured exactly once), so the caller parks the
+    /// parent without consuming again. Batch 08 F2.
     /// </para></summary>
-    private sealed record FanOutResult(bool AnyParked, bool AnyFailed, bool Cancelled, string? Error, bool Abandoned = false);
+    private sealed record FanOutResult(
+        bool AnyParked, bool AnyFailed, bool Cancelled, string? Error,
+        bool Abandoned = false, bool PauseRequested = false);
 
     /// <summary>
     /// Dispatch <paramref name="step"/>'s whole parallel group as sibling CHILD runs, await every one of them,
@@ -657,11 +674,56 @@ public sealed class AgentRunOrchestrator
         if (siblings.Count < 2)
             return null;
 
+        // ---- Batch 08 F2: from here on this run IS fanning out, and the row does not say so ----
+        //
+        // WaitingForChildren is not persisted until SafeBeginChildWait, AFTER the whole launch loop below, so
+        // for the entire prologue the row reads Running and AgentRunSteeringService.PauseAsync used to fire the
+        // parent's own token — which the cancelled-token check further down reads as a genuine cancel, settling
+        // the run TERMINALLY with CompletedAt stamped and every child's finished work discarded. Publishing the
+        // mark here, before the first side effect, is what tells the pause command to CASCADE instead.
+        //
+        // Cleared in a finally that covers every exit including a faulted one: a leaked mark would make every
+        // later pause of this run cascade to children it no longer has, i.e. never interrupt anything.
+        _steering?.BeginFanOut(run.Id);
+        try
+        {
+            // The other half of the handshake, and the reason the window closes by CONSTRUCTION rather than by
+            // being narrow: set the flag, THEN read the request. The pause command records its request and THEN
+            // reads the flag. Whichever ran first, the other one sees it — so a pause can neither be outrun
+            // into a fired parent token (it sees the flag and cascades) nor be started around (we see the
+            // request and park here without dispatching anything at all).
+            if (_steering?.TryConsumePauseRequest(run.Id) == true)
+            {
+                _logger.LogInformation(
+                    "Run {RunId} was paused as its fan-out began; nothing dispatched", run.Id);
+                return new FanOutResult(
+                    AnyParked: false, AnyFailed: false, Cancelled: false, null, PauseRequested: true);
+            }
+
+            return await FanOutCoreAsync(_childLauncher, run, group, siblings, ctx, profile, cts)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _steering?.EndFanOut(run.Id);
+        }
+    }
+
+    /// <summary>
+    /// The fan-out proper: supersede the previous generation, dispatch every sibling as a child run, await them
+    /// all and settle each sibling step from the child's persisted row. Split out of
+    /// <see cref="TryFanOutAsync"/> only so the Batch 08 F2 fan-out mark can bracket it in a <c>finally</c>
+    /// without re-indenting the body; the four decline tests and that bracket are the caller's whole job.
+    /// </summary>
+    private async Task<FanOutResult> FanOutCoreAsync(
+        IHeadlessRunLauncher childLauncher, AgentRun run, int group, List<AgentStep> siblings,
+        RunContext ctx, RunProfile profile, CancellationTokenSource cts)
+    {
         // D13's park leaves a child at WaitingForInput with its step still Pending, so a RESUMED parent arrives
         // here again with the same pending group. Nothing links a child to a STEP (only ParentRunId → parent),
         // so the parent cannot tell this group already has a parked generation behind it — and a parked run is
         // never swept, so it would sit there forever owning a visible stub chat. Cancel the old generation first.
-        await SafeCancelStaleChildrenAsync(_childLauncher, run.Id, cts.Token).ConfigureAwait(false);
+        await SafeCancelStaleChildrenAsync(childLauncher, run.Id, cts.Token).ConfigureAwait(false);
 
         var childProfile = ChildProfile(profile);
         var dispatched = new List<(AgentStep Step, HeadlessRunHandle Handle)>();
@@ -676,7 +738,7 @@ public sealed class AgentRunOrchestrator
         {
             try
             {
-                var handle = await _childLauncher.LaunchChildAsync(
+                var handle = await childLauncher.LaunchChildAsync(
                     new HeadlessRunRequest(
                         BuildChildGoal(sibling),
                         run.TriggerKind,
@@ -745,7 +807,7 @@ public sealed class AgentRunOrchestrator
                     // loop reads the request when its step unwinds, so a cancel delivered first could be
                     // consumed as a pause on the way past.
                     _steering?.RevokePauseRequest(d.Handle.RunId);
-                    _childLauncher.CancelAsync(d.Handle.RunId).SafeFireAndForget(_logger);
+                    childLauncher.CancelAsync(d.Handle.RunId).SafeFireAndForget(_logger);
                 }
             });
 
