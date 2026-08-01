@@ -279,8 +279,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             : await _stepPersonas.ResolveAsync(step.AssignedPersonaId, _runDefault, _tokenizationEnabled, ct)
                 .ConfigureAwait(false);
 
+        // Batch 08 D4: the ONLY place a user steering note may ride — composed here (this method has ctx),
+        // never inside RunExchangeStepAsync, which keeps taking a plain string and never sees ctx at all.
         return await RunExchangeStepAsync(
-                BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact),
+                ctx.AppendNudge(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact)),
                 persistInterim: true, ct, TimelineScope(step.Id), setup)
             .ConfigureAwait(false);
     }

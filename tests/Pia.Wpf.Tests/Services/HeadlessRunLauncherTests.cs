@@ -399,7 +399,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var (launcher, planner) = BuildLauncher(verifier: verifier);
         var parked = await ParkRunWithPendingStepAsync(policyJson: null);
 
-        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(launcher, parked.Id);
 
         var expected = SafeFolderPath.Canonicalize(Path.Combine(_runsBase, parked.Id.ToString()));
@@ -438,7 +438,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(await _runs.TryPauseUserAsync(parked.Id, ct));
         Assert.Equal(AgentRunState.Paused, (await _runs.GetAsync(parked.Id, ct))!.State);
 
-        Assert.True(await launcher.ResumeAsync(parked.Id, ct));
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
         await AwaitRunSettledAsync(launcher, parked.Id);
 
         var final = await _runs.GetAsync(parked.Id, ct);
@@ -665,7 +665,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var narrowEnvelope = HeadlessRunLauncher.SerializeGrantEnvelope(["create_todo"], AgentRunTrigger.Schedule);
 
         var parked = await ParkRunWithPendingStepAsync(narrowEnvelope);
-        Assert.True(await deleteLauncher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        Assert.True(await deleteLauncher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(deleteLauncher, parked.Id);
 
         Assert.False(deleteProbe.Executed);
@@ -674,7 +674,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var writeProbe = new ToolProbe("write_file");
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
         var parked2 = await ParkRunWithPendingStepAsync(narrowEnvelope);
-        Assert.True(await writeLauncher.ResumeAsync(parked2.Id, TestContext.Current.CancellationToken));
+        Assert.True(await writeLauncher.ResumeAsync(parked2.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(writeLauncher, parked2.Id);
 
         Assert.False(writeProbe.Executed); // the floor is a FALLBACK, never an addition to a known set
@@ -685,7 +685,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var grantProbe = new ToolProbe("create_todo");
         var (grantLauncher, _) = BuildLauncher(probe: grantProbe);
         var parked3 = await ParkRunWithPendingStepAsync(narrowEnvelope);
-        Assert.True(await grantLauncher.ResumeAsync(parked3.Id, TestContext.Current.CancellationToken));
+        Assert.True(await grantLauncher.ResumeAsync(parked3.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(grantLauncher, parked3.Id);
 
         Assert.True(grantProbe.Executed); // exactly what the launch granted still runs
@@ -737,7 +737,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var deleteProbe = new ToolProbe("delete_file");
         var (deleteLauncher, _) = BuildLauncher(probe: deleteProbe);
         var parked = await ParkRunWithPendingStepAsync(policyJson: null);
-        Assert.True(await deleteLauncher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        Assert.True(await deleteLauncher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(deleteLauncher, parked.Id);
 
         Assert.False(deleteProbe.Executed);
@@ -746,7 +746,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var writeProbe = new ToolProbe("write_file");
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
         var parked2 = await ParkRunWithPendingStepAsync(policyJson: "{\"totally\":\"foreign\"}");
-        Assert.True(await writeLauncher.ResumeAsync(parked2.Id, TestContext.Current.CancellationToken));
+        Assert.True(await writeLauncher.ResumeAsync(parked2.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(writeLauncher, parked2.Id);
 
         Assert.True(writeProbe.Executed);
@@ -813,7 +813,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Null(HeadlessRunLauncher.TryRestorePolicy(policylessEnvelope));
 
         var parked = await ParkRunWithPendingStepAsync(policylessEnvelope);
-        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(launcher, parked.Id);
 
         Assert.False(probe.Executed);
@@ -834,7 +834,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             [], AgentRunTrigger.Schedule, new RunAutonomyPolicy([ToolClass.Files]));
 
         var parked = await ParkRunWithPendingStepAsync(envelope);
-        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(launcher, parked.Id);
 
         Assert.True(probe.Executed);
@@ -854,7 +854,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             [], AgentRunTrigger.Schedule, new RunAutonomyPolicy([ToolClass.Files]));
 
         var parked = await ParkRunWithPendingStepAsync(envelope);
-        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(launcher, parked.Id);
 
         Assert.False(probe.Executed);
@@ -892,7 +892,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(AgentRunState.WaitingForInput,
             (await _runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
 
-        var resumed = await launcher.ResumeAsync(run.Id, TestContext.Current.CancellationToken);
+        var resumed = await launcher.ResumeAsync(run.Id, ct: TestContext.Current.CancellationToken);
 
         Assert.False(resumed);
         var after = await _runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
@@ -1153,7 +1153,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Directory.CreateDirectory(parentRoot); // the parent's workspace, still standing while its children work
 
         var parked = await ParkRunWithPendingStepAsync(policyJson: null, parentRunId: parent.RunId);
-        Assert.True(await launcher.ResumeAsync(parked.Id, TestContext.Current.CancellationToken));
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
         await AwaitRunSettledAsync(launcher, parked.Id);
 
         // The provisioner was never asked about the child's id (it was asked about the parent's, at launch).

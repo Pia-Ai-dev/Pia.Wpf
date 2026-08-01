@@ -84,6 +84,11 @@ public sealed class AgentRunOrchestrator
         _steering = steering;
     }
 
+    /// <param name="nudge">Batch 08 D4. TRAILING and DEFAULTED, like every dependency this loop has gained:
+    /// null ⇒ <see cref="RunContext.Nudge"/> stays null for this dispatch, which is what keeps a launch (never
+    /// nudged) and a resume that supplies none identical to the pre-Batch-08 loop. Scoped to THIS dispatch only
+    /// — a fresh <see cref="RunContext"/> is built below on every call, so a nudge never survives a second
+    /// resume that does not repeat it.</param>
     public async Task RunAsync(
         AgentRun run,
         IAgentTurnExecutor executor,
@@ -91,12 +96,14 @@ public sealed class AgentRunOrchestrator
         AiProvider provider,
         RunProfile profile,
         CancellationToken externalToken,
-        bool resume = false)
+        bool resume = false,
+        string? nudge = null)
     {
         // R13: link the run CTS from the caller's token. Interactive passes session.Cts.Token, so
         // ChatSession.Cancel() (which cancels session.Cts) propagates to the run + in-flight step.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
         var ctx = new RunContext(run.Goal ?? string.Empty, profile);
+        ctx.SetNudge(nudge); // Batch 08 D4: scope-to-dispatch — set before BeginRunAsync/SafeSeedResumeContext read ctx
         var cancelled = false;
         var failed = false;
         Guid? runFirst = null;

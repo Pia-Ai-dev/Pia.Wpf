@@ -449,7 +449,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         return new HeadlessRunHandle(run.Id, chatId, completion);
     }
 
-    public async Task<bool> ResumeAsync(Guid runId, CancellationToken ct = default)
+    public async Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default)
     {
         var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
         if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return false; }
@@ -594,7 +594,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // i.e. before this line, which is why ChatSessionManager keeps its ActiveRunId-matched
                     // term as well as reading this index.
                     _executingRuns.Register(run.ChatId, run.Id);
-                    await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token, resume: true)
+                    await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token, resume: true, nudge: nudge)
                         .ConfigureAwait(false); // resume:true → no re-plan, drains the Pending remainder (D1)
                 }
                 catch (OperationCanceledException)

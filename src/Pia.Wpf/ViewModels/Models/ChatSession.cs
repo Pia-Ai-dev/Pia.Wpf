@@ -792,7 +792,8 @@ public sealed class ChatSession : IDisposable
                 instruction += $" Expected: {spec.ExpectedArtifact}";
         }
 
-        chatMessages.Add(new ChatMessage(ChatRole.User, instruction));
+        // Batch 08 D4: the ONLY place a user steering note may ride — a ChatRole.User message, never System.
+        chatMessages.Add(new ChatMessage(ChatRole.User, ctx.AppendNudge(instruction)));
 
         // No ConfigureAwait(false) — this session is UI-thread-affine (see the class remarks), and the
         // caller resumes into code that touches Messages and the streaming target message.

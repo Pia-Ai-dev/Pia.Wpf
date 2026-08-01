@@ -161,7 +161,9 @@ public sealed class AgentVerifier : IAgentVerifier
         return new List<ChatMessage>
         {
             new(ChatRole.System, sb.ToString()),
-            new(ChatRole.User, ctx.Goal),
+            // Batch 08 D4: the critic seeing an active nudge is intentional (§1 D4 item 5) — never the System
+            // prompt above, which is model/persona text, not the user's.
+            new(ChatRole.User, ctx.AppendNudge(ctx.Goal)),
         };
     }
 

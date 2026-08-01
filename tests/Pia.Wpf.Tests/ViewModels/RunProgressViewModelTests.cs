@@ -367,7 +367,7 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         await vm.ContinueCommand.ExecuteAsync(null);
 
-        await _resume.Received(1).ResumeAsync(run.Id, Arg.Any<CancellationToken>());
+        await _resume.Received(1).ResumeAsync(run.Id, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         vm.Dispose();
     }
 

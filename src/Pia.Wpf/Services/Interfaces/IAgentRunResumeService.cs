@@ -8,11 +8,16 @@ namespace Pia.Services.Interfaces;
 public interface IAgentRunResumeService
 {
     /// <summary>
-    /// Resume a budget-paused run. CAS-claims it via
-    /// <see cref="IAgentRunService.TryBeginResumeAsync"/> first (guardrail 2 — returns <c>false</c> and
-    /// no-ops if the run is already claimed or not parked), then re-launches it headless-style on the
-    /// EXISTING run id: a FRESH <c>RunContext</c> budget grant, the persisted ledger preserved, and the
-    /// run's slot + workspace re-acquired. Returns <c>true</c> iff THIS call started the resume.
+    /// Resume a budget-paused (or user-paused, Batch 08) run. CAS-claims it via
+    /// <see cref="IAgentRunService.TryBeginResumeAsync"/> / <see cref="IAgentRunService.TryResumeFromPauseAsync"/>
+    /// first, by the row's own state (guardrail 2 — returns <c>false</c> and no-ops if the run is already
+    /// claimed or not parked/paused), then re-launches it headless-style on the EXISTING run id: a FRESH
+    /// <c>RunContext</c> budget grant, the persisted ledger preserved, and the run's slot + workspace
+    /// re-acquired. Returns <c>true</c> iff THIS call started the resume.
     /// </summary>
-    Task<bool> ResumeAsync(Guid runId, CancellationToken ct = default);
+    /// <param name="nudge">Batch 08 D4: an optional transient steering note, scoped to THIS resume dispatch
+    /// only — never persisted, and never present on a later resume unless that call supplies it again. Rides
+    /// only <c>ChatRole.User</c> messages (the step instruction, the critic, the replan) and never a System
+    /// prompt.</param>
+    Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default);
 }

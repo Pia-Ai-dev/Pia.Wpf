@@ -209,7 +209,7 @@ public class FlowItemViewModelTests
 
         vm.ExecuteActionCommand.Execute(null);
 
-        resume.Received(1).ResumeAsync(runId, Arg.Any<CancellationToken>());
+        resume.Received(1).ResumeAsync(runId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
     }
 
