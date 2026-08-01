@@ -73,6 +73,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CanMutatePlan))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
+    // Batch 08 F4. EVERY command gated on CanMutatePlan must be listed here, and EditStepCommand was the one
+    // that was not: CommunityToolkit's RelayCommand has no CommandManager integration, so CanExecuteChanged
+    // fires only from an explicit notify and ButtonBase caches _canExecute until it arrives. A row realized
+    // while the run was live hooked "Edit step" at CanExecute == false and never heard otherwise — so after a
+    // pause the other four verbs lit up and Edit stayed dead on every pre-existing row, for the VM's whole
+    // life. Pinned count-wise (not name-wise) by RunProgressViewModelPlanMutationTests, so a seventh verb
+    // added without its entry here reds instead of shipping greyed out.
+    [NotifyCanExecuteChangedFor(nameof(EditStepCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveStepEditCommand))]
     [NotifyCanExecuteChangedFor(nameof(InsertStepBelowCommand))]
     [NotifyCanExecuteChangedFor(nameof(MoveStepUpCommand))]

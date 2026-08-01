@@ -37,12 +37,36 @@ public interface IRunSteeringStore
     /// CTS, or <c>ChatSession.Cancel()</c>, which also releases pending action cards). Overwrites, like
     /// <c>IExecutingRunStore.Register</c>, and for the same reason: a resume dispatch may start while the
     /// previous one is still unwinding its <c>finally</c>.
+    /// <para>
+    /// <b>THE OWNERSHIP RULE (Batch 08 F3), and this call is where it is enforced: a pause request belongs to
+    /// the dispatch whose sink was registered when the request was recorded — the sink the request actually
+    /// fired — so registering a NEW sink here drops the previous one's unconsumed request, and nothing else
+    /// may drop it.</b>
+    /// </para>
+    /// <para>
+    /// WHY HERE. The rule used to be approximated by the run loop revoking any request for its own run id on
+    /// entry, which is a BLIND revoke: it cannot tell a request left behind by the dispatch it superseded from
+    /// one recorded against ITSELF a moment earlier. A pause landing in the resume ramp-up — after
+    /// <see cref="RegisterDispatch"/>, before the loop starts — therefore fired the NEW dispatch's token and was
+    /// then thrown away by that same dispatch, leaving a cancelled token with no request: the step came back
+    /// cancelled, nothing consumed it, and the run settled TERMINALLY <c>Cancelled</c> with <c>CompletedAt</c>
+    /// stamped, after <c>PauseAsync</c> had already told the user the pause succeeded. Registration is the exact
+    /// instant ownership changes hands, so the revoke belongs here and the window closes by construction.
+    /// </para>
+    /// <para>
+    /// ORDER: install the new sink FIRST, then drop the superseded request. The reverse order can leave a
+    /// request recorded against the OLD sink standing for the new dispatch to consume — a SPURIOUS pause, the
+    /// direction FAILURE DIRECTION above calls unrecoverable. This order can only lose a request, which is the
+    /// direction the user can simply repeat.
+    /// </para>
     /// </summary>
     void RegisterDispatch(Guid runId, Action cancel);
 
     /// <summary>
     /// Drop this dispatch AND any pause request it never consumed. Ownership-guarded: removes only when the
-    /// stored delegate is the caller's own, mirroring <c>HeadlessRunLauncher.RemoveInflight</c>.
+    /// stored delegate is the caller's own, mirroring <c>HeadlessRunLauncher.RemoveInflight</c>. The other half
+    /// of <see cref="RegisterDispatch"/>'s ownership rule: between the two, an unconsumed request dies with the
+    /// dispatch that owned it, whether that dispatch was superseded or simply finished.
     /// </summary>
     void ReleaseDispatch(Guid runId, Action ownCancel);
 
@@ -96,8 +120,10 @@ public interface IRunSteeringStore
     bool IsFanningOut(Guid runId);
 
     /// <summary>
-    /// Drop a request WITHOUT honouring it — the terminal-intent cancel paths (Stop, clear conversation, chat
-    /// delete, a superseded fan-out generation, a parent's terminal cascade) and the loop's clear-on-entry.
+    /// Drop a request WITHOUT honouring it — the TERMINAL-INTENT cancel paths, and only those: Stop, clear
+    /// conversation, chat delete, a superseded fan-out generation, a parent's terminal cascade. The run loop
+    /// deliberately does NOT call this on entry any more; that blind clear was Batch 08 F3, and the dispatch
+    /// boundary it was approximating is enforced by <see cref="RegisterDispatch"/> instead.
     /// </summary>
     void RevokePauseRequest(Guid runId);
 }

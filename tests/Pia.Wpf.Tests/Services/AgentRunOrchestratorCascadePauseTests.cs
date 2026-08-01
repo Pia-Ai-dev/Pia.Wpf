@@ -926,6 +926,77 @@ public sealed class AgentRunOrchestratorCascadePauseTests
     }
 
     /// <summary>
+    /// <b>F3 on the DELEGATING shape, which is where it bites hardest.</b> Continue, then Pause a beat later, on
+    /// a parent whose next pending step is a parallel group. The pause is recorded against the resume's own sink
+    /// and fires it, so the loop starts on an already-cancelled token — and the fan-out reaches
+    /// <c>cts.IsCancellationRequested</c> (which returns <c>Cancelled: true</c> and settles the run TERMINALLY)
+    /// only after it has read the request. Ordering, not luck: <c>TryFanOutAsync</c> consumes at the
+    /// <c>BeginFanOut</c> handshake, before <c>FanOutCoreAsync</c> is entered at all, so the parent parks with
+    /// NOTHING dispatched rather than cancelling a fresh generation on the way to a terminal settle.
+    /// <para>
+    /// Doubly red before F3's fix: the loop revoked the request on entry, so the cancelled token was all that
+    /// was left — the launch loop threw OCE per sibling, the wait ended and <c>:892</c> returned
+    /// <c>Cancelled: true</c>. This is the fact that stops a future "tidy" that moves the token check above the
+    /// request read from being silent.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APauseInTheResumeRampUp_OfADelegatingParent_ParksItBeforeAnyChildIsDispatched()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new CascadingChildLauncher(h)
+        {
+            ExpectedChildren = 2,
+            BehaviorFor = _ => ChildBehavior.HoldUntilCancelled,
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1)), false));
+
+        // Generation 1: dispatch, cascade-pause it the ordinary way, so the run is genuinely Paused with both
+        // group steps back at Pending — the state a Continue actually claims.
+        using var dispatchA = new CancellationTokenSource();
+        RegisterDispatch(h, run.Id, dispatchA);
+        var loop = h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, new ParentExecutor(), Persona(), Provider(), RunProfile.Interactive, dispatchA.Token);
+        await launcher.AllChildrenInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await h.WaitForStateAsync(run.Id, AgentRunState.WaitingForChildren, ct);
+        Assert.True(await h.Steering.PauseAsync(run.Id, ct));
+        await loop.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Equal(AgentRunState.Paused, (await h.Runs.GetAsync(run.Id, ct))!.State);
+        Assert.Equal(2, launcher.Dispatches.Count);
+
+        // CONTINUE: the claim CAS puts the row back at Running, then the resume registers its sink — and only
+        // then does the user press Pause. The row is Running and the run is NOT yet fanning out, so this takes
+        // the ordinary fire-the-cancel branch: the request is the new dispatch's, and so is the fired token.
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+        var resumed = (await h.Runs.GetAsync(run.Id, ct))!;
+        using var dispatchB = new CancellationTokenSource();
+        RegisterDispatch(h, run.Id, dispatchB);
+        Assert.True(await h.Steering.PauseAsync(run.Id, ct));
+        Assert.True(dispatchB.IsCancellationRequested);
+
+        var exec = new ParentExecutor();
+        await h.BuildOrchestrator(new FakePlanner(), childLauncher: launcher).RunAsync(
+            resumed, exec, Persona(), Provider(), RunProfile.Interactive, dispatchB.Token, resume: true);
+
+        var parent = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Paused, parent!.State);          // NOT Cancelled
+        Assert.NotEqual(AgentRunState.Cancelled, parent.State);
+        Assert.Null(parent.CompletedAt);
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(parent));
+        Assert.True(exec.PausedCalled);
+        Assert.False(exec.EndCalled);
+
+        // Nothing was dispatched into the pause: the generation count is still generation 1's, and both group
+        // steps are still Pending, so one Continue re-dispatches the whole group.
+        Assert.Equal(2, launcher.Dispatches.Count);
+        Assert.All(parent.Plan, s => Assert.Equal(AgentStepStatus.Pending, s.Status));
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+    }
+
+    /// <summary>
     /// <b>F1.</b> A cascade must not fire at a child outside the PAUSABLE set. Here one child is live inside its
     /// step and the other is still in its PLANNING turn — the longest single phase of a child's life, and the
     /// state the review calls the most likely real-world timing in the whole batch.

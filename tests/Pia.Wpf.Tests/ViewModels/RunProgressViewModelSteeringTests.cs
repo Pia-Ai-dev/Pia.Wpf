@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Windows.Input;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -224,10 +226,14 @@ public sealed class RunProgressViewModelPlanMutationTests
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]); // echo the key so a rejection note is assertable
     }
 
-    private RunProgressViewModel CreateVm()
+    /// <param name="steering">Trailing-optional, so every call site below stays <c>CreateVm()</c>. Only the
+    /// <c>CanExecuteChanged</c> fact supplies one: <c>CanPause</c> is null-guarded on this service, so without
+    /// it <c>PauseCommand</c>'s answer is false in every state while <c>_state</c> still notifies it — and that
+    /// fact's set equality would then fail for a reason that is not the defect.</param>
+    private RunProgressViewModel CreateVm(IAgentRunSteeringService? steering = null)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
-        return new RunProgressViewModel(_runs, _runId, _loc, _resume, NullLogger.Instance);
+        return new RunProgressViewModel(_runs, _runId, _loc, _resume, NullLogger.Instance, steering: steering);
     }
 
     private sealed class InlineSyncContext : SynchronizationContext
@@ -428,6 +434,59 @@ public sealed class RunProgressViewModelPlanMutationTests
         Assert.True(vm.MoveStepUpCommand.CanExecute(row));
         Assert.True(vm.MoveStepDownCommand.CanExecute(row));
         Assert.True(vm.SkipStepCommand.CanExecute(row));
+
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F4.</b> Every command whose <c>CanExecute</c> ANSWER changes when the run pauses must also
+    /// RAISE <c>CanExecuteChanged</c> — set equality, both directions, over whatever commands the VM happens to
+    /// expose. <c>EditStepCommand</c> was the one that did not: it was missing from <c>_state</c>'s
+    /// <c>[NotifyCanExecuteChangedFor]</c> block, and CommunityToolkit's <c>RelayCommand</c> has no
+    /// <c>CommandManager</c> integration, so <c>ButtonBase</c> keeps the <c>_canExecute</c> it cached when the
+    /// row was realized. A row that existed while the run was live therefore showed "Edit step" greyed out for
+    /// the panel's whole life, while the four verbs beside it lit up — and only re-minting the VM recovered it.
+    /// <para>
+    /// Why the shipped facts missed it, and why this one is shaped by REFLECTION rather than by six named
+    /// subscriptions: <see cref="RowCommands_AreDisabledWhileTheRunIsLive"/> calls <c>CanExecute</c> directly,
+    /// which recomputes on every call and can never observe a missing notification, and the row-level fact sets
+    /// <c>Paused</c> BEFORE loading the row so its buttons hook already-enabled. A named list would have to be
+    /// extended by hand for the seventh verb — exactly the omission this is guarding. The set is discovered, so
+    /// a new command is covered the moment it exists.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void EveryCommandWhoseCanExecuteChangesOnPause_AlsoRaisesCanExecuteChanged()
+    {
+        var vm = CreateVm(Substitute.For<IAgentRunSteeringService>());
+        var row = new StepRowViewModel { StepId = Guid.NewGuid(), Title = "s1", Status = AgentStepStatus.Pending };
+
+        var commands = typeof(RunProgressViewModel)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => typeof(ICommand).IsAssignableFrom(p.PropertyType))
+            .ToDictionary(p => p.Name, p => (ICommand)p.GetValue(vm)!, StringComparer.Ordinal);
+
+        // Non-vacuity floor: the ten commands the panel ships today. A discovery that found none — a renamed
+        // generator suffix, a changed base type — would otherwise make every assertion below trivially true.
+        Assert.True(commands.Count >= 10, $"only {commands.Count} commands were discovered: {string.Join(",", commands.Keys)}");
+
+        vm.State = RunProgressState.Running;
+        // The row argument is ignored by the parameterless commands and consumed by the per-row ones, so one
+        // call shape covers both kinds.
+        var before = commands.ToDictionary(kv => kv.Key, kv => kv.Value.CanExecute(row), StringComparer.Ordinal);
+
+        var notified = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (name, command) in commands)
+            command.CanExecuteChanged += (_, _) => notified.Add(name);
+
+        vm.State = RunProgressState.Paused;
+
+        var changed = commands.Where(kv => kv.Value.CanExecute(row) != before[kv.Key]).Select(kv => kv.Key);
+        var changedText = string.Join(",", changed.OrderBy(n => n, StringComparer.Ordinal));
+        var notifiedText = string.Join(",", notified.OrderBy(n => n, StringComparer.Ordinal));
+
+        Assert.NotEqual(string.Empty, changedText); // the state flip really did move some answers
+        Assert.Equal(changedText, notifiedText);
 
         vm.Dispose();
     }

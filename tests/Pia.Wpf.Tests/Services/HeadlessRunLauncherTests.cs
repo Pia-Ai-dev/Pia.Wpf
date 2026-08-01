@@ -165,8 +165,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         FakeRunWorkspaceService? workspaces = null, string? runsBaseOverride = null,
         Persona? rosterPersona = null, AiProvider? rosterProvider = null,
         IRunSteeringStore? steering = null,
-        Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null)
+        Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null,
+        IExecutingRunStore? executing = null)
     {
+        // Trailing-optional and defaulted to the shared field, so every existing call site is untouched. The
+        // one fact that overrides it needs a SEAM between the resume's RegisterDispatch and RunAsync, and
+        // Register is the last statement before the orchestrator is entered (Batch 08 F3).
+        var executingRuns = executing ?? _executing;
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
         var planner = new FakePlanner(onPlan);
@@ -227,7 +232,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // A2: the same index the launcher below is given, because the per-run scope resolves
         // HeadlessTurnExecutor -> concrete BackgroundAssistantTurnRunner, which now requires it. Omit this
         // and the resolve throws inside the launcher's dispatch task, which is swallowed there.
-        services.AddSingleton<IExecutingRunStore>(_executing);
+        services.AddSingleton<IExecutingRunStore>(executingRuns);
         // Batch 08: the loop needs the SAME registry the launcher registers its sink with, or it can never
         // consume the request the launcher's dispatch made possible (the orchestrator's parameter is
         // trailing-optional, so an unregistered store is silently "no steering" — the pre-Batch-08 loop).
@@ -239,7 +244,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var launcher = new HeadlessRunLauncher(
             sp.GetRequiredService<IServiceScopeFactory>(), _chats, _runs, settings, providers, personas,
-            _executing, NullLogger<HeadlessRunLauncher>.Instance,
+            executingRuns, NullLogger<HeadlessRunLauncher>.Instance,
             runsBaseDirOverride: runsBaseOverride ?? _runsBase, workspaces: workspaces, steering: steering);
         return (launcher, planner);
     }
@@ -1468,9 +1473,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// The ordering is deterministic and rests on two measured facts: <c>AssistantChatService</c> raises
     /// <c>ChatsChanged</c> SYNCHRONOUSLY inside <c>DeleteAsync</c>, and the token registration below runs INSIDE
     /// <c>Cts.Cancel()</c> — so by the time <c>DeleteAsync</c> returns, both the revoke and the cancel are in the
-    /// log, in the order the production line put them there. The loop's own clear-on-entry revoke happens before
-    /// the request is recorded, which is why the assertion looks for a revoke AFTER the record rather than for
-    /// "a revoke exists".
+    /// log, in the order the production line put them there. The assertion looks for a revoke AFTER the record
+    /// rather than for "a revoke exists" so that it pins the DELETE's revoke specifically and cannot be
+    /// satisfied by some other site's; since Batch 08 F3 removed the loop's blind clear-on-entry there is in
+    /// fact only one revoke in this log, and the search still asserts it is the right one.
     /// </para>
     /// </summary>
     [Fact]
@@ -1564,6 +1570,98 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal("S0", next!.Title);                                                     // …and is drainable
 
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// Holds a dispatch in the RESUME RAMP-UP — the window Batch 08 F3 lives in. <c>IExecutingRunStore.Register</c>
+    /// is the last statement before <c>orchestrator.RunAsync</c>, and the resume's <c>RegisterDispatch</c> has
+    /// already run by then (it is synchronous, before <c>Task.Run</c>), so a fact holding here has the row at
+    /// <c>Running</c>, the panel's Pause live, and the new dispatch's sink installed and unused.
+    /// <para>
+    /// Armed explicitly, because the LAUNCH path registers here too and a launch must not be gated. Bounded:
+    /// a gate nobody releases fails the fact instead of hanging the suite.
+    /// </para>
+    /// </summary>
+    private sealed class RampUpGate : IExecutingRunStore
+    {
+        private readonly ExecutingRunStore _inner = new();
+
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Named apart from <see cref="Release(Guid)"/>, which is the interface's own member.</summary>
+        public TaskCompletionSource Opened { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool Armed { get; set; }
+
+        public void Register(Guid chatId, Guid runId)
+        {
+            _inner.Register(chatId, runId);
+            if (!Armed) return;
+
+            Entered.TrySetResult();
+            Assert.True(Opened.Task.Wait(TimeSpan.FromSeconds(30)), "the ramp-up gate was never released");
+        }
+
+        public void Release(Guid runId) => _inner.Release(runId);
+
+        public bool IsExecuting(Guid chatId) => _inner.IsExecuting(chatId);
+
+        public Guid? GetChatId(Guid runId) => _inner.GetChatId(runId);
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F3, through the REAL launcher</b> — the shape the review executed and printed as
+    /// <c>LPROBE1 … FINAL state=Cancelled … resumableFromPaused=False</c>. Continue, then Pause a beat later:
+    /// the resume's CAS has the row at <c>Running</c> and its sink registered, so the pause is accepted and
+    /// fires THAT dispatch's token. The dispatch must then honour it.
+    /// <para>
+    /// Before the fix <c>RunAsync</c> revoked any request for its own run id on entry — blindly, unable to tell
+    /// a superseded dispatch's leftover from one recorded against itself milliseconds ago — so the cancel stood
+    /// with nothing to explain it and the run settled <c>Cancelled</c> with <c>CompletedAt</c> stamped, after
+    /// <c>PauseAsync</c> had already told the user it worked. The ownership rule now lives in
+    /// <c>RegisterDispatch</c>, which is the instant ownership actually changes hands.
+    /// </para>
+    /// <para>
+    /// The launcher's own ORDER is half the claim, which is why this is not only an orchestrator fact: if
+    /// <c>RegisterDispatch</c> ever moved to after <c>Task.Run</c>, the pause below would be refused
+    /// (registration-scoped) and the assertion that it was accepted reds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APauseInTheResumeRampUp_LeavesTheRunPausedAndResumable_NotCancelled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new RunSteeringStore();
+        var gate = new RampUpGate();
+        var (launcher, _) = BuildLauncher(steering: store, executing: gate);
+        var steering = new AgentRunSteeringService(_runs, store, NullLogger<AgentRunSteeringService>.Instance);
+
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+        await _runs.SetStateAsync(parked.Id, AgentRunState.Running, ct);
+        Assert.True(await _runs.TryPauseUserAsync(parked.Id, ct)); // a genuine USER pause, through the real CAS
+
+        gate.Armed = true;
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        // THE WINDOW, asserted rather than assumed: the row reads Running (so CanPause is true and the button
+        // is live) while the loop has not started.
+        Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(parked.Id, ct))!.State);
+        Assert.True(await steering.PauseAsync(parked.Id, ct)); // accepted — the resume's sink is registered
+
+        gate.Opened.TrySetResult();
+        await launcher.StopAsync(CancellationToken.None); // drains the dispatch task; deliberately does not revoke
+
+        var final = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.Paused, final!.State);                                    // NOT Cancelled
+        Assert.NotEqual(AgentRunState.Cancelled, final.State);
+        Assert.Null(final.CompletedAt);                                                      // not settled
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(final));  // a USER pause …
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Pending, s.Status));        // … with its work kept
+        Assert.Equal("S1", (await _runs.NextPendingStepAsync(parked.Id, ct))!.Title);
+        Assert.True(await _runs.TryResumeFromPauseAsync(parked.Id, ct));                     // claimable again
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
     /// <summary>Signals that a step is in flight, then holds it there until its own token is cancelled.</summary>

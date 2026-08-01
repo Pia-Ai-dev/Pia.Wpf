@@ -133,14 +133,20 @@ public sealed class AgentRunOrchestrator
                 await SafeRange(run.Id, first, runLast, cts.Token).ConfigureAwait(false);
         }
 
-        // Batch 08 D1, collision hardening 2 (cleared on entry): no pause request may survive a DISPATCH
-        // boundary. The same run id is dispatched more than once over its life (launch → pause → resume, and
-        // HeadlessRunLauncher's per-run entry is overwritten by the new dispatch while the old one is still
-        // unwinding), so without this a request recorded against the previous dispatch — one the user has
-        // already seen refused, or one a `!started` arm never consumed — would abort the FIRST step of this
-        // one. Structurally impossible instead of narrowly timed.
-        _steering?.RevokePauseRequest(run.Id);
-
+        // Batch 08 D1 collision hardening 2 (no pause request may survive a DISPATCH boundary) used to be a
+        // blind `_steering?.RevokePauseRequest(run.Id)` HERE, and Batch 08 F3 is what that cost. THE OWNERSHIP
+        // RULE, one sentence: a pause request belongs to the dispatch whose cancel sink was registered when it
+        // was recorded — the sink it actually fired. This loop cannot evaluate that rule. Its run id is the
+        // only thing it knows, and a request against that id is EITHER one the superseded dispatch left behind
+        // (drop it) OR one the user typed a beat ago against THIS dispatch's sink, in the ramp-up between
+        // HeadlessRunLauncher's RegisterDispatch and this line (honour it). Revoking blindly gets the second
+        // case exactly backwards: it discards the request while the cancel it fired stands, so the first step
+        // came back cancelled with nothing to consume, SafeFail(cancelled: true) stamped CompletedAt, and the
+        // run settled TERMINALLY — after PauseAsync had already returned true to the user.
+        //
+        // So the revoke moved to the one place that CAN evaluate the rule: IRunSteeringStore.RegisterDispatch,
+        // the exact instant ownership changes hands. By the time this line runs, a superseded dispatch's
+        // request is already gone and anything still standing is ours to honour at the first boundary below.
         try
         {
             await executor.BeginRunAsync(run, ctx, cts.Token).ConfigureAwait(false);
@@ -370,7 +376,8 @@ public sealed class AgentRunOrchestrator
                     //     CONTINUES and can return Succeeded:false, Cancelled:false, which would fall into the
                     //     replan arm below: the user clicks Pause and the run replans. There is no scenario in
                     //     which the request exists and a pause is not wanted (only the pause command writes it,
-                    //     and RunAsync revoked stale ones on entry), so the request alone decides.
+                    //     and a request belonging to a superseded dispatch was dropped when this dispatch
+                    //     registered its sink — the F3 ownership rule), so the request alone decides.
                     // (3) CancellationToken.None throughout the branch: cts.Token is already cancelled by the
                     //     sink that produced this abort. Neither SetStepStatusAsync nor SetRunMessageRangeAsync
                     //     inspects its token today, but passing None states the intent rather than relying on it.

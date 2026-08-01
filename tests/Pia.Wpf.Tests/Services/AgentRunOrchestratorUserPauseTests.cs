@@ -488,11 +488,17 @@ public sealed class AgentRunOrchestratorUserPauseTests
     }
 
     /// <summary>
-    /// Collision hardening 2, cleared on entry. A request recorded against a PREVIOUS dispatch of this run must
-    /// not abort the first step of the next one — the launcher's per-run entry is overwritten by a resume while
-    /// the old dispatch is still unwinding, and a <c>!started</c> arm can leave a request behind. So
-    /// <c>RunAsync</c> revokes any request for its own run id before it does anything else, and the run here
-    /// runs to completion untouched.
+    /// Collision hardening 2, and Batch 08 F3's OWNERSHIP RULE from the side that must be refused: <b>a request
+    /// recorded against a PREVIOUS dispatch must not abort the first step of the next one.</b> The launcher's
+    /// per-run entry is overwritten by a resume while the old dispatch is still unwinding, and a
+    /// <c>!started</c> arm can leave a request behind, so this is reachable.
+    /// <para>
+    /// TWO dispatches are constructed here on purpose. Until F3 this fact registered ONE sink, recorded against
+    /// it and then ran <c>RunAsync</c> for that same registration — which under the ownership rule is not a
+    /// stale request at all but a live one belonging to the dispatch that is running, i.e. the fact's body
+    /// asserted the F3 defect (blind revoke) as correct behaviour while its name described a scenario it never
+    /// built. Its twin below is the other side.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task StalePauseRequest_FromAPreviousDispatch_IsNotHonoured()
@@ -503,17 +509,106 @@ public sealed class AgentRunOrchestratorUserPauseTests
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2"), false));
 
-        h.Store.RegisterDispatch(run.Id, () => { });
-        Assert.True(h.Store.RecordPauseRequest(run.Id)); // the stale intent, recorded BEFORE this dispatch starts
+        // Dispatch A, and a pause it never consumed.
+        using var dispatchA = new CancellationTokenSource();
+        Action sinkA = () => { try { dispatchA.Cancel(); } catch { /* disposed */ } };
+        h.Store.RegisterDispatch(run.Id, sinkA);
+        Assert.True(h.Store.RecordPauseRequest(run.Id));
+
+        // Dispatch B supersedes A — the resume registering its own sink, exactly as HeadlessRunLauncher does
+        // before it schedules the loop. The drop happens HERE, at the boundary, not inside the loop.
+        using var dispatchB = new CancellationTokenSource();
+        Action sinkB = () => { try { dispatchB.Cancel(); } catch { /* disposed */ } };
+        h.Store.RegisterDispatch(run.Id, sinkB);
 
         var exec = new PausingExecutor("never", pause: null);
         await h.BuildOrchestrator(planner, steering: h.Store)
-            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, ct);
+            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, dispatchB.Token);
 
         var final = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.Completed, final!.State);
-        Assert.Equal(new[] { "s1", "s2" }, exec.Executed);
-        Assert.False(h.Store.TryConsumePauseRequest(run.Id)); // revoked, not merely ignored
+        Assert.Equal(new[] { "s1", "s2" }, exec.Executed);   // A's intent aborted neither step of B
+        Assert.False(exec.PausedCalled);
+        Assert.False(dispatchA.IsCancellationRequested);     // nothing fired A's sink either
+        Assert.False(h.Store.TryConsumePauseRequest(run.Id)); // dropped, not merely ignored
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F3 — the twin, and the leg that was broken.</b> Continue, then Pause a beat later: the
+    /// resume CAS has already put the row at <c>Running</c> and the panel's Pause button is live, so the
+    /// request is accepted and fires the RESUME's own sink — and it must then be honoured by the very dispatch
+    /// it was aimed at, not thrown away by it.
+    /// <para>
+    /// Before the fix the loop revoked any request for its own run id on entry, which discarded this one while
+    /// the cancel it had fired stood: the first step came back cancelled with nothing to consume, and
+    /// <c>SafeFail(cancelled: true)</c> settled the run <c>Cancelled</c> with <c>CompletedAt</c> stamped and no
+    /// claim path back — after <c>PauseAsync</c> had already returned <c>true</c> to the user. The review
+    /// executed exactly that through the real launcher (<c>FINAL state=Cancelled … resumable=False</c>).
+    /// </para>
+    /// <para>
+    /// Deterministic, not timed: the request is recorded strictly BEFORE <c>RunAsync</c> is entered, which is
+    /// the whole window. No sleep, no gate.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APauseInTheResumeRampUp_IsHonouredByTheDispatchItFired_NotRevokedByIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2"), false));
+
+        // Dispatch A: a fresh launch the user pauses mid-step, so the run really is Paused and really is the
+        // kind of run a Continue claims.
+        using var dispatchA = new CancellationTokenSource();
+        Action sinkA = () => { try { dispatchA.Cancel(); } catch { /* disposed */ } };
+        h.Store.RegisterDispatch(run.Id, sinkA);
+        var first = new PausingExecutor("s1", runId => h.Steering.PauseAsync(runId, ct));
+        await h.BuildOrchestrator(planner, steering: h.Store)
+            .RunAsync(run, first, Persona(), Provider(), RunProfile.Interactive, dispatchA.Token);
+        Assert.Equal(AgentRunState.Paused, (await h.Runs.GetAsync(run.Id, ct))!.State);
+
+        // CONTINUE. The claim CAS moves the row to Running, then the launcher registers the resume's sink —
+        // both before the loop is even scheduled (HeadlessRunLauncher.ResumeAsync: the CAS, then
+        // RegisterDispatch, then Task.Run).
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+        var resumed = (await h.Runs.GetAsync(run.Id, ct))!;
+        using var dispatchB = new CancellationTokenSource();
+        Action sinkB = () => { try { dispatchB.Cancel(); } catch { /* disposed */ } };
+        h.Store.RegisterDispatch(run.Id, sinkB);
+
+        // PAUSE, inside the ramp-up. The row reads Running, so the panel's button is live and the service
+        // accepts — through the real steering service, i.e. the real pre-check and the real record-then-fire.
+        Assert.Equal(AgentRunState.Running, (await h.Runs.GetAsync(run.Id, ct))!.State);
+        Assert.True(await h.Steering.PauseAsync(run.Id, ct));
+        // It fired THIS dispatch's token, which is what makes the request B's to honour. (dispatchA is already
+        // cancelled from leg 1's own pause, so it says nothing here.)
+        Assert.True(dispatchB.IsCancellationRequested);
+
+        // NOW the loop starts, on the token the pause already cancelled. The delegate below does not pause
+        // again — the pause already happened; it only routes the step into the token-honouring unwind a real
+        // executor performs when it is handed an already-cancelled token.
+        var second = new PausingExecutor("s1", _ => Task.FromResult(true));
+        await h.BuildOrchestrator(new FakePlanner(), steering: h.Store)
+            .RunAsync(resumed, second, Persona(), Provider(), RunProfile.Interactive, dispatchB.Token, resume: true);
+
+        var final = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Paused, final!.State);                                    // NOT Cancelled
+        Assert.Null(final.CompletedAt);                                                      // not settled
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(final));  // a USER pause
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Pending, s.Status));        // nothing lost
+        Assert.True(second.PausedCalled);   // the non-terminal release …
+        Assert.False(second.EndCalled);     // … and not the terminal one (guardrail 5)
+
+        // Resumable for real, which is the property the whole batch rests on: claim it and drain it.
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+        var again = (await h.Runs.GetAsync(run.Id, ct))!;
+        var third = new PausingExecutor("never", pause: null);
+        await h.BuildOrchestrator(new FakePlanner(), steering: h.Store)
+            .RunAsync(again, third, Persona(), Provider(), RunProfile.Interactive, ct, resume: true);
+        Assert.Equal(new[] { "s1", "s2" }, third.Executed);
+        Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
     }
 
     /// <summary>

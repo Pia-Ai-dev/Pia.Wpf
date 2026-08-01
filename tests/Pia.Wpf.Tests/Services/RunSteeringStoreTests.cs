@@ -67,6 +67,63 @@ public sealed class RunSteeringStoreTests
     }
 
     /// <summary>
+    /// <b>Batch 08 F3 — THE OWNERSHIP RULE, side one.</b> A pause request belongs to the dispatch whose sink was
+    /// registered when it was recorded, so superseding that sink drops the request. This is the case the run
+    /// loop's old blind clear-on-entry was really aiming at: the previous dispatch is still unwinding, its
+    /// <c>ReleaseDispatch</c> will find it no longer owns the entry and drop nothing, so if the boundary does
+    /// not drop the request here the NEW dispatch consumes an intent the user aimed at a run that has already
+    /// stopped — a first step silently aborted by a pause pressed minutes ago.
+    /// </summary>
+    [Fact]
+    public void RegisterDispatch_DropsTheSupersededDispatchsUnconsumedRequest()
+    {
+        var store = new RunSteeringStore();
+        var runId = Guid.NewGuid();
+        Action first = () => { };
+        Action second = () => { };
+
+        store.RegisterDispatch(runId, first);
+        Assert.True(store.RecordPauseRequest(runId));  // recorded against `first`, and never consumed
+
+        store.RegisterDispatch(runId, second);         // the resume supersedes it
+
+        Assert.False(store.TryConsumePauseRequest(runId));
+
+        // …and the old dispatch unwinding afterwards changes nothing in either direction: it owns neither the
+        // sink nor a request any more.
+        store.ReleaseDispatch(runId, first);
+        Assert.True(store.RecordPauseRequest(runId));  // non-vacuity: `second` is still the live registration
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F3 — THE OWNERSHIP RULE, side two, and the half that was broken.</b> A request recorded
+    /// AFTER the new dispatch registered belongs to that dispatch and must survive until it is consumed. The
+    /// run loop used to revoke blindly on entry, which could not tell these two cases apart: a pause landing in
+    /// the resume ramp-up fired the new dispatch's token and was then thrown away by that same dispatch, so the
+    /// step came back cancelled with no request to explain it and the run settled terminally.
+    /// <para>
+    /// Re-registering the SAME delegate is not a dispatch boundary and must not eat the request either — the
+    /// reference check, asserted so a "simplification" to an unconditional drop reds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void RegisterDispatch_DoesNotDropARequestRecordedAgainstTheNewDispatch()
+    {
+        var store = new RunSteeringStore();
+        var runId = Guid.NewGuid();
+        Action first = () => { };
+        Action second = () => { };
+
+        store.RegisterDispatch(runId, first);
+        store.RegisterDispatch(runId, second);         // the ramp-up: the resume's sink is in place …
+        Assert.True(store.RecordPauseRequest(runId));  // … and only NOW does the user press Pause
+
+        store.RegisterDispatch(runId, second);         // the same sink again is not a boundary
+
+        Assert.True(store.TryConsumePauseRequest(runId));
+    }
+
+    /// <summary>
     /// Hazard 7's second half. The launcher's <c>!started</c> arms settle the row themselves and never enter the
     /// orchestrator, so nothing there ever consumes a request — without this drop the request would outlive its
     /// dispatch and be honoured by the next one.
