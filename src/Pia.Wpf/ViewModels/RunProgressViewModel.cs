@@ -541,10 +541,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // The pause vocabulary, like the truncation vocabulary above, is a fixed set of APP-OWNED tokens written by
     // the run loop and the startup reconcile — never user content. An unknown or absent reason keeps the budget
     // wording, because that is what every pause the loop itself writes actually is ("step-cap"/"wall-clock").
+    // Batch 08 G2: the "user" arm is not reachable TODAY — ComputeActivity returns null for Paused (the state
+    // chip already carries it), so a user-paused run renders no activity line at all. It is added anyway
+    // because the alternative is a latent "Stopped at budget" the day someone makes the line render for
+    // Paused, and it is deliberately NOT mapped to the existing Run_State_Paused chip label: a mapping arm
+    // that borrows a string written for another control reads fine and breaks on the next copy edit.
     private string DescribePause(string? reason) => reason switch
     {
         AgentRunOrchestrator.ChildrenParkedReason => _localization["Run_Activity_ChildrenParked"],
         AgentRunService.ChildrenInterruptedReason => _localization["Run_Activity_ChildrenInterrupted"],
+        AgentRunService.UserPausedReason => _localization["Run_Activity_UserPaused"],
         _ => _localization["Run_Activity_WaitingAtBudget"],
     };
 

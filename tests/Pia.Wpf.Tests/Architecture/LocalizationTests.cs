@@ -79,10 +79,19 @@ public class LocalizationTests
         var allKeys = GetAllResourceKeys();
 
         // Patterns for static (non-interpolated) key lookups
+        //
+        // Batch 08 G2 widens the array with the `_localization` field name. RunProgressViewModel calls its
+        // localization service `_localization`, not `_localizationService`, so NONE of the run panel's
+        // VM-formatted keys were seen by any regex here — and AllTranslations_MustBeComplete only compares
+        // resx to resx, so a key missing from all three files was invisible in both directions. The `[` must
+        // follow `_localization` immediately, which is what keeps this from also matching
+        // `_localizationService[` and double-reporting every hit above.
         var patterns = new[]
         {
             new Regex(@"_localizationService\[""(\w+)""\]", RegexOptions.Compiled),
             new Regex(@"_localizationService\.Format\(""(\w+)""", RegexOptions.Compiled),
+            new Regex(@"_localization\[""(\w+)""\]", RegexOptions.Compiled),
+            new Regex(@"_localization\.Format\(""(\w+)""", RegexOptions.Compiled),
             new Regex(@"LocalizationSource\.Instance\[""(\w+)""\]", RegexOptions.Compiled),
         };
 

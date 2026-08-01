@@ -94,6 +94,40 @@ public interface IAgentRunService
     Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default);
 
     /// <summary>
+    /// Batch 08 D1 — the USER pause. CAS an executing run to <see cref="AgentRunState.Paused"/>, writing
+    /// <c>{paused:true,reason:"user"}</c> (<c>AgentRunService.UserPausedReason</c>) to ExtraJson. Returns
+    /// <c>true</c> iff THIS caller won. Raises RunChanged(Paused) only on the win.
+    /// <para>
+    /// The source states are an EXPLICIT set — <see cref="AgentRunState.Running"/>,
+    /// <see cref="AgentRunState.Verifying"/>, <see cref="AgentRunState.WaitingForChildren"/> — never an
+    /// ordinal range (D7): <see cref="AgentRunState.WaitingForChildren"/> is appended ABOVE the terminal
+    /// band, so any threshold lies about it. <see cref="AgentRunState.Planning"/> is excluded on purpose: a
+    /// resume skips planning, so a run paused mid-plan would come back with no plan at all.
+    /// </para>
+    /// <para>
+    /// Writes NO <c>CompletedAt</c> — that is precisely what distinguishes a pause from
+    /// <see cref="FailAsync"/>, which stamps one unconditionally. A paused run must stay RESUMABLE, which is
+    /// what <see cref="TryResumeFromPauseAsync"/> then claims. A lost CAS writes nothing at all, not even the
+    /// ledger clock: whoever moved the run owns its state (R11).
+    /// </para>
+    /// </summary>
+    Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Batch 08 — the resume claim for a USER-paused run: CAS <see cref="AgentRunState.Paused"/> →
+    /// <see cref="AgentRunState.Running"/>, re-opening a fresh ledger work segment on the win. The SIBLING of
+    /// <see cref="TryBeginResumeAsync"/>, and deliberately a second single-source CAS rather than a widened
+    /// one: the two claims are DISJOINT by source state, so the launcher dispatches on the row's state
+    /// instead of trying one and then the other.
+    /// <para>
+    /// Like <see cref="TryBeginResumeAsync"/> — and unlike <see cref="TryEndChildWaitAsync"/> — this DOES
+    /// clear <c>ExtraJson</c>: the claim retires the pause marker it is consuming, or a cleanly-completing
+    /// resumed run would keep reporting itself paused.
+    /// </para>
+    /// </summary>
+    Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>
     /// Park a PARENT while its child runs execute (Batch 07 D9): State →
     /// <see cref="AgentRunState.WaitingForChildren"/>, and the ledger work segment is CLOSED — the parent is
     /// not working, its children are, and each bills its own time. Raises

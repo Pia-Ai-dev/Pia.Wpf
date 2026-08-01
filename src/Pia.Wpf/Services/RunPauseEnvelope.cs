@@ -15,9 +15,15 @@ namespace Pia.Services;
 /// <para>
 /// The reason vocabulary is a fixed set of APP-OWNED tokens (<c>"step-cap"</c>, <c>"wall-clock"</c>,
 /// <see cref="AgentRunOrchestrator.ChildrenParkedReason"/>,
-/// <see cref="AgentRunService.ChildrenInterruptedReason"/>) — never user content, so a consumer may key copy on
+/// <see cref="AgentRunService.ChildrenInterruptedReason"/>, <see cref="AgentRunService.UserPausedReason"/>) —
+/// never user content, so a consumer may key copy on
 /// it and may log it. Same swallowing discipline as the truncation reader beside it: a malformed, absent or
 /// foreign envelope reads as <c>null</c>, i.e. "no stated reason", never a guess.
+/// <para>
+/// Batch 08 adds <see cref="AgentRunService.UserPausedReason"/>, which is also the only token written to a run
+/// at <see cref="Models.AgentRunState.Paused"/> rather than <see cref="Models.AgentRunState.WaitingForInput"/>
+/// — the envelope shape is identical, so this reader needs no state knowledge.
+/// </para>
 /// </para>
 /// </summary>
 internal static class RunPauseEnvelope

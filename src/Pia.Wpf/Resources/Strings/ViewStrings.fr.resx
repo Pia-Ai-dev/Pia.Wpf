@@ -943,6 +943,7 @@
   <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>En attente des sous-agents…</value></data>
   <data name="Run_Activity_ChildrenParked" xml:space="preserve"><value>Un sous-agent a atteint son propre budget — continuer ?</value></data>
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrompue pendant le travail des sous-agents — continuer ?</value></data>
+  <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Vous avez mis cette exécution en pause</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Publier les fichiers</value></data>
   <data name="Run_Publish_Pending" xml:space="preserve"><value>Les fichiers de cette exécution sont encore dans son espace de travail.</value></data>
@@ -972,6 +973,7 @@
   <data name="Flow_Run_WaitingAtBudget" xml:space="preserve"><value>Arrêtée à son budget — continuer ?</value></data>
   <data name="Flow_Run_ChildrenParked" xml:space="preserve"><value>L'un de ses sous-agents a atteint son propre budget — continuer ?</value></data>
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Interrompue pendant le travail de ses sous-agents — continuer ?</value></data>
+  <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Vous avez mis cette exécution en pause. Reprendre ?</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Reprendre l'exécution</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Plus court</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Plus détaillé</value></data>

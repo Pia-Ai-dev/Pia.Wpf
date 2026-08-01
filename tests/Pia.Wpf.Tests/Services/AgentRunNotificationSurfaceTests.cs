@@ -52,6 +52,10 @@ public sealed class AgentRunNotificationSurfaceTests
     [Theory]
     [InlineData("children-parked", "Flow_Run_ChildrenParked")]
     [InlineData("children-interrupted", "Flow_Run_ChildrenInterrupted")]
+    // Batch 08 G2. The "user" token is the one reason that is NOT a budget at all, and this row is the only
+    // coverage its key has: the body is read as _localizationService[PausedBodyKey(...)], so the key literal
+    // lives inside the switch arm where LocalizationTests' quoted-literal regex cannot see it.
+    [InlineData("user", "Flow_Run_UserPaused")]
     [InlineData("step-cap", "Flow_Run_WaitingAtBudget")]
     [InlineData("wall-clock", "Flow_Run_WaitingAtBudget")]
     [InlineData(null, "Flow_Run_WaitingAtBudget")]

@@ -336,6 +336,11 @@ public sealed class RunProgressViewModelTests : IDisposable
     [Theory]
     [InlineData("children-parked", "Run_Activity_ChildrenParked")]
     [InlineData("children-interrupted", "Run_Activity_ChildrenInterrupted")]
+    // Batch 08 G2. Driven through PauseAsync (→ WaitingForInput) because that is the only route that reaches
+    // DescribePause at all: ComputeActivity returns null for Paused itself, since the state chip carries it.
+    // The arm exists so the mapping is defensible the day that changes, instead of saying "Stopped at budget"
+    // to someone who pressed Pause.
+    [InlineData("user", "Run_Activity_UserPaused")]
     [InlineData("step-cap", "Run_Activity_WaitingAtBudget")]
     [InlineData("wall-clock", "Run_Activity_WaitingAtBudget")]
     [InlineData("something-a-later-build-invented", "Run_Activity_WaitingAtBudget")]

@@ -89,6 +89,9 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
     {
         AgentRunOrchestrator.ChildrenParkedReason => "Flow_Run_ChildrenParked",
         AgentRunService.ChildrenInterruptedReason => "Flow_Run_ChildrenInterrupted",
+        // Batch 08 G2. Telling a user who pressed Pause that the run "stopped at its budget" would send them
+        // to raise budgets that were never reached; the card still carries the same ContinueRunAction.
+        AgentRunService.UserPausedReason => "Flow_Run_UserPaused",
         _ => "Flow_Run_WaitingAtBudget",
     };
 

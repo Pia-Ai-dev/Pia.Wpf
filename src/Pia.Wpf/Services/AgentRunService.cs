@@ -43,6 +43,19 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     /// </summary>
     internal const string ChildrenInterruptedReason = "children-interrupted";
 
+    /// <summary>
+    /// The pause <c>reason</c> written by <see cref="TryPauseUserAsync"/> — a run the USER paused from the run
+    /// panel (Batch 08 D1), as opposed to the loop parking itself at a budget. Same closed, app-owned
+    /// vocabulary as <c>"step-cap"</c> / <c>"wall-clock"</c> / <c>"children-parked"</c> /
+    /// <see cref="ChildrenInterruptedReason"/>: never user content, so it may be logged and may key copy.
+    /// <para>
+    /// Adding a token to that vocabulary obliges an arm in BOTH readers, or a user-paused run announces
+    /// itself as "Stopped at budget": <c>RunProgressViewModel.DescribePause</c> and
+    /// <see cref="AgentRunNotificationSurface.PausedBodyKey"/>. Both default to the budget wording on purpose.
+    /// </para>
+    /// </summary>
+    internal const string UserPausedReason = "user";
+
     private readonly string _connectionString;
     private readonly ILogger<AgentRunService> _logger;
     private readonly object _gate = new();
@@ -353,6 +366,104 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         if (affected > 0)
         {
             _logger.LogInformation("Run {RunId} resume claimed → Running", runId);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        }
+        return Task.FromResult(affected > 0);
+    }
+
+    public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default)
+    {
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            // A CAS, never a blind write, for the reason TryEndChildWaitAsync is one: by the time a user
+            // clicks Pause a SECOND writer can already want this run — its own loop settling, the
+            // cascade-cancel path, a Stop — and a blind UPDATE would resurrect a run somebody else already
+            // settled as Running-but-Paused (R11). A lost race writes NOTHING and says so in its return.
+            //
+            // The source set is EXPLICIT and never a range (D7): WaitingForChildren = 8 sits ABOVE the
+            // terminal band, so any `State < x` predicate lies about it.
+            //   Running            — the ordinary case, and also what a fan-out parent presents (the un-park
+            //                        CAS has already moved it off WaitingForChildren by the time its caller
+            //                        sees AnyParked).
+            //   Verifying          — the critic's provider call is as interruptible as a step's.
+            //   WaitingForChildren — a pause that lands before the un-park CAS.
+            // Planning is DELIBERATELY excluded: a resume runs RunAsync(resume: true), which skips planning
+            // entirely, so a run paused mid-plan would come back with NO plan, drain zero steps and settle
+            // Completed having done nothing.
+            //
+            // NO CompletedAt — that is the whole difference between a pause and FailAsync, which stamps one
+            // unconditionally. A pause must leave a RESUMABLE run, and a non-null CompletedAt says finished.
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now, ExtraJson=@Extra WHERE Id=@Id AND State IN (@S1,@S2,@S3)";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Paused);
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            // Serialized through the SAME shape + options PauseAsync and the startup re-park use, never
+            // hand-written JSON: RunPauseEnvelope is the single reader and a naming-policy change must move
+            // every writer together.
+            cmd.Parameters.AddWithValue("@Extra",
+                JsonSerializer.Serialize(new { paused = true, reason = UserPausedReason }, JsonOptions));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@S1", (int)AgentRunState.Running);
+            cmd.Parameters.AddWithValue("@S2", (int)AgentRunState.Verifying);
+            cmd.Parameters.AddWithValue("@S3", (int)AgentRunState.WaitingForChildren);
+            affected = cmd.ExecuteNonQuery();
+
+            // Close the work segment ONLY for the winner, in the same _gate hold (mirrors
+            // TryBeginResumeAsync's OpenSegment): the pause gap must not count as worked time, and the loser
+            // must never touch the clock of a run it does not own. Separate statement on purpose — the CAS
+            // stays one self-contained UPDATE and this is bookkeeping (MoveLedgerClock swallows its faults).
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.CloseSegment);
+        }
+
+        if (affected > 0)
+        {
+            // The reason token is app-owned, so it may be logged in full (unlike the run's Goal).
+            _logger.LogInformation("Run {RunId} → Paused (reason={Reason})", runId, UserPausedReason);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Paused));
+        }
+        else
+        {
+            _logger.LogInformation("Run {RunId} user pause not applied — another writer owns this run", runId);
+        }
+        return Task.FromResult(affected > 0);
+    }
+
+    public Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default)
+    {
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            // The SIBLING of TryBeginResumeAsync, deliberately a second single-source CAS rather than a
+            // widened one: keeping `@Expected` a single state is what makes the two claims provably DISJOINT
+            // (a WaitingForInput run is not claimable here and a Paused run is not claimable there), and it
+            // is what lets the launcher dispatch on the row's state instead of "try one, then the other".
+            //
+            // ExtraJson=NULL is deliberate and is the same reasoning TryBeginResumeAsync gives: the claim
+            // RETIRES the pause marker it just consumed, so a resumed run that completes cleanly (whose
+            // non-truncated CompleteAsync leaves the column alone) does not keep telling the panel and the
+            // Flow surface that it is paused.
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now, ExtraJson=NULL WHERE Id=@Id AND State=@Expected";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Running);
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@Expected", (int)AgentRunState.Paused);
+            affected = cmd.ExecuteNonQuery();
+
+            // A FRESH work segment for the winner only (guardrail 2 — never two loops on one run).
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.OpenSegment);
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} resume claimed from Paused → Running", runId);
             RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Running));
         }
         return Task.FromResult(affected > 0);
