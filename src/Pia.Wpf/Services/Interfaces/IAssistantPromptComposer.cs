@@ -13,7 +13,14 @@ public sealed record AssistantTurnSetup(
     string SystemPrompt,
     IList<AITool>? Tools,
     bool SupportsTools,
-    bool WebSearchActive);
+    bool WebSearchActive,
+
+    /// <summary>
+    /// The persona driving this turn, sent as <c>X-Pia-Persona</c> so the server can scope persona-bound
+    /// KBs/connectors. Null only when no persona was resolved. Trailing and defaulted so every existing
+    /// construction site (all of which pass exactly the four members above) stays source-compatible.
+    /// </summary>
+    Guid? PersonaId = null);
 
 /// <summary>
 /// Builds the persona-driven system prompt and resolves the tool set for an

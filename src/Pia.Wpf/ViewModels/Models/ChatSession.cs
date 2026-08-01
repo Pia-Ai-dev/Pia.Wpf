@@ -366,7 +366,8 @@ public sealed class ChatSession : IDisposable
             // on every provider/exception type; RunTurnAsync keeps today's catches verbatim.
             // The returned usage is discarded here (the single-turn path has no step ledger).
             await RunModelExchangeAsync(assistantMessage, chatMessages, provider, tools,
-                supportsTools, webSearchActive, tokenizationEnabled, token);
+                supportsTools, webSearchActive, tokenizationEnabled, token,
+                personaId: turnSetup.PersonaId);
 
             // Reached the end of the turn without an exception — matches today's
             // "followups run as the last line of try" gate.
@@ -505,7 +506,11 @@ public sealed class ChatSession : IDisposable
         CancellationToken token,
         AgentContextBudget? contextBudget = null,
         RunAutonomyPolicy? policy = null,
-        AgentTimelineScope? timeline = null)
+        AgentTimelineScope? timeline = null,
+        // The turn's persona, sent as X-Pia-Persona. A parameter rather than a field because the two
+        // callers source it differently: the interactive turn reads it off the AssistantTurnSetup, a
+        // Planned step off its own per-step persona attribution.
+        Guid? personaId = null)
     {
         var rawBuffer = new StringBuilder();
         // Reasoning reaches us via two channels that never overlap for a given provider:
@@ -551,8 +556,9 @@ public sealed class ChatSession : IDisposable
             chatMessages, provider, tools,
             supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled, policy, timeline) : null,
             nameof(WindowMode.Assistant),
-            token,
-            contextBudget))
+            personaId,
+            cancellationToken: token,
+            contextBudget: contextBudget))
         {
             switch (item)
             {
@@ -689,9 +695,11 @@ public sealed class ChatSession : IDisposable
             var chatMessages = await BuildStepChatMessagesAsync(spec, ctx, assistantMessage, ct);
             // Same budget the step request was compacted with, relayed so the in-step tool loop is
             // bounded too. The INTERACTIVE call site (RunTurnAsync) deliberately leaves it null.
+            // spec.Persona is THIS step's attribution (a step can run under a different persona than the
+            // run default), so the header follows the step rather than the run.
             usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
                 spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct,
-                AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline);
+                AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline, spec.Persona.Id);
             succeeded = true;
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)

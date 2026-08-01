@@ -121,7 +121,7 @@ public sealed class AgentPlannerTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var messages = ci.ArgAt<IList<ChatMessage>>(0);
@@ -141,7 +141,7 @@ public sealed class AgentPlannerTests
     {
         _ai.GetChatResponseAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 _reasoningRequests.Add(ci.ArgAt<IList<ChatMessage>>(0));
@@ -155,7 +155,7 @@ public sealed class AgentPlannerTests
     {
         _ai.GetChatResponseAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<ChatResponse>(ex));
     }
 
@@ -164,7 +164,7 @@ public sealed class AgentPlannerTests
     {
         _ = _ai.Received(count).GetChatResponseAsync(
             Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
     }
 
     /// <summary>Received-count assertion for the constrained emit_plan turn.</summary>
@@ -172,7 +172,7 @@ public sealed class AgentPlannerTests
     {
         _ai.Received(count).GetChatCompletionWithToolsAsync(
             Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
     }
 
     [Fact]

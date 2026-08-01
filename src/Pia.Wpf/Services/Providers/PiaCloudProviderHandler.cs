@@ -33,6 +33,7 @@ public sealed class PiaCloudProviderHandler : IAiProviderHandler
         string? apiKey,
         HttpClient httpClient,
         string? mode,
+        Guid? managedPersonaId,
         CancellationToken cancellationToken)
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -41,12 +42,14 @@ public sealed class PiaCloudProviderHandler : IAiProviderHandler
         if (string.IsNullOrEmpty(serverUrl))
             throw new InvalidOperationException("Pia Cloud server URL is not configured. Set it in Settings > Sync.");
 
-        _logger.LogInformation("PiaCloud: creating PiaCloudChatClient with endpoint={ServerUrl}/api/ai/chat",
-            SafeUrl.Format(serverUrl));
+        // Whether a persona rides along is a count, not the id: the id is a stable identifier tied to a
+        // user's org, so it stays out of the release log surface entirely.
+        _logger.LogInformation("PiaCloud: creating PiaCloudChatClient with endpoint={ServerUrl}/api/ai/chat, persona={HasPersona}",
+            SafeUrl.Format(serverUrl), managedPersonaId.HasValue);
 
         // The chat client fetches a valid (refreshed) token per-request via the auth service,
         // and can force a refresh on 401 retry.
-        return new PiaCloudChatClient(httpClient, serverUrl, _authService.GetAccessTokenAsync, _logger, mode);
+        return new PiaCloudChatClient(httpClient, serverUrl, _authService.GetAccessTokenAsync, _logger, mode, managedPersonaId);
     }
 
     public ChatOptions CreateChatOptions(AiProvider provider, bool hasTools)

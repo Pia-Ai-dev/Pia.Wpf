@@ -72,7 +72,9 @@ public class AiClientService : IAiClientService
         try
         {
             using var response = await SendPiaCloudRequestAsync(
-                httpClient, $"{serverUrl}/api/ai/generate-prompt", json, mode, linkedCts.Token);
+                httpClient, $"{serverUrl}/api/ai/generate-prompt", json, mode,
+                // §7: the prompt-generation route has no connector plane and never reads X-Pia-Persona.
+                managedPersonaId: null, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
 
@@ -123,6 +125,7 @@ public class AiClientService : IAiClientService
             IList<AITool>? tools = null,
             Func<FunctionCallContent, Task<object?>>? toolHandler = null,
             string? mode = null,
+            Guid? managedPersonaId = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default,
             AgentContextBudget? contextBudget = null)
     {
@@ -143,7 +146,8 @@ public class AiClientService : IAiClientService
 
         var providerHandler = _handlers.Get(provider.ProviderType);
         var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await providerHandler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
+        var chatClient = await providerHandler.CreateChatClientAsync(
+            provider, apiKey, httpClient, mode, managedPersonaId, linkedCts.Token);
 
         var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
         var options = providerHandler.CreateChatOptions(provider, hasTools: useTools);
@@ -425,6 +429,7 @@ public class AiClientService : IAiClientService
             AiProvider provider,
             IList<AITool>? tools = null,
             string? mode = null,
+            Guid? managedPersonaId = null,
             CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
@@ -438,7 +443,8 @@ public class AiClientService : IAiClientService
         {
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = _httpClientFactory.CreateClient();
-            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
+            var chatClient = await handler.CreateChatClientAsync(
+                provider, apiKey, httpClient, mode, managedPersonaId, linkedCts.Token);
 
             var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
             var options = handler.CreateChatOptions(provider, hasTools: useTools);
@@ -503,7 +509,9 @@ public class AiClientService : IAiClientService
         try
         {
             using var response = await SendPiaCloudRequestAsync(
-                httpClient, $"{serverUrl}/api/ai/optimize", json, mode, linkedCts.Token);
+                httpClient, $"{serverUrl}/api/ai/optimize", json, mode,
+                // §7: /api/ai/optimize has no connector plane and never reads X-Pia-Persona.
+                managedPersonaId: null, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
             _logger.LogDebug("PiaCloud optimize: response body length={Length}", responseJson.Length);
@@ -579,7 +587,7 @@ public class AiClientService : IAiClientService
 
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = _httpClientFactory.CreateClient();
-            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
+            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
             var messages = new[]
             {
@@ -640,7 +648,10 @@ public class AiClientService : IAiClientService
 
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode, linkedCts.Token);
+        // No persona here on purpose: this tool-free stream serves SuggestionService, not an assistant
+        // chat turn, so there is no selected persona whose resources should be unlocked.
+        var chatClient = await handler.CreateChatClientAsync(
+            provider, apiKey, httpClient, mode, managedPersonaId: null, linkedCts.Token);
         var options = handler.CreateChatOptions(provider, hasTools: false);
 
         IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
@@ -742,7 +753,7 @@ public class AiClientService : IAiClientService
 
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
@@ -781,7 +792,7 @@ public class AiClientService : IAiClientService
 
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
         var dummyTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool");
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
@@ -824,7 +835,7 @@ public class AiClientService : IAiClientService
 
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = _httpClientFactory.CreateClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, linkedCts.Token);
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
         var pingTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool. Call it to confirm tool support.");
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
@@ -1019,9 +1030,15 @@ public class AiClientService : IAiClientService
     /// <summary>
     /// POSTs to a Pia Cloud endpoint with a valid bearer token from the auth service, retrying
     /// once on 401 with a forced token refresh. Caller owns disposing the returned response.
+    /// <para>
+    /// <paramref name="managedPersonaId"/> exists for a future non-streaming chat route. Both current
+    /// callers (/api/ai/generate-prompt and /api/ai/optimize) pass null deliberately: only /api/ai/chat
+    /// reads <c>X-Pia-Persona</c>, and the handoff's out-of-scope list forbids sending it on those two.
+    /// </para>
     /// </summary>
     private async Task<HttpResponseMessage> SendPiaCloudRequestAsync(
-        HttpClient httpClient, string url, string jsonBody, string? mode, CancellationToken cancellationToken)
+        HttpClient httpClient, string url, string jsonBody, string? mode, Guid? managedPersonaId,
+        CancellationToken cancellationToken)
     {
         async Task<(HttpResponseMessage Response, string? Token)> Attempt(bool forceRefresh, string? staleAccessToken = null)
         {
@@ -1035,6 +1052,8 @@ public class AiClientService : IAiClientService
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
             if (!string.IsNullOrEmpty(mode))
                 request.Headers.Add("X-Pia-Mode", mode);
+            if (managedPersonaId is Guid personaId)
+                request.Headers.Add("X-Pia-Persona", personaId.ToString());
             return (await httpClient.SendAsync(request, cancellationToken), token);
         }
 

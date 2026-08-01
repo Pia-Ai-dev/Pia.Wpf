@@ -241,7 +241,7 @@ public class AiClientServiceContextLengthDiagnosisTests
         handler.ProviderType.Returns(AiProviderType.OpenAI);
         handler.CreateChatClientAsync(
                 Arg.Any<AiProvider>(), Arg.Any<string?>(), Arg.Any<HttpClient>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(chatClient));
         // A FRESH ChatOptions per call: the retry must be observable as "no tools", which only works if the
         // handler does not hand back the same instance the first call had its tools written into.

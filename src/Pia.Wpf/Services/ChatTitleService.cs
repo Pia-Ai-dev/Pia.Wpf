@@ -53,7 +53,7 @@ public sealed class ChatTitleService : IChatTitleService
         _logger.SensitiveDebug("Auto-title prompt: user={User} assistant={Assistant}", userSnippet, assistantSnippet);
 
         var response = await _aiClientService.GetChatResponseAsync(
-            messages, provider, tools: null, mode: nameof(WindowMode.Assistant), cancellationToken);
+            messages, provider, tools: null, mode: nameof(WindowMode.Assistant), cancellationToken: cancellationToken);
 
         var rawTitle = response.Text ?? string.Empty;
         var title = SanitizeGeneratedTitle(rawTitle);

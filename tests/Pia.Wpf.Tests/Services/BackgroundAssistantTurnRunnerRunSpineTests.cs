@@ -53,7 +53,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
 
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ => throwMidStreamCanceled ? ThrowMidStream(canceled: true)
                 : throwMidStream ? ThrowMidStream() : Drive(usage, answer));
 

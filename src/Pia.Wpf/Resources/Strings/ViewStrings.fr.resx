@@ -666,6 +666,8 @@
   <data name="Personas_AddPersona" xml:space="preserve"><value>Ajouter une persona</value></data>
   <data name="Personas_Duplicate" xml:space="preserve"><value>Dupliquer</value></data>
   <data name="Personas_BuiltIn" xml:space="preserve"><value>Intégré</value></data>
+  <data name="Personas_Managed" xml:space="preserve"><value>Géré</value></data>
+  <data name="Personas_ManagedTooltip" xml:space="preserve"><value>Publié par votre administrateur. Dupliquez-le pour créer une copie modifiable.</value></data>
   <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Préparation du modèle</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Téléchargement du modèle Whisper...</value></data>
   <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>Téléchargement de {0}...</value></data>

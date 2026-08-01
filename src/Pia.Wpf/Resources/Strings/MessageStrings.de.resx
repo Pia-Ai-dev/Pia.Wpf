@@ -208,6 +208,9 @@
   <data name="Msg_Settings_PersonaDeleted" xml:space="preserve"><value>Persona erfolgreich gelöscht.</value></data>
   <data name="Msg_Settings_PersonaUpdated" xml:space="preserve"><value>Persona erfolgreich aktualisiert.</value></data>
   <data name="Msg_Settings_CannotDeleteBuiltInPersona" xml:space="preserve"><value>Integrierte Personas können nicht gelöscht werden.</value></data>
+  <data name="Msg_Settings_CannotEditManagedPersona" xml:space="preserve"><value>Verwaltete Personas werden von Ihrer Administration veröffentlicht und können nicht bearbeitet werden. Duplizieren Sie sie, um eine bearbeitbare Kopie zu erstellen.</value></data>
+  <data name="Msg_Settings_CannotDeleteManagedPersona" xml:space="preserve"><value>Verwaltete Personas werden von Ihrer Administration veröffentlicht und können nicht gelöscht werden.</value></data>
+  <data name="Msg_Settings_ManagedPersonaWithdrawn" xml:space="preserve"><value>Die Persona „{0}“ ist nicht mehr verfügbar; es wurde zu „{1}“ gewechselt.</value></data>
   <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Stimme geändert</value></data>
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Stimmen-Download fehlgeschlagen: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Stimme {0} erfolgreich heruntergeladen.</value></data>

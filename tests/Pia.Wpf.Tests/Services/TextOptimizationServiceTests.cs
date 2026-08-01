@@ -258,7 +258,7 @@ public class TextOptimizationServiceTests
                 Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(),
                 Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ToStream(new TextDelta(json), new Finished(null, "pia-cloud")));
 
         var service = CreateService();
@@ -283,7 +283,7 @@ public class TextOptimizationServiceTests
             Arg.Any<IList<AITool>?>(),
             Arg.Any<Func<FunctionCallContent, Task<object?>>?>(),
             nameof(WindowMode.Assistant),
-            Arg.Any<CancellationToken>());
+            Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
         await _aiClientService.DidNotReceive().GeneratePromptViaPiaCloudAsync(
             Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }

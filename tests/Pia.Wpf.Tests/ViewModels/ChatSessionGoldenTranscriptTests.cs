@@ -56,7 +56,7 @@ public sealed class ChatSessionGoldenTranscriptTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ => factory());
     }
 
@@ -78,7 +78,7 @@ public sealed class ChatSessionGoldenTranscriptTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var handler = ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3);

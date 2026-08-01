@@ -120,7 +120,7 @@ public sealed class AgentTimelineParityTests
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(),
-                Arg.Any<CancellationToken>(), Arg.Any<AgentContextBudget?>())
+                Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName));
 
         var session = new ChatSession(
@@ -151,7 +151,7 @@ public sealed class AgentTimelineParityTests
             .Returns(Route(pending));
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName));
 
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();

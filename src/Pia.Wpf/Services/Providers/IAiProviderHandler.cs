@@ -36,11 +36,15 @@ public interface IAiProviderHandler
     /// </summary>
     bool DropsReasoningEffortWithTools { get; }
 
+    /// <param name="managedPersonaId">
+    /// Only PiaCloudProviderHandler consumes this — third-party providers have no server-side persona scope.
+    /// </param>
     Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,
         HttpClient httpClient,
         string? mode,
+        Guid? managedPersonaId,
         CancellationToken cancellationToken);
 
     ChatOptions CreateChatOptions(AiProvider provider, bool hasTools);

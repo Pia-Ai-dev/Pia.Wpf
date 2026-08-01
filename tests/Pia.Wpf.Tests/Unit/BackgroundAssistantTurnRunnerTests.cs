@@ -62,7 +62,7 @@ public class BackgroundAssistantTurnRunnerTests
 
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                    Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                    Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
                 .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls, answer));
 
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();

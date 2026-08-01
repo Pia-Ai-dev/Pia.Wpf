@@ -237,6 +237,9 @@ public partial class PersonaEditModel : ObservableValidator
             ReasoningEffort = SelectedReasoningEffort?.Value,
             SchemaVersion = 1,
             IsBuiltIn = false,
+            // Anything this editor produces is a user persona that syncs — including a duplicate seeded
+            // from a managed original, which must not inherit the admin-owned flag.
+            IsManaged = false,
             CreatedAt = _createdAt,
             UpdatedAt = DateTime.UtcNow,
         };

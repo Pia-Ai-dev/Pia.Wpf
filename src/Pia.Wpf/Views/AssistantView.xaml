@@ -379,11 +379,13 @@
 
               <Separator Width="1" Margin="4,2" Background="{DynamicResource BorderBrush_}" />
 
-              <!-- Persona picker (applies from the next turn) -->
+              <!-- Persona picker (applies from the next turn). MaxWidth widened 200 -> 240 to make room
+                   for the "Managed" chip in the item template: the name trims with an ellipsis, and the
+                   name is the part users actually read. -->
               <ComboBox ItemsSource="{Binding AvailablePersonas}"
                         SelectedItem="{Binding ActivePersona}"
                         MinWidth="140"
-                        MaxWidth="200"
+                        MaxWidth="240"
                         VerticalAlignment="Center"
                         ToolTip="{loc:Str Settings_Tab_Personas}">
                 <ComboBox.ItemTemplate>
@@ -392,6 +394,7 @@
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
                       <controls:PersonaGlyph Grid.Column="0"
@@ -415,6 +418,19 @@
                                StrokeThickness="1"
                                Visibility="{Binding AccentColor, Converter={StaticResource NullToVisibilityConverter}}"
                                ToolTip="{Binding AccentColor}" />
+                      <!-- Marks an admin-published persona here too, not only on the settings card — this
+                           is where a user actually picks one. Same two loc keys as the settings badge. -->
+                      <Border Grid.Column="3"
+                              Style="{StaticResource PiaLabelChipStyle}"
+                              Background="{DynamicResource PiaAccentSoftBrush}"
+                              Margin="6,0,0,0"
+                              Visibility="{Binding IsManaged, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              ToolTip="{loc:Str Personas_ManagedTooltip}">
+                        <TextBlock Text="{loc:Str Personas_Managed}"
+                                   FontSize="10.5"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PiaInkBrush}" />
+                      </Border>
                     </Grid>
                   </DataTemplate>
                 </ComboBox.ItemTemplate>

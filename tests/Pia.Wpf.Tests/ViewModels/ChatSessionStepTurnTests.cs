@@ -54,7 +54,7 @@ public sealed class ChatSessionStepTurnTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ => factory());
     }
 
@@ -152,12 +152,12 @@ public sealed class ChatSessionStepTurnTests
         };
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 sent = [.. (IList<ChatMessage>)ci[0]];
-                relayed = (AgentContextBudget?)ci[6];
+                relayed = (AgentContextBudget?)ci[7];
                 return Stream(new TextDelta("done"), new Finished(null, "m"));
             });
 
@@ -204,12 +204,12 @@ public sealed class ChatSessionStepTurnTests
         AgentContextBudget? relayed = new AgentContextBudget(1, 1);
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 sent = [.. (IList<ChatMessage>)ci[0]];
-                relayed = (AgentContextBudget?)ci[6];
+                relayed = (AgentContextBudget?)ci[7];
                 return Stream(new TextDelta("done"), new Finished(null, "m"));
             });
 

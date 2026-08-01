@@ -121,13 +121,15 @@ public class TokenizingAiClientService : IAiClientService
         AiProvider provider,
         IList<AITool>? tools = null,
         string? mode = null,
+        Guid? managedPersonaId = null,
         CancellationToken cancellationToken = default)
     {
         if (!await IsEnabledAsync())
-            return await _inner.GetChatResponseAsync(messages, provider, tools, mode, cancellationToken);
+            return await _inner.GetChatResponseAsync(messages, provider, tools, mode, managedPersonaId, cancellationToken);
 
         var tokenizedMessages = TokenizeMessages(messages);
-        var response = await _inner.GetChatResponseAsync(tokenizedMessages, provider, tools, mode, cancellationToken);
+        var response = await _inner.GetChatResponseAsync(
+            tokenizedMessages, provider, tools, mode, managedPersonaId, cancellationToken);
 
         // Detokenize text in response messages
         foreach (var msg in response.Messages)
@@ -152,6 +154,7 @@ public class TokenizingAiClientService : IAiClientService
         IList<AITool>? tools = null,
         Func<FunctionCallContent, Task<object?>>? toolHandler = null,
         string? mode = null,
+        Guid? managedPersonaId = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default,
         AgentContextBudget? contextBudget = null)
     {
@@ -164,7 +167,8 @@ public class TokenizingAiClientService : IAiClientService
         if (!await IsEnabledAsync())
         {
             _logger.LogDebug("Tokenization disabled, passing through tool completion");
-            await foreach (var item in _inner.GetChatCompletionWithToolsAsync(messages, provider, tools, toolHandler, mode, cancellationToken, contextBudget))
+            await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
+                messages, provider, tools, toolHandler, mode, managedPersonaId, cancellationToken, contextBudget))
                 yield return item;
             yield break;
         }
@@ -182,7 +186,7 @@ public class TokenizingAiClientService : IAiClientService
         var reasoningIsBuffering = false;
 
         await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
-            tokenizedMessages, provider, tools, wrappedHandler, mode, cancellationToken, contextBudget))
+            tokenizedMessages, provider, tools, wrappedHandler, mode, managedPersonaId, cancellationToken, contextBudget))
         {
             if (item is TextDelta td)
             {

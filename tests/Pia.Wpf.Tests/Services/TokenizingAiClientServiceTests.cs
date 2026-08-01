@@ -48,7 +48,7 @@ public class TokenizingAiClientServiceTests
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ => Stream(
                 new ReasoningDelta("thinking out loud"),
                 new TextDelta("the answer"),
@@ -97,7 +97,7 @@ public class TokenizingAiClientServiceTests
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 capturedHandler = ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3);
@@ -158,11 +158,11 @@ public class TokenizingAiClientServiceTests
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
-                seenByInner = ci.ArgAt<AgentContextBudget?>(6);
+                seenByInner = ci.ArgAt<AgentContextBudget?>(7);
                 return Stream(new Finished(null, "gpt-5"));
             });
 
@@ -209,11 +209,11 @@ public class TokenizingAiClientServiceTests
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
-                observed.Add(ci.ArgAt<AgentContextBudget?>(6));
+                observed.Add(ci.ArgAt<AgentContextBudget?>(7));
                 return Stream(new Finished(null, "gpt-5"));
             });
 

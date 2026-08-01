@@ -331,11 +331,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         string? model = null;
         UsageDetails? usage = null;
 
+        // The persona rides on the setup (which every caller of this method already builds via
+        // PrepareTurn), so no new parameter is needed here — HeadlessTurnExecutor calls this too.
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
             setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy, timeline) : null,
-            nameof(WindowMode.Assistant), ct, contextBudget))
+            nameof(WindowMode.Assistant), setup.PersonaId,
+            cancellationToken: ct, contextBudget: contextBudget))
         {
             switch (item)
             {

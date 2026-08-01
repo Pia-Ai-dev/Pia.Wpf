@@ -50,7 +50,7 @@ public class AiClientServiceProtectedRouteTests
         handler.ProviderType.Returns(AiProviderType.OpenAI);
         handler.CreateChatClientAsync(
                 Arg.Any<AiProvider>(), Arg.Any<string?>(), Arg.Any<HttpClient>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(chatClient));
         handler.CreateChatOptions(Arg.Any<AiProvider>(), Arg.Any<bool>()).Returns(new ChatOptions());
 

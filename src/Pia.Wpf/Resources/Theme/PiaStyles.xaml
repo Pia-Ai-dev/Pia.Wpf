@@ -96,6 +96,18 @@
     <Setter Property="Background"   Value="{DynamicResource PiaAccentSoftBrush}"/>
   </Style>
 
+  <!-- Small static label chip (a word or two, no interaction) — the geometry of
+       Controls/Memory/PiaTypeChip.xaml, lifted so other surfaces can share the look.
+       Background is deliberately NOT set: callers pick the tint that carries their meaning.
+       PiaTypeChip itself is intentionally NOT refactored onto this style yet — it is hardwired to
+       MemoryType through three converters, and rewiring it is how a contained addition becomes a
+       memory-view regression. Deferred to its own change. -->
+  <Style x:Key="PiaLabelChipStyle" TargetType="Border">
+    <Setter Property="CornerRadius"      Value="4"/>
+    <Setter Property="Padding"           Value="7,1"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+  </Style>
+
   <!-- Composer / input bar card. -->
   <Style x:Key="PiaComposerCardStyle" TargetType="Border">
     <Setter Property="Background"      Value="{DynamicResource SurfaceBrush}"/>

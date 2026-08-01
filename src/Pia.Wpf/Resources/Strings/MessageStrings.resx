@@ -212,6 +212,9 @@
   <data name="Msg_Settings_PersonaDeleted" xml:space="preserve"><value>Persona deleted successfully.</value></data>
   <data name="Msg_Settings_PersonaUpdated" xml:space="preserve"><value>Persona updated successfully.</value></data>
   <data name="Msg_Settings_CannotDeleteBuiltInPersona" xml:space="preserve"><value>Built-in personas cannot be deleted.</value></data>
+  <data name="Msg_Settings_CannotEditManagedPersona" xml:space="preserve"><value>Managed personas are published by your administrator and cannot be edited. Duplicate it to make an editable copy.</value></data>
+  <data name="Msg_Settings_CannotDeleteManagedPersona" xml:space="preserve"><value>Managed personas are published by your administrator and cannot be deleted.</value></data>
+  <data name="Msg_Settings_ManagedPersonaWithdrawn" xml:space="preserve"><value>The persona "{0}" is no longer available; switched to "{1}".</value></data>
   <data name="Msg_Settings_VoiceChanged" xml:space="preserve"><value>Voice Changed</value></data>
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Voice download failed: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Voice {0} downloaded successfully.</value></data>

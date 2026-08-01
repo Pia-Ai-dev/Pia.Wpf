@@ -63,7 +63,9 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             tools = null;
         }
 
-        return new AssistantTurnSetup(fullSystemPrompt, tools, supportsTools, webSearchActive);
+        // Carried on the setup rather than re-resolved downstream: RunExchangeAsync and the step path both
+        // already receive the setup, so this is the one place the persona is known on every turn path.
+        return new AssistantTurnSetup(fullSystemPrompt, tools, supportsTools, webSearchActive, persona.Id);
     }
 
     private static string GetLanguageName(TargetLanguage language) => language switch

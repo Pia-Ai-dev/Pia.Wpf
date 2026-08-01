@@ -76,7 +76,7 @@ public sealed class ChatSessionPolicyGateTests
         _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => StreamWithToolCall(
                 ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName, capture));
     }

@@ -20,6 +20,8 @@ public sealed class OllamaProviderHandler : IAiProviderHandler
         string? apiKey,
         HttpClient httpClient,
         string? mode,
+        // Ignored: this handler talks to a third-party provider, which has no server-side persona scope.
+        Guid? managedPersonaId,
         CancellationToken cancellationToken)
     {
         var client = new ChatClient(
