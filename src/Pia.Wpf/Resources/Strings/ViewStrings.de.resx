@@ -980,4 +980,49 @@
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exportieren</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>In VS Code öffnen</value></data>
+  <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Geplante Aufträge</value></data>
+  <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Aufträge, die nach einem Zeitplan auf diesem Gerät laufen. Jeder läuft mit den Grenzen und der Auto-Freigabe von oben – beides wird nicht pro Auftrag festgelegt.</value></data>
+  <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>Noch keine geplanten Aufträge.</value></data>
+  <data name="Settings_ScheduledJobs_Add" xml:space="preserve"><value>Neuer Auftrag</value></data>
+  <data name="Settings_ScheduledJobs_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
+  <data name="Settings_ScheduledJobs_Delete" xml:space="preserve"><value>Löschen</value></data>
+  <data name="Settings_ScheduledJobs_Enable" xml:space="preserve"><value>Aktivieren</value></data>
+  <data name="Settings_ScheduledJobs_Disable" xml:space="preserve"><value>Deaktivieren</value></data>
+  <data name="Settings_ScheduledJobs_RunNow" xml:space="preserve"><value>Jetzt ausführen</value></data>
+  <data name="Settings_ScheduledJobs_Save" xml:space="preserve"><value>Speichern</value></data>
+  <data name="Settings_ScheduledJobs_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
+  <data name="Settings_ScheduledJobs_Field_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Settings_ScheduledJobs_Field_Goal" xml:space="preserve"><value>Ziel</value></data>
+  <data name="Settings_ScheduledJobs_Field_Kind" xml:space="preserve"><value>Typ</value></data>
+  <data name="Settings_ScheduledJobs_Field_Recurrence" xml:space="preserve"><value>Wiederholung</value></data>
+  <data name="Settings_ScheduledJobs_Field_Time" xml:space="preserve"><value>Uhrzeit (HH:mm)</value></data>
+  <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Datum</value></data>
+  <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Anbieter</value></data>
+  <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Erlaubte Schreib-Tools (durch Komma getrennt)</value></data>
+  <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
+  <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Nächste Ausführung</value></data>
+  <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Letzte Ausführung</value></data>
+  <data name="Settings_ScheduledJobs_NotOwnedHere" xml:space="preserve"><value>Ein anderes Gerät besitzt den Zeitplan dieses Auftrags.</value></data>
+  <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Dieser Auftrag hat einen Status, den diese Version nicht kennt, und wird nur lesend angezeigt. Aktualisiere Pia, um ihn zu verwalten.</value></data>
+  <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Auftrag läuft …</value></data>
+  <data name="Settings_ScheduledJobs_RunFinished" xml:space="preserve"><value>Der Auftrag ist fertig. Das Ergebnis steht im erzeugten Chat.</value></data>
+  <data name="Settings_ScheduledJobs_RunNotOwner" xml:space="preserve"><value>Nicht ausgeführt: Ein anderes Gerät besitzt den Zeitplan dieses Auftrags.</value></data>
+  <data name="Settings_ScheduledJobs_RunNotFound" xml:space="preserve"><value>Nicht ausgeführt: Diesen Auftrag gibt es nicht mehr.</value></data>
+  <data name="Settings_ScheduledJobs_RunFailed" xml:space="preserve"><value>Der Auftrag konnte nicht gestartet werden.</value></data>
+  <data name="Settings_ScheduledJobs_LoadFailed" xml:space="preserve"><value>Geplante Aufträge konnten nicht gelesen werden.</value></data>
+  <data name="Settings_ScheduledJobs_SaveFailed" xml:space="preserve"><value>Diese Änderung konnte nicht gespeichert werden.</value></data>
+  <data name="Settings_ScheduledJobs_Validation_NameAndGoal" xml:space="preserve"><value>Ein Auftrag braucht einen Namen und ein Ziel.</value></data>
+  <data name="Settings_ScheduledJobs_Validation_Time" xml:space="preserve"><value>Gib die Uhrzeit als HH:mm an, zum Beispiel 09:00.</value></data>
+  <data name="Settings_ScheduledJobs_Status_Active" xml:space="preserve"><value>Aktiv</value></data>
+  <data name="Settings_ScheduledJobs_Status_Disabled" xml:space="preserve"><value>Aus</value></data>
+  <data name="Settings_ScheduledJobs_Status_Failed" xml:space="preserve"><value>Nach Fehlern gestoppt</value></data>
+  <data name="Settings_ScheduledJobs_Status_Completed" xml:space="preserve"><value>Erledigt</value></data>
+  <data name="Settings_ScheduledJobs_Status_Unknown" xml:space="preserve"><value>Unbekannter Status ({0})</value></data>
+  <data name="Settings_ScheduledJobs_Kind_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Settings_ScheduledJobs_Kind_AgentTask" xml:space="preserve"><value>Agenten-Ausführung</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Once" xml:space="preserve"><value>Einmal</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Daily" xml:space="preserve"><value>Täglich</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Weekly" xml:space="preserve"><value>Wöchentlich</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Monthly" xml:space="preserve"><value>Monatlich</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Yearly" xml:space="preserve"><value>Jährlich</value></data>
 </root>

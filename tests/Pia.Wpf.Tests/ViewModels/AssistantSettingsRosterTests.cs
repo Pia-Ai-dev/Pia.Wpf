@@ -33,7 +33,12 @@ public class AssistantSettingsRosterTests
         AccentColor = accentColor,
     };
 
-    private static (AssistantSettingsViewModel sut, ISettingsService settings, AppSettings stored) Create(
+    /// <summary>The scheduled-jobs service handed to the last <see cref="Create"/> call, so the Batch 09
+    /// wiring fact below can assert the section was loaded. Instance field: xunit builds one instance per
+    /// fact, so there is nothing to leak between them.</summary>
+    private IScheduledJobService _scheduledJobs = null!;
+
+    private (AssistantSettingsViewModel sut, ISettingsService settings, AppSettings stored) Create(
         AppSettings? initial, IPersonaService? personaService)
     {
         var stored = initial ?? new AppSettings();
@@ -74,13 +79,39 @@ public class AssistantSettingsRosterTests
         var meetingVm = new MeetingSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, settingsService, localization);
 
+        // Batch 09's sub-VM. Its service is kept on the fixture so the wiring fact below can assert that
+        // InitializeAsync loads the section — the one thing about it that neither a parse test nor its own
+        // ViewModel tests can see.
+        _scheduledJobs = Substitute.For<IScheduledJobService>();
+        _scheduledJobs.GetAllAsync().Returns(Array.Empty<ScheduledJob>());
+        var scheduledProviders = Substitute.For<IProviderService>();
+        scheduledProviders.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
+        var scheduledJobsVm = new ScheduledJobsSettingsViewModel(
+            _scheduledJobs, Substitute.For<IScheduledJobRunner>(),
+            scheduledProviders, localization, NullLogger<SettingsViewModel>.Instance);
+
         var sut = new AssistantSettingsViewModel(
-            providersVm, personasVm, toolPermissionsVm, meetingVm,
+            providersVm, personasVm, toolPermissionsVm, meetingVm, scheduledJobsVm,
             NullLogger<SettingsViewModel>.Instance, settingsService, Substitute.For<IAssistantChatService>(),
             dialogService, localization, Substitute.For<IAssistantFolderRelocationService>(),
             workingDirectoryService, personaService);
 
         return (sut, settingsService, stored);
+    }
+
+    [Fact]
+    public async Task Initialize_LoadsTheScheduledJobsSection()
+    {
+        // Batch 09's wiring, and it is a fact because the hole it closes was invisible to everything else:
+        // Jobs and ProviderChoices are populated ONLY by RefreshAsync, the section's bindings are correct
+        // either way, the parse test reads declared paths without evaluating them, and the section's own
+        // ViewModel tests call RefreshAsync themselves. A correct binding with no data behind it renders an
+        // empty list that looks exactly like having no scheduled jobs.
+        var (sut, _, _) = Create(null, null);
+
+        await sut.InitializeAsync();
+
+        await _scheduledJobs.Received(1).GetAllAsync();
     }
 
     [Fact]

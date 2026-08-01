@@ -82,6 +82,13 @@ public class SettingsAssistantViewParseTests
         Assert.Contains(bindings, b => b.Contains("=AgentRunAutoApproveBuiltInWrites "));  // Batch 04
         Assert.Contains(bindings, b => b.Contains("=AgentRosterOptions "));                // Batch 07 G7 / R11
 
+        // Batch 09's section, and BOTH halves matter. The first is the re-root itself; the second proves the
+        // walk followed it, because a path only resolves against ScheduledJobsSettingsViewModel if the
+        // DataContext binding above it was understood. Without the second, a section that silently stopped
+        // being walked would still satisfy the first.
+        Assert.Contains(bindings, b => b.Contains("=ScheduledJobsVm "));
+        Assert.Contains(bindings, b => b.Contains("=EditQuery [ScheduledJobsSettingsViewModel]"));
+
         var unresolved = bindings.Where(b => b.EndsWith("UNRESOLVED", StringComparison.Ordinal)).ToArray();
         Assert.True(unresolved.Length == 0,
             "these Binding paths in Views/SettingsViews/AssistantView.xaml do not resolve to a public " +

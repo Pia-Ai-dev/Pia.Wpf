@@ -516,6 +516,172 @@
               <TextBlock Text="{Binding ScheduledMaxReplansDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
             </StackPanel>
+
+            <!-- Scheduled jobs (Batch 09). Re-rooted to its own sub-ViewModel, the same shape PersonasVm,
+                 ToolPermissionsVm and MeetingVm use. Placed directly under the budget sliders on purpose:
+                 those sliders ARE this section's budget (D1 — budget and autonomy are global, not per job),
+                 so the read-only context the spec asks for is the block immediately above rather than a
+                 duplicate set of fields. -->
+            <StackPanel DataContext="{Binding ScheduledJobsVm}" Margin="0,8,0,20">
+              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Section_Header}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Section_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,4,0,8"/>
+
+              <TextBlock Text="{Binding StatusMessage}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"
+                         Visibility="{Binding HasStatusMessage, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Empty}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         FontStyle="Italic"
+                         Margin="0,0,0,8"
+                         Visibility="{Binding HasJobs, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+              <ItemsControl ItemsSource="{Binding Jobs}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Padding="8" Margin="0,0,0,6"
+                            CornerRadius="{StaticResource SmallRadius}"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource ControlStrokeBrush}">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Name}"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextDefaultBrush}"/>
+                        <TextBlock Text="{Binding Query}"
+                                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,2,0,0"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                          <TextBlock Text="{Binding KindLabel}"
+                                     Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                     Margin="0,0,12,0"/>
+                          <TextBlock Text="{Binding RecurrenceLabel}"
+                                     Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                     Margin="0,0,12,0"/>
+                          <TextBlock Text="{Binding StatusLabel}"
+                                     Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                     Margin="0,0,12,0"/>
+                          <TextBlock Text="{Binding NextFireAt, StringFormat=g}"
+                                     Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+                        </StackPanel>
+                        <TextBlock Text="{loc:Str Settings_ScheduledJobs_NotOwnedHere}"
+                                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                   FontStyle="Italic"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"
+                                   Visibility="{Binding OwnedByThisDevice, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                          <ui:Button Content="{loc:Str Settings_ScheduledJobs_Edit}"
+                                     Margin="0,0,6,0"
+                                     Command="{Binding DataContext.StartEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                     CommandParameter="{Binding}"/>
+                          <ui:Button Content="{Binding ToggleLabel}"
+                                     Margin="0,0,6,0"
+                                     IsEnabled="{Binding StatusIsKnown}"
+                                     Command="{Binding DataContext.ToggleEnabledCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                     CommandParameter="{Binding}"/>
+                          <ui:Button Content="{loc:Str Settings_ScheduledJobs_RunNow}"
+                                     Margin="0,0,6,0"
+                                     IsEnabled="{Binding CanRunNow}"
+                                     Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                     CommandParameter="{Binding}"/>
+                          <ui:Button Content="{loc:Str Settings_ScheduledJobs_Delete}"
+                                     Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                     CommandParameter="{Binding}"/>
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <ui:Button Content="{loc:Str Settings_ScheduledJobs_Add}"
+                         HorizontalAlignment="Left"
+                         Margin="0,4,0,0"
+                         Command="{Binding StartCreateCommand}"/>
+
+              <!-- The editor. Inline rather than a dialog, so it inherits this page's DataContext and its
+                   binding paths are covered by SettingsAssistantViewParseTests along with everything else. -->
+              <StackPanel Margin="0,12,0,0"
+                          Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Name}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ui:TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+                            Margin="0,2,0,8"/>
+
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Goal}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ui:TextBox Text="{Binding EditQuery, UpdateSourceTrigger=PropertyChanged}"
+                            AcceptsReturn="True"
+                            TextWrapping="Wrap"
+                            MinHeight="60"
+                            Margin="0,2,0,8"/>
+
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Kind}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <!-- SelectedValuePath, not SelectedItem: the list carries localized (value, label) pairs so
+                     the ComboBox does not render the C# enum identifier in every locale, while the VM keeps
+                     holding the enum itself. -->
+                <ComboBox ItemsSource="{Binding JobKinds}"
+                          DisplayMemberPath="Label"
+                          SelectedValuePath="Value"
+                          SelectedValue="{Binding EditKind, Mode=TwoWay}"
+                          HorizontalAlignment="Left" Width="240"
+                          Margin="0,2,0,8"/>
+
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Recurrence}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ComboBox ItemsSource="{Binding Recurrences}"
+                          DisplayMemberPath="Label"
+                          SelectedValuePath="Value"
+                          SelectedValue="{Binding EditRecurrence, Mode=TwoWay}"
+                          HorizontalAlignment="Left" Width="240"
+                          Margin="0,2,0,8"/>
+
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Time}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ui:TextBox Text="{Binding EditTimeOfDay, UpdateSourceTrigger=PropertyChanged}"
+                            HorizontalAlignment="Left" Width="120"
+                            Margin="0,2,0,8"/>
+
+                <StackPanel Visibility="{Binding EditorWantsSpecificDate, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Date}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                  <DatePicker SelectedDate="{Binding EditSpecificDate, Mode=TwoWay}"
+                              HorizontalAlignment="Left" Width="240"
+                              Margin="0,2,0,8"/>
+                </StackPanel>
+
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Provider}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ComboBox ItemsSource="{Binding ProviderChoices}"
+                          SelectedItem="{Binding EditProvider, Mode=TwoWay}"
+                          DisplayMemberPath="Name"
+                          HorizontalAlignment="Left" Width="240"
+                          Margin="0,2,0,8"/>
+
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_GrantedTools}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ui:TextBox Text="{Binding EditGrantedTools, UpdateSourceTrigger=PropertyChanged}"
+                            Margin="0,2,0,8"/>
+
+                <StackPanel Orientation="Horizontal">
+                  <ui:Button Content="{loc:Str Settings_ScheduledJobs_Save}"
+                             Appearance="Primary"
+                             Margin="0,0,6,0"
+                             Command="{Binding SaveCommand}"/>
+                  <ui:Button Content="{loc:Str Settings_ScheduledJobs_Cancel}"
+                             Command="{Binding CancelEditCommand}"/>
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

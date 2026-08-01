@@ -980,4 +980,49 @@
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exporter</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Ouvrir le dossier contenant</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Ouvrir dans VS Code</value></data>
+  <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Tâches planifiées</value></data>
+  <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Tâches qui s'exécutent selon un calendrier, sur cet appareil. Chacune utilise les limites et le réglage d'approbation automatique ci-dessus — ils ne se définissent pas par tâche.</value></data>
+  <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>Aucune tâche planifiée pour l'instant.</value></data>
+  <data name="Settings_ScheduledJobs_Add" xml:space="preserve"><value>Nouvelle tâche</value></data>
+  <data name="Settings_ScheduledJobs_Edit" xml:space="preserve"><value>Modifier</value></data>
+  <data name="Settings_ScheduledJobs_Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="Settings_ScheduledJobs_Enable" xml:space="preserve"><value>Activer</value></data>
+  <data name="Settings_ScheduledJobs_Disable" xml:space="preserve"><value>Désactiver</value></data>
+  <data name="Settings_ScheduledJobs_RunNow" xml:space="preserve"><value>Exécuter maintenant</value></data>
+  <data name="Settings_ScheduledJobs_Save" xml:space="preserve"><value>Enregistrer</value></data>
+  <data name="Settings_ScheduledJobs_Cancel" xml:space="preserve"><value>Annuler</value></data>
+  <data name="Settings_ScheduledJobs_Field_Name" xml:space="preserve"><value>Nom</value></data>
+  <data name="Settings_ScheduledJobs_Field_Goal" xml:space="preserve"><value>Objectif</value></data>
+  <data name="Settings_ScheduledJobs_Field_Kind" xml:space="preserve"><value>Type</value></data>
+  <data name="Settings_ScheduledJobs_Field_Recurrence" xml:space="preserve"><value>Répétition</value></data>
+  <data name="Settings_ScheduledJobs_Field_Time" xml:space="preserve"><value>Heure (HH:mm)</value></data>
+  <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Date</value></data>
+  <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Fournisseur</value></data>
+  <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Outils d'écriture autorisés (séparés par des virgules)</value></data>
+  <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Fournisseur par défaut</value></data>
+  <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Prochaine exécution</value></data>
+  <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Dernière exécution</value></data>
+  <data name="Settings_ScheduledJobs_NotOwnedHere" xml:space="preserve"><value>Un autre appareil possède le calendrier de cette tâche.</value></data>
+  <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Cette tâche a un statut que cette version ne reconnaît pas ; elle est affichée en lecture seule. Mettez Pia à jour pour la gérer.</value></data>
+  <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Exécution de la tâche…</value></data>
+  <data name="Settings_ScheduledJobs_RunFinished" xml:space="preserve"><value>La tâche est terminée. Son résultat se trouve dans la conversation créée.</value></data>
+  <data name="Settings_ScheduledJobs_RunNotOwner" xml:space="preserve"><value>Non exécutée : un autre appareil possède le calendrier de cette tâche.</value></data>
+  <data name="Settings_ScheduledJobs_RunNotFound" xml:space="preserve"><value>Non exécutée : cette tâche n'existe plus.</value></data>
+  <data name="Settings_ScheduledJobs_RunFailed" xml:space="preserve"><value>Impossible de démarrer la tâche.</value></data>
+  <data name="Settings_ScheduledJobs_LoadFailed" xml:space="preserve"><value>Impossible de lire les tâches planifiées.</value></data>
+  <data name="Settings_ScheduledJobs_SaveFailed" xml:space="preserve"><value>Impossible d'enregistrer cette modification.</value></data>
+  <data name="Settings_ScheduledJobs_Validation_NameAndGoal" xml:space="preserve"><value>Une tâche a besoin d'un nom et d'un objectif.</value></data>
+  <data name="Settings_ScheduledJobs_Validation_Time" xml:space="preserve"><value>Saisissez l'heure au format HH:mm, par exemple 09:00.</value></data>
+  <data name="Settings_ScheduledJobs_Status_Active" xml:space="preserve"><value>Active</value></data>
+  <data name="Settings_ScheduledJobs_Status_Disabled" xml:space="preserve"><value>Désactivée</value></data>
+  <data name="Settings_ScheduledJobs_Status_Failed" xml:space="preserve"><value>Arrêtée après des échecs</value></data>
+  <data name="Settings_ScheduledJobs_Status_Completed" xml:space="preserve"><value>Terminée</value></data>
+  <data name="Settings_ScheduledJobs_Status_Unknown" xml:space="preserve"><value>Statut inconnu ({0})</value></data>
+  <data name="Settings_ScheduledJobs_Kind_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Settings_ScheduledJobs_Kind_AgentTask" xml:space="preserve"><value>Exécution d'agent</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Once" xml:space="preserve"><value>Une fois</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Daily" xml:space="preserve"><value>Quotidien</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Weekly" xml:space="preserve"><value>Hebdomadaire</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Monthly" xml:space="preserve"><value>Mensuel</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Yearly" xml:space="preserve"><value>Annuel</value></data>
 </root>

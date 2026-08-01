@@ -108,6 +108,7 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 17 | `70400aa` → `695e123` | **[Batch 06](06-run-workspace-isolation.md)** — run workspace isolation, as work groups **G1–G5**: the runs dir carved out of `SensitivePathGuard` + a `RunContext.WorkspaceRoot` the verifier prefers over the ambient (G1), both `Initialize` call sites flipped so an unattended run's file tools really land in `%LOCALAPPDATA%\Pia\runs\<runId>` (G2), a provisioner with two modes — **git worktree** when the root is a repo, else a bounded **copy** — with symmetric teardown and degrade-to-copy on any fault (G3), promotion after verify and before `CompleteAsync` plus a publish offer for a run that failed (G4), and the same isolation for an interactive `Planned` run with chip resolution past promotion (G5). **Its own polish is deliberately outside this range** — see the note below | ✅ done |
 | 18 | `08e20ab` → `1d6cc15` | **[Batch 07](07-subagents-multipersona.md)** — sub-agents / multi-persona, as work groups **G6–G10** *in a different order than that*: per-step persona + provider + prompt resolution on both executors (G6, `08e20ab`), `ParentRunId` on the create request + `IX_AgentRuns_ParentRunId` + a narrow-for-child grant envelope (G9, `b2f46a2`), the fan-out itself on a **separate** child slot pool (G10 part 1, `9c32999`), the roster settings surface + the panel attribution that fixes two pre-existing avatar defects (G7, `d09c71f`), the appended `WaitingForChildren(8)` run state that survives the startup sweep (G8, `3e12bcf`), and G10's remaining recorded debt (`1d6cc15`). **Six commits inside this span belong to no batch or to Batch 06** — see the note below | ✅ done |
 | 19 | `928e27e` → `09522be` | **[Batch 13](13-view-test-host.md)** — the shared WPF test host, and the View coverage three batches had booked as debt behind it: `Pump()` moved off the host thread so a nested frame can no longer lose the request that ends it (`11722ee`), Batch 03's **withdrawn** row-render fact re-landed verbatim, a **second** View parsed — the *settings* `AssistantView`, by reflected binding path rather than by rendered text (`62c974b`) — and the per-step persona avatar's deferred row template (`09522be`). **The first work on this branch that SHORTENS the Rank-1 round.** Gate `2707 / 0 failed / 1 skipped` | ✅ done |
+| 20 | `c7020fe` → HEAD | **[Batch 09](09-scheduler-ui.md)** — the scheduler UI, as a section of the Assistant settings page: `UpdateAsync` gains `specificDate` + `kind` (and the UPDATE statement gains both columns, which it did not carry), making the **re-arm of a settled one-off reachable for the first time**; a narrow `IScheduledJobRunner` over the existing background-service singleton for an owner-checked manual fire; a `ScheduledJobsSettingsViewModel` with full CRUD, enable/disable, last-run outcome and unknown-status tolerance; and 45 new strings in all three locales. **Budget and policy stay global by decision (D1)** — see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) | ✅ done |
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -566,8 +567,7 @@ each other by number. Read the **Rank** column for priority.
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
 | **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by FOURTEEN items and shortened nothing** — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
-| 2 | 09 | [Scheduler UI](09-scheduler-ui.md) — create/edit/list agent jobs; **now also owes a re-arm surface + unknown-status handling, see below** | 4 | M | Milestone B ✅; **Batch 04 ✅ shipped** — the autonomy policy it needs to render now exists |
-| 3 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below |
+| 2 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
@@ -579,6 +579,7 @@ each other by number. Read the **Rank** column for priority.
 | — | 06 | [Run workspace isolation](06-run-workspace-isolation.md) | 3 | M | ✅ **shipped** `70400aa`→`695e123` (G1–G5) — polish outside that range; see “Opened by Phase 3” |
 | — | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) | 3 | L | ✅ **shipped** `08e20ab`→`1d6cc15` (G6–G10, **not in that order**) — see “Opened by Phase 3” |
 | — | 13 | [View test host](13-view-test-host.md) | 3 cleanup | S–M | ✅ **shipped** `928e27e`→`09522be` — the only batch so far that made Rank 1 **shorter**; see “Opened by Batch 13” |
+| — | 09 | [Scheduler UI](09-scheduler-ui.md) | 4 | L (**not M**) | ✅ **shipped** `c7020fe`→HEAD — global-only budget/policy by decision; see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) and “Opened by Batch 09” |
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -1466,6 +1467,15 @@ is worded as a round trip and only its silent half is now covered:
 Batch 03's own withdrawn row-render item comes **off** the list outright rather than shortening, because it was
 never a round trip — it was a render check standing in for a test that existed and could not be shipped.
 
+**And then Batch 09 lengthened it again the same day, which retires the "first work that shortens Rank 1"
+framing after exactly one batch.** Say it plainly rather than leave the earlier paragraph reading as a trend:
+09 adds a jobs list, an inline editor and a manual fire button, and its share of the round is (a) the row
+`DataTemplate`'s bindings, which a logical walk cannot reach — **though the `LoadContent()` technique now
+exists to close it, so this one is booked rather than blocked**; (b) the DE/FR render of a section whose German
+strings are long; and (c) a two-device owner-mismatch check, since `IsOwnedByThisDeviceAsync` returning false
+is faked everywhere it is tested. The net is still better than before 13: what 09 adds is a *shorter* list than
+it would have been, because its top-level binding paths are covered as they were written instead of booked.
+
 **Risks the plan named that were ACCEPTED rather than closed.** Each of these was mitigated and then explicitly
 left; the reason is the point.
 
@@ -1633,6 +1643,36 @@ across two commits, one of which does not mention resx at all, so a bisect lands
 the opposite of what its diff did.
 
 ---
+
+### Opened by Batch 09 (2026-08-01) — known, reasoned, not closed
+
+- **Budget and autonomy stay GLOBAL, and this is the decision, not an omission** (impl spec D1). The batch
+  file's acceptance says "jobs carry budget + policy"; neither field exists on `ScheduledJob`, the budget is
+  built at fire time from `ScheduledMaxSteps`/`MaxReplans`/`WallClockMinutes` and the policy is resolved from
+  settings at launch. The UI therefore places the jobs list directly beneath those sliders instead of
+  duplicating them. Per-job was deferred for a reason bigger than size: a per-job autonomy class list becomes
+  **peer-writable, unvalidated input** the moment it crosses the sync wire — `SyncScheduledJob.GrantedTools`
+  already is (04 §13.2) — so it needs `ParseGrantedTools`' treatment *and* a decision about what an unknown
+  class from a newer peer means. That is a batch.
+- **A manual "run now" inherits the process-wide head-of-line block, deliberately.** It dispatches through the
+  same `_runLock` a tick uses, so the button holds every *other* scheduled job for the run's duration. Not
+  bypassed on purpose: that lock is what bounds a delegating job (R15), and a manual path that skipped it
+  would be the one way to get two agent runs dispatching at once. The consequence a user sees is a button that
+  stays busy for the whole run.
+- **The jobs row template is manual-smoke debt, and it is the FIRST thing to write when someone picks this up
+  again.** The section's top-level binding paths are covered by `SettingsAssistantViewParseTests` — which is
+  the whole reason [Batch 13](13-view-test-host.md) went first, and it caught nothing only because the paths
+  were right — but the row `DataTemplate` (`ToggleLabel`, `CanRunNow`, `StatusLabel`, the four
+  `RelativeSource` command paths) is deferred content a logical walk cannot reach. **The technique now exists**:
+  the avatar and trace-row facts drive exactly this shape through `ItemTemplate.LoadContent()`. Booked rather
+  than written because this batch ran out of round, not because it is blocked.
+- **An unknown `ScheduledJobStatus` is rendered inert and NOT normalised**, which is the enum's own documented
+  requirement. What is *not* covered anywhere is the real cross-device path that produces one: the fact injects
+  `(ScheduledJobStatus)7` directly. Confirming that a newer peer's ordinal survives a round trip through sync
+  needs two devices on different builds.
+- **`UpdateAsync` grew two parameters and the UPDATE statement grew two columns**, `SpecificDate` and `Kind`,
+  neither of which it wrote before. Any future caller that assumed "UpdateAsync cannot change the date" is now
+  wrong — and one comment in the service and one in its tests said exactly that, both corrected in place.
 
 ### Opened by Batch 13 (2026-08-01) — known, reasoned, not closed
 
