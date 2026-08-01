@@ -567,7 +567,8 @@ each other by number. Read the **Rank** column for priority.
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
 | **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. **Phase 3 lengthened it by FOURTEEN items and shortened nothing** — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and all three “Opened by” sections | — | S | a Windows runner + a live provider + a real git repo |
-| 2 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below |
+| 2 | 14 | [View-coverage debt](14-view-coverage-debt.md) — the jobs row, the branch line, the run panel's paths, the seven unparsed settings views | 3 cleanup | S–M | [Batch 13](13-view-test-host.md) ✅ shipped — every item in it is already **booked, not blocked** |
+| 3 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below. **Seven decisions RESOLVED 2026-08-01** — see its own file |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
@@ -579,7 +580,28 @@ each other by number. Read the **Rank** column for priority.
 | — | 06 | [Run workspace isolation](06-run-workspace-isolation.md) | 3 | M | ✅ **shipped** `70400aa`→`695e123` (G1–G5) — polish outside that range; see “Opened by Phase 3” |
 | — | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) | 3 | L | ✅ **shipped** `08e20ab`→`1d6cc15` (G6–G10, **not in that order**) — see “Opened by Phase 3” |
 | — | 13 | [View test host](13-view-test-host.md) | 3 cleanup | S–M | ✅ **shipped** `928e27e`→`09522be` — the only batch so far that made Rank 1 **shorter**; see “Opened by Batch 13” |
-| — | 09 | [Scheduler UI](09-scheduler-ui.md) | 4 | L (**not M**) | ✅ **shipped** `c7020fe`→HEAD — global-only budget/policy by decision; see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) and “Opened by Batch 09” |
+| — | 09 | [Scheduler UI](09-scheduler-ui.md) | 4 | L (**not M**) | ✅ **shipped** `c7020fe`→`ea77c95` (**not** →HEAD, which this row said until 2026-08-01 — `aa5beb9` is a docs commit and the chronicle above already pinned the real end) — global-only budget/policy by decision; see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) and “Opened by Batch 09” |
+
+**A THIRD set of rank moves, 2026-08-01, and this one IS a reprioritisation — the first on this branch.**
+Every move before it was a batch leaving the list. This one inserts a new batch ahead of an existing one:
+**[Batch 14](14-view-coverage-debt.md) enters at Rank 2 and pushes 08 to Rank 3.** Two sentences above are now
+stale for the ordinary reason and are left in place per this file's habit — "Rank 2 is now **09** and Rank 3
+is **08**" (09 shipped) and, before it, "Rank 2 is now **06**". The argument for the insert is the metric this
+document has tracked since Batch 12 and named explicitly since 13: **14 SHORTENS the Rank-1 manual round and
+adds nothing to it, while 08 is size L and will lengthen it by at least six items** (08's own file now
+enumerates them up front). 14 is not new scope — every item in it was written down by a shipped batch as
+booked-and-unblocked: Batch 09 calls its jobs row `DataTemplate` "the FIRST thing to write when someone picks
+this up again", and Batch 13 leaves the run panel's branch line "reachable by the same walk… simply not
+written". Doing it now also lands while the `LoadContent()` and reflected-binding-path techniques are one
+batch old rather than several. **What this does NOT change: Rank 1.** 14 makes that list shorter; it does not
+make it shorter by enough to reorder anything, and no green suite substitutes for it.
+
+**Batch 08's seven decisions are resolved and its "Key seams" section has been re-measured** (2026-08-01, at
+`aa5beb9`, by inspection — no gate was run and none is claimed). Three of that section's four bullets needed
+correcting and one hazard was **retired by reading the code**: R15's head-of-line block is *not* extended by a
+user pause, because `HeadlessRunHandle.Completion` settles on a park and
+`ScheduledJobBackgroundService.cs:251` already matches `Paused`. That premise is stated in 08's file as
+something to pin with a test before building on, not as a measurement.
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -1665,7 +1687,14 @@ the opposite of what its diff did.
   were right — but the row `DataTemplate` (`ToggleLabel`, `CanRunNow`, `StatusLabel`, the four
   `RelativeSource` command paths) is deferred content a logical walk cannot reach. **The technique now exists**:
   the avatar and trace-row facts drive exactly this shape through `ItemTemplate.LoadContent()`. Booked rather
-  than written because this batch ran out of round, not because it is blocked.
+  than written because this batch ran out of round, not because it is blocked. **PICKED UP 2026-08-01 as
+  [Batch 14](14-view-coverage-debt.md) G2, now Rank 2** — and reading the markup to plan it found this bullet's
+  own list is short: the template carries **ten** item-scoped paths, not three, and one of the seven it omits
+  (`StatusIsKnown`, the Toggle button's `IsEnabled`) sits directly beside the `CanRunNow` it does name. Read
+  `AssistantView.xaml:545`–`:601`, not this list. 14 also found that the four `RelativeSource` command paths
+  are **not** reachable by the `LoadContent()` precedent as-is — a loaded row is detached and has no
+  `ItemsControl` ancestor — so "the technique now exists" is true for the ten and an open question for the
+  four (14 D1).
 - **An unknown `ScheduledJobStatus` is rendered inert and NOT normalised**, which is the enum's own documented
   requirement. What is *not* covered anywhere is the real cross-device path that produces one: the fact injects
   `(ScheduledJobStatus)7` directly. Confirming that a newer peer's ordinal survives a round trip through sync
@@ -1703,7 +1732,10 @@ the opposite of what its diff did.
 - **The run panel's branch line is still unparsed, and that is a scope choice rather than a limitation.** R11
   named three surfaces; Batch 13 covered two. The branch line sits in `RunProgressPanel.xaml`'s non-templated
   region and is reachable by the same walk — it was simply not written, so it stays on the manual round with no
-  technical obstacle in front of it.
+  technical obstacle. **PICKED UP 2026-08-01 as [Batch 14](14-view-coverage-debt.md) G3, now Rank 2, and
+  widened on the way**: rather than one render fact for one line, 14 runs the binding-path walker over the
+  whole panel, which pins the branch line together with every other non-templated path on a surface three
+  batches have added lines to and none has parsed.
 - **The two sweeps are narrower than they sound, in the same way and for the same reason.** Both loc-key sweeps
   see `TextBlock.Text` only, so on the settings view they cover the section headers and descriptions and **not**
   the toggle labels, which are `Content=` on a CheckBox and become a `TextBlock` only after template
