@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Controls.Assistant;
@@ -123,7 +122,7 @@ public class RunProgressPanelParseTests
 
             before = WpfStaHost.Run(() =>
                 BindingPathWalker.FindLogical<TextBlock>(panel!)
-                    .Single(tb => PathOf(tb, TextBlock.TextProperty) == "OutputBranchNote")
+                    .Single(tb => BindingPathWalker.PathOf(tb, TextBlock.TextProperty) == "OutputBranchNote")
                     .Visibility);
 
             WpfStaHost.Run(() =>
@@ -139,7 +138,7 @@ public class RunProgressPanelParseTests
             (after, text) = WpfStaHost.Run(() =>
             {
                 var tb = BindingPathWalker.FindLogical<TextBlock>(panel!)
-                    .Single(t => PathOf(t, TextBlock.TextProperty) == "OutputBranchNote");
+                    .Single(t => BindingPathWalker.PathOf(t, TextBlock.TextProperty) == "OutputBranchNote");
                 return (tb.Visibility, tb.Text);
             });
         }
@@ -154,11 +153,6 @@ public class RunProgressPanelParseTests
         Assert.Equal(Visibility.Visible, after);
         Assert.Contains(branchName, text);
     }
-
-    /// <summary>The binding path a property is bound to, or null if unbound or bound some other way. Reading
-    /// elements by PATH, never by index and never by Content/Text (hazard 9).</summary>
-    private static string? PathOf(DependencyObject element, DependencyProperty property) =>
-        (BindingOperations.GetBinding(element, property) as Binding)?.Path?.Path;
 
     /// <summary>
     /// This file's OWN factory, deliberately not

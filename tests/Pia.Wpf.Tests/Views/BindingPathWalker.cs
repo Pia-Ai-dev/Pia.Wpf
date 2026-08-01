@@ -11,7 +11,9 @@ namespace Pia.Tests.Views;
 /// <see cref="Walk"/>, <see cref="BoundPath"/>, <see cref="TargetsDataContext"/>,
 /// <see cref="ResolvePathType"/>, <see cref="FindLogical{T}"/> — with only their visibility changed
 /// (<c>private</c> → <c>internal</c>); <see cref="Describe"/> is new here (D7), moving an existing
-/// projection expression into the one place its format string can be owned once.
+/// projection expression into the one place its format string can be owned once. <see cref="PathOf"/> is a
+/// sixth member, lifted (Batch 14 SIMPLIFY) from two byte-identical private copies in
+/// <c>ScheduledJobsRowTemplateTests</c> and <c>RunProgressPanelParseTests</c>.
 /// </summary>
 internal static class BindingPathWalker
 {
@@ -123,4 +125,21 @@ internal static class BindingPathWalker
         Walk(root, contextType)
             .Select(b => $"{b.Element}.{b.Property}={b.Path} [{b.ContextType}] {(b.Resolves ? "ok" : "UNRESOLVED")}")
             .ToArray();
+
+    /// <summary>
+    /// The binding path a property is bound to, or null if unbound or bound some other way. Reading elements
+    /// by PATH — never by index, never by <c>Content</c>/<c>Text</c> — is what survives a measured walk order
+    /// that can come out reversed from markup, and labels that are <c>loc:Str</c>-dependent (hazard 9).
+    /// <para>
+    /// <b>Deliberately NOT <see cref="BoundPath"/>, and must not be merged with it.</b> <see cref="BoundPath"/>
+    /// reads via <c>ReadLocalValue</c> and rejects any binding that fails <see cref="TargetsDataContext"/>
+    /// (<c>RelativeSource</c>/<c>ElementName</c>/explicit <c>Source</c>). <see cref="PathOf"/> reads via
+    /// <see cref="BindingOperations.GetBinding"/> and applies no such filter — that is load-bearing for its
+    /// callers: the scheduled-jobs row's four ancestor-command bindings are found by matching
+    /// <c>PathOf(button, ButtonBase.CommandProperty) == "DataContext.ToggleEnabledCommand"</c>, and those
+    /// bindings carry <c>RelativeSource</c>, which <see cref="TargetsDataContext"/> would reject outright.
+    /// </para>
+    /// </summary>
+    internal static string? PathOf(DependencyObject element, DependencyProperty property) =>
+        (BindingOperations.GetBinding(element, property) as Binding)?.Path?.Path;
 }

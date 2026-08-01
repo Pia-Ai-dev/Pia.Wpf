@@ -106,13 +106,6 @@ public class ScheduledJobsRowTemplateTests
         OwnedByThisDevice = false,
     };
 
-    /// <summary>The binding path a property is bound to, or null if unbound or bound some other way. Reading
-    /// elements by PATH (never by index, never by Content/Text — hazard 9) is what survives the measured walk
-    /// order coming out reversed from markup (Delete | Run now | Disable | Edit) and every label being
-    /// <c>loc:Str</c>-dependent.</summary>
-    private static string? PathOf(DependencyObject element, DependencyProperty property) =>
-        (BindingOperations.GetBinding(element, property) as Binding)?.Path?.Path;
-
     /// <summary>Logical AND visual descent, deduped: a <c>DataTemplate.LoadContent()</c>'d row is reachable
     /// logically; nothing in this row needs a visual pass, but the shape is kept identical to the one Ground D
     /// measured so a future template change that DOES introduce a generated visual child is still found.</summary>
@@ -226,11 +219,11 @@ public class ScheduledJobsRowTemplateTests
         var buttons = FindElements<ButtonBase>(row).ToList();
 
         string? TextOf(string path) =>
-            texts.Single(tb => PathOf(tb, TextBlock.TextProperty) == path).Text;
+            texts.Single(tb => BindingPathWalker.PathOf(tb, TextBlock.TextProperty) == path).Text;
 
-        var notOwned = texts.Single(tb => PathOf(tb, UIElement.VisibilityProperty) == "OwnedByThisDevice");
-        var toggle = buttons.Single(b => PathOf(b, ButtonBase.CommandProperty) == "DataContext.ToggleEnabledCommand");
-        var runNow = buttons.Single(b => PathOf(b, ButtonBase.CommandProperty) == "DataContext.RunNowCommand");
+        var notOwned = texts.Single(tb => BindingPathWalker.PathOf(tb, UIElement.VisibilityProperty) == "OwnedByThisDevice");
+        var toggle = buttons.Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "DataContext.ToggleEnabledCommand");
+        var runNow = buttons.Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "DataContext.RunNowCommand");
 
         return (
             buttons.Count,
@@ -239,7 +232,7 @@ public class ScheduledJobsRowTemplateTests
             TextOf("KindLabel"),
             TextOf("RecurrenceLabel"),
             TextOf("StatusLabel"),
-            texts.Single(tb => PathOf(tb, TextBlock.TextProperty) == "NextFireAt").Text,
+            texts.Single(tb => BindingPathWalker.PathOf(tb, TextBlock.TextProperty) == "NextFireAt").Text,
             notOwned.Visibility.ToString(),
             toggle.Content?.ToString(),
             toggle.IsEnabled,
@@ -308,7 +301,7 @@ public class ScheduledJobsRowTemplateTests
         FindElements<ButtonBase>(row)
             .Select(b =>
             {
-                var path = PathOf(b, ButtonBase.CommandProperty) ?? "<unbound>";
+                var path = BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) ?? "<unbound>";
                 var be = BindingOperations.GetBindingExpression(b, ButtonBase.CommandProperty);
                 var expected = Expected(vm, path);
                 return (path,
