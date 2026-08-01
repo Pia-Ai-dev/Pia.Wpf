@@ -191,38 +191,64 @@ internal static class WpfStaHost
     }
 
     /// <summary>
-    /// Drains the dispatcher queue down to <see cref="DispatcherPriority.SystemIdle"/>. Binding values
-    /// do not transfer until the queue drains; without this a test asserts the property default and
-    /// looks like a pass — the single most likely way for a view-parse test to be silently vacuous.
-    /// Callable from either thread.
+    /// Drains the host's dispatcher queue: returns once everything queued at a priority above
+    /// <see cref="DispatcherPriority.SystemIdle"/> has run. Binding values do not transfer until the queue
+    /// drains; without this a test asserts the property default and looks like a pass — the single most
+    /// likely way for a view-parse test to be silently vacuous.
     /// <para>
-    /// Deliberately NOT bounded by a timer that would set <c>frame.Continue = false</c> early: a frame
-    /// that cannot drain must surface as the <see cref="TimeoutException"/> from <see cref="Run{T}"/>,
-    /// not as a partially drained queue. A partial pump is the vacuous-pass failure mode this method
-    /// exists to prevent, so giving up quietly would defeat it.
+    /// <b>MUST be called from the TEST thread, never from inside a <see cref="Run{T}"/> body — and that
+    /// rule IS the fix for a defect three batches tripped over.</b> This used to be
+    /// <c>Dispatcher.PushFrame</c> executed on the host thread from inside a <c>Run</c> body: a NESTED
+    /// message loop, started inside an executing <c>DispatcherOperation</c>, on a thread that is already
+    /// running <c>Dispatcher.Run()</c>. A nested loop has to re-request idle-priority processing while an
+    /// outer loop's request is still outstanding, and when that request is lost the frame's
+    /// <c>SystemIdle</c> exit callback is never dispatched — so the frame pumps until
+    /// <see cref="InvokeTimeout"/> kills the whole <c>Run</c>.
+    /// </para>
+    /// <para>
+    /// Measured on 2026-08-01 at <c>fcfa7d5</c>, because the prior record called it a flake and it is not:
+    /// with an EIGHTH frame-pushing fact in this collection the full gate failed <b>1 run in 3</b> with a
+    /// body gutted to nothing but a pump, and <b>3 of 3</b> with the real body — always the same signature,
+    /// a 60 s timeout on whichever test pumped next (never the new fact itself). Seven facts sat just under
+    /// that threshold, which is why <c>0f5c53bf</c> could withdraw one test and see green.
+    /// </para>
+    /// <para>
+    /// Waiting from the OUTSIDE removes the nesting entirely: the host thread's own <c>Dispatcher.Run()</c>
+    /// loop — never nested, never re-entered for this — is what dispatches the drain marker, and the test
+    /// thread only waits on a task with a bound. The priority still has to be <c>SystemIdle</c>, the lowest
+    /// non-inactive one, so that everything already queued (DataBind, Normal, Input — AssistantView's
+    /// ScrollToBottom uses it — Loaded, Render) has run when this returns. Nothing in <c>src/</c> posts at
+    /// an idle priority, so no production work can sort below the marker and be missed.
     /// </para>
     /// </summary>
     internal static void Pump()
     {
-        // Dispatcher.PushFrame is STATIC and pumps the CALLING thread, so this has to be on the host
-        // thread before the frame is pushed.
-        if (!StaDispatcher.CheckAccess())
-        {
-            Run<object?>(() =>
-            {
-                Pump();
-                return null;
-            });
-            return;
-        }
+        var dispatcher = StaDispatcher;
 
-        var frame = new DispatcherFrame();
+        // A hard failure rather than a silent re-marshal, because the re-marshal is what the old shape did
+        // and it is precisely the bug: from inside a Run body there is no way to drain without nesting a
+        // frame. Restructure the caller into Run(mutate) → Pump() → Run(observe) instead.
+        if (dispatcher.CheckAccess())
+            throw new InvalidOperationException(
+                "WpfStaHost.Pump() was called ON the host thread, i.e. from inside a WpfStaHost.Run body. " +
+                "That is the nested-frame shape this host no longer supports: it pumps a message loop inside " +
+                "an executing DispatcherOperation and intermittently loses the idle-priority request that " +
+                "ends it, timing out an unrelated test 60 s later. Split the caller into " +
+                "Run(mutate) → Pump() → Run(observe); every step still runs on the host thread.");
 
-        // SystemIdle is the lowest non-inactive priority, so everything already queued — DataBind,
-        // Normal, Input (AssistantView's ScrollToBottom uses Input), Loaded, Render — runs before the
-        // frame exits. Never use ApplicationIdle or higher for the exit. A statement-bodied lambda so
-        // this binds to InvokeAsync(Action, DispatcherPriority) with no Func<bool> ambiguity.
-        StaDispatcher.InvokeAsync(() => { frame.Continue = false; }, DispatcherPriority.SystemIdle);
-        Dispatcher.PushFrame(frame);
+        // A statement-bodied lambda so this binds to InvokeAsync(Action, DispatcherPriority) rather than
+        // the Func<bool> overload.
+        var drained = dispatcher.InvokeAsync(() => { }, DispatcherPriority.SystemIdle).Task;
+
+        // Same bounded-wait discipline as Run<T>, and for the same reason: a queue that cannot drain must
+        // name itself instead of blocking the suite. Waiting on the handle rather than Task.Wait keeps the
+        // real failure unwrapped.
+        if (!((IAsyncResult)drained).AsyncWaitHandle.WaitOne(InvokeTimeout))
+            throw new TimeoutException(
+                $"The WPF STA host's queue did not drain to SystemIdle within {InvokeTimeout.TotalSeconds:0}s. " +
+                "Suspect work that re-queues itself at a priority above SystemIdle, or a host operation that " +
+                "is blocking the dispatcher. Failing instead of waiting forever is deliberate.");
+
+        drained.GetAwaiter().GetResult();
     }
 }

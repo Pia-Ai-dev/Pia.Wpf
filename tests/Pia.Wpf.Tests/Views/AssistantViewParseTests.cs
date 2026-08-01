@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Controls.Assistant;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
@@ -66,24 +67,51 @@ public class AssistantViewParseTests
     [Fact]
     public void ComposerHint_Parses_AndTracksForeignRunActive()
     {
-        var (found, before, after) = WpfStaHost.Run(() =>
+        // Run(mutate) → Pump() → Run(observe), because Pump() drains from the TEST thread now (see
+        // WpfStaHost.Pump). The WPF objects live in these locals but are only ever DEREFERENCED inside a
+        // Run body, i.e. always on the host thread; only primitives and enums cross back.
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        TextBlock? hint = null;
+        bool found;
+        Visibility? before, after;
+        try
         {
-            var vm = CreateAssistantViewModel();
-            var view = new AssistantView { DataContext = vm };
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateAssistantViewModel();
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
             WpfStaHost.Pump();
 
-            var hint = FindTextBlocks(view).FirstOrDefault(tb => tb.Text == HintText);
-            var visibilityBefore = hint?.Visibility;
+            (found, before) = WpfStaHost.Run(() =>
+            {
+                hint = FindTextBlocks(view!).FirstOrDefault(tb => tb.Text == HintText);
+                return (hint is not null, hint?.Visibility);
+            });
 
-            // Set the [ObservableProperty] directly. Going through ChatSession.ForeignRunActiveChanged
-            // would route via the injected dispatcher and add a second thing under test.
-            vm.ForeignRunActive = true;
+            WpfStaHost.Run(() =>
+            {
+                // Set the [ObservableProperty] directly. Going through ChatSession.ForeignRunActiveChanged
+                // would route via the injected dispatcher and add a second thing under test.
+                vm!.ForeignRunActive = true;
+                return 0;
+            });
             WpfStaHost.Pump();
-            var visibilityAfter = hint?.Visibility;
 
-            vm.Dispose();
-            return (hint is not null, visibilityBefore, visibilityAfter);
-        });
+            after = WpfStaHost.Run(() => hint?.Visibility);
+        }
+        finally
+        {
+            // On the host thread, and in a finally: the VM subscribes to events on construction, so a failed
+            // assertion must not leak a live subscriber onto a dispatcher that outlives every test.
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
 
         Assert.True(found,
             $"No TextBlock in the parsed AssistantView renders '{HintText}'. Either the view failed to " +
@@ -105,21 +133,37 @@ public class AssistantViewParseTests
         // string becomes a TextBlock only after template application), PlaceholderText and Value: all
         // structurally invisible to a logical walk without layout. Widening it means realizing templates,
         // which is exactly what this file must not do.
-        var (rendered, unresolved) = WpfStaHost.Run(() =>
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        List<string> rendered, unresolved;
+        try
         {
-            var vm = CreateAssistantViewModel();
-            var view = new AssistantView { DataContext = vm };
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateAssistantViewModel();
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
             WpfStaHost.Pump();
 
-            var texts = FindTextBlocks(view).Select(tb => tb.Text).ToList();
-            var hits = texts
-                .Where(t => t is not null && Regex.IsMatch(t, @"^\[\w+\]$"))
-                .Distinct()
-                .ToList();
-
-            vm.Dispose();
-            return (texts, hits);
-        });
+            (rendered, unresolved) = WpfStaHost.Run(() =>
+            {
+                var texts = FindTextBlocks(view!).Select(tb => tb.Text).ToList();
+                var hits = texts
+                    .Where(t => t is not null && Regex.IsMatch(t, @"^\[\w+\]$"))
+                    .Distinct()
+                    .ToList();
+                return (texts, hits);
+            });
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
 
         // NON-VACUITY FLOOR, and it carries the whole assertion below: "no unresolved keys" is trivially
         // true over an EMPTY walk, which is reachable — if LogicalTreeHelper.GetChildren stops descending
@@ -151,6 +195,141 @@ public class AssistantViewParseTests
         foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
             foreach (var descendant in FindTextBlocks(child))
                 yield return descendant;
+    }
+
+    /// <summary>
+    /// Batch 03's trace row, RENDERED. The panel's own binding paths resolve at runtime and fail silently, and
+    /// two of them were bound by nothing at all: <c>OutcomeSuffix</c> and <c>StepLabel</c> were computed,
+    /// localized into three resx files and unit-tested over the VM property, while the row template bound three
+    /// columns — so an <c>Error</c> row rendered byte-identically to a successful one on the one surface whose
+    /// job is to say what happened.
+    /// <para>
+    /// Drives <see cref="RunProgressPanel"/> DIRECTLY rather than through <see cref="AssistantView"/>: this file
+    /// documents Measure/Arrange on that view as a measured hazard (it arms three <c>Loaded</c> handlers), and a
+    /// layout pass is exactly what is needed here to realize the deferred <c>ItemTemplate</c>. The panel's own
+    /// code-behind is nothing but <c>InitializeComponent</c>.
+    /// </para>
+    /// <para>
+    /// Note for the record: the builder's open item claimed "NOTHING parses RunProgressPanel.xaml". That is
+    /// false — <c>AssistantView.xaml</c> places the panel as a plain element, so
+    /// <c>AssistantView.InitializeComponent()</c> already constructs it and runs its
+    /// <c>InitializeComponent()</c>, meaning the Expander's non-deferred markup has been parsed by the fact
+    /// above since it landed. What was genuinely uncovered is the deferred row template and the binding paths,
+    /// which is what this fact adds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task RunProgressPanel_RendersATimelineRow_WithItsStepOutcomeAndDecision()
+    {
+        RunProgressViewModel? vm = null;
+        RunProgressPanel? panel = null;
+        FrameworkElement? row = null;
+
+        WpfStaHost.Run(() =>
+        {
+            vm = CreateRunProgressViewModel();
+            panel = new RunProgressPanel { DataContext = vm };
+            // Expanding RE-READS the trace, and with no store behind this VM that read clears the collection —
+            // so this happens before any row is added.
+            vm.IsTimelineExpanded = true;
+            return 0;
+        });
+
+        // The expand's load is a fire-and-forget the VM exposes precisely so a fact can await it instead of
+        // racing it; the read hops off-thread, so draining the dispatcher alone would NOT wait for it. That is
+        // the seam eb0fb369 added and this fact never used — and its absence is why the projection could land
+        // during a LATER test and overwrite state nobody expected to move.
+        await WpfStaHost.Run(() => vm!.TimelineLoadTask)!;
+        WpfStaHost.Pump();
+
+        string[] texts;
+        Visibility? emptyLineVisibility;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                // AFTER the load, deliberately: the expand's own (store-less) projection would otherwise
+                // overwrite this. This is what the real load does once it has rows.
+                vm!.HasNoTimeline = false;
+
+                // The trace's ItemsControl is declared markup, so it IS in the logical tree; its generated
+                // containers are not (the walk here is logical — the same documented limit that keeps the
+                // message template out of reach). So instantiate the row template the way WPF does and bind
+                // one row to it: that is the TEMPLATE INSTANTIATION the builder's open item said no test
+                // could reach, and it pins every path in the template without a layout pass on a view whose
+                // Loaded handlers are a hazard.
+                var items = FindLogical<ItemsControl>(panel!)
+                    .Single(ic => ReferenceEquals(ic.ItemsSource, vm.Timeline));
+                row = (FrameworkElement)items.ItemTemplate.LoadContent();
+                row.DataContext = new TimelineRowViewModel
+                {
+                    TimeLabel = "14:03",
+                    StepLabel = "Step 2",
+                    ToolName = "write_file",
+                    OutcomeSuffix = "failed",
+                    DecisionLabel = "Auto-approved",
+                };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (texts, emptyLineVisibility) = WpfStaHost.Run(() =>
+            {
+                var empty = FindTextBlocks(panel!).FirstOrDefault(tb => tb.Text == TimelineEmptyText);
+                return (FindTextBlocks(row!).Select(tb => tb.Text).ToArray(), empty?.Visibility);
+            });
+        }
+        finally
+        {
+            // The withdrawn version leaked this: the VM subscribes to IAgentRunService.RunChanged in its
+            // ctor, and a leaked subscriber on a host that outlives every test is exactly how one fact
+            // reaches into another.
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        // The five row binding paths, one assertion each. A typo in any of them used to ship silently.
+        Assert.Contains("14:03", texts);
+        Assert.Contains("Step 2", texts);
+        Assert.Contains("write_file", texts);
+        Assert.Contains("failed", texts);
+        Assert.Contains("Auto-approved", texts);
+
+        // …and the HasNoTimeline path: the "nothing recorded" line is not shown over a row.
+        Assert.Equal(Visibility.Collapsed, emptyLineVisibility);
+    }
+
+    /// <summary>ViewStrings.resx (neutral = EN), same reasoning as <see cref="HintText"/>.</summary>
+    private const string TimelineEmptyText = "No tool decisions were recorded for this run.";
+
+    /// <summary>The <see cref="FindTextBlocks"/> walk, generalized — logical, for the same reason.</summary>
+    private static IEnumerable<T> FindLogical<T>(DependencyObject root) where T : DependencyObject
+    {
+        if (root is T hit)
+            yield return hit;
+
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+            foreach (var descendant in FindLogical<T>(child))
+                yield return descendant;
+    }
+
+    /// <summary>
+    /// A store-less <see cref="RunProgressViewModel"/>: the trailing-optional <c>IAgentTimelineService</c> is
+    /// omitted on purpose, so nothing here reads a database and the rows under test are the ones this fact adds.
+    /// Must be called ON the STA thread — the VM captures <c>SynchronizationContext.Current</c> and marshals
+    /// every collection mutation through it.
+    /// </summary>
+    private static RunProgressViewModel CreateRunProgressViewModel()
+    {
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]);
+        return new RunProgressViewModel(
+            Substitute.For<IAgentRunService>(), Guid.NewGuid(), loc,
+            Substitute.For<IAgentRunResumeService>(), NullLogger.Instance);
     }
 
     /// <summary>

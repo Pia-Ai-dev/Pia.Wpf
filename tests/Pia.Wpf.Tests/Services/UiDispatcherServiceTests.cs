@@ -61,15 +61,17 @@ public class UiDispatcherServiceTests
     [Fact]
     public void Post_OnTheUiThread_QueuesAndRunsOnTheNextPump()
     {
-        var (ranImmediately, ranAfterPump) = WpfStaHost.Run(() =>
+        // Run(act) → Pump() → Run(observe): Pump() drains from the TEST thread now, so the queued action
+        // cannot be observed inside the same host operation that queued it. See WpfStaHost.Pump.
+        var ranBox = new bool[1];
+        var ranImmediately = WpfStaHost.Run(() =>
         {
             var sut = CreateSut();
-            var ran = false;
-            sut.Post(() => ran = true);
-            var immediately = ran;
-            WpfStaHost.Pump();
-            return (immediately, ran);
+            sut.Post(() => ranBox[0] = true);
+            return ranBox[0];
         });
+        WpfStaHost.Pump();
+        var ranAfterPump = WpfStaHost.Run(() => ranBox[0]);
 
         Assert.False(ranImmediately,
             "Post must ALWAYS queue, even on the UI thread: VoiceModeViewModel posts its silence-timer " +
@@ -81,15 +83,17 @@ public class UiDispatcherServiceTests
     [Fact]
     public void PostAsync_OnTheUiThread_QueuesAndCompletesWithTheMutationApplied()
     {
-        var (completedImmediately, statusAfterPump, valueAfterPump) = WpfStaHost.Run(() =>
+        var valueBox = new int[1];
+        Task? posted = null;
+        var completedImmediately = WpfStaHost.Run(() =>
         {
             var sut = CreateSut();
-            var value = 0;
-            var task = sut.PostAsync(() => value = 42);
-            var immediately = task.IsCompleted;
-            WpfStaHost.Pump();
-            return (immediately, task.Status.ToString(), value);
+            posted = sut.PostAsync(() => valueBox[0] = 42);
+            return posted.IsCompleted;
         });
+        WpfStaHost.Pump();
+        var (statusAfterPump, valueAfterPump) =
+            WpfStaHost.Run(() => (posted!.Status.ToString(), valueBox[0]));
 
         Assert.False(completedImmediately, "PostAsync queues; it does not run the action inline.");
         Assert.Equal("RanToCompletion", statusAfterPump);
@@ -99,30 +103,49 @@ public class UiDispatcherServiceTests
     [Fact]
     public void PostAsync_WhenTheActionThrows_FaultsTheReturnedTask()
     {
-        var (isFaulted, exceptionType, message) = WpfStaHost.Run(() =>
+        // A net for the duration, so a WRONG assumption fails this test instead of killing the test
+        // PROCESS: App's own DispatcherUnhandledException handler is installed in OnStartup, which the
+        // host never runs. If InvokeAsync routed a queued failure to Dispatcher.UnhandledException the
+        // way the legacy BeginInvoke does, an unhandled exception here would take ~2700 tests with it.
+        //
+        // The net's lifetime has to SPAN the pump, and the pump now runs on the test thread — so the
+        // attach/detach pair is managed explicitly from here rather than by a finally inside one host
+        // operation. Both halves still execute ON the host thread, which is where the event lives.
+        DispatcherUnhandledExceptionEventHandler net = (_, e) => e.Handled = true;
+        WpfStaHost.Run(() =>
         {
-            var sut = CreateSut();
-
-            // A net for the duration, so a WRONG assumption fails this test instead of killing the test
-            // PROCESS: App's own DispatcherUnhandledException handler is installed in OnStartup, which the
-            // host never runs. If InvokeAsync routed a queued failure to Dispatcher.UnhandledException the
-            // way the legacy BeginInvoke does, an unhandled exception here would take ~2157 tests with it.
-            DispatcherUnhandledExceptionEventHandler net = (_, e) => e.Handled = true;
             WpfStaHost.StaDispatcher.UnhandledException += net;
-            try
-            {
-                var task = sut.PostAsync(() => throw new InvalidOperationException("boom"));
-                WpfStaHost.Pump();
+            return 0;
+        });
 
+        bool isFaulted;
+        string? exceptionType, message;
+        try
+        {
+            Task? posted = null;
+            WpfStaHost.Run(() =>
+            {
+                var sut = CreateSut();
+                posted = sut.PostAsync(() => throw new InvalidOperationException("boom"));
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (isFaulted, exceptionType, message) = WpfStaHost.Run(() =>
+            {
                 // Reading .Exception also MARKS IT OBSERVED, which is the point of the whole member.
-                var inner = task.Exception?.InnerException;
-                return (task.IsFaulted, inner?.GetType().Name, inner?.Message);
-            }
-            finally
+                var inner = posted!.Exception?.InnerException;
+                return (posted.IsFaulted, inner?.GetType().Name, inner?.Message);
+            });
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
             {
                 WpfStaHost.StaDispatcher.UnhandledException -= net;
-            }
-        });
+                return 0;
+            });
+        }
 
         Assert.True(isFaulted,
             "PostAsync must fault its task with the action's exception. Four awaited call sites depend on it: " +
@@ -136,31 +159,41 @@ public class UiDispatcherServiceTests
     [Fact]
     public void Post_WhenTheActionThrows_RunsItAndDoesNotReachTheCaller()
     {
-        var reached = WpfStaHost.Run(() =>
+        DispatcherUnhandledExceptionEventHandler net = (_, e) => e.Handled = true;
+        WpfStaHost.Run(() =>
         {
-            var sut = CreateSut();
-
-            DispatcherUnhandledExceptionEventHandler net = (_, e) => e.Handled = true;
             WpfStaHost.StaDispatcher.UnhandledException += net;
-            try
+            return 0;
+        });
+
+        bool reached;
+        try
+        {
+            var ranBox = new bool[1];
+            WpfStaHost.Run(() =>
             {
-                var ran = false;
+                var sut = CreateSut();
                 sut.Post(() =>
                 {
-                    ran = true;
+                    ranBox[0] = true;
                     throw new InvalidOperationException("boom");
                 });
+                return 0;
+            });
 
-                // Pump() throwing would fail this test: a fire-and-forget failure must not escape into the
-                // dispatcher frame either. It is logged instead (see UiDispatcherService.LogIfFaulted).
-                WpfStaHost.Pump();
-                return ran;
-            }
-            finally
+            // Pump() throwing would fail this test: a fire-and-forget failure must not escape into the
+            // drain either. It is logged instead (see UiDispatcherService.LogIfFaulted).
+            WpfStaHost.Pump();
+            reached = WpfStaHost.Run(() => ranBox[0]);
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
             {
                 WpfStaHost.StaDispatcher.UnhandledException -= net;
-            }
-        });
+                return 0;
+            });
+        }
 
         Assert.True(reached,
             "the queued action must have run; Post's contract is that its failure is logged, never rethrown " +
