@@ -3,6 +3,26 @@
 **Phase 3 cleanup · Size S–M · Work on `feature/agent-run-spine`** (see the chronicle in
 [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
+> **✅ SHIPPED 2026-08-01, `928e27e` → `09522be` (this spec, then three commits).** Gate on the finished tree:
+> `dotnet build -t:Rebuild -v:n` **0 Warning(s) / 0 Error(s)**, again with `-c Release` **0 / 0**, suite
+> **2708 total / 0 failed / 2707 passed / 1 skipped** — +4 against the 2704 measured on the clean tree before
+> this batch started, which itself matched what `00-OVERVIEW.md` claimed for `165486e`.
+>
+> **Three things went differently than this spec predicted, and each is worth more than the plan was.**
+> (1) Step 1 said "diagnose, don't guess"; the discriminating experiment turned out to be **gutting the
+> restored fact's body to a bare pump** — still red 1-of-3, which indicts the host rather than the fact and is
+> what justifies the refactor. The mechanism itself is inferred, not instrumented; see "Opened by Batch 13".
+> (2) The settings-view test's first version assumed a single `DataContext` and produced **23 false
+> positives**, every one a genuinely re-rooted section. Handling the re-rooting made it **stronger** than
+> planned: it now covers the composed page including nested sub-views, and would catch a section rooted at the
+> wrong sub-ViewModel. (3) Step 4's third bullet was written as optional ("if it comes cheap") and turned out
+> to be the most valuable of the three, because it is the only one with a **shipped precedent**: rebinding
+> `PersonaId` to `AssignedPersonaId` reproduces Batch 07's real avatar bug at 0 warnings, and the new fact
+> reds.
+>
+> Both red-before/green-after demonstrations needed `-t:Rebuild` to be trustworthy — an incremental build
+> reused stale BAML and kept a reverted typo "failing". That trap is now recorded in the roadmap.
+
 This batch exists because three other batches each hit the same wall and each wrote it down instead of
 fixing it: Batch 03 **withdrew** a finished, passing test rather than ship a red gate
 ([`03-audit-timeline.impl.md`](03-audit-timeline.impl.md) §9.1), Batch 12 was named as the owner of the fix

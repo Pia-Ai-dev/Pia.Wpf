@@ -59,6 +59,21 @@ than a number from here, because its own tally needed a correction (8 distinct d
 refuted with evidence) and then an update — the one that was "fixed in part" was finished on 2026-08-01, so all
 **8** are fixed. See "Opened by Phase 3" below for what is known and open._
 
+_**Snapshot addendum: 2026-08-01 — as-built at `09522be`, which is [Batch 13](13-view-test-host.md).** Nothing
+above is retracted; what it does not know is that the `WpfStaHost` defect three separate batches wrote down and
+none fixed is now fixed, and that the coverage it was blocking has landed. Measured by this pass on this tree,
+not copied: `dotnet build -t:Rebuild -v:n` → **0 Warning(s) / 0 Error(s)**, again with `-c Release` →
+**0 Warning(s) / 0 Error(s)**, and the gate **`2708 total / 0 failed / 2707 passed / 1 skipped`**. It closes
+arithmetically against the 2704 this file records at `165486e` — **which this pass re-measured on the clean tree
+before touching anything, and it matched exactly, so the doc was accurate** — as **+4**: Batch 03's re-landed
+row-render fact, **two** settings-view parse facts, and the avatar row fact. The chain was measured at each stop
+rather than inferred (2704 → 2705 → 2707 → 2708), which matters here because the intermediate 2705 and 2707 were
+also the trees the defect below was measured on. One run of one earlier triple cost the known
+`AssistantChatConcurrencyTests` intermittent (195 ms, then verified **13/13 green isolated, three times running**);
+the 60 s `Pump()` signature this batch exists to kill never reappeared once after the fix. **Read the caveat that
+matters more than the count: this batch SHORTENS the Rank-1 manual round by four items and CLOSES none of them**,
+because each is worded as a restart round trip and only its silent half is automatable._
+
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
 
@@ -92,6 +107,7 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 16 | `df0841a` | **[Batch 02](02-cost-ledger.md)** — the `CostUsd` removal (pricing withdrawn by decision, so the batch is a deletion): the ledger DTO field, the VM's mirror + backing field + TODO assignment, and the `$` segment in `FormatLedger`. **No review fix pass, and the one-commit span is the honest size** — six seams, two facts, no new behaviour. Two prose seams the spec's own acceptance grep could not match were live and are also gone; the grep is amended to the pattern that found them | ✅ done |
 | 17 | `70400aa` → `695e123` | **[Batch 06](06-run-workspace-isolation.md)** — run workspace isolation, as work groups **G1–G5**: the runs dir carved out of `SensitivePathGuard` + a `RunContext.WorkspaceRoot` the verifier prefers over the ambient (G1), both `Initialize` call sites flipped so an unattended run's file tools really land in `%LOCALAPPDATA%\Pia\runs\<runId>` (G2), a provisioner with two modes — **git worktree** when the root is a repo, else a bounded **copy** — with symmetric teardown and degrade-to-copy on any fault (G3), promotion after verify and before `CompleteAsync` plus a publish offer for a run that failed (G4), and the same isolation for an interactive `Planned` run with chip resolution past promotion (G5). **Its own polish is deliberately outside this range** — see the note below | ✅ done |
 | 18 | `08e20ab` → `1d6cc15` | **[Batch 07](07-subagents-multipersona.md)** — sub-agents / multi-persona, as work groups **G6–G10** *in a different order than that*: per-step persona + provider + prompt resolution on both executors (G6, `08e20ab`), `ParentRunId` on the create request + `IX_AgentRuns_ParentRunId` + a narrow-for-child grant envelope (G9, `b2f46a2`), the fan-out itself on a **separate** child slot pool (G10 part 1, `9c32999`), the roster settings surface + the panel attribution that fixes two pre-existing avatar defects (G7, `d09c71f`), the appended `WaitingForChildren(8)` run state that survives the startup sweep (G8, `3e12bcf`), and G10's remaining recorded debt (`1d6cc15`). **Six commits inside this span belong to no batch or to Batch 06** — see the note below | ✅ done |
+| 19 | `928e27e` → `09522be` | **[Batch 13](13-view-test-host.md)** — the shared WPF test host, and the View coverage three batches had booked as debt behind it: `Pump()` moved off the host thread so a nested frame can no longer lose the request that ends it (`11722ee`), Batch 03's **withdrawn** row-render fact re-landed verbatim, a **second** View parsed — the *settings* `AssistantView`, by reflected binding path rather than by rendered text (`62c974b`) — and the per-step persona avatar's deferred row template (`09522be`). **The first work on this branch that SHORTENS the Rank-1 round.** Gate `2707 / 0 failed / 1 skipped` | ✅ done |
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -562,6 +578,7 @@ each other by number. Read the **Rank** column for priority.
 | — | 02 | [Remove `CostUsd`](02-cost-ledger.md) | 2 | XS | ✅ **shipped** `df0841a` — a deletion, not a feature; **adds nothing to the smoke list** |
 | — | 06 | [Run workspace isolation](06-run-workspace-isolation.md) | 3 | M | ✅ **shipped** `70400aa`→`695e123` (G1–G5) — polish outside that range; see “Opened by Phase 3” |
 | — | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) | 3 | L | ✅ **shipped** `08e20ab`→`1d6cc15` (G6–G10, **not in that order**) — see “Opened by Phase 3” |
+| — | 13 | [View test host](13-view-test-host.md) | 3 cleanup | S–M | ✅ **shipped** `928e27e`→`09522be` — the only batch so far that made Rank 1 **shorter**; see “Opened by Batch 13” |
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -1083,7 +1100,15 @@ surface, which reads it statically.
   switched from `Post` (queue) to `PostOrRun` (which would run `TransitionToProcessingAsync` inside
   `Timer.Elapsed`).
 - **Views other than `AssistantView` are still unparsed**, and the loc-key sweep covers `TextBlock.Text` only —
-  see the corrected callout above.
+  see the corrected callout above. **Partly closed 2026-08-01 by [Batch 13](13-view-test-host.md)** (`62c974b`):
+  the **settings** `AssistantView` is now parsed too, and its test is a different and more general shape than
+  the chat view's — rather than rendering text, it reads every declared `Binding` PATH out of the parsed tree
+  and resolves it by reflection against the ViewModel the markup roots it at, re-rooting wherever a section
+  sets its own `DataContext`. That needs no ViewModel instance, which is what made every earlier attempt
+  disproportionate (`AssistantSettingsViewModel` takes four concrete sub-VMs). **The "~20-line file" estimate
+  in Batch 12's own callout was low** — the first version assumed a single `DataContext` and produced 23 false
+  positives, every one of them a real re-rooted section. Two views parsed, not one; the rest of the repo is
+  unchanged, and the technique is now the cheaper one to copy.
 
 **Promoted out of this list on 2026-07-28 and now shipped:** the `Once`-job relaunch loop, two writers on one
 chat row, the missing write gate on the shared `SqliteContext` connection (all → Batch 10), and
@@ -1225,7 +1250,21 @@ these carries its full reasoning and its escape hatch.
   (4) The prune actually runs: set the retention to 1 day, hand-age a row, confirm the `Information` line reports
   a non-zero delete. (5) DE/FR without clipping in the narrow decision column — **narrower now**, since the fix
   pass grew the row from three columns to five, and the German decision label is the long one.
-- **DISCOVERED, and it belongs to Batch 12: `WpfStaHost` does not tolerate another test.** The host is one
+- ~~**DISCOVERED, and it belongs to Batch 12: `WpfStaHost` does not tolerate another test.**~~ **CLOSED
+  2026-08-01 by [Batch 13](13-view-test-host.md)** (`11722ee`), and the inherited description was wrong in one
+  direction and right in the other. Wrong: it is **not a flake**. Re-measured differentially at `fcfa7d5` —
+  7 facts clean at 2704/0; an 8th whose body is a *bare pump* red in **1 of 3**; the same 8th with its real
+  body red in **3 of 3**; the fix in, **0 of 3** — so the body is an amplifier and the eighth fact is the
+  cause. Right: the signature never varied (a 60 s `InvokeTimeout`, the queue never reaching `SystemIdle`,
+  the victim always whichever test pumped next and never the new fact). The fix is that `Pump()` no longer
+  runs on the host thread at all: pumping a nested frame from inside an executing `DispatcherOperation`, on a
+  thread already running `Dispatcher.Run()`, is what could lose the idle-priority request that ends the frame
+  — so the drain is now awaited from the **test** thread and the host's own un-nested loop dispatches it.
+  Callers became `Run(mutate)` → `Pump()` → `Run(observe)`; `Pump()` on the host thread now throws and names
+  the remedy. **State the epistemics honestly, since this file's whole ethos is that:** the differential is
+  measured, the *mechanism* is inferred — nobody instrumented the lost request. What independently justifies
+  the fix is the gutted-body run: no ViewModel, no load, still red. The original description follows.
+  **`WpfStaHost` does not tolerate another test.** The host is one
   process-wide STA thread whose `Dispatcher.Run()` is *re-entered* when an exception escapes a queued operation
   (its own comment says so), while every test drives it through `Dispatcher.PushFrame`. Adding an eighth
   frame-pushing test to the `WpfApplicationStatic` collection took the full gate from **0/3 to 2/3 failing**;
@@ -1260,6 +1299,13 @@ these carries its full reasoning and its escape hatch.
   so the five row binding paths and the `loc:Str` header (bound to `Header`, invisible to a logical walk) remain
   uncovered — and the fact written to cover them was **withdrawn** rather than shipped, because it raised the
   full gate from 0/3 to 2/3 failing via the `WpfStaHost` defect above. Re-land it once that host is fixed.
+  **DONE 2026-08-01, and "re-land it" turned out to be literal**: the host is fixed, and `0f5c53bf`'s deletion
+  reverse-applied cleanly because the file had had no edits since — so the fact is back verbatim
+  (`11722ee`), covering the five row binding paths and `HasNoTimeline`. Two caveats a reader should keep. (i)
+  It changed **twice**, so its 3/3 → 0/3 is not attributable to the host fix alone: it now awaits
+  `TimelineLoadTask` — the seam its own commit added for exactly this purpose and which it never used — and
+  disposes the VM in a `finally`, which the withdrawn version did not. (ii) The `loc:Str` **header** is still
+  uncovered: it binds `Header`, which a logical walk does not see, and nothing here changed that.
 - **`Round` is not recorded, so the trace cannot say "these three calls were in the same round."** Recoverable
   later only by touching the tool-handler delegate signature — six closures, five with nothing to emit — which is
   why the decision is written down here rather than left implicit for someone to rediscover as a gap.
@@ -1402,6 +1448,24 @@ locales before deciding it needs its own string.
 completion with NO click, and an ordinary run must still show none of the three note lines at all. The second half is
 the one worth checking: quiet-on-an-ordinary-run is the property that makes the notes worth reading.
 
+**FOUR of those items got SHORTER on 2026-08-01, and this is the first time anything on this branch has moved
+in that direction.** [Batch 13](13-view-test-host.md) fixed the `WpfStaHost` defect that made every one of them
+un-automatable, then spent the headroom. Read "shorter" strictly — **none of the four is closed**, because each
+is worded as a round trip and only its silent half is now covered:
+
+- **§8 item 7 (per-step avatars render)** — the four row bindings are pinned by
+  `RunProgressPanel_RendersAStepRow_WithItsPersonaAvatar`, demonstrated by rebinding `PersonaId` to
+  `AssignedPersonaId` (the actual shipped shape) and watching it red at 0 warnings. Still manual: whether the
+  glyph is legible at 20×20 and the accent ring looks right.
+- **§8 item 6 (the persona roster)** — the roster's binding path is covered by the settings-view parse test.
+  Still manual: *"persists across a restart"*, which no parse test can see.
+- **Batch 04's item 1 and Batch 05's toggle debt** — one defect written up twice, and the same split: the
+  `Binding` paths of both CheckBoxes are now pinned, and the *"toggle it, restart, confirm it stuck"* half
+  stays. Batch 05's entry can stop saying no test parses this view; one does.
+
+Batch 03's own withdrawn row-render item comes **off** the list outright rather than shortening, because it was
+never a round trip — it was a render check standing in for a test that existed and could not be shipped.
+
 **Risks the plan named that were ACCEPTED rather than closed.** Each of these was mitigated and then explicitly
 left; the reason is the point.
 
@@ -1413,7 +1477,14 @@ left; the reason is the point.
   its work is the one mistake this sweep must not make, which is also why `WaitingForChildren(8)` was **not** added
   to the terminal set. The comment at the constant says "a judgement call, not a measurement: if seven days turns
   out to be short, it is one constant."
-- **R11 — no new `View` test, so 07's UI is manual-smoke debt by decision.** `WpfStaHost` holds 7 frame-pushing
+- ~~**R11 — no new `View` test, so 07's UI is manual-smoke debt by decision.**~~ **MOSTLY CLOSED 2026-08-01 by
+  [Batch 13](13-view-test-host.md)**, which did implement the fix this bullet says "belongs to Batch 12 and is
+  not implemented". Two of the three surfaces it names now have XAML-level coverage: the **avatar row**
+  (`RunProgressPanel_RendersAStepRow_WithItsPersonaAvatar`, driving the deferred `ItemTemplate` through
+  `LoadContent()`) and the **roster surface** (its binding path, via the settings-view parse test). **The
+  branch line is the one that stays** — it lives in `RunProgressPanel.xaml`'s non-templated region and is
+  reachable, so this is a gap in what Batch 13 chose to write, not in what it made possible. The original
+  reasoning follows, and its premise is the part that is now false. `WpfStaHost` holds 7 frame-pushing
   facts and the 8th previously took the gate from 0/3 to 2/3 failing; the documented fix belongs to Batch 12 and is
   not implemented. So the roster surface, the avatar row and the branch line are all covered at ViewModel level and
   their XAML is booked as debt — the same call Batch 03 made when it withdrew its row-render fact. This is the
@@ -1560,6 +1631,44 @@ brand-new keys to `fr.resx` **only**, leaving the localization parity fact red a
 commit supplied the base and DE values. The lesson kept is the cause and not the redness: G10's resx trio was split
 across two commits, one of which does not mention resx at all, so a bisect lands on a commit whose message asserts
 the opposite of what its diff did.
+
+---
+
+### Opened by Batch 13 (2026-08-01) — known, reasoned, not closed
+
+- **The mechanism is INFERRED, and the fix is justified by a different measurement than the one that explains
+  it.** What is measured is a differential (7 facts clean · a bare-pump 8th red 1-of-3 · a real 8th red 3-of-3 ·
+  fixed 0-of-3) and an invariant signature (60 s `InvokeTimeout`, queue never reaching `SystemIdle`, victim
+  always whichever test pumped next). What is *not* measured is the lost idle-priority request itself — nobody
+  instrumented it. The fix stands on the **gutted-body** run rather than on the theory: with no ViewModel and no
+  load in the new fact, the collection still went red, which indicts the host and nothing else. If this
+  resurfaces, instrument before re-theorising.
+- **`Pump()` now THROWS when called on the host thread**, i.e. from inside a `WpfStaHost.Run` body. That is the
+  guardrail, not an oversight — the nested shape is the defect — but it makes a previously working idiom a
+  hard error, and the message names the remedy (`Run(mutate)` → `Pump()` → `Run(observe)`) because a future test
+  author will hit it before reading any of this.
+- **A XAML-level red-before/green-after needs `-t:Rebuild`, and an incremental build will lie to you.** Found
+  while demonstrating the settings test: after reverting an injected binding typo, an incremental build reused
+  the **stale BAML** and the test kept failing against markup that no longer existed on disk. Same shape as the
+  warning-count trap `CLAUDE.md` documents, one layer down, and more confusing because the symptom is a red test
+  rather than a missing warning.
+- **The run panel's branch line is still unparsed, and that is a scope choice rather than a limitation.** R11
+  named three surfaces; Batch 13 covered two. The branch line sits in `RunProgressPanel.xaml`'s non-templated
+  region and is reachable by the same walk — it was simply not written, so it stays on the manual round with no
+  technical obstacle in front of it.
+- **The two sweeps are narrower than they sound, in the same way and for the same reason.** Both loc-key sweeps
+  see `TextBlock.Text` only, so on the settings view they cover the section headers and descriptions and **not**
+  the toggle labels, which are `Content=` on a CheckBox and become a `TextBlock` only after template
+  application. The trace expander's `loc:Str` **header** binds `Header` and stays invisible to a logical walk.
+  `LocalizationTests` still carries key parity for all of them; what is uncovered is the rendering, not the key.
+- **The binding-path check skips three binding shapes by design** — `RelativeSource`, `ElementName` and explicit
+  `Source` — because none targets the DataContext, which is what keeps `loc:Str` and the ItemsControl-ancestor
+  command binding out of scope. `MultiBinding` is skipped rather than flattened. So a typo inside a
+  `MultiBinding` or an `ElementName` that names nothing is still silent.
+- **Every other view in the repo is still unparsed**, and there are seven more settings views alone. What
+  changed is the cost: the reflected-path technique needs no ViewModel instance, so the next one really is a
+  short file — Batch 12's "~20-line" estimate was low for the *first* one (the single-DataContext assumption
+  cost a rewrite) but is about right now that the walk handles re-rooting.
 
 ---
 
