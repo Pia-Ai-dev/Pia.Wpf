@@ -379,6 +379,42 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     }
 
     /// <summary>
+    /// Batch 08 G3. The resume claim is now dispatched on the row's STATE, over an explicit two-member set and
+    /// never a range (D7): a budget park is <c>WaitingForInput</c> → <c>TryBeginResumeAsync</c>, a USER pause is
+    /// <c>Paused</c> → <c>TryResumeFromPauseAsync</c>, anything else is refused. Every other resume fact in this
+    /// file covers the first arm; this is the only cover for the second, and without it a swapped or missing arm
+    /// would stay green here and surface as a dead Continue button once the UI lands.
+    /// <para>
+    /// Not listed in the impl spec's §17 file table for G3, which names only the two new test files. Added
+    /// anyway: shipping a new switch arm with no fact is the thing the plan's own hazards forbid.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Resume_ClaimsAUserPausedRun_AndDrainsItToCompletion()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+
+        // Turn the budget park into a genuine USER pause, through the real CAS rather than by writing the
+        // column: WaitingForInput is deliberately NOT in that CAS's source set, so the row goes through Running.
+        await _runs.SetStateAsync(parked.Id, AgentRunState.Running, ct);
+        Assert.True(await _runs.TryPauseUserAsync(parked.Id, ct));
+        Assert.Equal(AgentRunState.Paused, (await _runs.GetAsync(parked.Id, ct))!.State);
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        var final = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        // The claim retired the pause envelope it consumed, so the panel and the Flow surface stop calling a
+        // finished run paused.
+        Assert.Null(RunPauseEnvelope.ReadReason(final));
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
+
+    /// <summary>
     /// T-G3-14a, <b>REGRESSION</b>. Batch 06 B16's first half: a provisioner that cannot isolate the run
     /// returns null — "no isolation", the pre-Batch-06 behaviour — and the run proceeds and settles
     /// <c>Completed</c>. It must NOT be settled <c>Failed</c> with <c>"workspace setup failed"</c>: an

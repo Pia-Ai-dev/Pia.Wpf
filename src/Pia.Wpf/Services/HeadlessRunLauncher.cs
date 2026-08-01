@@ -130,6 +130,14 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// </summary>
     private readonly IRunWorkspaceService? _workspaces;
 
+    /// <summary>
+    /// Batch 08 D1: where each dispatch publishes its own cancel sink, so a user pause can interrupt the
+    /// in-flight step of a run THIS process is running and the run's loop can tell that interrupt from a Stop.
+    /// Trailing and defaulted: null ⇒ nothing registers a sink, no pause request can ever be recorded against a
+    /// run of this launcher, and every cancel is the pre-Batch-08 terminal cancel.
+    /// </summary>
+    private readonly IRunSteeringStore? _steering;
+
     private bool _disposed;
 
     public HeadlessRunLauncher(
@@ -142,7 +150,8 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         IExecutingRunStore executingRuns,
         ILogger<HeadlessRunLauncher> logger,
         string? runsBaseDirOverride = null,
-        IRunWorkspaceService? workspaces = null)
+        IRunWorkspaceService? workspaces = null,
+        IRunSteeringStore? steering = null)
     {
         _scopeFactory = scopeFactory;
         _chatService = chatService;
@@ -156,6 +165,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // (SensitivePathGuard.BuildAllowedExceptions) and this default can never drift apart (Batch 06 B1).
         _runsBaseDir = runsBaseDirOverride ?? AssistantWorkspace.RunsRoot;
         _workspaces = workspaces;
+        _steering = steering;
 
         // Decision c: delete a run's workspace when its chat (and, by FK cascade, its run) is deleted.
         _chatService.ChatsChanged += OnChatsChanged;
@@ -334,6 +344,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // command returning). Shutdown cancels every run; per-run cancel disposes this source.
         var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
 
+        // Batch 08 D1: THIS dispatch's cancel sink. A local delegate rather than a lambda passed inline,
+        // because the same instance is the release token below (reference equality is what stops a finishing
+        // dispatch from dropping a live resume's registration). Best-effort by design — a disposed source must
+        // never break a pause or a cascade.
+        Action steerCancel = () => { try { runCts.Cancel(); } catch { /* already disposed/cancelled */ } };
+        _steering?.RegisterDispatch(run.Id, steerCancel);
+
         // Batch 07 §7.6: teardown is keyed on WORKSPACE OWNERSHIP, not on run id. This index exists so
         // OnChatsChanged can tear down the workspaces a chat's runs own — and a CHILD owns none: it writes its
         // parent's directory. Registering it would make deleting the child's stub chat call
@@ -419,6 +436,11 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 // this finally runs, so either side may get here first.
                 _executingRuns.Release(run.Id);
                 RemoveInflight(run.Id, runCts);
+                // Batch 08 D1: drop this dispatch's sink AND any pause request it never consumed — the
+                // !started arm above settles the row itself and never enters the orchestrator, so nothing
+                // there would ever consume one. Ownership-guarded like RemoveInflight beside it, and for the
+                // same reason: a resume dispatch may already have registered its own sink.
+                _steering?.ReleaseDispatch(run.Id, steerCancel);
                 runCts.Dispose();
             }
         }, CancellationToken.None);
@@ -434,7 +456,18 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
         // Atomic claim FIRST (guardrail 2): a panel+Flow race or double-click → only one winner. On the
         // lost path we return BEFORE touching _slots/_inflight/_runsByChat — no slot leak, no duplicate run.
-        if (!await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false))
+        //
+        // Batch 08: TWO claims now, disjoint by SOURCE STATE, chosen from the row we already read. An explicit
+        // dispatch, never a range (D7) and never "try one, then the other": a run whose state moved between the
+        // read and the CAS is not ours, and the loser's log line below says so. A budget park is
+        // WaitingForInput; a USER pause is Paused, and its claim also retires the pause envelope it consumed.
+        var claimed = run.State switch
+        {
+            AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
+            AgentRunState.Paused => await _agentRunService.TryResumeFromPauseAsync(runId, ct).ConfigureAwait(false),
+            _ => false,
+        };
+        if (!claimed)
         {
             _logger.LogInformation("Resume: run {RunId} not claimable (already resumed/not parked)", runId);
             return false;
@@ -512,6 +545,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             }
 
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
+
+            // Batch 08 D1: this dispatch's cancel sink, same shape as the launch path. Registering OVERWRITES,
+            // which is the point — a resume can start while the previous dispatch is still unwinding, and the
+            // sink a pause must fire is the one belonging to the loop that is actually running.
+            Action steerCancel = () => { try { runCts.Cancel(); } catch { /* already disposed/cancelled */ } };
+            _steering?.RegisterDispatch(run.Id, steerCancel);
 
             // The same non-registration rule as the launch path, for the same reason: teardown is keyed on
             // WORKSPACE OWNERSHIP, not on run id, and a resumed child still owns no directory of its own
@@ -595,6 +634,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // recoverable direction (a stale true is not recoverable).
                     _executingRuns.Release(run.Id);
                     RemoveInflight(run.Id, runCts);
+                    // Batch 08 D1: see the launch path's finally. The !started arms above re-park the row
+                    // themselves without entering the orchestrator, so an unconsumed request has to die here.
+                    _steering?.ReleaseDispatch(run.Id, steerCancel);
                     runCts.Dispose();
                 }
             }, CancellationToken.None);

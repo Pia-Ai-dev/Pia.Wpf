@@ -511,6 +511,15 @@ public static class Bootstrapper
         // brackets (this launcher and BackgroundAssistantTurnRunner) and by every window's ChatSessionManager,
         // which reads it synchronously when a chat is activated. Holds no state that outlives a run.
         services.AddSingleton<IExecutingRunStore, ExecutingRunStore>();
+        // Batch 08 D1: the per-dispatch cancel-sink + pause-intent registry that lets a run's own loop tell a
+        // USER PAUSE from a Stop. SINGLETON beside the index above and for the same reason — it is written by
+        // the launcher's two dispatches and by every window's ChatSessionManager, and read by the loop running
+        // in a per-run scope, so a scoped registration would give the pause command and the loop two different
+        // maps. Holds no state that outlives a dispatch.
+        services.AddSingleton<IRunSteeringStore, RunSteeringStore>();
+        // The command surface over that registry. Never writes a run row: the row moves to Paused from inside
+        // the loop, through the CAS, after the aborted step has been given back to the plan.
+        services.AddSingleton<IAgentRunSteeringService, AgentRunSteeringService>();
         // Batch 06 G3: owns both workspace provisioning modes (git worktree when the source root is a repo,
         // else a bounded copy) and the symmetric teardown each needs. SINGLETON, like the launcher that
         // consumes it: a scoped registration would give two dispatches of one run different metadata readers

@@ -24,6 +24,7 @@ public sealed class AgentRunOrchestrator
     private readonly IRunWorkspaceService? _workspaces;
     private readonly IHeadlessRunLauncher? _childLauncher;
     private readonly IAssistantChatService? _chats;
+    private readonly IRunSteeringStore? _steering;
 
     /// <summary>
     /// Cap on a delegated run's answer text as it is folded into the parent's context. Same number as
@@ -59,6 +60,10 @@ public sealed class AgentRunOrchestrator
     /// <param name="chats">Batch 07 G10, trailing and defaulted. Only used to read a settled child's answer back
     /// into the parent's context; null ⇒ the fan-out still works and the parent's replan/verify prompts see
     /// <see cref="DelegatedAnswerUnavailable"/> instead of the child's text.</param>
+    /// <param name="steering">Batch 08 G3. TRAILING and DEFAULTED, like every dependency this loop has gained:
+    /// null ⇒ no pause request can ever be consumed ⇒ this loop is byte-for-byte the pre-Batch-08 one, which is
+    /// what keeps a dozen positional test constructions unchanged. It is the DISCRIMINATOR that tells a user
+    /// pause from a stop: without it every cancel is a stop, exactly as before.</param>
     public AgentRunOrchestrator(
         IAgentRunService runService,
         IAgentPlanner planner,
@@ -66,7 +71,8 @@ public sealed class AgentRunOrchestrator
         ILogger<AgentRunOrchestrator> logger,
         IRunWorkspaceService? workspaces = null,
         IHeadlessRunLauncher? childLauncher = null,
-        IAssistantChatService? chats = null)
+        IAssistantChatService? chats = null,
+        IRunSteeringStore? steering = null)
     {
         _runService = runService;
         _planner = planner;
@@ -75,6 +81,7 @@ public sealed class AgentRunOrchestrator
         _workspaces = workspaces;
         _childLauncher = childLauncher;
         _chats = chats;
+        _steering = steering;
     }
 
     public async Task RunAsync(
@@ -95,6 +102,12 @@ public sealed class AgentRunOrchestrator
         Guid? runFirst = null;
         var runLast = Guid.Empty;
 
+        // Batch 08 D1: the step this loop currently has in flight, hoisted to RunAsync scope because `step` is
+        // scoped to the drain `while` below and is NOT in scope in the catch(OperationCanceledException) arm —
+        // which is where a step that never returned (an OCE out of the persona resolve, or Live's second escape
+        // hatch, both of which leave the row Running) has to be given back to the plan.
+        Guid? inflightStepId = null;
+
         // R3: on resume, seed the range from the persisted pre-pause slice so the terminal PinRange
         // EXTENDS the run's transcript range rather than shrinking it to only the post-resume portion.
         // runFirst's ??= below then keeps this original first message; runLast advances to the latest.
@@ -112,6 +125,14 @@ public sealed class AgentRunOrchestrator
             if (runFirst is { } first)
                 await SafeRange(run.Id, first, runLast, cts.Token).ConfigureAwait(false);
         }
+
+        // Batch 08 D1, collision hardening 2 (cleared on entry): no pause request may survive a DISPATCH
+        // boundary. The same run id is dispatched more than once over its life (launch → pause → resume, and
+        // HeadlessRunLauncher's per-run entry is overwritten by the new dispatch while the old one is still
+        // unwinding), so without this a request recorded against the previous dispatch — one the user has
+        // already seen refused, or one a `!started` arm never consumed — would abort the FIRST step of this
+        // one. Structurally impossible instead of narrowly timed.
+        _steering?.RevokePauseRequest(run.Id);
 
         try
         {
@@ -291,14 +312,61 @@ public sealed class AgentRunOrchestrator
 
                     await SafeSetState(run.Id, AgentRunState.Running, cts.Token).ConfigureAwait(false);
                     await SafeSetStepStatus(step.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
+                    inflightStepId = step.Id; // D1: what the catch(OCE) arm has to restore (see the hoist above)
 
                     var r = await executor.ExecuteStepAsync(run, step, ctx, cts.Token).ConfigureAwait(false); // critical path
+
+                    // ---- Batch 08 D1: USER PAUSE, tested BEFORE the step is recorded and BEFORE r.Cancelled ----
+                    // Ordering is the whole design and it is deliberate in three ways.
+                    //
+                    // (1) BEFORE SafeRecordStep. That call is UNCONDITIONAL and maps !Succeeded → Failed(3), a
+                    //     status invisible to NextPendingStepAsync AND dropped by KeepDoneAsync — so recording
+                    //     the aborted step would delete it from the resumed plan while the panel still showed
+                    //     it. It also writes the step's First/LastMessageId and its per-step ledger entry, and
+                    //     D2 says the aborted step's TEXT is discarded so the step re-runs clean. ctx.RecordStep
+                    //     is skipped for the same reason: it would burn a step against ctx.StepsExecuted and
+                    //     hand the critic a step that never finished.
+                    // (2) NOT gated on r.Cancelled, and never &&-ed with it. On Live the pause releases a
+                    //     pending action card, which ChatSession maps to ToolDecision.Decline — the exchange
+                    //     CONTINUES and can return Succeeded:false, Cancelled:false, which would fall into the
+                    //     replan arm below: the user clicks Pause and the run replans. There is no scenario in
+                    //     which the request exists and a pause is not wanted (only the pause command writes it,
+                    //     and RunAsync revoked stale ones on entry), so the request alone decides.
+                    // (3) CancellationToken.None throughout the branch: cts.Token is already cancelled by the
+                    //     sink that produced this abort. Neither SetStepStatusAsync nor SetRunMessageRangeAsync
+                    //     inspects its token today, but passing None states the intent rather than relying on it.
+                    if (_steering?.TryConsumePauseRequest(run.Id) == true)
+                    {
+                        // Order fixed by D1 item 6 — a tidy-up reorder here breaks a scheduled job, because
+                        // ScheduledJobBackgroundService reads the row AFTER awaiting handle.Completion and books
+                        // anything not yet Paused/WaitingForInput as a FAILURE (a strike, and a `Once` job is
+                        // retired on the first one). The row must read Paused before this dispatch returns.
+                        await SafeSetStepStatus(step.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
+                        // D2: the tokens the aborted step already spent are BILLED, run-level (stepId: null) —
+                        // no per-step entry for a step that will re-run. SafeAddUsage null-guards, so a cancel
+                        // arm that reports no usage (which is what both executors do today) bills nothing and
+                        // synthesizes nothing: no estimate, no fallback number, ever.
+                        await SafeAddUsage(run.Id, r.Usage, CancellationToken.None).ConfigureAwait(false);
+                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                        // The CAS may LOSE (another writer settled this run while the step unwound). Release the
+                        // executor and return either way: the row is not ours to correct, but the SESSION is —
+                        // the same split the fan-out's Abandoned arm makes, for the same reason. Falling through
+                        // to SafeRecordStep after a lost CAS would write Failed over the Pending we just set.
+                        await SafePauseUser(run.Id).ConfigureAwait(false);
+                        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. Live must not settle
+                        // ChatState.Completed or raise TurnCompleted; OnPausedAsync drops the session to Idle so
+                        // Send re-enables while the run sits resumable. Headless no-ops.
+                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                        return;
+                    }
+
                     await SafeRecordStep(step.Id, r, cts.Token).ConfigureAwait(false); // R16 ledger + R3 slice
                     ctx.RecordStep(step, r);
                     // Track only valid (non-empty) message Ids so a step that produced no transcript
                     // (e.g. a cancelled step) never poisons the run-level range with Guid.Empty.
                     if (r.FirstMessageId != Guid.Empty) runFirst ??= r.FirstMessageId;
                     if (r.LastMessageId != Guid.Empty) runLast = r.LastMessageId;
+                    inflightStepId = null; // the step has settled; a later OCE must not re-open it
 
                     if (r.Cancelled)
                     {
@@ -377,6 +445,23 @@ public sealed class AgentRunOrchestrator
         }
         catch (OperationCanceledException)
         {
+            // Batch 08 D1, the SECOND pause site, and it is not redundant with the one in the drain loop: an
+            // abort can leave the loop by THROWING rather than returning a result. Three reachable shapes —
+            // an OCE out of the per-step persona resolve (awaited before either executor's exchange try/catch,
+            // so the step stays Running(1)), Live's second escape hatch (its UI-thread post rethrows, so
+            // ExecuteStepAsync throws instead of returning), and a pause that lands during the terminal critic
+            // (no step in flight at all, which is why the restore is conditional).
+            if (_steering?.TryConsumePauseRequest(run.Id) == true)
+            {
+                if (inflightStepId is { } sid)
+                    await SafeSetStepStatus(sid, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
+                // No usage to bill here: the step threw, so there is no StepTurnResult to read one from.
+                await PinRange().ConfigureAwait(false);
+                await SafePauseUser(run.Id).ConfigureAwait(false);
+                await SafeOnPaused(executor, run, ctx).ConfigureAwait(false); // never SafeEndRun — a pause is not terminal
+                return;
+            }
+
             // R3: a cancel can now surface here from the in-flight verify turn (SafeVerify rethrows a
             // genuine run cancel) — after the steps drained but before the terminal-settle PinRange. Pin
             // the executed-so-far slice first so a transcript-producing run never settles Cancelled with a
@@ -606,7 +691,15 @@ public sealed class AgentRunOrchestrator
             registration = cts.Token.Register(() =>
             {
                 foreach (var d in dispatched)
+                {
+                    // Batch 08 §5.3 revocation 5: the parent's token fired for a TERMINAL reason (a chat
+                    // delete, app shutdown, Stop), so a pause request standing against a child must not turn
+                    // this cascade into a park. Revoke BEFORE cancelling, always in that order — the child's
+                    // loop reads the request when its step unwinds, so a cancel delivered first could be
+                    // consumed as a pause on the way past.
+                    _steering?.RevokePauseRequest(d.Handle.RunId);
                     _childLauncher.CancelAsync(d.Handle.RunId).SafeFireAndForget(_logger);
+                }
             });
 
             await Task.WhenAll(dispatched.Select(d => d.Handle.Completion)).ConfigureAwait(false);
@@ -808,6 +901,11 @@ public sealed class AgentRunOrchestrator
                 if (old.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
                     continue;
 
+                // Batch 08 §5.3 revocation 4: a superseded generation settles TERMINAL. Revoke before
+                // cancelling, so a pause the user asked for on a child of the PREVIOUS generation cannot make
+                // that child park instead — it would then be neither superseded nor re-dispatched.
+                _steering?.RevokePauseRequest(old.Id);
+
                 await launcher.CancelAsync(old.Id).ConfigureAwait(false);
 
                 // A parked child is the one shape the cancel above cannot reach across a restart: states at or
@@ -977,6 +1075,35 @@ public sealed class AgentRunOrchestrator
     {
         try { await _runService.PauseAsync(runId, reason, ct).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (pause) failed for {RunId}", runId); }
+    }
+
+    /// <summary>
+    /// Batch 08 D1: park the run at <see cref="AgentRunState.Paused"/> for a USER pause, through the CAS and
+    /// never a blind write — a blind write would resurrect a run another writer already settled (R11), which is
+    /// the one way a pause could turn a Cancelled run back into a live one.
+    /// <para>
+    /// <c>CancellationToken.None</c>: this runs on an already-cancelled token by construction (the pause fired
+    /// it), and a pause that does not reach the row leaves the run dangling <c>Running</c> — unresumable.
+    /// Failure-isolated like its neighbours, and it REPORTS the CAS result rather than swallowing it: a lost CAS
+    /// is a normal outcome worth a log line, not a silent success.
+    /// </para>
+    /// </summary>
+    private async Task<bool> SafePauseUser(Guid runId)
+    {
+        try
+        {
+            if (await _runService.TryPauseUserAsync(runId, CancellationToken.None).ConfigureAwait(false))
+                return true;
+
+            _logger.LogInformation(
+                "Run {RunId} user pause was not applied — another writer owns this run; releasing the executor only", runId);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run bookkeeping (user pause) failed for {RunId}", runId);
+            return false;
+        }
     }
 
     /// <summary>
