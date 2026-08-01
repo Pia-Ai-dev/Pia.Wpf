@@ -11,12 +11,29 @@ public interface IScheduledJobService
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();
+
+    /// <summary>
+    /// May THIS device fire <paramref name="id"/>? The same rule <c>GetDueJobsAsync</c> applies in SQL
+    /// (<c>OwnerDeviceId IS NULL OR OwnerDeviceId = @LocalDevice</c>), exposed for the UI's manual "run now"
+    /// so the two cannot drift: a null owner is a legacy device-local row and stays runnable here, and a row
+    /// owned elsewhere is not. False for an id that does not exist — a job nobody can find is one this device
+    /// certainly may not fire.
+    /// </summary>
+    Task<bool> IsOwnedByThisDeviceAsync(Guid id);
     Task<ScheduledJob?> GetAsync(Guid id);
     Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync();
     Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since);
 
     /// <summary>
     /// Applies the supplied field edits (null = leave unchanged) and recomputes <c>NextFireAt</c>.
+    /// <para>
+    /// <b><paramref name="specificDate"/> is what makes the re-arm below reachable (Batch 09).</b> Until it
+    /// existed, a settled one-off whose date had passed could not be moved by ANY surface: the re-arm rule
+    /// requires a future <c>NextFireAt</c>, and the only edit that could produce one for a <c>Once</c> row was
+    /// the one this method could not express. <paramref name="kind"/> is here for the sibling reason — a job
+    /// authored as <c>Research</c> could otherwise only become an <c>AgentTask</c> by delete-and-recreate,
+    /// which throws away its history and its id.
+    /// </para>
     /// <para>
     /// Also RE-ARMS a job that had settled: a <see cref="ScheduledJobStatus.Completed"/> row whose recomputed
     /// fire time lands in the future goes back to <see cref="ScheduledJobStatus.Active"/>, because otherwise a
@@ -31,7 +48,8 @@ public interface IScheduledJobService
     Task UpdateAsync(Guid id, string? name = null, string? query = null,
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
-        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null);
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
+        DateTime? specificDate = null, ScheduledJobKind? kind = null);
 
     Task DeleteAsync(Guid id);
 

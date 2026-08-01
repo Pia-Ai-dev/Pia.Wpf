@@ -434,9 +434,15 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task UpdateAsync_DoesNotReArmASettledJobWhoseFireTimeIsStillPast()
     {
-        // The narrowing: UpdateAsync has no specificDate parameter, so a settled one-off keeps its PAST
-        // instant. Re-arming that would fire the job on the very next tick — for an AgentTask, an unattended
-        // run nobody asked for. It stays settled until the caller actually re-schedules it forward.
+        // The narrowing: a settled one-off whose fire time is still in the past stays settled, because
+        // re-arming it would fire the job on the very next tick — for an AgentTask, an unattended run nobody
+        // asked for. It stays settled until the caller actually re-schedules it FORWARD.
+        //
+        // CORRECTED by Batch 09. This comment used to justify the rule with "UpdateAsync has no specificDate
+        // parameter, so a settled one-off keeps its past instant". That parameter now exists, so the premise
+        // is gone and the rule is load-bearing on its own — which is why the two facts below it were added:
+        // one proves a FUTURE date re-arms, the other that a PAST date still does not. This fact keeps its
+        // original shape (an edit that supplies no date at all) because that is a third distinct case.
         var job = await _service.CreateAsync("TEST_OnceStalePast", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-2));
         await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
@@ -447,6 +453,62 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Equal(ScheduledJobStatus.Completed, after!.Status);
         Assert.Equal("TEST_OnceStalePast_renamed", after.Name);
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_MovingASettledOneOffToAFutureDate_ReArmsIt()
+    {
+        // Batch 09's re-arm surface, and the reason it needed a SERVICE change rather than only a UI: the
+        // re-arm rule ("Completed + a future NextFireAt ⇒ Active") already existed and was UNREACHABLE for a
+        // one-off whose date had passed, because no caller could supply a new date. The roadmap recorded that
+        // as "a settled Once job has almost no re-arm surface" and handed it to this batch.
+        var job = await _service.CreateAsync("TEST_OnceMovedForward", "q", RecurrenceType.Once,
+            new TimeOnly(9, 0), specificDate: DateTime.Now.Date.AddDays(-3));
+        await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
+        Assert.Equal(ScheduledJobStatus.Completed, (await _service.GetAsync(job.Id))!.Status);
+
+        var target = DateTime.Now.Date.AddDays(3);
+        await _service.UpdateAsync(job.Id, specificDate: target);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, after!.Status);
+        Assert.Equal(target.Date, after.SpecificDate!.Value.Date);
+        // The date has to be PERSISTED, not merely used to recompute: the UPDATE statement did not carry
+        // SpecificDate at all before this batch, so a re-armed job would have been written with the old past
+        // date and settled again on its next fire.
+        Assert.True(after.NextFireAt > DateTime.Now);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_MovingASettledOneOffToAnotherPastDate_LeavesItSettled()
+    {
+        // The other half, and the one that keeps the narrowing honest now that a date CAN be supplied: an
+        // explicitly past date must not re-arm, or the job fires on the next 30 s tick.
+        var job = await _service.CreateAsync("TEST_OnceMovedBackward", "q", RecurrenceType.Once,
+            new TimeOnly(9, 0), specificDate: DateTime.Now.Date.AddDays(-3));
+        await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
+
+        await _service.UpdateAsync(job.Id, specificDate: DateTime.Now.Date.AddDays(-1));
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Completed, after!.Status);
+        Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_CanChangeAJobsKind_WithoutLosingItsIdentity()
+    {
+        // A Research job cannot otherwise become an AgentTask except by delete-and-recreate, which discards
+        // the row's id, its history and its LastResultEntryId link. Kind was also absent from the UPDATE
+        // statement, so this is a persistence fact and not only a parameter one.
+        var job = await _service.CreateAsync("TEST_KindSwap", "q", RecurrenceType.Daily, new TimeOnly(9, 0),
+            kind: ScheduledJobKind.Research);
+
+        await _service.UpdateAsync(job.Id, kind: ScheduledJobKind.AgentTask);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobKind.AgentTask, after!.Kind);
+        Assert.Equal(job.Id, after.Id);
     }
 
     [Fact]

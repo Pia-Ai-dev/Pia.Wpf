@@ -44,6 +44,70 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task RunNowAsync_DispatchesAJobThatIsNotDue()
+    {
+        // The whole point of the manual surface: a job whose NextFireAt is in the FUTURE never appears in the
+        // due query, so nothing else in this service would ever run it.
+        var jobs = new FakeJobService();
+        var notDue = NewDueJob();
+        notDue.NextFireAt = DateTime.Now.AddDays(3);
+        jobs.SeedDue(notDue);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        // A tick alone proves the premise: this job is not due, so nothing runs.
+        await bg.ExecuteOnceAsync(CancellationToken.None);
+        Assert.Equal(0, runner.RunCount);
+
+        var result = await bg.RunNowAsync(notDue.Id, CancellationToken.None);
+
+        Assert.Equal(ScheduledJobRunNowResult.Dispatched, result);
+        Assert.Equal(1, runner.RunCount);
+    }
+
+    [Fact]
+    public async Task RunNowAsync_RefusesAJobOwnedByAnotherDevice_AndRunsNothing()
+    {
+        // The guardrail 09 inherits: only the owner device advances a job, or two machines double-fire it.
+        // A manual button must not be able to do what this device's own scheduler is forbidden to do.
+        var jobs = new FakeJobService { OwnedByThisDevice = false };
+        var job = NewDueJob();
+        jobs.SeedDue(job);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        var result = await bg.RunNowAsync(job.Id, CancellationToken.None);
+
+        Assert.Equal(ScheduledJobRunNowResult.NotOwner, result);
+        Assert.Equal(0, runner.RunCount);
+        Assert.Empty(jobs.Completed);
+    }
+
+    [Fact]
+    public async Task RunNowAsync_ReportsNotFound_ForAnIdThatIsGone()
+    {
+        // Deleted underneath an open list. Distinguished from NotOwner so the UI can say which happened.
+        var jobs = new FakeJobService();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            new FakeNotificationSurface(), Substitute.For<IHeadlessRunLauncher>(), NewSettings(),
+            Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        Assert.Equal(ScheduledJobRunNowResult.NotFound,
+            await bg.RunNowAsync(Guid.NewGuid(), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_Success_MarksCompleteWithChatIdAndNotifies()
     {
         var jobs = new FakeJobService();
@@ -529,12 +593,23 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
-        public Task<ScheduledJob?> GetAsync(Guid id) => throw new NotImplementedException();
+        // Run-now looks the job up by id rather than taking it off the due list, so this resolves against the
+        // same backing collection the due query reads — including rows that are NOT due, which is most of the
+        // point of firing one manually.
+        public Task<ScheduledJob?> GetAsync(Guid id) =>
+            Task.FromResult(_due.FirstOrDefault(j => j.Id == id));
 
         public Task UpdateAsync(Guid id, string? name = null, string? query = null,
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
-            IReadOnlyCollection<string>? grantedTools = null) => throw new NotImplementedException();
+            IReadOnlyCollection<string>? grantedTools = null,
+            DateTime? specificDate = null, ScheduledJobKind? kind = null) => throw new NotImplementedException();
+
+        /// <summary>Drives the run-now owner refusal. True by default, which is the ordinary case (a job this
+        /// device owns, or a legacy row with a null owner).</summary>
+        public bool OwnedByThisDevice { get; set; } = true;
+
+        public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(OwnedByThisDevice);
 
         public Task DeleteAsync(Guid id) => throw new NotImplementedException();
         public Task DisableAsync(Guid id) => throw new NotImplementedException();

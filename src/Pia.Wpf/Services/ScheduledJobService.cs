@@ -121,6 +121,19 @@ public class ScheduledJobService : IScheduledJobService
             });
     }
 
+    public async Task<bool> IsOwnedByThisDeviceAsync(Guid id)
+    {
+        var job = await GetAsync(id);
+        if (job is null) return false;
+
+        // Deliberately the same rule as GetDueJobsAsync' SQL predicate, expressed once more in C# rather than
+        // re-queried: a NULL owner is a legacy row that stays device-local to whichever machine made it, so
+        // it is runnable here. Anything owned by another device is not, which is what stops a manual run from
+        // doing what the scheduler on this device is forbidden to do.
+        if (job.OwnerDeviceId is not { } owner) return true;
+        return owner == await ResolveLocalDeviceIdAsync();
+    }
+
     public async Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) =>
         await ReadAsync(
             "WHERE UpdatedAt >= @Since",
@@ -129,7 +142,8 @@ public class ScheduledJobService : IScheduledJobService
     public async Task UpdateAsync(Guid id, string? name = null, string? query = null,
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
-        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null)
+        Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
+        DateTime? specificDate = null, ScheduledJobKind? kind = null)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
 
@@ -140,6 +154,8 @@ public class ScheduledJobService : IScheduledJobService
         if (dayOfWeek is not null) existing.DayOfWeek = dayOfWeek;
         if (dayOfMonth is not null) existing.DayOfMonth = dayOfMonth;
         if (month is not null) existing.Month = month;
+        if (specificDate is not null) existing.SpecificDate = specificDate;
+        if (kind is not null) existing.Kind = kind.Value;
         if (grantedTools is not null) existing.GrantedTools = grantedTools.ToList();
         if (providerId is not null) existing.ProviderId = providerId;
 
@@ -156,10 +172,19 @@ public class ScheduledJobService : IScheduledJobService
         // Two deliberate narrowings. ONLY Completed is re-armed: Disabled is the user's explicit off switch
         // (DisableAsync/EnableAsync own it) and Failed is a retirement whose ConsecutiveFailures budget only
         // EnableAsync resets, so neither may be flipped on by an unrelated field edit. And only when the
-        // recomputed NextFireAt is in the FUTURE: UpdateAsync cannot move SpecificDate (there is no
-        // parameter for it), so a settled one-off keeps its past instant, and re-arming that would fire the
-        // job again on the very next tick — an unattended AgentTask run nobody asked for. Re-scheduling it
-        // forward (a new recurrence, or a Once row with no SpecificDate, which clamps forward) does re-arm.
+        // recomputed NextFireAt is in the FUTURE.
+        //
+        // AMENDED by Batch 09: this comment used to explain the future-only rule by saying "UpdateAsync
+        // cannot move SpecificDate (there is no parameter for it), so a settled one-off keeps its past
+        // instant". THAT CLAUSE IS NOW FALSE — the parameter exists, which is the whole point: a settled
+        // one-off whose date is in the past was previously unreachable by any surface (the roadmap's
+        // "a settled Once job has almost no re-arm surface"), because the one edit that would revive it was
+        // the one edit this method could not express.
+        //
+        // The future-only rule survives that change UNALTERED, and now carries the weight on its own: moving
+        // a one-off to another PAST date must not re-arm it, because the due query would fire it on the very
+        // next 30 s tick — an unattended AgentTask run nobody asked for. Supplying a FUTURE date is what
+        // re-arms, and that is a thing the user did on purpose.
         if (existing.Status == ScheduledJobStatus.Completed && existing.NextFireAt > DateTime.Now)
             existing.Status = ScheduledJobStatus.Active;
 
@@ -167,8 +192,8 @@ public class ScheduledJobService : IScheduledJobService
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE ScheduledJobs
-            SET Name=@Name, Query=@Query, Recurrence=@Recurrence, TimeOfDay=@TimeOfDay,
-                DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month,
+            SET Name=@Name, Query=@Query, Kind=@Kind, Recurrence=@Recurrence, TimeOfDay=@TimeOfDay,
+                DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month, SpecificDate=@SpecificDate,
                 GrantedTools=@GrantedTools, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
                 Status=@Status, UpdatedAt=@UpdatedAt
             WHERE Id=@Id
@@ -176,6 +201,9 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@Id", existing.Id.ToString());
         command.Parameters.AddWithValue("@Name", existing.Name);
         command.Parameters.AddWithValue("@Query", existing.Query);
+        command.Parameters.AddWithValue("@Kind", existing.Kind.ToString());
+        command.Parameters.AddWithValue("@SpecificDate",
+            existing.SpecificDate.HasValue ? (object)existing.SpecificDate.Value.ToString("O") : DBNull.Value);
         command.Parameters.AddWithValue("@Recurrence", existing.Recurrence.ToString());
         command.Parameters.AddWithValue("@TimeOfDay", existing.TimeOfDay.ToString("HH:mm"));
         command.Parameters.AddWithValue("@DayOfWeek", existing.DayOfWeek.HasValue ? (object)(int)existing.DayOfWeek.Value : DBNull.Value);

@@ -13,7 +13,7 @@ namespace Pia.Services;
 /// once it exceeds the grace period the missed-run prompt in <see cref="RunJobAsync"/> asks the
 /// user before running.
 /// </summary>
-public class ScheduledJobBackgroundService : BackgroundService
+public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRunner
 {
     private static readonly TimeSpan _checkInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan _gracePeriod = TimeSpan.FromMinutes(15);
@@ -94,6 +94,34 @@ public class ScheduledJobBackgroundService : BackgroundService
             ct.ThrowIfCancellationRequested();
             await RunJobAsync(job, ct);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<ScheduledJobRunNowResult> RunNowAsync(Guid jobId, CancellationToken ct = default)
+    {
+        var job = await _jobs.GetAsync(jobId);
+        if (job is null)
+        {
+            _logger.LogWarning("Run-now requested for unknown scheduled job {Id}", jobId);
+            return ScheduledJobRunNowResult.NotFound;
+        }
+
+        // The owner rule is asked of the service rather than re-derived here, so this cannot drift from the
+        // SQL predicate GetDueJobsAsync uses. A manual run must not be able to do what this device's own
+        // scheduler is forbidden to do.
+        if (!await _jobs.IsOwnedByThisDeviceAsync(jobId))
+        {
+            _logger.LogInformation("Run-now refused for job {Id}: another device owns its schedule", jobId);
+            return ScheduledJobRunNowResult.NotOwner;
+        }
+
+        // ExecuteJobAsync, not RunJobAsync: the latter's grace check asks the user whether a LATE job should
+        // still run, which is meaningless for a run they just requested — and would pop a dialog for any job
+        // whose NextFireAt is in the past, which is exactly the settled/overdue rows most likely to be run
+        // manually. Both branches take _runLock themselves, so this still serialises against the tick.
+        _logger.LogInformation("Run-now dispatching scheduled job {Id} ({Kind})", jobId, job.Kind);
+        await ExecuteJobAsync(job, ct);
+        return ScheduledJobRunNowResult.Dispatched;
     }
 
     private async Task RunJobAsync(ScheduledJob job, CancellationToken ct)

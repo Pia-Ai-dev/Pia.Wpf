@@ -376,12 +376,15 @@ public class ScheduledJobToolHandlerTests
         public Task UpdateAsync(Guid id, string? name = null, string? query = null,
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
-            IReadOnlyCollection<string>? grantedTools = null)
+            IReadOnlyCollection<string>? grantedTools = null,
+            DateTime? specificDate = null, ScheduledJobKind? kind = null)
         {
             Updated.Add(id);
             LastUpdatedGrants = grantedTools;
             return Task.CompletedTask;
         }
+
+        public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
 
         public Task DeleteAsync(Guid id)
         {
